@@ -1144,6 +1144,10 @@ export const en = {
     pinned: {
       title: "Pinned",
     },
+    settled: {
+      title: "Settled",
+      titleWithCount: "Settled ({{count}})",
+    },
     host: {
       noHost: "No host",
       switchTitle: "Switch host",
@@ -1234,6 +1238,10 @@ export const en = {
         rename: "Rename workspace",
         pin: "Pin to top",
         unpin: "Unpin",
+        settle: "Settle",
+        unsettle: "Unsettle",
+        settleWorkspace: "Settle workspace",
+        unsettleWorkspace: "Unsettle workspace",
         archive: "Archive",
         archiveWorkspace: "Archive workspace",
         hideFromSidebar: "Hide from sidebar",

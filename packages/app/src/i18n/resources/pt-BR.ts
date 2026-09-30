@@ -1162,6 +1162,10 @@ export const ptBR: TranslationResources = {
     pinned: {
       title: "Fixados",
     },
+    settled: {
+      title: "Resolvidos",
+      titleWithCount: "Resolvidos ({{count}})",
+    },
     host: {
       noHost: "Nenhum host",
       switchTitle: "Trocar host",
@@ -1252,6 +1256,10 @@ export const ptBR: TranslationResources = {
         rename: "Renomear workspace",
         pin: "Fixar no topo",
         unpin: "Desafixar",
+        settle: "Resolver",
+        unsettle: "Reabrir",
+        settleWorkspace: "Marcar workspace como resolvido",
+        unsettleWorkspace: "Reabrir workspace",
         archive: "Arquivar",
         archiveWorkspace: "Arquivar workspace",
         hideFromSidebar: "Ocultar da barra lateral",

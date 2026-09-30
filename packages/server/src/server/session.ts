@@ -2915,6 +2915,8 @@ export class Session {
         return this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId);
       case "workspace.pin.set.request":
         return this.handleWorkspacePinSetRequest(msg.workspaceId, msg.pinned, msg.requestId);
+      case "workspace.settle.set.request":
+        return this.handleWorkspaceSettleSetRequest(msg.workspaceId, msg.settled, msg.requestId);
       default:
         return undefined;
     }
@@ -3769,6 +3771,8 @@ export class Session {
       const updated = await this.workspaceRegistry.update(workspaceId, (existing) => ({
         ...existing,
         pinnedAt: nextPinnedAt,
+        // A pinned workspace is one the user is keeping in view, so pinning ends a settle.
+        settledAt: pinned ? null : existing.settledAt,
         updatedAt,
       }));
       if (!updated) {
@@ -3792,6 +3796,43 @@ export class Session {
         },
       });
       emitResponse(false, null, getErrorMessageOr(error, "Failed to pin workspace"));
+    }
+  }
+
+  private async handleWorkspaceSettleSetRequest(
+    workspaceId: string,
+    settled: boolean,
+    requestId: string,
+  ): Promise<void> {
+    const logContext = { workspaceId, settled, requestId };
+    this.sessionLogger.info(logContext, "session: workspace.settle.set.request");
+    const emitResponse = (accepted: boolean, settledAt: string | null, error: string | null) => {
+      this.emit({
+        type: "workspace.settle.set.response",
+        payload: { requestId, workspaceId, accepted, settledAt, error },
+      });
+    };
+
+    try {
+      const now = new Date().toISOString();
+      const nextSettledAt = settled ? now : null;
+      const updated = await this.workspaceRegistry.update(workspaceId, (existing) => ({
+        ...existing,
+        settledAt: nextSettledAt,
+        updatedAt: now,
+      }));
+      if (!updated) {
+        emitResponse(false, null, "Workspace not found");
+        return;
+      }
+      emitResponse(true, nextSettledAt, null);
+      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
+    } catch (error) {
+      this.sessionLogger.error(
+        { ...logContext, err: error },
+        "session: workspace.settle.set.request error",
+      );
+      emitResponse(false, null, getErrorMessageOr(error, "Failed to settle workspace"));
     }
   }
 
@@ -5546,6 +5587,7 @@ export class Session {
       name: resolveWorkspaceDisplayName(workspace),
       title: workspace.title,
       pinnedAt: workspace.pinnedAt,
+      settledAt: workspace.settledAt,
       ...(workspace.labels && workspace.labels.length > 0 ? { labels: workspace.labels } : {}),
       archivingAt: null,
       status: "done",
@@ -5638,6 +5680,7 @@ export class Session {
       }),
       title: result.workspace.title,
       pinnedAt: result.workspace.pinnedAt,
+      settledAt: result.workspace.settledAt,
       ...(result.workspace.labels && result.workspace.labels.length > 0
         ? { labels: result.workspace.labels }
         : {}),
