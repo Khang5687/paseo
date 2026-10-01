@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AgentSkillSelection } from "@getpaseo/protocol/messages";
-import { listFilesRecursive, readManagedFilesManifest, removeSkill, syncSkills } from "./sync.js";
+import {
+  isLegacyCodexCopy,
+  listFilesRecursive,
+  readManagedFilesManifest,
+  removeSkill,
+  syncSkills,
+} from "./sync.js";
 
 export type SkillsState = "not-installed" | "up-to-date" | "drift";
 
@@ -168,6 +174,7 @@ export async function getSkillsStatus(
   const ops = diff(bundle, disks, names, desired);
   for (const name of codexDisk.keys()) {
     if (ops.some((op) => op.name === name)) continue;
+    if (!(await isLegacyCodexCopy(name, targets))) continue;
     if (!desired.has(name)) ops.push({ kind: "delete", name });
     else if (await readManagedFilesManifest(path.join(targets.codexDir, name))) {
       ops.push({ kind: "update", name });
