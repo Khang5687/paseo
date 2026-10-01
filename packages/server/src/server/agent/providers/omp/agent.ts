@@ -1377,24 +1377,20 @@ export class OmpAgentSession implements AgentSession {
     this.outOfBandCompactionEmit = emit;
     this.outOfBandCompactionStarted = false;
     this.outOfBandCompactionCompleted = false;
+    // OMP's RPC mode answers `compact` with a plain response and never streams
+    // `compaction_start`/`compaction_end` for manual compaction (those only
+    // reach the TUI). Paseo owns the loading/completed pair for this command;
+    // `emitCompactionTimeline` dedupes if OMP does stream them.
+    this.emitCompactionTimeline({
+      turnId: undefined,
+      item: { type: "compaction", status: "loading", trigger: "manual" },
+    });
     try {
       await this.runtimeSession.compact(customInstructions);
+      this.completeOutOfBandCompaction(emit);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (
-        this.outOfBandCompactionEmit === emit &&
-        this.outOfBandCompactionStarted &&
-        !this.outOfBandCompactionCompleted
-      ) {
-        this.emitCompactionTimeline({
-          turnId: undefined,
-          item: {
-            type: "compaction",
-            status: "completed",
-            trigger: "manual",
-          },
-        });
-      }
+      this.completeOutOfBandCompaction(emit);
       emit({
         type: "timeline",
         provider: this.provider,
@@ -1404,12 +1400,22 @@ export class OmpAgentSession implements AgentSession {
         },
       });
     } finally {
-      if (this.outOfBandCompactionEmit === emit && !this.outOfBandCompactionStarted) {
+      if (this.outOfBandCompactionEmit === emit) {
         this.outOfBandCompactionEmit = null;
         this.outOfBandCompactionStarted = false;
         this.outOfBandCompactionCompleted = false;
       }
     }
+  }
+
+  private completeOutOfBandCompaction(emit: (event: AgentStreamEvent) => void): void {
+    if (this.outOfBandCompactionEmit !== emit || this.outOfBandCompactionCompleted) {
+      return;
+    }
+    this.emitCompactionTimeline({
+      turnId: undefined,
+      item: { type: "compaction", status: "completed", trigger: "manual" },
+    });
   }
 
   private async executeAutoCompactCommand(
@@ -1893,9 +1899,15 @@ export class OmpAgentSession implements AgentSession {
     const emitOutOfBand = this.outOfBandCompactionEmit;
     if (emitOutOfBand && input.item.type === "compaction") {
       if (input.item.status === "loading") {
+        if (this.outOfBandCompactionStarted) {
+          return;
+        }
         this.outOfBandCompactionStarted = true;
       }
       if (input.item.status === "completed") {
+        if (this.outOfBandCompactionCompleted) {
+          return;
+        }
         this.outOfBandCompactionCompleted = true;
       }
     }
