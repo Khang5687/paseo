@@ -130,7 +130,8 @@ Everything else is a short-lived work branch.
    `type` is `fix` or `feat`; `area` is the package or provider (`omp`, `app`, `server`, `plugin`). Examples: `fix/omp-compact-command`, `feat/omp-goal-command`.
    A branch cut from fork `main` carries every other change with it, and its upstream PR becomes unreviewable.
 3. If the change needs another unmerged change, cut from that branch instead and write `Stacked on #N` as the first line of the PR body. Merge order follows the stack.
-4. Work in a worktree, not in the main checkout, so parallel agents never share a working tree:
+4. Open the draft PR right away, before writing code, with a one-line body. The PR list is the registry of who is working on what; every agent checks `gh pr list` before cutting a branch.
+5. Work in a worktree, not in the main checkout, so parallel agents never share a working tree:
    ```bash
    git worktree add ../paseo-<branch-slug> <branch>
    ```
@@ -147,13 +148,14 @@ Everything else is a short-lived work branch.
 
 1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
 2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
-3. Open it as a draft until the owner has read it. The owner approves; only then merge.
-4. Merge with a merge commit, never squash or rebase:
+3. Mark the PR ready for review and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
+4. The owner merges, with a merge commit, never squash or rebase:
    ```bash
    git checkout main && git merge --no-ff <branch> -m "Merge #N: <PR title>" && git push origin main
    ```
    The merge commit is what lets one change be reverted or cherry-picked later without touching the others.
 5. Keep the branch after merge. It is reused for the upstream PR.
+6. If a branch conflicts with `main` because an earlier PR merged first, fix it on the branch (`git merge main`, resolve, push), never with a fix-up commit on `main`. Every line of a change stays inside its own PR.
 
 ### Upstream PRs
 
@@ -166,6 +168,21 @@ Decide where a change lives before writing it:
 - **Plugin** (`docs/plugins.md`) when it is new behavior that needs no change to daemon, protocol, or app internals. Plugins never need the fork or upstream.
 - **Fork branch** when it needs a change inside Paseo. Everything in this section applies.
 - **OMP side** when the missing piece is an RPC or command OMP does not expose. Paseo cannot fake it; see `~/git/oh-my-pi` and open the change there first, then the Paseo branch that consumes it.
+
+### Spawning an agent
+
+Give every agent the same shape of brief. One job, one branch, one PR:
+
+```
+Task: <one sentence: what is broken or missing, and what done looks like>.
+Branch: <type>/<area>-<what>, cut from upstream/main (or "stacked on <branch>").
+Worktree: ../paseo-<slug>.
+Scope: only this. Note anything else you find in the PR body under "Seen but not fixed".
+Done: draft PR against Khang5687/paseo main, body upstream-ready, marked ready for review. Do not merge.
+Read CLAUDE.md "Fork workflow" first.
+```
+
+Five agents with five such briefs produce five independent PRs. The owner merges them in whatever order and opens upstream PRs from the same branches later.
 
 ### Syncing with upstream
 
