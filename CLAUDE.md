@@ -176,13 +176,13 @@ Give every agent the same shape of brief. One job, one branch, one PR:
 ```
 Task: <one sentence: what is broken or missing, and what done looks like>.
 Branch: <type>/<area>-<what>, cut from upstream/main (or "stacked on <branch>").
-Worktree: ../paseo-<slug>.
+Worktree: already created if you were launched as a Paseo worktree workspace; otherwise `git worktree add ../paseo-<slug> <branch>`.
 Scope: only this. Note anything else you find in the PR body under "Seen but not fixed".
 Done: draft PR against Khang5687/paseo main, body upstream-ready, marked ready for review. Do not merge.
 Read CLAUDE.md "Fork workflow" first.
 ```
 
-Five agents with five such briefs produce five independent PRs. The owner merges them in whatever order and opens upstream PRs from the same branches later.
+When launching from Paseo, use a worktree workspace (`create_workspace` with `isolation: worktree`, `baseBranch: upstream/main`, `branchName: <type>/<area>-<what>`) so the branch and worktree exist before the agent starts; the brief then only names them. Five agents with five such briefs produce five independent PRs. The owner merges them in whatever order and opens upstream PRs from the same branches later.
 
 ### Syncing with upstream
 
