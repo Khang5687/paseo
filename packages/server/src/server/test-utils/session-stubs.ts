@@ -292,6 +292,13 @@ export function createMessageReceiptsStub(): SessionOptions["messageReceipts"] {
   };
 }
 
+export function createAgentMessageQueueStub(): SessionOptions["agentMessageQueue"] {
+  return {
+    sendNow: async () => {},
+    drainIfIdle: () => {},
+  };
+}
+
 export function createProviderSnapshot(
   entries: ProviderSnapshotEntry[],
   cwd = GLOBAL_PROVIDER_SNAPSHOT_KEY,
