@@ -108,13 +108,75 @@ See [docs/development.md](docs/development.md) for full setup, build sync requir
 
 ## Fork workflow (Khang5687/paseo)
 
-`origin` is the fork, `upstream` is getpaseo/paseo. Fork `main` is upstream `main` plus every accepted fix, merged one PR at a time with `--no-ff`. It is the branch you build releases from.
+`origin` is the fork, `upstream` is getpaseo/paseo. Several agents work on this fork at the same time, each on one change. This section is the contract between them.
 
-- **Branch new work off `upstream/main`, never off fork `main`.** A branch cut from fork `main` carries every other fix with it, and the upstream PR for it becomes unreviewable. `git fetch upstream && git checkout -b fix/<name> upstream/main`.
-- One fix or feature per branch and per PR. Open the PR against fork `main` first; the same branch is reused for the upstream PR later, so keep the PR description upstream-ready.
-- Merge into fork `main` with a merge commit (`git merge --no-ff`), not squash or rebase. The merge commit is what lets a fix be dropped or cherry-picked later without touching the others.
-- Sync: `git checkout main && git merge upstream/main && git push origin main`.
-- A fix that depends on another (`fix/omp-goal-command` on `fix/omp-compact-command`) is stacked: branch it off the dependency and say so in the PR body.
+### The two branches that matter
+
+| Branch          | What it is                                                                                       | Who writes to it                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `upstream/main` | The maintainer's code. Read-only.                                                                | Nobody here.                                                                 |
+| fork `main`     | `upstream/main` + every accepted change, one `--no-ff` merge per PR. Releases are built from it. | Only merges of reviewed PRs and upstream syncs. Never commit to it directly. |
+
+Everything else is a short-lived work branch.
+
+### Starting a change
+
+1. One change per branch. A change is one fix or one feature a maintainer could review alone in one sitting. If you are about to touch two unrelated subsystems, that is two branches.
+2. Cut the branch from `upstream/main`, not from fork `main`:
+   ```bash
+   git fetch upstream
+   git checkout -b <type>/<area>-<what> upstream/main
+   ```
+   `type` is `fix` or `feat`; `area` is the package or provider (`omp`, `app`, `server`, `plugin`). Examples: `fix/omp-compact-command`, `feat/omp-goal-command`.
+   A branch cut from fork `main` carries every other change with it, and its upstream PR becomes unreviewable.
+3. If the change needs another unmerged change, cut from that branch instead and write `Stacked on #N` as the first line of the PR body. Merge order follows the stack.
+4. Work in a worktree, not in the main checkout, so parallel agents never share a working tree:
+   ```bash
+   git worktree add ../paseo-<branch-slug> <branch>
+   ```
+   Each worktree has its own `.dev/paseo-home`; two dev daemons on the default port collide, so set `PASEO_LISTEN` or use the `/tmp/paseo-*-home` pattern when you need a daemon.
+
+### While working
+
+- Stay inside your change. If you find an unrelated bug, note it in your PR body under "Seen but not fixed" and move on. Someone else may already have a branch for it; check `gh pr list` and `git branch -r` before opening one.
+- Do not rebase or force-push a branch that another agent's branch is stacked on. Add commits instead.
+- Never edit fork `main`, `CLAUDE.md`'s process sections, or another agent's branch to make your change work. If the only way forward is a change to shared ground, stop and ask.
+- Shared surfaces that break parallel work when touched casually: `packages/protocol` (see protocol compatibility rules above), `OMP_HANDLED_BUILTIN_SLASH_COMMANDS`, event-mapper switch statements, `docs/` tables. If you must add to one, add; do not reorder or rename.
+
+### Finishing a change
+
+1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
+2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
+3. Open it as a draft until the owner has read it. The owner approves; only then merge.
+4. Merge with a merge commit, never squash or rebase:
+   ```bash
+   git checkout main && git merge --no-ff <branch> -m "Merge #N: <PR title>" && git push origin main
+   ```
+   The merge commit is what lets one change be reverted or cherry-picked later without touching the others.
+5. Keep the branch after merge. It is reused for the upstream PR.
+
+### Upstream PRs
+
+A change goes to upstream only when the owner says so and when every dependency it has outside this repo (an OMP release, for example) is public. Open it from the same branch, against `getpaseo/paseo:main`, with the same body. If upstream asks for changes, make them on the branch, then merge the branch into fork `main` again.
+
+### Fork vs plugin vs upstream
+
+Decide where a change lives before writing it:
+
+- **Plugin** (`docs/plugins.md`) when it is new behavior that needs no change to daemon, protocol, or app internals. Plugins never need the fork or upstream.
+- **Fork branch** when it needs a change inside Paseo. Everything in this section applies.
+- **OMP side** when the missing piece is an RPC or command OMP does not expose. Paseo cannot fake it; see `~/git/oh-my-pi` and open the change there first, then the Paseo branch that consumes it.
+
+### Syncing with upstream
+
+Only the owner or an agent the owner asked does this:
+
+```bash
+git fetch upstream
+git checkout main && git merge upstream/main && git push origin main
+```
+
+Resolve conflicts on `main`. Open work branches do not need rebasing; they are still based on an older `upstream/main`, which is fine until their PR conflicts.
 
 ## Release branches
 
