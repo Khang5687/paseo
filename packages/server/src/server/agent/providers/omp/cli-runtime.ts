@@ -27,9 +27,12 @@ import {
   OmpPromptAckSchema,
   OmpRpcCommandSchema,
   OmpRuntimeEventSchema,
+  OmpGoalCommandResultSchema,
   OmpSessionStateSchema,
   OmpSessionStatsSchema,
   type OmpThinkingLevel,
+  type OmpGoalAction,
+  type OmpGoalModeState,
   type OmpAgentMessage,
   type OmpModel,
   type OmpPromptAck,
@@ -160,6 +163,11 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
 
   async setAutoCompaction(enabled: boolean): Promise<void> {
     await this.request({ type: "set_auto_compaction", enabled });
+  }
+
+  async goal(action: OmpGoalAction): Promise<OmpGoalModeState | null> {
+    const result = await this.request({ type: "goal", ...action });
+    return OmpGoalCommandResultSchema.parse(result).state;
   }
 
   async abort(): Promise<void> {

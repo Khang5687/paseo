@@ -881,6 +881,72 @@ describe("OMP agent client and session", () => {
     await expect(omp.runOutOfBandCommand("/compact")).resolves.toHaveLength(2);
   });
 
+  test("/goal set forwards the goal to OMP and surfaces goal_updated on the timeline", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const events = await omp.runOutOfBandCommand("/goal set ship the release --budget 5000");
+    expect(omp.goalRequests()).toEqual([
+      { op: "create", objective: "ship the release", token_budget: 5000 },
+    ]);
+    // The goal command answers out of band; the goal_updated event is what
+    // reaches the timeline, so the command itself emits nothing.
+    expect(events).toEqual([]);
+    expect(omp.timeline().at(-1)).toMatchObject({
+      type: "tool_call",
+      name: "omp_goal_updated",
+      metadata: { goalStatus: "active" },
+    });
+
+    await omp.runOutOfBandCommand("/goal pause");
+    await omp.runOutOfBandCommand("/goal resume");
+    await omp.runOutOfBandCommand("/goal drop");
+    expect(omp.goalRequests().slice(1)).toEqual([
+      { op: "pause" },
+      { op: "resume" },
+      { op: "drop" },
+    ]);
+    expect(omp.timeline().at(-1)).toMatchObject({
+      type: "tool_call",
+      name: "omp_goal_updated",
+      metadata: { goalStatus: "dropped" },
+    });
+  });
+
+  test("/goal show reports the current goal and usage errors stay local", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const empty = await omp.runOutOfBandCommand("/goal");
+    expect(empty.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "assistant_message", text: "No active OMP goal." },
+    ]);
+
+    await omp.runOutOfBandCommand("/goal set write tests");
+    const shown = await omp.runOutOfBandCommand("/goal show");
+    expect(shown.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      {
+        type: "assistant_message",
+        text: "Goal: write tests\nStatus: active\nTokens used: 0\nTime used: 0s\nMode: active",
+      },
+    ]);
+
+    const bad = await omp.runOutOfBandCommand("/goal bogus");
+    expect(omp.goalRequests()).toHaveLength(3);
+    expect(bad.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      {
+        type: "assistant_message",
+        text: "[Error] Usage: /goal set <objective> [--budget <tokens>] | /goal pause | /goal resume | /goal drop | /goal show",
+      },
+    ]);
+
+    omp.configureGoal({ error: new Error("No active goal to pause.") });
+    const failed = await omp.runOutOfBandCommand("/goal pause");
+    expect(failed.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "assistant_message", text: "[Error] Goal command failed: No active goal to pause." },
+    ]);
+  });
+
   test("completes a local-only prompt when no OMP turn begins", async () => {
     const omp = new OmpHarness();
     await omp.start();

@@ -463,6 +463,14 @@ export class OmpHarness {
     return this.omp.latestSession().compactRequests;
   }
 
+  configureGoal(options: { error?: Error }): void {
+    this.omp.latestSession().goalError = options.error ?? null;
+  }
+
+  goalRequests() {
+    return this.omp.latestSession().goalRequests;
+  }
+
   pendingPermissions() {
     return this.requireSession().getPendingPermissions();
   }
