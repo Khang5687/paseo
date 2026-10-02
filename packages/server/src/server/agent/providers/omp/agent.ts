@@ -85,6 +85,8 @@ import type {
   OmpAgentSessionEvent,
   OmpAgentMessage,
   OmpImageContent,
+  OmpGoalAction,
+  OmpGoalModeState,
   OmpModel,
   OmpRuntimeEvent,
   OmpSessionState,
@@ -1226,6 +1228,13 @@ export class OmpAgentSession implements AgentSession {
         },
       };
     }
+    if (commandName === "goal") {
+      return {
+        run: async ({ emit }) => {
+          await this.executeGoalCommand(parsed.args, emit);
+        },
+      };
+    }
     return null;
   }
 
@@ -1415,6 +1424,34 @@ export class OmpAgentSession implements AgentSession {
     this.emitCompactionTimeline({
       turnId: undefined,
       item: { type: "compaction", status: "completed", trigger: "manual" },
+    });
+  }
+
+  private async executeGoalCommand(
+    args: string | undefined,
+    emit: (event: AgentStreamEvent) => void,
+  ): Promise<void> {
+    const action = parseGoalCommandArgs(args);
+    if (!action) {
+      this.emitAssistantNotice(emit, `[Error] Usage: ${GOAL_COMMAND_USAGE}`);
+      return;
+    }
+    try {
+      const state = await this.runtimeSession.goal(action);
+      if (action.action === "get") {
+        this.emitAssistantNotice(emit, formatGoalState(state));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emitAssistantNotice(emit, `[Error] Goal command failed: ${message}`);
+    }
+  }
+
+  private emitAssistantNotice(emit: (event: AgentStreamEvent) => void, text: string): void {
+    emit({
+      type: "timeline",
+      provider: this.provider,
+      item: { type: "assistant_message", text },
     });
   }
 
@@ -2587,4 +2624,65 @@ export class OmpAgentClient implements AgentClient {
       defaultBinary: "omp",
     });
   }
+}
+
+const GOAL_COMMAND_USAGE =
+  "/goal set <objective> [--budget <tokens>] | /goal pause | /goal resume | /goal drop | /goal show";
+
+export function parseGoalCommandArgs(args: string | undefined): OmpGoalAction | null {
+  const trimmed = args?.trim() ?? "";
+  if (!trimmed) {
+    return { action: "get" };
+  }
+  const firstWhitespaceIdx = trimmed.search(/\s/);
+  const verb = (
+    firstWhitespaceIdx === -1 ? trimmed : trimmed.slice(0, firstWhitespaceIdx)
+  ).toLowerCase();
+  const rest = firstWhitespaceIdx === -1 ? "" : trimmed.slice(firstWhitespaceIdx + 1).trim();
+  if (verb === "set") {
+    return parseGoalSetArgs(rest);
+  }
+  if (rest) {
+    return null;
+  }
+  switch (verb) {
+    case "show":
+    case "status":
+    case "get":
+      return { action: "get" };
+    case "pause":
+    case "resume":
+    case "drop":
+      return { action: verb };
+    default:
+      return null;
+  }
+}
+
+function parseGoalSetArgs(rest: string): OmpGoalAction | null {
+  const budgetMatch = rest.match(/(?:^|\s)--budget(?:=|\s+)(\d+)(?=\s|$)/);
+  const objective = (budgetMatch ? rest.replace(budgetMatch[0], " ") : rest).trim();
+  if (!objective) {
+    return null;
+  }
+  const tokenBudget = budgetMatch ? Number.parseInt(budgetMatch[1] ?? "", 10) : undefined;
+  return tokenBudget !== undefined && tokenBudget > 0
+    ? { action: "set", objective, tokenBudget }
+    : { action: "set", objective };
+}
+
+function formatGoalState(state: OmpGoalModeState | null): string {
+  const goal = state?.goal;
+  if (!goal) {
+    return "No active OMP goal.";
+  }
+  const parts = [
+    `Goal: ${goal.objective?.trim() || "(no objective)"}`,
+    goal.status ? `Status: ${goal.status}` : null,
+    goal.tokensUsed !== undefined ? `Tokens used: ${goal.tokensUsed}` : null,
+    goal.tokenBudget !== undefined ? `Token budget: ${goal.tokenBudget}` : null,
+    goal.timeUsedSeconds !== undefined ? `Time used: ${goal.timeUsedSeconds}s` : null,
+    state?.mode ? `Mode: ${state.mode}` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.join("\n");
 }

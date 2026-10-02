@@ -362,8 +362,9 @@ export const OmpGoalSchema = z
     tokenBudget: z.number().optional(),
     tokensUsed: z.number().optional(),
     timeUsedSeconds: z.number().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
+    // OMP serializes these as epoch milliseconds; older builds sent ISO strings.
+    createdAt: z.union([z.string(), z.number()]).optional(),
+    updatedAt: z.union([z.string(), z.number()]).optional(),
   })
   .passthrough();
 export const OmpGoalModeStateSchema = z
@@ -516,6 +517,13 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
     customInstructions: z.string().optional(),
   }),
   z.object({ ...OmpCommandBase, type: z.literal("set_auto_compaction"), enabled: z.boolean() }),
+  z.object({
+    ...OmpCommandBase,
+    type: z.literal("goal"),
+    action: z.enum(["set", "pause", "resume", "drop", "get"]),
+    objective: z.string().optional(),
+    tokenBudget: z.number().optional(),
+  }),
   z.object({ ...OmpCommandBase, type: z.literal("abort") }),
   z.object({ ...OmpCommandBase, type: z.literal("get_state") }),
   z.object({
@@ -594,6 +602,14 @@ export type OmpAgentMessage = z.infer<typeof OmpAgentMessageSchema>;
 export type OmpModel = z.infer<typeof OmpModelSchema>;
 export type OmpModelThinking = z.infer<typeof OmpModelThinkingSchema>;
 export type OmpSessionState = z.infer<typeof OmpSessionStateSchema>;
+export const OmpGoalCommandResultSchema = z.object({ state: OmpGoalModeStateSchema.nullable() });
+export type OmpGoalModeState = z.infer<typeof OmpGoalModeStateSchema>;
+export type OmpGoalAction =
+  | { action: "set"; objective: string; tokenBudget?: number }
+  | { action: "pause" }
+  | { action: "resume" }
+  | { action: "drop" }
+  | { action: "get" };
 export type OmpSessionStats = z.infer<typeof OmpSessionStatsSchema>;
 export type OmpRpcSlashCommand = z.infer<typeof OmpRpcSlashCommandSchema>;
 export type OmpAgentToolResult = z.infer<typeof OmpAgentToolResultSchema>;

@@ -1,5 +1,7 @@
 import type {
   OmpAgentMessage,
+  OmpGoalAction,
+  OmpGoalModeState,
   OmpModel,
   OmpPromptAck,
   OmpRpcHostToolDefinition,
@@ -50,6 +52,7 @@ export interface OmpRuntimeSession {
   ): Promise<OmpPromptAck>;
   compact(customInstructions?: string): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
+  goal(action: OmpGoalAction): Promise<OmpGoalModeState | null>;
   abort(): Promise<void>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;

@@ -9,6 +9,8 @@ import type {
   OmpRpcHostToolResult,
   OmpRpcHostToolUpdate,
   OmpAgentMessage,
+  OmpGoalAction,
+  OmpGoalModeState,
   OmpModel,
   OmpPromptAck,
   OmpRpcSlashCommand,
@@ -120,6 +122,9 @@ export class FakeOmpSession implements OmpRuntimeSession {
   readonly prompts: Array<{ message: string; imageCount: number }> = [];
   readonly compactRequests: Array<{ customInstructions?: string }> = [];
   readonly setAutoCompactionRequests: boolean[] = [];
+  readonly goalRequests: OmpGoalAction[] = [];
+  goalState: OmpGoalModeState | null = null;
+  goalError: Error | null = null;
   readonly subagentSubscriptionRequests: FakeOmpSubagentSubscriptionLevel[] = [];
   readonly subagentMessageRequests: FakeOmpSubagentMessagesSelector[] = [];
   readonly setModelRequests: Array<{ provider: string; modelId: string }> = [];
@@ -256,6 +261,56 @@ export class FakeOmpSession implements OmpRuntimeSession {
     }
     if (this.streamCompactionEvents) {
       this.emit({ type: "compaction_end", reason: "manual" });
+    }
+  }
+
+  async goal(action: OmpGoalAction): Promise<OmpGoalModeState | null> {
+    this.goalRequests.push(action);
+    if (this.goalError) {
+      throw this.goalError;
+    }
+    switch (action.action) {
+      case "get":
+        return this.goalState;
+      case "set": {
+        const now = Date.now();
+        const existing = this.goalState?.goal;
+        const goal = {
+          id: existing?.id ?? `goal-${this.goalRequests.length}`,
+          objective: action.objective ?? "",
+          status: "active",
+          ...(action.tokenBudget !== undefined ? { tokenBudget: action.tokenBudget } : {}),
+          tokensUsed: 0,
+          timeUsedSeconds: 0,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        this.goalState = { enabled: true, mode: "active", goal };
+        this.emit({ type: "goal_updated", goal, state: this.goalState });
+        return this.goalState;
+      }
+      case "pause":
+      case "resume": {
+        if (!this.goalState?.goal) {
+          throw new Error(
+            action.action === "pause" ? "No active goal to pause." : "No paused goal to resume.",
+          );
+        }
+        const status = action.action === "pause" ? "paused" : "active";
+        const goal = { ...this.goalState.goal, status, updatedAt: Date.now() };
+        this.goalState = { enabled: status === "active", mode: "active", goal };
+        this.emit({ type: "goal_updated", goal, state: this.goalState });
+        return this.goalState;
+      }
+      case "drop": {
+        if (!this.goalState?.goal) {
+          throw new Error("No goal to drop.");
+        }
+        const goal = { ...this.goalState.goal, status: "dropped", updatedAt: Date.now() };
+        this.goalState = null;
+        this.emit({ type: "goal_updated", goal, state: { enabled: false, mode: "none" } });
+        return null;
+      }
     }
   }
 
