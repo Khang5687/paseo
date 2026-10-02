@@ -445,6 +445,24 @@ export class OmpHarness {
     this.omp.latestSession().emit(event);
   }
 
+  async runOutOfBandCommand(input: string): Promise<AgentStreamEvent[]> {
+    const handler = this.requireSession().tryHandleOutOfBand(input);
+    if (!handler) throw new Error(`OMP session did not handle ${input} out of band`);
+    const events: AgentStreamEvent[] = [];
+    await handler.run({ emit: (event) => events.push(event) });
+    return events;
+  }
+
+  configureCompact(options: { error?: Error; streamCompactionEvents?: boolean }): void {
+    const runtime = this.omp.latestSession();
+    runtime.compactError = options.error ?? null;
+    runtime.streamCompactionEvents = options.streamCompactionEvents ?? false;
+  }
+
+  compactRequests() {
+    return this.omp.latestSession().compactRequests;
+  }
+
   pendingPermissions() {
     return this.requireSession().getPendingPermissions();
   }

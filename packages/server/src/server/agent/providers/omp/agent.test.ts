@@ -826,6 +826,61 @@ describe("OMP agent client and session", () => {
     expect(omp.completedTurnCount()).toBe(1);
   });
 
+  test("/compact emits loading then completed when OMP answers without compaction events", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const events = await omp.runOutOfBandCommand("/compact focus on tests");
+    expect(omp.compactRequests()).toEqual([{ customInstructions: "focus on tests" }]);
+    expect(events).toEqual([
+      {
+        type: "timeline",
+        provider: "omp",
+        item: { type: "compaction", status: "loading", trigger: "manual" },
+      },
+      {
+        type: "timeline",
+        provider: "omp",
+        item: { type: "compaction", status: "completed", trigger: "manual" },
+      },
+    ]);
+    expect(omp.timeline()).toEqual([]);
+  });
+
+  test("/compact does not duplicate timeline items when OMP streams compaction events", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    omp.configureCompact({ streamCompactionEvents: true });
+
+    const events = await omp.runOutOfBandCommand("/compact");
+    expect(omp.compactRequests()).toEqual([{}]);
+    expect(events.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "compaction", status: "loading", trigger: "manual" },
+      { type: "compaction", status: "completed", trigger: "manual" },
+    ]);
+    expect(omp.timeline()).toEqual([]);
+  });
+
+  test("/compact settles the compaction item and reports the error when OMP rejects", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    omp.configureCompact({ error: new Error("Nothing to compact (session too small)") });
+
+    const events = await omp.runOutOfBandCommand("/compact");
+    expect(events.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "compaction", status: "loading", trigger: "manual" },
+      { type: "compaction", status: "completed", trigger: "manual" },
+      {
+        type: "assistant_message",
+        text: "[Error] Failed to compact context: Nothing to compact (session too small)",
+      },
+    ]);
+
+    // A second /compact runs again instead of reporting a stuck command.
+    omp.configureCompact({});
+    await expect(omp.runOutOfBandCommand("/compact")).resolves.toHaveLength(2);
+  });
+
   test("completes a local-only prompt when no OMP turn begins", async () => {
     const omp = new OmpHarness();
     await omp.start();
