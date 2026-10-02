@@ -1305,7 +1305,7 @@ function ComposerContentImpl({
   const agentState = useSessionStore(useShallow(buildAgentStateSelector(serverId, agentId)));
 
   // COMPAT(messageQueue): added in v0.10.0, remove the client-local branch after
-  // 2027-04-01 once the daemon floor >= v0.10.0.
+  // 2027-10-02 once the daemon floor >= v0.10.0.
   const hostOwnsQueue = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.messageQueue === true,
   );
