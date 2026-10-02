@@ -106,6 +106,16 @@ Repo dev commands use checkout-local state by default. In this checkout, `PASEO_
 
 See [docs/development.md](docs/development.md) for full setup, build sync requirements, and debugging.
 
+## Fork workflow (Khang5687/paseo)
+
+`origin` is the fork, `upstream` is getpaseo/paseo. Fork `main` is upstream `main` plus every accepted fix, merged one PR at a time with `--no-ff`. It is the branch you build releases from.
+
+- **Branch new work off `upstream/main`, never off fork `main`.** A branch cut from fork `main` carries every other fix with it, and the upstream PR for it becomes unreviewable. `git fetch upstream && git checkout -b fix/<name> upstream/main`.
+- One fix or feature per branch and per PR. Open the PR against fork `main` first; the same branch is reused for the upstream PR later, so keep the PR description upstream-ready.
+- Merge into fork `main` with a merge commit (`git merge --no-ff`), not squash or rebase. The merge commit is what lets a fix be dropped or cherry-picked later without touching the others.
+- Sync: `git checkout main && git merge upstream/main && git push origin main`.
+- A fix that depends on another (`fix/omp-goal-command` on `fix/omp-compact-command`) is stacked: branch it off the dependency and say so in the PR body.
+
 ## Release branches
 
 When the user says "this goes to next", create or
