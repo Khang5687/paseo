@@ -269,17 +269,17 @@ export class FakeOmpSession implements OmpRuntimeSession {
     if (this.goalError) {
       throw this.goalError;
     }
-    switch (action.action) {
+    switch (action.op) {
       case "get":
         return this.goalState;
-      case "set": {
+      case "create": {
         const now = Date.now();
         const existing = this.goalState?.goal;
         const goal = {
           id: existing?.id ?? `goal-${this.goalRequests.length}`,
           objective: action.objective ?? "",
           status: "active",
-          ...(action.tokenBudget !== undefined ? { tokenBudget: action.tokenBudget } : {}),
+          ...(action.token_budget !== undefined ? { tokenBudget: action.token_budget } : {}),
           tokensUsed: 0,
           timeUsedSeconds: 0,
           createdAt: existing?.createdAt ?? now,
@@ -293,10 +293,10 @@ export class FakeOmpSession implements OmpRuntimeSession {
       case "resume": {
         if (!this.goalState?.goal) {
           throw new Error(
-            action.action === "pause" ? "No active goal to pause." : "No paused goal to resume.",
+            action.op === "pause" ? "No active goal to pause." : "No paused goal to resume.",
           );
         }
-        const status = action.action === "pause" ? "paused" : "active";
+        const status = action.op === "pause" ? "paused" : "active";
         const goal = { ...this.goalState.goal, status, updatedAt: Date.now() };
         this.goalState = { enabled: status === "active", mode: "active", goal };
         this.emit({ type: "goal_updated", goal, state: this.goalState });

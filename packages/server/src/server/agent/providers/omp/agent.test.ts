@@ -887,7 +887,7 @@ describe("OMP agent client and session", () => {
 
     const events = await omp.runOutOfBandCommand("/goal set ship the release --budget 5000");
     expect(omp.goalRequests()).toEqual([
-      { action: "set", objective: "ship the release", tokenBudget: 5000 },
+      { op: "create", objective: "ship the release", token_budget: 5000 },
     ]);
     // The goal command answers out of band; the goal_updated event is what
     // reaches the timeline, so the command itself emits nothing.
@@ -902,9 +902,9 @@ describe("OMP agent client and session", () => {
     await omp.runOutOfBandCommand("/goal resume");
     await omp.runOutOfBandCommand("/goal drop");
     expect(omp.goalRequests().slice(1)).toEqual([
-      { action: "pause" },
-      { action: "resume" },
-      { action: "drop" },
+      { op: "pause" },
+      { op: "resume" },
+      { op: "drop" },
     ]);
     expect(omp.timeline().at(-1)).toMatchObject({
       type: "tool_call",

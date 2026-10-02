@@ -1438,7 +1438,7 @@ export class OmpAgentSession implements AgentSession {
     }
     try {
       const state = await this.runtimeSession.goal(action);
-      if (action.action === "get") {
+      if (action.op === "get") {
         this.emitAssistantNotice(emit, formatGoalState(state));
       }
     } catch (error) {
@@ -2632,7 +2632,7 @@ const GOAL_COMMAND_USAGE =
 export function parseGoalCommandArgs(args: string | undefined): OmpGoalAction | null {
   const trimmed = args?.trim() ?? "";
   if (!trimmed) {
-    return { action: "get" };
+    return { op: "get" };
   }
   const firstWhitespaceIdx = trimmed.search(/\s/);
   const verb = (
@@ -2649,11 +2649,11 @@ export function parseGoalCommandArgs(args: string | undefined): OmpGoalAction | 
     case "show":
     case "status":
     case "get":
-      return { action: "get" };
+      return { op: "get" };
     case "pause":
     case "resume":
     case "drop":
-      return { action: verb };
+      return { op: verb };
     default:
       return null;
   }
@@ -2667,8 +2667,8 @@ function parseGoalSetArgs(rest: string): OmpGoalAction | null {
   }
   const tokenBudget = budgetMatch ? Number.parseInt(budgetMatch[1] ?? "", 10) : undefined;
   return tokenBudget !== undefined && tokenBudget > 0
-    ? { action: "set", objective, tokenBudget }
-    : { action: "set", objective };
+    ? { op: "create", objective, token_budget: tokenBudget }
+    : { op: "create", objective };
 }
 
 function formatGoalState(state: OmpGoalModeState | null): string {

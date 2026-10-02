@@ -520,9 +520,9 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
   z.object({
     ...OmpCommandBase,
     type: z.literal("goal"),
-    action: z.enum(["set", "pause", "resume", "drop", "get"]),
+    op: z.enum(["get", "create", "resume", "pause", "drop"]),
     objective: z.string().optional(),
-    tokenBudget: z.number().optional(),
+    token_budget: z.number().optional(),
   }),
   z.object({ ...OmpCommandBase, type: z.literal("abort") }),
   z.object({ ...OmpCommandBase, type: z.literal("get_state") }),
@@ -602,14 +602,17 @@ export type OmpAgentMessage = z.infer<typeof OmpAgentMessageSchema>;
 export type OmpModel = z.infer<typeof OmpModelSchema>;
 export type OmpModelThinking = z.infer<typeof OmpModelThinkingSchema>;
 export type OmpSessionState = z.infer<typeof OmpSessionStateSchema>;
-export const OmpGoalCommandResultSchema = z.object({ state: OmpGoalModeStateSchema.nullable() });
+export const OmpGoalCommandResultSchema = z.object({
+  goal: OmpGoalSchema.nullable(),
+  state: OmpGoalModeStateSchema.nullable(),
+});
 export type OmpGoalModeState = z.infer<typeof OmpGoalModeStateSchema>;
 export type OmpGoalAction =
-  | { action: "set"; objective: string; tokenBudget?: number }
-  | { action: "pause" }
-  | { action: "resume" }
-  | { action: "drop" }
-  | { action: "get" };
+  | { op: "create"; objective: string; token_budget?: number }
+  | { op: "pause" }
+  | { op: "resume" }
+  | { op: "drop" }
+  | { op: "get" };
 export type OmpSessionStats = z.infer<typeof OmpSessionStatsSchema>;
 export type OmpRpcSlashCommand = z.infer<typeof OmpRpcSlashCommandSchema>;
 export type OmpAgentToolResult = z.infer<typeof OmpAgentToolResultSchema>;
