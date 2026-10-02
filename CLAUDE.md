@@ -135,7 +135,11 @@ Everything else is a short-lived work branch.
    ```bash
    git worktree add ../paseo-<branch-slug> <branch>
    ```
-   A fresh worktree has no `node_modules`; run `npm ci` in it before the first commit or the pre-commit hook (format, typecheck) fails on missing `oxfmt`/`tsgo`/`zod-aot`.
+   A fresh worktree has no `node_modules` or built `dist` declarations, and the pre-commit hook runs format + full typecheck. Bootstrap before the first commit:
+   ```bash
+   npm ci && npm run build:server && npm run build:plugin
+   ```
+   Without it the hook fails on missing `oxfmt`/`tsgo`/`zod-aot` and then on `@getpaseo/*` module declarations.
    Each worktree has its own `.dev/paseo-home`; two dev daemons on the default port collide, so set `PASEO_LISTEN` or use the `/tmp/paseo-*-home` pattern when you need a daemon.
 
 ### While working
