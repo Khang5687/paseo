@@ -3047,6 +3047,48 @@ describe("HostRuntimeStore", () => {
     useSessionStore.getState().clearSession(host.serverId);
   });
 
+  it("leaves the queue to the daemon when the host owns it, and drains locally when it does not", async () => {
+    const run = async (input: { serverId: string; messageQueue: boolean }) => {
+      const host = makeHost({ serverId: input.serverId });
+      const fakeClient = new FakeDaemonClient();
+      const store = new HostRuntimeStore({
+        deps: {
+          createClient: () => fakeClient as unknown as DaemonClient,
+          connectToDaemon: async () => ({
+            client: fakeClient as unknown as DaemonClient,
+            serverId: host.serverId,
+            hostname: null,
+          }),
+          getClientId: async () => `cid_${input.serverId}`,
+        },
+      });
+      const sessionStore = useSessionStore.getState();
+      sessionStore.initializeSession(host.serverId, fakeClient as unknown as DaemonClient, 1);
+      sessionStore.updateSessionServerInfo(host.serverId, {
+        serverId: host.serverId,
+        hostname: null,
+        version: "0.10.0",
+        // COMPAT(messageQueue): the `false` branch is the old-daemon fallback.
+        features: { messageQueue: input.messageQueue },
+      });
+      // With a daemon-owned queue this map only mirrors this client's entries;
+      // the daemon dispatches them itself.
+      sessionStore.setQueuedMessages(
+        host.serverId,
+        new Map([["agent", [{ id: "mirrored", text: "daemon sends me", attachments: [] }]]]),
+      );
+
+      store.drainQueuedAgentMessage(host.serverId, "agent");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const sent = fakeClient.sentAgentMessages.length;
+      useSessionStore.getState().clearSession(host.serverId);
+      return sent;
+    };
+
+    expect(await run({ serverId: "srv_daemon_owned_queue", messageQueue: true })).toBe(0);
+    expect(await run({ serverId: "srv_client_owned_queue", messageQueue: false })).toBe(1);
+  });
+
   it("uses legacy GitHub attachments when draining a queue for an old daemon", async () => {
     const host = makeHost({ serverId: "srv_legacy_queue_attachment" });
     const fakeClient = new FakeDaemonClient();
