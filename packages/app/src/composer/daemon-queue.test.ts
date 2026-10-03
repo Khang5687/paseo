@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ComposerAttachment } from "@/attachments/types";
 import type { AgentQueuedMessagePayload } from "@getpaseo/protocol/messages";
-import type { QueuedComposerMessage, QueueWriter } from "./actions";
+import type { UserMessageItem } from "@/types/stream";
+import type { MessageSubmissionWriter, QueuedComposerMessage, QueueWriter } from "./actions";
 import {
   pruneLocalMirror,
   queueMessageOnDaemon,
@@ -60,6 +61,31 @@ function createClient(): DaemonQueueClient & {
       sentNow.push(input.messageId);
       const index = queue.findIndex((item) => item.id === input.messageId);
       if (index !== -1) queue.splice(index, 1);
+    },
+  };
+}
+
+function createSubmissionWriter(): MessageSubmissionWriter & {
+  begun: UserMessageItem[];
+  accepted: string[];
+  rejected: string[];
+} {
+  const begun: UserMessageItem[] = [];
+  const accepted: string[] = [];
+  const rejected: string[] = [];
+  return {
+    begun,
+    accepted,
+    rejected,
+    begin: (_agentId, message) => {
+      begun.push(message);
+    },
+    accept: (_agentId, clientMessageId) => {
+      accepted.push(clientMessageId);
+    },
+    reject: (_agentId, clientMessageId) => {
+      rejected.push(clientMessageId);
+      return "rejected";
     },
   };
 }
@@ -206,15 +232,26 @@ describe("daemon-owned queue", () => {
       localMirror: mirror,
     });
 
+    const submission = createSubmissionWriter();
     await sendQueuedMessageNowOnDaemon({
       client,
       agentId: "agent-1",
       messageId: second.id,
       activeTurnBehavior: "steer",
+      activeTurnId: "turn-1",
       localMirror: mirror,
+      summary: null,
+      submission,
     });
     expect(client.sentNow).toEqual([second.id]);
     expect(mirror.read("agent-1").map((item) => item.id)).toEqual([first.id]);
+    // The row is keyed by the entry id so the daemon's canonical user_message
+    // (recorded under the same clientMessageId) reconciles with it.
+    expect(submission.begun.map((item) => [item.clientMessageId, item.text, item.turnId])).toEqual([
+      [second.id, "second", "turn-1"],
+    ]);
+    expect(submission.accepted).toEqual([second.id]);
+    expect(submission.rejected).toEqual([]);
 
     // The daemon dispatched `first` on idle; the next snapshot lists nothing.
     const before = mirror.state;
@@ -226,5 +263,39 @@ describe("daemon-owned queue", () => {
     pruneLocalMirror(mirror, "agent-1", []);
     expect(mirror.state).toBe(unchanged);
     expect(before).not.toBe(unchanged);
+  });
+
+  it("send-now renders a cross-client entry from the summary and drops the row if the host rejects", async () => {
+    const client = createClient();
+    const mirror = createMirror();
+    const theirs = await client.addQueuedAgentMessage({ agentId: "agent-1", text: "theirs" });
+    const failing: DaemonQueueClient = {
+      ...client,
+      sendQueuedAgentMessageNow: async () => {
+        throw new Error("host rejected");
+      },
+    };
+    const submission = createSubmissionWriter();
+
+    await expect(
+      sendQueuedMessageNowOnDaemon({
+        client: failing,
+        agentId: "agent-1",
+        messageId: theirs.id,
+        activeTurnBehavior: "interrupt",
+        localMirror: mirror,
+        summary: theirs,
+        submission,
+      }),
+    ).rejects.toThrow("host rejected");
+
+    expect(submission.begun.map((item) => [item.clientMessageId, item.text, item.turnId])).toEqual([
+      [theirs.id, "theirs", undefined],
+    ]);
+    expect(submission.rejected).toEqual([theirs.id]);
+    expect(submission.accepted).toEqual([]);
+    // The daemon still lists the entry; nothing local claims it.
+    expect(client.queue.map((item) => item.id)).toEqual([theirs.id]);
+    expect(mirror.state.has("agent-1")).toBe(false);
   });
 });

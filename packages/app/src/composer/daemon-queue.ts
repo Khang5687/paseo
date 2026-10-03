@@ -9,7 +9,13 @@ import {
   splitComposerAttachmentsForSubmit,
   type ComposerAttachmentSubmitFormat,
 } from "@/composer/attachments/submit";
-import type { AttachmentPersister, QueuedComposerMessage, QueueWriter } from "./actions";
+import { createUserMessage } from "@/types/stream";
+import type {
+  AttachmentPersister,
+  MessageSubmissionWriter,
+  QueuedComposerMessage,
+  QueueWriter,
+} from "./actions";
 
 /**
  * Daemon-owned queue. The host stores and dispatches queued messages, so every
@@ -124,17 +130,53 @@ export interface SendQueuedMessageNowOnDaemonInput {
   agentId: string;
   messageId: string;
   activeTurnBehavior: ActiveTurnBehavior;
+  /** The active turn the row joins when steering; omitted for interrupt. */
+  activeTurnId?: string;
   localMirror: QueueWriter;
+  /** The daemon's summary of the entry, used for the row when another client queued it. */
+  summary: Pick<AgentQueuedMessageSummaryPayload, "text"> | null;
+  attachmentSubmitFormat?: ComposerAttachmentSubmitFormat;
+  submission: MessageSubmissionWriter;
 }
 
+/**
+ * Same contract as a composer send: the row appears before the RPC resolves,
+ * keyed by the entry id, and the daemon records its canonical user_message
+ * under that same id so the two reconcile. A failed RPC removes the row.
+ */
 export async function sendQueuedMessageNowOnDaemon(
   input: SendQueuedMessageNowOnDaemonInput,
 ): Promise<void> {
-  await input.client.sendQueuedAgentMessageNow({
-    agentId: input.agentId,
-    messageId: input.messageId,
-    activeTurnBehavior: input.activeTurnBehavior,
+  const mirrored =
+    input.localMirror.read(input.agentId).find((item) => item.id === input.messageId) ?? null;
+  const wirePayload = splitComposerAttachmentsForSubmit(mirrored?.attachments ?? [], {
+    format: input.attachmentSubmitFormat,
   });
+  const text = mirrored?.text ?? input.summary?.text ?? "";
+  input.submission.begin(
+    input.agentId,
+    createUserMessage({
+      clientMessageId: input.messageId,
+      text,
+      timestamp: new Date(),
+      images: wirePayload.images,
+      attachments: wirePayload.attachments,
+      ...(input.activeTurnBehavior === "steer" && input.activeTurnId
+        ? { turnId: input.activeTurnId }
+        : {}),
+    }),
+  );
+  try {
+    await input.client.sendQueuedAgentMessageNow({
+      agentId: input.agentId,
+      messageId: input.messageId,
+      activeTurnBehavior: input.activeTurnBehavior,
+    });
+  } catch (error) {
+    input.submission.reject(input.agentId, input.messageId);
+    throw error;
+  }
+  input.submission.accept(input.agentId, input.messageId);
   takeFromLocalMirror(input.localMirror, input.agentId, input.messageId);
 }
 

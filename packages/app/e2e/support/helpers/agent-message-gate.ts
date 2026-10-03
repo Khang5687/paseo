@@ -3,8 +3,13 @@ import { daemonWsRoutePattern } from "./daemon-port";
 
 type WebSocketMessage = string | Buffer;
 
+/**
+ * Every client request that puts a prompt in front of the agent: a composer
+ * send, or send-now on a daemon-queued entry (the daemon dispatches that one,
+ * so the request carries the entry id instead of the text).
+ */
 interface SendAgentMessageRequest {
-  type: "send_agent_message_request";
+  type: "send_agent_message_request" | "agent.queue.send_now.request";
   requestId: string;
   agentId: string;
   /** Absent when the client sends into an idle agent. */
@@ -20,14 +25,15 @@ function readSendRequest(message: WebSocketMessage): SendAgentMessageRequest | n
     };
     const request = envelope.type === "session" ? envelope.message : null;
     if (
-      request?.type !== "send_agent_message_request" ||
+      (request?.type !== "send_agent_message_request" &&
+        request?.type !== "agent.queue.send_now.request") ||
       typeof request.requestId !== "string" ||
       typeof request.agentId !== "string"
     ) {
       return null;
     }
     return {
-      type: "send_agent_message_request",
+      type: request.type,
       requestId: request.requestId,
       agentId: request.agentId,
       activeTurnBehavior:

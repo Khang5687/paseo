@@ -1315,9 +1315,18 @@ function ComposerContentImpl({
   const localQueuedMessages = useSessionStore((state) =>
     state.sessions[serverId]?.queuedMessages?.get(agentId),
   );
-  const queuedMessages: readonly QueuedMessage[] = hostOwnsQueue
-    ? (daemonQueuedMessages ?? EMPTY_ARRAY)
-    : (localQueuedMessages ?? EMPTY_ARRAY);
+  // Entries whose send-now RPC is in flight. The row has already moved into
+  // the timeline as a submission; hide it here until the daemon's snapshot
+  // drops it, or the RPC fails and it belongs in the queue again.
+  const [sendingQueuedMessageIds, setSendingQueuedMessageIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const queuedMessages: readonly QueuedMessage[] = useMemo(() => {
+    if (!hostOwnsQueue) return localQueuedMessages ?? EMPTY_ARRAY;
+    const daemonQueue = daemonQueuedMessages ?? EMPTY_ARRAY;
+    if (sendingQueuedMessageIds.size === 0) return daemonQueue;
+    return daemonQueue.filter((item) => !sendingQueuedMessageIds.has(item.id));
+  }, [daemonQueuedMessages, hostOwnsQueue, localQueuedMessages, sendingQueuedMessageIds]);
 
   const setQueuedMessages = useSessionStore((state) => state.setQueuedMessages);
 
@@ -2034,16 +2043,37 @@ function ComposerContentImpl({
           setSendError(t("workspace.terminal.hostDisconnected"));
           return;
         }
+        const activeTurnBehavior = appSettings.sendBehavior === "steer" ? "steer" : "interrupt";
+        setSendingQueuedMessageIds((prev) => new Set(prev).add(id));
         try {
           await sendQueuedMessageNowOnDaemon({
             client,
             agentId,
             messageId: id,
-            activeTurnBehavior: appSettings.sendBehavior === "steer" ? "steer" : "interrupt",
+            activeTurnBehavior,
+            activeTurnId:
+              activeTurnBehavior === "steer"
+                ? (selectAgentTurnPresentation(
+                    useSessionStore.getState().sessions[serverId],
+                    agentId,
+                  ).turnId ?? undefined)
+                : undefined,
             localMirror: queueWriter,
+            summary: daemonQueuedMessages?.find((item) => item.id === id) ?? null,
+            attachmentSubmitFormat: resolveComposerAttachmentSubmitFormat({
+              supportsForgeAttachments: supportsForgeSearch,
+            }),
+            submission: createMessageSubmissionWriter(serverId),
           });
+          onAttentionPromptSend?.();
         } catch (error) {
           setSendError(error instanceof Error ? error.message : t("composer.errors.failedToSend"));
+        } finally {
+          setSendingQueuedMessageIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
         }
         return;
       }
@@ -2061,7 +2091,19 @@ function ComposerContentImpl({
         setSendError(result.errorMessage);
       }
     },
-    [agentId, appSettings.sendBehavior, client, hostOwnsQueue, queueWriter, submitMessage, t],
+    [
+      agentId,
+      appSettings.sendBehavior,
+      client,
+      daemonQueuedMessages,
+      hostOwnsQueue,
+      onAttentionPromptSend,
+      queueWriter,
+      serverId,
+      submitMessage,
+      supportsForgeSearch,
+      t,
+    ],
   );
 
   const handleQueue = useCallback(

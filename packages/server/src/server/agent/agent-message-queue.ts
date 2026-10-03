@@ -126,11 +126,16 @@ export class AgentMessageQueueDispatcher {
         },
         "Dispatching queued agent message",
       );
+      // The entry id doubles as the clientMessageId. Without one the manager
+      // records no canonical user_message for a steered dispatch (providers do
+      // not echo steered prompts), and a client that pre-renders the entry on
+      // send-now has nothing to reconcile its row against.
       const result = await sendPromptToAgent({
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         agentId,
         prompt: buildAgentPrompt(message.text, message.images, message.attachments),
+        messageId: message.id,
         activeTurnBehavior: options.activeTurnBehavior ?? "steer",
         clearPendingPermissions: true,
         logger: this.logger,

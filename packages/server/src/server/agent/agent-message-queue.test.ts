@@ -18,6 +18,8 @@ import type {
   AgentSession,
   AgentSessionConfig,
   AgentStreamEvent,
+  SteerActiveTurnOptions,
+  SteerResult,
 } from "./agent-sdk-types.js";
 
 const logger = createTestLogger();
@@ -335,6 +337,36 @@ test("send_now pops a specific entry and sends it into the active turn", async (
   expect(manager.getAgent(agentId)?.queuedMessages).toEqual([first]);
 
   await expect(dispatcher.sendNow(agentId, "missing", "steer")).rejects.toThrow(/not found/);
+});
+
+test("a steered send_now records the entry as the turn's canonical user message", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const steered: AgentPromptInput[] = [];
+  const steerable = session as HeldTurnSession & {
+    steerActiveTurn?: (
+      prompt: AgentPromptInput,
+      options: SteerActiveTurnOptions,
+    ) => Promise<SteerResult>;
+  };
+  steerable.steerActiveTurn = async (prompt, options) => {
+    if (options.expectedTurnId !== session.turns[0].turnId) return { status: "unavailable" };
+    steered.push(prompt);
+    return { status: "accepted" };
+  };
+  const queued = await manager.addQueuedMessage(agentId, { text: "steer me in" });
+
+  await dispatcher.sendNow(agentId, queued.id, "steer");
+
+  // The provider accepted the steer and does not echo it, so the manager's
+  // record is the only user_message a client will ever see for this entry.
+  expect(steered.map(promptText)).toEqual(["steer me in"]);
+  expect(session.turns).toHaveLength(1);
+  const userMessages = manager
+    .getTimeline(agentId)
+    .filter((item) => item.type === "user_message")
+    .map((item) => ({ text: item.text, clientMessageId: item.clientMessageId }));
+  expect(userMessages).toEqual([{ text: "steer me in", clientMessageId: queued.id }]);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([]);
 });
 
 test("a message queued after the turn already ended dispatches on drainIfIdle", async () => {
