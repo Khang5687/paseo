@@ -127,6 +127,9 @@ import type {
   AgentSkillSelection,
   AgentSkillsStatus,
   AgentSkillsSaveResult,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
+  AgentAttachment,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentPermissionRequest,
@@ -1187,8 +1190,8 @@ interface PingProbe {
   drivesLivenessFailure: boolean;
 }
 
+// COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
 export function supportsUsageReports(features: ServerInfoStatusPayload["features"]): boolean {
-  // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
   return features?.usageSources === true || features?.providerUsageList === true;
 }
 
@@ -2081,6 +2084,91 @@ export class DaemonClient {
       });
     if (!response.success) {
       throw new Error(response.error ?? "Failed to mark workspace unread");
+    }
+  }
+
+  // Agent message queue (daemon-owned). Gate on `serverInfo.features.messageQueue`.
+
+  async addQueuedAgentMessage(
+    input: {
+      agentId: string;
+      text: string;
+      images?: AgentQueuedMessagePayload["images"];
+      attachments?: AgentAttachment[];
+    },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.add.response">({
+      requestId,
+      message: {
+        type: "agent.queue.add.request",
+        agentId: input.agentId,
+        text: input.text,
+        images: input.images,
+        attachments: input.attachments,
+      },
+    });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to queue agent message");
+    }
+    return response.message;
+  }
+
+  async removeQueuedAgentMessage(
+    input: { agentId: string; messageId: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.remove.response">({
+        requestId,
+        message: {
+          type: "agent.queue.remove.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to remove queued agent message");
+    }
+    return response.message;
+  }
+
+  async updateQueuedAgentMessage(
+    input: { agentId: string; messageId: string; text: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.update.response">({
+        requestId,
+        message: {
+          type: "agent.queue.update.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          text: input.text,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to update queued agent message");
+    }
+    return response.message;
+  }
+
+  async sendQueuedAgentMessageNow(
+    input: { agentId: string; messageId: string; activeTurnBehavior?: ActiveTurnBehavior },
+    requestId?: string,
+  ): Promise<void> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.send_now.response">({
+        requestId,
+        message: {
+          type: "agent.queue.send_now.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          activeTurnBehavior: input.activeTurnBehavior,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to send queued agent message");
     }
   }
 
@@ -5278,22 +5366,36 @@ export class DaemonClient {
           .filter(
             (provider) => !options?.reportIds || options.reportIds.includes(provider.providerId),
           )
-          .map((provider) => ({
-            id: provider.providerId,
-            sourceId: provider.providerId,
-            sourceLabel: provider.displayName,
-            icon: legacyUsageIcon(provider.providerId),
-            account: {},
-            fetchedAt: provider.fetchedAt ?? payload.fetchedAt,
-            report: {
-              status: provider.status,
-              windows: provider.windows,
-              balances: provider.balances ?? undefined,
-              details: provider.details ?? undefined,
-              planLabel: provider.planLabel ?? undefined,
-              error: provider.error ?? undefined,
-            },
-          })),
+          .map((provider) => {
+            // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
+            // 0.10 reports have no typed problems; preserve their unavailable badge and error text.
+            let report: UsageListReportsPayload["reports"][number]["report"];
+            if (provider.status === "available") {
+              report = {
+                status: "available",
+                windows: provider.windows,
+                balances: provider.balances ?? undefined,
+                details: provider.details ?? undefined,
+                planLabel: provider.planLabel ?? undefined,
+              };
+            } else if (provider.status === "error") {
+              report = { status: "error", error: provider.error ?? "" };
+            } else {
+              report = {
+                status: "unavailable",
+                problem: { kind: "no_quota", detail: provider.error ?? "" },
+              };
+            }
+            return {
+              id: provider.providerId,
+              sourceId: provider.providerId,
+              sourceLabel: provider.displayName,
+              icon: legacyUsageIcon(provider.providerId),
+              account: {},
+              fetchedAt: provider.fetchedAt ?? payload.fetchedAt,
+              report,
+            };
+          }),
       };
     }
     return this.sendNamespacedCorrelatedSessionRequest({

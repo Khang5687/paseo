@@ -59,6 +59,7 @@ const CLOSED_PARENT: ManagedAgent = {
   finalizedForegroundTurnIds: new Set(),
   unsubscribeSession: null,
   labels: {},
+  queuedMessages: [],
   lifecycle: "closed",
   session: null,
   activeForegroundTurnId: null,

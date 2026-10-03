@@ -2394,6 +2394,10 @@ export class HostRuntimeStore {
     if (this.queuedAgentDrainInFlight.has(drainKey)) return;
     const store = useSessionStore.getState();
     const session = store.sessions[serverId];
+    // COMPAT(messageQueue): added in v0.10.0, remove the client-local drain after
+    // 2027-10-02 once the daemon floor >= v0.10.0. When the host owns the queue it
+    // dispatches on idle itself; the local map only mirrors this client's entries.
+    if (session?.serverInfo?.features?.messageQueue === true) return;
     const queue = session?.queuedMessages.get(agentId);
     const client = session?.client;
     if (!client || !queue?.length || session.initializingAgents.get(agentId) === true) {

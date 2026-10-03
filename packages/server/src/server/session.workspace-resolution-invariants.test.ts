@@ -1,4 +1,5 @@
 import {
+  createAgentMessageQueueStub,
   createMessageReceiptsStub,
   createTestCreationService,
 } from "./test-utils/session-stubs.js";
@@ -93,6 +94,7 @@ function createHarness(input: {
 
   const session = new Session({
     messageReceipts: createMessageReceiptsStub(),
+    agentMessageQueue: createAgentMessageQueueStub(),
     creationService: createTestCreationService(),
     clientId: "test",
     permissions: OWNER_PERMISSIONS,
