@@ -1150,6 +1150,10 @@ export const ja: TranslationResources = {
     pinned: {
       title: "固定済み",
     },
+    settled: {
+      title: "完了済み",
+      titleWithCount: "完了済み ({{count}})",
+    },
     host: {
       noHost: "ホストなし",
       switchTitle: "ホストを切り替え",
@@ -1240,6 +1244,10 @@ export const ja: TranslationResources = {
         rename: "ワークスペースの名前を変更",
         pin: "上部に固定",
         unpin: "固定解除",
+        settle: "完了にする",
+        unsettle: "完了を取り消す",
+        settleWorkspace: "ワークスペースを完了にする",
+        unsettleWorkspace: "ワークスペースの完了を取り消す",
         archive: "アーカイブ",
         archiveWorkspace: "ワークスペースをアーカイブ",
         hideFromSidebar: "サイドバーから非表示",

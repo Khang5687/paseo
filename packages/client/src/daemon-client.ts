@@ -3186,6 +3186,26 @@ export class DaemonClient {
     return { pinnedAt: payload.pinnedAt };
   }
 
+  async setWorkspaceSettled(
+    workspaceId: string,
+    settled: boolean,
+    requestId?: string,
+  ): Promise<{ settledAt: string | null }> {
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "workspace.settle.set.request",
+        workspaceId,
+        settled,
+      },
+      responseType: "workspace.settle.set.response",
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "setWorkspaceSettled rejected");
+    }
+    return { settledAt: payload.settledAt };
+  }
+
   async inspectWorkspaceRecovery(
     workspaceId: string,
     requestId?: string,
