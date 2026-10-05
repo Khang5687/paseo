@@ -20,7 +20,7 @@ import {
 } from "../agent.js";
 import type { OmpUsagePollScheduler } from "../usage-poller.js";
 import type { OmpAgentMessage, OmpRpcSlashCommand, OmpRuntimeEvent } from "../rpc-types.js";
-import { FakeOmp } from "./fake-omp.js";
+import { FakeOmp, type FakeOmpSession } from "./fake-omp.js";
 
 const CWD = "/tmp/paseo-omp-agent-test";
 
@@ -88,6 +88,10 @@ export class OmpHarness {
 
   queueCommands(commands: OmpRpcSlashCommand[]): void {
     this.omp.queueCommands(commands);
+  }
+
+  queueSessionSetup(setup: (session: FakeOmpSession) => void): void {
+    this.omp.queueSessionSetup(setup);
   }
 
   failEventSubscription(error: Error): void {
