@@ -191,7 +191,7 @@ When launching from Paseo, use a worktree workspace (`create_workspace` with `is
 
 ### Syncing with upstream
 
-Only the owner or an agent the owner asked does this:
+Only the owner or an agent the owner asked does this. `scripts/fork-update.sh` does it as its first step (see below); by hand:
 
 ```bash
 git fetch upstream
@@ -199,6 +199,14 @@ git checkout main && git merge upstream/main && git push origin main
 ```
 
 Resolve conflicts on `main`. Open work branches do not need rebasing; they are still based on an older `upstream/main`, which is fine until their PR conflicts.
+
+### Running the fork
+
+The owner runs a desktop app built from fork `main` in place of the published Paseo.app. After merging PRs, run `scripts/fork-update.sh` on `main`: it syncs upstream, builds the macOS app, and installs it to `/Applications/Paseo.app`. While any Paseo process runs (the daemon can outlive the window) it stops after the build; quit Paseo, run `paseo daemon stop`, then `scripts/fork-update.sh --install`. Stopping the daemon stops every running agent, so the owner picks the moment; agents never run `--install`.
+
+Fork builds have no update feed (`--dir` builds write no `app-update.yml`), so the app never auto-updates back to stock Paseo. They are ad-hoc signed and not notarized; macOS asks to allow the app on first launch.
+
+Daemon-only changes work with the store mobile app. App changes (composer, timeline UI) show only in fork-built clients.
 
 ## Release branches
 
