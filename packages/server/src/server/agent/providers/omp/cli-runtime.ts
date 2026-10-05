@@ -1,3 +1,4 @@
+import { createExternalProcessEnv } from "../../../paseo-env.js";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Logger } from "pino";
 import { z } from "zod";
@@ -77,6 +78,7 @@ export class OmpCliRuntime implements OmpRuntime {
       runtimeSettings: this.options.runtimeSettings,
       session: input,
     });
+    launch.env = createExternalProcessEnv(globalThis.process.env, launch.env ?? {});
     const [command, ...args] = launch.argv;
     const processLaunch: JsonlRpcLaunch = {
       command,
@@ -101,7 +103,7 @@ export class OmpCliRuntime implements OmpRuntime {
         requestTimeoutMs: this.options.requestTimeoutMs,
       });
       input.signal?.throwIfAborted();
-      return new OmpCliRuntimeSession(process, this.commandsRpcName);
+      return new OmpCliRuntimeSession(process, this.commandsRpcName, launch.env);
     } catch (error) {
       const startupError = error instanceof Error ? error : new Error(String(error));
       await process.close(startupError);
@@ -119,6 +121,7 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
   constructor(
     private readonly process: JsonlRpcProcess,
     private readonly commandsRpcName: "get_available_commands",
+    private readonly launchEnvironment: Record<string, string>,
   ) {
     process.onMessage((message) => {
       const event = OmpRuntimeEventSchema.safeParse(message);
@@ -129,6 +132,10 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     process.onExit(({ error }) => {
       this.emit({ type: "process_exit", error: error.message });
     });
+  }
+
+  get environment(): Record<string, string> {
+    return this.launchEnvironment;
   }
 
   onEvent(callback: (event: OmpRuntimeEvent) => void): () => void {
