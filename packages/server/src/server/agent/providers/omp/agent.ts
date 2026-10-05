@@ -716,6 +716,8 @@ export class OmpAgentSession implements AgentSession {
   private readonly usagePoller: OmpUsagePoller;
   private closed = false;
   private live: boolean;
+  // A resumed session already has context usage, but OMP only reports it during turns.
+  private usageRefreshPending: boolean;
   private readonly emittedUserMessageIds = new Set<string>();
 
   private readonly usageSessionKey = randomUUID();
@@ -740,6 +742,7 @@ export class OmpAgentSession implements AgentSession {
     this.currentModeId = options.currentModeId ?? null;
     this.logger = options.logger;
     this.live = options.live ?? true;
+    this.usageRefreshPending = !this.live;
     this.providerIdleScheduler = options.providerIdleScheduler ?? createOmpProviderIdleScheduler();
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs ?? OMP_PROVIDER_IDLE_DEADLINE_MS;
     this.noTurnScheduler = options.noTurnScheduler ?? createOmpNoTurnScheduler();
@@ -954,6 +957,10 @@ export class OmpAgentSession implements AgentSession {
 
   subscribe(callback: (event: AgentStreamEvent) => void): () => void {
     this.subscribers.add(callback);
+    if (this.usageRefreshPending) {
+      this.usageRefreshPending = false;
+      void this.usagePoller.refresh();
+    }
     return () => {
       this.subscribers.delete(callback);
     };

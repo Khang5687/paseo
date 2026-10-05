@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { AgentStreamEvent } from "../../agent-sdk-types.js";
 import type { PaseoToolCatalog } from "../../tools/types.js";
-import type { OmpAgentMessage } from "./rpc-types.js";
+import type { OmpAgentMessage, OmpSessionStats } from "./rpc-types.js";
 import type { OmpNoTurnScheduler, OmpProviderIdleScheduler } from "./agent.js";
 import type { OmpUsagePollScheduler } from "./usage-poller.js";
 import { resolveOmpProviderOptions } from "./provider-config.js";
@@ -398,6 +398,60 @@ describe("OMP agent client and session", () => {
     expect(scheduler.activePollCount()).toBe(1);
     await omp.close();
     expect(scheduler.activePollCount()).toBe(0);
+  });
+
+  test("a resumed session reports its context usage without running a turn", async () => {
+    const scheduler = new ManualUsagePollScheduler();
+    const omp = new OmpHarness({ usagePollScheduler: scheduler });
+    omp.queueSessionSetup((session) => {
+      session.stats = {
+        tokens: { input: 1_000, output: 200, cacheRead: 5_000, cacheWrite: 0, total: 6_200 },
+        cost: 1.5,
+        contextUsage: { tokens: 650_000, contextWindow: 1_000_000 },
+      };
+    });
+    await omp.resume({
+      user: { id: "user-history", text: "continue" },
+      assistant: { id: "assistant-history", text: "ready" },
+    });
+    await waitForImmediate();
+
+    expect(omp.usageUpdates()).toEqual([
+      {
+        inputTokens: 1_000,
+        cachedInputTokens: 5_000,
+        outputTokens: 200,
+        totalCostUsd: 1.5,
+        contextWindowMaxTokens: 1_000_000,
+        contextWindowUsedTokens: 650_000,
+      },
+    ]);
+    expect(scheduler.activePollCount()).toBe(0);
+  });
+
+  test("a turn that starts before the resume usage read returns keeps its own usage", async () => {
+    const scheduler = new ManualUsagePollScheduler();
+    const omp = new OmpHarness({ usagePollScheduler: scheduler });
+    const resumeStats = Promise.withResolvers<OmpSessionStats>();
+    omp.queueSessionSetup((session) => {
+      session.getSessionStats = () => {
+        session.getSessionStats = async () => session.stats;
+        return resumeStats.promise;
+      };
+    });
+    await omp.resume({
+      user: { id: "user-history", text: "continue" },
+      assistant: { id: "assistant-history", text: "ready" },
+    });
+
+    await omp.requireStartTurn("keep working");
+    omp.runtime().stats = { contextUsage: { tokens: 300, contextWindow: 200_000 } };
+    scheduler.poll();
+    await waitForImmediate();
+    resumeStats.resolve({ contextUsage: { tokens: 100, contextWindow: 200_000 } });
+    await waitForImmediate();
+
+    expect(omp.usageUpdates().map((usage) => usage.contextWindowUsedTokens)).toEqual([300]);
   });
 
   test("does not accept a follow-up until OMP reports stable idle", async () => {
