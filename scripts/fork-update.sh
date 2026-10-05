@@ -43,16 +43,28 @@ built_app="packages/desktop/release/mac-${arch}/Paseo.app"
 if [[ $build == 1 ]]; then
   npm ci --no-audit --no-fund
   # Signing is ad-hoc: never pick up whatever certificate is in the keychain.
+  # Hardened runtime must be off: with ad-hoc signatures every binary has no Team ID,
+  # so library validation refuses to load Electron Framework and the app cannot open.
   # --dir writes no app-update.yml, so the built app has no update feed and cannot
   # auto-update back to stock Paseo.
-  CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:desktop -- \
+  # PASEO_DESKTOP_SMOKE launches the packaged app (isolated home and port) after
+  # signing and fails the build if it does not start, so a broken app is never installed.
+  CSC_IDENTITY_AUTO_DISCOVERY=false PASEO_DESKTOP_SMOKE=1 npm run build:desktop -- \
     --mac --dir "--${arch}" \
     -c.mac.identity=- \
+    -c.mac.hardenedRuntime=false \
     -c.mac.notarize=false
 fi
 
 if [[ ! -d $built_app ]]; then
   echo "No build at $built_app; run without --install first." >&2
+  exit 1
+fi
+
+# --install skips the build-time smoke launch, so re-check what would break opening.
+codesign --verify --deep --strict "$built_app"
+if codesign -dv "$built_app/Contents/MacOS/Paseo" 2>&1 | grep -q "flags=.*runtime"; then
+  echo "$built_app is ad-hoc signed with hardened runtime and will not open. Rebuild." >&2
   exit 1
 fi
 
@@ -65,6 +77,12 @@ if pgrep -xq Paseo || pgrep -xq "Paseo Helper" || pgrep -qf "^${INSTALL_PATH}/";
   exit 0
 fi
 
-rm -rf "$INSTALL_PATH"
+backup_path="${INSTALL_PATH%.app}.previous.app"
+rm -rf "$backup_path"
+if [[ -d $INSTALL_PATH ]]; then
+  mv "$INSTALL_PATH" "$backup_path"
+fi
 ditto "$built_app" "$INSTALL_PATH"
 echo "Installed $(defaults read "$INSTALL_PATH/Contents/Info" CFBundleShortVersionString) at $INSTALL_PATH from $(git rev-parse --short HEAD)."
+echo "Previous app kept at $backup_path. To roll back: quit Paseo, paseo daemon stop,"
+echo "then: rm -rf $INSTALL_PATH && mv $backup_path $INSTALL_PATH"

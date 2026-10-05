@@ -204,7 +204,16 @@ Resolve conflicts on `main`. Open work branches do not need rebasing; they are s
 
 The owner runs a desktop app built from fork `main` in place of the published Paseo.app. After merging PRs, run `scripts/fork-update.sh` on `main`: it syncs upstream, builds the macOS app, and installs it to `/Applications/Paseo.app`. While any Paseo process runs (the daemon can outlive the window) it stops after the build; quit Paseo, run `paseo daemon stop`, then `scripts/fork-update.sh --install`. Stopping the daemon stops every running agent, so the owner picks the moment; agents never run `--install`.
 
-Fork builds have no update feed (`--dir` builds write no `app-update.yml`), so the app never auto-updates back to stock Paseo. They are ad-hoc signed and not notarized; macOS asks to allow the app on first launch.
+Fork builds have no update feed (`--dir` builds write no `app-update.yml`), so the app never auto-updates back to stock Paseo. The `[auto-updater] … app-update.yml` ENOENT lines in its log are expected. Builds are ad-hoc signed and not notarized.
+
+The owner's Paseo.app is their only way to reach their agents. These rules come from a fork build that was installed under a running daemon and then could not open:
+
+- **Build and install the desktop app only through `scripts/fork-update.sh`.** Do not run `electron-builder`, `npm run build:desktop`, `codesign`, or `ditto` against `/Applications/Paseo.app` by hand. Change the script instead, in its own PR.
+- **Ad-hoc signing needs `hardenedRuntime=false`.** With hardened runtime on, every ad-hoc binary has no Team ID, library validation refuses to load `Electron Framework`, and the app dies at launch with a `dyld … different Team IDs` error. The upstream `electron-builder.yml` turns hardened runtime on for notarized releases; the script overrides it.
+- **Every build runs the packaged smoke launch (`PASEO_DESKTOP_SMOKE=1`)**, which starts the built app in an isolated home and port. A build that fails it is never installed. Do not skip it to save time.
+- **Never install while any Paseo process runs.** The daemon runs as `Paseo Helper` and outlives the window; checking only for the window misses it. Replacing the bundle under a running daemon leaves it running deleted code.
+- **Agents never install.** An agent may build (`--no-sync`) and report; only the owner runs `--install` or the full script, after quitting Paseo and `paseo daemon stop`.
+- **Keep the rollback.** Install moves the old app to `/Applications/Paseo.previous.app`. If the new app does not open: `rm -rf /Applications/Paseo.app && mv /Applications/Paseo.previous.app /Applications/Paseo.app`. To diagnose, run `/Applications/Paseo.app/Contents/MacOS/Paseo` from a terminal; launch errors print there, not in a dialog.
 
 Daemon-only changes work with the store mobile app. App changes (composer, timeline UI) show only in fork-built clients.
 
