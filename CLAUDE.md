@@ -112,10 +112,10 @@ See [docs/development.md](docs/development.md) for full setup, build sync requir
 
 ### The two branches that matter
 
-| Branch          | What it is                                                                                       | Who writes to it                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `upstream/main` | The maintainer's code. Read-only.                                                                | Nobody here.                                                                 |
-| fork `main`     | `upstream/main` + every accepted change, one `--no-ff` merge per PR. Releases are built from it. | Only merges of reviewed PRs and upstream syncs. Never commit to it directly. |
+| Branch          | What it is                                                                                       | Who writes to it                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `upstream/main` | The maintainer's code. Read-only.                                                                | Nobody here.                                                                                 |
+| fork `main`     | `upstream/main` + every accepted change, one `--no-ff` merge per PR. Releases are built from it. | Only the integrator's merges (see Build it) and upstream syncs. Never commit to it directly. |
 
 Everything else is a short-lived work branch.
 
@@ -130,7 +130,7 @@ Everything else is a short-lived work branch.
    `type` is `fix` or `feat`; `area` is the package or provider (`omp`, `app`, `server`, `plugin`). Examples: `fix/omp-compact-command`, `feat/omp-goal-command`.
    A branch cut from fork `main` carries every other change with it, and its upstream PR becomes unreviewable.
 3. If the change needs another unmerged change, cut from that branch instead and write `Stacked on #N` as the first line of the PR body. Merge order follows the stack.
-4. Open the draft PR right away, before writing code, with a one-line body. The PR list is the registry of who is working on what; every agent checks `gh pr list` before cutting a branch.
+4. Open the draft PR right away, before writing code, with a one-line body, and add your entry to the handoff file (see below). The PR list and `~/git/paseo-HANDOFF.md` are the registry of who is working on what; every agent checks both before cutting a branch.
 5. Work in a worktree, not in the main checkout, so parallel agents never share a working tree:
    ```bash
    git worktree add ../paseo-<branch-slug> <branch>
@@ -146,21 +146,62 @@ Everything else is a short-lived work branch.
 
 - Stay inside your change. If you find an unrelated bug, note it in your PR body under "Seen but not fixed" and move on. Someone else may already have a branch for it; check `gh pr list` and `git branch -r` before opening one.
 - Do not rebase or force-push a branch that another agent's branch is stacked on. Add commits instead.
-- Never edit fork `main`, `CLAUDE.md`'s process sections, or another agent's branch to make your change work. If the only way forward is a change to shared ground, stop and ask.
+- Never edit fork `main`, `CLAUDE.md`'s process sections, or another agent's branch to make your change work. The integrator's merges under Build it are the only writes to `main`. If the only way forward is a change to shared ground, stop and ask.
 - Shared surfaces that break parallel work when touched casually: `packages/protocol` (see protocol compatibility rules above), `OMP_HANDLED_BUILTIN_SLASH_COMMANDS`, event-mapper switch statements, `docs/` tables. If you must add to one, add; do not reorder or rename.
 
 ### Finishing a change
 
 1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
 2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
-3. Mark the PR ready for review and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
-4. The owner merges, with a merge commit, never squash or rebase:
+3. Mark the PR ready for review, set your handoff entry to `ready`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
+4. The integrator merges on "build it" (see Build it), with a merge commit, never squash or rebase:
    ```bash
-   git checkout main && git merge --no-ff <branch> -m "Merge #N: <PR title>" && git push origin main
+   git merge --no-ff <branch> -m "Merge #N: <PR title>"
    ```
    The merge commit is what lets one change be reverted or cherry-picked later without touching the others.
-5. Keep the branch after merge. It is reused for the upstream PR.
+5. Keep the branch after merge. It is reused for the upstream PR. Its worktree is removed on merge (see Build it); recreate it with `git worktree add ../paseo-<slug> <branch>` when upstream asks for changes.
 6. If a branch conflicts with `main` because an earlier PR merged first, fix it on the branch (`git merge main`, resolve, push), never with a fix-up commit on `main`. Every line of a change stays inside its own PR.
+
+### The handoff file
+
+Every agent on the fork reads and writes one file: `~/git/paseo-HANDOFF.md`. It lives outside the repository because each agent works on its own branch in its own worktree; a tracked file would have a different copy on every branch and conflict on every merge. The PR stays the record of what changed; the handoff file records what is ready to build and in what order.
+
+The file has three sections: `## Open`, `## Merged`, `## Builds`. When you open your draft PR, add one entry under `## Open`:
+
+```markdown
+### #7 feat/settle-workspace
+
+- status: wip
+- worktree: ~/git/paseo-settle-workspace
+- stacked on: none
+- shared surfaces: packages/protocol (new RPC workspace.settle.set)
+- ships in: daemon + desktop app; Android needs a fork Android build
+- note: none
+```
+
+- Edit only your own entry, in place. Never rewrite the file, reorder it, or touch another agent's entry, even one that looks stale. Two agents rewriting the whole file at once lose each other's edits.
+- Keep the entry to these lines. Detail goes in the PR body.
+- `status` is `wip`, `ready`, or `blocked: <reason>`. Set `ready` only after the PR is marked ready for review and the checks in "Finishing a change" passed.
+- `shared surfaces` names anything listed under "While working" as shared ground, so the integrator can expect conflicts.
+- A session that opens with a bare `continue` reads its own entry before asking the owner anything.
+
+### Build it
+
+When the owner says "build it", one agent integrates. That agent is the only one that merges, and only then. "Build it except #N" leaves #N out.
+
+1. Read `~/git/paseo-HANDOFF.md`. Take every `## Open` entry with `status: ready`. Check each with `gh pr view <N> --json isDraft,state,mergeable`; skip drafts, closed PRs, and `CONFLICTING`.
+2. In the main checkout, merge in stack order, otherwise by PR number:
+   ```bash
+   git checkout main && git pull --no-rebase origin main
+   git merge --no-ff <branch> -m "Merge #N: <PR title>"
+   ```
+   If a merge conflicts, abort it (`git merge --abort`), set that entry to `blocked: conflicts with main after #M`, and continue with the rest. Conflicts are fixed on the branch, never on `main`.
+3. Sync upstream into `main` as in "Syncing with upstream" (`git fetch upstream && git merge --no-ff --no-edit upstream/main`), resolving any conflict on `main`.
+4. Run `npm ci`, `npm run build:server`, `npm run typecheck`, and `npm run lint`. If a check fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
+5. `git push origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
+6. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
+7. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays.
+8. Report to the owner what merged, what was skipped and why, and the install commands.
 
 ### Upstream PRs
 
@@ -184,10 +225,11 @@ Branch: <type>/<area>-<what>, cut from upstream/main (or "stacked on <branch>").
 Worktree: already created if you were launched as a Paseo worktree workspace; otherwise `git worktree add ../paseo-<slug> <branch>`.
 Scope: only this. Note anything else you find in the PR body under "Seen but not fixed".
 Done: draft PR against Khang5687/paseo main, body upstream-ready, marked ready for review. Do not merge.
+Handoff: add your entry to ~/git/paseo-HANDOFF.md when the draft PR opens; set it to ready when done.
 Read CLAUDE.md "Fork workflow" first.
 ```
 
-When launching from Paseo, use a worktree workspace (`create_workspace` with `isolation: worktree`, `baseBranch: upstream/main`, `branchName: <type>/<area>-<what>`) so the branch and worktree exist before the agent starts; the brief then only names them. Five agents with five such briefs produce five independent PRs. The owner merges them in whatever order and opens upstream PRs from the same branches later.
+When launching from Paseo, use a worktree workspace (`create_workspace` with `isolation: worktree`, `baseBranch: upstream/main`, `branchName: <type>/<area>-<what>`) so the branch and worktree exist before the agent starts; the brief then only names them. Five agents with five such briefs produce five independent PRs and five handoff entries. The integrator merges the ready ones on "build it", and the owner opens upstream PRs from the same branches later.
 
 ### Syncing with upstream
 
