@@ -11,6 +11,7 @@ import { isAbsolute } from "node:path";
 import { CreationService } from "./creation/index.js";
 import type { CreationSnapshot, AgentCreateRequest } from "@getpaseo/protocol/messages";
 import type { MessageReceipts } from "./message-receipts/index.js";
+import type { AgentMessageQueueDispatcher } from "./agent/agent-message-queue.js";
 import equal from "fast-deep-equal";
 import { SessionDelivery, type OwnedSubscription } from "./session/owned-subscriptions/index.js";
 import { v4 as uuidv4 } from "uuid";
@@ -119,7 +120,11 @@ import {
   setAgentModeCommand,
   updateAgentCommand,
 } from "./agent/lifecycle-command.js";
-import { buildStoredAgentPayload, toAgentPayload } from "./agent/agent-projections.js";
+import {
+  buildStoredAgentPayload,
+  summarizeQueuedMessage,
+  toAgentPayload,
+} from "./agent/agent-projections.js";
 import {
   appendTimelineItemIfAgentKnown,
   emitLiveTimelineItemIfAgentKnown,
@@ -460,6 +465,7 @@ export interface SessionOptions {
   agentManager: AgentManager;
   agentStorage: AgentStorage;
   messageReceipts: Pick<MessageReceipts, "send">;
+  agentMessageQueue: Pick<AgentMessageQueueDispatcher, "sendNow" | "drainIfIdle">;
   creationService: Pick<CreationService, "create" | "subscribe">;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
@@ -796,6 +802,7 @@ export class Session {
   private readonly hubExecutionController: HubExecutionController | null;
   private readonly workspaceScripts: WorkspaceScriptsService;
   private readonly messageReceipts: Pick<MessageReceipts, "send">;
+  private readonly agentMessageQueue: Pick<AgentMessageQueueDispatcher, "sendNow" | "drainIfIdle">;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
 
@@ -872,6 +879,7 @@ export class Session {
     this.pushNotifications = pushNotifications;
     this.paseoHome = paseoHome;
     this.messageReceipts = options.messageReceipts;
+    this.agentMessageQueue = options.agentMessageQueue;
     this.creationService = options.creationService;
     this.projectIcons = new ProjectIconReader(paseoHome);
     this.worktreesRoot = worktreesRoot;
@@ -2754,6 +2762,21 @@ export class Session {
         return this.handleAgentPermissionResponse(msg.agentId, msg.requestId, msg.response);
       case "clear_agent_attention":
         return this.handleClearAgentAttention(msg.agentId, msg.requestId);
+      default:
+        return this.dispatchAgentQueueMessage(msg);
+    }
+  }
+
+  private dispatchAgentQueueMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "agent.queue.add.request":
+        return this.handleAgentQueueAddRequest(msg);
+      case "agent.queue.remove.request":
+        return this.handleAgentQueueRemoveRequest(msg);
+      case "agent.queue.update.request":
+        return this.handleAgentQueueUpdateRequest(msg);
+      case "agent.queue.send_now.request":
+        return this.handleAgentQueueSendNowRequest(msg);
       default:
         return undefined;
     }
@@ -8049,6 +8072,213 @@ export class Session {
     if (stored && !stored.title && !stored.lastUserMessageAt) {
       const { provisionalTitle } = resolveCreateAgentTitles({ initialPrompt: text });
       if (provisionalTitle) await this.agentManager.setTitle(agentId, provisionalTitle);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daemon-owned message queue
+  // ---------------------------------------------------------------------------
+
+  private async resolveQueueAgent(
+    agentIdentifier: string,
+  ): Promise<{ ok: true; agentId: string } | { ok: false; error: string }> {
+    const resolved = await this.resolveAgentIdentifier(agentIdentifier);
+    if (!resolved.ok) return resolved;
+    try {
+      await ensureAgentLoaded(resolved.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+      });
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return resolved;
+  }
+
+  private async handleAgentQueueAddRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.queue.add.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveQueueAgent(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.queue.add.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          message: null,
+          success: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      const message = await this.agentManager.addQueuedMessage(resolved.agentId, {
+        text: msg.text,
+        images: msg.images,
+        attachments: msg.attachments,
+      });
+      this.emit({
+        type: "agent.queue.add.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          message: summarizeQueuedMessage(message),
+          success: true,
+          error: null,
+        },
+      });
+      // The client queues against a running agent, but the turn may have ended
+      // between its decision and this request.
+      this.agentMessageQueue.drainIfIdle(resolved.agentId);
+    } catch (error) {
+      this.emit({
+        type: "agent.queue.add.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          message: null,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentQueueRemoveRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.queue.remove.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveQueueAgent(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.queue.remove.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          message: null,
+          success: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      const message = await this.agentManager.removeQueuedMessage(resolved.agentId, msg.messageId);
+      this.emit({
+        type: "agent.queue.remove.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          message,
+          success: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.queue.remove.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          message: null,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentQueueUpdateRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.queue.update.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveQueueAgent(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.queue.update.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          message: null,
+          success: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      const message = await this.agentManager.updateQueuedMessage(
+        resolved.agentId,
+        msg.messageId,
+        msg.text,
+      );
+      this.emit({
+        type: "agent.queue.update.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          message: summarizeQueuedMessage(message),
+          success: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.queue.update.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          message: null,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentQueueSendNowRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.queue.send_now.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveQueueAgent(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.queue.send_now.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          success: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      await this.agentMessageQueue.sendNow(
+        resolved.agentId,
+        msg.messageId,
+        msg.activeTurnBehavior ?? "steer",
+      );
+      this.emit({
+        type: "agent.queue.send_now.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          success: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      if (this.delivery.requestSignal.aborted) return;
+      this.handleAgentRunError(resolved.agentId, error, "Failed to send queued message");
+      this.emit({
+        type: "agent.queue.send_now.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   }
 

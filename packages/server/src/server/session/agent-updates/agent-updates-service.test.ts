@@ -195,6 +195,7 @@ function buildHarness() {
         updatedAt: new Date(payload.updatedAt),
         lastUserMessageAt: null,
         pendingPermissions: new Map(),
+        queuedMessages: [],
         attention: {
           requiresAttention: payload.requiresAttention ?? false,
           attentionReason: null,

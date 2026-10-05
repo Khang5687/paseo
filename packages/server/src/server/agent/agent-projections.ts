@@ -1,5 +1,7 @@
 import type {
   AgentListItemPayload,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
   AgentSnapshotPayload,
   RecentProviderSessionDescriptorPayload,
 } from "../messages.js";
@@ -98,6 +100,7 @@ export function toStoredAgentRecord(
       : null,
     internal: options?.internal,
     owner: agent.owner,
+    queuedMessages: agent.queuedMessages,
   } satisfies StoredAgentRecord;
 }
 
@@ -139,6 +142,7 @@ export function toAgentPayload(
     persistence: projectPersistenceHandleForWire(agent.persistence),
     title: options?.title ?? null,
     labels: agent.labels,
+    queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
   };
 
   const usage = sanitizeUsage(agent.lastUsage);
@@ -248,7 +252,22 @@ export function buildStoredAgentPayload(
     attentionTimestamp: record.attentionTimestamp ?? null,
     archivedAt: record.archivedAt ?? null,
     labels: normalizeLabels(record.labels),
+    queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
+  };
+}
+
+// Snapshots carry summaries only: image bytes stay in the record and are
+// replayed by the daemon on dispatch.
+export function summarizeQueuedMessage(
+  message: AgentQueuedMessagePayload,
+): AgentQueuedMessageSummaryPayload {
+  return {
+    id: message.id,
+    text: message.text,
+    imageCount: message.images.length,
+    attachmentCount: message.attachments.length,
+    createdAt: message.createdAt,
   };
 }
 

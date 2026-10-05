@@ -36,6 +36,7 @@ import type {
 import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
+  AgentQueuedMessageSummaryPayload,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
@@ -100,6 +101,8 @@ export interface Agent {
   parentAgentId: string | null;
   labels: Record<string, string>;
   projectPlacement?: ProjectPlacementPayload | null;
+  /** Daemon-owned queue summaries. Absent or empty on hosts without `features.messageQueue`. */
+  queuedMessages?: AgentQueuedMessageSummaryPayload[];
 }
 
 export interface WorkspaceDescriptor {
