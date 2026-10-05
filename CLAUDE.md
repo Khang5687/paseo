@@ -159,7 +159,7 @@ Everything else is a short-lived work branch.
    git merge --no-ff <branch> -m "Merge #N: <PR title>"
    ```
    The merge commit is what lets one change be reverted or cherry-picked later without touching the others.
-5. Keep the branch after merge. It is reused for the upstream PR.
+5. Keep the branch after merge. It is reused for the upstream PR. Its worktree is removed on merge (see Build it); recreate it with `git worktree add ../paseo-<slug> <branch>` when upstream asks for changes.
 6. If a branch conflicts with `main` because an earlier PR merged first, fix it on the branch (`git merge main`, resolve, push), never with a fix-up commit on `main`. Every line of a change stays inside its own PR.
 
 ### The handoff file
@@ -200,7 +200,8 @@ When the owner says "build it", one agent integrates. That agent is the only one
 4. Run `npm ci`, `npm run build:server`, `npm run typecheck`, and `npm run lint`. If a check fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
 5. `git push origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
 6. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
-7. Report to the owner what merged, what was skipped and why, and the install commands.
+7. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays.
+8. Report to the owner what merged, what was skipped and why, and the install commands.
 
 ### Upstream PRs
 
