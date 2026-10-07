@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runPluginClientBundle, type PluginClientRuntime } from "./evaluate";
+import { applyPluginSkin } from "@/skins/plugin-cache";
+
+vi.mock("@/skins/plugin-cache", () => ({ applyPluginSkin: vi.fn(async () => {}) }));
 
 const runtime = {
   paseo: {},
+  serverId: "host-a",
   async rpc() {},
   openSettings() {},
   openScreen() {},
@@ -745,4 +749,92 @@ it("binds imported getters to each originating installation across delayed callb
   ]);
   await first.cleanup();
   await second.cleanup();
+});
+
+describe("skins", () => {
+  const SKIN = `{
+    id: "dusk",
+    name: " Dusk ",
+    version: "1",
+    appearance: "dark",
+    focal: { x: 0.25, y: 0.5 },
+    loadImage: async () => ({ base64: "AA==", mimeType: "image/png" }),
+  }`;
+
+  beforeEach(() => {
+    vi.mocked(applyPluginSkin).mockClear();
+  });
+
+  it("collects a contributed skin and releases it on removal", () => {
+    const plugin = evaluatePluginClientBundle(
+      "skins",
+      bundle(`globalThis.__skinRemove = plugin.addSkin(${SKIN})`),
+    );
+    expect(plugin.skins).toHaveLength(1);
+    expect(plugin.skins[0]).toMatchObject({ id: "dusk", name: "Dusk", appearance: "dark" });
+    (globalThis as unknown as { __skinRemove: () => void }).__skinRemove();
+    expect(plugin.skins).toEqual([]);
+  });
+
+  it("rejects a duplicate skin id", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`const skin = ${SKIN}; plugin.addSkin(skin); plugin.addSkin(skin);`),
+      ),
+    ).toThrow("Duplicate skin: dusk");
+  });
+
+  it("rejects a focal point outside 0-1", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`plugin.addSkin({ ...${SKIN}, focal: { x: 2, y: 0.5 } })`),
+      ),
+    ).toThrow();
+  });
+
+  it("rejects a skin without loadImage", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`const { loadImage, ...skin } = ${SKIN}; plugin.addSkin(skin)`),
+      ),
+    ).toThrow();
+  });
+
+  it("rejects a non-https attribution link", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`plugin.addSkin({ ...${SKIN}, attribution: { sourceUrl: "http://example.com" } })`),
+      ),
+    ).toThrow();
+  });
+
+  it("rejects applySkin for an id this plugin never registered", async () => {
+    const plugin = evaluatePluginClientBundle("skins", bundle(`globalThis.__skinContext = plugin`));
+    const context = (
+      globalThis as unknown as { __skinContext: { applySkin(id: string): Promise<void> } }
+    ).__skinContext;
+    await expect(context.applySkin("missing")).rejects.toThrow("Unknown skin: missing");
+    expect(applyPluginSkin).not.toHaveBeenCalled();
+    await plugin.cleanup();
+  });
+
+  it("applies a registered skin under the plugin-scoped id on the installing host", async () => {
+    evaluatePluginClientBundle(
+      "skins",
+      bundle(`plugin.addSkin(${SKIN}); globalThis.__skinContext = plugin`),
+    );
+    const context = (
+      globalThis as unknown as { __skinContext: { applySkin(id: string): Promise<void> } }
+    ).__skinContext;
+    await context.applySkin("dusk");
+    expect(applyPluginSkin).toHaveBeenCalledWith({
+      id: "skins/skin/dusk",
+      serverId: "host-a",
+      contribution: expect.objectContaining({ id: "dusk" }),
+    });
+  });
 });

@@ -2292,6 +2292,84 @@ export const ja: TranslationResources = {
         moveUp: "上に移動",
         moveDown: "下に移動",
       },
+      background: {
+        title: "背景",
+        applyTo: {
+          title: "適用先",
+          options: {
+            both: "両方",
+            light: "ライト",
+            dark: "ダーク",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "背景画像",
+          none: "なし",
+          addImage: "画像を追加…",
+          importDefaultName: "画像",
+        },
+        menu: {
+          actions: "{{name}} の操作",
+          edit: "編集…",
+          delete: "削除",
+          details: "詳細",
+        },
+        undo: {
+          action: "元に戻す",
+          accessibilityLabel: "背景の変更を元に戻す",
+        },
+        catalog: {
+          browse: "参照",
+          hint: "このプラグインから背景を追加",
+        },
+        visibility: {
+          title: "画像の表示量",
+          hint: "Paseo は文字の読みやすさを自動で保つため、明るい画像では表示が控えめになることがあります。",
+        },
+        blur: {
+          title: "ぼかし",
+          options: {
+            off: "オフ",
+            low: "弱",
+            medium: "中",
+            high: "強",
+          },
+        },
+        showBehindSidebar: "サイドバーの背後に表示",
+        showBehindContent: "コンテンツの背後に表示",
+        status: {
+          reducedTransparency: "システム設定で「透明度を下げる」がオンのため非表示です",
+          forcedColors: "ハイコントラストモードがオンの間は非表示です",
+          error: "背景を表示できませんでした",
+        },
+        errors: {
+          select: "背景を適用できませんでした: {{message}}",
+          import: "画像をインポートできませんでした: {{message}}",
+          update: "変更を保存できませんでした: {{message}}",
+          remove: "背景を削除できませんでした: {{message}}",
+        },
+        edit: {
+          title: "背景を編集",
+          name: "名前",
+          focal: "焦点",
+          focalHint: "表示したい部分の画像をタップしてください。",
+          focalAccessibility: "焦点を選択",
+          save: "保存",
+          saving: "保存中…",
+        },
+        delete: {
+          title: "「{{name}}」を削除しますか？",
+          message: "この画像はこのデバイスから削除されます。",
+          confirm: "削除",
+        },
+        details: {
+          title: "詳細",
+          author: "作者",
+          license: "ライセンス",
+          source: "ソース",
+          openSource: "ソースを開く",
+        },
+      },
       fonts: {
         title: "フォント",
         systemDefault: "システムデフォルト",

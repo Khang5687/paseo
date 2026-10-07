@@ -2312,6 +2312,85 @@ export const ru: TranslationResources = {
         moveUp: "Переместить вверх",
         moveDown: "Переместить вниз",
       },
+      background: {
+        title: "Фон",
+        applyTo: {
+          title: "Применить к",
+          options: {
+            both: "Обеим",
+            light: "Светлой",
+            dark: "Тёмной",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Фоновые изображения",
+          none: "Нет",
+          addImage: "Добавить изображение…",
+          importDefaultName: "Изображение",
+        },
+        menu: {
+          actions: "Действия для {{name}}",
+          edit: "Изменить…",
+          delete: "Удалить",
+          details: "Подробности",
+        },
+        undo: {
+          action: "Отменить",
+          accessibilityLabel: "Отменить изменение фона",
+        },
+        catalog: {
+          browse: "Обзор",
+          hint: "Установите больше фонов из этого плагина",
+        },
+        visibility: {
+          title: "Видимость изображения",
+          hint: "Paseo автоматически сохраняет читаемость текста, поэтому яркие изображения могут быть видны слабее.",
+        },
+        blur: {
+          title: "Размытие",
+          options: {
+            off: "Выкл.",
+            low: "Слабое",
+            medium: "Среднее",
+            high: "Сильное",
+          },
+        },
+        showBehindSidebar: "Показывать за боковой панелью",
+        showBehindContent: "Показывать за содержимым",
+        status: {
+          reducedTransparency:
+            "Скрыто, так как в системных настройках включено «Уменьшить прозрачность»",
+          forcedColors: "Скрыто, пока включён режим высокой контрастности",
+          error: "Не удалось показать фон",
+        },
+        errors: {
+          select: "Не удалось применить фон: {{message}}",
+          import: "Не удалось импортировать изображение: {{message}}",
+          update: "Не удалось сохранить изменения: {{message}}",
+          remove: "Не удалось удалить фон: {{message}}",
+        },
+        edit: {
+          title: "Изменить фон",
+          name: "Название",
+          focal: "Фокусная точка",
+          focalHint: "Нажмите на часть изображения, которая должна остаться в кадре.",
+          focalAccessibility: "Выбрать фокусную точку",
+          save: "Сохранить",
+          saving: "Сохранение…",
+        },
+        delete: {
+          title: "Удалить «{{name}}»?",
+          message: "Изображение будет удалено с этого устройства.",
+          confirm: "Удалить",
+        },
+        details: {
+          title: "Подробности",
+          author: "Автор",
+          license: "Лицензия",
+          source: "Источник",
+          openSource: "Открыть источник",
+        },
+      },
       fonts: {
         title: "Шрифты",
         systemDefault: "Системный шрифт",

@@ -2284,6 +2284,84 @@ export const ko: TranslationResources = {
         moveUp: "위로 이동",
         moveDown: "아래로 이동",
       },
+      background: {
+        title: "배경",
+        applyTo: {
+          title: "적용 대상",
+          options: {
+            both: "둘 다",
+            light: "라이트",
+            dark: "다크",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "배경 이미지",
+          none: "없음",
+          addImage: "이미지 추가…",
+          importDefaultName: "이미지",
+        },
+        menu: {
+          actions: "{{name}} 작업",
+          edit: "편집…",
+          delete: "삭제",
+          details: "세부 정보",
+        },
+        undo: {
+          action: "실행 취소",
+          accessibilityLabel: "배경 변경 실행 취소",
+        },
+        catalog: {
+          browse: "둘러보기",
+          hint: "이 플러그인에서 배경 더 설치하기",
+        },
+        visibility: {
+          title: "이미지 표시 정도",
+          hint: "Paseo가 텍스트 가독성을 자동으로 유지하므로 밝은 이미지는 덜 표시될 수 있습니다.",
+        },
+        blur: {
+          title: "흐림",
+          options: {
+            off: "끔",
+            low: "낮음",
+            medium: "보통",
+            high: "높음",
+          },
+        },
+        showBehindSidebar: "사이드바 뒤에 표시",
+        showBehindContent: "콘텐츠 뒤에 표시",
+        status: {
+          reducedTransparency: "시스템 설정에서 투명도 줄이기가 켜져 있어 숨겨짐",
+          forcedColors: "고대비 모드가 켜져 있는 동안 숨겨짐",
+          error: "배경을 표시할 수 없습니다",
+        },
+        errors: {
+          select: "배경을 적용할 수 없습니다: {{message}}",
+          import: "이미지를 가져올 수 없습니다: {{message}}",
+          update: "변경 사항을 저장할 수 없습니다: {{message}}",
+          remove: "배경을 삭제할 수 없습니다: {{message}}",
+        },
+        edit: {
+          title: "배경 편집",
+          name: "이름",
+          focal: "초점",
+          focalHint: "계속 보여야 하는 이미지 부분을 탭하세요.",
+          focalAccessibility: "초점 선택",
+          save: "저장",
+          saving: "저장 중…",
+        },
+        delete: {
+          title: '"{{name}}"을(를) 삭제할까요?',
+          message: "이 기기에서 이미지가 삭제됩니다.",
+          confirm: "삭제",
+        },
+        details: {
+          title: "세부 정보",
+          author: "작성자",
+          license: "라이선스",
+          source: "출처",
+          openSource: "출처 열기",
+        },
+      },
       fonts: {
         title: "글꼴",
         systemDefault: "시스템 기본값",

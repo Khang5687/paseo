@@ -1683,7 +1683,7 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   },
   sortTrigger: {
     flexDirection: "row",

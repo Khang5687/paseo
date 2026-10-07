@@ -699,7 +699,7 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
     width: "100%",
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   contentContainer: {
     flex: 1,

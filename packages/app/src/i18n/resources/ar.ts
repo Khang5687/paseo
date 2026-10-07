@@ -2273,6 +2273,84 @@ export const ar: TranslationResources = {
         moveUp: "نقل لأعلى",
         moveDown: "نقل لأسفل",
       },
+      background: {
+        title: "الخلفية",
+        applyTo: {
+          title: "تطبيق على",
+          options: {
+            both: "كلاهما",
+            light: "فاتح",
+            dark: "داكن",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "صور الخلفية",
+          none: "بلا",
+          addImage: "إضافة صورة…",
+          importDefaultName: "صورة",
+        },
+        menu: {
+          actions: "إجراءات {{name}}",
+          edit: "تعديل…",
+          delete: "حذف",
+          details: "التفاصيل",
+        },
+        undo: {
+          action: "تراجع",
+          accessibilityLabel: "التراجع عن تغيير الخلفية",
+        },
+        catalog: {
+          browse: "تصفح",
+          hint: "ثبّت المزيد من الخلفيات من هذه الإضافة",
+        },
+        visibility: {
+          title: "وضوح الصورة",
+          hint: "يحافظ Paseo على وضوح النص تلقائيًا، لذا قد تظهر الصور الساطعة بشكل أخف.",
+        },
+        blur: {
+          title: "التمويه",
+          options: {
+            off: "إيقاف",
+            low: "منخفض",
+            medium: "متوسط",
+            high: "مرتفع",
+          },
+        },
+        showBehindSidebar: "إظهار خلف الشريط الجانبي",
+        showBehindContent: "إظهار خلف المحتوى",
+        status: {
+          reducedTransparency: "مخفية لأن «تقليل الشفافية» مفعّل في إعدادات النظام",
+          forcedColors: "مخفية أثناء تفعيل وضع التباين العالي",
+          error: "تعذّر عرض الخلفية",
+        },
+        errors: {
+          select: "تعذّر تطبيق الخلفية: {{message}}",
+          import: "تعذّر استيراد الصورة: {{message}}",
+          update: "تعذّر حفظ التغييرات: {{message}}",
+          remove: "تعذّر حذف الخلفية: {{message}}",
+        },
+        edit: {
+          title: "تعديل الخلفية",
+          name: "الاسم",
+          focal: "نقطة التركيز",
+          focalHint: "اضغط على الجزء من الصورة الذي يجب أن يبقى ظاهرًا.",
+          focalAccessibility: "اختيار نقطة التركيز",
+          save: "حفظ",
+          saving: "جارٍ الحفظ…",
+        },
+        delete: {
+          title: "حذف «{{name}}»؟",
+          message: "سيؤدي هذا إلى إزالة الصورة من هذا الجهاز.",
+          confirm: "حذف",
+        },
+        details: {
+          title: "التفاصيل",
+          author: "المؤلف",
+          license: "الترخيص",
+          source: "المصدر",
+          openSource: "فتح المصدر",
+        },
+      },
       fonts: {
         title: "الخطوط",
         systemDefault: "الافتراضي للنظام",

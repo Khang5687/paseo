@@ -21,6 +21,7 @@ import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-ha
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { AppearanceProvider } from "@/appearance/provider";
+import { SkinBackdrop } from "@/skins";
 import { CommandCenter } from "@/command-center/command-center";
 import { CommandCenterRootActions } from "@/command-center/root-registration";
 import { CommandCenterProvider } from "@/command-center/provider";
@@ -577,6 +578,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   // Their tracked styles update in place; web numeric styles still need remounting.
   const surface = (
     <View style={layoutStyles.surfaceFill}>
+      <SkinBackdrop />
       {workspaceChrome}
       <AppearanceStyleBoundary>
         {!isCompactLayout && appChromeLayout.sidebarToggleOwner === "window" ? (

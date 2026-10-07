@@ -912,7 +912,7 @@ const styles = StyleSheet.create((theme) => ({
   desktopSidebarBorder: {
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   },
   sidebarDragArea: {
     position: "relative",

@@ -2397,6 +2397,84 @@ export const en = {
         moveUp: "Move up",
         moveDown: "Move down",
       },
+      background: {
+        title: "Background",
+        applyTo: {
+          title: "Apply to",
+          options: {
+            both: "Both",
+            light: "Light",
+            dark: "Dark",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Background images",
+          none: "None",
+          addImage: "Add image…",
+          importDefaultName: "Image",
+        },
+        menu: {
+          actions: "Actions for {{name}}",
+          edit: "Edit…",
+          delete: "Delete",
+          details: "Details",
+        },
+        undo: {
+          action: "Undo",
+          accessibilityLabel: "Undo background change",
+        },
+        catalog: {
+          browse: "Browse",
+          hint: "Install more skins from this plugin",
+        },
+        visibility: {
+          title: "Art visibility",
+          hint: "Paseo keeps text readable automatically, so bright images may show less art.",
+        },
+        blur: {
+          title: "Blur",
+          options: {
+            off: "Off",
+            low: "Low",
+            medium: "Medium",
+            high: "High",
+          },
+        },
+        showBehindSidebar: "Show behind sidebar",
+        showBehindContent: "Show behind content",
+        status: {
+          reducedTransparency: "Hidden because Reduce transparency is on in your system settings",
+          forcedColors: "Hidden while high contrast mode is on",
+          error: "The background could not be shown",
+        },
+        errors: {
+          select: "Could not apply background: {{message}}",
+          import: "Could not import image: {{message}}",
+          update: "Could not save changes: {{message}}",
+          remove: "Could not delete background: {{message}}",
+        },
+        edit: {
+          title: "Edit background",
+          name: "Name",
+          focal: "Focal point",
+          focalHint: "Tap the part of the image that should stay in view.",
+          focalAccessibility: "Choose focal point",
+          save: "Save",
+          saving: "Saving…",
+        },
+        delete: {
+          title: 'Delete "{{name}}"?',
+          message: "This removes the image from this device.",
+          confirm: "Delete",
+        },
+        details: {
+          title: "Details",
+          author: "Author",
+          license: "License",
+          source: "Source",
+          openSource: "Open source",
+        },
+      },
       fonts: {
         title: "Fonts",
         systemDefault: "System default",
