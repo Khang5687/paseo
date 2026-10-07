@@ -1,4 +1,4 @@
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1378,6 +1378,69 @@ describe("OMP agent client and session", () => {
     await expect(omp.currentMode()).resolves.toBe("ask");
     expect(omp.runtimeLaunches()[1]?.argv).toContain("--approval-mode");
     expect(omp.runtimeLaunches()[1]?.argv).toContain("always-ask");
+  });
+
+  describe("command refresh", () => {
+    const review = { name: "review", description: "Review changes", source: "skill" };
+    const deploy = { name: "deploy", description: "Deploy the app", source: "skill" };
+
+    async function startWithFakeClock(): Promise<OmpHarness> {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const omp = new OmpHarness();
+      omp.queueCommands([review]);
+      await omp.start();
+      return omp;
+    }
+
+    test("shows a skill installed after the session started once the refresh interval passes", async () => {
+      const omp = await startWithFakeClock();
+      const cached = await omp.commands();
+      expect(cached).toContainEqual(expect.objectContaining({ name: "review" }));
+      expect(cached).not.toContainEqual(expect.objectContaining({ name: "deploy" }));
+
+      omp.runtime().commands = [review, deploy];
+      vi.setSystemTime(Date.now() + 5_000);
+
+      expect(await omp.commands()).toContainEqual(
+        expect.objectContaining({ name: "deploy", kind: "skill" }),
+      );
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(2);
+    });
+
+    test("returns the cached list within the refresh interval", async () => {
+      const omp = await startWithFakeClock();
+      await omp.commands();
+
+      omp.runtime().commands = [review, deploy];
+      vi.setSystemTime(Date.now() + 4_999);
+
+      expect(await omp.commands()).not.toContainEqual(expect.objectContaining({ name: "deploy" }));
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(1);
+    });
+
+    test("shares one in-flight refresh between concurrent callers", async () => {
+      const omp = await startWithFakeClock();
+
+      const [first, second] = await Promise.all([omp.commands(), omp.commands()]);
+
+      expect(second).toBe(first);
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(1);
+    });
+
+    test("keeps the cached list when a refresh fails", async () => {
+      const omp = await startWithFakeClock();
+      const cached = await omp.commands();
+
+      omp.runtime().refreshCommandsError = new Error("OMP RPC request timed out");
+      omp.runtime().commands = [review, deploy];
+      vi.setSystemTime(Date.now() + 5_000);
+
+      await expect(omp.commands()).resolves.toBe(cached);
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(2);
+    });
   });
 
   test("restarts the same conversation after an idle process exit", async () => {

@@ -154,6 +154,9 @@ export interface OmpNoTurnScheduler {
 const OMP_NO_TURN_SETTLE_MS = 5_000;
 const OMP_PROVIDER_IDLE_DEADLINE_MS = 600_000;
 const OMP_FAST_INACTIVE_MESSAGE = "Fast is enabled but does not apply to this model.";
+// Listing commands rediscovers OMP skills and slash commands at most this often, so newly
+// installed skills appear in a running session without a filesystem scan on every menu open.
+const OMP_COMMAND_REFRESH_INTERVAL_MS = 5_000;
 
 interface OmpPromptPayload {
   text: string;
@@ -720,6 +723,8 @@ export class OmpAgentSession implements AgentSession {
   private outOfBandCompactionStarted = false;
   private outOfBandCompactionCompleted = false;
   private commandCache: AgentSlashCommand[] | null = null;
+  private commandRefresh: Promise<AgentSlashCommand[]> | null = null;
+  private lastCommandRefreshAt: number | null = null;
   private readonly subagentIndex = new OmpSubagentIndex();
   private readonly subagentCardTracker: OmpSubagentCardTracker;
   private lastTodoItem: Extract<AgentTimelineItem, { type: "todo" }> | null = null;
@@ -1208,11 +1213,29 @@ export class OmpAgentSession implements AgentSession {
   }
 
   async listCommands(): Promise<AgentSlashCommand[]> {
-    if (this.commandCache) {
+    const refreshedRecently =
+      this.lastCommandRefreshAt !== null &&
+      Date.now() - this.lastCommandRefreshAt < OMP_COMMAND_REFRESH_INTERVAL_MS;
+    if (this.commandCache && (refreshedRecently || this.closed || this.runtimeDead)) {
       return this.commandCache;
     }
-    const commands = await this.runtimeSession.getCommands();
-    return mapOmpRuntimeSlashCommands(commands);
+    this.commandRefresh ??= this.refreshCommandCache().finally(() => {
+      this.commandRefresh = null;
+    });
+    return await this.commandRefresh;
+  }
+
+  private async refreshCommandCache(): Promise<AgentSlashCommand[]> {
+    this.lastCommandRefreshAt = Date.now();
+    try {
+      this.commandCache = mapOmpRuntimeSlashCommands(await this.runtimeSession.refreshCommands());
+      return this.commandCache;
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to refresh OMP slash commands; using cached list");
+      return (
+        this.commandCache ?? mapOmpRuntimeSlashCommands(await this.runtimeSession.getCommands())
+      );
+    }
   }
 
   tryHandleOutOfBand(
