@@ -33,6 +33,7 @@ function registry() {
     createRuntime: (installation) => {
       setupClients.set(installation.id, installation.paseo);
       return {
+        serverId: installation.serverId,
         hosts: createPluginHosts(
           {
             getHosts: () => [],
