@@ -1412,6 +1412,9 @@ export const es: TranslationResources = {
       title: "Saliendo dePaseo...",
       detail: "Deteniendo el demonio local.",
     },
+    quitConfirm: {
+      hint: "Mantén ⌘Q o pulsa dos veces para salir",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "Daemon",

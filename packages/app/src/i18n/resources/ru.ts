@@ -1395,6 +1395,9 @@ export const ru: TranslationResources = {
       title: "Завершение работы Paseo...",
       detail: "Остановка локального демона.",
     },
+    quitConfirm: {
+      hint: "Удерживайте ⌘Q или нажмите дважды для выхода",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "Демон",

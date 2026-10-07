@@ -1390,6 +1390,9 @@ export const ja: TranslationResources = {
       title: "Paseoを終了中...",
       detail: "ローカルデーモンを停止中。",
     },
+    quitConfirm: {
+      hint: "⌘Qを長押しするか2回押して終了",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "デーモン",

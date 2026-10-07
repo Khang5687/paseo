@@ -1376,6 +1376,9 @@ export const ar: TranslationResources = {
       title: "جارٍ إنهاء Paseo...",
       detail: "إيقاف البرنامج الخفي المحلي.",
     },
+    quitConfirm: {
+      hint: "اضغط مع الاستمرار على ⌘Q أو اضغط مرتين للإنهاء",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "Daemon",

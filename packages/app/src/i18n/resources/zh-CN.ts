@@ -1365,6 +1365,9 @@ export const zhCN: TranslationResources = {
       title: "正在退出 Paseo...",
       detail: "正在停止本地 daemon。",
     },
+    quitConfirm: {
+      hint: "按住 ⌘Q 或按两次以退出",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "Daemon",

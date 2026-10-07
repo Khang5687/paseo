@@ -1384,6 +1384,9 @@ export const en = {
       title: "Quitting Paseo...",
       detail: "Stopping the local daemon.",
     },
+    quitConfirm: {
+      hint: "Hold ⌘Q or press twice to quit",
+    },
     daemon: {
       title: "Daemon",
       lifecycle: {

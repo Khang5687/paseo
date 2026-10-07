@@ -1402,6 +1402,9 @@ export const ptBR: TranslationResources = {
       title: "Saindo do Paseo...",
       detail: "Parando o daemon local.",
     },
+    quitConfirm: {
+      hint: "Segure ⌘Q ou pressione duas vezes para sair",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "Daemon",

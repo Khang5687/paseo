@@ -1383,6 +1383,9 @@ export const ko: TranslationResources = {
       title: "Paseo 종료 중...",
       detail: "로컬 데몬을 중지하는 중입니다.",
     },
+    quitConfirm: {
+      hint: "종료하려면 ⌘Q를 길게 누르거나 두 번 누르세요",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "데몬",
