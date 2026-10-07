@@ -1396,6 +1396,9 @@ export const fr: TranslationResources = {
       title: "Fermeture de Paseo…",
       detail: "Arrêt du daemon local.",
     },
+    quitConfirm: {
+      hint: "Maintenez ⌘Q ou appuyez deux fois pour quitter",
+    },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
       title: "Daemon",
