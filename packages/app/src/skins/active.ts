@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useForcedColors, usePrefersMoreContrast, useReduceTransparency } from "./accessibility";
+import { useForcedColors, useReduceTransparency } from "./accessibility";
 import type { SkinSurfacesInput } from "./apply-surfaces";
 import { readCachedSkinImages, useCachedSkins } from "./cache";
 import { useSkinPreferencesStore, type SkinPreferencesStoreState } from "./preferences-store";
@@ -109,32 +109,20 @@ export function useSkinRenderState(): {
 }
 
 /**
- * What the appearance provider needs to make page surfaces translucent for the active skin, or
- * null when no art is drawn. Stable while its values are unchanged. Surfaces stay opaque when
- * the art cannot be drawn (missing images, suppressed by accessibility settings).
+ * Which page areas the appearance provider should make transparent for the active skin, or null
+ * when no art is drawn. Stable while its values are unchanged, so dragging Art visibility never
+ * patches the theme. Surfaces stay opaque when the art cannot be drawn (missing images,
+ * suppressed by accessibility settings).
  */
 export function useSkinSurfaces(scheme: SkinScheme): SkinSurfacesInput | null {
   const { state: renderState, metadata } = useActiveSkin(scheme);
-  const visibility = useSkinPreferencesStore((state) => state.visibility);
   const showBehindSidebar = useSkinPreferencesStore((state) => state.showBehindSidebar);
   const showBehindContent = useSkinPreferencesStore((state) => state.showBehindContent);
-  const moreContrast = usePrefersMoreContrast();
   // `loading` with metadata means the next skin's images are resolving while the backdrop
-  // still shows the previous art; gate for the incoming skin so surfaces do not flash opaque.
+  // still shows the previous art; keep surfaces clear so they do not flash opaque.
   const active = metadata !== null && (renderState === "on" || renderState === "loading");
-  const low = metadata?.luminance?.low;
-  const high = metadata?.luminance?.high;
   return useMemo(
-    () =>
-      active
-        ? {
-            luminance: low === undefined || high === undefined ? null : { low, high },
-            visibility,
-            showBehindSidebar,
-            showBehindContent,
-            moreContrast,
-          }
-        : null,
-    [active, low, high, visibility, showBehindSidebar, showBehindContent, moreContrast],
+    () => (active ? { showBehindSidebar, showBehindContent } : null),
+    [active, showBehindSidebar, showBehindContent],
   );
 }

@@ -120,10 +120,21 @@ export interface GateAlphaInput {
 /**
  * Smallest surface alpha in [0, 1] at which `text` still reaches `target` contrast on the
  * surface blended over the worst-case art pixel. Returns 1 when even the opaque surface fails.
+ *
+ * The blend must also stay on the surface's side of the text (lighter than dark text, darker
+ * than light text). A mid-grey text can pass against black art and against white surface but
+ * drops to 1:1 between them, so without the polarity rule `passes` is not monotonic and the
+ * search can stop at an alpha that only works for one pixel colour.
  */
 export function computeGateAlpha({ text, base, artLuminance, target }: GateAlphaInput): number {
   const art = grayForLuminance(artLuminance);
-  const passes = (alpha: number) => contrastRatio(text, blendOver(base, art, alpha)) >= target;
+  const textLuminance = relativeLuminance(text);
+  const baseIsLighter = relativeLuminance(base) > textLuminance;
+  const passes = (alpha: number) => {
+    const shown = blendOver(base, art, alpha);
+    if (relativeLuminance(shown) > textLuminance !== baseIsLighter) return false;
+    return contrastRatio(text, shown) >= target;
+  };
   if (passes(0)) return 0;
   if (!passes(1)) return 1;
   let low = 0;
@@ -134,4 +145,41 @@ export function computeGateAlpha({ text, base, artLuminance, target }: GateAlpha
     else low = mid;
   }
   return high;
+}
+
+/** Contrast targets: primary text at the WCAG body-text level, secondary (muted) text at 3:1. */
+const TARGETS = {
+  standard: { foreground: 4.5, muted: 3 },
+  more: { foreground: 7, muted: 4.5 },
+} as const;
+
+export interface ArtLimitInput {
+  /** Opaque page color the art is drawn over (the theme's `surface0`). */
+  surface: string;
+  foreground: string;
+  foregroundMuted: string;
+  colorScheme: "light" | "dark";
+  /** Measured art luminance; null assumes pure white (dark themes) or pure black (light themes). */
+  luminance: { low: number; high: number } | null;
+  /** The OS asks for more contrast. */
+  moreContrast: boolean;
+}
+
+/**
+ * Largest art opacity (0–1) over `surface` that keeps primary text at 4.5:1 and muted text at
+ * 3:1 against the worst pixel of the art (7:1 and 4.5:1 with more contrast). Muted text is held
+ * to the 3:1 tier because light themes leave it no room: Paseo's light muted grey is only 4.83:1
+ * on plain white, so a 4.5:1 floor would hide every skin behind a ~96% veil.
+ */
+export function computeArtLimit(input: ArtLimitInput): number {
+  const base = parseColor(input.surface);
+  const artLuminance =
+    input.colorScheme === "dark" ? (input.luminance?.high ?? 1) : (input.luminance?.low ?? 0);
+  const targets = input.moreContrast ? TARGETS.more : TARGETS.standard;
+  const gate = (text: string, target: number) =>
+    computeGateAlpha({ text: parseColor(text), base, artLuminance, target });
+  return (
+    1 -
+    Math.max(gate(input.foreground, targets.foreground), gate(input.foregroundMuted, targets.muted))
+  );
 }
