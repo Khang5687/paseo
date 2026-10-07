@@ -146,6 +146,28 @@ const OmpContextUsageSchema = z
   })
   .passthrough();
 
+export const OmpGoalSchema = z
+  .object({
+    id: z.string().optional(),
+    objective: z.string().optional(),
+    status: z.string().optional(),
+    tokenBudget: z.number().optional(),
+    tokensUsed: z.number().optional(),
+    timeUsedSeconds: z.number().optional(),
+    // OMP serializes these as epoch milliseconds; older builds sent ISO strings.
+    createdAt: z.union([z.string(), z.number()]).optional(),
+    updatedAt: z.union([z.string(), z.number()]).optional(),
+  })
+  .passthrough();
+export const OmpGoalModeStateSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    mode: z.string().optional(),
+    reason: z.string().optional(),
+    goal: OmpGoalSchema.optional(),
+  })
+  .passthrough();
+
 export const OmpSessionStateSchema = z
   .object({
     model: OmpModelSchema.nullable().optional(),
@@ -162,6 +184,10 @@ export const OmpSessionStateSchema = z
     queuedMessageCount: z.number().int().nonnegative(),
     contextUsage: OmpContextUsageSchema.optional(),
     todoPhases: z.unknown().optional(),
+    // OMP 18.4.11+: `isSettled` is false while a goal continuation is scheduled or admitted.
+    isSettled: z.boolean().optional(),
+    hasPendingAsyncWork: z.boolean().optional(),
+    goal: OmpGoalModeStateSchema.nullable().optional(),
   })
   .passthrough();
 
@@ -376,27 +402,6 @@ export const OmpNoticeEventSchema = z
     level: z.enum(["info", "warning", "error"]),
     message: z.string(),
     source: z.string().optional(),
-  })
-  .passthrough();
-export const OmpGoalSchema = z
-  .object({
-    id: z.string().optional(),
-    objective: z.string().optional(),
-    status: z.string().optional(),
-    tokenBudget: z.number().optional(),
-    tokensUsed: z.number().optional(),
-    timeUsedSeconds: z.number().optional(),
-    // OMP serializes these as epoch milliseconds; older builds sent ISO strings.
-    createdAt: z.union([z.string(), z.number()]).optional(),
-    updatedAt: z.union([z.string(), z.number()]).optional(),
-  })
-  .passthrough();
-export const OmpGoalModeStateSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    mode: z.string().optional(),
-    reason: z.string().optional(),
-    goal: OmpGoalSchema.optional(),
   })
   .passthrough();
 export const OmpGoalUpdatedEventSchema = z

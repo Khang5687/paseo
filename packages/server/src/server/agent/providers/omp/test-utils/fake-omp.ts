@@ -371,7 +371,8 @@ export class FakeOmpSession implements OmpRuntimeSession {
     if (report) {
       this.state = report;
     }
-    return this.state;
+    // Real OMP reports the goal mode state alongside the session state.
+    return { ...this.state, goal: this.goalState };
   }
 
   async setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }> {

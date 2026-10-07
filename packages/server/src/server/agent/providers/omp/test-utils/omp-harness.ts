@@ -19,7 +19,12 @@ import {
   type OmpProviderIdleScheduler,
 } from "../agent.js";
 import type { OmpUsagePollScheduler } from "../usage-poller.js";
-import type { OmpAgentMessage, OmpRpcSlashCommand, OmpRuntimeEvent } from "../rpc-types.js";
+import type {
+  OmpAgentMessage,
+  OmpRpcSlashCommand,
+  OmpRuntimeEvent,
+  OmpSessionState,
+} from "../rpc-types.js";
 import { FakeOmp, type FakeOmpSession } from "./fake-omp.js";
 
 const CWD = "/tmp/paseo-omp-agent-test";
@@ -274,7 +279,11 @@ export class OmpHarness {
     return this.omp.latestSession().waitForStateRequests(count);
   }
 
-  reportProviderState(state: { isStreaming: boolean; isCompacting: boolean }): void {
+  reportProviderState(
+    state: Partial<
+      Pick<OmpSessionState, "isStreaming" | "isCompacting" | "isSettled" | "hasPendingAsyncWork">
+    >,
+  ): void {
     const runtime = this.omp.latestSession();
     runtime.state = { ...runtime.state, ...state };
   }
