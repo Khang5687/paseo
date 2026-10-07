@@ -1147,6 +1147,7 @@ export const en = {
   },
   sidebar: {
     statusGroupAccessibility: "{{label}} group",
+    unsentDraft: "Unsent draft",
     statusBucket: {
       needsInput: "Needs input",
       failed: "Failed",

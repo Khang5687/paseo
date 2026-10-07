@@ -1131,6 +1131,7 @@ export const zhCN: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "{{label}} 分组",
+    unsentDraft: "未发送的草稿",
     statusBucket: {
       needsInput: "需要输入",
       failed: "失败",

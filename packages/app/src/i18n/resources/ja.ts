@@ -1152,6 +1152,7 @@ export const ja: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "{{label}} グループ",
+    unsentDraft: "未送信の下書き",
     statusBucket: {
       needsInput: "入力待ち",
       failed: "失敗",

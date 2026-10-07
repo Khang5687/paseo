@@ -1165,6 +1165,7 @@ export const ptBR: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
+    unsentDraft: "Rascunho não enviado",
     statusBucket: {
       needsInput: "Precisa de resposta",
       failed: "Com falha",
