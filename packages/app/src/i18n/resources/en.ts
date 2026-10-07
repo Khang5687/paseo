@@ -2264,6 +2264,7 @@ export const en = {
           queue: "Queue",
         },
       },
+      defaultEditor: "Default editor",
       serviceUrls: {
         options: {
           ask: "Ask",

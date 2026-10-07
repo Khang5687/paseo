@@ -2159,6 +2159,7 @@ export const ja: TranslationResources = {
           queue: "キュー",
         },
       },
+      defaultEditor: "デフォルトのエディタ",
       serviceUrls: {
         options: {
           ask: "確認する",

@@ -2187,6 +2187,7 @@ export const fr: TranslationResources = {
           queue: "File d’attente",
         },
       },
+      defaultEditor: "Éditeur par défaut",
       serviceUrls: {
         options: {
           ask: "Demander",

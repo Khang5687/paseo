@@ -2151,6 +2151,7 @@ export const ko: TranslationResources = {
           queue: "대기열",
         },
       },
+      defaultEditor: "기본 편집기",
       serviceUrls: {
         options: {
           ask: "물어보기",

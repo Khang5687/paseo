@@ -2115,6 +2115,7 @@ export const zhCN: TranslationResources = {
           queue: "排队",
         },
       },
+      defaultEditor: "默认编辑器",
       serviceUrls: {
         options: {
           ask: "询问",
