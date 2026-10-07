@@ -1156,6 +1156,7 @@ export const ru: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Группа «{{label}}»",
+    unsentDraft: "Неотправленный черновик",
     statusBucket: {
       needsInput: "Ожидает ввода",
       failed: "Ошибка",

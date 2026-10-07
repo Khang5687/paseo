@@ -1175,6 +1175,7 @@ export const es: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
+    unsentDraft: "Borrador sin enviar",
     statusBucket: {
       needsInput: "Necesita datos",
       failed: "Con error",

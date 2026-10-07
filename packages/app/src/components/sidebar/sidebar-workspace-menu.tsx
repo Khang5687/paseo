@@ -17,6 +17,7 @@ import { isWeb } from "@/constants/platform";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { useAppSettings } from "@/hooks/use-settings";
+import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import {
@@ -365,6 +366,7 @@ export function SidebarWorkspaceContextMenu({
     settings: { workspaceTitleSource },
   } = useAppSettings();
   const { t } = useTranslation();
+  const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
   const pullRequestLabel = workspace.prHint
     ? t("workspace.git.pr.accessibility.pullRequest", {
         number: workspace.prHint.number,
@@ -380,6 +382,7 @@ export function SidebarWorkspaceContextMenu({
     serviceLabel: serviceSummary
       ? t(workspaceServiceLabelKey(serviceSummary), { name: serviceSummary.name })
       : null,
+    hasUnsentDraft,
     t,
   });
   const workspaceTarget = useMemo<WorkspaceLabelTarget>(

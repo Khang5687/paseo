@@ -1166,6 +1166,7 @@ export const fr: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Groupe {{label}}",
+    unsentDraft: "Brouillon non envoyé",
     statusBucket: {
       needsInput: "Attend une réponse",
       failed: "Échec",

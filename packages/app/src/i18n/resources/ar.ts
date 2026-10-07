@@ -1139,6 +1139,7 @@ export const ar: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "مجموعة {{label}}",
+    unsentDraft: "مسودة غير مرسلة",
     statusBucket: {
       needsInput: "تحتاج إدخالاً",
       failed: "فشل",

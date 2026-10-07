@@ -1146,6 +1146,7 @@ export const ko: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "{{label}} 그룹",
+    unsentDraft: "보내지 않은 초안",
     statusBucket: {
       needsInput: "입력 필요",
       failed: "실패",

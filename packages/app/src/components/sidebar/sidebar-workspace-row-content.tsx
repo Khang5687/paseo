@@ -1,7 +1,7 @@
 import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { CircleAlert, Folder, FolderGit2, Monitor } from "lucide-react-native";
+import { CircleAlert, Folder, FolderGit2, Monitor, PencilLine } from "lucide-react-native";
 import { ProjectStatusIndicator } from "@/components/sidebar/project-leading-visual";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 import {
@@ -16,6 +16,7 @@ import {
   type SidebarWorkspaceTrailing,
 } from "@/components/sidebar/workspace-trailing";
 import { useAppSettings } from "@/hooks/use-settings";
+import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
 import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { getStatusDotColor } from "@/utils/status-dot-color";
@@ -40,6 +41,7 @@ const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedMonitor = withUnistyles(Monitor);
 const ThemedFolder = withUnistyles(Folder);
 const ThemedFolderGit2 = withUnistyles(FolderGit2);
+const ThemedPencilLine = withUnistyles(PencilLine);
 
 export function SidebarWorkspaceRowFrame({
   workspace,
@@ -123,6 +125,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     settings: { workspaceTitleSource },
   } = useAppSettings();
   const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource });
+  const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
@@ -145,6 +148,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             projectViewKey={workspace.projectViewKey}
             statusBucket={workspace.statusBucket}
             backdrop={backdrop}
+            hasUnsentDraft={hasUnsentDraft}
             loading={isLoading}
             testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
           />
@@ -153,6 +157,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             bucket={workspace.statusBucket}
             workspaceKind={workspace.workspaceKind}
             loading={isLoading}
+            hasUnsentDraft={hasUnsentDraft}
             reserveIdleSpace={reserveIdleStatusIndicatorSpace}
           />
         )}
@@ -187,11 +192,13 @@ function WorkspaceStatusIndicator({
   workspaceKind,
   loading = false,
   reserveIdleSpace = true,
+  hasUnsentDraft,
 }: {
   bucket: SidebarWorkspaceEntry["statusBucket"];
   workspaceKind: SidebarWorkspaceEntry["workspaceKind"];
   loading?: boolean;
   reserveIdleSpace?: boolean;
+  hasUnsentDraft: boolean;
 }) {
   // Busy is the only status that moves, and it is the ring rather than a dot for the same
   // reason it is a dot elsewhere: every status in the sidebar sits in this one slot, so busy
@@ -230,6 +237,18 @@ function WorkspaceStatusIndicator({
   }
 
   if (bucket === "done") {
+    // A prompt the user started here and walked away from. It takes the idle slot only:
+    // a busy or alerting row already pulls the user back, and they find the draft then.
+    if (hasUnsentDraft) {
+      return (
+        <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-draft">
+          <ThemedPencilLine
+            size={STATUS_INDICATOR_ALERT_SIZE}
+            uniProps={foregroundMutedColorMapping}
+          />
+        </View>
+      );
+    }
     // An idle row still gets a dot rather than an empty slot. Nested rows are marked as
     // workspaces by indentation alone, and with nothing in the leading slot the rail has no
     // edge to read against — a workspace carrying its own glyph starts looking like a project
