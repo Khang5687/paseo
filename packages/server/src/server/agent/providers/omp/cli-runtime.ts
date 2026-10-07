@@ -8,6 +8,7 @@ import {
   JsonlRpcProcess,
   type JsonlRpcLaunch,
 } from "../jsonl-rpc-process.js";
+import { writeOmpConfigOverlay } from "./config-overlay.js";
 import { establishOmpProtocol } from "./protocol-session.js";
 import {
   buildOmpLaunch,
@@ -77,6 +78,7 @@ export class OmpCliRuntime implements OmpRuntime {
       runtimeSettings: this.options.runtimeSettings,
       session: input,
     });
+    launch.argv.push("--config", await writeOmpConfigOverlay());
     const [command, ...args] = launch.argv;
     const processLaunch: JsonlRpcLaunch = {
       command,

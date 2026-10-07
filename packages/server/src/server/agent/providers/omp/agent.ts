@@ -696,6 +696,9 @@ export class OmpAgentSession implements AgentSession {
   private activeAssistantMessageId: string | null = null;
   private activeTurnTerminalAssistantMessage: OmpAgentMessage | null = null;
   private activeTurnStarted = false;
+  // Bumped by every run start and yield: a wait for provider idle belongs to the latest
+  // yield, and a goal continuation's run ends with its own yield and its own wait.
+  private providerIdleWait = 0;
   private activeTurnHasUserMessage = false;
   private activeNoTurnPromptText: string | null = null;
   private readonly pendingNoTurnOutputs: Array<{ turnId: string; message: string }> = [];
@@ -1808,6 +1811,7 @@ export class OmpAgentSession implements AgentSession {
     switch (event.type) {
       case "agent_start":
         this.activeTurnStarted = true;
+        this.providerIdleWait += 1;
         this.clearNoTurnBuffers();
         this.emit({
           type: "thread_started",
@@ -1817,6 +1821,7 @@ export class OmpAgentSession implements AgentSession {
         return;
       case "turn_start":
         this.activeTurnStarted = true;
+        this.providerIdleWait += 1;
         this.clearNoTurnBuffers();
         this.emit({
           type: "turn_started",
@@ -1893,7 +1898,7 @@ export class OmpAgentSession implements AgentSession {
         }
         // A state request is processed after OMP's RPC loop becomes promptable,
         // so do not advertise Paseo idle until it reports that transition.
-        void this.completeTurnAfterProviderIdle(turnId, terminalMessages);
+        void this.completeTurnAfterProviderIdle(turnId, terminalMessages, ++this.providerIdleWait);
         return;
       }
       default:
@@ -2201,9 +2206,15 @@ export class OmpAgentSession implements AgentSession {
   private async completeTurnAfterProviderIdle(
     turnId: string | undefined,
     messages: OmpAgentMessage[],
+    wait: number,
   ): Promise<void> {
     const deadline = Date.now() + this.providerIdleDeadlineMs;
-    while (!this.closed && this.activeTurnStarted && this.currentTurnIdForEvent() === turnId) {
+    while (
+      !this.closed &&
+      this.activeTurnStarted &&
+      this.currentTurnIdForEvent() === turnId &&
+      this.providerIdleWait === wait
+    ) {
       if (Date.now() >= deadline) {
         this.usagePoller.stopTurn();
         this.resetActiveTurn({ terminalizeWork: true });
@@ -2218,11 +2229,25 @@ export class OmpAgentSession implements AgentSession {
       try {
         const state = await this.runtimeSession.getState();
         this.state = state;
-        if (this.closed || !this.activeTurnStarted || this.currentTurnIdForEvent() !== turnId) {
-          // An interrupt settled this turn while the state check was in flight.
+        if (
+          this.closed ||
+          !this.activeTurnStarted ||
+          this.currentTurnIdForEvent() !== turnId ||
+          this.providerIdleWait !== wait
+        ) {
+          // An interrupt settled this turn, or another run started, while the state
+          // check was in flight.
           return;
         }
-        if (!state.isStreaming && !state.isCompacting) {
+        // An active goal that is not settled has its next run scheduled or admitted, so
+        // the turn spans it. Background work alone keeps the existing behavior: the turn
+        // ends and whatever the work wakes arrives as its own turn.
+        const goalTurnPending =
+          state.isSettled === false &&
+          state.hasPendingAsyncWork !== true &&
+          state.goal?.enabled === true &&
+          state.goal.goal?.status === "active";
+        if (!state.isStreaming && !state.isCompacting && !goalTurnPending) {
           this.completeTurn(turnId, messages);
           return;
         }
@@ -2627,8 +2652,11 @@ export class OmpAgentClient implements AgentClient {
 }
 
 const GOAL_COMMAND_USAGE =
-  "/goal set <objective> [--budget <tokens>] | /goal pause | /goal resume | /goal drop | /goal show";
+  "/goal <objective> [--budget <tokens>] | /goal set <objective> | /goal pause | /goal resume | /goal drop | /goal show";
 
+// Mirrors OMP's own `/goal`: a first word that names no subcommand starts the objective.
+// `budget` is an OMP subcommand the RPC goal API cannot perform, so it stays a usage error
+// instead of becoming an objective.
 export function parseGoalCommandArgs(args: string | undefined): OmpGoalAction | null {
   const trimmed = args?.trim() ?? "";
   if (!trimmed) {
@@ -2639,23 +2667,19 @@ export function parseGoalCommandArgs(args: string | undefined): OmpGoalAction | 
     firstWhitespaceIdx === -1 ? trimmed : trimmed.slice(0, firstWhitespaceIdx)
   ).toLowerCase();
   const rest = firstWhitespaceIdx === -1 ? "" : trimmed.slice(firstWhitespaceIdx + 1).trim();
-  if (verb === "set") {
-    return parseGoalSetArgs(rest);
-  }
-  if (rest) {
-    return null;
-  }
   switch (verb) {
+    case "set":
+      return parseGoalSetArgs(rest);
     case "show":
-    case "status":
-    case "get":
-      return { op: "get" };
+      return rest ? null : { op: "get" };
     case "pause":
     case "resume":
     case "drop":
-      return { op: verb };
-    default:
+      return rest ? null : { op: verb };
+    case "budget":
       return null;
+    default:
+      return parseGoalSetArgs(trimmed);
   }
 }
 

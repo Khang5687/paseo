@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -931,20 +931,86 @@ describe("OMP agent client and session", () => {
       },
     ]);
 
-    const bad = await omp.runOutOfBandCommand("/goal bogus");
-    expect(omp.goalRequests()).toHaveLength(3);
-    expect(bad.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
-      {
-        type: "assistant_message",
-        text: "[Error] Usage: /goal set <objective> [--budget <tokens>] | /goal pause | /goal resume | /goal drop | /goal show",
-      },
-    ]);
+    // As in OMP's own /goal, text that names no subcommand is the objective.
+    await omp.runOutOfBandCommand("/goal get CI green --budget 900");
+    expect(omp.goalRequests().at(-1)).toEqual({
+      op: "create",
+      objective: "get CI green",
+      token_budget: 900,
+    });
+
+    // `budget` is an OMP subcommand the RPC goal API cannot run; it never becomes an objective.
+    for (const input of ["/goal budget 5000", "/goal pause now"]) {
+      const bad = await omp.runOutOfBandCommand(input);
+      expect(bad.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+        {
+          type: "assistant_message",
+          text: "[Error] Usage: /goal <objective> [--budget <tokens>] | /goal set <objective> | /goal pause | /goal resume | /goal drop | /goal show",
+        },
+      ]);
+    }
+    expect(omp.goalRequests()).toHaveLength(4);
 
     omp.configureGoal({ error: new Error("No active goal to pause.") });
     const failed = await omp.runOutOfBandCommand("/goal pause");
     expect(failed.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
       { type: "assistant_message", text: "[Error] Goal command failed: No active goal to pause." },
     ]);
+  });
+
+  test("an active goal keeps the turn running across OMP's continuation runs", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const scheduler = new ManualIdleScheduler();
+      const omp = new OmpHarness({ providerIdleScheduler: scheduler });
+      await omp.start();
+      await omp.runOutOfBandCommand("/goal ship it");
+
+      // OMP has scheduled the next goal run when the first one yields.
+      omp.reportProviderState({ isSettled: false });
+      const { completion } = await omp.startPromptUntilProviderIdle("go", "first run", {
+        isStreaming: false,
+        isCompacting: false,
+      });
+      await scheduler.waitForWaits(1);
+      expect(omp.completedTurnCount()).toBe(0);
+
+      // The continuation run outlasts the first yield's idle deadline; that wait must not
+      // fail the turn.
+      const runtime = omp.runtime();
+      runtime.beginTurn();
+      runtime.streamAssistantText("second run", "omp-assistant-2");
+      vi.setSystemTime(Date.now() + 3_600_000);
+      scheduler.retry();
+      await waitForImmediate();
+      expect(omp.turnFailures()).toEqual([]);
+      expect(omp.completedTurnCount()).toBe(0);
+
+      omp.reportProviderState({ isSettled: true });
+      runtime.finishTurn();
+      await expect(completion).resolves.toBeDefined();
+      expect(omp.completedTurnCount()).toBe(1);
+      expect(omp.timeline()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "assistant_message", text: "first run" }),
+          expect.objectContaining({ type: "assistant_message", text: "second run" }),
+        ]),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("background work alone does not hold a goal turn open", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    await omp.runOutOfBandCommand("/goal ship it");
+
+    omp.reportProviderState({ isSettled: false, hasPendingAsyncWork: true });
+    await expect(omp.runPrompt("go", "started a long job")).resolves.toMatchObject({
+      finalText: "started a long job",
+    });
+    expect(omp.completedTurnCount()).toBe(1);
   });
 
   test("completes a local-only prompt when no OMP turn begins", async () => {
