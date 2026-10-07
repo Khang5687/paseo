@@ -165,6 +165,8 @@ export class FakeOmpSession implements OmpRuntimeSession {
     cost: 0,
   };
   commands: OmpRpcSlashCommand[] = [];
+  refreshCommandsRequestCount = 0;
+  refreshCommandsError: Error | null = null;
   subagents: FakeOmpSubagentSnapshot[] = [];
   readonly subagentSubscriptionErrors = new Map<FakeOmpSubagentSubscriptionLevel, Error>();
   compactError: Error | null = null;
@@ -463,6 +465,12 @@ export class FakeOmpSession implements OmpRuntimeSession {
   }
 
   async getCommands(): Promise<OmpRpcSlashCommand[]> {
+    return this.commands;
+  }
+
+  async refreshCommands(): Promise<OmpRpcSlashCommand[]> {
+    this.refreshCommandsRequestCount += 1;
+    if (this.refreshCommandsError) throw this.refreshCommandsError;
     return this.commands;
   }
 

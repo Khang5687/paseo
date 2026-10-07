@@ -566,6 +566,7 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
   }),
   z.object({ ...OmpCommandBase, type: z.literal("get_session_stats") }),
   z.object({ ...OmpCommandBase, type: z.literal("get_available_commands") }),
+  z.object({ ...OmpCommandBase, type: z.literal("refresh_commands") }),
   z.object({
     ...OmpCommandBase,
     type: z.literal("set_subagent_subscription"),
