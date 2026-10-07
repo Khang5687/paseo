@@ -10,7 +10,9 @@ Keep a bundled provider in `plugins/<id>/` and register it through
 import rules belong to [plugins.md](plugins.md#built-in-plugins); the
 [public provider guide](../public-docs/plugins/providers.md) covers the provider contract.
 
-The plugin owns the CLI transport, session state, catalog, and capabilities. The daemon owns
+The plugin owns the CLI transport, session state, catalog, and capabilities. Launch CLI transports
+and probes through the [SDK process helpers](../public-docs/plugins/providers.md#launch-the-provider-cli),
+which share Windows launcher handling with core providers. The daemon owns
 executable resolution and applies `agents.providers.<provider-id>.command` and `env` before
 connecting. Register the provider's icon with the plugin rather than adding it to the app's
 provider icon map. You do not need a core manifest entry or provider factory.
@@ -79,7 +81,7 @@ Pi control-plane RPCs wait 60 seconds by default. Override `params.rpcTimeoutMs`
 
 Pi import discovery reads Pi's persisted JSONL session files because Pi RPC does not expose a recent-session listing command. Resume and full history hydration still go through `pi --mode rpc` using the session file as `nativeHandle`.
 
-OMP is a first-class built-in provider, disabled by default. Its launch contract, typed runtime, agent/session behavior, history, permissions, imports, and test fake live under `providers/omp/`; only the provider-neutral JSONL child-process transport is shared with Pi. It launches `omp --mode rpc-ui`, uses OMP's `get_available_commands` RPC for slash-command discovery, bridges OMP `rpc-ui` approval dialogs into Paseo permissions, and imports terminal-started sessions from `~/.omp/agent/sessions` when enabled.
+OMP is a first-class built-in provider, disabled by default. Its launch contract, typed runtime, agent/session behavior, history, permissions, imports, and test fake live under `providers/omp/`; only the provider-neutral JSONL child-process transport is shared with Pi. It launches `omp --mode rpc-ui`, uses OMP's `get_available_commands` RPC for slash-command discovery, bridges OMP `rpc-ui` approval dialogs into Paseo permissions, and imports terminal-started sessions from `~/.omp/agent/sessions` when enabled. Listing commands for a running session calls OMP's `refresh_commands` RPC (at most once per 5 seconds, shared between concurrent callers) so skills installed after launch appear; OMP builds without that RPC fall back to `get_available_commands`.
 
 OMP supports native Paseo host tools. The adapter registers the full caller-scoped Paseo tool catalog directly with OMP, matching providers such as Claude that expose the full catalog through MCP. Serialize every OMP host definition with `loadMode: "essential"` so `create_agent`, `send_agent_prompt`, `wait_for_agent`, and related tools remain direct calls; omitting the field makes OMP mount non-built-in names under `xd://` instead. OMP's provider-managed task subagents are surfaced as Paseo subagents through `child_session` imports; the parent keeps the subagents track while the child runtime stays owned by OMP. Custom OMP profiles should extend `omp`; other Pi-compatible forks can still extend `pi`, override `command`, and set `params.sessionDir` to their JSONL session directory.
 
@@ -111,7 +113,11 @@ Submitted user-message wire items carry the same Paseo ID in `messageId` and `cl
 
 Provider adapters must terminalize every transient timeline row before emitting the turn's terminal event. Codex may omit the completed `contextCompaction` item when a turn ends during compaction, so its adapter closes any pending root compaction before forwarding `turn_completed`, `turn_failed`, or `turn_canceled`. A terminal turn must never leave the client showing an operation as still loading.
 
+A resumed session reports its current context usage with `usage_updated` once something subscribes, without waiting for a turn. The daemon does not store usage, so after a restart the context window meter shows no data until the provider reports it. Read it from the provider's own session (OMP answers `get_session_stats` without a model call) so a session changed outside Paseo still shows the right numbers. Emit after subscription, and drop the reading if a turn has started since, so it cannot overwrite the turn's newer usage.
+
 Draft metadata lookups should avoid creating provider sessions when the upstream provider has top-level APIs for that metadata. Prefer `AgentClient.fetchCatalog`, `listCommands`, or `listFeatures` over creating a scratch `AgentSession`; scratch sessions can show up as empty native sessions in provider import/history UIs. `fetchCatalog` is the single discovery API for models and modes — provider implementations may use one process, separate upstream calls, or static data internally, but callers outside the provider do not get separate runtime model/mode probes. Draft command listing and scratch-session feature listing require an explicit draft model. Do not resolve a default model through catalog discovery. A client-level `listFeatures` implementation may return features from an incomplete, model-less draft and owns which features are valid in that state.
+
+Command lists have no change event. The app asks for the list again whenever the `/` menu opens after a 10-second freshness window, and once more when the typed query matches nothing, so a skill installed on disk shows up without a restart. `listCommands` must therefore report what the provider can run now, not a list captured at session start. Identical concurrent draft listings share one call in `AgentManager.listDraftCommands`, which keeps the result for two seconds.
 
 Provider session import has its own contract. The picker calls `listImportableSessions` and receives rows only: provider handle, cwd, title, prompt previews, and last activity. Import calls `importSession({ providerHandleId, cwd })` for the selected row and must not call listing again. The provider returns the resumed session, storage config, persistence handle, and hydrated timeline for that one native session; `AgentManager.importProviderSession` seeds the daemon timeline and publishes the Paseo agent only after it is ready.
 
@@ -187,15 +193,10 @@ promise for completion: equal results, including equal discovery timestamps, emi
 
 ## Usage sources
 
-Usage is fetched on demand from plugin usage sources. Each source registers through `server.registerUsageSource()` with an input schema, `fetch(input)`, and required `discover()`. The daemon discovers configured accounts, validates inputs in the plugin runtime, caches each source/input result for five minutes, and returns `usage.list_reports.response`. A source report has an account key, availability status, plan label, windows, balances, and details.
-
-Create a built-in source under `plugins/<name>-usage-source/` with the same manifest, entry, `server/`, `shared/`, and `icon.svg` layout as an external plugin. Add its ID to `builtinPlugins` in `packages/server/src/server/plugins/builtin/index.ts`. Keep credential discovery, API parsing, and normalization inside the source; use helpers from `@getpaseo/plugin/server/usage`. The wire shape remains source agnostic. See [plugin usage sources](plugins.md#usage-sources).
-
-`provider.usage.list` remains a compatibility RPC for older apps. It maps discovered reports to `ProviderUsage`. New clients use `usage.list_reports` after checking `server_info.features.usageSources`.
-
-### Credentials are read only
-
-A source reads provider credentials without writing them. On 401 or 403 it returns `unavailable` and leaves refresh to the provider CLI. Redeeming a refresh token here would invalidate the CLI's copy; rewriting a parsed credential file could drop fields the source does not model.
+See the [public usage source reference](../public-docs/plugins/reference.md#usage-sources) for the
+contract, account and window identity, provider-derived period names, login fallback, and
+read-only credential rules. Usage adapters own the interpretation of provider fields; the app
+renders their names and resolves pins without provider-specific duration guesses.
 
 ---
 

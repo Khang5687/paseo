@@ -1,3 +1,4 @@
+import { createExternalProcessEnv } from "../../../paseo-env.js";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Logger } from "pino";
 import { z } from "zod";
@@ -27,7 +28,7 @@ import {
   OmpModelsResultSchema,
   OmpPromptAckSchema,
   OmpRpcCommandSchema,
-  OmpRuntimeEventSchema,
+  parseOmpRuntimeEvent,
   OmpGoalCommandResultSchema,
   OmpSessionStateSchema,
   OmpSessionStatsSchema,
@@ -79,6 +80,7 @@ export class OmpCliRuntime implements OmpRuntime {
       session: input,
     });
     launch.argv.push("--config", await writeOmpConfigOverlay());
+    launch.env = createExternalProcessEnv(globalThis.process.env, launch.env ?? {});
     const [command, ...args] = launch.argv;
     const processLaunch: JsonlRpcLaunch = {
       command,
@@ -103,7 +105,7 @@ export class OmpCliRuntime implements OmpRuntime {
         requestTimeoutMs: this.options.requestTimeoutMs,
       });
       input.signal?.throwIfAborted();
-      return new OmpCliRuntimeSession(process, this.commandsRpcName);
+      return new OmpCliRuntimeSession(process, this.commandsRpcName, launch.env);
     } catch (error) {
       const startupError = error instanceof Error ? error : new Error(String(error));
       await process.close(startupError);
@@ -116,21 +118,27 @@ export class OmpCliRuntime implements OmpRuntime {
 
 class OmpCliRuntimeSession implements OmpRuntimeSession {
   private readonly subscribers = new Set<(event: OmpRuntimeEvent) => void>();
+  private refreshCommandsUnsupported = false;
   activeBranchEntryId?: string;
 
   constructor(
     private readonly process: JsonlRpcProcess,
     private readonly commandsRpcName: "get_available_commands",
+    private readonly launchEnvironment: Record<string, string>,
   ) {
     process.onMessage((message) => {
-      const event = OmpRuntimeEventSchema.safeParse(message);
-      if (event.success) {
-        this.emit(event.data);
+      const event = parseOmpRuntimeEvent(message);
+      if (event) {
+        this.emit(event);
       }
     });
     process.onExit(({ error }) => {
       this.emit({ type: "process_exit", error: error.message });
     });
+  }
+
+  get environment(): Record<string, string> {
+    return this.launchEnvironment;
   }
 
   onEvent(callback: (event: OmpRuntimeEvent) => void): () => void {
@@ -238,6 +246,25 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
   async getCommands(): Promise<OmpRpcSlashCommand[]> {
     const data = OmpCommandsResultSchema.parse(await this.request({ type: this.commandsRpcName }));
     return data.commands ?? [];
+  }
+
+  async refreshCommands(): Promise<OmpRpcSlashCommand[]> {
+    if (this.refreshCommandsUnsupported) {
+      return await this.getCommands();
+    }
+    try {
+      const data = OmpCommandsResultSchema.parse(await this.request({ type: "refresh_commands" }));
+      return data.commands ?? [];
+    } catch (error) {
+      // COMPAT(ompRefreshCommands): added in v0.11.0, remove after 2027-04-07 once the
+      // minimum supported OMP version answers `refresh_commands`. Older binaries reject it
+      // as an unknown command; list the commands they already know instead.
+      if (!(error instanceof Error) || error.message !== "Unknown command: refresh_commands") {
+        throw error;
+      }
+      this.refreshCommandsUnsupported = true;
+      return await this.getCommands();
+    }
   }
 
   async setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void> {

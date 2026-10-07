@@ -4,6 +4,7 @@ import { type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   Archive,
+  Check,
   Circle,
   CircleCheck,
   Copy,
@@ -12,6 +13,7 @@ import {
   Pin,
   PinOff,
   Tag,
+  Undo2,
 } from "lucide-react-native";
 import { isWeb } from "@/constants/platform";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
@@ -59,6 +61,8 @@ const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
 const ThemedTag = withUnistyles(Tag);
+const ThemedCheck = withUnistyles(Check);
+const ThemedUndo2 = withUnistyles(Undo2);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
@@ -69,6 +73,8 @@ const markAsUnreadLeadingIcon = <ThemedCircle size={14} uniProps={foregroundMute
 const archiveLeadingIcon = <ThemedArchive size={14} uniProps={foregroundMutedColorMapping} />;
 const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />;
 const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
+const settleLeadingIcon = <ThemedCheck size={14} uniProps={foregroundMutedColorMapping} />;
+const unsettleLeadingIcon = <ThemedUndo2 size={14} uniProps={foregroundMutedColorMapping} />;
 
 function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return (
@@ -96,6 +102,9 @@ export interface SidebarWorkspaceMenuProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isSettled?: boolean;
+  /** Omitted for pinned rows: a pinned workspace cannot be settled. */
+  onToggleSettle?: () => void;
   openInFileManagerPath?: string | null;
   /**
    * Lifted so the row that reveals the kebab can keep it mounted while its menu is up. See
@@ -144,6 +153,8 @@ function SidebarWorkspaceMenuItems({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSettled,
+  onToggleSettle,
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
@@ -218,6 +229,18 @@ function SidebarWorkspaceMenuItems({
           {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
         </WorkspaceMenuItem>
       ) : null}
+      {onToggleSettle ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-settle-${workspaceKey}`}
+          leading={isSettled ? unsettleLeadingIcon : settleLeadingIcon}
+          onSelect={onToggleSettle}
+        >
+          {isSettled
+            ? t("sidebar.workspace.actions.unsettle")
+            : t("sidebar.workspace.actions.settle")}
+        </WorkspaceMenuItem>
+      ) : null}
       {serverId && workspaceId ? (
         <DropdownMenuSubTrigger
           id={WORKSPACE_LABEL_PAGE_ID}
@@ -266,6 +289,8 @@ export function SidebarWorkspaceMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSettled,
+  onToggleSettle,
   openInFileManagerPath,
   open,
   onOpenChange,
@@ -312,6 +337,8 @@ export function SidebarWorkspaceMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          isSettled={isSettled}
+          onToggleSettle={onToggleSettle}
           openInFileManagerPath={openInFileManagerPath}
         />
       </DropdownMenuContent>
@@ -345,6 +372,8 @@ export function SidebarWorkspaceContextMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSettled,
+  onToggleSettle,
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
@@ -380,6 +409,7 @@ export function SidebarWorkspaceContextMenu({
     serviceLabel: serviceSummary
       ? t(workspaceServiceLabelKey(serviceSummary), { name: serviceSummary.name })
       : null,
+    t,
   });
   const workspaceTarget = useMemo<WorkspaceLabelTarget>(
     () => ({
@@ -425,6 +455,8 @@ export function SidebarWorkspaceContextMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          isSettled={isSettled}
+          onToggleSettle={onToggleSettle}
           openInFileManagerPath={openInFileManagerPath}
         />
       </ContextMenuContent>

@@ -45,6 +45,7 @@ export interface OmpStartSessionInput {
 }
 
 export interface OmpRuntimeSession {
+  readonly environment: Record<string, string>;
   onEvent(callback: (event: OmpRuntimeEvent) => void): () => void;
   prompt(
     message: string,
@@ -62,6 +63,8 @@ export interface OmpRuntimeSession {
   setThinkingLevel(level: OmpThinkingLevel): Promise<void>;
   getSessionStats(): Promise<OmpSessionStats>;
   getCommands(): Promise<OmpRpcSlashCommand[]>;
+  /** Rediscovers OMP skills and file slash commands for the session cwd, then lists commands. */
+  refreshCommands(): Promise<OmpRpcSlashCommand[]>;
   setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void>;
   setHostTools(tools: OmpRpcHostToolDefinition[]): Promise<string[]>;
   sendHostToolResult(result: OmpRpcHostToolResult): void;

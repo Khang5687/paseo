@@ -95,7 +95,7 @@ import type {
   RefreshProvidersSnapshotResponseMessage,
   ProviderDiagnosticResponseMessage,
   ProviderUsageListResponseMessage,
-  UsageListReportsResponseMessage,
+  UsageReportEntry,
   DaemonGetStatusResponse,
   DaemonGetPairingOfferResponse,
   DaemonConfigReloadResponse,
@@ -127,6 +127,9 @@ import type {
   AgentSkillSelection,
   AgentSkillsStatus,
   AgentSkillsSaveResult,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
+  AgentAttachment,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentPermissionRequest,
@@ -562,7 +565,10 @@ type GetProvidersSnapshotPayload = GetProvidersSnapshotResponseMessage["payload"
 type RefreshProvidersSnapshotPayload = RefreshProvidersSnapshotResponseMessage["payload"];
 type ProviderDiagnosticPayload = ProviderDiagnosticResponseMessage["payload"];
 type ProviderUsageListPayload = ProviderUsageListResponseMessage["payload"];
-type UsageListReportsPayload = UsageListReportsResponseMessage["payload"];
+interface UsageListReportsPayload {
+  requestId: string;
+  reports: UsageReportEntry[];
+}
 type DaemonStatusPayload = DaemonGetStatusResponse["payload"];
 type DaemonPairingOfferPayload = DaemonGetPairingOfferResponse["payload"];
 type DiagnosticsPayload = DiagnosticsResponse["payload"];
@@ -1187,8 +1193,8 @@ interface PingProbe {
   drivesLivenessFailure: boolean;
 }
 
+// COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
 export function supportsUsageReports(features: ServerInfoStatusPayload["features"]): boolean {
-  // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
   return features?.usageSources === true || features?.providerUsageList === true;
 }
 
@@ -2081,6 +2087,91 @@ export class DaemonClient {
       });
     if (!response.success) {
       throw new Error(response.error ?? "Failed to mark workspace unread");
+    }
+  }
+
+  // Agent message queue (daemon-owned). Gate on `serverInfo.features.messageQueue`.
+
+  async addQueuedAgentMessage(
+    input: {
+      agentId: string;
+      text: string;
+      images?: AgentQueuedMessagePayload["images"];
+      attachments?: AgentAttachment[];
+    },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.add.response">({
+      requestId,
+      message: {
+        type: "agent.queue.add.request",
+        agentId: input.agentId,
+        text: input.text,
+        images: input.images,
+        attachments: input.attachments,
+      },
+    });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to queue agent message");
+    }
+    return response.message;
+  }
+
+  async removeQueuedAgentMessage(
+    input: { agentId: string; messageId: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.remove.response">({
+        requestId,
+        message: {
+          type: "agent.queue.remove.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to remove queued agent message");
+    }
+    return response.message;
+  }
+
+  async updateQueuedAgentMessage(
+    input: { agentId: string; messageId: string; text: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.update.response">({
+        requestId,
+        message: {
+          type: "agent.queue.update.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          text: input.text,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to update queued agent message");
+    }
+    return response.message;
+  }
+
+  async sendQueuedAgentMessageNow(
+    input: { agentId: string; messageId: string; activeTurnBehavior?: ActiveTurnBehavior },
+    requestId?: string,
+  ): Promise<void> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.send_now.response">({
+        requestId,
+        message: {
+          type: "agent.queue.send_now.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          activeTurnBehavior: input.activeTurnBehavior,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to send queued agent message");
     }
   }
 
@@ -3093,6 +3184,26 @@ export class DaemonClient {
       throw new Error(payload.error ?? "setWorkspacePinned rejected");
     }
     return { pinnedAt: payload.pinnedAt };
+  }
+
+  async setWorkspaceSettled(
+    workspaceId: string,
+    settled: boolean,
+    requestId?: string,
+  ): Promise<{ settledAt: string | null }> {
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "workspace.settle.set.request",
+        workspaceId,
+        settled,
+      },
+      responseType: "workspace.settle.set.response",
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "setWorkspaceSettled rejected");
+    }
+    return { settledAt: payload.settledAt };
   }
 
   async inspectWorkspaceRecovery(
@@ -5259,17 +5370,25 @@ export class DaemonClient {
     });
   }
 
-  async listUsageReports(options?: {
-    requestId?: string;
-    forceRefresh?: boolean;
-    reportIds?: string[];
-  }): Promise<UsageListReportsPayload> {
+  async listUsageReports(
+    options?: {
+      agentId?: string;
+      requestId?: string;
+      forceRefresh?: boolean;
+      reportIds?: string[];
+    },
+    onReport?: (report: UsageReportEntry) => void,
+  ): Promise<UsageListReportsPayload> {
     const features = this.getLastServerInfoMessage()?.features;
     if (!supportsUsageReports(features)) {
       throw new Error("Update the host to see usage.");
     }
+    if (options?.agentId !== undefined && options.reportIds !== undefined)
+      throw new Error("agentId and reportIds cannot be combined");
     // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
     if (features?.usageSources !== true) {
+      if (options?.agentId !== undefined)
+        return { requestId: this.createRequestId(options.requestId), reports: [] };
       // Released hosts serve a five-minute cache and have no forceRefresh option.
       const payload = await this.listProviderUsage({ requestId: options?.requestId });
       return {
@@ -5278,32 +5397,78 @@ export class DaemonClient {
           .filter(
             (provider) => !options?.reportIds || options.reportIds.includes(provider.providerId),
           )
-          .map((provider) => ({
-            id: provider.providerId,
-            sourceId: provider.providerId,
-            sourceLabel: provider.displayName,
-            icon: legacyUsageIcon(provider.providerId),
-            account: {},
-            fetchedAt: provider.fetchedAt ?? payload.fetchedAt,
-            report: {
-              status: provider.status,
-              windows: provider.windows,
-              balances: provider.balances ?? undefined,
-              details: provider.details ?? undefined,
-              planLabel: provider.planLabel ?? undefined,
-              error: provider.error ?? undefined,
-            },
-          })),
+          .map((provider) => {
+            // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
+            // 0.10 reports have no typed problems; preserve their unavailable badge and error text.
+            let report: UsageListReportsPayload["reports"][number]["report"];
+            if (provider.status === "available") {
+              report = {
+                status: "available",
+                windows: provider.windows,
+                balances: provider.balances ?? undefined,
+                details: provider.details ?? undefined,
+                planLabel: provider.planLabel ?? undefined,
+              };
+            } else if (provider.status === "error") {
+              report = { status: "error", error: provider.error ?? "" };
+            } else {
+              report = {
+                status: "unavailable",
+                problem: { kind: "no_quota", detail: provider.error ?? "" },
+              };
+            }
+            return {
+              id: provider.providerId,
+              sourceId: provider.providerId,
+              sourceLabel: provider.displayName,
+              icon: legacyUsageIcon(provider.providerId),
+              account: {},
+              fetchedAt: provider.fetchedAt ?? payload.fetchedAt,
+              report,
+            };
+          }),
       };
     }
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "usage.list_reports.request",
-        forceRefresh: options?.forceRefresh,
-        reportIds: options?.reportIds,
-      },
+    const requestId = this.createRequestId(options?.requestId);
+    const reports: UsageReportEntry[] = [];
+    let active = true;
+    const unsubscribe = this.subscribeRawMessages((message) => {
+      if (
+        !active ||
+        !("payload" in message) ||
+        !("requestId" in message.payload) ||
+        message.payload.requestId !== requestId
+      )
+        return;
+      if (message.type === "usage.list_reports.response" || message.type === "rpc_error") {
+        active = false;
+        return;
+      }
+      if (message.type !== "usage.list_reports.update") return;
+      reports.push(message.payload.report);
+      onReport?.(message.payload.report);
     });
+    try {
+      const response = await this.sendRequest({
+        requestId,
+        message: {
+          type: "usage.list_reports.request",
+          requestId,
+          forceRefresh: options?.forceRefresh,
+          reportIds: options?.reportIds,
+          agentId: options?.agentId,
+        },
+        select: (message) =>
+          message.type === "usage.list_reports.response" && message.payload.requestId === requestId
+            ? message.payload
+            : null,
+      });
+      if (response.error !== null) throw new Error(response.error);
+      return { requestId, reports };
+    } finally {
+      active = false;
+      unsubscribe();
+    }
   }
 
   async listCommands(options: ListCommandsOptions): Promise<ListCommandsPayload>;
