@@ -95,6 +95,10 @@ import { extractAttention } from "../persistence-hooks.js";
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
 const IMPORTABLE_SESSION_LIST_TIMEOUT_MS = 90_000;
+// Listing draft commands can start a provider process. Identical requests share one listing,
+// and its result is reused this long so bursts of menu opens (several clients, panels) start
+// one process. Kept short: a longer window would hide newly installed skills.
+const DRAFT_COMMANDS_REUSE_MS = 2_000;
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
   supportsSessionPersistence: true,
@@ -737,6 +741,7 @@ export class AgentManager {
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
   private readonly reloadedSessionCloses = new WeakMap<AgentSession, Promise<void>>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
+  private readonly draftCommandListings = new Map<string, Promise<AgentSlashCommand[]>>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -1092,6 +1097,27 @@ export class AgentManager {
   }
 
   async listDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
+    const key = JSON.stringify(config);
+    const shared = this.draftCommandListings.get(key);
+    if (shared) {
+      return await shared;
+    }
+    const listing = this.loadDraftCommands(config);
+    this.draftCommandListings.set(key, listing);
+    const release = () => {
+      if (this.draftCommandListings.get(key) === listing) {
+        this.draftCommandListings.delete(key);
+      }
+    };
+    listing.then(
+      () => setTimeout(release, DRAFT_COMMANDS_REUSE_MS).unref(),
+      // A failed listing is not reused; the next request retries.
+      release,
+    );
+    return await listing;
+  }
+
+  private async loadDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
     const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
     const client = this.requireClient(normalizedConfig.provider);
     if (!normalizedConfig.model) {
