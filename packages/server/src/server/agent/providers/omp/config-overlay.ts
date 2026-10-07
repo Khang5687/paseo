@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rename, writeFile } from "node:fs/promises";
+import { mkdtempSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,28 +10,29 @@ import { join } from "node:path";
 // and project config.
 const OMP_CONFIG_OVERLAY = "goal:\n  continuationModes:\n    - interactive\n    - rpc\n";
 
-let overlayDirectory: Promise<string> | null = null;
+let overlayDirectory: string | null = null;
 
 /**
  * Writes the overlay and returns its path. OMP refuses to launch when a `--config` file is
  * missing or unreadable, so every launch rewrites it (the OS may clean the temp dir) and
  * swaps it in with a rename. The directory comes from `mkdtemp` (mode 0700): an overlay can
  * set any OMP setting, so it must not sit at a predictable path other users can write.
+ * Synchronous so the launch spawns OMP in the same tick it was asked to.
  */
-export async function writeOmpConfigOverlay(): Promise<string> {
+export function writeOmpConfigOverlay(): string {
   try {
-    overlayDirectory ??= mkdtemp(join(tmpdir(), "paseo-omp-"));
-    return await writeOverlay(await overlayDirectory);
+    overlayDirectory ??= mkdtempSync(join(tmpdir(), "paseo-omp-"));
+    return writeOverlay(overlayDirectory);
   } catch {
-    overlayDirectory = mkdtemp(join(tmpdir(), "paseo-omp-"));
-    return await writeOverlay(await overlayDirectory);
+    overlayDirectory = mkdtempSync(join(tmpdir(), "paseo-omp-"));
+    return writeOverlay(overlayDirectory);
   }
 }
 
-async function writeOverlay(directory: string): Promise<string> {
+function writeOverlay(directory: string): string {
   const path = join(directory, "config.yml");
   const staging = `${path}.${randomUUID()}`;
-  await writeFile(staging, OMP_CONFIG_OVERLAY, { mode: 0o600 });
-  await rename(staging, path);
+  writeFileSync(staging, OMP_CONFIG_OVERLAY, { mode: 0o600 });
+  renameSync(staging, path);
   return path;
 }
