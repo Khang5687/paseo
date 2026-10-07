@@ -2162,6 +2162,7 @@ export const ptBR: TranslationResources = {
           queue: "Fila",
         },
       },
+      defaultEditor: "Editor padrão",
       serviceUrls: {
         options: {
           ask: "Perguntar",

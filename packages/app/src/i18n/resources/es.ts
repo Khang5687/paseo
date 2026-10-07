@@ -2179,6 +2179,7 @@ export const es: TranslationResources = {
           queue: "Cola",
         },
       },
+      defaultEditor: "Editor predeterminado",
       serviceUrls: {
         options: {
           ask: "Preguntar",

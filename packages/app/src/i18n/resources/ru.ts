@@ -2163,6 +2163,7 @@ export const ru: TranslationResources = {
           queue: "Поставить в очередь",
         },
       },
+      defaultEditor: "Редактор по умолчанию",
       serviceUrls: {
         options: {
           ask: "Спрашивать",

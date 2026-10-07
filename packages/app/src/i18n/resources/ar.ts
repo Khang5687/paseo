@@ -2128,6 +2128,7 @@ export const ar: TranslationResources = {
           queue: "طابور",
         },
       },
+      defaultEditor: "المحرر الافتراضي",
       serviceUrls: {
         options: {
           ask: "بسأل",
