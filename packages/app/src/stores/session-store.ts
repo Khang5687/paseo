@@ -53,6 +53,7 @@ import {
   buildWorkspaceAgentActivityIndex,
   type WorkspaceAgentActivity,
 } from "@/utils/workspace-agent-activity";
+import { buildWorkspaceParentIndex } from "@/subagents/policies";
 import {
   resolveTurnPresentation,
   TURN_LIVENESS_IDLE,
@@ -415,6 +416,8 @@ export interface SessionState {
   // Agents
   agents: Map<string, Agent>;
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
+  // Subagent workspace id -> the workspace id it nests under in the sidebar.
+  workspaceParents: Map<string, string>;
   agentDetails: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   // All active project descriptors, keyed by host-local projectId.
@@ -659,6 +662,7 @@ function createInitialSessionState(
     initializingAgents: new Map(),
     agents: new Map(),
     workspaceAgentActivity: new Map(),
+    workspaceParents: new Map(),
     agentDetails: new Map(),
     workspaces: new Map(),
     projects: new Map(),
@@ -1500,6 +1504,7 @@ export const useSessionStore = create<SessionStore>()(
                   nextAgents,
                   session.workspaceAgentActivity,
                 ),
+                workspaceParents: buildWorkspaceParentIndex(nextAgents, session.workspaceParents),
               },
             },
           };

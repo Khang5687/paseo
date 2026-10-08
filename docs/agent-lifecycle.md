@@ -160,6 +160,10 @@ Workspace status is an aggregate activity signal computed **per `workspaceId`**.
 
 Running provider-native subagents contribute `running` to the workspace owned by their parent agent. Their completed, failed, and canceled states stay in the parent's subagents track.
 
+The sidebar uses the same ownership to place workspaces. Workspace W renders as an indented child row under workspace P when every unarchived workspace-root agent in W (an agent whose parent is not in W) is a subagent of an unarchived agent in P. W's own same-workspace helpers do not count. A root agent in W, or subagents of a second workspace, keep W at the top level. Detach and parent archive (which detaches cross-workspace children) return it there without user action. Nesting chains, and a parent cycle still places every row once. The client derives this from its agent list (`packages/app/src/subagents/workspace-parents.ts`); the daemon sends no relationship field.
+
+A child row keeps its own status, actions, and pin. It follows its parent's row: a collapsed project hides both, and pinning the parent brings its children into Pinned beneath it. A child pinned on its own stays a top-level pinned row when its parent is not pinned. A child in a different project from its parent stays in its own project. Status grouping is the exception: a child nests only inside its parent's status group, so a child that needs attention is never hidden under a finished parent.
+
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion
 notification. Opening the workspace clears that attention through the normal focus flow.

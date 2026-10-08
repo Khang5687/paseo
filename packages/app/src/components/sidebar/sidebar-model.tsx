@@ -8,6 +8,7 @@ import {
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import { usePinnedSidebarKeys, type PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
+import { useSidebarWorkspaceParents } from "@/hooks/use-sidebar-workspace-parents";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import {
   hasActiveSidebarLabelFilter,
@@ -44,6 +45,7 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   collapsedProjectKeys: ReadonlySet<string>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   shortcutModel: SidebarShortcutModel;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
 const SidebarModelContext = createContext<SidebarModel | null>(null);
@@ -141,6 +143,11 @@ export function SidebarModelProvider({
     visibleWorkspaceKeys,
   ]);
   const pinnedKeys = usePinnedSidebarKeys(filteredProjects);
+  const serverIds = useMemo(
+    () => Array.from(new Set(list.workspacePlacements.map((workspace) => workspace.serverId))),
+    [list.workspacePlacements],
+  );
+  const parentKeyByWorkspaceKey = useSidebarWorkspaceParents(serverIds);
   const projectionInput = useMemo(
     () => ({
       projects: filteredProjects,
@@ -152,6 +159,7 @@ export function SidebarModelProvider({
       pinnedCollapsed,
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,
+      parentKeyByWorkspaceKey,
       t,
     }),
     [
@@ -164,6 +172,7 @@ export function SidebarModelProvider({
       pinnedKeys,
       pinnedWorkspaceOrder,
       filteredWorkspaceEntriesByKey,
+      parentKeyByWorkspaceKey,
       t,
     ],
   );
@@ -183,6 +192,7 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       toggleProjectCollapsed,
       shortcutModel: projection.shortcutModel,
+      nestingDepthByWorkspaceKey: projection.nestingDepthByWorkspaceKey,
     }),
     [
       resolvedProjectFilters,

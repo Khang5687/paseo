@@ -286,6 +286,11 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
   rowIndented: {
     paddingLeft: theme.spacing[2] + theme.spacing[2],
   },
+  // A subagent workspace row under its parent row: `level` steps of the same indent, so each
+  // level of nesting is its own rail and a child's status dot lines up under its parent's title.
+  rowNested: (level: number) => ({
+    paddingLeft: theme.spacing[2] + level * (theme.spacing[2] + theme.spacing[2]),
+  }),
   rowRight: {
     flexDirection: "row",
     alignItems: "flex-start",
