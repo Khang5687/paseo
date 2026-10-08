@@ -4,7 +4,6 @@ export interface CollapsedProjectsState {
   collapsedProjectKeys: Set<string>;
   collapsedWorkspaceGroupKeys: Set<string>;
   collapsedPinned: boolean;
-  collapsedSettled: boolean;
 }
 
 export interface PersistedCollapsedProjects {
@@ -12,7 +11,6 @@ export interface PersistedCollapsedProjects {
   collapsedWorkspaceGroupKeys?: string[];
   collapsedStatusGroupKeys?: string[];
   collapsedPinned?: boolean;
-  collapsedSettled?: boolean;
 }
 
 export const PersistedCollapsedProjectsSchema: z.ZodType<PersistedCollapsedProjects> =
@@ -22,25 +20,10 @@ export const PersistedCollapsedProjectsSchema: z.ZodType<PersistedCollapsedProje
     // COMPAT(sidebarWorkspaceGroupCollapse): added in v0.4.0, remove after 2027-02-14.
     collapsedStatusGroupKeys: z.array(z.string()).optional(),
     collapsedPinned: z.boolean().optional(),
-    collapsedSettled: z.boolean().optional(),
   });
-
-// Settled workspaces are the ones the user put away, so their section starts folded.
-export function createDefaultCollapsedProjectsState(): CollapsedProjectsState {
-  return {
-    collapsedProjectKeys: new Set(),
-    collapsedWorkspaceGroupKeys: new Set(),
-    collapsedPinned: false,
-    collapsedSettled: true,
-  };
-}
 
 export function togglePinnedCollapsed(state: CollapsedProjectsState): CollapsedProjectsState {
   return { ...state, collapsedPinned: !state.collapsedPinned };
-}
-
-export function toggleSettledCollapsed(state: CollapsedProjectsState): CollapsedProjectsState {
-  return { ...state, collapsedSettled: !state.collapsedSettled };
 }
 
 export function toggleProjectCollapsed(
@@ -87,13 +70,11 @@ export function serializeCollapsedProjects(state: CollapsedProjectsState): {
   collapsedProjectKeys: string[];
   collapsedWorkspaceGroupKeys: string[];
   collapsedPinned: boolean;
-  collapsedSettled: boolean;
 } {
   return {
     collapsedProjectKeys: Array.from(state.collapsedProjectKeys),
     collapsedWorkspaceGroupKeys: Array.from(state.collapsedWorkspaceGroupKeys),
     collapsedPinned: state.collapsedPinned,
-    collapsedSettled: state.collapsedSettled,
   };
 }
 
@@ -115,12 +96,10 @@ export function mergePersistedCollapsedProjects<S extends CollapsedProjectsState
       Array.from(current.collapsedWorkspaceGroupKeys),
   );
   const restoredPinned = persisted.collapsedPinned ?? current.collapsedPinned;
-  const restoredSettled = persisted.collapsedSettled ?? current.collapsedSettled;
   if (
     areSetsEqual(current.collapsedProjectKeys, restoredProjects) &&
     areSetsEqual(current.collapsedWorkspaceGroupKeys, restoredWorkspaceGroups) &&
-    current.collapsedPinned === restoredPinned &&
-    current.collapsedSettled === restoredSettled
+    current.collapsedPinned === restoredPinned
   ) {
     return current;
   }
@@ -129,7 +108,6 @@ export function mergePersistedCollapsedProjects<S extends CollapsedProjectsState
     collapsedProjectKeys: restoredProjects,
     collapsedWorkspaceGroupKeys: restoredWorkspaceGroups,
     collapsedPinned: restoredPinned,
-    collapsedSettled: restoredSettled,
   };
 }
 

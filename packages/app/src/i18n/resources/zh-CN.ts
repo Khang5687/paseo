@@ -1188,10 +1188,6 @@ export const zhCN: TranslationResources = {
     pinned: {
       title: "已置顶",
     },
-    settled: {
-      title: "已了结",
-      titleWithCount: "已了结 ({{count}})",
-    },
     host: {
       noHost: "没有 Host",
       switchTitle: "切换 Host",
@@ -1280,10 +1276,6 @@ export const zhCN: TranslationResources = {
         rename: "重命名 workspace",
         pin: "置顶",
         unpin: "取消置顶",
-        settle: "了结",
-        unsettle: "取消了结",
-        settleWorkspace: "了结工作区",
-        unsettleWorkspace: "取消了结工作区",
         archive: "归档",
         archiveWorkspace: "归档工作区",
         hideFromSidebar: "从侧边栏隐藏",

@@ -134,7 +134,6 @@ import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
-import { attachWorkspaceAutoUnsettle } from "./workspace-settle.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
   createPaseoToolCatalog,
@@ -970,11 +969,6 @@ export async function createPaseoDaemon(
     agentManager,
     agentStorage,
   );
-  const detachWorkspaceAutoUnsettle = attachWorkspaceAutoUnsettle({
-    agentManager,
-    workspaceRegistry,
-    logger,
-  });
   await agentStorage.initialize();
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
   await bootstrapWorkspaceRegistries({
@@ -1828,7 +1822,6 @@ export async function createPaseoDaemon(
     }).catch((error) => logger.warn({ err: error }, "Plugin lifecycle events did not finish"));
     await agentManager.flushForShutdown().catch(() => undefined);
     detachAgentStoragePersistence();
-    detachWorkspaceAutoUnsettle();
     await agentStorage.flush().catch(() => undefined);
     await agentProviderRuntime.shutdown();
     await pluginRuntime.stopAllPlugins();
