@@ -131,7 +131,7 @@ Everything else is a short-lived work branch.
    `type` is `fix` or `feat`; `area` is the package or provider (`omp`, `app`, `server`, `plugin`). Examples: `fix/omp-compact-command`, `feat/omp-goal-command`.
    A branch cut from fork `main` carries every other change with it, and its upstream PR becomes unreviewable.
 3. If the change needs another unmerged change, cut from that branch instead and write `Stacked on #N` as the first line of the PR body. Merge order follows the stack.
-4. Open the draft PR right away, before writing code, with a one-line body, and add your entry to the handoff file (see below). The PR list and `~/git/paseo-HANDOFF.md` are the registry of who is working on what; every agent checks both before cutting a branch.
+4. Open the draft PR right away, before writing code, with a one-line body followed by a `## Progress` section (see "The handoff file"), and add your entry to the handoff file. The PR list and `~/git/paseo-HANDOFF.md` are the registry of who is working on what; every agent checks both before cutting a branch.
 5. Work in a worktree, not in the main checkout, so parallel agents never share a working tree:
    ```bash
    git worktree add ../paseo-<branch-slug> <branch>
@@ -153,8 +153,8 @@ Everything else is a short-lived work branch.
 ### Finishing a change
 
 1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
-2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
-3. Mark the PR ready for review, set your handoff entry to `ready`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
+2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it. The `## Progress` section is the one exception; delete it in step 3.
+3. Delete the `## Progress` section from the PR body, mark the PR ready for review, set your handoff entry to `ready` and `next: none`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
 4. The integrator merges on "build it" (see Build it), with a merge commit, never squash or rebase:
    ```bash
    git merge --no-ff <branch> -m "Merge #N: <PR title>"
@@ -165,7 +165,7 @@ Everything else is a short-lived work branch.
 
 ### The handoff file
 
-Every agent on the fork reads and writes one file: `~/git/paseo-HANDOFF.md`. It lives outside the repository because each agent works on its own branch in its own worktree; a tracked file would have a different copy on every branch and conflict on every merge. The PR stays the record of what changed; the handoff file records what is ready to build and in what order.
+Every agent on the fork reads and writes one file: `~/git/paseo-HANDOFF.md`. It lives outside the repository because each agent works on its own branch in its own worktree; a tracked file would have a different copy on every branch and conflict on every merge. The PR stays the record of what changed; the handoff file records what is ready to build and in what order, and where to pick up work whose agent is gone.
 
 The file has three sections: `## Open`, `## Merged`, `## Builds`. When you open your draft PR, add one entry under `## Open`:
 
@@ -173,18 +173,38 @@ The file has three sections: `## Open`, `## Merged`, `## Builds`. When you open 
 ### #7 feat/settle-workspace
 
 - status: wip
+- agent: 271df5e3-a03c-4467-9fe4-12d2c41d2225
 - worktree: ~/git/paseo-settle-workspace
 - stacked on: none
 - shared surfaces: packages/protocol (new RPC workspace.settle.set)
 - ships in: daemon + desktop app; Android needs a fork Android build
+- next: wire the Settled section into status grouping
 - note: none
 ```
 
 - Edit only your own entry, in place. Never rewrite the file, reorder it, or touch another agent's entry, even one that looks stale. Two agents rewriting the whole file at once lose each other's edits.
 - Keep the entry to these lines. Detail goes in the PR body.
 - `status` is `wip`, `ready`, or `blocked: <reason>`. Set `ready` only after the PR is marked ready for review and the checks in "Finishing a change" passed.
+- `agent` is your `$PASEO_AGENT_ID`. `"$PASEO_CLI" logs <agent>` prints that agent's transcript, archived or not, so it is how a successor recovers the conversation. `paseo` is not on an agent's `PATH`, and `npm run cli` targets the checkout's dev daemon, which never ran that agent; outside a Paseo agent the binary is `/Applications/Paseo.app/Contents/Resources/bin/paseo`.
 - `shared surfaces` names anything listed under "While working" as shared ground, so the integrator can expect conflicts.
-- A session that opens with a bare `continue` reads its own entry before asking the owner anything.
+- `next` is the single action you would take next. `none` once `ready`.
+
+#### Stopping point
+
+While your entry is `wip`, every time you stop (end of a turn, waiting on the owner, blocked), leave the work resumable by an agent that never saw your conversation:
+
+1. Commit and push everything in the worktree. Commits that do not pass the pre-commit hook yet are prefixed `wip:` and may use `--no-verify`; the last commit before `ready` passes the hook.
+2. Rewrite the PR body's `## Progress` section: **Done** (what works and how you checked it), **Next** (remaining steps, in order), **Decisions** (what the owner decided and why, quoted when short; the transcript is the fallback, not the source).
+3. Update `next` in your entry.
+
+#### Resuming
+
+A session that opens with a bare `continue`, or is told to continue #N, resumes from the entry before asking the owner anything:
+
+1. Read the entry, then `gh pr view <N>` for `## Progress`.
+2. Open the worktree (recreate it from the branch if it is gone) and compare it with the pushed branch.
+3. Read `"$PASEO_CLI" logs <agent>` when `## Progress` leaves a decision unexplained.
+4. Set `agent` to your own `$PASEO_AGENT_ID`; the entry is yours from here. Continue from `next`.
 
 ### Build it
 
