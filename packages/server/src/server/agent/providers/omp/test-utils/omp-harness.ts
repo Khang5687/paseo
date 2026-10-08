@@ -12,6 +12,7 @@ import type {
   AgentTimelineItem,
 } from "../../../agent-sdk-types.js";
 import type { PaseoToolCatalog } from "../../../tools/types.js";
+import type { OutputStyle } from "../../../output-styles.js";
 import {
   OmpAgentClient,
   OmpAgentSession,
@@ -73,6 +74,8 @@ export class OmpHarness {
       usagePollScheduler?: OmpUsagePollScheduler;
       providerIdleDeadlineMs?: number;
       runtimeEnv?: Record<string, string>;
+      /** Custom output styles; the real user's Claude config dir is never read. */
+      outputStyles?: OutputStyle[];
     } = {},
   ) {
     this.client = new OmpAgentClient({
@@ -83,6 +86,7 @@ export class OmpHarness {
       noTurnScheduler: options.noTurnScheduler,
       usagePollScheduler: options.usagePollScheduler,
       providerIdleDeadlineMs: options.providerIdleDeadlineMs,
+      discoverOutputStyles: async () => options.outputStyles ?? [],
     });
   }
 

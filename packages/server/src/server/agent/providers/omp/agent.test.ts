@@ -1205,6 +1205,45 @@ describe("OMP agent client and session", () => {
     expect(omp.runtimeLaunches()[1]?.argv).toContain("always-ask");
   });
 
+  test("appends the selected output style and relaunches the same session when it changes", async () => {
+    const omp = new OmpHarness({
+      outputStyles: [{ name: "ELI5", description: "keep it simple pls", body: "Small words." }],
+    });
+    await omp.start({ modeId: "full", systemPrompt: "Paseo prompt" });
+    const session = omp.requireSession();
+    const outputStyleFeature = () =>
+      session.features.find((feature) => feature.id === "output_style");
+    expect(outputStyleFeature()).toMatchObject({
+      value: "default",
+      options: [
+        { id: "default", label: "Default" },
+        { id: "ELI5", label: "ELI5", description: "keep it simple pls" },
+      ],
+    });
+    expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("Paseo prompt");
+    const sessionFile = omp.runtime().state.sessionFile;
+
+    await session.setFeature?.("output_style", "ELI5");
+    const relaunch = omp.runtimeLaunches()[1];
+    expect(relaunch?.systemPrompt).toBe("Paseo prompt\n\n# Output style: ELI5\n\nSmall words.");
+    expect(relaunch?.session).toBe(sessionFile);
+    expect(relaunch?.argv).toContain("yolo");
+    expect(outputStyleFeature()?.value).toBe("ELI5");
+
+    await expect(session.setFeature?.("output_style", "Explanatory")).rejects.toThrow(
+      "OMP output style 'Explanatory' is not available",
+    );
+    expect(omp.runtimeLaunches()).toHaveLength(2);
+  });
+
+  test("starts with the output style from the agent's feature values", async () => {
+    const omp = new OmpHarness({
+      outputStyles: [{ name: "ELI5", body: "Small words." }],
+    });
+    await omp.start({ featureValues: { output_style: "ELI5" } });
+    expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("# Output style: ELI5\n\nSmall words.");
+  });
+
   test("restarts the same conversation after an idle process exit", async () => {
     const omp = new OmpHarness();
     await omp.start({ modeId: "full" });

@@ -2745,6 +2745,12 @@ export const ja: TranslationResources = {
         failedToFetch: "診断の取得に失敗しました",
         unknownError: "不明なエラー",
       },
+      featureDefaults: {
+        title: "新しいエージェントのデフォルト",
+        providerDefault: "プロバイダーのデフォルト",
+        on: "オン",
+        off: "オフ",
+      },
     },
     project: {
       noEditableTarget: "このホストではこのプロジェクトを編集できません。",

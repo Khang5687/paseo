@@ -2717,6 +2717,12 @@ export const ar: TranslationResources = {
         failedToFetch: "فشل جلب التشخيص",
         unknownError: "خطأ غير معروف",
       },
+      featureDefaults: {
+        title: "الإعدادات الافتراضية للوكلاء الجدد",
+        providerDefault: "الإعداد الافتراضي للمزوّد",
+        on: "تشغيل",
+        off: "إيقاف",
+      },
     },
     project: {
       noEditableTarget: "هذا المشروع غير متاح للتحرير على هذا المضيف.",

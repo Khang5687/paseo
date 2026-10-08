@@ -2732,6 +2732,12 @@ export const ko: TranslationResources = {
         failedToFetch: "진단을 가져오지 못했습니다",
         unknownError: "알 수 없는 오류",
       },
+      featureDefaults: {
+        title: "새 에이전트 기본값",
+        providerDefault: "제공자 기본값",
+        on: "켜기",
+        off: "끄기",
+      },
     },
     project: {
       noEditableTarget: "이 호스트에서는 이 프로젝트를 편집할 수 없습니다.",

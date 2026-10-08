@@ -2768,6 +2768,12 @@ export const ru: TranslationResources = {
         failedToFetch: "Не удалось получить диагностику.",
         unknownError: "Неизвестная ошибка",
       },
+      featureDefaults: {
+        title: "Значения по умолчанию для новых агентов",
+        providerDefault: "По умолчанию у провайдера",
+        on: "Вкл.",
+        off: "Выкл.",
+      },
     },
     project: {
       noEditableTarget: "Этот проект нельзя редактировать на этом хосте.",

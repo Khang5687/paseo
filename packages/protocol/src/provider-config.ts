@@ -33,6 +33,12 @@ export const ProviderPaseoToolsPolicySchema = z.object({
   disabledTools: z.array(z.string()).optional(),
 });
 
+/** Feature values a new agent starts with when its create request names none. */
+export const ProviderFeatureDefaultsSchema = z.record(
+  z.string(),
+  z.union([z.boolean(), z.string()]),
+);
+
 const ProviderProfileThinkingOptionSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -61,6 +67,7 @@ export const ProviderOverrideSchema = z.object({
   additionalModels: z.array(ProviderProfileModelSchema).optional(),
   disallowedTools: z.array(z.string()).optional(),
   paseoTools: ProviderPaseoToolsPolicySchema.optional(),
+  featureDefaults: ProviderFeatureDefaultsSchema.optional(),
   enabled: z.boolean().optional(),
   order: z.number().optional(),
 });
@@ -133,6 +140,7 @@ export type ProviderRuntimeSettings = z.infer<typeof ProviderRuntimeSettingsSche
 export type ProviderPaseoToolsPolicy = z.infer<typeof ProviderPaseoToolsPolicySchema>;
 export type ProviderProfileModel = z.infer<typeof ProviderProfileModelSchema>;
 export type ProviderOverride = z.infer<typeof ProviderOverrideSchema>;
+export type ProviderFeatureDefaults = z.infer<typeof ProviderFeatureDefaultsSchema>;
 export type ProviderOverrides = z.infer<typeof ProviderOverridesSchema>;
 export type AgentProviderRuntimeSettingsMap = Partial<
   Record<AgentProvider, ProviderRuntimeSettings>

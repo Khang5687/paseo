@@ -2781,6 +2781,12 @@ export const fr: TranslationResources = {
         failedToFetch: "Impossible de récupérer le diagnostic",
         unknownError: "Erreur inconnue",
       },
+      featureDefaults: {
+        title: "Valeurs par défaut des nouveaux agents",
+        providerDefault: "Valeur par défaut du fournisseur",
+        on: "Activé",
+        off: "Désactivé",
+      },
     },
     project: {
       noEditableTarget: "Ce projet n’est pas modifiable sur cet hôte.",

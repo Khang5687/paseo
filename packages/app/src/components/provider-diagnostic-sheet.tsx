@@ -1,6 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import { AlertTriangle, Copy, FileText, Plus, RotateCw, Trash2 } from "lucide-react-native";
 import type { TFunction } from "i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, type PressableStateCallbackType, Text, View } from "react-native";
@@ -11,21 +12,37 @@ import {
   type SheetHeader,
 } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
+import { type FieldControlSize } from "@/components/ui/control-geometry";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { ScrollableCodeSurface, SurfaceCard } from "@/components/ui/scrollable-code-surface";
+import {
+  SelectField,
+  type SelectFieldDisplay,
+  type SelectFieldOption,
+} from "@/components/ui/select-field";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-context";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
+import { useFetchQuery } from "@/data/query";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { useTimeAgo } from "@/hooks/use-time-ago";
-import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { useHostFeature } from "@/runtime/host-features";
 import { settingsStyles } from "@/styles/settings";
 import { resolveProviderLabel } from "@/utils/provider-definitions";
+import { toErrorMessage } from "@/utils/error-messages";
 import { compareMatchScores, scoreTextFields } from "@getpaseo/protocol/search/text-match";
-import type { AgentModelDefinition, AgentProvider } from "@getpaseo/protocol/agent-types";
-import type { ProviderProfileModel } from "@getpaseo/protocol/provider-config";
+import type {
+  AgentFeature,
+  AgentModelDefinition,
+  AgentProvider,
+} from "@getpaseo/protocol/agent-types";
+import type {
+  ProviderFeatureDefaults,
+  ProviderProfileModel,
+} from "@getpaseo/protocol/provider-config";
 import {
   resolveProviderDiscoveredModels,
   type ProviderDiscoveredModelsCache,
@@ -133,6 +150,217 @@ function SectionHeader({ title, count, hint }: { title: string; count?: number; 
           <Text style={settingsStyles.sectionHeaderTitle}>·</Text>
         ) : null}
         {hint ? <Text style={settingsStyles.sectionHeaderTitle}>{hint}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Feature defaults are provider-wide, so the feature catalog is probed in the
+ * daemon's home directory rather than a workspace, as agent profiles do.
+ */
+const FEATURE_DEFAULTS_CWD = "~";
+/** Select value meaning "no Paseo default": the provider's own settings decide. */
+const PROVIDER_DEFAULT_VALUE = "";
+const PROVIDER_DEFAULT_OPTION_ID = "__provider_default__";
+
+function toFeatureDefaultKey(feature: AgentFeature, stored: boolean | string | undefined): string {
+  if (feature.type === "toggle") {
+    return typeof stored === "boolean" ? String(stored) : PROVIDER_DEFAULT_VALUE;
+  }
+  return typeof stored === "string" ? stored : PROVIDER_DEFAULT_VALUE;
+}
+
+function fromFeatureDefaultKey(feature: AgentFeature, key: string): boolean | string | null {
+  if (key === PROVIDER_DEFAULT_VALUE) {
+    return null;
+  }
+  if (feature.type === "toggle") {
+    return key === "true";
+  }
+  return key;
+}
+
+function FeatureDefaultRow({
+  feature,
+  stored,
+  isFirst,
+  disabled,
+  size,
+  onChange,
+}: {
+  feature: AgentFeature;
+  stored: boolean | string | undefined;
+  isFirst: boolean;
+  disabled: boolean;
+  size: FieldControlSize;
+  onChange: (feature: AgentFeature, value: boolean | string | null) => void;
+}) {
+  const { t } = useTranslation();
+  const rowStyle = useMemo(
+    () => [settingsStyles.row, isFirst ? null : settingsStyles.rowBorder],
+    [isFirst],
+  );
+  const value = toFeatureDefaultKey(feature, stored);
+  const options = useMemo<SelectFieldOption<string>[]>(() => {
+    const providerDefault: SelectFieldOption<string> = {
+      id: PROVIDER_DEFAULT_OPTION_ID,
+      value: PROVIDER_DEFAULT_VALUE,
+      label: t("settings.providers.featureDefaults.providerDefault"),
+      testID: `provider-feature-default-option-${feature.id}-default`,
+    };
+    if (feature.type === "toggle") {
+      return [
+        providerDefault,
+        {
+          id: "true",
+          value: "true",
+          label: t("settings.providers.featureDefaults.on"),
+          testID: `provider-feature-default-option-${feature.id}-on`,
+        },
+        {
+          id: "false",
+          value: "false",
+          label: t("settings.providers.featureDefaults.off"),
+          testID: `provider-feature-default-option-${feature.id}-off`,
+        },
+      ];
+    }
+    return [
+      providerDefault,
+      ...feature.options.map((option) => ({
+        id: option.id,
+        value: option.id,
+        label: option.label,
+        ...(option.description ? { description: option.description } : {}),
+        testID: `provider-feature-default-option-${feature.id}-${option.id}`,
+      })),
+    ];
+  }, [feature, t]);
+  // A stored value the provider no longer offers still shows, so the user can clear it.
+  const selectedDisplay = useMemo<SelectFieldDisplay>(() => {
+    const option = options.find((candidate) => candidate.value === value);
+    return { label: option?.label ?? value };
+  }, [options, value]);
+  const handleChange = useCallback(
+    (key: string) => onChange(feature, fromFeatureDefaultKey(feature, key)),
+    [feature, onChange],
+  );
+
+  return (
+    <View style={rowStyle} testID={`provider-feature-default-row-${feature.id}`}>
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle} numberOfLines={1}>
+          {feature.label}
+        </Text>
+        {feature.description ? (
+          <Text style={settingsStyles.rowHint} numberOfLines={2}>
+            {feature.description}
+          </Text>
+        ) : null}
+      </View>
+      <View style={sheetStyles.featureDefaultPicker}>
+        <SelectField
+          field={false}
+          label={feature.label}
+          value={value}
+          selectedDisplay={selectedDisplay}
+          options={options}
+          onChange={handleChange}
+          placeholder={feature.label}
+          emptyText={feature.label}
+          disabled={disabled}
+          searchable={options.length > 6}
+          title={feature.label}
+          size={size}
+          triggerTestID={`provider-feature-default-trigger-${feature.id}`}
+        />
+      </View>
+    </View>
+  );
+}
+
+function ProviderFeatureDefaultsSection({
+  provider,
+  serverId,
+  visible,
+}: {
+  provider: string;
+  serverId: string;
+  visible: boolean;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const client = useHostRuntimeClient(serverId);
+  const isConnected = useHostRuntimeIsConnected(serverId);
+  const supportsFeatureDefaults = useHostFeature(serverId, "providerFeatureDefaults");
+  const { config, patchConfig } = useDaemonConfig(serverId);
+  const controlSize: FieldControlSize = useIsCompactFormFactor() ? "md" : "sm";
+  const [savingFeatureId, setSavingFeatureId] = useState<string | null>(null);
+
+  const featuresQuery = useFetchQuery({
+    queryKey: ["providerFeatureDefaults", serverId, provider],
+    dataShape: "value",
+    staleTimeMs: 5 * 60 * 1000,
+    enabled: Boolean(visible && client && isConnected && supportsFeatureDefaults),
+    retry: false,
+    queryFn: async () => {
+      if (!client) {
+        throw new Error(t("workspace.terminal.hostDisconnected"));
+      }
+      const payload = await client.listProviderFeatures({ provider, cwd: FEATURE_DEFAULTS_CWD });
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      return payload.features ?? [];
+    },
+  });
+  const features = featuresQuery.data;
+  const featureDefaults = useMemo<ProviderFeatureDefaults>(
+    () => config?.providers?.[provider]?.featureDefaults ?? {},
+    [config?.providers, provider],
+  );
+
+  const handleChange = useCallback(
+    (feature: AgentFeature, value: boolean | string | null) => {
+      // The daemon replaces the map wholesale, so send every default; omitting a key clears it.
+      const next: ProviderFeatureDefaults = Object.fromEntries(
+        Object.entries(featureDefaults).filter(([featureId]) => featureId !== feature.id),
+      );
+      if (value !== null) {
+        next[feature.id] = value;
+      }
+      setSavingFeatureId(feature.id);
+      void patchConfig({ providers: { [provider]: { featureDefaults: next } } })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["providerFeatures", serverId] }))
+        .catch((error) => toast.error(toErrorMessage(error)))
+        .finally(() => {
+          setSavingFeatureId((current) => (current === feature.id ? null : current));
+        });
+    },
+    [featureDefaults, patchConfig, provider, queryClient, serverId, toast],
+  );
+
+  if (!supportsFeatureDefaults || !features || features.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={sheetStyles.section} testID="provider-feature-defaults">
+      <SectionHeader title={t("settings.providers.featureDefaults.title")} />
+      <View style={settingsStyles.card}>
+        {features.map((feature, index) => (
+          <FeatureDefaultRow
+            key={feature.id}
+            feature={feature}
+            stored={featureDefaults[feature.id]}
+            isFirst={index === 0}
+            disabled={savingFeatureId !== null}
+            size={controlSize}
+            onChange={handleChange}
+          />
+        ))}
       </View>
     </View>
   );
@@ -697,6 +925,13 @@ export function ProviderDiagnosticSheet({
         })}
         snapPoints={MAIN_SNAP_POINTS}
       >
+        {q ? null : (
+          <ProviderFeatureDefaultsSection
+            provider={provider}
+            serverId={serverId}
+            visible={visible}
+          />
+        )}
         <ProviderModalBody
           discoveredCount={discoveredModels.length}
           additionalCount={additionalModels.length}
@@ -809,6 +1044,10 @@ const sheetStyles = StyleSheet.create((theme) => ({
   },
   modelRowFiller: {
     flex: 1,
+  },
+  featureDefaultPicker: {
+    width: 200,
+    flexShrink: 0,
   },
   emptyState: {
     paddingVertical: theme.spacing[8],

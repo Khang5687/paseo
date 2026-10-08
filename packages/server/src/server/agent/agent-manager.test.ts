@@ -2224,6 +2224,58 @@ test("listDraftFeatures uses explicit model config without default model fetchin
   ]);
 });
 
+test("provider feature defaults fill feature values a request leaves out", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-feature-defaults-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  class DraftFeatureClient extends TestAgentClient {
+    readonly featureConfigs: AgentSessionConfig[] = [];
+
+    async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
+      this.featureConfigs.push(config);
+      return [];
+    }
+  }
+  const client = new DraftFeatureClient();
+  let featureDefaults: Record<string, boolean | string> | undefined = {
+    output_style: "ELI5",
+    fast_mode: true,
+  };
+  let nextId = 0;
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    resolveFeatureDefaults: (provider) => (provider === "codex" ? featureDefaults : undefined),
+    idFactory: () => `00000000-0000-4000-8000-00000000020${nextId++}`,
+  });
+
+  await manager.listDraftFeatures({ provider: "codex", cwd: workdir });
+  expect(client.featureConfigs[0]?.featureValues).toEqual({
+    output_style: "ELI5",
+    fast_mode: true,
+  });
+
+  const created = await manager.createAgent(
+    { provider: "codex", cwd: workdir, featureValues: { output_style: "Learning" } },
+    undefined,
+    { workspaceId: undefined },
+  );
+  expect(client.createdConfigs[0]?.featureValues).toEqual({
+    output_style: "Learning",
+    fast_mode: true,
+  });
+  expect((await storage.get(created.id))?.config?.featureValues).toEqual({
+    output_style: "Learning",
+    fast_mode: true,
+  });
+
+  featureDefaults = undefined;
+  await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  expect(client.createdConfigs[1]?.featureValues).toBeUndefined();
+});
+
 test("createAgent injects daemon append system prompt at runtime only", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");

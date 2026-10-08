@@ -64,6 +64,14 @@ import {
 import { readClaudeWorkflowResultFile } from "./subagents/workflow-output.js";
 import { buildClaudeFeatures, claudeModelSupportsFastMode } from "./feature-definitions.js";
 import {
+  discoverOutputStyleFiles,
+  mergeClaudeOutputStyles,
+  OUTPUT_STYLE_FEATURE_ID,
+  readOutputStyleValue,
+  type DiscoverOutputStyles,
+  type OutputStyle,
+} from "../../output-styles.js";
+import {
   buildBinaryDiagnosticRows,
   buildCommandResolutionDiagnosticRows,
   formatProviderDiagnostic,
@@ -419,6 +427,7 @@ interface ClaudeAgentClientOptions {
   resolveBinary?: () => Promise<string>;
   resolveVersion?: (signal?: AbortSignal) => Promise<string>;
   rewindSdk?: ClaudeRewindSdk;
+  discoverOutputStyles?: DiscoverOutputStyles;
 }
 
 interface ClaudeAgentSessionOptions {
@@ -432,6 +441,8 @@ interface ClaudeAgentSessionOptions {
   queryFactory?: ClaudeQueryFactory;
   resolveBinary: () => Promise<string>;
   rewindSdk?: ClaudeRewindSdk;
+  /** Built-in and custom styles the output style feature offers. */
+  outputStyles: readonly OutputStyle[];
 }
 
 type ClaudeThinkingEffort = "low" | "medium" | "high" | "xhigh" | "max";
@@ -1524,6 +1535,7 @@ export class ClaudeAgentClient implements AgentClient {
   private readonly resolveBinary: () => Promise<string>;
   private readonly resolveVersion: (signal?: AbortSignal) => Promise<string>;
   private readonly rewindSdk: ClaudeRewindSdk;
+  private readonly discoverOutputStyles: DiscoverOutputStyles;
 
   constructor(options: ClaudeAgentClientOptions) {
     this.defaults = options.defaults;
@@ -1535,6 +1547,13 @@ export class ClaudeAgentClient implements AgentClient {
       options.resolveVersion ??
       ((signal) => resolveClaudeCodeVersion(this.runtimeSettings, signal));
     this.rewindSdk = options.rewindSdk ?? realClaudeRewindSdk;
+    this.discoverOutputStyles = options.discoverOutputStyles ?? discoverOutputStyleFiles;
+  }
+
+  private async listOutputStyles(cwd: string, launchEnv?: Record<string, string>) {
+    return mergeClaudeOutputStyles(
+      await this.discoverOutputStyles({ cwd, env: this.buildProviderEnv(launchEnv) }),
+    );
   }
 
   resolveConfiguredModel(model: AgentModelDefinition): AgentModelDefinition {
@@ -1547,6 +1566,7 @@ export class ClaudeAgentClient implements AgentClient {
     options?: AgentCreateSessionOptions,
   ): Promise<AgentSession> {
     const claudeConfig = this.assertConfig(config);
+    const outputStyles = await this.listOutputStyles(claudeConfig.cwd, launchContext?.env);
     return new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
@@ -1557,6 +1577,7 @@ export class ClaudeAgentClient implements AgentClient {
       queryFactory: this.queryFactory,
       resolveBinary: this.resolveBinary,
       rewindSdk: this.rewindSdk,
+      outputStyles,
     });
   }
 
@@ -1576,6 +1597,7 @@ export class ClaudeAgentClient implements AgentClient {
       cwd: merged.cwd,
     };
     const claudeConfig = this.assertConfig(mergedConfig);
+    const outputStyles = await this.listOutputStyles(claudeConfig.cwd, launchContext?.env);
     return new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
@@ -1586,6 +1608,7 @@ export class ClaudeAgentClient implements AgentClient {
       queryFactory: this.queryFactory,
       resolveBinary: this.resolveBinary,
       rewindSdk: this.rewindSdk,
+      outputStyles,
     });
   }
 
@@ -1635,6 +1658,8 @@ export class ClaudeAgentClient implements AgentClient {
     return buildClaudeFeatures({
       modelId: claudeConfig.model,
       fastModeEnabled: claudeConfig.featureValues?.fast_mode === true,
+      outputStyles: await this.listOutputStyles(claudeConfig.cwd),
+      outputStyle: readOutputStyleValue(claudeConfig.featureValues),
     });
   }
 
@@ -2154,6 +2179,7 @@ class ClaudeAgentSession implements AgentSession {
   private readonly emittedUserMessageIds = new Set<string>();
   private readonly rewindTurnAnchors: ClaudeRewindTurnAnchor[] = [];
   private readonly rewindSdk: ClaudeRewindSdk;
+  private readonly outputStyles: readonly OutputStyle[];
   private pendingFreshSessionId: string | null = null;
   private recentStderr = "";
   private closed = false;
@@ -2171,6 +2197,7 @@ class ClaudeAgentSession implements AgentSession {
     this.queryFactory = options.queryFactory;
     this.resolveBinary = options.resolveBinary;
     this.rewindSdk = options.rewindSdk ?? realClaudeRewindSdk;
+    this.outputStyles = options.outputStyles;
     this.contextUsage = new ClaudeContextUsageState(
       findClaudeModel(this.config.model)?.contextWindowMaxTokens,
     );
@@ -2210,6 +2237,8 @@ class ClaudeAgentSession implements AgentSession {
     return buildClaudeFeatures({
       modelId: this.config.model,
       fastModeEnabled: this.config.featureValues?.fast_mode === true,
+      outputStyles: this.outputStyles,
+      outputStyle: readOutputStyleValue(this.config.featureValues),
     });
   }
 
@@ -2554,6 +2583,10 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
+    if (featureId === OUTPUT_STYLE_FEATURE_ID) {
+      await this.applyOutputStyleFeature(value);
+      return;
+    }
     if (featureId !== "fast_mode") {
       throw new Error(`Unknown Claude feature: ${featureId}`);
     }
@@ -2566,6 +2599,16 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     await this.applyFastModeFeature(enabled);
+  }
+
+  // Claude Code 2.1.251+ applies a changed style from the next message; older CLIs need a new
+  // session. Paseo validates against the styles it discovered, not Claude's resolved list.
+  private async applyOutputStyleFeature(value: unknown): Promise<void> {
+    if (typeof value !== "string" || !this.outputStyles.some((style) => style.name === value)) {
+      throw new Error(`Claude output style '${String(value)}' is not available`);
+    }
+    this.config.featureValues = { ...this.config.featureValues, [OUTPUT_STYLE_FEATURE_ID]: value };
+    await this.query?.applyFlagSettings({ outputStyle: value });
   }
 
   private async applyFastModeFeature(enabled: boolean, query?: Query): Promise<void> {
@@ -3445,7 +3488,8 @@ class ClaudeAgentSession implements AgentSession {
     // Internal agents do daemon work such as naming a branch, so the user's and
     // project's hooks must not run for them.
     const disableAllHooks = this.config.internal === true;
-    if (fastMode === null && !input.ultracode && !disableAllHooks) {
+    const outputStyle = readOutputStyleValue(this.config.featureValues);
+    if (fastMode === null && !input.ultracode && !disableAllHooks && outputStyle === null) {
       return {};
     }
     return {
@@ -3453,6 +3497,7 @@ class ClaudeAgentSession implements AgentSession {
         ...(fastMode === null ? {} : { fastMode }),
         ...(input.ultracode ? { ultracode: true } : {}),
         ...(disableAllHooks ? { disableAllHooks: true } : {}),
+        ...(outputStyle === null ? {} : { outputStyle }),
       }),
     };
   }

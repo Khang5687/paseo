@@ -2845,6 +2845,12 @@ export const en = {
         failedToFetch: "Failed to fetch diagnostic",
         unknownError: "Unknown error",
       },
+      featureDefaults: {
+        title: "Defaults for new agents",
+        providerDefault: "Provider default",
+        on: "On",
+        off: "Off",
+      },
     },
     project: {
       noEditableTarget: "This project isn't editable on this host.",

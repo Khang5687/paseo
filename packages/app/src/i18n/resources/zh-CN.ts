@@ -2684,6 +2684,12 @@ export const zhCN: TranslationResources = {
         failedToFetch: "获取诊断失败",
         unknownError: "未知错误",
       },
+      featureDefaults: {
+        title: "新代理的默认设置",
+        providerDefault: "提供方默认",
+        on: "开启",
+        off: "关闭",
+      },
     },
     project: {
       noEditableTarget: "此项目无法在这个 Host 上编辑。",

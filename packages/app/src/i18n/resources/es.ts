@@ -2776,6 +2776,12 @@ export const es: TranslationResources = {
         failedToFetch: "No se pudo recuperar el diagnóstico",
         unknownError: "Error desconocido",
       },
+      featureDefaults: {
+        title: "Valores predeterminados para nuevos agentes",
+        providerDefault: "Predeterminado del proveedor",
+        on: "Activado",
+        off: "Desactivado",
+      },
     },
     project: {
       noEditableTarget: "Este proyecto no se puede editar en este host.",

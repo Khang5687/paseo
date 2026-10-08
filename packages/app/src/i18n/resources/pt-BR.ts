@@ -2759,6 +2759,12 @@ export const ptBR: TranslationResources = {
         failedToFetch: "Falha ao buscar diagnóstico",
         unknownError: "Erro desconhecido",
       },
+      featureDefaults: {
+        title: "Padrões para novos agentes",
+        providerDefault: "Padrão do provedor",
+        on: "Ativado",
+        off: "Desativado",
+      },
     },
     project: {
       noEditableTarget: "Este projeto não pode ser editado neste host.",

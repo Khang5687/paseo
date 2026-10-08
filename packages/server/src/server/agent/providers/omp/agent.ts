@@ -53,6 +53,16 @@ import {
 import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
 import { composeSystemPromptParts } from "../../system-prompt.js";
 import {
+  buildOutputStyleFeature,
+  DEFAULT_OUTPUT_STYLE,
+  discoverOutputStyleFiles,
+  OUTPUT_STYLE_FEATURE_ID,
+  readOutputStyleValue,
+  renderOutputStylePrompt,
+  type DiscoverOutputStyles,
+  type OutputStyle,
+} from "../../output-styles.js";
+import {
   buildBinaryDiagnosticRows,
   buildCommandResolutionDiagnosticRows,
   formatProviderDiagnostic,
@@ -135,6 +145,7 @@ export interface OmpAgentClientOptions {
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
+  discoverOutputStyles?: DiscoverOutputStyles;
 }
 
 export interface OmpProviderIdleScheduler {
@@ -210,6 +221,8 @@ interface OmpAgentSessionOptions {
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
+  /** "default" plus the custom styles; OMP has no copy of Claude Code's built-in style text. */
+  outputStyles: readonly OutputStyle[];
   /**
    * When false (resumed sessions), replayed session events are dropped until
    * the first prompt or agent_start so history is not re-emitted as live
@@ -451,6 +464,7 @@ function buildResumeStartInput(input: {
   sessionFile: string;
   launchContext: AgentLaunchContext | undefined;
   launchMode: { modeId: string | null; extraArgs?: string[] };
+  outputStyles: readonly OutputStyle[];
 }): OmpStartSessionInput {
   return {
     cwd: input.resumeConfig.cwd,
@@ -460,11 +474,35 @@ function buildResumeStartInput(input: {
     thinkingOptionId: normalizeOmpThinkingOption(input.resumeConfig.thinkingOptionId) ?? undefined,
     ...(input.launchMode.modeId ? { modeId: input.launchMode.modeId } : {}),
     ...(input.launchMode.extraArgs ? { extraArgs: input.launchMode.extraArgs } : {}),
-    systemPrompt: composeSystemPromptParts(
-      input.resumeConfig.config.systemPrompt,
-      input.resumeConfig.config.daemonAppendSystemPrompt,
-    ),
+    systemPrompt: composeOmpSystemPrompt(input.resumeConfig.config, input.outputStyles),
   };
+}
+
+// The picker only appears once a custom style exists; "default" alone is no choice.
+function buildOmpOutputStyleFeatures(
+  outputStyles: readonly OutputStyle[],
+  config: AgentSessionConfig,
+): AgentFeature[] {
+  if (outputStyles.length < 2) return [];
+  return [
+    buildOutputStyleFeature({
+      styles: outputStyles,
+      value: readOutputStyleValue(config.featureValues) ?? DEFAULT_OUTPUT_STYLE,
+    }),
+  ];
+}
+
+// OMP has no output-style setting, so the selected style's text rides on --append-system-prompt.
+function composeOmpSystemPrompt(
+  config: AgentSessionConfig,
+  outputStyles: readonly OutputStyle[],
+): string | undefined {
+  const selected = readOutputStyleValue(config.featureValues);
+  return composeSystemPromptParts(
+    config.systemPrompt,
+    config.daemonAppendSystemPrompt,
+    renderOutputStylePrompt(outputStyles.find((style) => style.name === selected)),
+  );
 }
 
 function readNativeMessageId(
@@ -756,6 +794,7 @@ export class OmpAgentSession implements AgentSession {
     this.currentModeId = options.currentModeId ?? null;
     this.logger = options.logger;
     this.live = options.live ?? true;
+    this.outputStyles = options.outputStyles;
     this.providerIdleScheduler = options.providerIdleScheduler ?? createOmpProviderIdleScheduler();
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs ?? OMP_PROVIDER_IDLE_DEADLINE_MS;
     this.noTurnScheduler = options.noTurnScheduler ?? createOmpNoTurnScheduler();
@@ -804,13 +843,15 @@ export class OmpAgentSession implements AgentSession {
   private readonly restartRuntime: OmpAgentSessionOptions["restartRuntime"];
   private readonly config: AgentSessionConfig;
   private readonly logger: Logger;
+  private readonly outputStyles: readonly OutputStyle[];
 
   get id(): string | null {
     return this.state.sessionId;
   }
 
   get features(): AgentFeature[] {
-    if (!hasOmpFastMode(this.state)) return [];
+    const outputStyleFeatures = buildOmpOutputStyleFeatures(this.outputStyles, this.config);
+    if (!hasOmpFastMode(this.state)) return outputStyleFeatures;
     return [
       {
         type: "toggle",
@@ -822,10 +863,15 @@ export class OmpAgentSession implements AgentSession {
           ? { description: OMP_FAST_INACTIVE_MESSAGE, tooltip: OMP_FAST_INACTIVE_MESSAGE }
           : {}),
       },
+      ...outputStyleFeatures,
     ];
   }
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
+    if (featureId === OUTPUT_STYLE_FEATURE_ID) {
+      await this.setOutputStyle(value);
+      return;
+    }
     if (featureId !== "fast_mode") throw new Error(`Unknown OMP feature: ${featureId}`);
     if (typeof value !== "boolean") throw new Error("OMP fast mode requires a boolean");
     if (!hasOmpFastMode(this.state)) throw new Error("OMP fast mode is unavailable");
@@ -836,6 +882,27 @@ export class OmpAgentSession implements AgentSession {
       fastModeActive: result.active,
     };
     this.config.featureValues = { ...this.config.featureValues, fast_mode: result.enabled };
+  }
+
+  // The style is part of the launch-time system prompt, so changing it restarts OMP on the same
+  // session file, as an approval-mode change does.
+  private async setOutputStyle(value: unknown): Promise<void> {
+    if (typeof value !== "string" || !this.outputStyles.some((style) => style.name === value)) {
+      throw new Error(`OMP output style '${String(value)}' is not available`);
+    }
+    if (value === (readOutputStyleValue(this.config.featureValues) ?? DEFAULT_OUTPUT_STYLE)) return;
+    if (this.activeTurnId || this.state.isStreaming || this.state.isCompacting) {
+      throw new Error("Change the output style once the current turn ends");
+    }
+    if (!this.currentModeId) throw new Error("OMP session has no approval mode to relaunch with");
+    const previous = this.config.featureValues;
+    this.config.featureValues = { ...previous, [OUTPUT_STYLE_FEATURE_ID]: value };
+    try {
+      await this.replaceRuntime(this.currentModeId);
+    } catch (error) {
+      this.config.featureValues = previous;
+      throw error;
+    }
   }
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
@@ -2237,6 +2304,7 @@ export class OmpAgentClient implements AgentClient {
   private readonly usagePollScheduler?: OmpUsagePollScheduler;
   private readonly providerIdleDeadlineMs?: number;
   private readonly runtime?: OmpRuntime;
+  private readonly discoverOutputStyles: DiscoverOutputStyles;
 
   constructor(options: OmpAgentClientOptions) {
     const runtimeSettings = mergeOmpRuntimeSettings(
@@ -2256,6 +2324,21 @@ export class OmpAgentClient implements AgentClient {
     this.usagePollScheduler = options.usagePollScheduler;
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs;
     this.runtime = options.runtime;
+    this.discoverOutputStyles = options.discoverOutputStyles ?? discoverOutputStyleFiles;
+  }
+
+  private async listOutputStyles(
+    cwd: string,
+    launchEnv?: Record<string, string>,
+  ): Promise<OutputStyle[]> {
+    const custom = await this.discoverOutputStyles({
+      cwd,
+      env: { ...process.env, ...this.runtimeSettings?.env, ...launchEnv },
+    });
+    return [
+      { name: DEFAULT_OUTPUT_STYLE, description: "OMP's own voice, no style appended", body: null },
+      ...custom.filter((style) => style.name !== DEFAULT_OUTPUT_STYLE),
+    ];
   }
 
   private async configureNativePaseoTools(
@@ -2299,6 +2382,7 @@ export class OmpAgentClient implements AgentClient {
     launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
     const launchMode = this.resolveLaunchMode(config.modeId, config.providerOptions);
+    const outputStyles = await this.listOutputStyles(config.cwd, launchContext?.env);
     const startInput: OmpStartSessionInput = {
       cwd: config.cwd,
       protocolMode: "rpc-ui",
@@ -2307,7 +2391,7 @@ export class OmpAgentClient implements AgentClient {
       noSession: config.internal === true,
       modeId: launchMode.modeId,
       extraArgs: launchMode.extraArgs,
-      systemPrompt: composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
+      systemPrompt: composeOmpSystemPrompt(config, outputStyles),
       env: launchContext?.env,
     };
     const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession(
@@ -2329,7 +2413,7 @@ export class OmpAgentClient implements AgentClient {
       return new OmpAgentSession({
         runtimeSession,
         hostTools,
-        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext),
+        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext, outputStyles),
         config,
         initialState,
         currentModeId: launchMode.modeId,
@@ -2339,6 +2423,7 @@ export class OmpAgentClient implements AgentClient {
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
+        outputStyles,
       });
     } catch (error) {
       await hostTools?.close();
@@ -2375,11 +2460,13 @@ export class OmpAgentClient implements AgentClient {
       resumeConfig.modeId,
       resumeConfig.config.providerOptions,
     );
+    const outputStyles = await this.listOutputStyles(resumeConfig.cwd, launchContext?.env);
     const startInput = buildResumeStartInput({
       resumeConfig,
       sessionFile,
       launchContext,
       launchMode,
+      outputStyles,
     });
     const runtimeSession = await this.resolveRuntime(
       resumeConfig.config.providerOptions,
@@ -2401,7 +2488,7 @@ export class OmpAgentClient implements AgentClient {
       return new OmpAgentSession({
         runtimeSession,
         hostTools,
-        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext),
+        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext, outputStyles),
         config,
         initialState,
         currentModeId: launchMode.modeId,
@@ -2411,6 +2498,7 @@ export class OmpAgentClient implements AgentClient {
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
+        outputStyles,
         live: false,
       });
     } catch (error) {
@@ -2452,7 +2540,8 @@ export class OmpAgentClient implements AgentClient {
   private buildRestartRuntime(
     startInput: OmpStartSessionInput,
     config: AgentSessionConfig,
-    launchContext?: AgentLaunchContext,
+    launchContext: AgentLaunchContext | undefined,
+    outputStyles: readonly OutputStyle[],
   ): OmpAgentSessionOptions["restartRuntime"] {
     return async (sessionFile, modeId) => {
       const launchMode = this.resolveLaunchMode(modeId, config.providerOptions);
@@ -2462,6 +2551,7 @@ export class OmpAgentClient implements AgentClient {
         thinkingOptionId: normalizeOmpThinkingOption(config.thinkingOptionId) ?? undefined,
         modeId: launchMode.modeId,
         extraArgs: launchMode.extraArgs,
+        systemPrompt: composeOmpSystemPrompt(config, outputStyles),
         ...(!startInput.noSession && sessionFile ? { session: sessionFile } : {}),
       });
       let hostTools: OmpHostToolRouter | undefined;
@@ -2524,8 +2614,8 @@ export class OmpAgentClient implements AgentClient {
     }
   }
 
-  async listFeatures(_config: AgentSessionConfig): Promise<AgentFeature[]> {
-    return [];
+  async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
+    return buildOmpOutputStyleFeatures(await this.listOutputStyles(config.cwd), config);
   }
 
   async listImportableSessions(
