@@ -78,12 +78,15 @@ function mountCard(question: Record<string, unknown>) {
     });
   };
   const submit = () => act(() => view.getByRole("button", { name: "Submit" }).click());
-  const submittedAnswers = (): Record<string, string> => {
+  const submittedInput = (): Record<string, unknown> => {
     const response = onRespond.mock.calls[0]?.[0];
     if (!response || response.behavior !== "allow") throw new Error("card did not submit");
-    return (response.updatedInput as { answers: Record<string, string> }).answers;
+    return response.updatedInput ?? {};
   };
-  return { check, type, otherInput, submit, submittedAnswers };
+  const submittedAnswers = () => submittedInput().answers as Record<string, string>;
+  const queryOtherInput = () =>
+    view.queryByRole<HTMLInputElement>("textbox", { name: String(question.question) });
+  return { check, type, otherInput, queryOtherInput, submit, submittedAnswers, submittedInput };
 }
 
 const multiSelectQuestion = {
@@ -145,5 +148,54 @@ describe("QuestionFormCard other answers", () => {
     expect(card.otherInput().value).toBe("");
     card.submit();
     expect(card.submittedAnswers()).toEqual({ Provider: "Codex" });
+  });
+});
+
+describe("QuestionFormCard notes", () => {
+  const deadlineQuestion = {
+    question: "Which deadline?",
+    header: "Deadline",
+    options: [{ label: "3-month" }, { label: "6-month" }],
+    multiSelect: false,
+    allowOther: true,
+    allowNotes: true,
+  };
+
+  it("submits the typed text as a note on the selected option", () => {
+    const card = mountCard(deadlineQuestion);
+
+    expect(card.otherInput().placeholder).toBe("Other...");
+    card.check("6-month");
+    expect(card.otherInput().placeholder).toBe("Add a note...");
+    card.type("but make the refund window 30 days");
+    card.check("3-month");
+
+    expect(card.otherInput().value).toBe("but make the refund window 30 days");
+    card.submit();
+    expect(card.submittedInput()).toMatchObject({
+      answers: { Deadline: "3-month" },
+      notes: { Deadline: "but make the refund window 30 days" },
+    });
+  });
+
+  it("turns the note back into the Other answer when the option is deselected", () => {
+    const card = mountCard(deadlineQuestion);
+
+    card.check("6-month");
+    card.type("9-month");
+    card.check("6-month");
+
+    expect(card.otherInput().placeholder).toBe("Other...");
+    card.submit();
+    expect(card.submittedAnswers()).toEqual({ Deadline: "9-month" });
+    expect(card.submittedInput()).not.toHaveProperty("notes");
+  });
+
+  it("shows the box only once an option is selected when Other answers are not allowed", () => {
+    const card = mountCard({ ...deadlineQuestion, allowOther: false });
+
+    expect(card.queryOtherInput()).toBeNull();
+    card.check("3-month");
+    expect(card.otherInput().placeholder).toBe("Add a note...");
   });
 });

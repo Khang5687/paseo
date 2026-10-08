@@ -367,6 +367,7 @@ export const en = {
       next: "Next",
       answerPlaceholder: "Type your answer...",
       otherPlaceholder: "Other...",
+      notePlaceholder: "Add a note...",
     },
     todo: {
       title: "Tasks",

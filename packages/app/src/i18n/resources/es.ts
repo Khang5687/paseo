@@ -375,6 +375,7 @@ export const es: TranslationResources = {
       next: "Siguiente",
       answerPlaceholder: "Escribe tu respuesta...",
       otherPlaceholder: "Otro...",
+      notePlaceholder: "Añade una nota...",
     },
     todo: {
       title: "Tareas",

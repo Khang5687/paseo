@@ -375,6 +375,7 @@ export const fr: TranslationResources = {
       next: "Suivant",
       answerPlaceholder: "Saisissez votre réponse…",
       otherPlaceholder: "Autre…",
+      notePlaceholder: "Ajouter une note…",
     },
     todo: {
       title: "Tâches",

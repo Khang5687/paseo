@@ -2,6 +2,7 @@ import type { ProviderEvent, ProviderPermissionResponse } from "@getpaseo/plugin
 import type { z } from "zod";
 import { MspConnection } from "./connection.js";
 import { MuseError } from "./errors.js";
+import type { UserInputAnswer } from "./msp.js";
 import { ackSchema, questionSchema, questionAnswersSchema, settledQuestionSchema } from "./wire.js";
 
 export class Questions {
@@ -33,6 +34,7 @@ export class Questions {
             options: question.options,
             multiSelect: question.selection.mode === "multiple",
             allowOther: true,
+            allowNotes: true,
             allowEmpty: question.selection.minSelections === 0,
           })),
         },
@@ -64,17 +66,23 @@ export class Questions {
     const answers = request.questions.map((question) => {
       const text = supplied.answers[question.header];
       if (text === undefined) throw new MuseError("missingAnswer", `Answer ${question.header}`);
-      if (question.selection.mode === "single")
-        return question.options.some((option) => option.label === text)
-          ? { questionId: question.id, selectedLabel: text }
-          : { questionId: question.id, freeText: text };
-      const labels = text
-        .split(",")
-        .map((label) => label.trim())
-        .filter(Boolean);
-      if (labels.every((label) => question.options.some((option) => option.label === label)))
-        return { questionId: question.id, selectedLabels: labels };
-      return { questionId: question.id, freeText: text };
+      const answer: UserInputAnswer = { questionId: question.id };
+      if (question.selection.mode === "single") {
+        if (question.options.some((option) => option.label === text)) answer.selectedLabel = text;
+        else answer.freeText = text;
+      } else {
+        const labels = text
+          .split(",")
+          .map((label) => label.trim())
+          .filter(Boolean);
+        if (labels.every((label) => question.options.some((option) => option.label === label)))
+          answer.selectedLabels = labels;
+        else answer.freeText = text;
+      }
+      // Like freeText, a note longer than Muse's 500 characters is left for the host to reject.
+      const note = supplied.notes?.[question.header]?.trim();
+      if (note) answer.note = note;
+      return answer;
     });
     await this.host.command(
       "userInput/answer",
