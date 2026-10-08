@@ -1,4 +1,5 @@
 import { generateMessageId } from "@/types/stream";
+import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 
 export const NEW_WORKSPACE_DRAFT_KEY = "new-workspace";
 const NEW_WORKSPACE_FORK_DRAFT_PREFIX = `${NEW_WORKSPACE_DRAFT_KEY}:draft:`;
@@ -33,4 +34,23 @@ export function buildDraftStoreKey(input: {
     return `draft:${serverId}:${explicitDraftId}`;
   }
   return `agent:${serverId}:${input.agentId.trim()}`;
+}
+
+/** The composer draft a workspace tab owns, or null for tabs without a composer. */
+export function buildTabDraftStoreKey(input: {
+  serverId: string;
+  tabId: string;
+  target: WorkspaceTabTarget;
+}): string | null {
+  if (input.target.kind === "agent") {
+    return buildDraftStoreKey({ serverId: input.serverId, agentId: input.target.agentId });
+  }
+  if (input.target.kind === "draft") {
+    return buildDraftStoreKey({
+      serverId: input.serverId,
+      agentId: input.tabId,
+      draftId: input.target.draftId,
+    });
+  }
+  return null;
 }

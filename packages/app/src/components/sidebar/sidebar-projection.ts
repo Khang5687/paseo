@@ -5,9 +5,11 @@ import {
   type PinnedSidebarGroups,
   type PinnedSidebarKeys,
 } from "@/hooks/use-sidebar-pins";
+import { splitSettledSidebarGroups, type SettledSidebarKeys } from "@/hooks/use-sidebar-settled";
 import type {
   SidebarProjectEntry,
   SidebarWorkspaceEntry,
+  SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
 import {
@@ -22,8 +24,11 @@ import {
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
 
 export interface SidebarProjection {
+  /** `unpinnedProjects` here also has the settled rows removed: it is exactly what the list shows. */
   pinnedGroups: PinnedSidebarGroups;
   workspaceGroups: SidebarWorkspaceGroup[];
+  /** The flat Settled section at the bottom of the list, most recently settled first. */
+  settledRows: SidebarWorkspacePlacement[];
   /**
    * The project icons this projection needs fetched, keyed by `projectViewKey` — one per project,
    * whatever the mode groups by. It sits here rather than beside `useProjectIcons` in the list
@@ -39,6 +44,7 @@ export interface SidebarProjection {
 export interface SidebarProjectionInput {
   projects: SidebarProjectEntry[];
   pinnedKeys: PinnedSidebarKeys;
+  settledKeys: SettledSidebarKeys;
   pinnedWorkspaceOrder: string[];
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByViewKey: Map<string, string>;
@@ -50,20 +56,33 @@ export interface SidebarProjectionInput {
 }
 
 export function buildSidebarProjection(input: SidebarProjectionInput): SidebarProjection {
-  const pinnedGroups = splitPinnedSidebarGroups({
+  const pinned = splitPinnedSidebarGroups({
     projects: input.projects,
     keys: input.pinnedKeys,
     pinnedWorkspaceOrder: input.pinnedWorkspaceOrder,
   });
+  // Settled splits after Pinned, from what Pinned left behind, so pinned wins.
+  const settled = splitSettledSidebarGroups({
+    projects: pinned.unpinnedProjects,
+    keys: input.settledKeys,
+  });
+  const pinnedGroups: PinnedSidebarGroups = {
+    pinnedChats: pinned.pinnedChats,
+    unpinnedProjects: settled.unsettledProjects,
+  };
   const pinnedWorkspaceKeys = new Set(input.pinnedKeys.pinnedWorkspaceKeys);
-  const unpinnedWorkspaces = Array.from(input.workspaceEntriesByKey.values()).filter(
-    (workspace) => !pinnedWorkspaceKeys.has(workspace.workspaceKey),
+  const settledWorkspaceKeys = new Set(input.settledKeys.settledWorkspaceKeys);
+  const listedWorkspaces = Array.from(input.workspaceEntriesByKey.values()).filter(
+    (workspace) =>
+      !pinnedWorkspaceKeys.has(workspace.workspaceKey) &&
+      !settledWorkspaceKeys.has(workspace.workspaceKey),
   );
   // One switch decides both what the list groups by and what the keyboard shortcuts walk, so the
   // two cannot disagree and a new grouping mode is a compile error here rather than a silent
   // fall-through to the project rows.
-  const workspaceGroups = buildWorkspaceGroups(input, unpinnedWorkspaces);
+  const workspaceGroups = buildWorkspaceGroups(input, listedWorkspaces);
 
+  // Settled rows are put away, so no section here numbers them.
   const sections: SidebarShortcutSection[] = [];
   if (!input.pinnedCollapsed) {
     sections.push({ workspaces: pinnedGroups.pinnedChats });
@@ -87,6 +106,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   return {
     pinnedGroups,
     workspaceGroups,
+    settledRows: settled.settledRows,
     projectIconTargets: resolveSidebarProjectIconTargets(input.projects),
     shortcutModel: buildSidebarShortcutSections({ sections }),
   };
@@ -95,14 +115,14 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
 /** Project mode keeps its project headers and groups nothing; status mode groups the rows. */
 function buildWorkspaceGroups(
   input: SidebarProjectionInput,
-  unpinnedWorkspaces: SidebarWorkspaceEntry[],
+  listedWorkspaces: SidebarWorkspaceEntry[],
 ): SidebarWorkspaceGroup[] {
   switch (input.groupMode) {
     case "project":
       return [];
     case "status":
       return statusWorkspaceGroups(
-        buildStatusGroups(unpinnedWorkspaces, input.projectNamesByViewKey, input.t),
+        buildStatusGroups(listedWorkspaces, input.projectNamesByViewKey, input.t),
       );
   }
 }

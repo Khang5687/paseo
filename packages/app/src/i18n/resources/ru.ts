@@ -473,6 +473,7 @@ export const ru: TranslationResources = {
       openToSide: "Открыть сбоку",
       copyPath: "Копировать путь",
       copyRelativePath: "Копировать относительный путь",
+      copyFullPath: "Копировать полный путь",
       revealIn: "Показать в {{target}}",
       download: "Скачать",
       addToChat: "Добавить в чат",
@@ -1157,6 +1158,7 @@ export const ru: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Группа «{{label}}»",
+    unsentDraft: "Неотправленный черновик",
     statusBucket: {
       needsInput: "Ожидает ввода",
       failed: "Ошибка",
@@ -1212,6 +1214,10 @@ export const ru: TranslationResources = {
     },
     pinned: {
       title: "Закреплённые",
+    },
+    settled: {
+      title: "Завершённые",
+      titleWithCount: "Завершённые ({{count}})",
     },
     host: {
       noHost: "Нет хоста",
@@ -1303,6 +1309,10 @@ export const ru: TranslationResources = {
         rename: "Переименовать рабочее пространство",
         pin: "Закрепить вверху",
         unpin: "Открепить",
+        settle: "Завершить",
+        unsettle: "Вернуть",
+        settleWorkspace: "Отметить рабочее пространство завершённым",
+        unsettleWorkspace: "Вернуть рабочее пространство",
         archive: "Архивировать",
         archiveWorkspace: "Архивировать рабочее пространство",
         hideFromSidebar: "Скрыть на боковой панели",
@@ -1387,6 +1397,9 @@ export const ru: TranslationResources = {
     quitting: {
       title: "Завершение работы Paseo...",
       detail: "Остановка локального демона.",
+    },
+    quitConfirm: {
+      hint: "Удерживайте ⌘Q или нажмите дважды для выхода",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2164,6 +2177,7 @@ export const ru: TranslationResources = {
           queue: "Поставить в очередь",
         },
       },
+      defaultEditor: "Редактор по умолчанию",
       serviceUrls: {
         options: {
           ask: "Спрашивать",
@@ -2300,6 +2314,85 @@ export const ru: TranslationResources = {
         },
         moveUp: "Переместить вверх",
         moveDown: "Переместить вниз",
+      },
+      background: {
+        title: "Фон",
+        applyTo: {
+          title: "Применить к",
+          options: {
+            both: "Обеим",
+            light: "Светлой",
+            dark: "Тёмной",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Фоновые изображения",
+          none: "Нет",
+          addImage: "Добавить изображение…",
+          importDefaultName: "Изображение",
+        },
+        menu: {
+          actions: "Действия для {{name}}",
+          edit: "Изменить…",
+          delete: "Удалить",
+          details: "Подробности",
+        },
+        undo: {
+          action: "Отменить",
+          accessibilityLabel: "Отменить изменение фона",
+        },
+        catalog: {
+          browse: "Обзор",
+          hint: "Установите больше фонов из этого плагина",
+        },
+        visibility: {
+          title: "Видимость изображения",
+          hint: "Paseo автоматически сохраняет читаемость текста, поэтому яркие изображения могут быть видны слабее.",
+        },
+        blur: {
+          title: "Размытие",
+          options: {
+            off: "Выкл.",
+            low: "Слабое",
+            medium: "Среднее",
+            high: "Сильное",
+          },
+        },
+        showBehindSidebar: "Показывать за боковой панелью",
+        showBehindContent: "Показывать за содержимым",
+        status: {
+          reducedTransparency:
+            "Скрыто, так как в системных настройках включено «Уменьшить прозрачность»",
+          forcedColors: "Скрыто, пока включён режим высокой контрастности",
+          error: "Не удалось показать фон",
+        },
+        errors: {
+          select: "Не удалось применить фон: {{message}}",
+          import: "Не удалось импортировать изображение: {{message}}",
+          update: "Не удалось сохранить изменения: {{message}}",
+          remove: "Не удалось удалить фон: {{message}}",
+        },
+        edit: {
+          title: "Изменить фон",
+          name: "Название",
+          focal: "Фокусная точка",
+          focalHint: "Нажмите на часть изображения, которая должна остаться в кадре.",
+          focalAccessibility: "Выбрать фокусную точку",
+          save: "Сохранить",
+          saving: "Сохранение…",
+        },
+        delete: {
+          title: "Удалить «{{name}}»?",
+          message: "Изображение будет удалено с этого устройства.",
+          confirm: "Удалить",
+        },
+        details: {
+          title: "Подробности",
+          author: "Автор",
+          license: "Лицензия",
+          source: "Источник",
+          openSource: "Открыть источник",
+        },
       },
       fonts: {
         title: "Шрифты",

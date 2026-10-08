@@ -7,6 +7,10 @@ import {
   type PullRequestOpenLocation,
   type ServiceUrlBehavior,
 } from "@/hooks/use-settings";
+import {
+  DefaultEditorRow,
+  useDefaultEditorSetting,
+} from "@/screens/settings/open-location/default-editor";
 
 const SOURCES = [
   "explorerFiles",
@@ -83,10 +87,14 @@ function ServiceUrlRow() {
   );
 }
 
-/** Where things open: files, diffs, subagents, pull requests, and script URLs. Desktop only. */
+/**
+ * Where things open: files, diffs, subagents, pull requests, script URLs, and the editor
+ * "Open in …" uses. Desktop only.
+ */
 export function OpenLocationSection() {
   const { t } = useTranslation();
   const { settings, updateSettings } = useAppSettings();
+  const defaultEditor = useDefaultEditorSetting();
   const handleDestinationChange = useCallback(
     (source: OpenLocationSource, destination: PullRequestOpenLocation) => {
       if (source === "pullRequests") {
@@ -117,6 +125,7 @@ export function OpenLocationSection() {
           onDestinationChange={handleDestinationChange}
         />
         <ServiceUrlRow />
+        {defaultEditor ? <DefaultEditorRow {...defaultEditor} /> : null}
       </SettingsCard>
     </SettingsSection>
   );

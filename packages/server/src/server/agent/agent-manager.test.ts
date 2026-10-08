@@ -2072,6 +2072,55 @@ test("listDraftCommands uses explicit model config without default model fetchin
   ]);
 });
 
+test("listDraftCommands shares one provider session across identical concurrent requests", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-commands-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const draftCommand: AgentSlashCommand = {
+    name: "review",
+    description: "Review changes",
+    argumentHint: "",
+    kind: "skill",
+  };
+  let failNextListing = true;
+  class DraftCommandSession extends TestAgentSession {
+    override async listCommands(): Promise<AgentSlashCommand[]> {
+      if (failNextListing) {
+        failNextListing = false;
+        throw new Error("provider exited");
+      }
+      return [draftCommand];
+    }
+  }
+  class DraftCommandClient extends TestAgentClient {
+    createSessionCalls = 0;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.createSessionCalls += 1;
+      return new DraftCommandSession(config);
+    }
+  }
+  const client = new DraftCommandClient();
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const config: AgentSessionConfig = { provider: "codex", cwd: workdir, model: "gpt-5.4" };
+
+  const failed = await Promise.allSettled([
+    manager.listDraftCommands(config),
+    manager.listDraftCommands({ ...config }),
+  ]);
+  expect(failed.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+  expect(client.createSessionCalls).toBe(1);
+
+  // A failed listing is not reused: the next request starts a new session and succeeds.
+  await expect(manager.listDraftCommands(config)).resolves.toEqual([draftCommand]);
+  expect(client.createSessionCalls).toBe(2);
+
+  // A different config is a different listing.
+  await expect(manager.listDraftCommands({ ...config, model: "gpt-5.5" })).resolves.toEqual([
+    draftCommand,
+  ]);
+  expect(client.createSessionCalls).toBe(3);
+});
+
 test("listDraftFeatures does not start a fallback session without a model", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-features-"));
   const storagePath = join(workdir, "agents");

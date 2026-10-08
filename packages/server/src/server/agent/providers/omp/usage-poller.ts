@@ -105,6 +105,28 @@ export class OmpUsagePoller {
     this.publishUsage(usage, turnId);
   }
 
+  /**
+   * Reads usage once outside a turn, e.g. when a resumed session first gets a subscriber.
+   * A turn that starts meanwhile owns usage reporting, so its result wins.
+   */
+  async refresh(): Promise<void> {
+    if (this.closed || this.active) {
+      return;
+    }
+    const refreshGeneration = this.generation;
+    let usage: AgentUsage | undefined;
+    try {
+      usage = toAgentUsage(await this.options.readStats());
+    } catch (error) {
+      this.options.onPollError(error);
+      return;
+    }
+    if (this.closed || this.active || this.generation !== refreshGeneration) {
+      return;
+    }
+    this.publishUsage(usage);
+  }
+
   close(): void {
     this.closed = true;
     this.active = false;

@@ -474,6 +474,7 @@ export const es: TranslationResources = {
       openToSide: "Abrir al lado",
       copyPath: "Copiar ruta",
       copyRelativePath: "Copiar ruta relativa",
+      copyFullPath: "Copiar ruta completa",
       revealIn: "Mostrar en {{target}}",
       download: "Descargar",
       addToChat: "Añadir al chat",
@@ -1176,6 +1177,7 @@ export const es: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
+    unsentDraft: "Borrador sin enviar",
     statusBucket: {
       needsInput: "Necesita datos",
       failed: "Con error",
@@ -1230,6 +1232,10 @@ export const es: TranslationResources = {
     },
     pinned: {
       title: "Anclados",
+    },
+    settled: {
+      title: "Resueltos",
+      titleWithCount: "Resueltos ({{count}})",
     },
     host: {
       noHost: "Sin anfitrión",
@@ -1321,6 +1327,10 @@ export const es: TranslationResources = {
         rename: "Cambiar nombre del espacio de trabajo",
         pin: "Anclar arriba",
         unpin: "Desanclar",
+        settle: "Resolver",
+        unsettle: "Reabrir",
+        settleWorkspace: "Marcar espacio de trabajo como resuelto",
+        unsettleWorkspace: "Reabrir espacio de trabajo",
         archive: "Archivo",
         archiveWorkspace: "Archivar espacio de trabajo",
         hideFromSidebar: "Ocultar de la barra lateral",
@@ -1404,6 +1414,9 @@ export const es: TranslationResources = {
     quitting: {
       title: "Saliendo dePaseo...",
       detail: "Deteniendo el demonio local.",
+    },
+    quitConfirm: {
+      hint: "Mantén ⌘Q o pulsa dos veces para salir",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2180,6 +2193,7 @@ export const es: TranslationResources = {
           queue: "Cola",
         },
       },
+      defaultEditor: "Editor predeterminado",
       serviceUrls: {
         options: {
           ask: "Preguntar",
@@ -2314,6 +2328,85 @@ export const es: TranslationResources = {
         },
         moveUp: "Mover hacia arriba",
         moveDown: "Mover hacia abajo",
+      },
+      background: {
+        title: "Fondo",
+        applyTo: {
+          title: "Aplicar a",
+          options: {
+            both: "Ambos",
+            light: "Claro",
+            dark: "Oscuro",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Imágenes de fondo",
+          none: "Ninguno",
+          addImage: "Añadir imagen…",
+          importDefaultName: "Imagen",
+        },
+        menu: {
+          actions: "Acciones para {{name}}",
+          edit: "Editar…",
+          delete: "Eliminar",
+          details: "Detalles",
+        },
+        undo: {
+          action: "Deshacer",
+          accessibilityLabel: "Deshacer cambio de fondo",
+        },
+        catalog: {
+          browse: "Explorar",
+          hint: "Instala más fondos desde este complemento",
+        },
+        visibility: {
+          title: "Visibilidad de la imagen",
+          hint: "Paseo mantiene el texto legible automáticamente, por lo que las imágenes claras pueden mostrar menos imagen.",
+        },
+        blur: {
+          title: "Desenfoque",
+          options: {
+            off: "Desactivado",
+            low: "Bajo",
+            medium: "Medio",
+            high: "Alto",
+          },
+        },
+        showBehindSidebar: "Mostrar detrás de la barra lateral",
+        showBehindContent: "Mostrar detrás del contenido",
+        status: {
+          reducedTransparency:
+            "Oculto porque Reducir transparencia está activado en los ajustes del sistema",
+          forcedColors: "Oculto mientras el modo de alto contraste está activado",
+          error: "No se pudo mostrar el fondo",
+        },
+        errors: {
+          select: "No se pudo aplicar el fondo: {{message}}",
+          import: "No se pudo importar la imagen: {{message}}",
+          update: "No se pudieron guardar los cambios: {{message}}",
+          remove: "No se pudo eliminar el fondo: {{message}}",
+        },
+        edit: {
+          title: "Editar fondo",
+          name: "Nombre",
+          focal: "Punto focal",
+          focalHint: "Toca la parte de la imagen que debe mantenerse visible.",
+          focalAccessibility: "Elegir punto focal",
+          save: "Guardar",
+          saving: "Guardando…",
+        },
+        delete: {
+          title: '¿Eliminar "{{name}}"?',
+          message: "Esto elimina la imagen de este dispositivo.",
+          confirm: "Eliminar",
+        },
+        details: {
+          title: "Detalles",
+          author: "Autor",
+          license: "Licencia",
+          source: "Origen",
+          openSource: "Abrir origen",
+        },
       },
       fonts: {
         title: "Fuentes",
