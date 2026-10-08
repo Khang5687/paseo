@@ -467,6 +467,7 @@ export const zhCN: TranslationResources = {
       openToSide: "在侧边打开",
       copyPath: "复制路径",
       copyRelativePath: "复制相对路径",
+      copyFullPath: "复制完整路径",
       revealIn: "在 {{target}} 中显示",
       download: "下载",
       addToChat: "添加到聊天",
@@ -1131,6 +1132,7 @@ export const zhCN: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "{{label}} 分组",
+    unsentDraft: "未发送的草稿",
     statusBucket: {
       needsInput: "需要输入",
       failed: "失败",
@@ -1185,6 +1187,10 @@ export const zhCN: TranslationResources = {
     },
     pinned: {
       title: "已置顶",
+    },
+    settled: {
+      title: "已了结",
+      titleWithCount: "已了结 ({{count}})",
     },
     host: {
       noHost: "没有 Host",
@@ -1274,6 +1280,10 @@ export const zhCN: TranslationResources = {
         rename: "重命名 workspace",
         pin: "置顶",
         unpin: "取消置顶",
+        settle: "了结",
+        unsettle: "取消了结",
+        settleWorkspace: "了结工作区",
+        unsettleWorkspace: "取消了结工作区",
         archive: "归档",
         archiveWorkspace: "归档工作区",
         hideFromSidebar: "从侧边栏隐藏",
@@ -1356,6 +1366,9 @@ export const zhCN: TranslationResources = {
     quitting: {
       title: "正在退出 Paseo...",
       detail: "正在停止本地 daemon。",
+    },
+    quitConfirm: {
+      hint: "按住 ⌘Q 或按两次以退出",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2103,6 +2116,7 @@ export const zhCN: TranslationResources = {
           queue: "排队",
         },
       },
+      defaultEditor: "默认编辑器",
       serviceUrls: {
         options: {
           ask: "询问",
@@ -2234,6 +2248,84 @@ export const zhCN: TranslationResources = {
         },
         moveUp: "上移",
         moveDown: "下移",
+      },
+      background: {
+        title: "背景",
+        applyTo: {
+          title: "应用于",
+          options: {
+            both: "两者",
+            light: "浅色",
+            dark: "深色",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "背景图片",
+          none: "无",
+          addImage: "添加图片…",
+          importDefaultName: "图片",
+        },
+        menu: {
+          actions: "{{name}} 的操作",
+          edit: "编辑…",
+          delete: "删除",
+          details: "详情",
+        },
+        undo: {
+          action: "撤销",
+          accessibilityLabel: "撤销背景更改",
+        },
+        catalog: {
+          browse: "浏览",
+          hint: "从此插件安装更多背景",
+        },
+        visibility: {
+          title: "图片可见度",
+          hint: "Paseo 会自动保持文字清晰可读，因此明亮的图片可能显示得较淡。",
+        },
+        blur: {
+          title: "模糊",
+          options: {
+            off: "关闭",
+            low: "低",
+            medium: "中",
+            high: "高",
+          },
+        },
+        showBehindSidebar: "显示在侧边栏后方",
+        showBehindContent: "显示在内容后方",
+        status: {
+          reducedTransparency: "因系统设置中开启了“减少透明度”而隐藏",
+          forcedColors: "高对比度模式开启期间已隐藏",
+          error: "无法显示背景",
+        },
+        errors: {
+          select: "无法应用背景：{{message}}",
+          import: "无法导入图片：{{message}}",
+          update: "无法保存更改：{{message}}",
+          remove: "无法删除背景：{{message}}",
+        },
+        edit: {
+          title: "编辑背景",
+          name: "名称",
+          focal: "焦点",
+          focalHint: "点按图片中需要保持可见的部分。",
+          focalAccessibility: "选择焦点",
+          save: "保存",
+          saving: "正在保存…",
+        },
+        delete: {
+          title: "删除“{{name}}”？",
+          message: "这会从此设备移除该图片。",
+          confirm: "删除",
+        },
+        details: {
+          title: "详情",
+          author: "作者",
+          license: "许可证",
+          source: "来源",
+          openSource: "打开来源",
+        },
       },
       fonts: {
         title: "字体",

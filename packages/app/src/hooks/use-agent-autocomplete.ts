@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -298,12 +298,14 @@ function resolveCanLoadCommands(args: {
 function resolveAutocompleteIsLoading(args: {
   mode: AutocompleteMode;
   isCommandsLoading: boolean;
+  isCommandsFetching: boolean;
   fileSuggestionsIsPending: boolean;
   fileSuggestionsIsLoading: boolean;
   optionsLength: number;
 }): boolean {
   if (args.mode === "command") {
-    return args.isCommandsLoading && args.optionsLength === 0;
+    // A refetch with nothing to show reads as loading, not as "no commands".
+    return (args.isCommandsLoading || args.isCommandsFetching) && args.optionsLength === 0;
   }
   if (args.mode === "file") {
     return (
@@ -360,6 +362,35 @@ function resolveAutocompleteEmptyText(args: {
     return args.t("agentAutocomplete.chooseModelForCommands");
   }
   return args.t("agentAutocomplete.noCommands");
+}
+
+// One refetch per menu session when the typed query matches nothing: the command the user is
+// looking for may have been installed after the cached list was fetched.
+function useRevalidateCommandsOnMiss(args: {
+  mode: AutocompleteMode;
+  isVisible: boolean;
+  commandFilterQuery: string;
+  optionsLength: number;
+  revalidateForMiss: () => void;
+}) {
+  const { mode, revalidateForMiss } = args;
+  const revalidatedRef = useRef(false);
+  const hasMiss =
+    mode === "command" &&
+    args.isVisible &&
+    args.commandFilterQuery.length > 0 &&
+    args.optionsLength === 0;
+  useEffect(() => {
+    if (mode !== "command") {
+      revalidatedRef.current = false;
+      return;
+    }
+    if (!hasMiss || revalidatedRef.current) {
+      return;
+    }
+    revalidatedRef.current = true;
+    revalidateForMiss();
+  }, [mode, hasMiss, revalidateForMiss]);
 }
 
 export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAutocompleteResult {
@@ -438,7 +469,13 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     enabled: mode === "command" && canLoadCommands && canListCommands,
     draftConfig: queryDraftConfig,
   });
-  const { commands, isError, error } = commandsQuery;
+  const {
+    commands,
+    isError,
+    error,
+    isFetching: isCommandsFetching,
+    revalidateForMiss,
+  } = commandsQuery;
   const isCommandsLoading = canListCommands && commandsQuery.isLoading;
 
   const isVisible = canShowAutocomplete && !(mode === "command" && isCommandsLoading);
@@ -506,6 +543,14 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       t,
     ],
   );
+
+  useRevalidateCommandsOnMiss({
+    mode,
+    isVisible,
+    commandFilterQuery,
+    optionsLength: options.length,
+    revalidateForMiss,
+  });
 
   const onSelectOption = useCallback(
     (option: AutocompleteOption, snapshot?: AgentAutocompleteInputSnapshot) => {
@@ -590,6 +635,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   const isLoading = resolveAutocompleteIsLoading({
     mode,
     isCommandsLoading,
+    isCommandsFetching,
     fileSuggestionsIsPending: fileSuggestionsQuery.isPending,
     fileSuggestionsIsLoading: fileSuggestionsQuery.isLoading,
     optionsLength: options.length,

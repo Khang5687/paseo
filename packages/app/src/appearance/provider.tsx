@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useColorScheme } from "react-native";
 import { UnistylesRuntime } from "react-native-unistyles";
 import {
   DEFAULT_THEME_PREFERENCE,
@@ -20,6 +21,9 @@ import {
   type PluginThemeOption,
 } from "@/plugins/themes";
 import { PLUGIN_THEME_NAMES, PLUGIN_THEME_PREFERENCE, THEME_TO_UNISTYLES } from "@/styles/theme";
+import { useSkinSurfaces } from "@/skins/active";
+import { applySkinSurfaces } from "@/skins/apply-surfaces";
+import { resolveActiveScheme, SkinSchemeContext } from "@/skins/scheme";
 import { applyAppearance } from "./apply";
 
 interface ContributedThemes {
@@ -57,13 +61,19 @@ function applyTheme({ preference, contributedTheme }: ApplyThemeInput): void {
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
   const { settings, updateSettings, isLoading } = useAppSettings();
+  const systemScheme = useColorScheme();
   const [hasAppliedAppearance, setHasAppliedAppearance] = useState(false);
   const options = usePluginThemeCatalog();
   const selected = useMemo(() => {
     if (settings.theme !== PLUGIN_THEME_PREFERENCE) return null;
     return options.find((option) => option.id === settings.pluginThemeId) ?? null;
   }, [options, settings.pluginThemeId, settings.theme]);
-
+  const scheme = resolveActiveScheme({
+    preference: settings.theme,
+    contributedTheme: selected,
+    systemScheme,
+  });
+  const skinSurfaces = useSkinSurfaces(scheme);
   useEffect(() => {
     if (isLoading) return;
     applyTheme({ preference: settings.theme, contributedTheme: selected });
@@ -90,6 +100,26 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     settings.syntaxTheme,
   ]);
 
+  // The main effect above rewrites the plugin theme slot whenever any of its inputs change,
+  // discarding canvas patches. Skin surfaces derive from the base tokens, so re-apply them after
+  // every run of that effect and whenever the skin inputs change.
+  useEffect(() => {
+    if (isLoading) return;
+    applySkinSurfaces(skinSurfaces);
+  }, [
+    isLoading,
+    selected,
+    settings.theme,
+    settings.uiFontFamily,
+    settings.monoFontFamily,
+    settings.uiBaseFontSize,
+    settings.contentFontSize,
+    settings.codeFontSize,
+    settings.contentMaxWidth,
+    settings.syntaxTheme,
+    skinSurfaces,
+  ]);
+
   const select = useCallback(
     (option: PluginThemeOption) => {
       rememberPluginThemeHost(option);
@@ -107,7 +137,9 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   if (!hasAppliedAppearance) return null;
 
   return (
-    <ContributedThemesContext.Provider value={value}>{children}</ContributedThemesContext.Provider>
+    <ContributedThemesContext.Provider value={value}>
+      <SkinSchemeContext.Provider value={scheme}>{children}</SkinSchemeContext.Provider>
+    </ContributedThemesContext.Provider>
   );
 }
 

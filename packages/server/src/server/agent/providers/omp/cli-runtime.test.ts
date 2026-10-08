@@ -339,6 +339,57 @@ describe("OMP CLI runtime", () => {
     expect(commandTypes).toEqual(["get_available_commands"]);
   });
 
+  test("refreshes commands through refresh_commands", async () => {
+    const child = createOmpChild();
+    const commandTypes: string[] = [];
+    replyToCommands(child, (command) => {
+      commandTypes.push(String(command.type));
+      return { commands: [{ name: "deploy", description: "Deploy the app", source: "skill" }] };
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+
+    await expect(session.refreshCommands()).resolves.toEqual([
+      { name: "deploy", description: "Deploy the app", source: "skill" },
+    ]);
+    expect(commandTypes).toEqual(["refresh_commands"]);
+  });
+
+  test("lists known commands when OMP does not support refresh_commands", async () => {
+    const child = createOmpChild();
+    const commandTypes: string[] = [];
+    onOmpCommand(child, (command) => {
+      commandTypes.push(String(command.type));
+      const response =
+        command.type === "refresh_commands"
+          ? { success: false, error: "Unknown command: refresh_commands" }
+          : { success: true, data: { commands: [{ name: "review", source: "skill" }] } };
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: command.type, ...response })}\n`,
+      );
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+
+    await expect(session.refreshCommands()).resolves.toEqual([{ name: "review", source: "skill" }]);
+    await expect(session.refreshCommands()).resolves.toEqual([{ name: "review", source: "skill" }]);
+    expect(commandTypes).toEqual([
+      "refresh_commands",
+      "get_available_commands",
+      "get_available_commands",
+    ]);
+  });
+
+  test("surfaces refresh_commands failures other than an unknown command", async () => {
+    const child = createOmpChild();
+    onOmpCommand(child, (command) => {
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: command.type, success: false, error: "discovery failed" })}\n`,
+      );
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+
+    await expect(session.refreshCommands()).rejects.toThrow("discovery failed");
+  });
+
   test("accepts model catalogs with null maxTokens from newer OMP binaries", async () => {
     const child = createOmpChild();
     replyToCommands(child, () => ({

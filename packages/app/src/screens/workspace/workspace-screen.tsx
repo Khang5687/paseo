@@ -4141,10 +4141,10 @@ function WorkspaceScreenContent({
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   containerWorkspaceBackground: {
-    backgroundColor: theme.colors.surfaceWorkspace,
+    backgroundColor: theme.colors.canvasWorkspace,
   },
   threePaneRow: {
     flex: 1,
@@ -4273,7 +4273,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   newTabTooltipShortcut: {},
   mobileTabsRow: {
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     borderBottomWidth: theme.borderWidth[1],
     borderBottomColor: theme.colors.border,
   },
@@ -4310,7 +4310,7 @@ const styles = StyleSheet.create((theme) => ({
   tabsContainer: {
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -4394,7 +4394,7 @@ const styles = StyleSheet.create((theme) => ({
   content: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     position: "relative",
   },
   mobileMountedTabSlot: {
@@ -4403,7 +4403,7 @@ const styles = StyleSheet.create((theme) => ({
   contentPlaceholder: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   emptyState: {
     flex: 1,

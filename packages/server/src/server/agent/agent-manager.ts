@@ -56,6 +56,7 @@ import {
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import type { AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -95,6 +96,10 @@ import { extractAttention } from "../persistence-hooks.js";
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
 const IMPORTABLE_SESSION_LIST_TIMEOUT_MS = 90_000;
+// Listing draft commands can start a provider process. Identical requests share one listing,
+// and its result is reused this long so bursts of menu opens (several clients, panels) start
+// one process. Kept short: a longer window would hide newly installed skills.
+const DRAFT_COMMANDS_REUSE_MS = 2_000;
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
   supportsSessionPersistence: true,
@@ -439,6 +444,11 @@ interface ManagedAgentBase {
    * User-defined labels for categorizing agents (e.g., { surface: "workspace" }).
    */
   labels: Record<string, string>;
+  /**
+   * Daemon-owned message queue, head first. Dispatched one at a time when the
+   * agent goes idle (see agent-message-queue.ts). Persisted with the record.
+   */
+  queuedMessages: AgentQueuedMessagePayload[];
 }
 
 type ManagedAgentWithSession = ManagedAgentBase & {
@@ -737,6 +747,7 @@ export class AgentManager {
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
   private readonly reloadedSessionCloses = new WeakMap<AgentSession, Promise<void>>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
+  private readonly draftCommandListings = new Map<string, Promise<AgentSlashCommand[]>>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -1092,6 +1103,27 @@ export class AgentManager {
   }
 
   async listDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
+    const key = JSON.stringify(config);
+    const shared = this.draftCommandListings.get(key);
+    if (shared) {
+      return await shared;
+    }
+    const listing = this.loadDraftCommands(config);
+    this.draftCommandListings.set(key, listing);
+    const release = () => {
+      if (this.draftCommandListings.get(key) === listing) {
+        this.draftCommandListings.delete(key);
+      }
+    };
+    listing.then(
+      () => setTimeout(release, DRAFT_COMMANDS_REUSE_MS).unref(),
+      // A failed listing is not reused; the next request retries.
+      release,
+    );
+    return await listing;
+  }
+
+  private async loadDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
     const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
     const client = this.requireClient(normalizedConfig.provider);
     if (!normalizedConfig.model) {
@@ -1313,6 +1345,7 @@ export class AgentManager {
       workspaceId?: string;
       owner?: AgentOwner;
       attention?: AttentionState;
+      queuedMessages?: AgentQueuedMessagePayload[];
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1345,6 +1378,7 @@ export class AgentManager {
       workspaceId?: string;
       owner?: AgentOwner;
       attention?: AttentionState;
+      queuedMessages?: AgentQueuedMessagePayload[];
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1911,6 +1945,7 @@ export class AgentManager {
         lastError: record.lastError ?? undefined,
         attention,
         internal: record.internal,
+        queuedMessages: record.queuedMessages ?? [],
         labels: record.labels,
       },
     });
@@ -2022,6 +2057,103 @@ export class AgentManager {
       const agent = this.requireAgent(agentId);
       await this.writeLabels(agent.id, labels);
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daemon-owned message queue. Dispatch policy lives in agent-message-queue.ts;
+  // these only mutate, persist, and broadcast the list.
+  // ---------------------------------------------------------------------------
+
+  async addQueuedMessage(
+    agentId: string,
+    input: {
+      text: string;
+      images?: AgentQueuedMessagePayload["images"];
+      attachments?: AgentQueuedMessagePayload["attachments"];
+    },
+  ): Promise<AgentQueuedMessagePayload> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const message: AgentQueuedMessagePayload = {
+        id: randomUUID(),
+        text: input.text,
+        images: input.images ?? [],
+        attachments: input.attachments ?? [],
+        createdAt: new Date().toISOString(),
+      };
+      await this.writeQueuedMessages(agent, [...agent.queuedMessages, message]);
+      return message;
+    });
+  }
+
+  async updateQueuedMessage(
+    agentId: string,
+    messageId: string,
+    text: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const existing = agent.queuedMessages.find((item) => item.id === messageId);
+      if (!existing) {
+        throw new Error(`Queued message '${messageId}' not found on agent '${agent.id}'`);
+      }
+      const updated = { ...existing, text };
+      await this.writeQueuedMessages(
+        agent,
+        agent.queuedMessages.map((item) => (item.id === messageId ? updated : item)),
+      );
+      return updated;
+    });
+  }
+
+  async removeQueuedMessage(
+    agentId: string,
+    messageId: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const existing = agent.queuedMessages.find((item) => item.id === messageId);
+      if (!existing) {
+        throw new Error(`Queued message '${messageId}' not found on agent '${agent.id}'`);
+      }
+      await this.writeQueuedMessages(
+        agent,
+        agent.queuedMessages.filter((item) => item.id !== messageId),
+      );
+      return existing;
+    });
+  }
+
+  /**
+   * Pops a queued message (the head when `messageId` is omitted) and returns it
+   * for dispatch. Returns null when nothing matches.
+   */
+  async takeQueuedMessage(
+    agentId: string,
+    messageId?: string,
+  ): Promise<AgentQueuedMessagePayload | null> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.agents.get(agentId);
+      if (!agent) return null;
+      const target = messageId
+        ? agent.queuedMessages.find((item) => item.id === messageId)
+        : agent.queuedMessages[0];
+      if (!target) return null;
+      await this.writeQueuedMessages(
+        agent,
+        agent.queuedMessages.filter((item) => item.id !== target.id),
+      );
+      return target;
+    });
+  }
+
+  private async writeQueuedMessages(
+    agent: LiveManagedAgent,
+    next: AgentQueuedMessagePayload[],
+  ): Promise<void> {
+    agent.queuedMessages = next;
+    await this.persistSnapshot(agent);
+    this.emitState(agent, { persist: false });
   }
 
   private async writeLabels(agentId: string, patch: AgentLabelPatch): Promise<WriteLabelsResult> {
@@ -3451,6 +3583,7 @@ export class AgentManager {
       lastUsage?: AgentUsage;
       lastError?: string;
       attention?: AttentionState;
+      queuedMessages?: AgentQueuedMessagePayload[];
       /**
        * Bringing a known agent back, rather than starting a new one. Its timestamps and
        * attention come from what was already recorded, and installing the session is not
@@ -3637,23 +3770,25 @@ export class AgentManager {
           persistence?: AgentPersistenceHandle;
           workspaceId?: string;
           owner?: AgentOwner;
+          queuedMessages?: AgentQueuedMessagePayload[];
         }
       | undefined;
   }): ActiveManagedAgent {
-    const { resolvedAgentId, session, config, now, durableTimelineHasRows, options } = params;
+    const { resolvedAgentId, session, config, now, durableTimelineHasRows } = params;
+    const options = params.options ?? {};
     return {
       id: resolvedAgentId,
       provider: config.provider,
       cwd: config.cwd,
-      workspaceId: options?.workspaceId,
-      owner: options?.owner,
+      workspaceId: options.workspaceId,
+      owner: options.owner,
       session,
       capabilities: session.capabilities,
       config,
       runtimeInfo: undefined,
       lifecycle: "initializing",
-      createdAt: options?.createdAt ?? now,
-      updatedAt: options?.updatedAt ?? now,
+      createdAt: options.createdAt ?? now,
+      updatedAt: options.updatedAt ?? now,
       availableModes: [],
       currentModeId: null,
       pendingPermissions: new Map<string, AgentPermissionRequest>(),
@@ -3667,16 +3802,17 @@ export class AgentManager {
       finalizedForegroundTurnIds: new Set<string>(),
       unsubscribeSession: null,
       persistence: attachPersistenceCwd(
-        options?.persistence ?? session.describePersistence(),
+        options.persistence ?? session.describePersistence(),
         config.cwd,
       ),
-      historyPrimed: options?.historyPrimed ?? durableTimelineHasRows,
-      lastUserMessageAt: options?.lastUserMessageAt ?? null,
-      lastUsage: options?.lastUsage,
-      lastError: options?.lastError,
-      attention: resolveInitialAttention(options?.attention),
+      historyPrimed: options.historyPrimed ?? durableTimelineHasRows,
+      lastUserMessageAt: options.lastUserMessageAt ?? null,
+      lastUsage: options.lastUsage,
+      lastError: options.lastError,
+      attention: resolveInitialAttention(options.attention),
       internal: config.internal ?? false,
-      labels: options?.labels ?? {},
+      labels: options.labels ?? {},
+      queuedMessages: options.queuedMessages ?? [],
     } as ActiveManagedAgent;
   }
 

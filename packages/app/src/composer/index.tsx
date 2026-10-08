@@ -81,6 +81,12 @@ import {
   type QueueWriter,
   type QueuedComposerMessage,
 } from "@/composer/actions";
+import {
+  pruneLocalMirror,
+  queueMessageOnDaemon,
+  restoreQueuedMessageFromDaemon,
+  sendQueuedMessageNowOnDaemon,
+} from "@/composer/daemon-queue";
 import { useVoiceOptional } from "@/contexts/voice-context";
 import { useToast } from "@/contexts/toast-context";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -171,7 +177,7 @@ const composerImageAttachmentPersister: Pick<
   persistFromFileUri: persistAttachmentFromFileUri,
 };
 
-type QueuedMessage = QueuedComposerMessage;
+type QueuedMessage = Pick<QueuedComposerMessage, "id" | "text">;
 
 type AttachmentListUpdater =
   | UserComposerAttachment[]
@@ -1257,10 +1263,29 @@ function ComposerContentImpl({
 
   const agentState = useSessionStore(useShallow(buildAgentStateSelector(serverId, agentId)));
 
-  const queuedMessagesRaw = useSessionStore((state) =>
+  // COMPAT(messageQueue): added in v0.10.0, remove the client-local branch after
+  // 2027-10-02 once the daemon floor >= v0.10.0.
+  const hostOwnsQueue = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.messageQueue === true,
+  );
+  const daemonQueuedMessages = useSessionStore(
+    (state) => state.sessions[serverId]?.agents.get(agentId)?.queuedMessages,
+  );
+  const localQueuedMessages = useSessionStore((state) =>
     state.sessions[serverId]?.queuedMessages?.get(agentId),
   );
-  const queuedMessages = queuedMessagesRaw ?? EMPTY_ARRAY;
+  // Entries whose send-now RPC is in flight. The row has already moved into
+  // the timeline as a submission; hide it here until the daemon's snapshot
+  // drops it, or the RPC fails and it belongs in the queue again.
+  const [sendingQueuedMessageIds, setSendingQueuedMessageIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const queuedMessages: readonly QueuedMessage[] = useMemo(() => {
+    if (!hostOwnsQueue) return localQueuedMessages ?? EMPTY_ARRAY;
+    const daemonQueue = daemonQueuedMessages ?? EMPTY_ARRAY;
+    if (sendingQueuedMessageIds.size === 0) return daemonQueue;
+    return daemonQueue.filter((item) => !sendingQueuedMessageIds.has(item.id));
+  }, [daemonQueuedMessages, hostOwnsQueue, localQueuedMessages, sendingQueuedMessageIds]);
 
   const setQueuedMessages = useSessionStore((state) => state.setQueuedMessages);
 
@@ -1581,8 +1606,50 @@ function ComposerContentImpl({
     [serverId, setQueuedMessages],
   );
 
+  // The daemon list is authoritative; drop mirror entries it no longer holds
+  // (dispatched, or removed from another client).
+  useEffect(() => {
+    if (!hostOwnsQueue || !daemonQueuedMessages) return;
+    pruneLocalMirror(queueWriter, agentId, daemonQueuedMessages);
+  }, [agentId, daemonQueuedMessages, hostOwnsQueue, queueWriter]);
+
   const queueMessage = useCallback(
     (queuedMessage: string, queuedAttachments: ComposerAttachment[]) => {
+      if (hostOwnsQueue) {
+        if (!client) {
+          setSendError(t("workspace.terminal.hostDisconnected"));
+          return;
+        }
+        // Optimistic: clear the composer now, restore it if the host rejects.
+        replaceUserInput("");
+        setSelectedAttachments([]);
+        resetSuppression();
+        void queueMessageOnDaemon({
+          client,
+          agentId,
+          text: queuedMessage,
+          attachments: queuedAttachments,
+          attachmentSubmitFormat: resolveComposerAttachmentSubmitFormat({
+            supportsForgeAttachments: supportsForgeSearch,
+          }),
+          encodeImages,
+          localMirror: queueWriter,
+        })
+          .then(() => {
+            clearSentAttachments(queuedAttachments);
+            return undefined;
+          })
+          .catch((error: unknown) => {
+            replaceUserInput(queuedMessage);
+            setSelectedAttachments(
+              composerWorkspaceAttachment.userAttachmentsOnly(queuedAttachments),
+            );
+            setSendError(
+              error instanceof Error ? error.message : t("composer.errors.failedToSend"),
+            );
+          });
+        return;
+      }
       const result = queueComposerMessage({
         agentId,
         text: queuedMessage,
@@ -1598,11 +1665,15 @@ function ComposerContentImpl({
     },
     [
       agentId,
+      client,
       clearSentAttachments,
+      hostOwnsQueue,
       queueWriter,
       resetSuppression,
       setSelectedAttachments,
       replaceUserInput,
+      supportsForgeSearch,
+      t,
     ],
   );
 
@@ -1887,6 +1958,32 @@ function ComposerContentImpl({
 
   const handleEditQueuedMessage = useCallback(
     (id: string) => {
+      if (hostOwnsQueue) {
+        if (!client) {
+          setSendError(t("workspace.terminal.hostDisconnected"));
+          return;
+        }
+        void restoreQueuedMessageFromDaemon({
+          client,
+          agentId,
+          messageId: id,
+          localMirror: queueWriter,
+          persister: composerImageAttachmentPersister,
+        })
+          .then((result) => {
+            replaceUserInput(result.text);
+            setSelectedAttachments(
+              composerWorkspaceAttachment.userAttachmentsOnly(result.attachments),
+            );
+            return undefined;
+          })
+          .catch((error: unknown) => {
+            setSendError(
+              error instanceof Error ? error.message : t("composer.errors.failedToSend"),
+            );
+          });
+        return;
+      }
       const result = editQueuedComposerMessage({
         agentId,
         messageId: id,
@@ -1896,11 +1993,50 @@ function ComposerContentImpl({
       replaceUserInput(result.text);
       setSelectedAttachments(result.attachments);
     },
-    [agentId, queueWriter, replaceUserInput, setSelectedAttachments],
+    [agentId, client, hostOwnsQueue, queueWriter, replaceUserInput, setSelectedAttachments, t],
   );
 
   const handleSendQueuedNow = useCallback(
     async (id: string) => {
+      if (hostOwnsQueue) {
+        if (!client) {
+          setSendError(t("workspace.terminal.hostDisconnected"));
+          return;
+        }
+        const activeTurnBehavior = appSettings.sendBehavior === "steer" ? "steer" : "interrupt";
+        setSendingQueuedMessageIds((prev) => new Set(prev).add(id));
+        try {
+          await sendQueuedMessageNowOnDaemon({
+            client,
+            agentId,
+            messageId: id,
+            activeTurnBehavior,
+            activeTurnId:
+              activeTurnBehavior === "steer"
+                ? (selectAgentTurnPresentation(
+                    useSessionStore.getState().sessions[serverId],
+                    agentId,
+                  ).turnId ?? undefined)
+                : undefined,
+            localMirror: queueWriter,
+            summary: daemonQueuedMessages?.find((item) => item.id === id) ?? null,
+            attachmentSubmitFormat: resolveComposerAttachmentSubmitFormat({
+              supportsForgeAttachments: supportsForgeSearch,
+            }),
+            submission: createMessageSubmissionWriter(serverId),
+          });
+          onAttentionPromptSend?.();
+        } catch (error) {
+          setSendError(error instanceof Error ? error.message : t("composer.errors.failedToSend"));
+        } finally {
+          setSendingQueuedMessageIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        }
+        return;
+      }
       if (!sendAgentMessageRef.current && !onSubmitMessageRef.current) return;
       // Reuse the regular send path; server-side send atomically interrupts any active run.
       const result = await sendQueuedComposerMessageNow({
@@ -1915,7 +2051,19 @@ function ComposerContentImpl({
         setSendError(result.errorMessage);
       }
     },
-    [agentId, queueWriter, submitMessage, t],
+    [
+      agentId,
+      appSettings.sendBehavior,
+      client,
+      daemonQueuedMessages,
+      hostOwnsQueue,
+      onAttentionPromptSend,
+      queueWriter,
+      serverId,
+      submitMessage,
+      supportsForgeSearch,
+      t,
+    ],
   );
 
   const handleQueue = useCallback(
