@@ -339,6 +339,7 @@ describe("Codex app-server provider (local e2e)", () => {
                 header: "Confirm",
                 question: "Proceed with the plan?",
                 isOther: true,
+                allowNotes: true,
                 options: [
                   {
                     label: "Yes (Recommended)",
@@ -369,6 +370,9 @@ describe("Codex app-server provider (local e2e)", () => {
               answers: {
                 Confirm: "Yes (Recommended)",
               },
+              notes: {
+                Confirm: "but keep the old API for one release",
+              },
             },
           });
 
@@ -393,16 +397,17 @@ describe("Codex app-server provider (local e2e)", () => {
           }
           expect(completedQuestionCall.item.metadata).toMatchObject({
             answers: {
-              confirm_path: ["Yes (Recommended)"],
+              confirm_path: [
+                "Yes (Recommended)",
+                "user_note: but keep the old API for one release",
+              ],
             },
           });
-          expect(
-            mockServer.requestBodies.some(
-              (body) =>
-                body.includes('"type":"function_call_output"') &&
-                body.includes('"call_id":"call1"'),
-            ),
-          ).toBe(true);
+          const functionCallOutput = mockServer.requestBodies.find(
+            (body) =>
+              body.includes('"type":"function_call_output"') && body.includes('"call_id":"call1"'),
+          );
+          expect(functionCallOutput).toContain("user_note: but keep the old API for one release");
 
           const finalAssistantMessage = [...events]
             .toReversed()

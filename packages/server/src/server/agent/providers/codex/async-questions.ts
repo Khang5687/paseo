@@ -18,6 +18,8 @@ const ItemSchema = z.object({
 const RecordSchema = z.object({
   item: ItemSchema,
   resolution: z.union([z.literal("dismissed"), z.array(z.string())]).optional(),
+  // Per-question note, aligned with `resolution`; null where the user added none.
+  notes: z.array(z.string().nullable()).optional(),
 });
 type QuestionRecord = z.infer<typeof RecordSchema>;
 
@@ -39,9 +41,14 @@ function toPermission(record: QuestionRecord): AgentPermissionRequest {
         question: question.title,
         options: (question.options ?? []).map((label) => ({ label })),
         isOther: true,
+        allowNotes: true,
       })),
     },
   };
+}
+
+function formatAnswer(question: string, answer: string | undefined, note?: string | null): string {
+  return [question, answer, note ? `Note: ${note}` : null].filter(Boolean).join("\n");
 }
 
 function toTimeline(record: QuestionRecord): ToolCallTimelineItem {
@@ -58,9 +65,11 @@ function toTimeline(record: QuestionRecord): ToolCallTimelineItem {
       text:
         record.item.questions
           .map((question, index) =>
-            [question.title, answers ? answers[index] : (question.options ?? []).join(", ")]
-              .filter(Boolean)
-              .join("\n"),
+            formatAnswer(
+              question.title,
+              answers ? answers[index] : (question.options ?? []).join(", "),
+              record.notes?.[index],
+            ),
           )
           .join("\n\n") + (record.resolution === "dismissed" ? "\n\nDismissed" : ""),
     },
@@ -110,25 +119,35 @@ export class CodexAsyncQuestions {
     if (!record || record.resolution !== undefined)
       throw new Error("Question is no longer pending");
     let resolution: QuestionRecord["resolution"] = "dismissed";
+    let notes: QuestionRecord["notes"];
     let prompt: string | undefined;
     if (response.behavior === "allow") {
       const answers = z.record(z.string(), z.string()).parse(response.updatedInput?.answers);
+      const suppliedNotes =
+        z.record(z.string(), z.string()).optional().parse(response.updatedInput?.notes) ?? {};
       resolution = record.item.questions.map((_, index) => {
         const answer = answers[`Question ${index + 1}`]?.trim();
         if (!answer) throw new Error(`Answer Question ${index + 1} before submitting`);
         return answer;
       });
       const values = resolution;
+      const questionNotes = record.item.questions.map(
+        (_, index) => suppliedNotes[`Question ${index + 1}`]?.trim() || null,
+      );
+      if (questionNotes.some(Boolean)) notes = questionNotes;
       prompt =
         "Answers to your questions:\n\n" +
         record.item.questions
-          .map((question, index) => `${question.title}\n${values[index]}`)
+          .map((question, index) =>
+            formatAnswer(question.title, values[index], questionNotes[index]),
+          )
           .join("\n\n");
     }
     return {
       prompt,
       complete: () => {
         record.resolution = resolution;
+        record.notes = notes;
         return toTimeline(record);
       },
     };

@@ -13,13 +13,17 @@ import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
+  buildQuestionFormNotes,
   isQuestionAnswered,
   parseQuestionFormQuestions,
-  questionShowsTextInput,
+  questionPickAdvances,
+  questionPickReplacesText,
   resolveDismissLabel,
+  resolveQuestionTextRole,
   shouldSubmitEmptyOnDismiss,
   type QuestionFormQuestion,
   type QuestionOption,
+  type QuestionTextRole,
 } from "./question-form-card-core";
 
 interface QuestionFormCardProps {
@@ -32,13 +36,20 @@ const IS_WEB = isWeb;
 
 function getQuestionInputPlaceholder({
   question,
+  role,
   answerPlaceholder,
   otherPlaceholder,
+  notePlaceholder,
 }: {
   question: QuestionFormQuestion;
+  role: QuestionTextRole;
   answerPlaceholder: string;
   otherPlaceholder: string;
+  notePlaceholder: string;
 }): string {
+  if (role === "note") {
+    return notePlaceholder;
+  }
   return (
     question.placeholder ?? (question.options.length === 0 ? answerPlaceholder : otherPlaceholder)
   );
@@ -338,6 +349,8 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
 
   const toggleOption = useCallback(
     (qIndex: number, optIndex: number, multiSelect: boolean) => {
+      const question = questions?.[qIndex];
+      if (!questions || !question) return;
       const current = selections[qIndex] ?? new Set<number>();
       const next = new Set(current);
       if (multiSelect) {
@@ -355,11 +368,11 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
 
       setSelections((prev) => ({ ...prev, [qIndex]: next }));
 
-      // Single-select: an option and a custom answer replace each other, as in Claude Code.
-      // Multi-select keeps both. The editing surface owns its text and never replays state
-      // (docs/forms.md), so clearing state alone would leave stale text on screen that
-      // submit ignores; clear the surface explicitly.
-      if (!multiSelect && otherTexts[qIndex]) {
+      // Single-select without notes: an option and a custom answer replace each other, as in
+      // Claude Code. Multi-select and note-taking questions keep the text. The editing surface
+      // owns its text and never replays state (docs/forms.md), so clearing state alone would
+      // leave stale text on screen that submit ignores; clear the surface explicitly.
+      if (questionPickReplacesText(question) && otherTexts[qIndex]) {
         setOtherTexts((prev) => {
           const nextTexts = { ...prev };
           delete nextTexts[qIndex];
@@ -368,7 +381,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
         otherInputRef.current?.replaceText("");
       }
 
-      if (!multiSelect && next.size > 0 && qIndex === activeQuestionIndex && questions) {
+      if (questionPickAdvances(question, next) && qIndex === activeQuestionIndex) {
         setActiveQuestionIndex(Math.min(qIndex + 1, questions.length - 1));
       }
     },
@@ -378,8 +391,8 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
   const setOtherText = useCallback(
     (qIndex: number, text: string) => {
       setOtherTexts((prev) => ({ ...prev, [qIndex]: text }));
-      const multiSelect = questions?.[qIndex]?.multiSelect ?? false;
-      if (!multiSelect && text.length > 0) {
+      const question = questions?.[qIndex];
+      if (question && questionPickReplacesText(question) && text.length > 0) {
         setSelections((prev) => {
           if (!prev[qIndex] || prev[qIndex].size === 0) return prev;
           return { ...prev, [qIndex]: new Set<number>() };
@@ -402,11 +415,13 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
   const handleSubmit = useCallback(() => {
     if (!questions || !allAnswered || isResponding) return;
     setRespondingAction("submit");
+    const notes = buildQuestionFormNotes(questions, selections, otherTexts);
     onRespond({
       behavior: "allow",
       updatedInput: {
         ...permission.request.input,
         answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+        ...(notes ? { notes } : {}),
       },
     });
   }, [
@@ -532,7 +547,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
   const dismissLabel = resolveDismissLabel(questions, t("common.actions.dismiss"));
   const selected = selections[resolvedActiveQuestionIndex] ?? new Set<number>();
   const otherText = otherTexts[resolvedActiveQuestionIndex] ?? "";
-  const showTextInput = activeQuestion ? questionShowsTextInput(activeQuestion) : false;
+  const textRole = activeQuestion ? resolveQuestionTextRole(activeQuestion, selected) : null;
 
   return (
     <View style={containerStyle} testID="question-form-card">
@@ -567,7 +582,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
               ))}
             </View>
           ) : null}
-          {showTextInput ? (
+          {textRole ? (
             <QuestionOtherInput
               qIndex={resolvedActiveQuestionIndex}
               inputRef={otherInputRef}
@@ -575,8 +590,10 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
               value={otherText}
               placeholder={getQuestionInputPlaceholder({
                 question: activeQuestion,
+                role: textRole,
                 answerPlaceholder: t("message.question.answerPlaceholder"),
                 otherPlaceholder: t("message.question.otherPlaceholder"),
+                notePlaceholder: t("message.question.notePlaceholder"),
               })}
               isResponding={isResponding}
               onChange={setOtherText}

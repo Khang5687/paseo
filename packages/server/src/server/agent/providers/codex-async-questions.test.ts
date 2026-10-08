@@ -410,6 +410,38 @@ test("late answers use the existing follow-up prompt and dismissal does not inte
   }
 });
 
+test("delivers a note under its answer in the follow-up prompt and the timeline", async () => {
+  const { session, events, ask, finish } = await setup();
+  try {
+    await ask();
+    const [permission] = session.getPendingPermissions();
+    expect(permission?.input?.questions).toEqual([expect.objectContaining({ allowNotes: true })]);
+    await finish();
+    expect(
+      await session.respondToPermission(permission.id, {
+        behavior: "allow",
+        updatedInput: { answers: { "Question 1": "Green" }, notes: { "Question 1": " darker " } },
+      }),
+    ).toEqual({
+      followUpPrompt: "Answers to your questions:\n\nWhich color?\nGreen\nNote: darker",
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "timeline",
+        item: expect.objectContaining({
+          name: "request_user_input_async",
+          detail: expect.objectContaining({ text: "Which color?\nGreen\nNote: darker" }),
+        }),
+      }),
+    );
+    expect(session.describePersistence()!.metadata?.asyncQuestions).toEqual([
+      expect.objectContaining({ resolution: ["Green"], notes: ["darker"] }),
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("restores unanswered questions and does not reopen answered questions on duplicate events", async () => {
   const first = await setup();
   let metadata: Record<string, unknown> | undefined;

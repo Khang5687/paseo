@@ -374,6 +374,7 @@ export const ru: TranslationResources = {
       next: "Далее",
       answerPlaceholder: "Введите ответ...",
       otherPlaceholder: "Другой ответ...",
+      notePlaceholder: "Добавьте примечание...",
     },
     todo: {
       title: "Задачи",
