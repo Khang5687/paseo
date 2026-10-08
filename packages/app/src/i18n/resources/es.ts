@@ -2853,6 +2853,9 @@ export const es: TranslationResources = {
         discovered: "descubierto",
         custom: "Modelos personalizados",
         updated: "{{time}}actualizado",
+        disabledCount: "{{count}} desactivados",
+        toggleModel: "Activar {{model}}",
+        failedToToggle: "No se pudo actualizar {{model}}",
       },
       diagnostic: {
         title: "Diagnóstico",

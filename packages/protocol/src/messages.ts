@@ -142,6 +142,7 @@ const MutableDaemonProviderConfigSchema = z
     paseoTools: ProviderPaseoToolsPolicySchema.optional(),
     enabled: z.boolean().optional(),
     additionalModels: z.array(MutableDaemonProviderModelSchema).optional(),
+    disabledModels: z.array(z.string().min(1)).optional(),
   })
   .passthrough();
 
@@ -333,6 +334,8 @@ export const ProviderSnapshotEntrySchema = z.object({
   source: z.enum(["builtin", "custom"]).optional(),
   error: z.string().optional(),
   models: z.array(AgentModelDefinitionSchema).optional(),
+  // Models the provider reports that Provider settings disabled. They are absent from `models`.
+  disabledModels: z.array(AgentModelDefinitionSchema).optional(),
   modes: z.array(AgentModeSchema).optional(),
   fetchedAt: z.string().optional(),
   label: z.string().optional(),
@@ -355,8 +358,10 @@ export const ProviderSnapshotThinkingSetSchema = z.object({
 
 export const CompactProviderSnapshotEntrySchema = ProviderSnapshotEntrySchema.omit({
   models: true,
+  disabledModels: true,
 }).extend({
   models: z.array(CompactProviderSnapshotModelSchema).optional(),
+  disabledModels: z.array(CompactProviderSnapshotModelSchema).optional(),
 });
 
 export const CompactProviderSnapshotSchema = z.object({
@@ -3815,6 +3820,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02 once daemon floor >= v0.10.0.
         // Daemon owns the per-agent message queue (agent.queue.* RPCs, queuedMessages on snapshots).
         messageQueue: z.boolean().optional(),
+        // COMPAT(providerDisabledModels): added in v0.11.2, remove gate after 2027-04-08.
+        // Daemon honors agents.providers.<id>.disabledModels and sends snapshot disabledModels.
+        providerDisabledModels: z.boolean().optional(),
       })
       .optional(),
   })

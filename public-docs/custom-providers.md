@@ -199,6 +199,20 @@ Any agent that speaks [ACP](https://agentclientprotocol.com) over stdio can be a
 }
 ```
 
+## Disabling models
+
+Turn off individual models in **Settings → Providers**: click a provider to open its settings, where every discovered model has a toggle and the search field filters long lists. Disabled models disappear from model pickers and from the `list_models` tool agents call, and new agents can't be started on them. Agents already running on a model keep running. The toggles write `disabledModels`:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "omp": { "disabledModels": ["openai/gpt-4.1"] }
+    }
+  }
+}
+```
+
 ## Disabling a provider
 
 ```json
@@ -213,4 +227,4 @@ Any agent that speaks [ACP](https://agentclientprotocol.com) over stdio can be a
 
 ## Full reference
 
-For the complete field reference (`extends`, `label`, `command`, `env`, `options`, `models`, `additionalModels`, `disallowedTools`, `paseoTools`, `enabled`, `order`), model and thinking-option schemas, and deeper examples for each plan, see [docs/custom-providers.md](https://github.com/getpaseo/paseo/blob/main/docs/custom-providers.md) on GitHub. See [Limit Paseo tools by provider](/docs/mcp#limit-paseo-tools-by-provider) for `paseoTools` configuration.
+For the complete field reference (`extends`, `label`, `command`, `env`, `options`, `models`, `additionalModels`, `disabledModels`, `disallowedTools`, `paseoTools`, `enabled`, `order`), model and thinking-option schemas, and deeper examples for each plan, see [docs/custom-providers.md](https://github.com/getpaseo/paseo/blob/main/docs/custom-providers.md) on GitHub. See [Limit Paseo tools by provider](/docs/mcp#limit-paseo-tools-by-provider) for `paseoTools` configuration.

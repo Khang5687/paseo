@@ -2821,6 +2821,9 @@ export const ja: TranslationResources = {
         discovered: "検出済み",
         custom: "カスタムモデル",
         updated: "{{time}}に更新",
+        disabledCount: "{{count}} 件無効",
+        toggleModel: "{{model}} を有効化",
+        failedToToggle: "{{model}} を更新できませんでした",
       },
       diagnostic: {
         title: "診断",
