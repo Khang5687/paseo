@@ -131,7 +131,9 @@ function mapOmpAskDetail(rawArgs: unknown, result: OmpToolResult): ToolCallDetai
       : [];
     const response =
       [...selected, firstString(answer.customInput)].filter(Boolean).join(", ") || "No selection";
-    return question ? [`${question}\n${response}`] : [];
+    const note = firstString(answer.note);
+    if (!question) return [];
+    return [note ? `${question}\n${response}\nNote: ${note}` : `${question}\n${response}`];
   });
   const text = lines.length ? lines.join("\n\n") : extractTextFromToolResult(result);
   return {

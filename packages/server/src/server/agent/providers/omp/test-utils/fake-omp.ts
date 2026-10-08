@@ -5,6 +5,7 @@ import type {
   OmpStartSessionInput,
 } from "../runtime.js";
 import type {
+  OmpExtensionUiResponse,
   OmpRpcHostToolDefinition,
   OmpRpcHostToolResult,
   OmpRpcHostToolUpdate,
@@ -153,10 +154,10 @@ export class FakeOmpSession implements OmpRuntimeSession {
   onAbort: (() => void) | null = null;
   private heldStateRequests: Array<() => void> | null = null;
   readonly canceledExtensionUiRequests: string[] = [];
-  readonly extensionUiResponses: Array<{
-    id: string;
-    response: { value?: string; confirmed?: boolean; cancelled?: boolean };
-  }> = [];
+  readonly extensionUiResponses: Array<{ id: string; response: OmpExtensionUiResponse }> = [];
+  /** What `set_ask_dialog` answers; an Error models OMP builds without the command. */
+  askDialogSupport: { enabled: boolean; notes: boolean } | Error = { enabled: true, notes: true };
+  readonly askDialogRequests: boolean[] = [];
   setModelResult: OmpModel | null = null;
   models: OmpModel[] = [];
   messages: OmpAgentMessage[] = [];
@@ -392,6 +393,12 @@ export class FakeOmpSession implements OmpRuntimeSession {
     return tools.map((tool) => tool.name);
   }
 
+  async setAskDialog(enabled: boolean): Promise<{ enabled: boolean; notes: boolean }> {
+    this.askDialogRequests.push(enabled);
+    if (this.askDialogSupport instanceof Error) throw this.askDialogSupport;
+    return this.askDialogSupport;
+  }
+
   async branch(entryId: string): Promise<{ text: string }> {
     this.branchRequests.push(entryId);
     if (this.branchResponse.cancelled === true) {
@@ -470,10 +477,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
     this.handoffRequests.push(customInstructions ? { customInstructions } : {});
   }
 
-  respondToExtensionUiRequest(
-    id: string,
-    response: { value?: string; confirmed?: boolean; cancelled?: boolean },
-  ): void {
+  respondToExtensionUiRequest(id: string, response: OmpExtensionUiResponse): void {
     this.extensionUiResponses.push({ id, response });
   }
 

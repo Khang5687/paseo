@@ -797,6 +797,22 @@ export class OmpAgentSession implements AgentSession {
         this.logger.debug({ err: progressError }, "OMP subagent progress subscription unavailable");
       });
     });
+    void this.enableAskDialog(runtime);
+  }
+
+  private async enableAskDialog(runtime: OmpRuntimeSession): Promise<void> {
+    this.questionUi.useAskDialog(null);
+    try {
+      const { enabled, notes } = await runtime.setAskDialog(true);
+      if (enabled && runtime === this.runtimeSession) this.questionUi.useAskDialog({ notes });
+    } catch (askDialogError) {
+      // COMPAT(ompAskDialog): OMP before 18.4.10 rejects set_ask_dialog and keeps
+      // prompting ask questions through select/editor, which OmpQuestionUi replays.
+      this.logger.debug(
+        { err: askDialogError },
+        "OMP ask dialog unavailable; replaying ask through select prompts",
+      );
+    }
   }
 
   private runtimeSession: OmpRuntimeSession;
@@ -1530,6 +1546,20 @@ export class OmpAgentSession implements AgentSession {
   private handleExtensionUiRequest(
     event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
   ): void {
+    if (event.method === "cancel") {
+      // OMP settled the dialog itself after a timeout or abort and ignores a late answer.
+      const targetId = event.targetId;
+      if (targetId && this.pendingExtensionUiRequests.delete(targetId)) {
+        this.emit({
+          type: "permission_resolved",
+          provider: this.provider,
+          requestId: targetId,
+          resolution: { behavior: "deny", message: "OMP closed the question" },
+          turnId: this.currentTurnIdForEvent(),
+        });
+      }
+      return;
+    }
     const message = optionalString(event.message);
     if (event.method === "notify" && message) {
       this.emit({

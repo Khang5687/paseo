@@ -294,6 +294,13 @@ export class OmpHarness {
     return await run;
   }
 
+  /** Configures the next runtime's `set_ask_dialog` answer; an Error models OMP before 18.4.10. */
+  setAskDialogSupport(support: { enabled: boolean; notes: boolean } | Error): void {
+    this.omp.queueSessionSetup((runtime) => {
+      runtime.askDialogSupport = support;
+    });
+  }
+
   async runPromptWithoutTurnOnNextRuntime(input: string, requestId: string): Promise<unknown> {
     const session = this.requireSession();
     this.omp.queueSessionSetup((runtime) => {
