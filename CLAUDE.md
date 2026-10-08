@@ -149,10 +149,11 @@ Everything else is a short-lived work branch.
 - Do not rebase or force-push a branch that another agent's branch is stacked on. Add commits instead.
 - Never edit fork `main`, `CLAUDE.md`'s process sections, or another agent's branch to make your change work. The integrator's merges under Build it are the only writes to `main`. If the only way forward is a change to shared ground, stop and ask.
 - Shared surfaces that break parallel work when touched casually: `packages/protocol` (see protocol compatibility rules above), `OMP_HANDLED_BUILTIN_SLASH_COMMANDS`, event-mapper switch statements, `docs/` tables. If you must add to one, add; do not reorder or rename.
+- Design for the phone. Every app change ships to iOS and Android, where the compact layout and touch are the normal case. Hover, right-click, and keyboard shortcuts do not exist on a phone, so a feature reachable only through them needs a touch path (a menu item, long-press, or visible control) or a "desktop only, because …" line in the PR body. The code rules are in Platform gating below.
 
 ### Finishing a change
 
-1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
+1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body. For any change under `packages/app`, also fill in the platform table from [docs/qa.md](docs/qa.md#every-platform-it-affects). The iOS and Android rows are never blank: write how you ran it, or `Not run` plus what you checked instead (the compact layout in a narrow browser window, the touch entry point, any `.native` file variant).
 2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
 3. Mark the PR ready for review, set your handoff entry to `ready`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
 4. The integrator merges on "build it" (see Build it), with a merge commit, never squash or rebase:
@@ -225,6 +226,7 @@ Task: <one sentence: what is broken or missing, and what done looks like>.
 Branch: <type>/<area>-<what>, cut from upstream/main (or "stacked on <branch>").
 Worktree: already created if you were launched as a Paseo worktree workspace; otherwise `git worktree add ../paseo-<slug> <branch>`.
 Scope: only this. Note anything else you find in the PR body under "Seen but not fixed".
+Mobile: say how the change behaves on iOS and Android (compact layout, touch entry points) and fill in the docs/qa.md platform table in the PR body.
 Done: draft PR against Khang5687/paseo main, body upstream-ready, marked ready for review. Do not merge.
 Handoff: add your entry to ~/git/paseo-HANDOFF.md when the draft PR opens; set it to ready when done.
 Read CLAUDE.md "Fork workflow" first.
