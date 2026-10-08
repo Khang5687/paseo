@@ -1152,6 +1152,34 @@ for (const mode of ["answer", "cancel"] as const) {
     );
   });
 }
+test("question answers carry the user's note to Muse", async () => {
+  const h = await harness("phase3-controls");
+  await h.open();
+  await h.prompt();
+  const permission = await h.wait(
+    (e) => e.type === "session.permission" && e.request.kind === "question",
+  );
+  if (permission.type !== "session.permission") throw new Error("Expected question");
+  expect(permission.request.input).toMatchObject({
+    questions: [{ header: "Color", allowNotes: true }],
+  });
+  await h.send({
+    type: "session.permission",
+    sessionId: "paseo-session",
+    permissionId: permission.request.id,
+    response: {
+      behavior: "allow",
+      updatedInput: { answers: { Color: "Blue" }, notes: { Color: " navy, not sky " } },
+    },
+  });
+  await h.wait(
+    (e) => e.type === "session.permission_resolved" && e.permissionId === permission.request.id,
+  );
+  const frame = (await h.recorded()).find((f) => f.method === "userInput/answer");
+  expect(frame.params.answers).toEqual([
+    { questionId: "color_choice", selectedLabel: "Blue", note: "navy, not sky" },
+  ]);
+});
 for (const variant of ["tool", "dedicated", "workflow"]) {
   test(`${variant} subagent opens only the supplied child and pages its real transcript`, async () => {
     const h = await harness("subagent", { MUSE_TEST_CHILD: variant });

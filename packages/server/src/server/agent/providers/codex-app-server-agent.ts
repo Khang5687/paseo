@@ -1269,6 +1269,19 @@ export function formatCodexQuestionPrompts(questions: CodexQuestionPrompt[]): st
     .trim();
 }
 
+// Codex's own TUI encodes a note on a question as an extra answers[] entry with this prefix
+// (codex-rs tui request_user_input), and renders it apart from the selected options.
+const CODEX_USER_NOTE_PREFIX = "user_note: ";
+
+function formatCodexQuestionAnswer(id: string, values: string[]): string {
+  const notes = values.filter((value) => value.startsWith(CODEX_USER_NOTE_PREFIX));
+  const answers = values.filter((value) => !value.startsWith(CODEX_USER_NOTE_PREFIX));
+  return [
+    `${id}: ${answers.join(", ")}`,
+    ...notes.map((note) => `Note: ${note.slice(CODEX_USER_NOTE_PREFIX.length)}`),
+  ].join("\n");
+}
+
 export function mapCodexQuestionRequestToToolCall(params: {
   callId: string;
   questions: CodexQuestionPrompt[];
@@ -1280,7 +1293,7 @@ export function mapCodexQuestionRequestToToolCall(params: {
   const formattedAnswers =
     params.answers && Object.keys(params.answers).length > 0
       ? Object.entries(params.answers)
-          .map(([id, values]) => `${id}: ${values.join(", ")}`)
+          .map(([id, values]) => formatCodexQuestionAnswer(id, values))
           .join("\n")
       : null;
   const detailText =
@@ -1340,6 +1353,7 @@ function mapCodexQuestionResponseByHeader(params: {
   }
   const updatedInputRecord = toObjectRecord(params.response.updatedInput);
   const answersRecord = toObjectRecord(updatedInputRecord?.answers);
+  const notesRecord = toObjectRecord(updatedInputRecord?.notes);
   if (!answersRecord) {
     return null;
   }
@@ -1360,6 +1374,10 @@ function mapCodexQuestionResponseByHeader(params: {
           .map((entry) => entry.trim())
           .filter((entry) => entry.length > 0)
       : [normalizedAnswer];
+    const note = notesRecord?.[question.header];
+    if (values.length > 0 && typeof note === "string" && note.trim()) {
+      values.push(`${CODEX_USER_NOTE_PREFIX}${note.trim()}`);
+    }
     if (values.length > 0) {
       answers[question.id] = { answers: values };
     }
@@ -7070,7 +7088,8 @@ export class CodexAppServerAgentSession implements AgentSession {
         text: formatCodexQuestionPrompts(questions),
         icon: "brain",
       },
-      input: { questions },
+      // Notes reach Codex as `user_note:` answers; see CODEX_USER_NOTE_PREFIX.
+      input: { questions: questions.map((question) => ({ ...question, allowNotes: true })) },
       metadata: {
         itemId: parsed.itemId,
         threadId: parsed.threadId,

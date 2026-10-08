@@ -374,6 +374,7 @@ export const ptBR: TranslationResources = {
       next: "Próximo",
       answerPlaceholder: "Digite sua resposta...",
       otherPlaceholder: "Outro...",
+      notePlaceholder: "Adicione uma nota...",
     },
     todo: {
       title: "Tarefas",

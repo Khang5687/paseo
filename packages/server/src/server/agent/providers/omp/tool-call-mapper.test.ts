@@ -301,6 +301,24 @@ describe("OMP tool call mapper", () => {
     });
   });
 
+  test("shows each answer's note in a multi-question ask row", () => {
+    const detail = mapOmpToolDetail(
+      parseToolArgs("ask", { questions: [{ question: "Which database?" }] }),
+      parseToolResult({
+        content: [{ type: "text", text: "User answers:\n..." }],
+        details: {
+          results: [
+            { question: "Which database?", selectedOptions: ["SQLite"], note: "Keep it local" },
+            { question: "Which features?", selectedOptions: [], customInput: "Export" },
+          ],
+        },
+      }),
+    );
+    expect(detail).toMatchObject({
+      text: "Which database?\nSQLite\nNote: Keep it local\n\nWhich features?\nExport",
+    });
+  });
+
   test("shows meaningful labels for OMP's remaining built-in tools", () => {
     expect(mapOmpToolDetail(parseToolArgs("glob", { pattern: "src/**/*.ts" }), null)).toMatchObject(
       { type: "search", query: "src/**/*.ts", toolName: "glob" },

@@ -483,8 +483,42 @@ const OmpExtensionUiRequestSchema = z
     url: z.string().optional(),
     launchUrl: z.string().optional(),
     instructions: z.string().optional(),
+    /** `cancel` names the dialog OMP closed after a timeout or abort. */
+    targetId: z.string().optional(),
+    /** `ask` carries every question; parsed by `OmpAskDialogQuestionSchema` where it is answered. */
+    questions: z.unknown().optional(),
   })
   .passthrough();
+/** One question of OMP's `ask` dialog, sent after `set_ask_dialog` enables it (OMP 18.4.10+). */
+export const OmpAskDialogQuestionSchema = z
+  .object({
+    id: z.string(),
+    question: z.string(),
+    header: z.string().optional(),
+    options: z.array(
+      z.object({ label: z.string(), description: z.string().optional() }).passthrough(),
+    ),
+    multi: z.boolean().optional(),
+    recommended: z.number().int().optional(),
+  })
+  .passthrough();
+export type OmpAskDialogQuestion = z.infer<typeof OmpAskDialogQuestionSchema>;
+/** `notes` is absent on OMP builds that ignore `note` in ask answers. */
+export const OmpAskDialogResultSchema = z
+  .object({ enabled: z.boolean(), notes: z.boolean().optional() })
+  .passthrough();
+export interface OmpAskDialogAnswer {
+  id: string;
+  selectedOptions: string[];
+  customInput?: string;
+  note?: string;
+}
+export interface OmpExtensionUiResponse {
+  value?: string;
+  confirmed?: boolean;
+  cancelled?: boolean;
+  answers?: OmpAskDialogAnswer[];
+}
 const OmpSubagentLifecycleEventSchema = z
   .object({ type: z.literal("subagent_lifecycle"), payload: OmpSubagentLifecyclePayloadSchema })
   .passthrough();
@@ -564,6 +598,7 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
     images: z.array(OmpImageContentSchema).optional(),
   }),
   z.object({ ...OmpCommandBase, type: z.literal("set_fast_mode"), enabled: z.boolean() }),
+  z.object({ ...OmpCommandBase, type: z.literal("set_ask_dialog"), enabled: z.boolean() }),
   z.object({ ...OmpCommandBase, type: z.literal("get_messages") }),
   z.object({ ...OmpCommandBase, type: z.literal("get_available_models") }),
   z.object({

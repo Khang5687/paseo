@@ -19,6 +19,7 @@ import {
   type OmpStartSessionInput,
 } from "./runtime.js";
 import {
+  OmpAskDialogResultSchema,
   OmpBranchMessagesResultSchema,
   OmpBranchResultSchema,
   OmpCommandsResultSchema,
@@ -33,6 +34,7 @@ import {
   OmpSessionStateSchema,
   OmpSessionStatsSchema,
   type OmpThinkingLevel,
+  type OmpExtensionUiResponse,
   type OmpGoalAction,
   type OmpGoalModeState,
   type OmpAgentMessage,
@@ -278,6 +280,13 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     return data.toolNames ?? [];
   }
 
+  async setAskDialog(enabled: boolean): Promise<{ enabled: boolean; notes: boolean }> {
+    const data = OmpAskDialogResultSchema.parse(
+      await this.request({ type: "set_ask_dialog", enabled }),
+    );
+    return { enabled: data.enabled, notes: data.notes === true };
+  }
+
   sendHostToolResult(result: OmpRpcHostToolResult): void {
     this.process.send({ ...result });
   }
@@ -326,10 +335,7 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     });
   }
 
-  respondToExtensionUiRequest(
-    id: string,
-    response: { value?: string; confirmed?: boolean; cancelled?: boolean },
-  ): void {
+  respondToExtensionUiRequest(id: string, response: OmpExtensionUiResponse): void {
     this.process.send({ type: "extension_ui_response", id, ...response });
   }
 

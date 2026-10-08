@@ -1,5 +1,6 @@
 import type {
   OmpAgentMessage,
+  OmpExtensionUiResponse,
   OmpGoalAction,
   OmpGoalModeState,
   OmpModel,
@@ -67,6 +68,8 @@ export interface OmpRuntimeSession {
   refreshCommands(): Promise<OmpRpcSlashCommand[]>;
   setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void>;
   setHostTools(tools: OmpRpcHostToolDefinition[]): Promise<string[]>;
+  /** Opts in to OMP's one-request `ask` dialog; rejects on OMP builds before 18.4.10. */
+  setAskDialog(enabled: boolean): Promise<{ enabled: boolean; notes: boolean }>;
   sendHostToolResult(result: OmpRpcHostToolResult): void;
   sendHostToolUpdate(update: OmpRpcHostToolUpdate): void;
   branch(entryId: string): Promise<{ text: string }>;
@@ -81,10 +84,7 @@ export interface OmpRuntimeSession {
     images?: Array<{ type: "image"; data: string; mimeType: string }>,
   ): void;
   handoff(customInstructions?: string): Promise<void>;
-  respondToExtensionUiRequest(
-    id: string,
-    response: { value?: string; confirmed?: boolean; cancelled?: boolean },
-  ): void;
+  respondToExtensionUiRequest(id: string, response: OmpExtensionUiResponse): void;
   cancelExtensionUiRequest(id: string): void;
   close(): Promise<void>;
 }

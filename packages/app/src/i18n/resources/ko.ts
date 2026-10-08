@@ -371,6 +371,7 @@ export const ko: TranslationResources = {
       next: "다음",
       answerPlaceholder: "답변을 입력하세요...",
       otherPlaceholder: "기타...",
+      notePlaceholder: "메모 추가...",
     },
     todo: {
       title: "작업",

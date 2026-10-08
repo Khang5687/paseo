@@ -1362,7 +1362,7 @@ describe("ClaudeAgentSession features", () => {
 });
 
 describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
-  test("marks Claude AskUserQuestion options as allowing other answers", () => {
+  test("marks Claude AskUserQuestion options as allowing other answers and notes", () => {
     expect(
       normalizeClaudeAskUserQuestionRequestInput("AskUserQuestion", {
         questions: [
@@ -1388,6 +1388,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
           ],
           multiSelect: false,
           allowOther: true,
+          allowNotes: true,
         },
       ],
     });
@@ -1449,6 +1450,57 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
         },
       ],
       answers: { "Which provider should I use?": "Codex" },
+    });
+  });
+
+  test("maps header-keyed notes to annotations keyed by question text and strips UI metadata", () => {
+    const requestInput = normalizeClaudeAskUserQuestionRequestInput("AskUserQuestion", {
+      questions: [
+        {
+          question: "Which deadline?",
+          header: "Deadline",
+          options: [{ label: "3-month" }, { label: "6-month" }],
+          multiSelect: false,
+        },
+        {
+          question: "Which region?",
+          header: "Region",
+          options: [{ label: "EU" }, { label: "US" }],
+          multiSelect: false,
+        },
+      ],
+      annotations: { "Which region?": { preview: "map" } },
+    });
+
+    expect(
+      normalizeClaudeAskUserQuestionUpdatedInput(
+        {
+          ...requestInput,
+          answers: { Deadline: "6-month", Region: "EU" },
+          notes: { Deadline: " but make the refund window 30 days ", Region: "Frankfurt only" },
+        },
+        requestInput,
+      ),
+    ).toEqual({
+      questions: [
+        {
+          question: "Which deadline?",
+          header: "Deadline",
+          options: [{ label: "3-month" }, { label: "6-month" }],
+          multiSelect: false,
+        },
+        {
+          question: "Which region?",
+          header: "Region",
+          options: [{ label: "EU" }, { label: "US" }],
+          multiSelect: false,
+        },
+      ],
+      answers: { "Which deadline?": "6-month", "Which region?": "EU" },
+      annotations: {
+        "Which deadline?": { notes: "but make the refund window 30 days" },
+        "Which region?": { preview: "map", notes: "Frankfurt only" },
+      },
     });
   });
 

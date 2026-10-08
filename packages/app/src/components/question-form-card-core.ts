@@ -9,6 +9,9 @@ export interface QuestionFormQuestion {
   options: QuestionOption[];
   multiSelect: boolean;
   allowOther: boolean;
+  // The provider can deliver a note attached to the selection. The text box then carries a
+  // note while an option is selected, and the Other answer while none is.
+  allowNotes: boolean;
   allowEmpty: boolean;
   placeholder?: string;
   dismissLabel?: string;
@@ -54,6 +57,7 @@ export function parseQuestionFormQuestions(input: unknown): QuestionFormQuestion
       options,
       multiSelect: q.multiSelect === true,
       allowOther: q.allowOther === true || q.isOther === true,
+      allowNotes: q.allowNotes === true,
       allowEmpty: q.allowEmpty === true,
       placeholder: readOptionalString(q, "placeholder"),
       dismissLabel: readOptionalString(q, "dismissLabel"),
@@ -64,6 +68,35 @@ export function parseQuestionFormQuestions(input: unknown): QuestionFormQuestion
 
 export function questionShowsTextInput(question: QuestionFormQuestion): boolean {
   return question.options.length === 0 || question.allowOther;
+}
+
+export type QuestionTextRole = "answer" | "note";
+
+/** What the question's text box means right now, or null when it is hidden. */
+export function resolveQuestionTextRole(
+  question: QuestionFormQuestion,
+  selected: ReadonlySet<number> | undefined,
+): QuestionTextRole | null {
+  if (question.allowNotes && selected && selected.size > 0) {
+    return "note";
+  }
+  return questionShowsTextInput(question) ? "answer" : null;
+}
+
+/** Single-select without notes: an option and the Other answer replace each other. */
+export function questionPickReplacesText(question: QuestionFormQuestion): boolean {
+  return !question.multiSelect && !question.allowNotes;
+}
+
+/**
+ * Single-select picks advance to the next question, except when the question takes a note:
+ * the user needs the box after picking.
+ */
+export function questionPickAdvances(
+  question: QuestionFormQuestion,
+  selected: ReadonlySet<number>,
+): boolean {
+  return !question.multiSelect && !question.allowNotes && selected.size > 0;
 }
 
 export function isQuestionAnswered(
@@ -113,7 +146,7 @@ export function buildQuestionFormAnswers(
     const otherText = otherTexts[i]?.trim();
     const labels = selected ? Array.from(selected).map((idx) => q.options[idx].label) : [];
 
-    if (questionShowsTextInput(q)) {
+    if (resolveQuestionTextRole(q, selected) === "answer") {
       if (otherText && otherText.length > 0) {
         // Multi-select keeps the checked options and appends the custom answer, the way
         // Claude Code's own AskUserQuestion UI does. Single-select replaces the option.
@@ -131,6 +164,22 @@ export function buildQuestionFormAnswers(
     }
   }
   return answers;
+}
+
+/** Notes keyed by header, for questions that allow notes and have a selection. */
+export function buildQuestionFormNotes(
+  questions: QuestionFormQuestion[],
+  selections: QuestionSelections,
+  otherTexts: QuestionOtherTexts,
+): Record<string, string> | null {
+  const notes: Record<string, string> = {};
+  questions.forEach((question, qIndex) => {
+    const note = otherTexts[qIndex]?.trim();
+    if (note && resolveQuestionTextRole(question, selections[qIndex]) === "note") {
+      notes[question.header] = note;
+    }
+  });
+  return Object.keys(notes).length > 0 ? notes : null;
 }
 
 export function shouldSubmitEmptyOnDismiss(questions: QuestionFormQuestion[]): boolean {
