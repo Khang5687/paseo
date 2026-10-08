@@ -95,6 +95,7 @@ import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceArchiveButton } from "@/components/sidebar/sidebar-workspace-archive-button";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
@@ -675,26 +676,33 @@ function WorkspaceRowRightGroup({
             scrimBackdrop={showScrim ? backdrop : undefined}
           >
             {onArchive ? (
-              <SidebarWorkspaceMenu
-                {...kebab.menuProps}
-                workspaceKey={workspace.workspaceKey}
-                serverId={workspace.serverId}
-                workspaceId={workspace.workspaceId}
-                workspaceLabels={workspace.labels}
-                onCopyPath={onCopyPath}
-                onCopyBranchName={onCopyBranchName}
-                onRename={onRename}
-                onMarkAsRead={onMarkAsRead}
-                onMarkAsUnread={onMarkAsUnread}
-                onArchive={onArchive}
-                archiveLabel={archiveLabel}
-                archiveStatus={archiveStatus}
-                archivePendingLabel={archivePendingLabel}
-                archiveShortcutKeys={archiveShortcutKeys}
-                isPinned={isPinned}
-                onTogglePin={onTogglePin}
-                openInFileManagerPath={workspacePath}
-              />
+              <>
+                <SidebarWorkspaceArchiveButton
+                  workspaceKey={workspace.workspaceKey}
+                  pending={archiveStatus === "pending"}
+                  onArchive={onArchive}
+                />
+                <SidebarWorkspaceMenu
+                  {...kebab.menuProps}
+                  workspaceKey={workspace.workspaceKey}
+                  serverId={workspace.serverId}
+                  workspaceId={workspace.workspaceId}
+                  workspaceLabels={workspace.labels}
+                  onCopyPath={onCopyPath}
+                  onCopyBranchName={onCopyBranchName}
+                  onRename={onRename}
+                  onMarkAsRead={onMarkAsRead}
+                  onMarkAsUnread={onMarkAsUnread}
+                  onArchive={onArchive}
+                  archiveLabel={archiveLabel}
+                  archiveStatus={archiveStatus}
+                  archivePendingLabel={archivePendingLabel}
+                  archiveShortcutKeys={archiveShortcutKeys}
+                  isPinned={isPinned}
+                  onTogglePin={onTogglePin}
+                  openInFileManagerPath={workspacePath}
+                />
+              </>
             ) : null}
           </SidebarWorkspaceTrailingActionOverlay>
         </SidebarWorkspaceTrailingActionSlot>

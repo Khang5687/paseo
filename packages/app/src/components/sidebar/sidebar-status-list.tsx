@@ -57,6 +57,7 @@ import {
   SidebarWorkspaceTrailingActionBase,
   SidebarWorkspaceTrailingActionOverlay,
   SidebarWorkspaceTrailingActionSlot,
+  type SidebarWorkspaceTrailingSlotReservation,
   sidebarWorkspaceRowStyles,
 } from "@/components/sidebar/sidebar-workspace-row-content";
 import { useOpenKebabMenuVisibility } from "@/components/sidebar/use-open-kebab-menu-visibility";
@@ -73,6 +74,7 @@ import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceArchiveButton } from "@/components/sidebar/sidebar-workspace-archive-button";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
@@ -963,7 +965,7 @@ function StatusWorkspaceActionSlot({
   trailingPresentation: SidebarWorkspaceTrailingPresentation;
   showKebab: boolean;
   showScrim: boolean;
-  reserveSlotWidth: boolean;
+  reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation;
   isPinned?: boolean;
   onTogglePin?: () => void;
   onCopyPath?: () => void;
@@ -988,25 +990,32 @@ function StatusWorkspaceActionSlot({
         scrimBackdrop={showScrim ? backdrop : undefined}
       >
         {kebab.showKebab && onArchive ? (
-          <SidebarWorkspaceMenu
-            {...kebab.menuProps}
-            workspaceKey={workspace.workspaceKey}
-            serverId={workspace.serverId}
-            workspaceId={workspace.workspaceId}
-            workspaceLabels={workspace.labels}
-            onCopyPath={onCopyPath}
-            onCopyBranchName={onCopyBranchName}
-            onRename={onRename}
-            onMarkAsRead={onMarkAsRead}
-            onMarkAsUnread={onMarkAsUnread}
-            onArchive={onArchive}
-            archiveLabel={archiveLabel}
-            archiveStatus={archiveStatus}
-            archivePendingLabel={archivePendingLabel}
-            archiveShortcutKeys={archiveShortcutKeys}
-            isPinned={isPinned}
-            onTogglePin={onTogglePin}
-          />
+          <>
+            <SidebarWorkspaceArchiveButton
+              workspaceKey={workspace.workspaceKey}
+              pending={archiveStatus === "pending"}
+              onArchive={onArchive}
+            />
+            <SidebarWorkspaceMenu
+              {...kebab.menuProps}
+              workspaceKey={workspace.workspaceKey}
+              serverId={workspace.serverId}
+              workspaceId={workspace.workspaceId}
+              workspaceLabels={workspace.labels}
+              onCopyPath={onCopyPath}
+              onCopyBranchName={onCopyBranchName}
+              onRename={onRename}
+              onMarkAsRead={onMarkAsRead}
+              onMarkAsUnread={onMarkAsUnread}
+              onArchive={onArchive}
+              archiveLabel={archiveLabel}
+              archiveStatus={archiveStatus}
+              archivePendingLabel={archivePendingLabel}
+              archiveShortcutKeys={archiveShortcutKeys}
+              isPinned={isPinned}
+              onTogglePin={onTogglePin}
+            />
+          </>
         ) : null}
       </SidebarWorkspaceTrailingActionOverlay>
     </SidebarWorkspaceTrailingActionSlot>

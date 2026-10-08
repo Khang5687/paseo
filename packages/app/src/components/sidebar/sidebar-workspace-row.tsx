@@ -23,6 +23,7 @@ import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceArchiveButton } from "@/components/sidebar/sidebar-workspace-archive-button";
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
@@ -433,23 +434,30 @@ function WorkspaceRowTrailingActions({
             scrimBackdrop={showScrim ? backdrop : undefined}
           >
             {onArchive ? (
-              <SidebarWorkspaceMenu
-                {...kebab.menuProps}
-                workspaceKey={workspace.workspaceKey}
-                serverId={workspace.serverId}
-                workspaceId={workspace.workspaceId}
-                workspaceLabels={workspace.labels}
-                onCopyPath={onCopyPath}
-                onCopyBranchName={onCopyBranchName}
-                onRename={onRename}
-                onMarkAsRead={onMarkAsRead}
-                onMarkAsUnread={onMarkAsUnread}
-                onArchive={onArchive}
-                archiveLabel={archiveLabel}
-                archiveStatus={archiveStatus}
-                archivePendingLabel={archivePendingLabel}
-                archiveShortcutKeys={archiveShortcutKeys}
-              />
+              <>
+                <SidebarWorkspaceArchiveButton
+                  workspaceKey={workspace.workspaceKey}
+                  pending={archiveStatus === "pending"}
+                  onArchive={onArchive}
+                />
+                <SidebarWorkspaceMenu
+                  {...kebab.menuProps}
+                  workspaceKey={workspace.workspaceKey}
+                  serverId={workspace.serverId}
+                  workspaceId={workspace.workspaceId}
+                  workspaceLabels={workspace.labels}
+                  onCopyPath={onCopyPath}
+                  onCopyBranchName={onCopyBranchName}
+                  onRename={onRename}
+                  onMarkAsRead={onMarkAsRead}
+                  onMarkAsUnread={onMarkAsUnread}
+                  onArchive={onArchive}
+                  archiveLabel={archiveLabel}
+                  archiveStatus={archiveStatus}
+                  archivePendingLabel={archivePendingLabel}
+                  archiveShortcutKeys={archiveShortcutKeys}
+                />
+              </>
             ) : null}
           </SidebarWorkspaceTrailingActionOverlay>
         </SidebarWorkspaceTrailingActionSlot>
