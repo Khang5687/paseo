@@ -53,6 +53,7 @@ import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { curateAgentActivity } from "../activity-curator.js";
+import { readQuestionAnswerList } from "../question-answers.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
 import {
   mapCodexToolCallEnvelope,
@@ -1346,26 +1347,30 @@ function mapCodexQuestionResponseByHeader(params: {
 
   const answers: Record<string, { answers: string[] }> = {};
   for (const question of params.questions) {
-    const rawAnswer = answersRecord[question.header];
-    if (typeof rawAnswer !== "string") {
-      continue;
-    }
-    const normalizedAnswer = rawAnswer.trim();
-    if (!normalizedAnswer) {
-      continue;
-    }
-    const values = question.multiSelect
-      ? normalizedAnswer
-          .split(",")
-          .map((entry) => entry.trim())
-          .filter((entry) => entry.length > 0)
-      : [normalizedAnswer];
+    const answerList = readQuestionAnswerList(updatedInputRecord, question.header);
+    const values = (answerList ?? legacyCodexQuestionAnswers(question, answersRecord))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
     if (values.length > 0) {
       answers[question.id] = { answers: values };
     }
   }
 
   return Object.keys(answers).length > 0 ? answers : null;
+}
+
+// COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before
+// v0.11.0 send only the comma-joined `answers` string, so a comma inside a label or custom
+// answer still splits it here.
+function legacyCodexQuestionAnswers(
+  question: CodexQuestionPrompt,
+  answersRecord: Record<string, unknown>,
+): string[] {
+  const rawAnswer = answersRecord[question.header];
+  if (typeof rawAnswer !== "string") {
+    return [];
+  }
+  return question.multiSelect ? rawAnswer.split(",") : [rawAnswer];
 }
 
 interface CodexPatchFileChange {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   areQuestionsAnswered,
+  buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
   parseQuestionFormQuestions,
   questionShowsTextInput,
@@ -78,6 +79,42 @@ describe("question form card core", () => {
       Fruits: "durian",
     });
     expect(buildQuestionFormAnswers(questions, {}, { 0: "durian" })).toEqual({ Fruits: "durian" });
+  });
+
+  test("lists answers per question so commas in labels and custom text survive", () => {
+    const questions = parseQuestionFormQuestions({
+      questions: [
+        {
+          question: "Which colors?",
+          header: "Colors",
+          options: [{ label: "Red, warm" }, { label: "Blue" }, { label: "Green" }],
+          multiSelect: true,
+          allowOther: true,
+        },
+        {
+          question: "Which provider?",
+          header: "Provider",
+          options: [{ label: "Claude Code" }, { label: "Codex" }],
+          multiSelect: false,
+          allowOther: true,
+        },
+        { question: "Anything else?", header: "Notes", options: [], allowEmpty: true },
+      ],
+    });
+
+    if (!questions) throw new Error("questions did not parse");
+    const selections = { 0: new Set([1, 0]), 1: new Set([1]) };
+    const otherTexts = { 0: " teal, or anything cool ", 1: "OpenCode, v2 forms" };
+    expect(buildQuestionFormAnswerLists(questions, selections, otherTexts)).toEqual({
+      Colors: ["Red, warm", "Blue", "teal, or anything cool"],
+      Provider: ["OpenCode, v2 forms"],
+      Notes: [],
+    });
+    expect(buildQuestionFormAnswers(questions, selections, otherTexts)).toEqual({
+      Colors: "Red, warm, Blue, teal, or anything cool",
+      Provider: "OpenCode, v2 forms",
+      Notes: "",
+    });
   });
 
   test("replaces the selected option with the other answer for single-select", () => {
