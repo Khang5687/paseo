@@ -5654,6 +5654,63 @@ describe("Codex app-server provider", () => {
     });
   });
 
+  test("answers each question from its answer list, keeping commas inside answers", async () => {
+    const session = createSession();
+    const questions = [
+      {
+        id: "colors",
+        header: "Colors",
+        question: "Which colors?",
+        options: [{ label: "Red, warm" }, { label: "Blue" }],
+        multiSelect: true,
+        isOther: true,
+      },
+      {
+        id: "name",
+        header: "Name",
+        question: "Which name?",
+        options: [{ label: "Atlas" }],
+        isOther: true,
+      },
+    ];
+    const listed = asInternals(session).handleToolApprovalRequest({
+      itemId: "call-question-lists",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      questions,
+    });
+    await session.respondToPermission("permission-call-question-lists", {
+      behavior: "allow",
+      updatedInput: {
+        answers: { Colors: "Red, warm, Blue, teal, or cyan", Name: "Nebula, v2" },
+        answerLists: { Colors: ["Red, warm", "Blue", "teal, or cyan"], Name: ["Nebula, v2"] },
+      },
+    });
+    await expect(listed).resolves.toEqual({
+      answers: {
+        colors: { answers: ["Red, warm", "Blue", "teal, or cyan"] },
+        name: { answers: ["Nebula, v2"] },
+      },
+    });
+
+    const legacy = asInternals(session).handleToolApprovalRequest({
+      itemId: "call-question-legacy",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      questions,
+    });
+    await session.respondToPermission("permission-call-question-legacy", {
+      behavior: "allow",
+      updatedInput: { answers: { Colors: "Blue, teal", Name: "Nebula, v2" } },
+    });
+    await expect(legacy).resolves.toEqual({
+      answers: {
+        colors: { answers: ["Blue", "teal"] },
+        name: { answers: ["Nebula, v2"] },
+      },
+    });
+  });
+
   test("emits a synthetic plan approval permission after a successful Codex plan turn", () => {
     const session = createSession({
       featureValues: { plan_mode: true, fast_mode: true },

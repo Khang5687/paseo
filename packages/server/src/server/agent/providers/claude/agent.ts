@@ -213,6 +213,8 @@ export function normalizeClaudeAskUserQuestionUpdatedInput(
   // the original request payload back in so provider callbacks that only return
   // `{ answers }` still satisfy Claude's full tool input schema.
   const merged = stripClaudeAskUserQuestionUiMetadata({ ...fallback, ...base });
+  // Claude Code reads the comma-joined `answers` natively; `answerLists` is for other providers.
+  delete merged.answerLists;
   const questions =
     (Array.isArray(base.questions) ? base.questions : null) ??
     (Array.isArray(fallback.questions) ? fallback.questions : null);

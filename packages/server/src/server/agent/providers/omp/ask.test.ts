@@ -163,6 +163,39 @@ describe("OMP ask RPC UI", () => {
     ]);
   });
 
+  test("keeps an Other answer that starts with an option label apart from the choices", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    startAsk(omp, true);
+    select(omp, "select-1", "Which colors?", ["Red", "Blue", "Other (type your own)"]);
+    await omp.respondToPermission("select-1", {
+      behavior: "allow",
+      updatedInput: {
+        answers: { Response: "Red, Blue, but darker" },
+        answerLists: { Response: ["Red", "Blue, but darker"] },
+      },
+    });
+    select(omp, "select-2", "(1 selected) Which colors?", [
+      "Red",
+      "Blue",
+      "✓ Done selecting",
+      "Other (type your own)",
+    ]);
+    omp.emit({
+      type: "extension_ui_request",
+      id: "editor-1",
+      method: "editor",
+      title: "(1 selected) Which colors?",
+    });
+
+    expect(omp.pendingPermissions()).toHaveLength(0);
+    expect(omp.extensionUiResponses()).toEqual([
+      { id: "select-1", response: { value: "Red" } },
+      { id: "select-2", response: { value: "Other (type your own)" } },
+      { id: "editor-1", response: { value: "Blue, but darker" } },
+    ]);
+  });
+
   test("cancels an ask without leaving replay state behind", async () => {
     const omp = new OmpHarness();
     await omp.start();
