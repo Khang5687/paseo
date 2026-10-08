@@ -32,6 +32,7 @@ function createSnapshot(
     persistence: input.persistence ?? null,
     title: input.title ?? null,
     labels: (input.labels ?? {}) as AgentSnapshotPayload["labels"],
+    ...(input.queuedMessages ? { queuedMessages: input.queuedMessages } : {}),
   };
 }
 
@@ -46,6 +47,25 @@ describe("normalizeAgentSnapshot", () => {
       status: "running",
       activeTurn: snapshot.activeTurn,
     });
+  });
+
+  it("carries daemon queue summaries through and defaults them for older daemons", () => {
+    const queuedMessages = [
+      {
+        id: "q-1",
+        text: "after this turn",
+        imageCount: 1,
+        attachmentCount: 0,
+        createdAt: "2026-10-02T00:00:00.000Z",
+      },
+    ];
+    const withQueue = normalizeAgentSnapshot(createSnapshot({ queuedMessages }), "server-1");
+    expect(withQueue.queuedMessages).toEqual(queuedMessages);
+    expect(projectAgentSnapshot(withQueue).queuedMessages).toEqual(queuedMessages);
+
+    // COMPAT(messageQueue): snapshots from daemons without the queue omit the field.
+    const legacy = normalizeAgentSnapshot(createSnapshot(), "server-1");
+    expect(legacy.queuedMessages).toEqual([]);
   });
 
   it("normalizes identified and legacy active turns at the snapshot boundary", () => {

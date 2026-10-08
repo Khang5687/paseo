@@ -1,5 +1,7 @@
 import type {
   OmpAgentMessage,
+  OmpGoalAction,
+  OmpGoalModeState,
   OmpModel,
   OmpPromptAck,
   OmpRpcHostToolDefinition,
@@ -51,6 +53,7 @@ export interface OmpRuntimeSession {
   ): Promise<OmpPromptAck>;
   compact(customInstructions?: string): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
+  goal(action: OmpGoalAction): Promise<OmpGoalModeState | null>;
   abort(): Promise<void>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;
@@ -60,6 +63,8 @@ export interface OmpRuntimeSession {
   setThinkingLevel(level: OmpThinkingLevel): Promise<void>;
   getSessionStats(): Promise<OmpSessionStats>;
   getCommands(): Promise<OmpRpcSlashCommand[]>;
+  /** Rediscovers OMP skills and file slash commands for the session cwd, then lists commands. */
+  refreshCommands(): Promise<OmpRpcSlashCommand[]>;
   setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void>;
   setHostTools(tools: OmpRpcHostToolDefinition[]): Promise<string[]>;
   sendHostToolResult(result: OmpRpcHostToolResult): void;

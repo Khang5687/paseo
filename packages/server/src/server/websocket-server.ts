@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import { CreationService } from "./creation/index.js";
 import { MessageReceipts } from "./message-receipts/index.js";
+import { AgentMessageQueueDispatcher } from "./agent/agent-message-queue.js";
 import { WebSocket, WebSocketServer } from "ws";
 import type { IncomingMessage, Server as HTTPServer } from "http";
 import { join } from "path";
@@ -537,6 +538,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
   private readonly messageReceipts: MessageReceipts;
+  private readonly agentMessageQueue: AgentMessageQueueDispatcher;
   private readonly creationService: CreationService;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
@@ -679,6 +681,12 @@ export class VoiceAssistantWebSocketServer {
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.messageReceipts = new MessageReceipts(join(paseoHome, "agent-requests"));
+    this.agentMessageQueue = new AgentMessageQueueDispatcher({
+      agentManager,
+      agentStorage,
+      logger: this.logger.child({ module: "agent-message-queue" }),
+    });
+    this.agentMessageQueue.attach();
     this.creationService = new CreationService(
       join(paseoHome, "creations"),
       this.logger.child({ module: "creation" }),
@@ -1061,6 +1069,7 @@ export class VoiceAssistantWebSocketServer {
 
   public async close(): Promise<void> {
     this.prepareForShutdown();
+    this.agentMessageQueue.detach();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
     this.unsubscribeDaemonConfigChange?.();
@@ -1480,6 +1489,7 @@ export class VoiceAssistantWebSocketServer {
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
       messageReceipts: this.messageReceipts,
+      agentMessageQueue: this.agentMessageQueue,
       creationService: this.creationService,
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
@@ -1897,6 +1907,8 @@ export class VoiceAssistantWebSocketServer {
         workspacePinning: true,
         // COMPAT(workspaceMarkUnread): added in v0.5.0, remove after 2027-08-20.
         workspaceMarkUnread: true,
+        // COMPAT(workspaceSettling): added in v0.11.0, remove gate after 2027-04-01.
+        workspaceSettling: true,
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
         hubRelationship: true,
         // COMPAT(projectGithubClone): added in v0.1.108, remove gate after 2027-01-15.
@@ -1939,6 +1951,8 @@ export class VoiceAssistantWebSocketServer {
         agentProfiles: true,
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: true,
+        // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02.
+        messageQueue: true,
         // COMPAT(providerDisabledModels): added in v0.11.2, remove gate after 2027-04-08.
         providerDisabledModels: true,
       },

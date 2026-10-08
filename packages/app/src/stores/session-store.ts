@@ -36,6 +36,7 @@ import type {
 import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
+  AgentQueuedMessageSummaryPayload,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
@@ -100,6 +101,8 @@ export interface Agent {
   parentAgentId: string | null;
   labels: Record<string, string>;
   projectPlacement?: ProjectPlacementPayload | null;
+  /** Daemon-owned queue summaries. Absent or empty on hosts without `features.messageQueue`. */
+  queuedMessages?: AgentQueuedMessageSummaryPayload[];
 }
 
 export interface WorkspaceDescriptor {
@@ -116,6 +119,7 @@ export interface WorkspaceDescriptor {
   name: string;
   title?: string | null;
   pinnedAt?: string | null;
+  settledAt?: string | null;
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
@@ -153,6 +157,8 @@ export function normalizeWorkspaceDescriptor(
     name: payload.name,
     title: payload.title ?? null,
     pinnedAt: payload.pinnedAt ?? null,
+    // COMPAT(workspaceSettling): added in v0.11.0, remove fallback after 2027-04-01.
+    settledAt: payload.settledAt ?? null,
     // COMPAT(workspaceLabels): old daemons omit assignments.
     labels: payload.labels ?? [],
     status: payload.status,

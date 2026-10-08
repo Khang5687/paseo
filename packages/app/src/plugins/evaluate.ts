@@ -21,6 +21,7 @@ import {
   type PluginClientContext,
   type PluginClientSlashCommandContribution,
   type PluginSidebarContribution,
+  type PluginSkinContribution,
   type PluginScreenContribution,
   type PluginScreenProps,
   type PluginScreenTitle,
@@ -36,6 +37,8 @@ import type { ComponentType } from "react";
 import { resolvePluginIcon } from "./icons";
 import { pluginReactNativeRuntime } from "./react-native/runtime";
 import { parsePluginThemeContribution } from "./themes";
+import { parsePluginSkinContribution } from "./skins";
+import { applyPluginSkin } from "@/skins/plugin-cache";
 
 const CONTRIBUTION_ID = /^[a-z][a-z0-9-]*$/;
 const PANEL_LOCATIONS = ["workspace", "explorer"] as const;
@@ -100,7 +103,11 @@ export type PluginClientRuntime = Pick<
   | "openPanel"
   | "addComposerPill"
   | "addHeaderButton"
-> & { hosts: ReturnType<typeof createPluginHosts> };
+> & {
+  hosts: ReturnType<typeof createPluginHosts>;
+  /** Host the plugin was installed from; skins applied by the plugin are attributed to it. */
+  serverId: string;
+};
 
 export function runPluginClientBundle(
   id: string,
@@ -118,6 +125,7 @@ export function runPluginClientBundle(
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
   };
@@ -132,6 +140,7 @@ export function runPluginClientBundle(
   const clientSlashCommandNames = new Set<string>();
   const attachmentSourceIds = new Set<string>();
   const themeIds = new Set<string>();
+  const skinIds = new Set<string>();
   const timelineTransformerIds = new Set<string>();
   const timelineRendererIds = new Set<string>();
   const removals = new Set<PluginCleanup>();
@@ -383,6 +392,23 @@ export function runPluginClientBundle(
       themeIds.add(normalizedId);
       return register(collector.themes, theme, () => themeIds.delete(normalizedId));
     },
+    addSkin(contribution: PluginSkinContribution) {
+      const normalizedId = requireId(contribution.id, "skin id");
+      if (skinIds.has(normalizedId)) throw new Error(`Duplicate skin: ${normalizedId}`);
+      const skin = parsePluginSkinContribution({ ...contribution, id: normalizedId });
+      skinIds.add(normalizedId);
+      return register(collector.skins, skin, () => skinIds.delete(normalizedId));
+    },
+    async applySkin(skinId: string) {
+      const normalizedId = typeof skinId === "string" ? skinId.trim() : "";
+      const contribution = collector.skins.find((skin) => skin.id === normalizedId);
+      if (!contribution) throw new Error(`Unknown skin: ${skinId}`);
+      await applyPluginSkin({
+        id: `${id}/skin/${normalizedId}`,
+        serverId: runtime.serverId,
+        contribution,
+      });
+    },
     addTimelineTransformer(contribution: PluginTimelineTransformerContribution) {
       const normalizedId = requireId(contribution.id, "timeline transformer id");
       if (timelineTransformerIds.has(normalizedId)) {
@@ -520,6 +546,7 @@ export function runPluginClientBundle(
     clientSlashCommands: collector.clientSlashCommands,
     attachmentSources: collector.attachmentSources,
     themes: collector.themes,
+    skins: collector.skins,
     timelineTransformers: collector.timelineTransformers,
     timelineRenderers: collector.timelineRenderers,
   };

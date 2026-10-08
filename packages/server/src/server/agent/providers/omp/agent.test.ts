@@ -1,4 +1,4 @@
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { AgentStreamEvent } from "../../agent-sdk-types.js";
 import type { PaseoToolCatalog } from "../../tools/types.js";
-import type { OmpAgentMessage } from "./rpc-types.js";
+import type { OmpAgentMessage, OmpSessionStats } from "./rpc-types.js";
 import type { OmpNoTurnScheduler, OmpProviderIdleScheduler } from "./agent.js";
 import type { OmpUsagePollScheduler } from "./usage-poller.js";
 import { resolveOmpProviderOptions } from "./provider-config.js";
@@ -398,6 +398,60 @@ describe("OMP agent client and session", () => {
     expect(scheduler.activePollCount()).toBe(1);
     await omp.close();
     expect(scheduler.activePollCount()).toBe(0);
+  });
+
+  test("a resumed session reports its context usage without running a turn", async () => {
+    const scheduler = new ManualUsagePollScheduler();
+    const omp = new OmpHarness({ usagePollScheduler: scheduler });
+    omp.queueSessionSetup((session) => {
+      session.stats = {
+        tokens: { input: 1_000, output: 200, cacheRead: 5_000, cacheWrite: 0, total: 6_200 },
+        cost: 1.5,
+        contextUsage: { tokens: 650_000, contextWindow: 1_000_000 },
+      };
+    });
+    await omp.resume({
+      user: { id: "user-history", text: "continue" },
+      assistant: { id: "assistant-history", text: "ready" },
+    });
+    await waitForImmediate();
+
+    expect(omp.usageUpdates()).toEqual([
+      {
+        inputTokens: 1_000,
+        cachedInputTokens: 5_000,
+        outputTokens: 200,
+        totalCostUsd: 1.5,
+        contextWindowMaxTokens: 1_000_000,
+        contextWindowUsedTokens: 650_000,
+      },
+    ]);
+    expect(scheduler.activePollCount()).toBe(0);
+  });
+
+  test("a turn that starts before the resume usage read returns keeps its own usage", async () => {
+    const scheduler = new ManualUsagePollScheduler();
+    const omp = new OmpHarness({ usagePollScheduler: scheduler });
+    const resumeStats = Promise.withResolvers<OmpSessionStats>();
+    omp.queueSessionSetup((session) => {
+      session.getSessionStats = () => {
+        session.getSessionStats = async () => session.stats;
+        return resumeStats.promise;
+      };
+    });
+    await omp.resume({
+      user: { id: "user-history", text: "continue" },
+      assistant: { id: "assistant-history", text: "ready" },
+    });
+
+    await omp.requireStartTurn("keep working");
+    omp.runtime().stats = { contextUsage: { tokens: 300, contextWindow: 200_000 } };
+    scheduler.poll();
+    await waitForImmediate();
+    resumeStats.resolve({ contextUsage: { tokens: 100, contextWindow: 200_000 } });
+    await waitForImmediate();
+
+    expect(omp.usageUpdates().map((usage) => usage.contextWindowUsedTokens)).toEqual([300]);
   });
 
   test("does not accept a follow-up until OMP reports stable idle", async () => {
@@ -921,6 +975,193 @@ describe("OMP agent client and session", () => {
     expect(omp.completedTurnCount()).toBe(1);
   });
 
+  test("/compact emits loading then completed when OMP answers without compaction events", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const events = await omp.runOutOfBandCommand("/compact focus on tests");
+    expect(omp.compactRequests()).toEqual([{ customInstructions: "focus on tests" }]);
+    expect(events).toEqual([
+      {
+        type: "timeline",
+        provider: "omp",
+        item: { type: "compaction", status: "loading", trigger: "manual" },
+      },
+      {
+        type: "timeline",
+        provider: "omp",
+        item: { type: "compaction", status: "completed", trigger: "manual" },
+      },
+    ]);
+    expect(omp.timeline()).toEqual([]);
+  });
+
+  test("/compact does not duplicate timeline items when OMP streams compaction events", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    omp.configureCompact({ streamCompactionEvents: true });
+
+    const events = await omp.runOutOfBandCommand("/compact");
+    expect(omp.compactRequests()).toEqual([{}]);
+    expect(events.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "compaction", status: "loading", trigger: "manual" },
+      { type: "compaction", status: "completed", trigger: "manual" },
+    ]);
+    expect(omp.timeline()).toEqual([]);
+  });
+
+  test("/compact settles the compaction item and reports the error when OMP rejects", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    omp.configureCompact({ error: new Error("Nothing to compact (session too small)") });
+
+    const events = await omp.runOutOfBandCommand("/compact");
+    expect(events.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "compaction", status: "loading", trigger: "manual" },
+      { type: "compaction", status: "completed", trigger: "manual" },
+      {
+        type: "assistant_message",
+        text: "[Error] Failed to compact context: Nothing to compact (session too small)",
+      },
+    ]);
+
+    // A second /compact runs again instead of reporting a stuck command.
+    omp.configureCompact({});
+    await expect(omp.runOutOfBandCommand("/compact")).resolves.toHaveLength(2);
+  });
+
+  test("/goal set forwards the goal to OMP and surfaces goal_updated on the timeline", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const events = await omp.runOutOfBandCommand("/goal set ship the release --budget 5000");
+    expect(omp.goalRequests()).toEqual([
+      { op: "create", objective: "ship the release", token_budget: 5000 },
+    ]);
+    // The goal command answers out of band; the goal_updated event is what
+    // reaches the timeline, so the command itself emits nothing.
+    expect(events).toEqual([]);
+    expect(omp.timeline().at(-1)).toMatchObject({
+      type: "tool_call",
+      name: "omp_goal_updated",
+      metadata: { goalStatus: "active" },
+    });
+
+    await omp.runOutOfBandCommand("/goal pause");
+    await omp.runOutOfBandCommand("/goal resume");
+    await omp.runOutOfBandCommand("/goal drop");
+    expect(omp.goalRequests().slice(1)).toEqual([
+      { op: "pause" },
+      { op: "resume" },
+      { op: "drop" },
+    ]);
+    expect(omp.timeline().at(-1)).toMatchObject({
+      type: "tool_call",
+      name: "omp_goal_updated",
+      metadata: { goalStatus: "dropped" },
+    });
+  });
+
+  test("/goal show reports the current goal and usage errors stay local", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const empty = await omp.runOutOfBandCommand("/goal");
+    expect(empty.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "assistant_message", text: "No active OMP goal." },
+    ]);
+
+    await omp.runOutOfBandCommand("/goal set write tests");
+    const shown = await omp.runOutOfBandCommand("/goal show");
+    expect(shown.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      {
+        type: "assistant_message",
+        text: "Goal: write tests\nStatus: active\nTokens used: 0\nTime used: 0s\nMode: active",
+      },
+    ]);
+
+    // As in OMP's own /goal, text that names no subcommand is the objective.
+    await omp.runOutOfBandCommand("/goal get CI green --budget 900");
+    expect(omp.goalRequests().at(-1)).toEqual({
+      op: "create",
+      objective: "get CI green",
+      token_budget: 900,
+    });
+
+    // `budget` is an OMP subcommand the RPC goal API cannot run; it never becomes an objective.
+    for (const input of ["/goal budget 5000", "/goal pause now"]) {
+      const bad = await omp.runOutOfBandCommand(input);
+      expect(bad.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+        {
+          type: "assistant_message",
+          text: "[Error] Usage: /goal <objective> [--budget <tokens>] | /goal set <objective> | /goal pause | /goal resume | /goal drop | /goal show",
+        },
+      ]);
+    }
+    expect(omp.goalRequests()).toHaveLength(4);
+
+    omp.configureGoal({ error: new Error("No active goal to pause.") });
+    const failed = await omp.runOutOfBandCommand("/goal pause");
+    expect(failed.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
+      { type: "assistant_message", text: "[Error] Goal command failed: No active goal to pause." },
+    ]);
+  });
+
+  test("an active goal keeps the turn running across OMP's continuation runs", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const scheduler = new ManualIdleScheduler();
+      const omp = new OmpHarness({ providerIdleScheduler: scheduler });
+      await omp.start();
+      await omp.runOutOfBandCommand("/goal ship it");
+
+      // OMP has scheduled the next goal run when the first one yields.
+      omp.reportProviderState({ isSettled: false });
+      const { completion } = await omp.startPromptUntilProviderIdle("go", "first run", {
+        isStreaming: false,
+        isCompacting: false,
+      });
+      await scheduler.waitForWaits(1);
+      expect(omp.completedTurnCount()).toBe(0);
+
+      // The continuation run outlasts the first yield's idle deadline; that wait must not
+      // fail the turn.
+      const runtime = omp.runtime();
+      runtime.beginTurn();
+      runtime.streamAssistantText("second run", "omp-assistant-2");
+      vi.setSystemTime(Date.now() + 3_600_000);
+      scheduler.retry();
+      await waitForImmediate();
+      expect(omp.turnFailures()).toEqual([]);
+      expect(omp.completedTurnCount()).toBe(0);
+
+      omp.reportProviderState({ isSettled: true });
+      runtime.finishTurn();
+      await expect(completion).resolves.toBeDefined();
+      expect(omp.completedTurnCount()).toBe(1);
+      expect(omp.timeline()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "assistant_message", text: "first run" }),
+          expect.objectContaining({ type: "assistant_message", text: "second run" }),
+        ]),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("background work alone does not hold a goal turn open", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    await omp.runOutOfBandCommand("/goal ship it");
+
+    omp.reportProviderState({ isSettled: false, hasPendingAsyncWork: true });
+    await expect(omp.runPrompt("go", "started a long job")).resolves.toMatchObject({
+      finalText: "started a long job",
+    });
+    expect(omp.completedTurnCount()).toBe(1);
+  });
+
   test("completes a local-only prompt when no OMP turn begins", async () => {
     const omp = new OmpHarness();
     await omp.start();
@@ -1203,6 +1444,69 @@ describe("OMP agent client and session", () => {
     await expect(omp.currentMode()).resolves.toBe("ask");
     expect(omp.runtimeLaunches()[1]?.argv).toContain("--approval-mode");
     expect(omp.runtimeLaunches()[1]?.argv).toContain("always-ask");
+  });
+
+  describe("command refresh", () => {
+    const review = { name: "review", description: "Review changes", source: "skill" };
+    const deploy = { name: "deploy", description: "Deploy the app", source: "skill" };
+
+    async function startWithFakeClock(): Promise<OmpHarness> {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const omp = new OmpHarness();
+      omp.queueCommands([review]);
+      await omp.start();
+      return omp;
+    }
+
+    test("shows a skill installed after the session started once the refresh interval passes", async () => {
+      const omp = await startWithFakeClock();
+      const cached = await omp.commands();
+      expect(cached).toContainEqual(expect.objectContaining({ name: "review" }));
+      expect(cached).not.toContainEqual(expect.objectContaining({ name: "deploy" }));
+
+      omp.runtime().commands = [review, deploy];
+      vi.setSystemTime(Date.now() + 5_000);
+
+      expect(await omp.commands()).toContainEqual(
+        expect.objectContaining({ name: "deploy", kind: "skill" }),
+      );
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(2);
+    });
+
+    test("returns the cached list within the refresh interval", async () => {
+      const omp = await startWithFakeClock();
+      await omp.commands();
+
+      omp.runtime().commands = [review, deploy];
+      vi.setSystemTime(Date.now() + 4_999);
+
+      expect(await omp.commands()).not.toContainEqual(expect.objectContaining({ name: "deploy" }));
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(1);
+    });
+
+    test("shares one in-flight refresh between concurrent callers", async () => {
+      const omp = await startWithFakeClock();
+
+      const [first, second] = await Promise.all([omp.commands(), omp.commands()]);
+
+      expect(second).toBe(first);
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(1);
+    });
+
+    test("keeps the cached list when a refresh fails", async () => {
+      const omp = await startWithFakeClock();
+      const cached = await omp.commands();
+
+      omp.runtime().refreshCommandsError = new Error("OMP RPC request timed out");
+      omp.runtime().commands = [review, deploy];
+      vi.setSystemTime(Date.now() + 5_000);
+
+      await expect(omp.commands()).resolves.toBe(cached);
+      expect(omp.runtime().refreshCommandsRequestCount).toBe(2);
+    });
   });
 
   test("restarts the same conversation after an idle process exit", async () => {

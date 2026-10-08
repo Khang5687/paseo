@@ -21,6 +21,7 @@ import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-ha
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { AppearanceProvider } from "@/appearance/provider";
+import { SkinBackdrop } from "@/skins";
 import { CommandCenter } from "@/command-center/command-center";
 import { CommandCenterRootActions } from "@/command-center/root-registration";
 import { CommandCenterProvider } from "@/command-center/provider";
@@ -30,6 +31,7 @@ import { AddProjectFlowHost } from "@/components/add-project-flow-host";
 import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
 import { DownloadToast } from "@/components/download-toast";
 import { QuittingOverlay } from "@/components/quitting-overlay";
+import { QuitConfirmToast } from "@/components/quit-confirm-toast";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
 import { ChangelogHost } from "@/changelog";
 import { AppDiagnosticHost } from "@/components/app-diagnostic-host";
@@ -576,6 +578,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   // Their tracked styles update in place; web numeric styles still need remounting.
   const surface = (
     <View style={layoutStyles.surfaceFill}>
+      <SkinBackdrop />
       {workspaceChrome}
       <AppearanceStyleBoundary>
         {!isCompactLayout && appChromeLayout.sidebarToggleOwner === "window" ? (
@@ -614,6 +617,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <KeyboardShortcutsDialog />
         <AppDiagnosticHost />
         <ChangelogHost />
+        <QuitConfirmToast />
         <QuittingOverlay />
       </AppearanceStyleBoundary>
     </View>

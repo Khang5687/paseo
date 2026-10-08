@@ -95,6 +95,7 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
     historyPrimed: true,
     lastUserMessageAt: now,
     attention: { requiresAttention: false },
+    queuedMessages: [],
   };
 
   return {

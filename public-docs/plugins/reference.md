@@ -1426,6 +1426,64 @@ unpainted.
 Themes need a host that supports them. A client released before `addTheme` cannot evaluate that client entry and reports
 `client.addTheme is not a function`. Update the client.
 
+## Contribute a skin
+
+`addSkin` adds a background image to Settings → Appearance → Background. Paseo draws it behind the
+whole app under a scrim it sizes so text keeps its contrast. A skin is an image plus
+a little metadata:
+
+```ts
+import type { PluginClientContext } from "@getpaseo/plugin/client";
+
+export default function contribute(client: PluginClientContext) {
+  if (typeof client.addSkin !== "function") return () => {};
+  return client.addSkin({
+    id: "aurora",
+    name: "Aurora",
+    version: "1",
+    appearance: "dark",
+    focal: { x: 0.7, y: 0.3 },
+    loadThumbnail: () => client.rpc(thumbnailRpc, {}),
+    loadImage: () => client.rpc(imageRpc, {}),
+  });
+}
+```
+
+| Field           | Meaning                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `id`            | Lowercase letters, digits, and hyphens. Unique within the plugin. The app lists it as `<pluginId>/skin/<id>`.       |
+| `name`          | Display name, 1–60 characters.                                                                                      |
+| `version`       | Cache key, 1–64 characters. Change it whenever the image changes so devices fetch the new bytes.                    |
+| `appearance`    | `"light"` or `"dark"`: whether the art reads as light or dark. Used for filtering and the default per-theme choice. |
+| `focal`         | `{ x, y }`, each 0–1. The point kept in view when the image is cropped. Defaults to the center.                     |
+| `intensity`     | `{ home, workspace, utility }`, each 0–1. How strongly the art shows in each area. Paseo still enforces contrast.   |
+| `luminance`     | `{ low, high }`, each 0–1: WCAG relative luminance of the darkest and brightest 1% of pixels. Lets more art show.   |
+| `attribution`   | `{ author, license, sourceUrl }`, each at most 200 characters; `sourceUrl` must be `https`.                         |
+| `loadThumbnail` | Optional. Returns `{ base64, mimeType }` for the gallery, ideally about 512×288.                                    |
+| `loadImage`     | Returns `{ base64, mimeType }` for the full image.                                                                  |
+
+Images are PNG, JPEG, or WebP, at most 16 MiB, 16384 px per side, and 50 megapixels. Paseo
+downsizes them for the device (2560 px long side, plus a 640 px thumbnail) before caching, so
+supply the art at the quality you want and let the app shrink it.
+
+Paseo caches the image on the device the first time a user selects the skin. The cached copy keeps
+working offline and when the plugin is disabled; it is fetched again only when `version` changes.
+Contrast is enforced by Paseo: you cannot make text unreadable by choosing bright art, and
+omitting `luminance` simply makes Paseo assume the worst case.
+
+`client.applySkin(id)` makes one of this plugin's registered skins the active background on this
+device. It resolves once the image is cached and applied, and rejects with `Unknown skin: <id>`
+for an id the plugin did not register, or with the loader's error if the image fails to load.
+Call it from a user action, not from setup.
+
+A client released before skins reports `client.addSkin is not a function`. Feature-detect with
+`typeof client.addSkin === "function"` to ship one plugin that works on both. See
+`plugin-examples/skins`.
+
+A settings screen that browses and installs skins can pass `skinCatalog: true` to
+`addSettingsScreen`. Settings → Appearance → Background then links to it with a **Browse**
+button, so people find your catalog where they pick a background.
+
 ## Settings screens
 
 Register a component with `client.addSettingsScreen({ id, title, icon, Component })` in

@@ -472,6 +472,7 @@ export const fr: TranslationResources = {
       openToSide: "Ouvrir sur le côté",
       copyPath: "Copier le chemin",
       copyRelativePath: "Copier le chemin relatif",
+      copyFullPath: "Copier le chemin complet",
       revealIn: "Afficher dans {{target}}",
       download: "Télécharger",
       addToChat: "Ajouter à la conversation",
@@ -1166,6 +1167,7 @@ export const fr: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Groupe {{label}}",
+    unsentDraft: "Brouillon non envoyé",
     statusBucket: {
       needsInput: "Attend une réponse",
       failed: "Échec",
@@ -1221,6 +1223,10 @@ export const fr: TranslationResources = {
     },
     pinned: {
       title: "Épinglés",
+    },
+    settled: {
+      title: "Réglés",
+      titleWithCount: "Réglés ({{count}})",
     },
     host: {
       noHost: "Aucun hôte",
@@ -1312,6 +1318,10 @@ export const fr: TranslationResources = {
         rename: "Renommer l’espace de travail",
         pin: "Épingler en haut",
         unpin: "Désépingler",
+        settle: "Régler",
+        unsettle: "Rouvrir",
+        settleWorkspace: "Marquer l’espace de travail comme réglé",
+        unsettleWorkspace: "Rouvrir l’espace de travail",
         archive: "Archiver",
         archiveWorkspace: "Archiver l’espace de travail",
         hideFromSidebar: "Masquer de la barre latérale",
@@ -1395,6 +1405,9 @@ export const fr: TranslationResources = {
     quitting: {
       title: "Fermeture de Paseo…",
       detail: "Arrêt du daemon local.",
+    },
+    quitConfirm: {
+      hint: "Maintenez ⌘Q ou appuyez deux fois pour quitter",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2175,6 +2188,7 @@ export const fr: TranslationResources = {
           queue: "File d’attente",
         },
       },
+      defaultEditor: "Éditeur par défaut",
       serviceUrls: {
         options: {
           ask: "Demander",
@@ -2310,6 +2324,85 @@ export const fr: TranslationResources = {
         },
         moveUp: "Monter",
         moveDown: "Descendre",
+      },
+      background: {
+        title: "Arrière-plan",
+        applyTo: {
+          title: "Appliquer à",
+          options: {
+            both: "Les deux",
+            light: "Clair",
+            dark: "Sombre",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Images d’arrière-plan",
+          none: "Aucun",
+          addImage: "Ajouter une image…",
+          importDefaultName: "Image",
+        },
+        menu: {
+          actions: "Actions pour {{name}}",
+          edit: "Modifier…",
+          delete: "Supprimer",
+          details: "Détails",
+        },
+        undo: {
+          action: "Annuler",
+          accessibilityLabel: "Annuler le changement d’arrière-plan",
+        },
+        catalog: {
+          browse: "Parcourir",
+          hint: "Installez d’autres arrière-plans depuis ce plugin",
+        },
+        visibility: {
+          title: "Visibilité de l’image",
+          hint: "Paseo garde automatiquement le texte lisible, donc les images claires peuvent s’afficher moins.",
+        },
+        blur: {
+          title: "Flou",
+          options: {
+            off: "Désactivé",
+            low: "Faible",
+            medium: "Moyen",
+            high: "Élevé",
+          },
+        },
+        showBehindSidebar: "Afficher derrière la barre latérale",
+        showBehindContent: "Afficher derrière le contenu",
+        status: {
+          reducedTransparency:
+            "Masqué car Réduire la transparence est activé dans les réglages du système",
+          forcedColors: "Masqué tant que le mode contraste élevé est activé",
+          error: "L’arrière-plan n’a pas pu être affiché",
+        },
+        errors: {
+          select: "Impossible d’appliquer l’arrière-plan : {{message}}",
+          import: "Impossible d’importer l’image : {{message}}",
+          update: "Impossible d’enregistrer les modifications : {{message}}",
+          remove: "Impossible de supprimer l’arrière-plan : {{message}}",
+        },
+        edit: {
+          title: "Modifier l’arrière-plan",
+          name: "Nom",
+          focal: "Point focal",
+          focalHint: "Touchez la partie de l’image qui doit rester visible.",
+          focalAccessibility: "Choisir le point focal",
+          save: "Enregistrer",
+          saving: "Enregistrement…",
+        },
+        delete: {
+          title: "Supprimer « {{name}} » ?",
+          message: "Cela supprime l’image de cet appareil.",
+          confirm: "Supprimer",
+        },
+        details: {
+          title: "Détails",
+          author: "Auteur",
+          license: "Licence",
+          source: "Source",
+          openSource: "Ouvrir la source",
+        },
       },
       fonts: {
         title: "Polices",

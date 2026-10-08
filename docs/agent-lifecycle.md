@@ -50,6 +50,29 @@ older cancellation from settling a newer turn. If interruption is rejected or ti
 keeps its active foreground turn and replacement, reload, rewind, and Stop report the failure.
 Accepting new work after an ambiguous interruption would create a split-brain session.
 
+### Queued messages
+
+The daemon owns the queue. Each agent record carries `queuedMessages` in the encoded wire form (text,
+base64 images, agent attachments), so the daemon can replay an entry without the client that queued
+it and the queue survives a restart. `AgentMessageQueueDispatcher`
+(`packages/server/src/server/agent/agent-message-queue.ts`) pops the head on every transition to
+`idle` and sends it through the same path as `send_agent_message`, one entry per turn. Adding while
+the agent is already idle dispatches immediately. `send_now` pops a specific entry and sends it into
+the active turn with the caller's steer/interrupt behavior.
+
+Snapshots carry summaries only (`id`, `text`, counts, `createdAt`); the bytes stay on the record.
+Every client renders the same list from its agent subscription and edits it through the
+`agent.queue.*` RPCs. `remove` returns the full entry so the caller can put it back in a composer.
+
+The app keeps a per-client mirror of the entries it queued itself, keyed by the daemon's id
+(`packages/app/src/composer/daemon-queue.ts`). The daemon holds the wire form, which cannot be turned
+back into forge, workspace-file, or plugin composer attachments; a same-client edit restores from the
+mirror instead. The mirror is pruned against each snapshot, so a dispatched or cross-client-removed
+entry never lingers. Cross-client edits restore text, images, and uploaded files and drop the rest.
+
+Hosts without `features.messageQueue` fall back to the client-local queue the app shipped before
+(`// COMPAT(messageQueue)` marks both branches).
+
 ## Relationships
 
 Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and always stamps `paseo.parent-agent-id`, pointing back at the caller. Omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.

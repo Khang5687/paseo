@@ -9,6 +9,8 @@ import type {
   OmpRpcHostToolResult,
   OmpRpcHostToolUpdate,
   OmpAgentMessage,
+  OmpGoalAction,
+  OmpGoalModeState,
   OmpModel,
   OmpPromptAck,
   OmpRpcSlashCommand,
@@ -136,6 +138,9 @@ export class FakeOmpSession implements OmpRuntimeSession {
   readonly prompts: Array<{ message: string; imageCount: number }> = [];
   readonly compactRequests: Array<{ customInstructions?: string }> = [];
   readonly setAutoCompactionRequests: boolean[] = [];
+  readonly goalRequests: OmpGoalAction[] = [];
+  goalState: OmpGoalModeState | null = null;
+  goalError: Error | null = null;
   readonly subagentSubscriptionRequests: FakeOmpSubagentSubscriptionLevel[] = [];
   readonly subagentMessageRequests: FakeOmpSubagentMessagesSelector[] = [];
   readonly setModelRequests: Array<{ provider: string; modelId: string }> = [];
@@ -165,10 +170,14 @@ export class FakeOmpSession implements OmpRuntimeSession {
     cost: 0,
   };
   commands: OmpRpcSlashCommand[] = [];
+  refreshCommandsRequestCount = 0;
+  refreshCommandsError: Error | null = null;
   subagents: FakeOmpSubagentSnapshot[] = [];
   readonly subagentSubscriptionErrors = new Map<FakeOmpSubagentSubscriptionLevel, Error>();
   compactError: Error | null = null;
-  emitCompactEnd = true;
+  // Real OMP RPC answers `compact` without streaming compaction_start/end
+  // (those only reach the TUI). Opt in to mirror runtimes that do stream them.
+  streamCompactionEvents = false;
   getStateError: Error | null = null;
   promptAck: OmpPromptAck = {};
   branchResponse: { text?: string; cancelled?: boolean } = { text: "" };
@@ -267,12 +276,64 @@ export class FakeOmpSession implements OmpRuntimeSession {
 
   async compact(customInstructions?: string): Promise<void> {
     this.compactRequests.push(customInstructions === undefined ? {} : { customInstructions });
-    this.emit({ type: "compaction_start", reason: "manual" });
-    if (this.emitCompactEnd) {
-      this.emit({ type: "compaction_end", reason: "manual" });
+    if (this.streamCompactionEvents) {
+      this.emit({ type: "compaction_start", reason: "manual" });
     }
     if (this.compactError) {
       throw this.compactError;
+    }
+    if (this.streamCompactionEvents) {
+      this.emit({ type: "compaction_end", reason: "manual" });
+    }
+  }
+
+  async goal(action: OmpGoalAction): Promise<OmpGoalModeState | null> {
+    this.goalRequests.push(action);
+    if (this.goalError) {
+      throw this.goalError;
+    }
+    switch (action.op) {
+      case "get":
+        return this.goalState;
+      case "create": {
+        const now = Date.now();
+        const existing = this.goalState?.goal;
+        const goal = {
+          id: existing?.id ?? `goal-${this.goalRequests.length}`,
+          objective: action.objective ?? "",
+          status: "active",
+          ...(action.token_budget !== undefined ? { tokenBudget: action.token_budget } : {}),
+          tokensUsed: 0,
+          timeUsedSeconds: 0,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        this.goalState = { enabled: true, mode: "active", goal };
+        this.emit({ type: "goal_updated", goal, state: this.goalState });
+        return this.goalState;
+      }
+      case "pause":
+      case "resume": {
+        if (!this.goalState?.goal) {
+          throw new Error(
+            action.op === "pause" ? "No active goal to pause." : "No paused goal to resume.",
+          );
+        }
+        const status = action.op === "pause" ? "paused" : "active";
+        const goal = { ...this.goalState.goal, status, updatedAt: Date.now() };
+        this.goalState = { enabled: status === "active", mode: "active", goal };
+        this.emit({ type: "goal_updated", goal, state: this.goalState });
+        return this.goalState;
+      }
+      case "drop": {
+        if (!this.goalState?.goal) {
+          throw new Error("No goal to drop.");
+        }
+        const goal = { ...this.goalState.goal, status: "dropped", updatedAt: Date.now() };
+        this.goalState = null;
+        this.emit({ type: "goal_updated", goal, state: { enabled: false, mode: "none" } });
+        return null;
+      }
     }
   }
 
@@ -310,7 +371,8 @@ export class FakeOmpSession implements OmpRuntimeSession {
     if (report) {
       this.state = report;
     }
-    return this.state;
+    // Real OMP reports the goal mode state alongside the session state.
+    return { ...this.state, goal: this.goalState };
   }
 
   async setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }> {
@@ -463,6 +525,12 @@ export class FakeOmpSession implements OmpRuntimeSession {
   }
 
   async getCommands(): Promise<OmpRpcSlashCommand[]> {
+    return this.commands;
+  }
+
+  async refreshCommands(): Promise<OmpRpcSlashCommand[]> {
+    this.refreshCommandsRequestCount += 1;
+    if (this.refreshCommandsError) throw this.refreshCommandsError;
     return this.commands;
   }
 
