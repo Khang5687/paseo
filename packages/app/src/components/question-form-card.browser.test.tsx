@@ -78,12 +78,16 @@ function mountCard(question: Record<string, unknown>) {
     });
   };
   const submit = () => act(() => view.getByRole("button", { name: "Submit" }).click());
-  const submittedAnswers = (): Record<string, string> => {
+  const submittedInput = () => {
     const response = onRespond.mock.calls[0]?.[0];
     if (!response || response.behavior !== "allow") throw new Error("card did not submit");
-    return (response.updatedInput as { answers: Record<string, string> }).answers;
+    return response.updatedInput as {
+      answers: Record<string, string>;
+      answerLists: Record<string, string[]>;
+    };
   };
-  return { check, type, otherInput, submit, submittedAnswers };
+  const submittedAnswers = () => submittedInput().answers;
+  return { check, type, otherInput, submit, submittedAnswers, submittedInput };
 }
 
 const multiSelectQuestion = {
@@ -145,5 +149,22 @@ describe("QuestionFormCard other answers", () => {
     expect(card.otherInput().value).toBe("");
     card.submit();
     expect(card.submittedAnswers()).toEqual({ Provider: "Codex" });
+  });
+
+  it("submits per-question answer lists that keep commas in labels and other answers", () => {
+    const card = mountCard({
+      ...multiSelectQuestion,
+      options: [{ label: "Apple" }, { label: "Banana, ripe" }, { label: "Cherry" }],
+    });
+
+    card.check("Cherry");
+    card.check("Banana, ripe");
+    card.type("durian, if it is in season");
+    card.submit();
+
+    expect(card.submittedInput()).toMatchObject({
+      answers: { Fruits: "Banana, ripe, Cherry, durian, if it is in season" },
+      answerLists: { Fruits: ["Banana, ripe", "Cherry", "durian, if it is in season"] },
+    });
   });
 });

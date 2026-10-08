@@ -101,36 +101,55 @@ export function areQuestionsAnswered(
   );
 }
 
-export function buildQuestionFormAnswers(
+/**
+ * One list per answered question: the checked option labels in option order, then the
+ * trimmed Other text. Providers read these instead of splitting the joined `answers`
+ * strings, which corrupts any label or custom answer that contains a comma.
+ */
+export function buildQuestionFormAnswerLists(
   questions: QuestionFormQuestion[],
   selections: QuestionSelections,
   otherTexts: QuestionOtherTexts,
-): Record<string, string> {
-  const answers: Record<string, string> = {};
+): Record<string, string[]> {
+  const answerLists: Record<string, string[]> = {};
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     const selected = selections[i];
     const otherText = otherTexts[i]?.trim();
-    const labels = selected ? Array.from(selected).map((idx) => q.options[idx].label) : [];
+    const labels = q.options
+      .filter((_, idx) => selected?.has(idx) === true)
+      .map((option) => option.label);
 
     if (questionShowsTextInput(q)) {
       if (otherText && otherText.length > 0) {
         // Multi-select keeps the checked options and appends the custom answer, the way
         // Claude Code's own AskUserQuestion UI does. Single-select replaces the option.
-        answers[q.header] = q.multiSelect ? [...labels, otherText].join(", ") : otherText;
+        answerLists[q.header] = q.multiSelect ? [...labels, otherText] : [otherText];
         continue;
       }
       if (q.allowEmpty && q.options.length === 0) {
-        answers[q.header] = "";
+        answerLists[q.header] = [];
         continue;
       }
     }
 
     if (labels.length > 0) {
-      answers[q.header] = labels.join(", ");
+      answerLists[q.header] = labels;
     }
   }
-  return answers;
+  return answerLists;
+}
+
+/** The comma-joined answer per question: Claude Code's native format, and the only one older daemons read. */
+export function buildQuestionFormAnswers(
+  questions: QuestionFormQuestion[],
+  selections: QuestionSelections,
+  otherTexts: QuestionOtherTexts,
+): Record<string, string> {
+  const answerLists = buildQuestionFormAnswerLists(questions, selections, otherTexts);
+  return Object.fromEntries(
+    Object.entries(answerLists).map(([header, answers]) => [header, answers.join(", ")]),
+  );
 }
 
 export function shouldSubmitEmptyOnDismiss(questions: QuestionFormQuestion[]): boolean {
