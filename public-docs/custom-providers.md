@@ -201,7 +201,7 @@ Any agent that speaks [ACP](https://agentclientprotocol.com) over stdio can be a
 
 ## Disabling models
 
-Turn off individual models from **Settings → Providers → (provider) settings**: every discovered model has a toggle. Disabled models disappear from model pickers and from the `list_models` tool agents call, and new agents can't be started on them. Agents already running on a model keep running. The toggles write `disabledModels`:
+Turn off individual models in **Settings → Providers**: click a provider to open its settings, where every discovered model has a toggle and the search field filters long lists. Disabled models disappear from model pickers and from the `list_models` tool agents call, and new agents can't be started on them. Agents already running on a model keep running. The toggles write `disabledModels`:
 
 ```json
 {
