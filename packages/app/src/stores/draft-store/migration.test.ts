@@ -8,6 +8,7 @@ import {
   PersistedDraftStoreSchema,
 } from "./migration";
 import { isAttachmentMetadata, type DraftRecord } from "./state";
+import { buildNewWorkspaceDraftKey } from "@/stores/draft-keys";
 
 const passThroughMigrateLegacyImages: MigrateLegacyImages = async (images) =>
   images.filter(isAttachmentMetadata);
@@ -143,6 +144,11 @@ describe("draft-store migration", () => {
   it("promotes the newest legacy New Workspace draft into the singleton surface", async () => {
     const forkDraft = activeDraft("fork context", 1700000000003);
     const agentDraft = activeDraft("agent prompt", 1700000000004);
+    const projectDraftKey = buildNewWorkspaceDraftKey({
+      serverId: "server-a",
+      sourceDirectory: "/project/current",
+    });
+    const projectDraft = activeDraft("per-project prompt", 1700000000000);
 
     const migrated = await migratePersistedState(
       {
@@ -156,6 +162,7 @@ describe("draft-store migration", () => {
             1700000000002,
           ),
           "new-workspace:draft:fork-1": forkDraft,
+          [projectDraftKey]: projectDraft,
           "agent:server-a:agent-1": agentDraft,
         },
         createModalDraft: null,
@@ -166,6 +173,7 @@ describe("draft-store migration", () => {
     expect(migrated.drafts).toEqual({
       "new-workspace": activeDraft("newer new workspace prompt", 1700000000002),
       "new-workspace:draft:fork-1": forkDraft,
+      [projectDraftKey]: projectDraft,
       "agent:server-a:agent-1": agentDraft,
     });
   });

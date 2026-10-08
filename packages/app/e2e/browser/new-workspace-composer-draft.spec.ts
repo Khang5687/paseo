@@ -53,6 +53,42 @@ test.describe("New workspace composer draft", () => {
     }
   });
 
+  test("keeps a separate draft for each project", async ({ page }) => {
+    const firstProject: SeededWorkspace = await seedWorkspace({
+      repoPrefix: "new-workspace-draft-separate-a-",
+    });
+    const secondProject: SeededWorkspace = await seedWorkspace({
+      repoPrefix: "new-workspace-draft-separate-b-",
+    });
+    const first = {
+      projectKey: firstProject.projectKey,
+      projectDisplayName: firstProject.projectDisplayName,
+    };
+    const second = {
+      projectKey: secondProject.projectKey,
+      projectDisplayName: secondProject.projectDisplayName,
+    };
+
+    try {
+      await gotoAppShell(page);
+      await waitForSidebarHydration(page);
+      await openNewWorkspaceComposer(page, first);
+      await expectNewWorkspaceProjectSelected(page, first.projectDisplayName);
+      await fillNewWorkspaceDraft(page, DRAFT);
+
+      await openNewWorkspaceComposer(page, second);
+      await expectNewWorkspaceProjectSelected(page, second.projectDisplayName);
+      await expectNewWorkspaceDraft(page, "");
+
+      await openNewWorkspaceComposer(page, first);
+      await expectNewWorkspaceProjectSelected(page, first.projectDisplayName);
+      await expectNewWorkspaceDraft(page, DRAFT);
+    } finally {
+      await secondProject.cleanup();
+      await firstProject.cleanup();
+    }
+  });
+
   test("keeps the draft when the host changes", async ({ page }) => {
     const project: SeededWorkspace = await seedWorkspace({
       repoPrefix: "new-workspace-draft-host-",
