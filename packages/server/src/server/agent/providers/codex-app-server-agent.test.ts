@@ -3158,6 +3158,7 @@ describe("Codex app-server provider", () => {
                 header: "Drink",
                 question: "Which drink do you want?",
                 options: [{ label: "Coffee", description: "Default" }, { label: "Tea" }],
+                allowNotes: true,
               },
             ],
           },
@@ -5651,6 +5652,56 @@ describe("Codex app-server provider", () => {
           },
         },
       },
+    });
+  });
+
+  test("delivers a question note as a Codex user_note answer and shows it in the tool call", async () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    const pendingResponse = asInternals(session).handleToolApprovalRequest({
+      itemId: "call-question-3",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      questions: [
+        {
+          id: "deadline",
+          header: "Deadline",
+          question: "Which deadline?",
+          options: [{ label: "3-month" }, { label: "6-month" }],
+        },
+        {
+          id: "region",
+          header: "Region",
+          question: "Which region?",
+          options: [{ label: "EU" }, { label: "US" }],
+        },
+      ],
+    });
+
+    await session.respondToPermission("permission-call-question-3", {
+      behavior: "allow",
+      updatedInput: {
+        answers: { Deadline: "6-month", Region: "EU" },
+        notes: { Deadline: " but make the refund window 30 days " },
+      },
+    });
+
+    await expect(pendingResponse).resolves.toEqual({
+      answers: {
+        deadline: { answers: ["6-month", "user_note: but make the refund window 30 days"] },
+        region: { answers: ["EU"] },
+      },
+    });
+    const completed = events.at(-1);
+    if (completed?.type !== "timeline" || completed.item.type !== "tool_call") {
+      throw new Error("Expected completed tool call");
+    }
+    expect(completed.item.detail).toMatchObject({
+      text:
+        "Deadline: Which deadline?\nOptions: 3-month, 6-month\n\nRegion: Which region?\nOptions: EU, US" +
+        "\n\nAnswers:\n\ndeadline: 6-month\nNote: but make the refund window 30 days\nregion: EU",
     });
   });
 

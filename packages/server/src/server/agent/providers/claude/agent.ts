@@ -169,7 +169,7 @@ export function normalizeClaudeAskUserQuestionRequestInput(
 
   // Claude Code's AskUserQuestion schema says "Other" is host-provided, not a
   // model-supplied option. Paseo's shared question UI uses allowOther for that
-  // freeform answer path.
+  // freeform answer path, and allowNotes for the per-question annotation notes.
   return {
     ...input,
     questions: input.questions.map((item) => {
@@ -179,6 +179,7 @@ export function normalizeClaudeAskUserQuestionRequestInput(
       return {
         ...item,
         allowOther: true,
+        allowNotes: true,
       };
     }),
   };
@@ -192,14 +193,26 @@ function stripClaudeAskUserQuestionUiMetadata(input: AgentMetadata): AgentMetada
   return {
     ...input,
     questions: input.questions.map((item) => {
-      if (!isMetadata(item) || !("allowOther" in item)) {
+      if (!isMetadata(item) || !("allowOther" in item || "allowNotes" in item)) {
         return item;
       }
       const itemForClaude: AgentMetadata = { ...item };
       delete itemForClaude.allowOther;
+      delete itemForClaude.allowNotes;
       return itemForClaude;
     }),
   };
+}
+
+// Paseo's question UI keys answers and notes by header; Claude keys them by question text.
+function readQuestionKeyedString(
+  record: AgentMetadata,
+  questionText: string,
+  header: string | null,
+): string | null {
+  return (
+    readNonEmptyString(record[questionText]) ?? (header ? readNonEmptyString(record[header]) : null)
+  );
 }
 
 export function normalizeClaudeAskUserQuestionUpdatedInput(
@@ -208,21 +221,26 @@ export function normalizeClaudeAskUserQuestionUpdatedInput(
 ): AgentMetadata {
   const fallback = isMetadata(fallbackInput) ? fallbackInput : {};
   const base = isMetadata(updatedInput) ? updatedInput : {};
-  // Paseo's shared question UI serializes answers by question header, but Claude's
-  // AskUserQuestion tool expects answer keys to match the full question text. Merge
-  // the original request payload back in so provider callbacks that only return
-  // `{ answers }` still satisfy Claude's full tool input schema.
+  // Paseo's shared question UI serializes answers and notes by question header, but
+  // Claude's AskUserQuestion tool expects answer and annotation keys to match the full
+  // question text. Merge the original request payload back in so provider callbacks
+  // that only return `{ answers }` still satisfy Claude's full tool input schema.
   const merged = stripClaudeAskUserQuestionUiMetadata({ ...fallback, ...base });
+  delete merged.notes;
   const questions =
     (Array.isArray(base.questions) ? base.questions : null) ??
     (Array.isArray(fallback.questions) ? fallback.questions : null);
   const answers = isMetadata(base.answers) ? base.answers : null;
+  const notes = isMetadata(base.notes) ? base.notes : {};
 
   if (!questions || !answers) {
     return merged;
   }
 
   const normalizedAnswers: Record<string, string> = {};
+  const annotations: AgentMetadata = isMetadata(merged.annotations)
+    ? { ...merged.annotations }
+    : {};
   for (const item of questions) {
     const question = isMetadata(item) ? item : null;
     if (!question) {
@@ -235,11 +253,15 @@ export function normalizeClaudeAskUserQuestionUpdatedInput(
     }
 
     const header = readNonEmptyString(question.header);
-    const answer =
-      readNonEmptyString(answers[questionText]) ??
-      (header ? readNonEmptyString(answers[header]) : null);
+    const answer = readQuestionKeyedString(answers, questionText, header);
     if (answer) {
       normalizedAnswers[questionText] = answer;
+    }
+
+    const note = readQuestionKeyedString(notes, questionText, header);
+    if (note) {
+      const existing = annotations[questionText];
+      annotations[questionText] = { ...(isMetadata(existing) ? existing : {}), notes: note.trim() };
     }
   }
 
@@ -250,6 +272,7 @@ export function normalizeClaudeAskUserQuestionUpdatedInput(
   return {
     ...merged,
     answers: normalizedAnswers,
+    ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
   };
 }
 
