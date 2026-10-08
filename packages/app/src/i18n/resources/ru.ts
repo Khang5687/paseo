@@ -2752,6 +2752,9 @@ export const ru: TranslationResources = {
         discovered: "Обнаруженные модели",
         custom: "Пользовательские модели",
         updated: "Обновлено {{time}}",
+        disabledCount: "Отключено: {{count}}",
+        toggleModel: "Включить {{model}}",
+        failedToToggle: "Не удалось обновить {{model}}",
       },
       diagnostic: {
         title: "Диагностика",

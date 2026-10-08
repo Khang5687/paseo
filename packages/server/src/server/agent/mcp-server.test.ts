@@ -24,7 +24,7 @@ import type {
   AgentStreamEvent,
   ProviderSnapshotEntry,
 } from "./agent-sdk-types.js";
-import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
+import { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import { createProviderSnapshotManagerStub } from "../test-utils/session-stubs.js";
 import {
   AgentListItemPayloadSchema,
@@ -3433,6 +3433,47 @@ describe("create_agent MCP tool", () => {
     }
   });
 
+  it("rejects a child on a model disabled in Provider settings", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-disabled-model-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const agentManager = new AgentManager({
+      clients: createTestAgentClients(),
+      providerDefinitions: {
+        claude: { enabled: true, disabledModels: ["sonnet"] },
+        codex: { enabled: true },
+      },
+      registry: storage,
+      logger,
+    });
+
+    try {
+      const parent = await agentManager.createAgent(
+        { provider: "codex", cwd: existingCwd },
+        undefined,
+        { workspaceId: "wks_parent" },
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage: storage,
+        callerAgentId: parent.id,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        logger,
+      });
+
+      await expect(
+        registeredTool(server, "create_agent").handler({
+          ...subagentCurrentWorkspace(),
+          title: "Child",
+          provider: "claude/sonnet",
+          initialPrompt: "Do work",
+        }),
+      ).rejects.toThrow("Model 'sonnet' is disabled for provider 'claude' in Provider settings");
+      expect(agentManager.listAgents().map((agent) => agent.id)).toEqual([parent.id]);
+    } finally {
+      await removeAgentStateDir(agentManager, storage, workdir);
+    }
+  });
+
   it("delegates MCP injection to AgentManager and passes through an undefined agent ID", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     spies.agentManager.createAgent.mockResolvedValue({
@@ -5562,6 +5603,34 @@ describe("provider MCP tools", () => {
     await expect(tool.handler({ provider: "codex" })).rejects.toThrow(
       "Provider 'codex' is disabled",
     );
+  });
+
+  it("list_models omits models disabled in Provider settings", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const providerSnapshotManager = new ProviderSnapshotManager({
+      logger,
+      extraClients: { claude: createTestAgentClients().claude },
+      providerOverrides: { claude: { disabledModels: ["haiku"] } },
+    });
+    try {
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager,
+        logger,
+      });
+
+      const response = await registeredTool(server, "list_models").handler({
+        provider: "claude",
+      });
+
+      expect(response.structuredContent).toEqual({
+        provider: "claude",
+        models: [{ provider: "claude", id: "sonnet", label: "Sonnet", isDefault: false }],
+      });
+    } finally {
+      providerSnapshotManager.destroy();
+    }
   });
 
   it("inspect_provider rejects disabled providers without fetching models", async () => {

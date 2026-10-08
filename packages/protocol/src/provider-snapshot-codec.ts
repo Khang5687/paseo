@@ -11,8 +11,12 @@ export interface CompactProviderSnapshotModel extends Omit<
   thinkingSet?: number;
 }
 
-export interface CompactProviderSnapshotEntry extends Omit<ProviderSnapshotEntry, "models"> {
+export interface CompactProviderSnapshotEntry extends Omit<
+  ProviderSnapshotEntry,
+  "models" | "disabledModels"
+> {
   models?: CompactProviderSnapshotModel[];
+  disabledModels?: CompactProviderSnapshotModel[];
 }
 
 export interface ProviderSnapshotThinkingSet {
@@ -69,13 +73,14 @@ function compactModel(
 export function compactProviderSnapshot(entries: ProviderSnapshotEntry[]): CompactProviderSnapshot {
   const thinkingSets: ProviderSnapshotThinkingSet[] = [];
   const thinkingSetIndexes = new Map<string, number>();
+  const compactModels = (models: AgentModelDefinition[]) =>
+    models.map((model) => compactModel(model, thinkingSets, thinkingSetIndexes));
   const compactEntries = entries.map((entry): CompactProviderSnapshotEntry => {
-    if (entry.models === undefined) {
-      return entry;
-    }
+    const { models, disabledModels, ...entryFields } = entry;
     return {
-      ...entry,
-      models: entry.models.map((model) => compactModel(model, thinkingSets, thinkingSetIndexes)),
+      ...entryFields,
+      ...(models !== undefined ? { models: compactModels(models) } : {}),
+      ...(disabledModels !== undefined ? { disabledModels: compactModels(disabledModels) } : {}),
     };
   });
   return { entries: compactEntries, thinkingSets };
@@ -107,13 +112,13 @@ function expandModel(
 
 export function expandProviderSnapshot(snapshot: CompactProviderSnapshot): ProviderSnapshotEntry[] {
   return snapshot.entries.map((entry): ProviderSnapshotEntry => {
-    const { models, ...entryFields } = entry;
-    if (models === undefined) return entryFields;
+    const { models, disabledModels, ...entryFields } = entry;
+    const expandModels = (compact: CompactProviderSnapshotModel[]) =>
+      compact.map((model) => expandModel(entryFields.provider, model, snapshot.thinkingSets));
     return {
       ...entryFields,
-      models: models.map((model) =>
-        expandModel(entryFields.provider, model, snapshot.thinkingSets),
-      ),
+      ...(models !== undefined ? { models: expandModels(models) } : {}),
+      ...(disabledModels !== undefined ? { disabledModels: expandModels(disabledModels) } : {}),
     };
   });
 }

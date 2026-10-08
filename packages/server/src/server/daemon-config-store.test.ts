@@ -747,6 +747,33 @@ describe("DaemonConfigStore", () => {
     });
   });
 
+  test("patch replaces provider disabled models in config.json", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+
+    const store = new DaemonConfigStore(
+      paseoHome,
+      {
+        mcp: { injectIntoAgents: false },
+        browserTools: { enabled: false },
+        providers: {},
+        metadataGeneration: { providers: [] },
+        autoArchiveAfterMerge: false,
+        enableTerminalAgentHooks: false,
+        appendSystemPrompt: "",
+      },
+      undefined,
+    );
+
+    store.patch({ providers: { omp: { disabledModels: ["openai/gpt-5.4", "zai/glm-4.6"] } } });
+    store.patch({ providers: { omp: { disabledModels: ["zai/glm-4.6"] } } });
+
+    expect(store.get().providers.omp?.disabledModels).toEqual(["zai/glm-4.6"]);
+    expect(loadPersistedConfig(paseoHome).agents?.providers?.omp).toEqual({
+      disabledModels: ["zai/glm-4.6"],
+    });
+  });
+
   test("patch persists daemon append system prompt into config.json", () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
     tempDirs.push(paseoHome);

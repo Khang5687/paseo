@@ -33,6 +33,7 @@ import {
   type AgentLaunchContext,
   type AgentSlashCommand,
   type AgentMode,
+  type AgentModelDefinition,
   type AgentPermissionRequest,
   type AgentPermissionResponse,
   type AgentPermissionResult,
@@ -55,6 +56,7 @@ import {
   type ListImportableSessionsOptions,
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
+import { assertModelEnabled, pickDefaultEnabledModel } from "./provider-disabled-models.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
@@ -299,6 +301,14 @@ interface ProviderEnabledFlag {
     config: AgentSessionConfig,
     toolPolicy: ToolPolicy | undefined,
   ) => AgentSessionConfig;
+  disabledModels?: readonly string[];
+}
+
+interface RequireEnabledModelInput {
+  provider: AgentProvider;
+  cwd: string;
+  model: string | undefined;
+  client: AgentClient | undefined;
 }
 type ProviderEnabledMap = Partial<Record<AgentProvider, ProviderEnabledFlag>>;
 type ProviderClientMap = Partial<Record<AgentProvider, AgentClient>>;
@@ -1263,6 +1273,12 @@ export class AgentManager {
     const client = await this.requireAvailableClient({
       provider: storedConfig.provider,
     });
+    await this.requireEnabledModel({
+      provider: storedConfig.provider,
+      cwd: storedConfig.cwd,
+      model: storedConfig.model,
+      client,
+    });
     this.paseoToolPolicies.set(resolvedAgentId, paseoToolPolicy);
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
@@ -1936,6 +1952,14 @@ export class AgentManager {
     const agent = this.requireSessionAgent(agentId);
     const normalizedModelId =
       typeof modelId === "string" && modelId.trim().length > 0 ? modelId : null;
+    if (normalizedModelId && normalizedModelId !== agent.config.model) {
+      await this.requireEnabledModel({
+        provider: agent.provider,
+        cwd: agent.cwd,
+        model: normalizedModelId,
+        client: this.clients.get(agent.provider),
+      });
+    }
 
     if (agent.session.setModel) {
       await agent.session.setModel(normalizedModelId);
@@ -5143,17 +5167,34 @@ export class AgentManager {
     if (!client) {
       return undefined;
     }
+    const models = await this.fetchCatalogModels(client, config.cwd);
+    const disabledModelIds = this.providerDefinitions.get(config.provider)?.disabledModels ?? [];
+    return models ? pickDefaultEnabledModel(models, disabledModelIds)?.id : undefined;
+  }
+
+  private async fetchCatalogModels(
+    client: AgentClient,
+    cwd: string,
+  ): Promise<AgentModelDefinition[] | null> {
     try {
-      const catalog = await client.fetchCatalog({
-        scope: "workspace",
-        cwd: config.cwd,
-        force: false,
-      });
-      return (catalog.models.find((model) => model.isDefault) ?? catalog.models[0])?.id;
+      const catalog = await client.fetchCatalog({ scope: "workspace", cwd, force: false });
+      return catalog.models;
     } catch {
-      // Provider may not support model listing — leave model undefined.
-      return undefined;
+      // Provider may not support model listing.
+      return null;
     }
+  }
+
+  /** Refuses new selections of models disabled in Provider settings; running agents are untouched. */
+  private async requireEnabledModel(input: RequireEnabledModelInput): Promise<void> {
+    const disabledModelIds = this.providerDefinitions.get(input.provider)?.disabledModels ?? [];
+    if (disabledModelIds.length === 0) return;
+    assertModelEnabled({
+      provider: input.provider,
+      requestedModel: input.model,
+      disabledModelIds,
+      catalog: input.client ? await this.fetchCatalogModels(input.client, input.cwd) : null,
+    });
   }
 
   private async prepareSessionConfig(

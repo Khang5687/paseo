@@ -130,6 +130,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;

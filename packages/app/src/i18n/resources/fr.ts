@@ -2765,6 +2765,9 @@ export const fr: TranslationResources = {
         discovered: "Détectés",
         custom: "Modèles personnalisés",
         updated: "Mis à jour {{time}}",
+        disabledCount: "{{count}} désactivés",
+        toggleModel: "Activer {{model}}",
+        failedToToggle: "Impossible de mettre à jour {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",

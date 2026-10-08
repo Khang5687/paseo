@@ -399,6 +399,31 @@ describe("provider overrides (new format)", () => {
     ]);
   });
 
+  test("disabledModels lists model IDs and is absent when not configured", () => {
+    const parsed = PersistedConfigSchema.parse({
+      agents: {
+        providers: {
+          omp: { disabledModels: ["anthropic/claude-opus-4-1", "openai/gpt-5.4"] },
+          codex: { enabled: true },
+        },
+      },
+    });
+
+    expect(parsed.agents?.providers?.omp?.disabledModels).toEqual([
+      "anthropic/claude-opus-4-1",
+      "openai/gpt-5.4",
+    ]);
+    expect(parsed.agents?.providers?.codex).toEqual({ enabled: true });
+  });
+
+  test("disabledModels rejects empty model IDs", () => {
+    expect(() =>
+      PersistedConfigSchema.parse({
+        agents: { providers: { omp: { disabledModels: [""] } } },
+      }),
+    ).toThrow();
+  });
+
   test("order field accepted", () => {
     const parsed = PersistedConfigSchema.parse({
       agents: {

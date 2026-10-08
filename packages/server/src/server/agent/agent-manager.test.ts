@@ -3776,6 +3776,100 @@ test("updateProviderRegistry disables a previously enabled provider", async () =
   ).rejects.toThrow("Provider 'codex' is disabled");
 });
 
+describe("models disabled in Provider settings", () => {
+  function createManager(disabledModels: string[]) {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-disabled-models-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const client = new TestAgentClient();
+    const manager = new AgentManager({
+      clients: { codex: client },
+      providerDefinitions: { codex: { enabled: true, disabledModels } },
+      registry: storage,
+      logger,
+    });
+    async function cleanup() {
+      for (const agent of manager.listAgents()) await manager.closeAgent(agent.id);
+      await manager.flush();
+      rmSync(workdir, { recursive: true, force: true });
+    }
+    return { workdir, storage, client, manager, cleanup };
+  }
+
+  test("createAgent rejects an explicitly chosen disabled model without creating a session", async () => {
+    const { workdir, storage, client, manager, cleanup } = createManager(["gpt-5.4-mini"]);
+    try {
+      await expect(
+        manager.createAgent({ provider: "codex", cwd: workdir, model: "gpt-5.4-mini" }, undefined, {
+          workspaceId: undefined,
+        }),
+      ).rejects.toThrow(
+        "Model 'gpt-5.4-mini' is disabled for provider 'codex' in Provider settings",
+      );
+      expect(client.createdConfigs).toHaveLength(0);
+      expect(await storage.list()).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("createAgent without a model uses the first enabled model when the default is disabled", async () => {
+    const { workdir, client, manager, cleanup } = createManager(["gpt-5.4"]);
+    try {
+      const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      });
+      expect(agent.config.model).toBe("gpt-5.4-mini");
+      expect(client.createdConfigs.map((config) => config.model)).toEqual(["gpt-5.4-mini"]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("createAgent without a model fails when every model is disabled", async () => {
+    const { workdir, client, manager, cleanup } = createManager([
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.2-codex",
+    ]);
+    try {
+      await expect(
+        manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+          workspaceId: undefined,
+        }),
+      ).rejects.toThrow("Every model for provider 'codex' is disabled in Provider settings");
+      expect(client.createdConfigs).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("a running agent keeps its newly disabled model while new selections are refused", async () => {
+    const { workdir, client, manager, cleanup } = createManager([]);
+    try {
+      const agent = await manager.createAgent(
+        { provider: "codex", cwd: workdir, model: "gpt-5.4" },
+        undefined,
+        { workspaceId: undefined },
+      );
+      manager.updateProviderRegistry({
+        providerDefinitions: {
+          codex: { enabled: true, disabledModels: ["gpt-5.4", "gpt-5.2-codex"] },
+        },
+        clients: { codex: client },
+      });
+
+      await expect(manager.setAgentModel(agent.id, "gpt-5.2-codex")).rejects.toThrow(
+        "Model 'gpt-5.2-codex' is disabled for provider 'codex' in Provider settings",
+      );
+      await manager.setAgentModel(agent.id, "gpt-5.4");
+      expect(manager.getAgent(agent.id)?.config.model).toBe("gpt-5.4");
+      expect(manager.getAgent(agent.id)?.lifecycle).not.toBe("closed");
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
 test("updateProviderRegistry registers a previously unknown provider", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");
