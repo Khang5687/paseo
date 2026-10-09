@@ -154,14 +154,23 @@ Everything else is a short-lived work branch.
 
 1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
 2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it. The `## Progress` section is the one exception; delete it in step 3.
-3. Delete the `## Progress` section from the PR body, mark the PR ready for review, set your handoff entry to `ready` and `next: none`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
+3. Delete the `## Progress` section from the PR body, mark the PR ready for review, set your handoff entry to `ready` and `next: none`, remove your worktree (see Worktree lifetime), and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
 4. The integrator merges on "build it" (see Build it), with a merge commit, never squash or rebase:
    ```bash
    git merge --no-ff <branch> -m "Merge #N: <PR title>"
    ```
    The merge commit is what lets one change be reverted or cherry-picked later without touching the others.
-5. Keep the branch after merge. It is reused for the upstream PR. Its worktree is removed on merge (see Build it); recreate it with `git worktree add ../paseo-<slug> <branch>` when upstream asks for changes.
+5. Keep the branch after merge. It is reused for the upstream PR. Recreate its worktree with `git worktree add ../paseo-<slug> <branch>` when upstream asks for changes.
 6. If a branch conflicts with `main` because an earlier PR merged first, fix it on the branch (`git merge main`, resolve, push), never with a fix-up commit on `main`. Every line of a change stays inside its own PR.
+
+### Worktree lifetime
+
+A worktree lives only while an agent works in it. Each one costs about 3 GB, mostly its own `npm ci` copy of `node_modules`; twelve worktrees parked between `ready` and "build it" once filled 37 GB. The branch holds the work, so a removed worktree costs only a rebuild of a few minutes.
+
+- When your entry turns `ready`, remove your worktree as your last action. `git status -sb` in the worktree must show nothing uncommitted and no `ahead`; then run `git -C ~/git/paseo worktree remove ../paseo-<slug>`. Never pass `--force`: without it git refuses to delete uncommitted changes. It does not check for unpushed commits, which is why you read `git status -sb` first.
+- If you run in a Paseo worktree workspace (`~/.paseo/worktrees/...`), leave it. Archiving the workspace archives you with it; the integrator archives it at Build it.
+- To work on the branch again (review feedback, a conflict with `main`, resuming), recreate the worktree and bootstrap it as in "Starting a change".
+- Any worktree whose entry is `ready` or merged is disposable. Whoever removes one checks that it has no uncommitted changes, no unpushed commits, and that the entry's `agent` is not running. An agent launched in the main checkout keeps that cwd while it edits a worktree, so `list_agents` cwd misses it.
 
 ### The handoff file
 
@@ -221,7 +230,7 @@ When the owner says "build it", one agent integrates. That agent is the only one
 4. Run `npm ci`, `npm run build:server`, `npm run typecheck`, and `npm run lint`. If a check fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
 5. `git push origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
 6. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
-7. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays.
+7. Remove every worktree still on disk whose entry is merged or `ready` (see Worktree lifetime): `git worktree remove ../paseo-<slug>`, or Archive workspace (`archive_workspace`) for a Paseo worktree workspace, which deletes its worktree. Skip one that fails the checks in Worktree lifetime and say so in the report. The branch stays.
 8. Report to the owner what merged, what was skipped and why, and the install commands.
 
 ### Upstream PRs
