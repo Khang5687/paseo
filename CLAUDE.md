@@ -131,7 +131,7 @@ Everything else is a short-lived work branch.
    `type` is `fix` or `feat`; `area` is the package or provider (`omp`, `app`, `server`, `plugin`). Examples: `fix/omp-compact-command`, `feat/omp-goal-command`.
    A branch cut from fork `main` carries every other change with it, and its upstream PR becomes unreviewable.
 3. If the change needs another unmerged change, cut from that branch instead and write `Stacked on #N` as the first line of the PR body. Merge order follows the stack.
-4. Open the draft PR right away, before writing code, with a one-line body, and add your entry to the handoff file (see below). The PR list and `~/git/paseo-HANDOFF.md` are the registry of who is working on what; every agent checks both before cutting a branch.
+4. Open the draft PR right away, before writing code, with a one-line body followed by a `## Progress` section (see "The handoff file"), and add your entry to the handoff file. The PR list and `~/git/paseo-HANDOFF.md` are the registry of who is working on what; every agent checks both before cutting a branch.
 5. Work in a worktree, not in the main checkout, so parallel agents never share a working tree:
    ```bash
    git worktree add ../paseo-<branch-slug> <branch>
@@ -153,19 +153,29 @@ Everything else is a short-lived work branch.
 ### Finishing a change
 
 1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
-2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
-3. Mark the PR ready for review, set your handoff entry to `ready`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
+2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it. The `## Progress` section is the one exception; delete it in step 3.
+3. Delete the `## Progress` section from the PR body, mark the PR ready for review, set your handoff entry to `ready` and `next: none`, remove your worktree (see Worktree lifetime), and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
 4. The integrator merges on "build it" (see Build it), with a merge commit, never squash or rebase:
    ```bash
    git merge --no-ff <branch> -m "Merge #N: <PR title>"
    ```
    The merge commit is what lets one change be reverted or cherry-picked later without touching the others.
-5. Keep the branch after merge. It is reused for the upstream PR. Its worktree is removed on merge (see Build it); recreate it with `git worktree add ../paseo-<slug> <branch>` when upstream asks for changes.
+5. Keep the branch after merge. It is reused for the upstream PR. Recreate its worktree with `git worktree add ../paseo-<slug> <branch>` when upstream asks for changes.
 6. If a branch conflicts with `main` because an earlier PR merged first, fix it on the branch (`git merge main`, resolve, push), never with a fix-up commit on `main`. Every line of a change stays inside its own PR.
+
+### Worktree lifetime
+
+A worktree lives only while an agent works in it. Each one costs about 3 GB, mostly its own `npm ci` copy of `node_modules`; twelve worktrees parked between `ready` and "build it" once filled 37 GB. The branch holds the work, so a removed worktree costs only a rebuild of a few minutes.
+
+- When your entry turns `ready`, remove your worktree as your last action. `git status -sb` in the worktree must show nothing uncommitted and no `ahead`; then run `git -C ~/git/paseo worktree remove ../paseo-<slug>`. Never pass `--force`: without it git refuses to delete uncommitted changes. It does not check for unpushed commits, which is why you read `git status -sb` first.
+- If you run in a Paseo worktree workspace (`~/.paseo/worktrees/...`), leave it. Archiving the workspace archives you with it; the integrator archives it at Build it.
+- To work on a `ready` branch again (review feedback, a conflict with `main`), set its entry back to `wip` and `agent` to your own `$PASEO_AGENT_ID` before touching it, then recreate the worktree and bootstrap it as in "Starting a change". A `wip` entry's worktree is never removed by anyone but you.
+- Only two roles remove a worktree: the agent that owns it, when its entry turns `ready`, and the integrator in Build it step 7. Any other agent leaves other agents' worktrees alone, even ones that look abandoned, and mentions them in its report instead.
+- The integrator removes a worktree only when all of these hold: the entry is `ready` or merged; the entry's `agent` is not running (`get_agent_status`); `git status -sb` shows nothing uncommitted and no `ahead`; for a Paseo worktree workspace, no agent in that workspace is running, since Archive workspace archives all of them. An entry without an `agent` line is skipped. Do not use `list_agents` cwd to find who works in a worktree: an agent launched in the main checkout keeps that cwd while it edits a worktree.
 
 ### The handoff file
 
-Every agent on the fork reads and writes one file: `~/git/paseo-HANDOFF.md`. It lives outside the repository because each agent works on its own branch in its own worktree; a tracked file would have a different copy on every branch and conflict on every merge. The PR stays the record of what changed; the handoff file records what is ready to build and in what order.
+Every agent on the fork reads and writes one file: `~/git/paseo-HANDOFF.md`. It lives outside the repository because each agent works on its own branch in its own worktree; a tracked file would have a different copy on every branch and conflict on every merge. The PR stays the record of what changed; the handoff file records what is ready to build and in what order, and where to pick up work whose agent is gone.
 
 The file has three sections: `## Open`, `## Merged`, `## Builds`. When you open your draft PR, add one entry under `## Open`:
 
@@ -173,18 +183,38 @@ The file has three sections: `## Open`, `## Merged`, `## Builds`. When you open 
 ### #7 feat/settle-workspace
 
 - status: wip
+- agent: 271df5e3-a03c-4467-9fe4-12d2c41d2225
 - worktree: ~/git/paseo-settle-workspace
 - stacked on: none
 - shared surfaces: packages/protocol (new RPC workspace.settle.set)
 - ships in: daemon + desktop app; Android needs a fork Android build
+- next: wire the Settled section into status grouping
 - note: none
 ```
 
 - Edit only your own entry, in place. Never rewrite the file, reorder it, or touch another agent's entry, even one that looks stale. Two agents rewriting the whole file at once lose each other's edits.
 - Keep the entry to these lines. Detail goes in the PR body.
 - `status` is `wip`, `ready`, or `blocked: <reason>`. Set `ready` only after the PR is marked ready for review and the checks in "Finishing a change" passed.
+- `agent` is your `$PASEO_AGENT_ID`. `"$PASEO_CLI" logs <agent>` prints that agent's transcript, archived or not, so it is how a successor recovers the conversation. `paseo` is not on an agent's `PATH`, and `npm run cli` targets the checkout's dev daemon, which never ran that agent; outside a Paseo agent the binary is `/Applications/Paseo.app/Contents/Resources/bin/paseo`.
 - `shared surfaces` names anything listed under "While working" as shared ground, so the integrator can expect conflicts.
-- A session that opens with a bare `continue` reads its own entry before asking the owner anything.
+- `next` is the single action you would take next. `none` once `ready`.
+
+#### Stopping point
+
+While your entry is `wip`, every time you stop (end of a turn, waiting on the owner, blocked), leave the work resumable by an agent that never saw your conversation:
+
+1. Commit and push everything in the worktree. Commits that do not pass the pre-commit hook yet are prefixed `wip:` and may use `--no-verify`; the last commit before `ready` passes the hook.
+2. Rewrite the PR body's `## Progress` section: **Done** (what works and how you checked it), **Next** (remaining steps, in order), **Decisions** (what the owner decided and why, quoted when short; the transcript is the fallback, not the source).
+3. Update `next` in your entry.
+
+#### Resuming
+
+A session that opens with a bare `continue`, or is told to continue #N, resumes from the entry before asking the owner anything:
+
+1. Read the entry, then `gh pr view <N>` for `## Progress`.
+2. Open the worktree (recreate it from the branch if it is gone) and compare it with the pushed branch.
+3. Read `"$PASEO_CLI" logs <agent>` when `## Progress` leaves a decision unexplained.
+4. Set `agent` to your own `$PASEO_AGENT_ID` and `status` to `wip`; the entry is yours from here. Continue from `next`.
 
 ### Build it
 
@@ -201,7 +231,7 @@ When the owner says "build it", one agent integrates. That agent is the only one
 4. Run `npm ci`, `npm run build:server`, `npm run typecheck`, and `npm run lint`. If a check fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
 5. `git push origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
 6. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
-7. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays.
+7. Remove every worktree still on disk whose entry is merged or `ready` (see Worktree lifetime): `git worktree remove ../paseo-<slug>`, or Archive workspace (`archive_workspace`) for a Paseo worktree workspace, which deletes its worktree. Skip one that fails the checks in Worktree lifetime and say so in the report. The branch stays.
 8. Report to the owner what merged, what was skipped and why, and the install commands.
 
 ### Upstream PRs
