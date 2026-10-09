@@ -228,6 +228,7 @@ paseo logs <id>                  # Full timeline
 paseo logs <id> -f               # Follow (streaming)
 paseo logs <id> --tail 10        # Last 10 entries
 paseo logs <id> --filter tools   # Only tool calls
+paseo logs <id> --seq 42 --epoch <epoch> --context 2  # Rows a Paseo debug reference points at, as JSON lines
 ```
 
 ## Waiting for agents

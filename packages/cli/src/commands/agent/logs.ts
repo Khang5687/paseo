@@ -9,6 +9,7 @@ import {
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import { curateAgentActivity } from "@getpaseo/server/agent-activity";
+import { lookupTimelineRowsBySeq, TimelineSeqLookupError, type SeqLookup } from "./logs-seq.js";
 
 export function addLogsOptions(cmd: Command): Command {
   return cmd
@@ -17,7 +18,17 @@ export function addLogsOptions(cmd: Command): Command {
     .option("-f, --follow", "Follow log output (streaming)")
     .option("--tail <n>", "Show last n entries")
     .option("--filter <type>", "Filter by event type (tools, text, errors, permissions)")
-    .option("--since <time>", "Show logs since timestamp");
+    .option("--since <time>", "Show logs since timestamp")
+    .option(
+      "--seq <n>",
+      "Print the timeline row containing seq n (from a Paseo debug reference) as JSON lines",
+    )
+    .option("--epoch <epoch>", "With --seq: fail unless the timeline is still at this epoch")
+    .option("--context <k>", "With --seq: also print k rows before and after the target", "0")
+    .option(
+      "--subagent <subagentId>",
+      "With --seq: search this provider subagent's timeline; <id> is its parent agent",
+    );
 }
 
 export interface AgentLogsOptions extends CommandOptions {
@@ -25,6 +36,57 @@ export interface AgentLogsOptions extends CommandOptions {
   tail?: string;
   filter?: string;
   since?: string;
+  seq?: string;
+  epoch?: string;
+  context: string;
+  subagent?: string;
+}
+
+interface SeqLookupRequest {
+  lookup: SeqLookup;
+  subagentId: string | null;
+}
+
+function exitWithUsageError(message: string): never {
+  console.error(`Error: ${message}`);
+  process.exit(1);
+}
+
+function parseSeqLookupRequest(options: AgentLogsOptions): SeqLookupRequest | null {
+  if (options.seq === undefined) {
+    const seqOnly = [
+      options.epoch !== undefined ? "--epoch" : null,
+      options.subagent !== undefined ? "--subagent" : null,
+      options.context !== "0" ? "--context" : null,
+    ].filter((flag) => flag !== null);
+    if (seqOnly.length > 0) {
+      exitWithUsageError(`${seqOnly.join(", ")} requires --seq`);
+    }
+    return null;
+  }
+  const conflicting = [
+    options.follow ? "--follow" : null,
+    options.tail !== undefined ? "--tail" : null,
+    options.filter !== undefined ? "--filter" : null,
+    options.since !== undefined ? "--since" : null,
+  ].filter((flag) => flag !== null);
+  if (conflicting.length > 0) {
+    exitWithUsageError(`--seq cannot be combined with ${conflicting.join(", ")}`);
+  }
+  if (!/^\d+$/.test(options.seq)) {
+    exitWithUsageError(`Invalid --seq value: ${options.seq} (expected an integer >= 0)`);
+  }
+  if (!/^\d+$/.test(options.context)) {
+    exitWithUsageError(`Invalid --context value: ${options.context} (expected an integer >= 0)`);
+  }
+  return {
+    lookup: {
+      seq: Number(options.seq),
+      epoch: options.epoch ?? null,
+      context: Number(options.context),
+    },
+    subagentId: options.subagent ?? null,
+  };
 }
 
 // Logs command returns void - it outputs directly to console
@@ -98,6 +160,7 @@ export async function runLogsCommand(
     process.exit(1);
   }
 
+  const seqLookup = parseSeqLookupRequest(options);
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
@@ -109,6 +172,17 @@ export async function runLogsCommand(
       process.exit(1);
     }
     const resolvedId = fetchResult.agent.id;
+
+    if (seqLookup) {
+      const rows = await lookupTimelineRowsBySeq(
+        client,
+        { agentId: resolvedId, subagentId: seqLookup.subagentId },
+        seqLookup.lookup,
+      );
+      await client.close();
+      console.log(rows);
+      return;
+    }
 
     // For follow mode, we stream events continuously
     if (options.follow) {
@@ -148,6 +222,11 @@ export async function runLogsCommand(
     const transcript = formatAgentActivityTranscript(timelineItems, tailCount);
     console.log(transcript);
   } catch (err) {
+    if (err instanceof TimelineSeqLookupError) {
+      console.error(`Error: ${err.message}`);
+      await client.close().catch(() => {});
+      process.exit(1);
+    }
     if (err && typeof err === "object" && "code" in err) throw err;
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: Failed to get logs: ${message}`);
