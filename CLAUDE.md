@@ -169,8 +169,9 @@ A worktree lives only while an agent works in it. Each one costs about 3 GB, mos
 
 - When your entry turns `ready`, remove your worktree as your last action. `git status -sb` in the worktree must show nothing uncommitted and no `ahead`; then run `git -C ~/git/paseo worktree remove ../paseo-<slug>`. Never pass `--force`: without it git refuses to delete uncommitted changes. It does not check for unpushed commits, which is why you read `git status -sb` first.
 - If you run in a Paseo worktree workspace (`~/.paseo/worktrees/...`), leave it. Archiving the workspace archives you with it; the integrator archives it at Build it.
-- To work on the branch again (review feedback, a conflict with `main`, resuming), recreate the worktree and bootstrap it as in "Starting a change".
-- Any worktree whose entry is `ready` or merged is disposable. Whoever removes one checks that it has no uncommitted changes, no unpushed commits, and that the entry's `agent` is not running. An agent launched in the main checkout keeps that cwd while it edits a worktree, so `list_agents` cwd misses it.
+- To work on a `ready` branch again (review feedback, a conflict with `main`), set its entry back to `wip` and `agent` to your own `$PASEO_AGENT_ID` before touching it, then recreate the worktree and bootstrap it as in "Starting a change". A `wip` entry's worktree is never removed by anyone but you.
+- Only two roles remove a worktree: the agent that owns it, when its entry turns `ready`, and the integrator in Build it step 7. Any other agent leaves other agents' worktrees alone, even ones that look abandoned, and mentions them in its report instead.
+- The integrator removes a worktree only when all of these hold: the entry is `ready` or merged; the entry's `agent` is not running (`get_agent_status`); `git status -sb` shows nothing uncommitted and no `ahead`; for a Paseo worktree workspace, no agent in that workspace is running, since Archive workspace archives all of them. An entry without an `agent` line is skipped. Do not use `list_agents` cwd to find who works in a worktree: an agent launched in the main checkout keeps that cwd while it edits a worktree.
 
 ### The handoff file
 
@@ -213,7 +214,7 @@ A session that opens with a bare `continue`, or is told to continue #N, resumes 
 1. Read the entry, then `gh pr view <N>` for `## Progress`.
 2. Open the worktree (recreate it from the branch if it is gone) and compare it with the pushed branch.
 3. Read `"$PASEO_CLI" logs <agent>` when `## Progress` leaves a decision unexplained.
-4. Set `agent` to your own `$PASEO_AGENT_ID`; the entry is yours from here. Continue from `next`.
+4. Set `agent` to your own `$PASEO_AGENT_ID` and `status` to `wip`; the entry is yours from here. Continue from `next`.
 
 ### Build it
 
