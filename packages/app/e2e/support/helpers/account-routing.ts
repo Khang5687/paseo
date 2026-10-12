@@ -33,7 +33,7 @@ export interface RoutingFixtureHost {
 }
 
 export async function startRoutingFixtureHost(
-  options: { corsOrigin?: string; agent?: boolean } = {},
+  options: { corsOrigin?: string; agent?: boolean; scenario?: "exhausted" } = {},
 ): Promise<RoutingFixtureHost> {
   const metroPort = process.env.E2E_METRO_PORT;
   const child: ChildProcess = spawnTsx(SELF, ["--serve"], {
@@ -43,6 +43,7 @@ export async function startRoutingFixtureHost(
       ROUTING_FIXTURE_CORS:
         options.corsOrigin ?? (metroPort ? `http://localhost:${metroPort}` : ""),
       ROUTING_FIXTURE_AGENT: options.agent === false ? "0" : "1",
+      ROUTING_FIXTURE_SCENARIO: options.scenario ?? "",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -167,6 +168,37 @@ async function serve(): Promise<void> {
     };
   };
   const accounts = (blocked: boolean) => {
+    if (process.env.ROUTING_FIXTURE_SCENARIO === "exhausted") {
+      // One personal account whose weekly limit is used up: the owner's real screen.
+      return [
+        fresh(
+          1,
+          {
+            windows: [
+              window("5h", "Claude 5 Hour", 0, shared),
+              window("7d", "Claude 7 Day", 1, shared),
+              window("7d", "Claude 7 Day (Fable)", 1, { kind: "model", modelId: "fable" }),
+            ],
+            quotaBlocks: [
+              {
+                limitId: "7d",
+                scope: shared,
+                resetAt: hour(90),
+                observedAt: Date.now(),
+                source: "native-usage",
+                confirmed: true,
+              },
+            ],
+          },
+          {
+            email: "solo@example.test",
+            organizationName: "solo@example.test's Organization",
+            accountId: "acct-1",
+            organizationId: "org-a",
+          },
+        ),
+      ];
+    }
     const block = blocked
       ? [
           {
@@ -186,7 +218,10 @@ async function serve(): Promise<void> {
           windows: [
             window("5h", "5h", 0.4, shared),
             window("7d", "7d", 0.85, shared),
-            window("7d", "7d sonnet", 0.2, { kind: "model", modelId: "claude-sonnet-4-5" }),
+            window("7d", "Claude 7 Day (Sonnet)", 0.2, {
+              kind: "model",
+              modelId: "claude-sonnet-4-5",
+            }),
           ],
           quotaBlocks: block,
         },

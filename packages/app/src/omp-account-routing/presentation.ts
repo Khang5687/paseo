@@ -71,13 +71,21 @@ export function buildAccountRows(state: OmpAccountRoutingState): AccountRow[] {
 
 export interface AccountTitle {
   title: string;
-  /** Organization line, or null when the row falls back to the generic missing-account label. */
+  /** Organization line, or null when the row has none worth showing (missing account, default personal organization). */
   organization: string | null;
 }
 
 function organizationName(account: OmpRoutingAccount, shared: boolean): string | null {
   if (!account.organizationLabel) return null;
   return shared ? account.organizationIdentityLabel : account.organizationLabel;
+}
+
+/** The organization every personal account gets by default; it only repeats the account name. */
+function isDefaultOrganization(account: OmpRoutingAccount): boolean {
+  return (
+    account.organizationLabel === `${account.label}'s Organization` ||
+    account.organizationLabel === `${account.label}\u2019s Organization`
+  );
 }
 
 /**
@@ -101,20 +109,30 @@ export function describeAccount(
   );
   return {
     title: labelShared ? account.identityLabel : account.label,
-    organization: organizationName(account, orgShared) ?? fallbacks.unknownOrganization,
+    // Kept while another account shares the label, where the organization tells them apart.
+    organization:
+      !labelShared && isDefaultOrganization(account)
+        ? null
+        : (organizationName(account, orgShared) ?? fallbacks.unknownOrganization),
   };
 }
 
 export type WindowKind = "fiveHour" | "weekly" | "model" | "other";
 
+export type WindowTone = "default" | "warning" | "danger";
+
 export interface WindowView {
   key: string;
   kind: WindowKind;
-  /** Server label; only shown for model and unclassified windows. */
+  /** The window's length when the id names one; model windows keep theirs. */
+  period: "fiveHour" | "weekly" | null;
+  /** Model named in the server label's trailing parentheses, for model windows. */
+  model: string | null;
+  /** Server label; only shown for unclassified windows and model windows without a known period. */
   serverLabel: string;
   /** Whole percent in [0,100]; 100 only when nothing is left, 0 only when nothing is used. */
   consumedPct: number | null;
-  remainingPct: number | null;
+  tone: WindowTone;
   resetAt: number | null;
   observedAt: number | null;
   stale: boolean;
@@ -125,6 +143,19 @@ function windowKind(window: OmpRoutingWindow): WindowKind {
   if (window.id === "7d" && window.scope.kind === "shared") return "weekly";
   if (window.scope.kind === "model" || window.scope.kind === "family") return "model";
   return "other";
+}
+
+function windowPeriod(window: OmpRoutingWindow): WindowView["period"] {
+  if (window.id === "5h") return "fiveHour";
+  if (window.id === "7d") return "weekly";
+  return null;
+}
+
+/** Same bands as the Usage screen: warning from 70%, danger above 90%. */
+function toneFor(consumedPct: number | null): WindowTone {
+  if (consumedPct === null) return "default";
+  if (consumedPct > 90) return "danger";
+  return consumedPct >= 70 ? "warning" : "default";
 }
 
 const KIND_ORDER: Record<WindowKind, number> = { fiveHour: 0, weekly: 1, model: 2, other: 3 };
@@ -146,12 +177,15 @@ export function buildWindowViews(account: OmpRoutingAccount, nowMs: number): Win
       const expired = window.validUntil !== null && window.validUntil <= nowMs;
       const measured = window.usedFraction !== null && window.source !== "unknown" && !expired;
       const consumed = measured ? consumedPercent(window.usedFraction as number) : null;
+      const kind = windowKind(window);
       return {
         key: `${window.id}:${JSON.stringify(window.scope)}`,
-        kind: windowKind(window),
+        kind,
+        period: windowPeriod(window),
+        model: kind === "model" ? (/\(([^()]+)\)\s*$/.exec(window.label)?.[1] ?? null) : null,
         serverLabel: window.label,
         consumedPct: consumed,
-        remainingPct: consumed === null ? null : 100 - consumed,
+        tone: toneFor(consumed),
         resetAt: window.resetAt,
         observedAt: window.observedAt,
         stale: expired || window.source === "unknown",
@@ -182,6 +216,54 @@ export function accountRefusal(
     (block) => block.resetAt === null || block.resetAt > nowMs,
   );
   return blocked ? { kind: "quota", code: "quota_blocked" } : null;
+}
+
+const LIMIT_ORDER: Record<WindowKind, number> = { weekly: 0, model: 1, fiveHour: 2, other: 3 };
+
+/** The full window that explains a quota refusal: the longest limit first. Null when none is known full. */
+export function quotaLimit(views: readonly WindowView[]): WindowView | null {
+  return (
+    views
+      .filter((view) => view.consumedPct === 100)
+      .toSorted((a, b) => LIMIT_ORDER[a.kind] - LIMIT_ORDER[b.kind])[0] ?? null
+  );
+}
+
+/** When the account can serve again: its latest still-pending reset among full windows and quota blocks. */
+function recoveryAt(row: AccountRow, nowMs: number): number | null {
+  if (!row.account) return null;
+  const resets = [
+    ...buildWindowViews(row.account, nowMs)
+      .filter((view) => view.consumedPct === 100)
+      .map((view) => view.resetAt),
+    ...row.account.quotaBlocks.map((block) => block.resetAt),
+  ].filter((at): at is number => at !== null && at > nowMs);
+  return resets.length > 0 ? Math.max(...resets) : null;
+}
+
+export type RoutingSummary =
+  | { kind: "paused"; resumesAt: number | null }
+  | { kind: "using"; row: AccountRow }
+  | { kind: "auto" };
+
+/** One line for the whole section, from the same rows and refusals the list shows. */
+export function summarizeRouting(
+  state: OmpAccountRoutingState,
+  rows: readonly AccountRow[],
+  nowMs: number,
+): RoutingSummary | null {
+  const candidates = rows.filter((row) => row.included && row.account);
+  if (
+    state.policy.autoEnabled &&
+    candidates.length > 0 &&
+    candidates.every((row) => accountRefusal(row, nowMs)?.kind === "quota")
+  ) {
+    const times = candidates.map((row) => recoveryAt(row, nowMs)).filter((at) => at !== null);
+    return { kind: "paused", resumesAt: times.length > 0 ? Math.min(...times) : null };
+  }
+  const current = rows.find((row) => row.isCurrent);
+  if (current) return { kind: "using", row: current };
+  return state.policy.autoEnabled ? { kind: "auto" } : null;
 }
 
 export type SectionNoticeKind =
@@ -228,9 +310,16 @@ export function describeSection(
   };
 }
 
-/** Local date and time, so a reading says when it was observed or resets, not how long ago. */
+/** Local date and time ("Oct 14, 7:00 AM"; the year only when it is not this one). */
 export function formatTimestamp(ms: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(ms);
+  const sameYear = new Date(ms).getFullYear() === new Date().getFullYear();
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(ms);
 }
 
 export interface Notice {

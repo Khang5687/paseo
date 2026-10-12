@@ -217,8 +217,17 @@ for (const layout of [
           await expect(routingRow(page, "acct-2")).toContainText("North Co");
           await expect(routingRow(page, "acct-3")).toContainText("South Co");
           await expect(routingRow(page, "acct-3")).toContainText("Paid usage credits are enabled");
-          await expect(routingRow(page, "ada@example.test")).toContainText("40% consumed");
-          await expect(routingRow(page, "acct-2")).toContainText("100% consumed");
+          await expect(routingRow(page, "ada@example.test")).toContainText("40% used");
+          await expect(routingRow(page, "acct-2")).toContainText("100% used");
+          await expect(routingRow(page, "ada@example.test")).toContainText(
+            "Weekly (Sonnet): 20% used",
+          );
+          await expect(routingRow(page, "ada@example.test")).not.toContainText("remaining");
+          await expect(page.getByTestId("omp-routing-summary")).toHaveText(
+            "Auto picks the account with the most usage left",
+          );
+          await expect(page.getByTestId("omp-routing-account-trigger")).toContainText("Automatic");
+          await expect(page.getByTestId("omp-routing-add-hint")).toContainText("/login");
           await shot(page, `${layout.name}-loaded`);
         });
 
@@ -228,6 +237,9 @@ for (const layout of [
           await page.getByText("Atlas Labs", { exact: true }).last().click();
           await expect(routingRow(page, "ada@example.test")).toContainText("Selected");
           await expect(auto).toBeChecked();
+          await expect(page.getByTestId("omp-routing-summary")).toHaveText(
+            "Using ada@example.test",
+          );
           await shot(page, `${layout.name}-selected`);
         });
 
@@ -240,17 +252,17 @@ for (const layout of [
         });
 
         await test.step("excluding an account does not select or disable auto, and excluding current keeps it selected", async () => {
-          await page.getByRole("switch", { name: "Include in auto-routing: acct-2" }).click();
+          await page.getByRole("switch", { name: "Use for auto-routing: acct-2" }).click();
           await expect(routingRow(page, "acct-2")).toContainText("Excluded from auto-routing");
           await page
-            .getByRole("switch", { name: "Include in auto-routing: ada@example.test" })
+            .getByRole("switch", { name: "Use for auto-routing: ada@example.test" })
             .click();
           await expect(routingRow(page, "ada@example.test")).toContainText(
             "Excluded from auto-routing",
           );
           await expect(routingRow(page, "ada@example.test")).toContainText("Selected");
           await page
-            .getByRole("switch", { name: "Include in auto-routing: ada@example.test" })
+            .getByRole("switch", { name: "Use for auto-routing: ada@example.test" })
             .click();
           await expect(auto).toBeChecked();
           await shot(page, `${layout.name}-excluded`);
@@ -276,6 +288,7 @@ for (const layout of [
         await test.step("quota pause and recovery", async () => {
           await host.run({ op: "pause" });
           await expect(page.getByTestId("omp-routing-notice-paused")).toBeVisible();
+          await expect(routingRow(page, "acct-2")).toContainText("5-hour limit reached · resets");
           await shot(page, `${layout.name}-paused`);
           await host.run({ op: "recover" });
           await expect(page.getByTestId("omp-routing-notice-recovered")).toBeVisible();
@@ -285,7 +298,7 @@ for (const layout of [
         await test.step("a stale revision shows the host's state and the conflict", async () => {
           gate.hold();
           await host.run({ op: "mutate", command: { kind: "set_auto", enabled: false } });
-          await page.getByRole("switch", { name: "Include in auto-routing: acct-2" }).click();
+          await page.getByRole("switch", { name: "Use for auto-routing: acct-2" }).click();
           await expect(page.getByTestId("omp-routing-notice-conflict")).toBeVisible();
           await expect(auto).not.toBeChecked();
           await shot(page, `${layout.name}-conflict`);
@@ -304,6 +317,41 @@ for (const layout of [
     });
   });
 }
+
+test.describe("Settings host providers: OMP account routing with one exhausted account", () => {
+  for (const layout of [
+    { name: "compact", compact: true, viewport: { width: 390, height: 844 } },
+    { name: "desktop", compact: false, viewport: { width: 1280, height: 860 } },
+  ]) {
+    test(`explains a used-up weekly limit plainly (${layout.name})`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await page.setViewportSize(layout.viewport);
+      const host = await startRoutingFixtureHost({ scenario: "exhausted" });
+      try {
+        await openRoutingSection(page, host, layout);
+        const row = page.locator('[data-testid^="omp-routing-row-"]');
+        await expect(page.getByTestId("omp-routing-summary")).toContainText(
+          "Paused: no included account has usage left. Resumes",
+        );
+        await expect(page.getByTestId("omp-routing-account-trigger")).toContainText("Automatic");
+        await expect(row).toContainText("Weekly limit reached · resets");
+        await expect(row).toContainText("5-hour: 0% used");
+        await expect(row).toContainText("Weekly: 100% used · resets");
+        await expect(row).toContainText("Weekly (Fable): 100% used");
+        await expect(row).toContainText("Use for auto-routing");
+        await expect(row).not.toContainText("Organization");
+        await expect(row).not.toContainText("remaining");
+        await expect(row).not.toContainText("Observed");
+        await expect(row).not.toContainText("Priority");
+        await expect(page.locator('[data-testid^="omp-routing-up-"]')).toHaveCount(0);
+        await expect(page.getByTestId("omp-routing-add-hint")).toBeVisible();
+        await shot(page, `${layout.name}-exhausted`);
+      } finally {
+        await host.close();
+      }
+    });
+  }
+});
 
 test.describe("Settings host providers: OMP account routing read-only and offline", () => {
   test.use({ viewport: { width: 390, height: 844 } });

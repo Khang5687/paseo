@@ -2067,23 +2067,25 @@ export const ja: TranslationResources = {
   },
   ompAccountRouting: {
     labels: {
-      title: "Claude アカウントのルーティング",
+      title: "Claude accounts (Oh My Pi)",
       scope:
         "このホスト上の Paseo 管理下のすべての OMP エージェントに適用されます。他のホストやスタンドアロンのターミナルには影響しません。",
       account: "アカウント",
+      automatic: "自動",
+      useForAuto: "自動ルーティングに使う",
       auto: "自動ルーティング",
-      included: "自動ルーティングに含める",
       priority: "フォールバック優先度",
       priorityHelp:
-        "切り替えが必要で残り容量が近いとき、優先度で順位を決めます。現在のアカウントは変わりません。",
+        "現在のアカウントを使い切ると、Paseo は残り使用量が最も多い対象アカウントに切り替えます。この順序は同じ場合の決め手になります。",
+      addAccountHint:
+        "アカウントを追加するには、ターミナルで omp を実行して /login と入力し、別の Claude アカウントでサインインします。",
       current: "選択中",
       serving: "対応中",
       lastServed: "最後に対応",
       excluded: "自動ルーティングから除外",
       missing: "保存済みアカウントは利用できません",
-      fiveHour: "5 時間の使用量",
-      weekly: "週間の使用量",
-      modelWindow: "モデルの使用量",
+      fiveHour: "5 時間",
+      weekly: "週間",
       tier: "サブスクリプションのプラン",
       unknownTier: "サブスクリプションのプランは不明",
       unknownBudget: "絶対的な上限は不明",
@@ -2108,6 +2110,11 @@ export const ja: TranslationResources = {
       paused: "利用可能な対象アカウントを待っています",
       recovered: "対象アカウントが利用可能です",
       unknownUsage: "使用量は不明",
+      summaryPaused: "一時停止中: 残り使用量のある対象アカウントがありません。",
+      summaryPausedResumes:
+        "一時停止中: 残り使用量のある対象アカウントがありません。{{time}} に再開",
+      summaryUsing: "{{account}} を使用中",
+      summaryAuto: "自動では残り使用量が最も多いアカウントを選びます",
     },
     reason: {
       no_account: "アカウントが選択されていません",
@@ -2139,10 +2146,11 @@ export const ja: TranslationResources = {
       persistence_failed: "設定は保存されませんでした。以前に確認した設定がそのまま残ります",
     },
     values: {
-      consumed: "{{percent}}% 使用済み",
-      remaining: "残り {{percent}}%",
+      used: "{{percent}}% 使用",
       reset: "{{time}} にリセット",
       observed: "{{time}} に観測",
+      limitReached: "{{window}}の上限に達しました",
+      limitReachedReset: "{{window}}の上限に達しました · {{time}} にリセット",
       account: "アカウント {{row}}",
       serving: "{{account}} が {{agent}} に対応中",
       priority: "優先度 {{position}}",
