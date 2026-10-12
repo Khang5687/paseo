@@ -211,6 +211,23 @@ unless a cached usage report matches the exact account and organization UUID pai
 
 ---
 
+## Claude account routing controls (OMP)
+
+The controls live in Settings > host > Providers, in the "Claude account routing" section between the provider list and "Add provider". There is no separate route, composer control, or per-agent override: the choice is one global setting for the selected host's Paseo-managed OMP agents. The section appears only when that host advertises `features.ompAccountRouting` and stays (disabled) once it has shown, so a host that loses managed coverage reads as unsupported instead of vanishing.
+
+The host's snapshot is the only source of state; the app persists no routing policy. `omp-account-routing/queries.ts` observes it per host and sends revision-checked mutations through the client's `accountRouting` methods (contract: `docs/plan_omp-routing-host-contract.md`). A mutation never renders as committed before the host answers, a stale revision replaces local state with the host's and shows the conflict notice, and a dropped connection keeps the last confirmed snapshot marked offline without replaying anything. Editing needs `daemon.manage` in the session's permissions; missing permission data reads as read-only.
+
+Rules the UI keeps:
+
+- Selecting an account changes only the current account. Excluding an account, excluding the current one, and moving priorities never select or switch, and the Auto-routing switch changes only auto.
+- Every control is a tap target (switch, up/down buttons, searchable picker). Up and down replace drag-to-reorder so touch and keyboard work the same.
+- Window percentages come from the server's `usedFraction`; 100% consumed means exhausted, expired or empty readings show as unknown and stale, never as zero. Billing refusal (enabled or unknown paid credits) outranks a quota label. "Selected" is the host's current account; "Serving" is an account with a request in its serving phase.
+- Account names are the server's labels; when two accounts share a label the server's identity labels replace them. The UI never derives identity from list position or translated text.
+
+Native device proof is separate from the browser proof in the PR: web does not verify iOS or Android.
+
+---
+
 ## ACP Provider Checklist
 
 ### 1. Create the provider class

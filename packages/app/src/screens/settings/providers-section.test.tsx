@@ -275,6 +275,14 @@ vi.mock("@/runtime/host-features", () => ({
   useHostFeature: () => false,
 }));
 
+vi.mock("@/omp-account-routing/account-section", () => ({
+  AccountRoutingSection: ({ serverId }: { serverId: string }) =>
+    React.createElement("div", {
+      "data-testid": "account-routing-section",
+      "data-server": serverId,
+    }),
+}));
+
 vi.mock("@/utils/confirm-dialog", () => ({
   confirmDialog: vi.fn(async () => true),
 }));
@@ -421,6 +429,20 @@ describe("ProvidersSection", () => {
     expect(status).toBeGreaterThan(label);
     expect(modelCount).toBeGreaterThan(status);
     expect(switchEl).toBeGreaterThan(modelCount);
+  });
+
+  it("renders the account routing section for the selected host after the provider rows", () => {
+    snapshotState.entries = [claudeEntry];
+    configState.config = makeConfig();
+
+    render();
+
+    const nodes = descendants(container as HTMLElement);
+    const providerRow = indexOfMatches(nodes, '[aria-label="Claude provider details"]');
+    const routing = indexOfMatches(nodes, '[data-testid="account-routing-section"]');
+    expect(providerRow).toBeGreaterThanOrEqual(0);
+    expect(routing).toBeGreaterThan(providerRow);
+    expect(nodes[routing]?.getAttribute("data-server")).toBe("server-1");
   });
 
   it("opens the diagnostic sheet when the outer row is pressed for a disabled provider", () => {
