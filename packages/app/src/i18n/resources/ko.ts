@@ -2044,12 +2044,14 @@ export const ko: TranslationResources = {
   ompAccountRouting: {
     labels: {
       title: "Claude 계정 라우팅",
-      scope: "이 호스트에서 Paseo가 관리하는 모든 OMP 에이전트에 적용됩니다. 다른 호스트와 독립 실행 터미널은 바뀌지 않습니다.",
+      scope:
+        "이 호스트에서 Paseo가 관리하는 모든 OMP 에이전트에 적용됩니다. 다른 호스트와 독립 실행 터미널은 바뀌지 않습니다.",
       account: "계정",
       auto: "자동 라우팅",
       included: "자동 라우팅에 포함",
       priority: "대체 우선순위",
-      priorityHelp: "전환이 필요하고 남은 용량이 비슷할 때 우선순위로 순서를 정합니다. 현재 계정은 바뀌지 않습니다.",
+      priorityHelp:
+        "전환이 필요하고 남은 용량이 비슷할 때 우선순위로 순서를 정합니다. 현재 계정은 바뀌지 않습니다.",
       current: "선택됨",
       serving: "사용 중",
       lastServed: "마지막 사용",
@@ -2087,7 +2089,8 @@ export const ko: TranslationResources = {
       no_account: "선택된 계정이 없습니다",
       source_changed: "선택한 네이티브 자격 증명 소스가 변경되었습니다",
       source_inaccessible: "이 런타임은 선택한 네이티브 계정에 접근할 수 없습니다",
-      billing_enabled: "유료 사용량 크레딧이 켜져 있어, 포함 사용량만 쓰는 라우팅은 이 계정을 사용할 수 없습니다",
+      billing_enabled:
+        "유료 사용량 크레딧이 켜져 있어, 포함 사용량만 쓰는 라우팅은 이 계정을 사용할 수 없습니다",
       billing_unknown: "유료 사용량 크레딧 설정이 최근에 확인되지 않았습니다",
       quota_blocked: "이 요청에는 포함 사용량을 쓸 수 없습니다",
       entitlement_unavailable: "이 계정의 모델 접근을 사용할 수 없거나 확인되지 않았습니다",
@@ -2099,7 +2102,8 @@ export const ko: TranslationResources = {
       cancelled: "요청이 취소되었습니다",
       metadata_pending: "계정 사용 가능 여부 확인 중",
       all_unavailable: "현재 사용 가능한 포함 계정이 없습니다",
-      auto_disabled: "자동 라우팅이 꺼져 있습니다. 계속하려면 계정을 선택하거나 자동 라우팅을 켜세요",
+      auto_disabled:
+        "자동 라우팅이 꺼져 있습니다. 계속하려면 계정을 선택하거나 자동 라우팅을 켜세요",
       provider_failed: "계정 사용 가능 여부를 확인하지 못했습니다",
     },
     mutationError: {

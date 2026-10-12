@@ -2059,12 +2059,14 @@ export const en = {
   ompAccountRouting: {
     labels: {
       title: "Claude account routing",
-      scope: "Applies to all Paseo-managed OMP agents on this host. Other hosts and standalone terminals are unchanged.",
+      scope:
+        "Applies to all Paseo-managed OMP agents on this host. Other hosts and standalone terminals are unchanged.",
       account: "Account",
       auto: "Auto-routing",
       included: "Include in auto-routing",
       priority: "Fallback priority",
-      priorityHelp: "Priority breaks close-capacity ties when a switch is needed. It does not change the current account.",
+      priorityHelp:
+        "Priority breaks close-capacity ties when a switch is needed. It does not change the current account.",
       current: "Selected",
       serving: "Serving",
       lastServed: "Last served",
@@ -2102,7 +2104,8 @@ export const en = {
       no_account: "No account is selected",
       source_changed: "The selected native credential source changed",
       source_inaccessible: "This runtime cannot access the selected native account",
-      billing_enabled: "Paid usage credits are enabled; included-only routing cannot use this account",
+      billing_enabled:
+        "Paid usage credits are enabled; included-only routing cannot use this account",
       billing_unknown: "Paid usage-credit settings are not freshly verified",
       quota_blocked: "Included usage is unavailable for this request",
       entitlement_unavailable: "Model access is unavailable or not verified for this account",

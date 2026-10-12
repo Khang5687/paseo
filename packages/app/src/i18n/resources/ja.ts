@@ -2055,12 +2055,14 @@ export const ja: TranslationResources = {
   ompAccountRouting: {
     labels: {
       title: "Claude アカウントのルーティング",
-      scope: "このホスト上の Paseo 管理下のすべての OMP エージェントに適用されます。他のホストやスタンドアロンのターミナルには影響しません。",
+      scope:
+        "このホスト上の Paseo 管理下のすべての OMP エージェントに適用されます。他のホストやスタンドアロンのターミナルには影響しません。",
       account: "アカウント",
       auto: "自動ルーティング",
       included: "自動ルーティングに含める",
       priority: "フォールバック優先度",
-      priorityHelp: "切り替えが必要で残り容量が近いとき、優先度で順位を決めます。現在のアカウントは変わりません。",
+      priorityHelp:
+        "切り替えが必要で残り容量が近いとき、優先度で順位を決めます。現在のアカウントは変わりません。",
       current: "選択中",
       serving: "対応中",
       lastServed: "最後に対応",
@@ -2098,19 +2100,23 @@ export const ja: TranslationResources = {
       no_account: "アカウントが選択されていません",
       source_changed: "選択したネイティブ認証情報のソースが変わりました",
       source_inaccessible: "このランタイムは選択したネイティブアカウントにアクセスできません",
-      billing_enabled: "従量課金のクレジットが有効です。プラン内のみのルーティングではこのアカウントを使えません",
+      billing_enabled:
+        "従量課金のクレジットが有効です。プラン内のみのルーティングではこのアカウントを使えません",
       billing_unknown: "従量課金クレジットの設定が最近確認されていません",
       quota_blocked: "このリクエストではプラン内の使用量を利用できません",
-      entitlement_unavailable: "このアカウントではモデルへのアクセスが利用できないか、確認されていません",
+      entitlement_unavailable:
+        "このアカウントではモデルへのアクセスが利用できないか、確認されていません",
       auth_unavailable: "ネイティブアカウントの認証を利用できません",
-      unsupported_transport: "このプロバイダーのトランスポートはプラン内のみのルーティングに対応していません",
+      unsupported_transport:
+        "このプロバイダーのトランスポートはプラン内のみのルーティングに対応していません",
       unsupported_runtime: "この OMP ランタイムは管理対象のルーティングに対応していません",
       persistence_failed: "ルーティング設定を保存できませんでした",
       host_unavailable: "ルーティングホストを利用できません",
       cancelled: "リクエストをキャンセルしました",
       metadata_pending: "アカウントの利用可否を確認中",
       all_unavailable: "現在利用できる対象アカウントがありません",
-      auto_disabled: "自動ルーティングはオフです。続けるにはアカウントを選択するか、オンにしてください",
+      auto_disabled:
+        "自動ルーティングはオフです。続けるにはアカウントを選択するか、オンにしてください",
       provider_failed: "アカウントの利用可否を確認できませんでした",
     },
     mutationError: {

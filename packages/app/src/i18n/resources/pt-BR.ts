@@ -2067,12 +2067,14 @@ export const ptBR: TranslationResources = {
   ompAccountRouting: {
     labels: {
       title: "Roteamento de contas do Claude",
-      scope: "Vale para todos os agentes OMP gerenciados pelo Paseo neste host. Outros hosts e terminais independentes não mudam.",
+      scope:
+        "Vale para todos os agentes OMP gerenciados pelo Paseo neste host. Outros hosts e terminais independentes não mudam.",
       account: "Conta",
       auto: "Roteamento automático",
       included: "Incluir no roteamento automático",
       priority: "Prioridade de reserva",
-      priorityHelp: "A prioridade desempata capacidades próximas quando é preciso trocar de conta. Ela não muda a conta atual.",
+      priorityHelp:
+        "A prioridade desempata capacidades próximas quando é preciso trocar de conta. Ela não muda a conta atual.",
       current: "Selecionada",
       serving: "Em uso",
       lastServed: "Último uso",
@@ -2110,26 +2112,33 @@ export const ptBR: TranslationResources = {
       no_account: "Nenhuma conta está selecionada",
       source_changed: "A origem de credenciais nativa selecionada mudou",
       source_inaccessible: "Este runtime não consegue acessar a conta nativa selecionada",
-      billing_enabled: "Os créditos de uso pagos estão ativados; o roteamento apenas com uso incluído não pode usar esta conta",
-      billing_unknown: "As configurações de créditos de uso pagos não foram verificadas recentemente",
+      billing_enabled:
+        "Os créditos de uso pagos estão ativados; o roteamento apenas com uso incluído não pode usar esta conta",
+      billing_unknown:
+        "As configurações de créditos de uso pagos não foram verificadas recentemente",
       quota_blocked: "O uso incluído não está disponível para esta solicitação",
-      entitlement_unavailable: "O acesso ao modelo está indisponível ou não foi verificado para esta conta",
+      entitlement_unavailable:
+        "O acesso ao modelo está indisponível ou não foi verificado para esta conta",
       auth_unavailable: "A autenticação da conta nativa está indisponível",
-      unsupported_transport: "Este transporte do provedor não oferece suporte ao roteamento apenas com uso incluído",
+      unsupported_transport:
+        "Este transporte do provedor não oferece suporte ao roteamento apenas com uso incluído",
       unsupported_runtime: "Este runtime do OMP não oferece suporte ao roteamento gerenciado",
       persistence_failed: "Não foi possível salvar as configurações de roteamento",
       host_unavailable: "Host de roteamento indisponível",
       cancelled: "Solicitação cancelada",
       metadata_pending: "Verificando a disponibilidade da conta",
       all_unavailable: "Nenhuma conta incluída está disponível no momento",
-      auto_disabled: "O roteamento automático está desativado; selecione uma conta ou ative-o para continuar",
+      auto_disabled:
+        "O roteamento automático está desativado; selecione uma conta ou ative-o para continuar",
       provider_failed: "Não foi possível verificar a disponibilidade da conta",
     },
     mutationError: {
-      conflict: "As configurações mudaram em outro lugar; revise o último estado antes de tentar de novo",
+      conflict:
+        "As configurações mudaram em outro lugar; revise o último estado antes de tentar de novo",
       invalid_account: "Essa conta nativa não está mais no catálogo",
       unsupported: "Os controles de roteamento de contas estão indisponíveis neste host",
-      persistence_failed: "As configurações não foram salvas; as últimas configurações confirmadas continuam valendo",
+      persistence_failed:
+        "As configurações não foram salvas; as últimas configurações confirmadas continuam valendo",
     },
     values: {
       consumed: "{{percent}}% consumido",
