@@ -143,6 +143,7 @@ export function toAgentPayload(
     title: options?.title ?? null,
     labels: agent.labels,
     queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
+    ...(agent.internal ? { internal: true } : {}),
   };
 
   const usage = sanitizeUsage(agent.lastUsage);
@@ -251,10 +252,18 @@ export function buildStoredAgentPayload(
     attentionReason: record.attentionReason ?? null,
     attentionTimestamp: record.attentionTimestamp ?? null,
     archivedAt: record.archivedAt ?? null,
+    ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),
-    queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
+    queuedMessages: summarizeQueuedMessages(record.queuedMessages),
+    ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
   };
+}
+
+function summarizeQueuedMessages(
+  messages: AgentQueuedMessagePayload[] = [],
+): AgentQueuedMessageSummaryPayload[] {
+  return messages.map(summarizeQueuedMessage);
 }
 
 // Snapshots carry summaries only: image bytes stay in the record and are
