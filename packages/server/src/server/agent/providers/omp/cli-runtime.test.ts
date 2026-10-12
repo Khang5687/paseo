@@ -793,6 +793,46 @@ describe("OMP host account routing", () => {
     expect(host.authority.snapshot().accounts.map((a) => a.ref.nativeRowId)).toEqual([1, 2]);
   });
 
+  test("accepts OMP's own billing shape: an absent reason and native reason names", async () => {
+    const host = routingHost();
+    const nativeCatalog = (runtimeInstanceId: string) => {
+      const catalog = JSON.parse(
+        JSON.stringify(
+          routingCatalog(runtimeInstanceId, [
+            routingAccount(1),
+            routingAccount(2),
+            routingAccount(3),
+          ]),
+        ),
+      );
+      // OMP omits `reason` when there is none and uses its own reason vocabulary.
+      delete catalog.accounts[0].billing.reason;
+      catalog.accounts[1].billing = {
+        state: "unknown",
+        observedAt: null,
+        validUntil: null,
+        source: null,
+        sourceRevision: null,
+        reason: "no_evidence",
+      };
+      catalog.accounts[2].billing = { ...catalog.accounts[1].billing, reason: "conflict" };
+      return catalog;
+    };
+    await startManaged(host, {
+      configure: (command) => ({ catalogs: [nativeCatalog(String(command.runtimeInstanceId))] }),
+    });
+
+    const snapshot = host.authority.snapshot();
+    expect(snapshot.capability.status).toBe("supported");
+    expect(
+      snapshot.accounts.map((a) => [a.ref.nativeRowId, a.billing.state, a.billing.reason]),
+    ).toEqual([
+      [1, "disabled", null],
+      [2, "unknown", null],
+      [3, "unknown", "conflicting"],
+    ]);
+  });
+
   test("frames the child sends in the same burst as its configure reply are queued, not lost", async () => {
     const host = routingHost();
     let runtimeInstanceId = "";

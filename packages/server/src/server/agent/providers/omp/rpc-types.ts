@@ -765,6 +765,24 @@ export const OmpRoutingPurposeSchema = z.enum([
   "other_auxiliary",
 ]);
 
+// OMP's own billing shape: it omits `reason` when there is none and names reasons in its own
+// vocabulary. The bridge maps it to the protocol's OmpRoutingBillingState.
+const OmpRpcRoutingBillingStateSchema = OmpRoutingBillingStateSchema.extend({
+  reason: z
+    .enum([
+      "no_evidence",
+      "malformed",
+      "conflict",
+      "untrusted_source",
+      "identity_mismatch",
+      "invalid_observation",
+      "expired",
+    ])
+    .nullable()
+    .optional(),
+});
+export type OmpRpcRoutingBillingState = z.infer<typeof OmpRpcRoutingBillingStateSchema>;
+
 const OmpRpcRoutingAccountSchema = z.object({
   ref: OmpRoutingAccountRefSchema,
   display: z.object({
@@ -775,7 +793,7 @@ const OmpRpcRoutingAccountSchema = z.object({
   }),
   credentialAvailable: z.boolean(),
   quotaIdentity: z.object({ accountUuid: z.string(), organizationUuid: z.string() }).nullable(),
-  billing: OmpRoutingBillingStateSchema,
+  billing: OmpRpcRoutingBillingStateSchema,
   subscriptionTier: z.object({
     kind: z.enum(["pro", "max5", "max20", "other", "unknown"]),
     observedAt: z.number().finite().nullable(),
