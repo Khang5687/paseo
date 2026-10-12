@@ -103,6 +103,7 @@ import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
+import type { AccountRoutingAuthority } from "./account-routing/authority.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -541,6 +542,10 @@ export class VoiceAssistantWebSocketServer {
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly accountRouting: AccountRoutingAuthority | undefined;
+  // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
+  private accountRoutingSupported = false;
+  private releaseAccountRoutingObserver: (() => void) | null = null;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -659,6 +664,7 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
+    accountRouting?: AccountRoutingAuthority,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -688,6 +694,8 @@ export class VoiceAssistantWebSocketServer {
     this.projectRegistry = projectRegistry ?? createNoopProjectRegistry();
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
+    this.accountRouting = accountRouting;
+    this.observeAccountRoutingCapability();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -989,6 +997,28 @@ export class VoiceAssistantWebSocketServer {
     this.updateServerCapabilities(buildServerCapabilities({ readiness }));
   }
 
+  /** The advertised feature follows the authority's negotiated runtime coverage, never code presence. */
+  private observeAccountRoutingCapability(): void {
+    const authority = this.accountRouting;
+    if (!authority) return;
+    const apply = (supported: boolean): void => {
+      if (supported === this.accountRoutingSupported) return;
+      this.accountRoutingSupported = supported;
+      this.broadcastCapabilitiesUpdate();
+    };
+    void (async () => {
+      try {
+        const { state, release } = await authority.observe((next) =>
+          apply(next.capability.status === "supported"),
+        );
+        this.releaseAccountRoutingObserver = release;
+        apply(state.capability.status === "supported");
+      } catch (error) {
+        this.logger.warn({ err: error }, "Account routing observer failed");
+      }
+    })();
+  }
+
   public updateServerCapabilities(capabilities: ServerCapabilities | null | undefined): void {
     const next = capabilities ?? undefined;
     if (areServerCapabilitiesEqual(this.serverCapabilities, next)) {
@@ -1063,6 +1093,8 @@ export class VoiceAssistantWebSocketServer {
     this.prepareForShutdown();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
+    this.releaseAccountRoutingObserver?.();
+    this.releaseAccountRoutingObserver = null;
     this.unsubscribeDaemonConfigChange?.();
     this.unsubscribeDaemonConfigChange = null;
     this.unsubscribeTerminalActivity?.();
@@ -1484,6 +1516,7 @@ export class VoiceAssistantWebSocketServer {
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      accountRouting: this.accountRouting,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -1797,6 +1830,7 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
