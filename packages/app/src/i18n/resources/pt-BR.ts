@@ -2836,6 +2836,9 @@ export const ptBR: TranslationResources = {
         discovered: "Descobertos",
         custom: "Modelos personalizados",
         updated: "Atualizado {{time}}",
+        disabledCount: "{{count}} desativados",
+        toggleModel: "Ativar {{model}}",
+        failedToToggle: "Não foi possível atualizar {{model}}",
       },
       diagnostic: {
         title: "Diagnóstico",

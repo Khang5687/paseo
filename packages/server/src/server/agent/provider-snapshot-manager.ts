@@ -51,6 +51,7 @@ import {
 } from "./agent-configuration-validator.js";
 import type { ProviderRegistration } from "@getpaseo/plugin/server/provider";
 import { PluginAgentClientRegistry } from "./plugin-provider.js";
+import { partitionDisabledModels } from "./provider-disabled-models.js";
 
 const DEFAULT_REFRESH_TIMEOUT_MS = 120_000;
 const MAX_REFRESH_TIMEOUT_MS = 2_147_483_647;
@@ -181,13 +182,15 @@ export interface ProviderDiagnosticResult {
   diagnostic: string;
 }
 
+export interface AgentManagerProviderDefinition extends Pick<
+  ProviderDefinition,
+  "enabled" | "derivedFromProviderId" | "applyToolPolicy"
+> {
+  disabledModels?: readonly string[];
+}
+
 export interface AgentManagerProviderState {
-  providerDefinitions: Partial<
-    Record<
-      AgentProvider,
-      Pick<ProviderDefinition, "enabled" | "derivedFromProviderId" | "applyToolPolicy">
-    >
-  >;
+  providerDefinitions: Partial<Record<AgentProvider, AgentManagerProviderDefinition>>;
   clients: Partial<Record<AgentProvider, AgentClient>>;
   retiredProviders?: readonly AgentProvider[];
 }
@@ -210,6 +213,11 @@ interface ProviderCatalog {
   result?: ProviderSnapshotRecord;
   stale?: boolean;
   load?: Promise<void>;
+}
+
+interface DisabledModelsRecord {
+  disabledModelIds: readonly string[];
+  record: ProviderSnapshotRecord;
 }
 
 interface RegistryGeneration {
@@ -236,6 +244,10 @@ interface ProviderSnapshotTarget {
 export class ProviderSnapshotManager {
   private readonly catalogs = new Map<string, Map<AgentProvider, ProviderCatalog>>();
   private readonly targets = new Map<string, Target>();
+  private readonly disabledModelsRecords = new WeakMap<
+    ProviderSnapshotRecord,
+    DisabledModelsRecord
+  >();
   private readonly events = new EventEmitter();
   private destroyed = false;
   private refreshTimeoutMs: number;
@@ -359,6 +371,7 @@ export class ProviderSnapshotManager {
   private createAgentManagerState(
     definitions: Record<AgentProvider, ProviderDefinition>,
     providerClients: Record<AgentProvider, AgentClient>,
+    overrides = this.providerOverrides,
   ): AgentManagerProviderState {
     const providerDefinitions: AgentManagerProviderState["providerDefinitions"] = {};
     const clients: AgentManagerProviderState["clients"] = {};
@@ -367,6 +380,7 @@ export class ProviderSnapshotManager {
         enabled: definition.enabled,
         derivedFromProviderId: definition.derivedFromProviderId,
         applyToolPolicy: definition.applyToolPolicy,
+        disabledModels: overrides?.[provider]?.disabledModels,
       };
       if (definition.enabled) {
         clients[provider] = this.ensureClient(provider, definition, providerClients);
@@ -626,7 +640,7 @@ export class ProviderSnapshotManager {
     }
     Object.assign(clients, this.extraClients);
     const generation = this.createGeneration(definitions, providerOverrides);
-    const agentManagerState = this.createAgentManagerState(definitions, clients);
+    const agentManagerState = this.createAgentManagerState(definitions, clients, providerOverrides);
     return {
       agentManagerState,
       commit: () => {
@@ -1077,7 +1091,9 @@ export class ProviderSnapshotManager {
         const result = binding?.key
           ? this.catalogs.get(binding.key)?.get(provider)?.result
           : undefined;
-        return binding?.failure ?? result ?? this.generation.providerStates.get(provider)!.initial;
+        return this.withDisabledModels(
+          binding?.failure ?? result ?? this.generation.providerStates.get(provider)!.initial,
+        );
       });
       const previous = target.snapshot;
       if (sameSnapshotRecords(previous.records, records)) continue;
@@ -1097,6 +1113,18 @@ export class ProviderSnapshotManager {
         }
       }
     }
+  }
+
+  /** Catalogues stay unfiltered so toggling a model republishes without a provider refetch. */
+  private withDisabledModels(record: ProviderSnapshotRecord): ProviderSnapshotRecord {
+    const disabledModelIds = this.providerOverrides?.[record.entry.provider]?.disabledModels;
+    if (!disabledModelIds || disabledModelIds.length === 0 || !record.entry.models) return record;
+    const cached = this.disabledModelsRecords.get(record);
+    if (cached?.disabledModelIds === disabledModelIds) return cached.record;
+    const entry = partitionDisabledModels(record.entry, disabledModelIds);
+    const partitioned = entry === record.entry ? record : identifyEntry(entry);
+    this.disabledModelsRecords.set(record, { disabledModelIds, record: partitioned });
+    return partitioned;
   }
 
   private getOrCreateTarget(cwd: string): Target {

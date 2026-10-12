@@ -2793,6 +2793,9 @@ export const ar: TranslationResources = {
         discovered: "اكتشف",
         custom: "نماذج مخصصة",
         updated: "تم تحديث{{time}}",
+        disabledCount: "{{count}} معطّل",
+        toggleModel: "تفعيل {{model}}",
+        failedToToggle: "تعذّر تحديث {{model}}",
       },
       diagnostic: {
         title: "التشخيص",

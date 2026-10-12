@@ -2921,6 +2921,9 @@ export const en = {
         discovered: "Discovered",
         custom: "Custom models",
         updated: "Updated {{time}}",
+        disabledCount: "{{count}} disabled",
+        toggleModel: "Enable {{model}}",
+        failedToToggle: "Failed to update {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",

@@ -2760,6 +2760,9 @@ export const zhCN: TranslationResources = {
         discovered: "已发现",
         custom: "自定义 Models",
         updated: "已更新 {{time}}",
+        disabledCount: "已停用 {{count}} 个",
+        toggleModel: "启用 {{model}}",
+        failedToToggle: "无法更新 {{model}}",
       },
       diagnostic: {
         title: "诊断",

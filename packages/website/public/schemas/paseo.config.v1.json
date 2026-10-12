@@ -320,6 +320,13 @@
                       "$ref": "#/definitions/PaseoConfigV1/properties/agents/properties/providers/additionalProperties/properties/models/items"
                     }
                   },
+                  "disabledModels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
                   "disallowedTools": {
                     "type": "array",
                     "items": {

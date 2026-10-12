@@ -2808,6 +2808,9 @@ export const ko: TranslationResources = {
         discovered: "발견됨",
         custom: "사용자 지정 모델",
         updated: "{{time}} 업데이트됨",
+        disabledCount: "{{count}}개 비활성화됨",
+        toggleModel: "{{model}} 사용",
+        failedToToggle: "{{model}}을(를) 업데이트하지 못했습니다",
       },
       diagnostic: {
         title: "진단",
