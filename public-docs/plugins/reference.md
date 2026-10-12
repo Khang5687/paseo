@@ -1429,7 +1429,7 @@ Themes need a host that supports them. A client released before `addTheme` canno
 ## Contribute a skin
 
 `addSkin` adds a background image to Settings → Appearance → Background. Paseo draws it behind the
-whole app under a scrim it sizes so text keeps its contrast. A skin is an image plus
+whole app and caps how strongly it shows so text keeps its contrast. A skin is an image plus
 a little metadata:
 
 ```ts

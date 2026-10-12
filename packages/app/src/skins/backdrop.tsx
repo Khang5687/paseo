@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
-import { StyleSheet as ThemedStyleSheet } from "react-native-unistyles";
+import { StyleSheet } from "react-native";
+import { withUnistyles } from "react-native-unistyles";
 import { Image } from "expo-image";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { useReduceMotion } from "./accessibility";
+import { usePrefersMoreContrast, useReduceMotion } from "./accessibility";
 import { useActiveSkin } from "./active";
 import { useRefreshSelectedPluginSkins } from "./catalog";
+import { computeArtLimit } from "./contrast";
 import { useSkinPreferencesStore } from "./preferences-store";
 import { useSkinRoute } from "./route";
 import { useActiveSkinScheme } from "./scheme";
@@ -24,17 +25,16 @@ const layout = StyleSheet.create({
   fill: StyleSheet.absoluteFillObject,
 });
 
-const themed = ThemedStyleSheet.create((theme) => ({
-  // One gated scrim for the whole shell; page backgrounds turn transparent while a skin is on.
-  scrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: theme.colors.canvasScrim,
-  },
-}));
-
 interface ShownSkin {
   metadata: SkinMetadata;
   images: SkinImageUris;
+}
+
+interface ThemeColors {
+  surface: string;
+  foreground: string;
+  foregroundMuted: string;
+  colorScheme: "light" | "dark";
 }
 
 /**
@@ -54,19 +54,42 @@ export function SkinBackdrop() {
   }, [state, metadata, images]);
 
   if (!shown) return null;
-  return (
-    <>
-      <SkinArt metadata={shown.metadata} images={shown.images} />
-      <View pointerEvents="none" style={themed.scrim} />
-    </>
-  );
+  return <ThemedSkinArt metadata={shown.metadata} images={shown.images} />;
 }
 
-function SkinArt({ metadata, images }: ShownSkin) {
+/**
+ * Draws the art over the shell's opaque `surface0` fill. Art at opacity `o` over that fill is the
+ * same picture as a `surface0` scrim at `1 - o` over full art, so the contrast gate and the
+ * skin's own route intensity combine as one opacity instead of dimming twice.
+ */
+function SkinArt({
+  metadata,
+  images,
+  surface,
+  foreground,
+  foregroundMuted,
+  colorScheme,
+}: ShownSkin & ThemeColors) {
   const route = useSkinRoute();
   const blur = useSkinPreferencesStore((state) => state.blur);
+  const visibility = useSkinPreferencesStore((state) => state.visibility);
+  const moreContrast = usePrefersMoreContrast();
   const reduceMotion = useReduceMotion();
-  const targetOpacity = metadata.intensity[route];
+  const low = metadata.luminance?.low;
+  const high = metadata.luminance?.high;
+  const limit = useMemo(
+    () =>
+      computeArtLimit({
+        surface,
+        foreground,
+        foregroundMuted,
+        colorScheme,
+        luminance: low === undefined || high === undefined ? null : { low, high },
+        moreContrast,
+      }),
+    [surface, foreground, foregroundMuted, colorScheme, low, high, moreContrast],
+  );
+  const targetOpacity = Math.min(metadata.intensity[route], limit * visibility);
   const opacity = useSharedValue(0);
 
   useEffect(() => {
@@ -94,3 +117,10 @@ function SkinArt({ metadata, images }: ShownSkin) {
     </Animated.View>
   );
 }
+
+const ThemedSkinArt = withUnistyles(SkinArt, (theme) => ({
+  surface: theme.colors.surface0,
+  foreground: theme.colors.foreground,
+  foregroundMuted: theme.colors.foregroundMuted,
+  colorScheme: theme.colorScheme,
+}));
