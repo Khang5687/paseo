@@ -8,6 +8,7 @@ import { PassThrough } from "node:stream";
 
 import { AccountRoutingAuthority } from "../../../../account-routing/authority.js";
 import { AccountRoutingStore } from "../../../../account-routing/store.js";
+import type { OmpRoutingBlock } from "@getpaseo/protocol/messages";
 import type {
   AccountRoutingClock,
   OmpRoutingAccountRef as OmpAccountRef,
@@ -925,6 +926,105 @@ export class FakeOmpChild {
       error: code,
       code,
     });
+  }
+}
+
+export interface RoutingPoolRow {
+  /** "expired" is a disabled observation whose validity already ended. */
+  billing?: "disabled" | "enabled" | "unknown" | "expired";
+  blocks?: OmpRoutingBlock[];
+  /** Stand-in for native pressure ranking: lower `used` is more headroom. */
+  used?: number;
+  email?: string | null;
+  organizationName?: string | null;
+  credentialAvailable?: boolean;
+}
+
+/**
+ * Mutable synthetic native store for N accounts. Every read stamps fresh observation times, so a
+ * catalog never expires mid-test; `update` bumps the catalog revision the way native does.
+ * Wire it as `ompRouting: pool.options()`.
+ */
+export class RoutingPool {
+  revision = 1;
+  private rows = new Map<number, RoutingPoolRow>();
+  private reversed = false;
+
+  constructor(count: number) {
+    for (let row = 1; row <= count; row += 1) this.rows.set(row, {});
+  }
+
+  get size() {
+    return this.rows.size;
+  }
+
+  update(row: number, patch: RoutingPoolRow): void {
+    this.rows.set(row, { ...this.rows.get(row), ...patch });
+    this.revision += 1;
+  }
+
+  add(row: number, patch: RoutingPoolRow = {}): void {
+    this.rows.set(row, patch);
+    this.revision += 1;
+  }
+
+  remove(row: number): void {
+    this.rows.delete(row);
+    this.revision += 1;
+  }
+
+  /** Native lists the same identities in a different order. */
+  reverseOrder(): void {
+    this.reversed = !this.reversed;
+    this.revision += 1;
+  }
+
+  catalogFor = (runtimeInstanceId: string): RoutingCatalog => {
+    const now = Date.now();
+    const accounts: RoutingCatalogAccount[] = [];
+    for (const [row, state] of this.rows) {
+      const account = routingAccount(row);
+      if (state.email !== undefined) account.display.email = state.email;
+      if (state.organizationName !== undefined) {
+        account.display.organizationName = state.organizationName;
+        account.display.organizationId = null;
+      }
+      account.credentialAvailable = state.credentialAvailable ?? true;
+      account.billing.state =
+        state.billing === "expired" ? "disabled" : (state.billing ?? "disabled");
+      account.billing.observedAt = now;
+      account.billing.validUntil = state.billing === "expired" ? now - 1 : now + 300_000;
+      account.quotaBlocks = state.blocks ?? [];
+      account.rank.primaryUsed = state.used ?? 0.1;
+      accounts.push(account);
+    }
+    if (this.reversed) accounts.reverse();
+    return routingCatalog(runtimeInstanceId, accounts, {
+      catalogRevision: this.revision,
+      observedAt: now,
+      authoritativeObservedAt: now,
+    });
+  };
+
+  /** Native answers a refresh with its current catalog. */
+  options(): FakeOmpChildOptions {
+    return {
+      catalogs: (id) => [this.catalogFor(id)],
+      refresh: (command) => ({ catalog: this.catalogFor(String(command.runtimeInstanceId)) }),
+      rank: (command) => {
+        const refs = (command.candidateRefs as OmpAccountRef[]) ?? [];
+        const used = (ref: OmpAccountRef) => this.rows.get(ref.nativeRowId)?.used ?? 0.1;
+        const best = Math.min(...refs.map(used));
+        const close = refs.filter((ref) => used(ref) === best);
+        return {
+          method: "claude-native-window-pressure-v1",
+          version: 1,
+          catalogRevision: command.catalogRevision,
+          anchorRef: close[0] ?? null,
+          bestCloseRefs: close,
+        };
+      },
+    };
   }
 }
 

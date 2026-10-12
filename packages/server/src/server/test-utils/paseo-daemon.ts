@@ -26,6 +26,8 @@ import {
   type FakeOmpChildOptions,
 } from "../agent/providers/omp/test-utils/fake-omp.js";
 import type { AccountRoutingAuthority } from "../account-routing/authority.js";
+import type { RoutingCatalog } from "../account-routing/types.js";
+import type { OmpRoutingBlock } from "@getpaseo/protocol/messages";
 
 interface TestPaseoDaemonOptions {
   daemonVersion?: string;
@@ -74,17 +76,43 @@ interface TestPaseoDaemonOptions {
 
 /** Test-only control of the fake native peer. Drives the real JSONL frames; never the store. */
 export interface OmpRoutingFixture {
+  /** The first scripted child; every opened agent gets its own, listed in `children`. */
   child: FakeOmpChild;
+  children: FakeOmpChild[];
   authority: AccountRoutingAuthority;
   /** Opens an OMP agent through the daemon so its runtime registers with the authority. */
-  openAgent(cwd: string): Promise<{ agentId: string; runtimeInstanceId: string }>;
+  openAgent(
+    cwd: string,
+  ): Promise<{ agentId: string; runtimeInstanceId: string; child: FakeOmpChild }>;
+  /** Replaces the catalogs native reports from now on (configure, refresh and default admit). */
+  updateCatalog(next: (runtimeInstanceId: string) => RoutingCatalog[]): void;
+  /** Replaces the answer native gives to the next `account.routing.configure`. */
+  setRuntimeCapability(configure: FakeOmpChildOptions["configure"]): void;
+  /** Native outcome frame for an admitted request, with optional confirmed quota blocks. */
+  outcome(input: {
+    runtimeInstanceId: string;
+    admission: Extract<OmpRpcAdmitDecision, { kind: "admit" }>;
+    operationId: string;
+    sessionId: string;
+    modelId: string;
+    quotaBlocks?: OmpRoutingBlock[];
+    code?: string;
+  }): void;
+  /** Native withdraws a request or wait. */
+  cancel(input: {
+    runtimeInstanceId: string;
+    operationId: string;
+    waitId?: string;
+    admissionId?: string;
+  }): void;
   /** Native admit.request; resolves with the host's `decision` once the response frame lands. */
   requestAdmission(input: {
     runtimeInstanceId: string;
     operationId: string;
     sessionId: string;
     modelId: string;
-    catalog: Record<string, unknown>;
+    /** Defaults to the first catalog the fixture currently reports. */
+    catalog?: Record<string, unknown>;
     purpose?: string;
     previousWaitId?: string;
   }): Promise<OmpRpcAdmitDecision>;
@@ -203,7 +231,14 @@ export async function createTestPaseoDaemon(
 
 /** The client is built before the daemon exists; the authority is resolved when a launch needs it. */
 function createOmpRoutingClient(options: FakeOmpChildOptions, logger: pino.Logger) {
-  const child = new FakeOmpChild(options);
+  // One shared options object: the fixture swaps catalogs and capability on it between scenarios.
+  const children: FakeOmpChild[] = [];
+  const byRuntime = new Map<string, FakeOmpChild>();
+  const childFor = (runtimeInstanceId: string) => {
+    const found = byRuntime.get(runtimeInstanceId);
+    if (!found) throw new Error(`No scripted child for ${runtimeInstanceId}`);
+    return found;
+  };
   let authority: AccountRoutingAuthority | undefined;
   const lazy = (): AccountRoutingAuthority => {
     if (!authority) throw new Error("Routing authority is not available yet");
@@ -225,10 +260,12 @@ function createOmpRoutingClient(options: FakeOmpChildOptions, logger: pino.Logge
       logger,
       command: ["omp"],
       // Only the marked launch is the scripted peer; catalog and model listing spawn throwaways.
-      spawnProcess: (launch) =>
-        launch.env?.[OMP_HOST_ACCOUNT_ROUTING_ENV] === "1"
-          ? child.process
-          : new FakeOmpChild().process,
+      spawnProcess: (launch) => {
+        if (launch.env?.[OMP_HOST_ACCOUNT_ROUTING_ENV] !== "1") return new FakeOmpChild().process;
+        const child = new FakeOmpChild(options);
+        children.push(child);
+        return child.process;
+      },
       probeCapabilities: async () => ({ complete: true, version: 1 }),
     }),
     accountRouting: delegate,
@@ -239,17 +276,71 @@ function createOmpRoutingClient(options: FakeOmpChildOptions, logger: pino.Logge
       if (!daemon.accountRouting) throw new Error("Daemon has no routing authority");
       authority = daemon.accountRouting;
       return {
-        child,
+        get child() {
+          return children[0];
+        },
+        children,
         authority,
         async openAgent(cwd) {
+          const before = children.length;
           const agent = await daemon.agentManager.createAgent({ provider: "omp", cwd }, undefined, {
             workspaceId: undefined,
           });
+          const child = children[before];
+          if (!child) throw new Error("Launch did not spawn a scripted routing child");
           const configure = await child.waitForFrame("account.routing.configure");
-          return { agentId: agent.id, runtimeInstanceId: String(configure.runtimeInstanceId) };
+          const runtimeInstanceId = String(configure.runtimeInstanceId);
+          byRuntime.set(runtimeInstanceId, child);
+          return { agentId: agent.id, runtimeInstanceId, child };
+        },
+        updateCatalog(next) {
+          options.catalogs = next;
+          options.refresh = (command) => ({
+            catalog: next(String(command.runtimeInstanceId))[0],
+          });
+        },
+        setRuntimeCapability(configure) {
+          options.configure = configure;
+        },
+        outcome(input) {
+          childFor(input.runtimeInstanceId).emit({
+            type: "account.routing.outcome",
+            hostEpoch: lazy().hostEpoch,
+            runtimeInstanceId: input.runtimeInstanceId,
+            admissionId: input.admission.admissionId,
+            operationId: input.operationId,
+            attemptId: "attempt-1",
+            sessionId: input.sessionId,
+            modelId: input.modelId,
+            accountRef: input.admission.accountRef,
+            selectionGeneration: input.admission.selectionGeneration,
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+            code: input.code ?? (input.quotaBlocks?.length ? "quota_exhausted" : "ok"),
+            dispatch: "dispatched",
+            replaySafe: false,
+            refusalReason: null,
+            retryAfterMs: null,
+            quotaBlocks: input.quotaBlocks ?? [],
+            windows: [],
+          });
+        },
+        cancel(input) {
+          childFor(input.runtimeInstanceId).emit({
+            type: "account.routing.cancel",
+            id: `ar-${input.operationId}`,
+            sessionId: "native-1",
+            hostEpoch: lazy().hostEpoch,
+            runtimeInstanceId: input.runtimeInstanceId,
+            operationId: input.operationId,
+            attemptId: "attempt-1",
+            ...(input.waitId ? { waitId: input.waitId } : {}),
+            ...(input.admissionId ? { admissionId: input.admissionId } : {}),
+          });
         },
         async requestAdmission(input) {
           const id = `ar-${input.operationId}`;
+          const child = childFor(input.runtimeInstanceId);
           child.emit({
             type: "account.routing.admit.request",
             id,
@@ -263,7 +354,7 @@ function createOmpRoutingClient(options: FakeOmpChildOptions, logger: pino.Logge
             modelId: input.modelId,
             requestGeneration: 1,
             ...(input.previousWaitId ? { previousWaitId: input.previousWaitId } : {}),
-            catalog: input.catalog,
+            catalog: input.catalog ?? options.catalogs?.(input.runtimeInstanceId)[0],
           });
           const response = await child.waitForFrame(
             "account.routing.admit.response",
@@ -272,7 +363,7 @@ function createOmpRoutingClient(options: FakeOmpChildOptions, logger: pino.Logge
           return response.decision as OmpRpcAdmitDecision;
         },
         started(input) {
-          child.emit({
+          childFor(input.runtimeInstanceId).emit({
             type: "account.routing.started",
             hostEpoch: lazy().hostEpoch,
             runtimeInstanceId: input.runtimeInstanceId,
