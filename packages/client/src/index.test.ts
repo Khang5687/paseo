@@ -314,16 +314,14 @@ test("createPaseoApi borrows daemon capabilities without exposing connection own
   expect("close" in paseo).toBe(false);
   expect("skills" in paseo.agents).toBe(false);
 });
-test("account routing exposes read-only get overloads and owns subscribed reads", async () => {
+test("account routing exposes get overloads and owns subscribed reads", async () => {
   const { client, ws } = await connectClient({
     providerUsageList: true,
     providersSnapshotCwd: true,
     ownedSubscriptions: true,
     ompAccountRouting: true,
   });
-  expect(Object.keys(client.accountRouting)).toEqual(["get"]);
-  expect("mutate" in client.accountRouting).toBe(false);
-  expect("observe" in client.accountRouting).toBe(false);
+  expect(Object.keys(client.accountRouting)).toEqual(["get", "observe", "mutate"]);
 
   const subscribedPromise = client.accountRouting.get({ subscribe: {} });
   const subscribedRequest = parseSentSessionMessage(ws.sent.at(-1));
@@ -359,6 +357,55 @@ test("account routing exposes read-only get overloads and owns subscribed reads"
   expect(
     ws.sent
       .slice(releaseStart)
+      .map((frame) => parseSentSessionMessage(frame))
+      .filter((message) => message.type === "subscription.release.request"),
+  ).toHaveLength(1);
+  await client.close();
+});
+
+test("account routing observe and mutate are owned or stateless on the API", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  const observation = client.accountRouting.observe();
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(),
+        subscriptionId: "obs",
+      },
+    }),
+  );
+  await observation.ready;
+
+  const mutation = client.accountRouting.mutate({
+    expectedPolicyRevision: 1,
+    command: { kind: "set_auto", enabled: false },
+  });
+  const mutateRequest = parseSentSessionMessage(ws.sent.at(-1));
+  expect(mutateRequest).toMatchObject({
+    type: "account.routing.mutate.request",
+    expectedPolicyRevision: 1,
+  });
+  ws.message(
+    sessionMessage({
+      type: "account.routing.mutate.response",
+      payload: { requestId: mutateRequest.requestId, state: accountRoutingState(2), error: null },
+    }),
+  );
+  await expect(mutation).resolves.toMatchObject({ error: null });
+
+  const sentBeforeDispose = ws.sent.length;
+  await client.dispose();
+  expect(
+    ws.sent
+      .slice(sentBeforeDispose)
       .map((frame) => parseSentSessionMessage(frame))
       .filter((message) => message.type === "subscription.release.request"),
   ).toHaveLength(1);

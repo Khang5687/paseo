@@ -27,6 +27,8 @@ import {
   DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
+  type OmpAccountRoutingMutation,
+  type OmpAccountRoutingMutationResult,
   type OmpAccountRoutingState,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
@@ -2669,6 +2671,41 @@ export class DaemonClient {
         signal: options?.signal,
       });
     return { state: response.state };
+  }
+
+  /** Lifecycle-only observation: the caller gets the owned handle and reads state through it. */
+  observeOmpAccountRoutingState(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<OmpAccountRoutingState> {
+    options?.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    return this.createOmpAccountRoutingSubscription(options?.signal);
+  }
+
+  /**
+   * Submits one revision-checked mutation. Host conflicts and other typed failures come back in
+   * `error`; only transport and correlation failures throw. The frame is never queued or resent:
+   * a disconnect rejects the call and the caller decides whether to retry against a fresh snapshot.
+   */
+  async mutateOmpAccountRouting(options: {
+    expectedPolicyRevision: number;
+    command: OmpAccountRoutingMutation;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingMutationResult> {
+    options.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "account.routing.mutate.request",
+        requestId,
+        expectedPolicyRevision: options.expectedPolicyRevision,
+        command: options.command,
+      }),
+      responseType: "account.routing.mutate.response",
+      signal: options.signal,
+    });
   }
 
   // ============================================================================

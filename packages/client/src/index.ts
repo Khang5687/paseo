@@ -10,6 +10,9 @@ import type {
   FetchWorkspacesResponseMessage,
   GetProvidersSnapshotResponseMessage,
   ListAvailableProvidersResponse,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
+  OmpAccountRoutingState,
   ListCommandsResponse,
   ListProviderFeaturesRequestMessage,
   ListProviderFeaturesResponseMessage,
@@ -39,6 +42,8 @@ export type { OmpAccountRoutingRead, OmpAccountRoutingSubscribedRead } from "./d
 export type {
   OmpRoutingAccountRef,
   OmpRoutingAccount,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
   OmpAccountRoutingPolicy,
   OmpAccountRoutingState,
 } from "@getpaseo/protocol/messages";
@@ -502,6 +507,14 @@ export interface PaseoAccountRoutingActions {
     signal?: AbortSignal;
   }): Promise<OmpAccountRoutingSubscribedRead>;
   get(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  /** Owned observation without a separate read; `ready` resolves with the first snapshot. */
+  observe(options?: { signal?: AbortSignal }): OwnedSubscription<OmpAccountRoutingState>;
+  /** Revision-checked mutation. Host conflicts return in `error`; transport failures throw. */
+  mutate(options: {
+    expectedPolicyRevision: number;
+    command: OmpAccountRoutingMutation;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingMutationResult>;
 }
 
 export interface PaseoApi {
@@ -805,6 +818,8 @@ export function createPaseoApi(
     },
     accountRouting: {
       get: getAccountRouting,
+      observe: (options) => own(() => daemonClient.observeOmpAccountRoutingState(options)),
+      mutate: (options) => daemonClient.mutateOmpAccountRouting(options),
     },
     config: {
       get: (requestId) => daemonClient.getDaemonConfig(requestId),
