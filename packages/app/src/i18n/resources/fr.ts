@@ -1224,10 +1224,6 @@ export const fr: TranslationResources = {
     pinned: {
       title: "Épinglés",
     },
-    settled: {
-      title: "Réglés",
-      titleWithCount: "Réglés ({{count}})",
-    },
     host: {
       noHost: "Aucun hôte",
       switchTitle: "Changer d’hôte",
@@ -1318,10 +1314,6 @@ export const fr: TranslationResources = {
         rename: "Renommer l’espace de travail",
         pin: "Épingler en haut",
         unpin: "Désépingler",
-        settle: "Régler",
-        unsettle: "Rouvrir",
-        settleWorkspace: "Marquer l’espace de travail comme réglé",
-        unsettleWorkspace: "Rouvrir l’espace de travail",
         archive: "Archiver",
         archiveWorkspace: "Archiver l’espace de travail",
         hideFromSidebar: "Masquer de la barre latérale",
