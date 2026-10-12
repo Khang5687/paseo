@@ -262,6 +262,32 @@ function openAccountRoutingAuthority(
   }
 }
 
+/**
+ * Closing or archiving an agent ends its transient routing work. The authority is told once per
+ * close; the agent can be reopened under the same id and closed again.
+ */
+function disposeRoutingOnAgentClose(
+  agentManager: AgentManager,
+  authority: Pick<AccountRoutingAuthority, "disposeAgent"> | undefined,
+): () => void {
+  if (!authority) return () => undefined;
+  const disposed = new Set<string>();
+  return agentManager.subscribe(
+    (event) => {
+      if (event.type !== "agent_state") return;
+      const { id, lifecycle } = event.agent;
+      if (lifecycle !== "closed") {
+        disposed.delete(id);
+        return;
+      }
+      if (disposed.has(id)) return;
+      disposed.add(id);
+      authority.disposeAgent(id);
+    },
+    { replayState: false },
+  );
+}
+
 function formatHostForHttpUrl(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
@@ -495,6 +521,8 @@ export interface PaseoDaemon {
   serviceProxy: ServiceProxySubsystem;
   scriptRuntimeStore: WorkspaceScriptRuntimeStore;
   browserToolsBroker: BrowserToolsBroker;
+  /** Host routing authority; absent when its policy file was unreadable. Test fixtures bind runtimes to it. */
+  accountRouting?: AccountRoutingAuthority;
   start(): Promise<void>;
   stop(): Promise<void>;
   getListenTarget(): ListenTarget | null;
@@ -1005,6 +1033,10 @@ export async function createPaseoDaemon(
   });
   await agentStorage.initialize();
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
+  const unsubscribeAccountRoutingDisposal = disposeRoutingOnAgentClose(
+    agentManager,
+    accountRouting,
+  );
   await bootstrapWorkspaceRegistries({
     serverId,
     paseoHome: config.paseoHome,
@@ -1778,6 +1810,7 @@ export async function createPaseoDaemon(
               pluginRuntime,
               orchestrationSkills,
               workspaceLabelService,
+              accountRouting,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
@@ -1831,6 +1864,7 @@ export async function createPaseoDaemon(
       await pluginRuntime.stopAllPlugins().catch(() => undefined);
       await serviceProxy.stopStandalone().catch(() => undefined);
       await agentProviderRuntime.shutdown().catch(() => undefined);
+      unsubscribeAccountRoutingDisposal();
       unbindAccountRouting();
       accountRouting?.dispose();
       if (mainStarted) {
@@ -1866,6 +1900,7 @@ export async function createPaseoDaemon(
     detachWorkspaceAutoUnsettle();
     await agentStorage.flush().catch(() => undefined);
     await agentProviderRuntime.shutdown();
+    unsubscribeAccountRoutingDisposal();
     unbindAccountRouting();
     accountRouting?.dispose();
     await pluginRuntime.stopAllPlugins();
@@ -1902,6 +1937,7 @@ export async function createPaseoDaemon(
     serviceProxy,
     scriptRuntimeStore,
     browserToolsBroker,
+    accountRouting,
     start,
     stop,
     getListenTarget: () => boundListenTarget,

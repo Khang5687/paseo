@@ -82,6 +82,24 @@ describe("SessionAuthorization", () => {
     ).toBe(false);
   });
 
+  test("workspace and hub authority never reach account routing", () => {
+    const authorization = new SessionAuthorization([
+      "workspace.read",
+      "workspace.write",
+      "workspace.manage",
+      "hub.execute",
+    ]);
+    for (const type of [
+      "account.routing.get_state.request",
+      "account.routing.mutate.request",
+    ] as const) {
+      expect(authorization.allowsInbound(inboundMessage(type))).toBe(false);
+    }
+    expect(authorization.allowsOutbound(outboundMessage("account.routing.state.update"))).toBe(
+      false,
+    );
+  });
+
   test("semantic permissions authorize operations instead of RPC namespaces", () => {
     const authorization = new SessionAuthorization(["hub.execute"]);
 

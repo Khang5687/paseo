@@ -187,6 +187,8 @@ import {
 import { ScheduleSession } from "./session/schedule/schedule-session.js";
 import { ProviderCatalogSession } from "./session/provider/provider-catalog-session.js";
 import { UsageSession } from "./session/usage/usage-session.js";
+import { AccountRoutingSession } from "./session/account-routing-session.js";
+import type { AccountRoutingAuthority } from "./account-routing/authority.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
@@ -473,6 +475,7 @@ export interface SessionOptions {
   workspaceRegistry: WorkspaceRegistry;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  accountRouting?: AccountRoutingAuthority;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -798,6 +801,7 @@ export class Session {
   private readonly scheduleSession: ScheduleSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly usageSession: UsageSession;
+  private readonly accountRoutingSession: AccountRoutingSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
   private readonly projectConfigSession: ProjectConfigSession;
@@ -834,6 +838,7 @@ export class Session {
       workspaceRegistry,
       directorySync,
       workspaceLabelService,
+      accountRouting,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -1011,6 +1016,12 @@ export class Session {
     this.usageSession = new UsageSession({
       emit: (msg) => this.emit(msg),
       runtime: pluginRuntime,
+      logger: this.sessionLogger,
+    });
+    this.accountRoutingSession = new AccountRoutingSession({
+      authority: accountRouting,
+      delivery: this.delivery,
+      emit: (msg) => this.emit(msg),
       logger: this.sessionLogger,
     });
     this.agentConfigSession = new AgentConfigSession({
@@ -3073,6 +3084,10 @@ export class Session {
         return this.usageSession.handleLegacyList(msg);
       case "usage.list_reports.request":
         return this.usageSession.handleListReports(msg);
+      case "account.routing.get_state.request":
+        return this.accountRoutingSession.handleGetState(msg);
+      case "account.routing.mutate.request":
+        return this.accountRoutingSession.handleMutate(msg);
       default:
         return undefined;
     }
