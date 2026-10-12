@@ -13,6 +13,8 @@ import {
   parseServerInfoStatusPayload,
   RoutingRefusalCodeSchema,
   RoutingWaitReasonSchema,
+  UsageRoutingSchema,
+  UsageSubscriptionSchema,
   SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WorkspaceProjectDescriptorPayloadSchema,
@@ -784,5 +786,27 @@ describe("OMP account-routing messages", () => {
     ).toBe(false);
     expect(RoutingRefusalCodeSchema.parse("host_unavailable")).toBe("host_unavailable");
     expect(RoutingWaitReasonSchema.parse("metadata_pending")).toBe("metadata_pending");
+  });
+});
+
+describe("usage routing metadata", () => {
+  test("routing accepts a null account ref for unknown state and rejects string row ids", () => {
+    const base = { state: "unknown", hostEpoch: "e", stateSequence: 0 };
+    expect(UsageRoutingSchema.safeParse({ ...base, accountRef: null }).success).toBe(true);
+    expect(
+      UsageRoutingSchema.safeParse({
+        ...base,
+        accountRef: { storeNamespace: "n", nativeRowId: "1" },
+      }).success,
+    ).toBe(false);
+  });
+
+  test("subscription keeps explicit nulls as unknown and rejects unknown sources", () => {
+    const nulls = { subscriptionType: null, rateLimitTier: null, observedAt: null };
+    expect(UsageSubscriptionSchema.parse({ ...nulls, source: "unknown" })).toEqual({
+      ...nulls,
+      source: "unknown",
+    });
+    expect(UsageSubscriptionSchema.safeParse({ ...nulls, source: "guess" }).success).toBe(false);
   });
 });

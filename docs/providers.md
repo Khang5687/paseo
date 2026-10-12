@@ -196,6 +196,13 @@ contract, account and window identity, provider-derived period names, login fall
 read-only credential rules. Usage adapters own the interpretation of provider fields; the app
 renders their names and resolves pins without provider-specific duration guesses.
 
+Host-routed OMP agents (`AgentUsageSession.managedRouting`) skip adapter discovery. Their
+per-agent usage comes from the routing authority: one report per account serving now, else the
+one last-served account, else a single `omp-managed:<agentId>` unknown report before the first
+dispatch. Launch `env` never decides the account, so a switch cannot show the old login. Routing
+report IDs resolve only through the agent-scoped list, never `reportIds`. Native tier stays unknown
+unless a cached usage report matches the exact account and organization UUID pair.
+
 ---
 
 ## ACP Provider Checklist
