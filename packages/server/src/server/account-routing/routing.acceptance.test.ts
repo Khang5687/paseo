@@ -350,7 +350,7 @@ describe("pause and resume", () => {
   test("all exhausted pauses once, wakes on reset, and cancelled or archived work stays dead", async () => {
     const h = await setup(2);
     // Native already reports both exhausted when the runtimes attach: no metadata-change wake.
-    const resetAt = Date.now() + 1500;
+    const resetAt = Date.now() + 4500;
     h.pool.update(1, { blocks: [block(shared, resetAt)] });
     h.pool.update(2, { blocks: [block(shared, resetAt)] });
     const live = await h.openAgent();
