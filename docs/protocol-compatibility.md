@@ -40,6 +40,8 @@ The app checks for the capability and either runs the feature or tells the user 
 
 Existing functionality keeps working across versions because of the protocol contract. Gating a new feature never substitutes for that.
 
+OMP account routing is gated by `isOmpAccountRoutingSupported` in `packages/client/src/daemon-client.ts`; unsupported hosts get no request, subscription, or fallback.
+
 ## Client capability ownership
 
 The client package advertises the protocol behavior it implements. Add each new capability to
@@ -64,6 +66,11 @@ server filters. Timeline and event membership retain their existing shared behav
 detaches its listener and uses the old unsubscribe operation where one exists. Broadcast-only hosts keep
 broadcasting; readiness there means local attachment, not a daemon acknowledgement. No extra sockets
 or multiplexing emulation are introduced.
+
+Account-routing subscriptions use the owned registry only. `account.routing.get_state.request`
+with `subscribe: {}` creates a host-owned stream; reconnect obtains a fresh bootstrap instead of
+replaying a request or falling back to a broadcast subscription. State updates are accepted only
+for the active subscription and in strictly increasing `stateSequence` within one `hostEpoch`.
 
 Preserve established workflows when changing delivery internals. Independent filters and quiet
 connections require a capable daemon; opening the app, reading history and using terminals do not.

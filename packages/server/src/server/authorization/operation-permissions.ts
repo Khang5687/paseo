@@ -7,6 +7,8 @@ export type PermissionRequirement = DaemonPermission | readonly DaemonPermission
 
 const INBOUND_PERMISSION = {
   abort_request: "workspace.write",
+  "account.routing.get_state.request": "daemon.read",
+  "account.routing.mutate.request": "daemon.manage",
   "agent.config.apply.request": ["workspace.write", "hub.execute"],
   "agent.detach.request": "workspace.write",
   "agent.queue.add.request": ["workspace.write", "hub.execute"],
@@ -224,6 +226,9 @@ const OUTBOUND_PERMISSION = {
   "agent.create.update": ["workspace.write", "hub.execute"],
   "workspace.create.update": "workspace.manage",
   "creation.subscribe.response": "workspace.read",
+  "account.routing.get_state.response": "daemon.read",
+  "account.routing.mutate.response": "daemon.manage",
+  "account.routing.state.update": "daemon.read",
   activity_log: "workspace.read",
   "agent.config.apply.response": ["workspace.write", "hub.execute"],
   "agent.detach.response": "workspace.write",
