@@ -321,8 +321,7 @@ test("account routing exposes read-only get overloads and owns subscribed reads"
     ownedSubscriptions: true,
     ompAccountRouting: true,
   });
-  expect(Object.keys(client.accountRouting)).toEqual(["get"]);
-  expect("mutate" in client.accountRouting).toBe(false);
+  expect(Object.keys(client.accountRouting)).toEqual(["get", "mutate"]);
   expect("observe" in client.accountRouting).toBe(false);
 
   const subscribedPromise = client.accountRouting.get({ subscribe: {} });
