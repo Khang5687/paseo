@@ -6553,7 +6553,7 @@ export const UsageRoutingSchema = z.object({
   accountRef: OmpRoutingAccountRefSchema.nullable(),
   state: z.enum(["serving", "last_served", "unknown"]),
   hostEpoch: z.string(),
-  stateSequence: z.number(),
+  stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
 export const UsageReportSchema = z.discriminatedUnion("status", [
   z.object({
