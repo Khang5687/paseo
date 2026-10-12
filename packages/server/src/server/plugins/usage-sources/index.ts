@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { AgentUsageSession } from "../../agent/agent-sdk-types.js";
 import type { UsageScope } from "@getpaseo/plugin/server/usage";
 import { z } from "zod";
+import { enrichRoutingTier, projectManagedUsage } from "../../account-routing/usage-projection.js";
 import type { Logger } from "pino";
 import {
   UsageReportSchema,
@@ -55,6 +56,11 @@ export class UsageSourceRegistry {
   private readonly known = new Map<string, KnownReport>();
   private defaults = new Map<string, KnownReport>();
   private readonly byAgent = new Map<string, AgentReports>();
+  /** Managed OMP agents: last accepted projection, so an older snapshot cannot replace it. */
+  private readonly managed = new Map<
+    string,
+    { hostEpoch: string; stateSequence: number; entries: UsageReportEntry[] }
+  >();
   private readonly cache = new Map<string, { at: number; entry: UsageReportEntry }>();
   private readonly pending = new Map<string, Promise<UsageReportEntry>>();
 
@@ -91,6 +97,11 @@ export class UsageSourceRegistry {
     let ids: string[];
     let reports = this.known;
     if (options.agentId !== undefined) {
+      const managed = this.listManaged(options.agentId);
+      if (managed) {
+        for (const entry of managed) options.onReport?.(entry);
+        return managed;
+      }
       ids = await this.discoverAgent(options.agentId);
       reports = this.byAgent.get(options.agentId)?.reports ?? new Map();
     } else if (options.reportIds !== undefined) {
@@ -114,7 +125,35 @@ export class UsageSourceRegistry {
     );
   }
 
+  /**
+   * Host-routed OMP agents report the accounts the host actually served, from authority metadata.
+   * Launch env is never consulted; unknown stays unknown. Routing IDs are agent-scoped: they are
+   * not in `known`, so a generic reportIds lookup cannot reach them.
+   */
+  private listManaged(agentId: string): UsageReportEntry[] | null {
+    if (!this.agents.hasAgent(agentId)) throw new Error(`Unknown agent: ${agentId}`);
+    const routing = this.agents.usageSession(agentId)?.managedRouting;
+    if (!routing) return null;
+    const previous = this.managed.get(agentId);
+    if (previous?.hostEpoch === routing.hostEpoch && routing.stateSequence < previous.stateSequence)
+      return previous.entries;
+    const cached = [...this.cache.values()].map((value) => value.entry);
+    const entries = projectManagedUsage(
+      { ...routing, accounts: routing.accounts.map((a) => enrichRoutingTier(a, cached)) },
+      this.now(),
+    );
+    this.managed.set(agentId, {
+      hostEpoch: routing.hostEpoch,
+      stateSequence: routing.stateSequence,
+      entries,
+    });
+    return entries;
+  }
+
   private pruneAgents(): void {
+    for (const id of this.managed.keys()) {
+      if (!this.agents.hasAgent(id)) this.managed.delete(id);
+    }
     for (const id of this.byAgent.keys()) {
       if (!this.agents.hasAgent(id)) this.byAgent.delete(id);
     }

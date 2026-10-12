@@ -74,6 +74,7 @@ import { ompSkillPromptUserText, shouldDisplayOmpCustomMessage } from "./custom-
 import { getUserMessageText } from "./message-history.js";
 import { mapOmpSystemNoticeToNotification } from "./system-notice.js";
 import { materializeProviderImage } from "../provider-image-output.js";
+import type { AccountRoutingAuthority } from "../../../account-routing/authority.js";
 import type { OmpHostRouting, OmpRoutingAuthority } from "./account-routing-bridge.js";
 import { OmpCliRuntime } from "./cli-runtime.js";
 import { listOmpImportableSessions, readOmpImportSessionConfig } from "./session-descriptor.js";
@@ -139,7 +140,7 @@ export interface OmpAgentClientOptions {
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
   /** Host routing authority. Absent means every launch is an independent OMP. */
-  accountRouting?: OmpRoutingAuthority;
+  accountRouting?: OmpRoutingAuthority & Partial<Pick<AccountRoutingAuthority, "snapshotForAgent">>;
 }
 
 export interface OmpProviderIdleScheduler {
@@ -224,6 +225,8 @@ interface OmpAgentSessionOptions {
    * timeline items.
    */
   live?: boolean;
+  /** Owned routing for this launch; `agentId` is the trusted host agent. */
+  usageRouting?: { agentId: string; snapshotForAgent: AccountRoutingAuthority["snapshotForAgent"] };
 }
 
 function createOmpProviderIdleScheduler(): OmpProviderIdleScheduler {
@@ -750,20 +753,31 @@ export class OmpAgentSession implements AgentSession {
   private readonly emittedUserMessageIds = new Set<string>();
 
   private readonly usageSessionKey = randomUUID();
+  private readonly usageRouting?: OmpAgentSessionOptions["usageRouting"];
 
   usageSession() {
     const env = this.runtimeSession.environment;
     if (this.closed) return null;
+    const routing = this.usageRouting;
     return {
       provider: "omp",
       model: modelToId(this.state.model) ?? undefined,
       env,
       sessionKey: this.usageSessionKey,
+      ...(routing
+        ? {
+            managedRouting: {
+              agentId: routing.agentId,
+              ...routing.snapshotForAgent(routing.agentId),
+            },
+          }
+        : {}),
     };
   }
 
   constructor(options: OmpAgentSessionOptions) {
     this.runtimeSession = options.runtimeSession;
+    this.usageRouting = options.usageRouting;
     this.hostTools = options.hostTools;
     this.restartRuntime = options.restartRuntime;
     this.config = options.config;
@@ -2344,7 +2358,8 @@ export class OmpAgentClient implements AgentClient {
   private readonly usagePollScheduler?: OmpUsagePollScheduler;
   private readonly providerIdleDeadlineMs?: number;
   private readonly runtime?: OmpRuntime;
-  private readonly accountRouting?: OmpRoutingAuthority;
+  private readonly accountRouting?: OmpRoutingAuthority &
+    Partial<Pick<AccountRoutingAuthority, "snapshotForAgent">>;
 
   constructor(options: OmpAgentClientOptions) {
     const runtimeSettings = mergeOmpRuntimeSettings(
@@ -2371,6 +2386,13 @@ export class OmpAgentClient implements AgentClient {
   private routingFor(launchContext: AgentLaunchContext | undefined): OmpHostRouting | undefined {
     if (!this.accountRouting) return undefined;
     return { authority: this.accountRouting, agentId: launchContext?.agentId };
+  }
+
+  private usageRoutingFor(launchContext: AgentLaunchContext | undefined) {
+    const agentId = launchContext?.agentId;
+    const snapshotForAgent = this.accountRouting?.snapshotForAgent?.bind(this.accountRouting);
+    if (!snapshotForAgent || !agentId) return undefined;
+    return { agentId, snapshotForAgent };
   }
 
   private async configureNativePaseoTools(
@@ -2455,6 +2477,7 @@ export class OmpAgentClient implements AgentClient {
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
+        usageRouting: this.usageRoutingFor(launchContext),
       });
     } catch (error) {
       await hostTools?.close();
@@ -2528,6 +2551,7 @@ export class OmpAgentClient implements AgentClient {
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
+        usageRouting: this.usageRoutingFor(launchContext),
         live: false,
       });
     } catch (error) {
