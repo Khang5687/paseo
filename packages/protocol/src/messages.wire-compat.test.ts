@@ -454,3 +454,65 @@ test("usage login errors are additive and older reports still parse", () => {
   expect(SessionOutboundMessageSchema.parse(newMessage)).toEqual(newMessage);
   expect(legacy.parse(newMessage)).toEqual(oldMessage);
 });
+
+test("usage routing and subscription metadata are optional, nullable-unknown and strictly typed", () => {
+  const legacyEntry = {
+    id: "claude:a",
+    account: {},
+    fetchedAt: "2026-10-05T00:00:00.000Z",
+    sourceId: "claude",
+    sourceLabel: "Claude",
+    report: { status: "available", windows: [] },
+  };
+  const message = (report: unknown) => ({
+    type: "usage.list_reports.update",
+    payload: { requestId: "usage", report },
+  });
+  const extended = {
+    ...legacyEntry,
+    report: {
+      status: "available",
+      windows: [],
+      quotaIdentity: { accountUuid: "a", organizationUuid: "o" },
+      subscription: {
+        subscriptionType: null,
+        rateLimitTier: "max_5x",
+        observedAt: null,
+        source: "claude-supported-login",
+      },
+    },
+    routing: {
+      accountRef: { storeNamespace: "11111111-1111-4111-8111-111111111111", nativeRowId: 3 },
+      state: "serving",
+      hostEpoch: "epoch",
+      stateSequence: 4,
+    },
+  };
+  expect(SessionOutboundMessageSchema.parse(message(legacyEntry))).toEqual(message(legacyEntry));
+  expect(SessionOutboundMessageSchema.parse(message(extended))).toEqual(message(extended));
+  const unknownRouting = {
+    ...legacyEntry,
+    routing: { ...extended.routing, accountRef: null, state: "unknown" },
+  };
+  expect(SessionOutboundMessageSchema.parse(message(unknownRouting))).toEqual(
+    message(unknownRouting),
+  );
+  const bad = [
+    { ...legacyEntry, report: { ...extended.report, quotaIdentity: { accountUuid: "a" } } },
+    {
+      ...legacyEntry,
+      report: {
+        ...extended.report,
+        subscription: { ...extended.report.subscription, source: "x" },
+      },
+    },
+    { ...extended, routing: { ...extended.routing, state: "idle" } },
+    {
+      ...extended,
+      routing: { ...extended.routing, accountRef: { storeNamespace: "n", nativeRowId: "3" } },
+    },
+  ];
+  for (const report of bad) {
+    expect(SessionOutboundMessageSchema.safeParse(message(report)).success).toBe(false);
+  }
+});
