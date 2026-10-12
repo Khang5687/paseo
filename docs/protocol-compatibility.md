@@ -40,7 +40,7 @@ The app checks for the capability and either runs the feature or tells the user 
 
 Existing functionality keeps working across versions because of the protocol contract. Gating a new feature never substitutes for that.
 
-OMP account routing is gated by `isOmpAccountRoutingSupported` in `packages/client/src/daemon-client.ts`; unsupported hosts get no request, subscription, or fallback.
+OMP account routing is gated by `isOmpAccountRoutingSupported` in `packages/client/src/daemon-client.ts`; unsupported hosts get no request, subscription, or fallback. Adding an account is gated by `features.ompAccountLogin`, which the host advertises only with routing and only on macOS; the app shows the button only for the desktop app on that host's own computer.
 
 ## Client capability ownership
 

@@ -48,6 +48,8 @@ echoes that ID under `payload` with the full typed state and an optional host su
 Retained updates carry the subscription ID and full state. The mutate pair carries `requestId`, `expectedPolicyRevision` and a `select`, `set_auto`, `set_inclusion` or `move_priority` command; its response returns the state and a typed `error` or `null`. Client routing and reconnect rules are
 in [protocol-compatibility.md](protocol-compatibility.md#owned-observations).
 
+Adding a Claude account is three plain pairs, `account.routing.login.start`, `.get_status` and `.cancel`, each answering with the host's one login status (`idle`, `running`, `succeeded`, `failed`, `cancelled`). The host opens its own browser and OMP's loopback callback finishes the login, so no URL, code or token appears in any message. Clients poll `get_status`; there is no push. A start while one runs answers `error: "already_running"` with the running status.
+
 ## Message Shape
 
 Requests keep their parameters at the top level:
