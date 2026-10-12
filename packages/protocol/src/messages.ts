@@ -6721,6 +6721,22 @@ export const UsageProblemSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("no_quota"), detail: z.string() }),
 ]);
+export const UsageQuotaIdentitySchema = z.object({
+  accountUuid: z.string(),
+  organizationUuid: z.string(),
+});
+export const UsageSubscriptionSchema = z.object({
+  subscriptionType: z.string().nullable(),
+  rateLimitTier: z.string().nullable(),
+  observedAt: z.number().nullable(),
+  source: z.enum(["claude-supported-login", "native-usage", "unknown"]),
+});
+export const UsageRoutingSchema = z.object({
+  accountRef: OmpRoutingAccountRefSchema.nullable(),
+  state: z.enum(["serving", "last_served", "unknown"]),
+  hostEpoch: z.string(),
+  stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
 export const UsageReportSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("available"),
@@ -6728,6 +6744,8 @@ export const UsageReportSchema = z.discriminatedUnion("status", [
     windows: z.array(ProviderUsageWindowSchema),
     balances: z.array(ProviderUsageBalanceSchema).optional(),
     details: z.array(ProviderUsageDetailSchema).optional(),
+    quotaIdentity: UsageQuotaIdentitySchema.optional(),
+    subscription: UsageSubscriptionSchema.optional(),
   }),
   z.object({ status: z.literal("unavailable"), problem: UsageProblemSchema }),
   z.object({ status: z.literal("error"), error: z.string() }),
@@ -6740,6 +6758,7 @@ export const UsageReportEntrySchema = z.object({
   sourceLabel: z.string(),
   icon: z.string().optional(),
   report: UsageReportSchema,
+  routing: UsageRoutingSchema.optional(),
   loginErrors: z
     .array(
       z.object({
