@@ -14,6 +14,7 @@ import {
   type UsageScope,
   windowFromUsedPct,
   type UsageReport,
+  type UsageSubscription,
   type UsageWindow,
   type UsageDetail,
 } from "@getpaseo/plugin/server/usage";
@@ -394,7 +395,11 @@ export async function discover(
         fetchApi,
         lookup.now ?? Date.now,
       );
-      accounts.push("status" in profile ? fallback : { ...profile, harness, input });
+      if ("status" in profile) accounts.push(fallback);
+      else {
+        const { accountUuid: _a, organizationUuid: _o, ...identity } = profile;
+        accounts.push({ ...identity, harness, input });
+      }
     } catch {
       // Keep the login visible; fetching usage reports the vendor failure.
       accounts.push(fallback);
@@ -554,6 +559,8 @@ export async function fetchUsage(
 
   const credentials = await resolveClaudeCredentials(input, credentialLookup);
   if (!credentials) throw new Error("Claude login store no longer exists");
+  // Stamped at the one credential read; projection below never reads the grant again.
+  const metadataReadAt = (credentialLookup.now ?? Date.now)();
   const refreshedBy =
     input.route.store === "claude" || input.route.store === "keychain"
       ? "claude"
@@ -609,6 +616,41 @@ export async function fetchUsage(
     windows,
     balances: [],
     details,
+    ...routingMetadata(input, profile, oauth, metadataReadAt),
+  };
+}
+
+function routingMetadata(
+  input: UsageInput,
+  profile: ClaudeIdentity | undefined,
+  oauth: { subscriptionType?: string; rateLimitTier?: string },
+  observedAt: number,
+): Pick<Extract<UsageReport, { status: "available" }>, "quotaIdentity" | "subscription"> {
+  const metadata: ReturnType<typeof routingMetadata> = {};
+  // Only a validated, already-cached profile; this path never fetches one.
+  if (profile && !("status" in profile))
+    metadata.quotaIdentity = {
+      accountUuid: profile.accountUuid,
+      organizationUuid: profile.organizationUuid,
+    };
+  // Pi/OMP stores carry no plan metadata, so they report none rather than unknown nulls.
+  if (input.route.store === "claude" || input.route.store === "keychain")
+    metadata.subscription = claudeSubscription(oauth, observedAt);
+  return metadata;
+}
+
+function claudeSubscription(
+  oauth: { subscriptionType?: string; rateLimitTier?: string },
+  observedAt: number,
+): UsageSubscription {
+  const subscriptionType = oauth.subscriptionType || null;
+  const rateLimitTier = oauth.rateLimitTier || null;
+  const known = subscriptionType !== null || rateLimitTier !== null;
+  return {
+    subscriptionType,
+    rateLimitTier,
+    observedAt: known ? observedAt : null,
+    source: known ? "claude-supported-login" : "unknown",
   };
 }
 
@@ -635,7 +677,9 @@ function formatWait(ms: number): string {
 }
 
 // The OAuth usage endpoint meters the active organization selected by the token.
-type ClaudeIdentity = { key: string; label?: string } | { status: number };
+type ClaudeIdentity =
+  | { key: string; label?: string; accountUuid: string; organizationUuid: string }
+  | { status: number };
 const PROFILE_TTL_MS = 300_000;
 const PROFILE_CACHE_LIMIT = 128;
 const profileCache = new Map<string, { at: number; result: Promise<ClaudeIdentity> }>();
@@ -685,6 +729,8 @@ async function readProfile(
     const account = profile.account;
     return {
       key: `${account.uuid}.${profile.organization.uuid}`,
+      accountUuid: account.uuid,
+      organizationUuid: profile.organization.uuid,
       ...(account.email ? { label: account.email } : {}),
     };
   })();
