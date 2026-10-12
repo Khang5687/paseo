@@ -12,7 +12,9 @@ import {
   consumedPercent,
   describeAccount,
   describeSection,
+  quotaLimit,
   refKey,
+  summarizeRouting,
 } from "./presentation";
 
 const ref = (row: number, storeNamespace = "ns") => ({ storeNamespace, nativeRowId: row });
@@ -172,7 +174,7 @@ describe("account names", () => {
 });
 
 describe("windows", () => {
-  it("never shows 100% consumed as 100% remaining", () => {
+  it("never shows an untouched window as used or an exhausted one as less than 100%", () => {
     expect(consumedPercent(0)).toBe(0);
     expect(consumedPercent(0.001)).toBe(1);
     expect(consumedPercent(0.999)).toBe(100);
@@ -181,8 +183,8 @@ describe("windows", () => {
       account(1, { windows: [window({ usedFraction: 1 }), window({ id: "7d", usedFraction: 0 })] }),
       NOW,
     );
-    expect([exhausted.consumedPct, exhausted.remainingPct]).toEqual([100, 0]);
-    expect([untouched.consumedPct, untouched.remainingPct]).toEqual([0, 100]);
+    expect(exhausted).toMatchObject({ consumedPct: 100, tone: "danger" });
+    expect(untouched).toMatchObject({ consumedPct: 0, tone: "default" });
   });
 
   it("orders five-hour, shared weekly, then model windows regardless of server order", () => {
@@ -210,9 +212,81 @@ describe("windows", () => {
       }),
       NOW,
     );
-    expect(expired).toMatchObject({ consumedPct: null, remainingPct: null, stale: true });
+    expect(expired).toMatchObject({ consumedPct: null, stale: true });
     expect(empty).toMatchObject({ consumedPct: null, stale: false });
     expect(unknownSource).toMatchObject({ consumedPct: null, stale: true });
+  });
+});
+
+describe("window names", () => {
+  it("splits a model window into its period and the model named in the server label", () => {
+    const [five, weekly, model, odd] = buildWindowViews(
+      account(1, {
+        windows: [
+          window({ id: "5h" }),
+          window({ id: "7d" }),
+          window({
+            id: "7d",
+            scope: { kind: "model", modelId: "fable" },
+            label: "Claude 7 Day (Fable)",
+          }),
+          window({ id: "30d", label: "Monthly", scope: { kind: "shared" } }),
+        ],
+      }),
+      NOW,
+    );
+    expect([five.period, five.model]).toEqual(["fiveHour", null]);
+    expect([weekly.period, weekly.model]).toEqual(["weekly", null]);
+    expect([model.kind, model.period, model.model]).toEqual(["model", "weekly", "Fable"]);
+    expect([odd.kind, odd.period]).toEqual(["other", null]);
+  });
+
+  it("uses warning from 70% and danger above 90%", () => {
+    const tones = buildWindowViews(
+      account(1, {
+        windows: [0.69, 0.7, 0.9, 0.91].map((usedFraction, i) =>
+          window({ id: `x${i}`, usedFraction }),
+        ),
+      }),
+      NOW,
+    ).map((view) => view.tone);
+    expect(tones).toEqual(["default", "warning", "warning", "danger"]);
+  });
+});
+
+describe("account names, default organization", () => {
+  const fallbacks = { missing: (id: number) => `Account ${id}`, unknownOrganization: "unknown" };
+
+  it("hides the organization line when it is the label's default personal organization", () => {
+    const rows = buildAccountRows(
+      state({
+        accounts: [
+          account(1, {
+            label: "me@example.test",
+            organizationLabel: "me@example.test's Organization",
+          }),
+          account(2, { label: "work@example.test", organizationLabel: "Acme" }),
+        ],
+      }),
+    );
+    expect(describeAccount(rows[0], rows, fallbacks).organization).toBeNull();
+    expect(describeAccount(rows[1], rows, fallbacks).organization).toBe("Acme");
+  });
+
+  it("keeps the disambiguating organization when two accounts share a label", () => {
+    const shared = {
+      label: "me@example.test",
+      organizationLabel: "me@example.test's Organization",
+    };
+    const rows = buildAccountRows(
+      state({
+        accounts: [
+          account(1, { ...shared, organizationIdentityLabel: "Org #1" }),
+          account(2, { ...shared, organizationIdentityLabel: "Org #2" }),
+        ],
+      }),
+    );
+    expect(describeAccount(rows[0], rows, fallbacks).organization).toBe("Org #1");
   });
 });
 
@@ -335,5 +409,99 @@ describe("notices", () => {
     expect(buildNotices({ ...base, state: null, featureOn: false }).map((n) => n.id)).toEqual([
       "unsupported",
     ]);
+  });
+});
+
+const HOUR = 3_600_000;
+const exhausted = (patch: Partial<OmpRoutingWindow>) =>
+  window({ usedFraction: 1, resetAt: NOW + HOUR, ...patch });
+const quotaBlock = (resetAt: number | null = NOW + HOUR) => ({
+  limitId: "l",
+  scope: { kind: "shared" as const },
+  resetAt,
+  observedAt: NOW,
+  source: "native-usage" as const,
+  confirmed: true as const,
+});
+
+describe("quota limit", () => {
+  it("names the weekly window over the five-hour one and ignores windows that are not full", () => {
+    const views = buildWindowViews(
+      account(1, {
+        windows: [
+          exhausted({ id: "5h" }),
+          exhausted({ id: "7d", resetAt: NOW + 5 * HOUR }),
+          window({ id: "7d", scope: { kind: "model", modelId: "m" }, usedFraction: 0.4 }),
+        ],
+      }),
+      NOW,
+    );
+    expect(quotaLimit(views)).toMatchObject({ kind: "weekly", resetAt: NOW + 5 * HOUR });
+    expect(quotaLimit(views.slice(0, 1))).toMatchObject({ kind: "fiveHour" });
+    expect(quotaLimit(views.slice(2))).toBeNull();
+  });
+
+  it("does not trust an expired reading", () => {
+    const views = buildWindowViews(
+      account(1, { windows: [exhausted({ validUntil: NOW - 1 })] }),
+      NOW,
+    );
+    expect(quotaLimit(views)).toBeNull();
+  });
+});
+
+describe("routing summary", () => {
+  const rowsFor = (accounts: OmpRoutingAccount[], patch: Partial<OmpAccountRoutingState> = {}) => {
+    const s = state({ accounts, ...patch });
+    return { s, rows: buildAccountRows(s) };
+  };
+  const out = (row: number, resetAt: number | null, extra: Partial<OmpRoutingAccount> = {}) =>
+    account(row, {
+      windows: [exhausted({ id: "7d", resetAt })],
+      quotaBlocks: [quotaBlock(resetAt)],
+      ...extra,
+    });
+
+  it("is paused until the earliest account recovers when every included account is out", () => {
+    const { s, rows } = rowsFor([out(1, NOW + 9 * HOUR), out(2, NOW + 3 * HOUR)]);
+    expect(summarizeRouting(s, rows, NOW)).toEqual({ kind: "paused", resumesAt: NOW + 3 * HOUR });
+  });
+
+  it("recovers at an account's latest exhausted reset, not its earliest", () => {
+    const both = account(1, {
+      windows: [
+        exhausted({ id: "5h", resetAt: NOW + HOUR }),
+        exhausted({ id: "7d", resetAt: NOW + 9 * HOUR }),
+      ],
+      quotaBlocks: [quotaBlock(NOW + HOUR)],
+    });
+    const { s, rows } = rowsFor([both]);
+    expect(summarizeRouting(s, rows, NOW)).toEqual({ kind: "paused", resumesAt: NOW + 9 * HOUR });
+  });
+
+  it("omits the time when no reset is known", () => {
+    const { s, rows } = rowsFor([out(1, null)]);
+    expect(summarizeRouting(s, rows, NOW)).toEqual({ kind: "paused", resumesAt: null });
+  });
+
+  it("is not paused while an included account still has usage, and excluded accounts do not count", () => {
+    const base = state().policy;
+    const { s, rows } = rowsFor([out(1, NOW + HOUR), account(2)]);
+    expect(summarizeRouting(s, rows, NOW)?.kind).toBe("auto");
+    const excluded = rowsFor([out(1, NOW + HOUR), account(2)], {
+      policy: { ...base, inclusion: [{ account: ref(2), included: false }] },
+    });
+    expect(summarizeRouting(excluded.s, excluded.rows, NOW)?.kind).toBe("paused");
+  });
+
+  it("names the current account, and says nothing for manual mode without one", () => {
+    const base = state().policy;
+    const current = rowsFor([account(1), account(2)], { policy: { ...base, current: ref(2) } });
+    expect(summarizeRouting(current.s, current.rows, NOW)).toMatchObject({
+      kind: "using",
+      row: { ref: ref(2) },
+    });
+    const manual = rowsFor([account(1)], { policy: { ...base, autoEnabled: false } });
+    expect(summarizeRouting(manual.s, manual.rows, NOW)).toBeNull();
   });
 });

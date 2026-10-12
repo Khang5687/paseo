@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ArrowDown, ArrowUp } from "lucide-react-native";
@@ -15,6 +16,7 @@ import { SelectField, type SelectFieldOption } from "@/components/ui/select-fiel
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/status-badge";
 import { Switch } from "@/components/ui/switch";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { UsageMeter } from "@/usage/meter";
 import { useSessionStore } from "@/stores/session-store";
 import { settingsStyles } from "@/styles/settings";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
@@ -26,7 +28,9 @@ import {
   buildNotices,
   describeSection,
   formatTimestamp,
+  quotaLimit,
   refKey,
+  summarizeRouting,
   type AccountRow,
   type ServingRequest,
   type WindowView,
@@ -64,40 +68,60 @@ function ServingLine({
   );
 }
 
+function windowName(view: WindowView, t: TFunction): string {
+  if (view.kind === "fiveHour") return t("ompAccountRouting.labels.fiveHour");
+  if (view.kind === "weekly") return t("ompAccountRouting.labels.weekly");
+  if (view.kind === "model" && view.period) {
+    const period = t(`ompAccountRouting.labels.${view.period}`);
+    return `${period} (${view.model ?? view.serverLabel})`;
+  }
+  return view.serverLabel;
+}
+
 function WindowLine({ view, locale }: { view: WindowView; locale: string }) {
   const { t } = useTranslation();
-  let name: string;
-  if (view.kind === "fiveHour") name = t("ompAccountRouting.labels.fiveHour");
-  else if (view.kind === "weekly") name = t("ompAccountRouting.labels.weekly");
-  else if (view.kind === "model") {
-    name = `${t("ompAccountRouting.labels.modelWindow")} · ${view.serverLabel}`;
-  } else name = view.serverLabel;
-
-  const parts: string[] = [];
-  if (view.consumedPct !== null && view.remainingPct !== null) {
-    parts.push(
-      t("ompAccountRouting.values.consumed", { percent: view.consumedPct }),
-      t("ompAccountRouting.values.remaining", { percent: view.remainingPct }),
-    );
-  } else {
-    parts.push(t("ompAccountRouting.status.unknownUsage"));
-  }
+  const parts: string[] =
+    view.consumedPct === null
+      ? [t("ompAccountRouting.status.unknownUsage")]
+      : [t("ompAccountRouting.values.used", { percent: view.consumedPct })];
   if (view.resetAt !== null) {
     parts.push(
       t("ompAccountRouting.values.reset", { time: formatTimestamp(view.resetAt, locale) }),
     );
   }
-  if (view.observedAt !== null) {
+  // A fresh reading is current by definition; the time only helps when it is old.
+  if (view.stale && view.observedAt !== null) {
     parts.push(
       t("ompAccountRouting.values.observed", { time: formatTimestamp(view.observedAt, locale) }),
     );
   }
-  if (view.stale) parts.push(t("ompAccountRouting.labels.stale"));
   return (
-    <Text style={settingsStyles.rowHint}>
-      {name}: {parts.join(" · ")}
-    </Text>
+    <View style={styles.windowLine}>
+      <Text style={settingsStyles.rowHint}>
+        {windowName(view, t)}: {parts.join(" · ")}
+      </Text>
+      {view.consumedPct === null ? null : (
+        <UsageMeter percent={view.consumedPct} tone={view.tone} style={styles.meter} />
+      )}
+    </View>
   );
+}
+
+/** A quota refusal names the full window and its reset; other refusals keep the reason's text. */
+function refusalCopy(
+  refusal: NonNullable<ReturnType<typeof accountRefusal>>,
+  windows: readonly WindowView[],
+  t: TFunction,
+  locale: string,
+): string {
+  const limit = refusal.kind === "quota" ? quotaLimit(windows) : null;
+  if (!limit) return t(`ompAccountRouting.reason.${refusal.code}`);
+  const window = windowName(limit, t);
+  if (limit.resetAt === null) return t("ompAccountRouting.values.limitReached", { window });
+  return t("ompAccountRouting.values.limitReachedReset", {
+    window,
+    time: formatTimestamp(limit.resetAt, locale),
+  });
 }
 
 interface AccountRowViewProps {
@@ -106,6 +130,8 @@ interface AccountRowViewProps {
   rows: readonly AccountRow[];
   isFirst: boolean;
   isLast: boolean;
+  /** Ordering only means something with two or more accounts. */
+  showOrder: boolean;
   disabled: boolean;
   nowMs: number;
   locale: string;
@@ -118,6 +144,7 @@ const AccountRowView = memo(function AccountRowView({
   rows,
   isFirst,
   isLast,
+  showOrder,
   disabled,
   nowMs,
   locale,
@@ -134,6 +161,7 @@ const AccountRowView = memo(function AccountRowView({
     () => (row.account ? buildWindowViews(row.account, nowMs) : []),
     [row.account, nowMs],
   );
+  const refusalText = refusal && refusalCopy(refusal, windows, t, locale);
   const toggleIncluded = useCallback(
     (included: boolean) => mutate({ kind: "set_inclusion", account: row.ref, included }),
     [mutate, row.ref],
@@ -198,7 +226,7 @@ const AccountRowView = memo(function AccountRowView({
         ) : null}
         {refusal ? (
           <Text style={refusal.kind === "quota" ? styles.refusalWarning : styles.refusal}>
-            {t(`ompAccountRouting.reason.${refusal.code}`)}
+            {refusalText}
           </Text>
         ) : null}
         {row.serving.map((request) => (
@@ -212,36 +240,43 @@ const AccountRowView = memo(function AccountRowView({
         {windows.map((view) => (
           <WindowLine key={view.key} view={view} locale={locale} />
         ))}
-        <Text style={settingsStyles.rowHint}>
-          {t("ompAccountRouting.values.priority", { position: row.position })}
-        </Text>
+        {showOrder ? (
+          <Text style={settingsStyles.rowHint}>
+            {t("ompAccountRouting.values.priority", { position: row.position })}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.rowControls}>
+        <Text style={settingsStyles.rowHint}>{t("ompAccountRouting.labels.useForAuto")}</Text>
         <Switch
           value={row.included}
           onValueChange={toggleIncluded}
           disabled={disabled}
-          accessibilityLabel={`${t("ompAccountRouting.labels.included")}: ${names.title}`}
+          accessibilityLabel={`${t("ompAccountRouting.labels.useForAuto")}: ${names.title}`}
           testID={`omp-routing-include-${row.key}`}
         />
-        <Button
-          variant="ghost"
-          size="sm"
-          leftIcon={moveUpIcon}
-          onPress={moveUp}
-          disabled={disabled || isFirst}
-          accessibilityLabel={`${t("ompAccountRouting.actions.moveUp")}: ${names.title}`}
-          testID={`omp-routing-up-${row.key}`}
-        />
-        <Button
-          variant="ghost"
-          size="sm"
-          leftIcon={moveDownIcon}
-          onPress={moveDown}
-          disabled={disabled || isLast}
-          accessibilityLabel={`${t("ompAccountRouting.actions.moveDown")}: ${names.title}`}
-          testID={`omp-routing-down-${row.key}`}
-        />
+        {showOrder ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={moveUpIcon}
+              onPress={moveUp}
+              disabled={disabled || isFirst}
+              accessibilityLabel={`${t("ompAccountRouting.actions.moveUp")}: ${names.title}`}
+              testID={`omp-routing-up-${row.key}`}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={moveDownIcon}
+              onPress={moveDown}
+              disabled={disabled || isLast}
+              accessibilityLabel={`${t("ompAccountRouting.actions.moveDown")}: ${names.title}`}
+              testID={`omp-routing-down-${row.key}`}
+            />
+          </>
+        ) : null}
       </View>
     </View>
   );
@@ -261,6 +296,15 @@ function optionFor(
     description: names.organization ?? undefined,
     testID: `omp-routing-option-${row.key}`,
   };
+}
+
+function AddAccountHint() {
+  const { t } = useTranslation();
+  return (
+    <Text style={styles.listHint} testID="omp-routing-add-hint">
+      {t("ompAccountRouting.labels.addAccountHint")}
+    </Text>
+  );
 }
 
 function MessageCard({ text }: { text: string }) {
@@ -306,9 +350,36 @@ function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) 
     [mutate],
   );
   const nowMs = Date.now();
+  const summary = summarizeRouting(state, rows, nowMs);
+  const showOrder = rows.length >= 2;
+  let summaryText: string | null = null;
+  if (summary?.kind === "paused") {
+    summaryText =
+      summary.resumesAt === null
+        ? t("ompAccountRouting.status.summaryPaused")
+        : t("ompAccountRouting.status.summaryPausedResumes", {
+            time: formatTimestamp(summary.resumesAt, i18n.language),
+          });
+  } else if (summary?.kind === "using") {
+    const account = describeAccount(summary.row, rows, {
+      missing: missingLabel,
+      unknownOrganization,
+    }).title;
+    summaryText = t("ompAccountRouting.status.summaryUsing", { account });
+  } else if (summary?.kind === "auto") {
+    summaryText = t("ompAccountRouting.status.summaryAuto");
+  }
 
   return (
     <>
+      {summaryText ? (
+        <Text
+          style={summary?.kind === "paused" ? styles.summaryPaused : styles.summary}
+          testID="omp-routing-summary"
+        >
+          {summaryText}
+        </Text>
+      ) : null}
       <SettingsCard testID="omp-routing-controls">
         <SettingsRow label={t("ompAccountRouting.labels.account")}>
           <SelectField
@@ -320,7 +391,11 @@ function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) 
             options={options}
             getValueKey={refKey}
             onChange={select}
-            placeholder={t("ompAccountRouting.reason.no_account")}
+            placeholder={
+              state.policy.autoEnabled
+                ? t("ompAccountRouting.labels.automatic")
+                : t("ompAccountRouting.reason.no_account")
+            }
             emptyText={t("ompAccountRouting.status.empty")}
             searchable
             searchPlaceholder={t("ompAccountRouting.labels.search")}
@@ -338,7 +413,9 @@ function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) 
           testID="omp-routing-auto"
         />
       </SettingsCard>
-      <Text style={styles.listHint}>{t("ompAccountRouting.labels.priorityHelp")}</Text>
+      {showOrder ? (
+        <Text style={styles.listHint}>{t("ompAccountRouting.labels.priorityHelp")}</Text>
+      ) : null}
       <View style={settingsStyles.card} testID="omp-routing-accounts">
         {rows.map((row, index) => (
           <View key={row.key} style={index > 0 ? settingsStyles.rowBorder : undefined}>
@@ -348,6 +425,7 @@ function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) 
               rows={rows}
               isFirst={index === 0}
               isLast={index === rows.length - 1}
+              showOrder={showOrder}
               disabled={disabled}
               nowMs={nowMs}
               locale={i18n.language}
@@ -356,6 +434,7 @@ function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) 
           </View>
         ))}
       </View>
+      <AddAccountHint />
     </>
   );
 }
@@ -385,7 +464,12 @@ export function AccountRoutingSection({ serverId }: { serverId: string }) {
 
   let body = <MessageCard text={t("ompAccountRouting.status.loading")} />;
   if (state && section?.catalog === "empty") {
-    body = <MessageCard text={t("ompAccountRouting.status.empty")} />;
+    body = (
+      <>
+        <MessageCard text={t("ompAccountRouting.status.empty")} />
+        <AddAccountHint />
+      </>
+    );
   } else if (state && section?.phase === "ready") {
     body = <ControlsBody serverId={serverId} state={state} disabled={disabled} mutate={mutate} />;
   }
@@ -417,6 +501,10 @@ const styles = StyleSheet.create((theme) => ({
   scope: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   notice: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   alert: { color: theme.colors.statusWarning, fontSize: theme.fontSize.sm },
+  summary: { color: theme.colors.foreground, fontSize: theme.fontSize.base },
+  summaryPaused: { color: theme.colors.statusWarning, fontSize: theme.fontSize.base },
+  windowLine: { gap: theme.spacing[1] },
+  meter: { maxWidth: 280 },
   listHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
@@ -429,5 +517,5 @@ const styles = StyleSheet.create((theme) => ({
   refusal: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm },
   refusalWarning: { color: theme.colors.statusWarning, fontSize: theme.fontSize.sm },
   badges: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing[1.5] },
-  rowControls: { flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
+  rowControls: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
 }));
