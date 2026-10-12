@@ -1403,7 +1403,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
     });
   });
 
-  test("maps frontend header-keyed answers to Claude question text keys", () => {
+  test("maps frontend header-keyed answers to Claude question text keys and drops answer lists", () => {
     expect(
       normalizeClaudeAskUserQuestionUpdatedInput(
         {
@@ -1416,6 +1416,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
             },
           ],
           answers: { Provider: "Claude" },
+          answerLists: { Provider: ["Claude"] },
         },
         undefined,
       ),
