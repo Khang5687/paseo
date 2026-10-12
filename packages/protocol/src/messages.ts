@@ -3121,6 +3121,267 @@ export const HubExecutionControlRequestSchema = z.object({
 
 export type HubExecutionControlRequest = z.infer<typeof HubExecutionControlRequestSchema>;
 
+export const RoutingRefusalCodeSchema = z.enum([
+  "no_account",
+  "source_changed",
+  "source_inaccessible",
+  "billing_enabled",
+  "billing_unknown",
+  "quota_blocked",
+  "entitlement_unavailable",
+  "auth_unavailable",
+  "unsupported_transport",
+  "unsupported_runtime",
+  "persistence_failed",
+  "host_unavailable",
+  "cancelled",
+]);
+export type RoutingRefusalCode = z.infer<typeof RoutingRefusalCodeSchema>;
+
+export const RoutingWaitReasonSchema = z.enum([
+  "metadata_pending",
+  "all_unavailable",
+  "auto_disabled",
+]);
+export type RoutingWaitReason = z.infer<typeof RoutingWaitReasonSchema>;
+
+export const RoutingWaitOrRefusalCodeSchema = z.union([
+  RoutingRefusalCodeSchema,
+  RoutingWaitReasonSchema,
+]);
+export type RoutingWaitOrRefusalCode = z.infer<typeof RoutingWaitOrRefusalCodeSchema>;
+
+export const OmpRoutingAccountRefSchema = z.object({
+  storeNamespace: z.string(),
+  nativeRowId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+export type OmpRoutingAccountRef = z.infer<typeof OmpRoutingAccountRefSchema>;
+
+export const OmpRoutingScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("shared") }),
+  z.object({ kind: z.literal("model"), modelId: z.string() }),
+  z.object({ kind: z.literal("family"), family: z.string() }),
+]);
+export type OmpRoutingScope = z.infer<typeof OmpRoutingScopeSchema>;
+
+export const OmpRoutingBlockSchema = z.object({
+  limitId: z.string(),
+  scope: OmpRoutingScopeSchema,
+  resetAt: z.number().finite().nullable(),
+  observedAt: z.number().finite(),
+  source: z.enum(["provider-rejection", "native-usage"]),
+  confirmed: z.literal(true),
+});
+export type OmpRoutingBlock = z.infer<typeof OmpRoutingBlockSchema>;
+
+export const OmpRoutingWindowSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  scope: OmpRoutingScopeSchema,
+  usedFraction: z.number().finite().min(0).max(1).nullable(),
+  resetAt: z.number().finite().nullable(),
+  observedAt: z.number().finite().nullable(),
+  validUntil: z.number().finite().nullable(),
+  source: z.enum(["usage-full", "usage-header", "unknown"]),
+});
+export type OmpRoutingWindow = z.infer<typeof OmpRoutingWindowSchema>;
+
+export const OmpRoutingBillingStateSchema = z.object({
+  state: z.enum(["disabled", "enabled", "unknown"]),
+  observedAt: z.number().finite().nullable(),
+  validUntil: z.number().finite().nullable(),
+  source: z.enum(["claude-usage-spend", "claude-usage-legacy"]).nullable(),
+  sourceRevision: z.string().nullable(),
+  reason: z
+    .enum([
+      "malformed",
+      "conflicting",
+      "expired",
+      "identity_mismatch",
+      "not_full_response",
+      "untrusted_source",
+    ])
+    .nullable(),
+});
+export type OmpRoutingBillingState = z.infer<typeof OmpRoutingBillingStateSchema>;
+
+export const OmpRoutingRankSchema = z.object({
+  method: z.literal("claude-native-window-pressure-v1"),
+  version: z.literal(1),
+  modelId: z.string().nullable(),
+  modelFamily: z.string().nullable(),
+  planGateApplies: z.boolean(),
+  planEligibility: z.union([z.boolean(), z.literal("unknown")]),
+  billingEligibility: z.enum(["eligible", "enabled", "unknown"]),
+  applicableLimitIds: z.array(z.string()),
+  coverage: z.enum(["complete", "partial", "unknown"]),
+  unknownReasons: z.array(RoutingWaitOrRefusalCodeSchema),
+  usageMeasured: z.boolean(),
+  primaryHot: z.boolean().nullable(),
+  primaryUsed: z.number().finite().nullable(),
+  secondaryUsed: z.number().finite().nullable(),
+  primaryRequiredDrain: z.number().finite().nullable(),
+  secondaryRequiredDrain: z.number().finite().nullable(),
+});
+export type OmpRoutingRank = z.infer<typeof OmpRoutingRankSchema>;
+
+export const OmpRoutingAccountSchema = z.object({
+  ref: OmpRoutingAccountRefSchema,
+  label: z.string(),
+  organizationLabel: z.string().nullable(),
+  identityLabel: z.string(),
+  organizationIdentityLabel: z.string(),
+  available: z.boolean(),
+  missing: z.boolean(),
+  authoritativeObservedAt: z.number().finite().nullable(),
+  quotaIdentity: z.object({ accountUuid: z.string(), organizationUuid: z.string() }).nullable(),
+  subscriptionTier: z.object({
+    kind: z.enum(["pro", "max5", "max20", "other", "unknown"]),
+    observedAt: z.number().finite().nullable(),
+    source: z.string().nullable(),
+  }),
+  absoluteAllowance: z.null(),
+  windows: z.array(OmpRoutingWindowSchema),
+  billing: OmpRoutingBillingStateSchema,
+  rank: OmpRoutingRankSchema,
+  quotaBlocks: z.array(OmpRoutingBlockSchema),
+  rankingCoverage: z.enum(["complete", "partial", "unknown"]),
+});
+export type OmpRoutingAccount = z.infer<typeof OmpRoutingAccountSchema>;
+
+export const OmpAccountRoutingPolicySchema = z.object({
+  policyRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  selectionGeneration: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  current: OmpRoutingAccountRefSchema.nullable(),
+  autoEnabled: z.boolean(),
+  priorityOrder: z.array(OmpRoutingAccountRefSchema),
+  inclusion: z.array(z.object({ account: OmpRoutingAccountRefSchema, included: z.boolean() })),
+});
+export type OmpAccountRoutingPolicy = z.infer<typeof OmpAccountRoutingPolicySchema>;
+
+export const OmpAccountRoutingCapabilitySchema = z.object({
+  status: z.enum(["supported", "unknown", "unsupported"]),
+  reason: RoutingRefusalCodeSchema.nullable(),
+});
+export type OmpAccountRoutingCapability = z.infer<typeof OmpAccountRoutingCapabilitySchema>;
+
+export const OmpAccountRoutingCatalogSchema = z.object({
+  status: z.enum(["loading", "loaded", "empty", "incomplete", "stale", "unsupported"]),
+  authoritativeObservedAt: z.number().finite().nullable(),
+});
+export type OmpAccountRoutingCatalog = z.infer<typeof OmpAccountRoutingCatalogSchema>;
+
+export const OmpAccountRoutingStateSchema = z.object({
+  hostEpoch: z.string(),
+  stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  policy: OmpAccountRoutingPolicySchema,
+  capability: OmpAccountRoutingCapabilitySchema,
+  catalog: OmpAccountRoutingCatalogSchema,
+  accounts: z.array(OmpRoutingAccountSchema),
+  activeRequests: z.array(
+    z.object({
+      admissionId: z.string(),
+      agentId: z.string(),
+      nativeSessionId: z.string(),
+      model: z.string(),
+      accountRef: OmpRoutingAccountRefSchema,
+      selectionGeneration: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      phase: z.enum(["admitted", "serving"]),
+      observedAt: z.number().finite(),
+    }),
+  ),
+  lastServed: z.array(
+    z.object({
+      agentId: z.string(),
+      accountRef: OmpRoutingAccountRefSchema,
+      model: z.string(),
+      servedAt: z.number().finite(),
+    }),
+  ),
+  pausedRequests: z.array(
+    z.object({
+      waitId: z.string(),
+      agentId: z.string(),
+      nativeSessionId: z.string(),
+      model: z.string(),
+      reason: RoutingWaitReasonSchema,
+      nextCheckAt: z.number().finite().nullable(),
+      requiresUserAction: z.boolean(),
+      accountRef: OmpRoutingAccountRefSchema.nullable(),
+      recoveredAt: z.number().finite().nullable(),
+    }),
+  ),
+});
+export type OmpAccountRoutingState = z.infer<typeof OmpAccountRoutingStateSchema>;
+
+export const OmpAccountRoutingMutationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("select"), account: OmpRoutingAccountRefSchema }),
+  z.object({ kind: z.literal("set_auto"), enabled: z.boolean() }),
+  z.object({
+    kind: z.literal("set_inclusion"),
+    account: OmpRoutingAccountRefSchema,
+    included: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("move_priority"),
+    account: OmpRoutingAccountRefSchema,
+    direction: z.enum(["up", "down"]),
+  }),
+]);
+export type OmpAccountRoutingMutation = z.infer<typeof OmpAccountRoutingMutationSchema>;
+
+const OmpAccountRoutingMutationErrorSchema = z.object({
+  code: z.enum(["conflict", "invalid_account", "unsupported", "persistence_failed"]),
+  message: z.string(),
+});
+
+export const OmpAccountRoutingMutationResultSchema = z.object({
+  requestId: z.string(),
+  state: OmpAccountRoutingStateSchema,
+  error: OmpAccountRoutingMutationErrorSchema.nullable(),
+});
+export type OmpAccountRoutingMutationResult = z.infer<typeof OmpAccountRoutingMutationResultSchema>;
+
+export const AccountRoutingGetStateRequestSchema = z.object({
+  type: z.literal("account.routing.get_state.request"),
+  requestId: z.string(),
+  subscribe: z.object({}).optional(),
+});
+export type AccountRoutingGetStateRequest = z.infer<typeof AccountRoutingGetStateRequestSchema>;
+
+export const AccountRoutingGetStateResponseSchema = z.object({
+  type: z.literal("account.routing.get_state.response"),
+  payload: z.object({
+    requestId: z.string(),
+    state: OmpAccountRoutingStateSchema,
+    subscriptionId: z.string().optional(),
+  }),
+});
+export type AccountRoutingGetStateResponse = z.infer<typeof AccountRoutingGetStateResponseSchema>;
+
+export const AccountRoutingStateUpdateSchema = z.object({
+  type: z.literal("account.routing.state.update"),
+  payload: z.object({
+    subscriptionId: z.string(),
+    state: OmpAccountRoutingStateSchema,
+  }),
+});
+export type AccountRoutingStateUpdate = z.infer<typeof AccountRoutingStateUpdateSchema>;
+
+export const AccountRoutingMutateRequestSchema = z.object({
+  type: z.literal("account.routing.mutate.request"),
+  requestId: z.string(),
+  expectedPolicyRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  command: OmpAccountRoutingMutationSchema,
+});
+export type AccountRoutingMutateRequest = z.infer<typeof AccountRoutingMutateRequestSchema>;
+
+export const AccountRoutingMutateResponseSchema = z.object({
+  type: z.literal("account.routing.mutate.response"),
+  payload: OmpAccountRoutingMutationResultSchema,
+});
+export type AccountRoutingMutateResponse = z.infer<typeof AccountRoutingMutateResponseSchema>;
+
 // These connection event streams have no directory bootstrap or timeline membership.
 export const SessionEventSubscriptionSchema = z.enum([
   "project.update",
@@ -3178,6 +3439,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   BrowserHostRegisterRequestSchema,
   SubscriptionReleaseRequestSchema,
   SessionEventsSetSubscriptionRequestSchema,
+  AccountRoutingGetStateRequestSchema,
+  AccountRoutingMutateRequestSchema,
   HubExecutionAgentCreateRequestSchema,
   HubExecutionAgentValidateRequestSchema,
   HubExecutionControlRequestSchema,
@@ -3697,6 +3960,7 @@ export const ServerInfoStatusPayloadSchema = z
         selectiveAgentTimeline: z.boolean().optional(),
         explicitEventSubscriptions: z.boolean().optional(),
         ownedSubscriptions: z.boolean().optional(),
+        ompAccountRouting: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
         agentMessageProvenance: z.boolean().optional(),
@@ -6817,6 +7081,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   BrowserHostRegisterResponseSchema,
   SubscriptionReleaseResponseSchema,
   SessionEventsSetSubscriptionResponseSchema,
+  AccountRoutingGetStateResponseSchema,
+  AccountRoutingMutateResponseSchema,
+  AccountRoutingStateUpdateSchema,
   HubExecutionAgentCreateResponseSchema,
   HubExecutionAgentValidateResponseSchema,
   HubExecutionControlResponseSchema,

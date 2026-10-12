@@ -33,6 +33,19 @@ of the originating request so source-owned delivery routes them to the requestin
 
 Most new RPCs should follow these shapes. If a request does not have a one-to-one terminal response, call that out in the code near the schema.
 
+Account routing uses the same request/response pair and adds a retained `.update`:
+
+```ts
+account.routing.get_state.request;
+account.routing.get_state.response;
+account.routing.state.update;
+```
+
+The request keeps `requestId` at the top level and may include `subscribe: {}`. The response
+echoes that ID under `payload` with the full typed state and an optional host subscription ID.
+Retained updates carry the subscription ID and full state. Client routing and reconnect rules are
+in [protocol-compatibility.md](protocol-compatibility.md#owned-observations).
+
 ## Message Shape
 
 Requests keep their parameters at the top level:

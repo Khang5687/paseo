@@ -46,6 +46,42 @@ describe("SessionAuthorization", () => {
     ).toBe(true);
   });
 
+  test("account routing separates read and manage permissions", () => {
+    const readAuthorization = new SessionAuthorization(["daemon.read"]);
+    expect(
+      readAuthorization.allowsInbound(inboundMessage("account.routing.get_state.request")),
+    ).toBe(true);
+    expect(
+      readAuthorization.allowsOutbound(outboundMessage("account.routing.get_state.response")),
+    ).toBe(true);
+    expect(readAuthorization.allowsOutbound(outboundMessage("account.routing.state.update"))).toBe(
+      true,
+    );
+    expect(readAuthorization.allowsInbound(inboundMessage("account.routing.mutate.request"))).toBe(
+      false,
+    );
+    expect(
+      readAuthorization.allowsOutbound(outboundMessage("account.routing.mutate.response")),
+    ).toBe(false);
+
+    const manageAuthorization = new SessionAuthorization(["daemon.manage"]);
+    expect(
+      manageAuthorization.allowsInbound(inboundMessage("account.routing.mutate.request")),
+    ).toBe(true);
+    expect(
+      manageAuthorization.allowsOutbound(outboundMessage("account.routing.mutate.response")),
+    ).toBe(true);
+    expect(
+      manageAuthorization.allowsInbound(inboundMessage("account.routing.get_state.request")),
+    ).toBe(false);
+    expect(
+      manageAuthorization.allowsOutbound(outboundMessage("account.routing.get_state.response")),
+    ).toBe(false);
+    expect(
+      manageAuthorization.allowsOutbound(outboundMessage("account.routing.state.update")),
+    ).toBe(false);
+  });
+
   test("semantic permissions authorize operations instead of RPC namespaces", () => {
     const authorization = new SessionAuthorization(["hub.execute"]);
 

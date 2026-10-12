@@ -1,9 +1,18 @@
 import { describe, expect, test } from "vitest";
 import {
+  AccountRoutingGetStateRequestSchema,
+  AccountRoutingGetStateResponseSchema,
+  AccountRoutingMutateRequestSchema,
+  AccountRoutingMutateResponseSchema,
+  AccountRoutingStateUpdateSchema,
   AgentTimelineItemPayloadSchema,
   FileExplorerRequestSchema,
+  OmpAccountRoutingMutationSchema,
+  OmpAccountRoutingStateSchema,
   PaseoWorktreeArchiveRequestSchema,
   parseServerInfoStatusPayload,
+  RoutingRefusalCodeSchema,
+  RoutingWaitReasonSchema,
   SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WorkspaceProjectDescriptorPayloadSchema,
@@ -547,4 +556,233 @@ test("agent messages are an optional semantic payload on existing tool rows", ()
       agentMessage: { ...agentMessage, sender: { id: 42 } },
     }).success,
   ).toBe(false);
+});
+
+function accountRoutingState(overrides: Record<string, unknown> = {}) {
+  const accountRef = { storeNamespace: "store-a", nativeRowId: 7 };
+  return {
+    hostEpoch: "epoch-1",
+    stateSequence: 4,
+    policy: {
+      policyRevision: 2,
+      selectionGeneration: 3,
+      current: accountRef,
+      autoEnabled: true,
+      priorityOrder: [accountRef],
+      inclusion: [{ account: accountRef, included: true }],
+    },
+    capability: { status: "supported", reason: null },
+    catalog: { status: "loaded", authoritativeObservedAt: 100 },
+    accounts: [
+      {
+        ref: accountRef,
+        label: "Primary",
+        organizationLabel: "Example",
+        identityLabel: "primary@example.com",
+        organizationIdentityLabel: "Example",
+        available: true,
+        missing: false,
+        authoritativeObservedAt: 100,
+        quotaIdentity: { accountUuid: "account-uuid", organizationUuid: "org-uuid" },
+        subscriptionTier: { kind: "pro", observedAt: 100, source: "supported-login" },
+        absoluteAllowance: null,
+        windows: [
+          {
+            id: "five-hour",
+            label: "Five hours",
+            scope: { kind: "shared" },
+            usedFraction: 0.25,
+            resetAt: 200,
+            observedAt: 100,
+            validUntil: 300,
+            source: "usage-full",
+          },
+        ],
+        billing: {
+          state: "disabled",
+          observedAt: 100,
+          validUntil: 300,
+          source: null,
+          sourceRevision: null,
+          reason: null,
+        },
+        rank: {
+          method: "claude-native-window-pressure-v1",
+          version: 1,
+          modelId: "claude-sonnet",
+          modelFamily: "claude",
+          planGateApplies: true,
+          planEligibility: true,
+          billingEligibility: "eligible",
+          applicableLimitIds: ["five-hour"],
+          coverage: "complete",
+          unknownReasons: [],
+          usageMeasured: true,
+          primaryHot: false,
+          primaryUsed: 0.25,
+          secondaryUsed: null,
+          primaryRequiredDrain: 0.1,
+          secondaryRequiredDrain: null,
+        },
+        quotaBlocks: [
+          {
+            limitId: "five-hour",
+            scope: { kind: "shared" },
+            resetAt: 200,
+            observedAt: 100,
+            source: "native-usage",
+            confirmed: true,
+          },
+        ],
+        rankingCoverage: "complete",
+      },
+    ],
+    activeRequests: [
+      {
+        admissionId: "admission-1",
+        agentId: "agent-1",
+        nativeSessionId: "session-1",
+        model: "claude-sonnet",
+        accountRef,
+        selectionGeneration: 3,
+        phase: "serving",
+        observedAt: 100,
+      },
+    ],
+    lastServed: [{ agentId: "agent-1", accountRef, model: "claude-sonnet", servedAt: 100 }],
+    pausedRequests: [
+      {
+        waitId: "wait-1",
+        agentId: "agent-2",
+        nativeSessionId: "session-2",
+        model: "claude-sonnet",
+        reason: "metadata_pending",
+        nextCheckAt: 200,
+        requiresUserAction: false,
+        accountRef: null,
+        recoveredAt: null,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe("OMP account-routing messages", () => {
+  test("parses get, mutate, and retained update messages", () => {
+    const state = accountRoutingState();
+    const getRequest = {
+      type: "account.routing.get_state.request",
+      requestId: "routing-get-1",
+      subscribe: {},
+    };
+    const getResponse = {
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: getRequest.requestId,
+        state,
+        subscriptionId: "routing-subscription-1",
+      },
+    };
+    const update = {
+      type: "account.routing.state.update",
+      payload: {
+        subscriptionId: "routing-subscription-1",
+        state,
+      },
+    };
+    const commands = [
+      { kind: "select", account: { storeNamespace: "store-a", nativeRowId: 7 } },
+      { kind: "set_auto", enabled: false },
+      {
+        kind: "set_inclusion",
+        account: { storeNamespace: "store-a", nativeRowId: 7 },
+        included: false,
+      },
+      {
+        kind: "move_priority",
+        account: { storeNamespace: "store-a", nativeRowId: 7 },
+        direction: "down",
+      },
+    ] as const;
+
+    expect(AccountRoutingGetStateRequestSchema.parse(getRequest)).toEqual(getRequest);
+    expect(AccountRoutingGetStateResponseSchema.parse(getResponse)).toEqual(getResponse);
+    expect(
+      AccountRoutingGetStateResponseSchema.parse({
+        type: "account.routing.get_state.response",
+        payload: { requestId: "routing-get-2", state },
+      }),
+    ).toEqual({
+      type: "account.routing.get_state.response",
+      payload: { requestId: "routing-get-2", state },
+    });
+    expect(AccountRoutingStateUpdateSchema.parse(update)).toEqual(update);
+    expect(SessionInboundMessageSchema.parse(getRequest)).toEqual(getRequest);
+    expect(SessionOutboundMessageSchema.parse(getResponse)).toEqual(getResponse);
+    expect(SessionOutboundMessageSchema.parse(update)).toEqual(update);
+    expect(OmpAccountRoutingStateSchema.parse(state)).toEqual(state);
+
+    for (const command of commands) {
+      const request = {
+        type: "account.routing.mutate.request",
+        requestId: `routing-mutate-${command.kind}`,
+        expectedPolicyRevision: 2,
+        command,
+      };
+      const response = {
+        type: "account.routing.mutate.response",
+        payload: {
+          requestId: request.requestId,
+          state,
+          error:
+            command.kind === "select" ? { code: "conflict", message: "The policy changed." } : null,
+        },
+      };
+      expect(OmpAccountRoutingMutationSchema.parse(command)).toEqual(command);
+      expect(AccountRoutingMutateRequestSchema.parse(request)).toEqual(request);
+      expect(AccountRoutingMutateResponseSchema.parse(response)).toEqual(response);
+      expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+      expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
+    }
+  });
+
+  test("enforces structural numeric boundaries without repairing malformed state", () => {
+    const state = accountRoutingState();
+    expect(
+      OmpAccountRoutingStateSchema.safeParse({
+        ...state,
+        stateSequence: Number.MAX_SAFE_INTEGER + 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      OmpAccountRoutingStateSchema.safeParse({
+        ...state,
+        policy: {
+          ...state.policy,
+          current: { storeNamespace: "store-a", nativeRowId: 1.5 },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      OmpAccountRoutingStateSchema.safeParse({
+        ...state,
+        accounts: [
+          {
+            ...state.accounts[0],
+            windows: [{ ...state.accounts[0].windows[0], usedFraction: 1.1 }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      AccountRoutingMutateRequestSchema.safeParse({
+        type: "account.routing.mutate.request",
+        requestId: "routing-mutate-invalid",
+        expectedPolicyRevision: 1,
+        command: { kind: "unknown" },
+      }).success,
+    ).toBe(false);
+    expect(RoutingRefusalCodeSchema.parse("host_unavailable")).toBe("host_unavailable");
+    expect(RoutingWaitReasonSchema.parse("metadata_pending")).toBe("metadata_pending");
+  });
 });

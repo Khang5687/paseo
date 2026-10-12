@@ -140,6 +140,24 @@ describe("wire schema compatibility", () => {
     });
   });
 
+  test("routing capability is additive and stays separate from server capabilities", () => {
+    const legacy = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "legacy-routing-server",
+      features: { ownedSubscriptions: true },
+    });
+    const capable = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "routing-server",
+      capabilities: { owned_subscriptions: true },
+      features: { ownedSubscriptions: true, ompAccountRouting: true },
+    });
+
+    expect(legacy.features?.ompAccountRouting).toBeUndefined();
+    expect(capable.features?.ompAccountRouting).toBe(true);
+    expect(capable.capabilities).toMatchObject({ owned_subscriptions: true });
+  });
+
   test("assistant timeline message ids are optional on the wire", () => {
     expect(
       AgentTimelineItemPayloadSchema.parse({
