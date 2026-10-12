@@ -74,6 +74,7 @@ import { ompSkillPromptUserText, shouldDisplayOmpCustomMessage } from "./custom-
 import { getUserMessageText } from "./message-history.js";
 import { mapOmpSystemNoticeToNotification } from "./system-notice.js";
 import { materializeProviderImage } from "../provider-image-output.js";
+import type { OmpHostRouting, OmpRoutingAuthority } from "./account-routing-bridge.js";
 import { OmpCliRuntime } from "./cli-runtime.js";
 import { listOmpImportableSessions, readOmpImportSessionConfig } from "./session-descriptor.js";
 import type { OmpRuntime, OmpRuntimeSession, OmpStartSessionInput } from "./runtime.js";
@@ -137,6 +138,8 @@ export interface OmpAgentClientOptions {
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
+  /** Host routing authority. Absent means every launch is an independent OMP. */
+  accountRouting?: OmpRoutingAuthority;
 }
 
 export interface OmpProviderIdleScheduler {
@@ -2341,6 +2344,7 @@ export class OmpAgentClient implements AgentClient {
   private readonly usagePollScheduler?: OmpUsagePollScheduler;
   private readonly providerIdleDeadlineMs?: number;
   private readonly runtime?: OmpRuntime;
+  private readonly accountRouting?: OmpRoutingAuthority;
 
   constructor(options: OmpAgentClientOptions) {
     const runtimeSettings = mergeOmpRuntimeSettings(
@@ -2360,6 +2364,13 @@ export class OmpAgentClient implements AgentClient {
     this.usagePollScheduler = options.usagePollScheduler;
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs;
     this.runtime = options.runtime;
+    this.accountRouting = options.accountRouting;
+  }
+
+  /** Managed launch request. `agentId` comes only from the trusted launch context. */
+  private routingFor(launchContext: AgentLaunchContext | undefined): OmpHostRouting | undefined {
+    if (!this.accountRouting) return undefined;
+    return { authority: this.accountRouting, agentId: launchContext?.agentId };
   }
 
   private async configureNativePaseoTools(
@@ -2413,6 +2424,7 @@ export class OmpAgentClient implements AgentClient {
       extraArgs: launchMode.extraArgs,
       systemPrompt: composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
       env: launchContext?.env,
+      routing: this.routingFor(launchContext),
     };
     const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession(
       startInput,
@@ -2485,6 +2497,7 @@ export class OmpAgentClient implements AgentClient {
       launchContext,
       launchMode,
     });
+    startInput.routing = this.routingFor(launchContext);
     const runtimeSession = await this.resolveRuntime(
       resumeConfig.config.providerOptions,
     ).startSession(startInput);
@@ -2609,6 +2622,8 @@ export class OmpAgentClient implements AgentClient {
           modeId: launchMode.modeId,
           extraArgs: launchMode.extraArgs,
           signal: context?.signal,
+          // Agentless: the helper lists models and cannot dispatch one.
+          routing: this.routingFor(undefined),
         });
         if (context?.signal.aborted) await closeSession();
       });

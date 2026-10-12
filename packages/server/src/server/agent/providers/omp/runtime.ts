@@ -15,6 +15,7 @@ import type {
   OmpThinkingLevel,
 } from "./rpc-types.js";
 import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
+import type { OmpHostRouting } from "./account-routing-bridge.js";
 
 export interface OmpRuntimeLaunch {
   cwd: string;
@@ -42,6 +43,11 @@ export interface OmpStartSessionInput {
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
+  /**
+   * Present when the host owns Claude account routing for this launch. Absent means an independent
+   * OMP launch: no marker, no probe, no routing frames.
+   */
+  routing?: OmpHostRouting;
 }
 
 export interface OmpRuntimeSession {

@@ -25,7 +25,9 @@ import type {
   OmpRuntimeEvent,
   OmpSessionState,
 } from "../rpc-types.js";
-import { FakeOmp, type FakeOmpSession } from "./fake-omp.js";
+import type { OmpRoutingAuthority } from "../account-routing-bridge.js";
+import { OmpCliRuntime } from "../cli-runtime.js";
+import { FakeOmp, type FakeOmpChild, type FakeOmpSession } from "./fake-omp.js";
 
 const CWD = "/tmp/paseo-omp-agent-test";
 
@@ -65,11 +67,19 @@ async function writeOmpHistory(history: OmpResumeHistory): Promise<string> {
   return sessionFile;
 }
 
+/** Runs the real `OmpCliRuntime` against a scripted JSONL child, with host account routing on. */
+export interface OmpManagedRouting {
+  authority: OmpRoutingAuthority;
+  child: FakeOmpChild;
+  agentId?: string;
+}
+
 export class OmpHarness {
   private readonly omp = new FakeOmp();
   private readonly client: OmpAgentClient;
   private readonly events: AgentStreamEvent[] = [];
   private session: OmpAgentSession | null = null;
+  private readonly routing?: OmpManagedRouting;
 
   constructor(
     options: {
@@ -78,12 +88,23 @@ export class OmpHarness {
       usagePollScheduler?: OmpUsagePollScheduler;
       providerIdleDeadlineMs?: number;
       runtimeEnv?: Record<string, string>;
+      routing?: OmpManagedRouting;
     } = {},
   ) {
+    const logger = pino({ level: "silent" });
+    this.routing = options.routing;
     this.client = new OmpAgentClient({
-      logger: pino({ level: "silent" }),
+      logger,
       runtimeSettings: { env: options.runtimeEnv },
-      runtime: this.omp,
+      runtime: options.routing
+        ? new OmpCliRuntime({
+            logger,
+            command: ["omp"],
+            spawnProcess: () => options.routing!.child.process,
+            probeCapabilities: async () => ({ complete: true, version: 1 }),
+          })
+        : this.omp,
+      accountRouting: options.routing?.authority,
       providerIdleScheduler: options.providerIdleScheduler,
       noTurnScheduler: options.noTurnScheduler,
       usagePollScheduler: options.usagePollScheduler,
@@ -110,7 +131,13 @@ export class OmpHarness {
   ): Promise<void> {
     const session = await this.client.createSession(
       { provider: "omp", cwd: CWD, ...config },
-      paseoTools || env ? { paseoTools, env } : undefined,
+      paseoTools || env || this.routing
+        ? {
+            paseoTools,
+            env,
+            ...(this.routing ? { agentId: this.routing.agentId ?? "agent-1" } : {}),
+          }
+        : undefined,
     );
     if (!(session instanceof OmpAgentSession)) {
       throw new Error("OMP client returned a non-OMP session");
@@ -196,6 +223,43 @@ export class OmpHarness {
     );
     runtime.finishTurn();
     return await run;
+  }
+
+  /**
+   * Starts a turn on the managed child and streams its first text. The caller decides when the turn
+   * ends with {@link endManagedTurn}, so account-routing frames can interleave with it.
+   */
+  async beginManagedTurn(input: string, output: string): Promise<{ completion: Promise<unknown> }> {
+    const { child } = this.requireRouting();
+    const completion = this.requireSession().run(input);
+    await child.waitForFrame("prompt");
+    child.emit({ type: "turn_start" });
+    child.emit({
+      type: "message_end",
+      message: { role: "user", content: input, entryId: "user-1" },
+    });
+    child.emit({
+      type: "message_start",
+      message: { role: "assistant", content: [], responseId: "omp-assistant-1" },
+    });
+    child.emit({
+      type: "message_update",
+      message: { role: "assistant", content: [], responseId: "omp-assistant-1" },
+      assistantMessageEvent: { type: "text_delta", delta: output },
+    });
+    return { completion };
+  }
+
+  endManagedTurn(): void {
+    this.requireRouting().child.emit({
+      type: "agent_end",
+      messages: [{ role: "assistant", content: [], responseId: "omp-assistant-1" }],
+    });
+  }
+
+  private requireRouting(): OmpManagedRouting {
+    if (!this.routing) throw new Error("OMP harness has no managed routing child");
+    return this.routing;
   }
 
   async runPromptWithCustomMessage(
