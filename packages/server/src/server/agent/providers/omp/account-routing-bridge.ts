@@ -16,6 +16,8 @@ import {
   OmpRpcRoutingRefreshDataSchema,
   type OmpRpcAccountRoutingFrame,
   type OmpRpcAdmitDecision,
+  type OmpRpcRoutingBillingState,
+  type OmpRpcRoutingCatalog,
 } from "./rpc-types.js";
 
 /** The slice of the host authority the native bridge may call. Nothing else crosses the boundary. */
@@ -51,6 +53,30 @@ export class OmpAccountRoutingRefusedError extends Error {
 }
 
 const CODE = /^[a-z_]{1,48}$/;
+
+const BILLING_REASON = {
+  no_evidence: null,
+  malformed: "malformed",
+  conflict: "conflicting",
+  untrusted_source: "untrusted_source",
+  identity_mismatch: "identity_mismatch",
+  invalid_observation: "malformed",
+  expired: "expired",
+} as const satisfies Record<NonNullable<OmpRpcRoutingBillingState["reason"]>, string | null>;
+
+/** Native catalogs name billing reasons in OMP's vocabulary and omit an absent one. */
+function toHostCatalog(catalog: OmpRpcRoutingCatalog): RoutingCatalog {
+  return {
+    ...catalog,
+    accounts: catalog.accounts.map((account) => ({
+      ...account,
+      billing: {
+        ...account.billing,
+        reason: account.billing.reason ? BILLING_REASON[account.billing.reason] : null,
+      },
+    })),
+  };
+}
 
 function refusedFrom(error: unknown): OmpAccountRoutingRefusedError {
   if (error instanceof OmpAccountRoutingRefusedError) return error;
@@ -212,7 +238,7 @@ export class OmpAccountRoutingBridge {
     }
     if (this.phase === "closed") throw new OmpAccountRoutingRefusedError("host_unavailable");
     this.accessibleNamespaces = new Set(data.accessibleNamespaces);
-    for (const catalog of data.catalogs) this.holdCatalog(catalog);
+    for (const catalog of data.catalogs) this.holdCatalog(toHostCatalog(catalog));
     this.registration = authority.attachRuntime(
       {
         runtimeInstanceId,
@@ -265,8 +291,9 @@ export class OmpAccountRoutingBridge {
               signal,
             ),
           );
-          this.holdCatalog(data.catalog);
-          return data.catalog;
+          const catalog = toHostCatalog(data.catalog);
+          this.holdCatalog(catalog);
+          return catalog;
         } catch (error) {
           throw refusedFrom(error);
         }
@@ -388,10 +415,10 @@ export class OmpAccountRoutingBridge {
           purpose: frame.purpose,
           requestGeneration: frame.requestGeneration,
           ...(frame.previousWaitId ? { previousWaitId: frame.previousWaitId } : {}),
-          catalog: frame.catalog,
+          catalog: toHostCatalog(frame.catalog),
           signal: controller.signal,
         });
-        this.holdCatalog(frame.catalog);
+        this.holdCatalog(toHostCatalog(frame.catalog));
       } catch {
         decision = { kind: "refuse", reason: "host_unavailable", requiresUserAction: false };
       }
