@@ -11,6 +11,7 @@ import {
   type SheetHeader,
 } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { ScrollableCodeSurface, SurfaceCard } from "@/components/ui/scrollable-code-surface";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -21,6 +22,7 @@ import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { useTimeAgo } from "@/hooks/use-time-ago";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useHostFeature } from "@/runtime/host-features";
 import { settingsStyles } from "@/styles/settings";
 import { resolveProviderLabel } from "@/utils/provider-definitions";
 import { compareMatchScores, scoreTextFields } from "@getpaseo/protocol/search/text-match";
@@ -49,10 +51,62 @@ function rankModels<T>(items: T[], query: string, fields: (item: T) => string[])
   return scored.map((entry) => entry.item);
 }
 
-function DiscoveredModelRow({ model }: { model: AgentModelDefinition }) {
+interface ModelToggleState {
+  /** Requested enabled state per model ID while its config patch is in flight. */
+  pending: Readonly<Record<string, boolean>>;
+  error: string | null;
+}
+
+interface ModelToggles {
+  disabledModelIds: readonly string[];
+  state: ModelToggleState;
+  onToggle: (model: AgentModelDefinition, isEnabled: boolean) => Promise<void>;
+}
+
+function applyPendingToggles(
+  disabledModelIds: readonly string[],
+  pending: ModelToggleState["pending"],
+): string[] {
+  const disabled = new Set(disabledModelIds);
+  for (const [modelId, isEnabled] of Object.entries(pending)) {
+    if (isEnabled) {
+      disabled.delete(modelId);
+    } else {
+      disabled.add(modelId);
+    }
+  }
+  return [...disabled];
+}
+
+function withoutPending(state: ModelToggleState, modelId: string): ModelToggleState["pending"] {
+  const { [modelId]: _settled, ...pending } = state.pending;
+  return pending;
+}
+
+function DiscoveredModelRow({
+  model,
+  toggles,
+}: {
+  model: AgentModelDefinition;
+  toggles: ModelToggles | null;
+}) {
+  const { t } = useTranslation();
+  const pendingValue = toggles?.state.pending[model.id];
+  const isSaving = pendingValue !== undefined;
+  const isEnabled = pendingValue ?? !toggles?.disabledModelIds.includes(model.id);
+  const isDimmed = toggles !== null && !isEnabled;
+  const needsFiller = toggles !== null && !model.description;
+  const handleValueChange = useCallback(
+    (next: boolean) => void toggles?.onToggle(model, next),
+    [model, toggles],
+  );
+
   return (
     <View style={sheetStyles.modelRow}>
-      <Text style={sheetStyles.modelTitle} numberOfLines={1}>
+      <Text
+        style={[sheetStyles.modelTitle, isDimmed && sheetStyles.modelTitleDisabled]}
+        numberOfLines={1}
+      >
         {model.label}
       </Text>
       <Text
@@ -67,6 +121,16 @@ function DiscoveredModelRow({ model }: { model: AgentModelDefinition }) {
         <Text style={sheetStyles.descriptionInline} numberOfLines={1}>
           {model.description}
         </Text>
+      ) : null}
+      {needsFiller ? <View style={sheetStyles.modelRowFiller} /> : null}
+      {toggles ? (
+        <Switch
+          value={isEnabled}
+          onValueChange={handleValueChange}
+          disabled={isSaving}
+          accessibilityLabel={t("settings.providers.models.toggleModel", { model: model.label })}
+          testID={`provider-model-toggle-${model.id}`}
+        />
       ) : null}
     </View>
   );
@@ -401,6 +465,8 @@ interface ProviderModalBodyProps {
   modelsRefreshing: boolean;
   searchActive: boolean;
   filteredDiscovered: AgentModelDefinition[];
+  discoveredHint: string | undefined;
+  modelToggles: ModelToggles | null;
   filteredCustom: ProviderProfileModel[];
   deletingModelId: string | null;
   onRefresh: () => void;
@@ -500,6 +566,8 @@ function ProviderModalBody(props: ProviderModalBodyProps) {
     modelsRefreshing,
     searchActive,
     filteredDiscovered,
+    discoveredHint,
+    modelToggles,
     filteredCustom,
     deletingModelId,
     onRefresh,
@@ -549,10 +617,16 @@ function ProviderModalBody(props: ProviderModalBodyProps) {
           <SectionHeader
             title={t("settings.providers.models.discovered")}
             count={filteredDiscovered.length}
+            hint={discoveredHint}
           />
+          {modelToggles?.state.error ? (
+            <Text style={[sheetStyles.errorText, sheetStyles.sectionError]}>
+              {modelToggles.state.error}
+            </Text>
+          ) : null}
           <View style={settingsStyles.card}>
             {filteredDiscovered.map((model) => (
-              <DiscoveredModelRow key={model.id} model={model} />
+              <DiscoveredModelRow key={model.id} model={model} toggles={modelToggles} />
             ))}
           </View>
         </View>
@@ -594,6 +668,11 @@ export function ProviderDiagnosticSheet({
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [diagSheetOpen, setDiagSheetOpen] = useState(false);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
+  const supportsDisabledModels = useHostFeature(serverId, "providerDisabledModels");
+  const [modelToggleState, setModelToggleState] = useState<ModelToggleState>({
+    pending: {},
+    error: null,
+  });
 
   const providerLabel = resolveProviderLabel(provider, snapshotEntries);
   const providerEntry = useMemo(
@@ -602,6 +681,10 @@ export function ProviderDiagnosticSheet({
   );
   const additionalModels = useMemo(
     () => config?.providers?.[provider]?.additionalModels ?? [],
+    [config?.providers, provider],
+  );
+  const disabledModelIds = useMemo(
+    () => config?.providers?.[provider]?.disabledModels ?? [],
     [config?.providers, provider],
   );
   const providerSnapshotRefreshing = providerEntry?.status === "loading";
@@ -617,6 +700,7 @@ export function ProviderDiagnosticSheet({
     serverId,
     provider,
     currentModels,
+    currentDisabledModels: providerEntry?.disabledModels,
     providerSnapshotRefreshing,
     previousCache: stableDiscoveredRef.current,
   });
@@ -627,6 +711,7 @@ export function ProviderDiagnosticSheet({
       setQuery("");
       setAddSheetOpen(false);
       setDiagSheetOpen(false);
+      setModelToggleState((current) => ({ ...current, error: null }));
     }
   }, [visible]);
 
@@ -667,6 +752,45 @@ export function ProviderDiagnosticSheet({
     [additionalModels, patchConfig, provider, refresh],
   );
 
+  const handleToggleModel = useCallback(
+    async (model: AgentModelDefinition, isEnabled: boolean) => {
+      const pending = { ...modelToggleState.pending, [model.id]: isEnabled };
+      const failure = t("settings.providers.models.failedToToggle", { model: model.label });
+      setModelToggleState({ pending, error: null });
+      let error: string | null = null;
+      try {
+        const saved = await patchConfig({
+          providers: {
+            [provider]: { disabledModels: applyPendingToggles(disabledModelIds, pending) },
+          },
+        });
+        if (!saved) error = failure;
+      } catch (cause) {
+        error = cause instanceof Error ? `${failure}: ${cause.message}` : failure;
+      }
+      setModelToggleState((current) => ({
+        pending: withoutPending(current, model.id),
+        error: error ?? current.error,
+      }));
+    },
+    [disabledModelIds, modelToggleState.pending, patchConfig, provider, t],
+  );
+
+  const modelToggles = useMemo<ModelToggles | null>(
+    () =>
+      supportsDisabledModels
+        ? { disabledModelIds, state: modelToggleState, onToggle: handleToggleModel }
+        : null,
+    [disabledModelIds, handleToggleModel, modelToggleState, supportsDisabledModels],
+  );
+  const disabledCount = modelToggles
+    ? discoveredModels.filter((model) => disabledModelIds.includes(model.id)).length
+    : 0;
+  const discoveredHint =
+    disabledCount > 0
+      ? t("settings.providers.models.disabledCount", { count: disabledCount })
+      : undefined;
+
   const sheetHeader = useMemo<SheetHeader>(
     () => ({
       title: providerLabel,
@@ -705,6 +829,8 @@ export function ProviderDiagnosticSheet({
           modelsRefreshing={modelsRefreshing}
           searchActive={Boolean(q)}
           filteredDiscovered={filteredDiscovered}
+          discoveredHint={discoveredHint}
+          modelToggles={modelToggles}
           filteredCustom={filteredCustom}
           deletingModelId={deletingModelId}
           onRefresh={handleRefreshModels}
@@ -806,6 +932,13 @@ const sheetStyles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
     flexShrink: 0,
+  },
+  modelTitleDisabled: {
+    color: theme.colors.foregroundMuted,
+  },
+  sectionError: {
+    marginBottom: theme.spacing[2],
+    marginLeft: theme.spacing[1],
   },
   modelRowFiller: {
     flex: 1,

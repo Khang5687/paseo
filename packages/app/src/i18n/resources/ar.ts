@@ -30,6 +30,7 @@ export const ar: TranslationResources = {
     back: "خلف",
     loading: "تحميل...",
     actions: {
+      save: "حفظ",
       back: "خلف",
       cancel: "يلغي",
       close: "يغلق",
@@ -123,6 +124,8 @@ export const ar: TranslationResources = {
     input: {
       accessibilityLabel: "وكيل الرسائل...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "ملء الشاشة",
+      exitFullscreen: "الخروج من ملء الشاشة",
       focusHint: "{{shortcut}}للتركيز",
       addAttachment: "إضافة مرفق",
       interruptAgent: "عامل المقاطعة",
@@ -467,6 +470,7 @@ export const ar: TranslationResources = {
       openToSide: "فتح إلى الجانب",
       copyPath: "نسخ المسار",
       copyRelativePath: "نسخ المسار النسبي",
+      copyFullPath: "نسخ المسار الكامل",
       revealIn: "إظهار في {{target}}",
       download: "تحميل",
       addToChat: "إضافة إلى الدردشة",
@@ -1139,6 +1143,7 @@ export const ar: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "مجموعة {{label}}",
+    unsentDraft: "مسودة غير مرسلة",
     statusBucket: {
       needsInput: "تحتاج إدخالاً",
       failed: "فشل",
@@ -1147,6 +1152,7 @@ export const ar: TranslationResources = {
       done: "تم",
     },
     display: {
+      showBackground: "إظهار مساحات العمل في الخلفية",
       trigger: "تفضيلات العرض",
       heading: "العرض",
       grouping: {
@@ -1193,6 +1199,10 @@ export const ar: TranslationResources = {
     },
     pinned: {
       title: "المثبتة",
+    },
+    settled: {
+      title: "المُنجزة",
+      titleWithCount: "المُنجزة ({{count}})",
     },
     host: {
       noHost: "لا مضيف",
@@ -1284,6 +1294,10 @@ export const ar: TranslationResources = {
         rename: "إعادة تسمية مساحة العمل",
         pin: "تثبيت في الأعلى",
         unpin: "إلغاء التثبيت",
+        settle: "تعيين كمُنجزة",
+        unsettle: "إلغاء الإنجاز",
+        settleWorkspace: "تعيين مساحة العمل كمُنجزة",
+        unsettleWorkspace: "إلغاء إنجاز مساحة العمل",
         archive: "أرشيف",
         archiveWorkspace: "أرشفة مساحة العمل",
         hideFromSidebar: "إخفاء من الشريط الجانبي",
@@ -1367,6 +1381,9 @@ export const ar: TranslationResources = {
     quitting: {
       title: "جارٍ إنهاء Paseo...",
       detail: "إيقاف البرنامج الخفي المحلي.",
+    },
+    quitConfirm: {
+      hint: "اضغط مع الاستمرار على ⌘Q أو اضغط مرتين للإنهاء",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2004,6 +2021,17 @@ export const ar: TranslationResources = {
     accessibility: "تم استخدام نافذة السياق{{percentage}}%",
   },
   review: {
+    feedback: {
+      send: "إرسال الملاحظات ({{count}})",
+      sending: "جارٍ إرسال الملاحظات ({{count}})",
+      chooseAgent: "اختر وكيلاً",
+      sent: "تم إرسال الملاحظات إلى {{recipient}}",
+      "no-agents": "افتح علامة تبويب وكيل في مساحة العمل هذه لإرسال الملاحظات.",
+      disconnected: "اتصل بالمضيف لإرسال الملاحظات.",
+      "no-context": "لم تعد التعليقات المحفوظة تتطابق مع هذا الفرق.",
+      failed: "تعذر إرسال الملاحظات. حاول مرة أخرى.",
+      prompt: "يرجى معالجة مراجعة الكود هذه.",
+    },
     comment: {
       add: "إضافة تعليق المراجعة",
       edit: "تحرير تعليق المراجعة",
@@ -2128,6 +2156,7 @@ export const ar: TranslationResources = {
           queue: "طابور",
         },
       },
+      defaultEditor: "المحرر الافتراضي",
       serviceUrls: {
         options: {
           ask: "بسأل",
@@ -2260,6 +2289,84 @@ export const ar: TranslationResources = {
         },
         moveUp: "نقل لأعلى",
         moveDown: "نقل لأسفل",
+      },
+      background: {
+        title: "الخلفية",
+        applyTo: {
+          title: "تطبيق على",
+          options: {
+            both: "كلاهما",
+            light: "فاتح",
+            dark: "داكن",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "صور الخلفية",
+          none: "بلا",
+          addImage: "إضافة صورة…",
+          importDefaultName: "صورة",
+        },
+        menu: {
+          actions: "إجراءات {{name}}",
+          edit: "تعديل…",
+          delete: "حذف",
+          details: "التفاصيل",
+        },
+        undo: {
+          action: "تراجع",
+          accessibilityLabel: "التراجع عن تغيير الخلفية",
+        },
+        catalog: {
+          browse: "تصفح",
+          hint: "ثبّت المزيد من الخلفيات من هذه الإضافة",
+        },
+        visibility: {
+          title: "وضوح الصورة",
+          hint: "يحافظ Paseo على وضوح النص تلقائيًا، لذا قد تظهر الصور الساطعة بشكل أخف.",
+        },
+        blur: {
+          title: "التمويه",
+          options: {
+            off: "إيقاف",
+            low: "منخفض",
+            medium: "متوسط",
+            high: "مرتفع",
+          },
+        },
+        showBehindSidebar: "إظهار خلف الشريط الجانبي",
+        showBehindContent: "إظهار خلف المحتوى",
+        status: {
+          reducedTransparency: "مخفية لأن «تقليل الشفافية» مفعّل في إعدادات النظام",
+          forcedColors: "مخفية أثناء تفعيل وضع التباين العالي",
+          error: "تعذّر عرض الخلفية",
+        },
+        errors: {
+          select: "تعذّر تطبيق الخلفية: {{message}}",
+          import: "تعذّر استيراد الصورة: {{message}}",
+          update: "تعذّر حفظ التغييرات: {{message}}",
+          remove: "تعذّر حذف الخلفية: {{message}}",
+        },
+        edit: {
+          title: "تعديل الخلفية",
+          name: "الاسم",
+          focal: "نقطة التركيز",
+          focalHint: "اضغط على الجزء من الصورة الذي يجب أن يبقى ظاهرًا.",
+          focalAccessibility: "اختيار نقطة التركيز",
+          save: "حفظ",
+          saving: "جارٍ الحفظ…",
+        },
+        delete: {
+          title: "حذف «{{name}}»؟",
+          message: "سيؤدي هذا إلى إزالة الصورة من هذا الجهاز.",
+          confirm: "حذف",
+        },
+        details: {
+          title: "التفاصيل",
+          author: "المؤلف",
+          license: "الترخيص",
+          source: "المصدر",
+          openSource: "فتح المصدر",
+        },
       },
       fonts: {
         title: "الخطوط",
@@ -2701,6 +2808,9 @@ export const ar: TranslationResources = {
         discovered: "اكتشف",
         custom: "نماذج مخصصة",
         updated: "تم تحديث{{time}}",
+        disabledCount: "{{count}} معطّل",
+        toggleModel: "تفعيل {{model}}",
+        failedToToggle: "تعذّر تحديث {{model}}",
       },
       diagnostic: {
         title: "التشخيص",

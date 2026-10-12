@@ -552,10 +552,13 @@ npm run cli -- ls -a -g              # List all agents globally
 npm run cli -- ls -a -g --json       # Same, as JSON
 npm run cli -- inspect <id>          # Show detailed agent info
 npm run cli -- logs <id>             # View agent timeline
+npm run cli -- logs <id> --seq <n> --epoch <e> --context 2 # Rows a Paseo debug reference points at
 npm run cli -- agent open <id>       # Focus an existing agent in Paseo Desktop
 npm run cli -- daemon status         # Check daemon status
 npm run cli -- clone owner/repo --dir ~/workspace # Clone GitHub repo and register project
 ```
+
+`logs --seq` takes the agent id, epoch, and seq from a Paseo debug reference and prints the projected timeline row whose `sourceSeqRanges` contain that seq, one JSON object per line, with `"target": true` on that row. One projected row can merge many seqs (a streamed assistant reply, a tool call and its completion), so any seq inside the row finds it. `--context <k>` adds the `k` rows displayed before and after it (default 0). A seq is only meaningful within its epoch: when `--epoch` differs from the agent's current epoch, the command fails and names both rather than matching a different row. `--subagent <subagentId>` searches that provider subagent's timeline, with `<id>` as the parent agent. `--seq` cannot be combined with `--follow`, `--tail`, `--filter`, or `--since`. There is no canonical-row view: the daemon keeps only projected rows (see [timeline-sync.md](timeline-sync.md)).
 
 Use the global `--host` option to point the CLI at a different daemon:
 

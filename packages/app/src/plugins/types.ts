@@ -6,6 +6,7 @@ import type {
   PluginCleanup,
   PluginThemeContribution,
 } from "@getpaseo/plugin";
+import type { PluginSkinContribution } from "@getpaseo/plugin/client";
 import type {
   PluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution,
@@ -40,6 +41,7 @@ export interface EvaluatedPlugin {
   clientSlashCommands: PluginClientSlashCommandContribution[];
   attachmentSources: PluginAttachmentSourceContribution[];
   themes: PluginThemeContribution[];
+  skins: PluginSkinContribution[];
   timelineTransformers: PluginTimelineTransformerContribution[];
   timelineRenderers: PluginTimelineRendererContribution[];
 }

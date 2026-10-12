@@ -31,6 +31,7 @@ export const ptBR: TranslationResources = {
     back: "Voltar",
     loading: "Carregando...",
     actions: {
+      save: "Salvar",
       back: "Voltar",
       cancel: "Cancelar",
       close: "Fechar",
@@ -124,6 +125,8 @@ export const ptBR: TranslationResources = {
     input: {
       accessibilityLabel: "Enviar mensagem ao agente...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "Tela cheia",
+      exitFullscreen: "Sair da tela cheia",
       focusHint: "{{shortcut}} para focar",
       addAttachment: "Adicionar anexo",
       interruptAgent: "Interromper agente",
@@ -472,6 +475,7 @@ export const ptBR: TranslationResources = {
       openToSide: "Abrir ao lado",
       copyPath: "Copiar caminho",
       copyRelativePath: "Copiar caminho relativo",
+      copyFullPath: "Copiar caminho completo",
       revealIn: "Mostrar no {{target}}",
       download: "Baixar",
       addToChat: "Adicionar ao chat",
@@ -1165,6 +1169,7 @@ export const ptBR: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
+    unsentDraft: "Rascunho não enviado",
     statusBucket: {
       needsInput: "Precisa de resposta",
       failed: "Com falha",
@@ -1173,6 +1178,7 @@ export const ptBR: TranslationResources = {
       done: "Concluído",
     },
     display: {
+      showBackground: "Mostrar espaços em segundo plano",
       trigger: "Preferências de exibição",
       heading: "Exibição",
       grouping: {
@@ -1219,6 +1225,10 @@ export const ptBR: TranslationResources = {
     },
     pinned: {
       title: "Fixados",
+    },
+    settled: {
+      title: "Resolvidos",
+      titleWithCount: "Resolvidos ({{count}})",
     },
     host: {
       noHost: "Nenhum host",
@@ -1310,6 +1320,10 @@ export const ptBR: TranslationResources = {
         rename: "Renomear workspace",
         pin: "Fixar no topo",
         unpin: "Desafixar",
+        settle: "Resolver",
+        unsettle: "Reabrir",
+        settleWorkspace: "Marcar workspace como resolvido",
+        unsettleWorkspace: "Reabrir workspace",
         archive: "Arquivar",
         archiveWorkspace: "Arquivar workspace",
         hideFromSidebar: "Ocultar da barra lateral",
@@ -1393,6 +1407,9 @@ export const ptBR: TranslationResources = {
     quitting: {
       title: "Saindo do Paseo...",
       detail: "Parando o daemon local.",
+    },
+    quitConfirm: {
+      hint: "Segure ⌘Q ou pressione duas vezes para sair",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2037,6 +2054,17 @@ export const ptBR: TranslationResources = {
     accessibility: "Janela de contexto {{percentage}}% usada",
   },
   review: {
+    feedback: {
+      send: "Enviar comentários ({{count}})",
+      sending: "Enviando comentários ({{count}})",
+      chooseAgent: "Escolher um agente",
+      sent: "Comentários enviados para {{recipient}}",
+      "no-agents": "Abra uma aba de agente neste espaço de trabalho para enviar comentários.",
+      disconnected: "Conecte-se ao host para enviar comentários.",
+      "no-context": "Os comentários salvos não correspondem mais a este diff.",
+      failed: "Falha ao enviar comentários. Tente novamente.",
+      prompt: "Por favor, atenda a esta revisão de código.",
+    },
     comment: {
       add: "Adicionar comentário de revisão",
       edit: "Editar comentário de revisão",
@@ -2162,6 +2190,7 @@ export const ptBR: TranslationResources = {
           queue: "Fila",
         },
       },
+      defaultEditor: "Editor padrão",
       serviceUrls: {
         options: {
           ask: "Perguntar",
@@ -2295,6 +2324,85 @@ export const ptBR: TranslationResources = {
         },
         moveUp: "Mover para cima",
         moveDown: "Mover para baixo",
+      },
+      background: {
+        title: "Plano de fundo",
+        applyTo: {
+          title: "Aplicar a",
+          options: {
+            both: "Ambos",
+            light: "Claro",
+            dark: "Escuro",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Imagens de plano de fundo",
+          none: "Nenhum",
+          addImage: "Adicionar imagem…",
+          importDefaultName: "Imagem",
+        },
+        menu: {
+          actions: "Ações para {{name}}",
+          edit: "Editar…",
+          delete: "Excluir",
+          details: "Detalhes",
+        },
+        undo: {
+          action: "Desfazer",
+          accessibilityLabel: "Desfazer mudança de plano de fundo",
+        },
+        catalog: {
+          browse: "Explorar",
+          hint: "Instale mais planos de fundo deste plugin",
+        },
+        visibility: {
+          title: "Visibilidade da imagem",
+          hint: "O Paseo mantém o texto legível automaticamente, então imagens claras podem mostrar menos da arte.",
+        },
+        blur: {
+          title: "Desfoque",
+          options: {
+            off: "Desligado",
+            low: "Baixo",
+            medium: "Médio",
+            high: "Alto",
+          },
+        },
+        showBehindSidebar: "Mostrar atrás da barra lateral",
+        showBehindContent: "Mostrar atrás do conteúdo",
+        status: {
+          reducedTransparency:
+            "Oculto porque Reduzir transparência está ativado nos ajustes do sistema",
+          forcedColors: "Oculto enquanto o modo de alto contraste está ativado",
+          error: "Não foi possível mostrar o plano de fundo",
+        },
+        errors: {
+          select: "Não foi possível aplicar o plano de fundo: {{message}}",
+          import: "Não foi possível importar a imagem: {{message}}",
+          update: "Não foi possível salvar as alterações: {{message}}",
+          remove: "Não foi possível excluir o plano de fundo: {{message}}",
+        },
+        edit: {
+          title: "Editar plano de fundo",
+          name: "Nome",
+          focal: "Ponto focal",
+          focalHint: "Toque na parte da imagem que deve permanecer visível.",
+          focalAccessibility: "Escolher ponto focal",
+          save: "Salvar",
+          saving: "Salvando…",
+        },
+        delete: {
+          title: 'Excluir "{{name}}"?',
+          message: "Isso remove a imagem deste dispositivo.",
+          confirm: "Excluir",
+        },
+        details: {
+          title: "Detalhes",
+          author: "Autor",
+          license: "Licença",
+          source: "Fonte",
+          openSource: "Abrir fonte",
+        },
       },
       fonts: {
         title: "Fontes",
@@ -2743,6 +2851,9 @@ export const ptBR: TranslationResources = {
         discovered: "Descobertos",
         custom: "Modelos personalizados",
         updated: "Atualizado {{time}}",
+        disabledCount: "{{count}} desativados",
+        toggleModel: "Ativar {{model}}",
+        failedToToggle: "Não foi possível atualizar {{model}}",
       },
       diagnostic: {
         title: "Diagnóstico",

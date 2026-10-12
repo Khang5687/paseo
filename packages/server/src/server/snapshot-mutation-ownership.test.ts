@@ -1,4 +1,5 @@
 import {
+  createAgentMessageQueueStub,
   createMessageReceiptsStub,
   createTestCreationService,
 } from "./test-utils/session-stubs.js";
@@ -104,6 +105,7 @@ describe("snapshot mutation ownership boundary", () => {
     const session = asInternals<SessionInternals>(
       new Session({
         messageReceipts: createMessageReceiptsStub(),
+        agentMessageQueue: createAgentMessageQueueStub(),
         creationService: createTestCreationService(),
         clientId: "test-client",
         permissions: OWNER_PERMISSIONS,

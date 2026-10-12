@@ -134,6 +134,7 @@ import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
+import { attachWorkspaceAutoUnsettle } from "./workspace-settle.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
   createPaseoToolCatalog,
@@ -852,6 +853,9 @@ export async function createPaseoDaemon(
     try {
       fileHandle = await open(entry.absolutePath, DOWNLOAD_OPEN_FLAGS);
       const fileStats = await fileHandle.stat();
+      if (res.destroyed) {
+        return;
+      }
       if (!fileStats.isFile()) {
         res.status(404).json({ error: "File not found" });
         return;
@@ -863,6 +867,7 @@ export async function createPaseoDaemon(
 
       const stream = fileHandle.createReadStream();
       fileHandle = null;
+      res.once("close", () => stream.destroy());
       stream.on("error", (err) => {
         logger.error({ err }, "Failed to stream download");
         if (!res.headersSent) {
@@ -993,6 +998,11 @@ export async function createPaseoDaemon(
     agentManager,
     agentStorage,
   );
+  const detachWorkspaceAutoUnsettle = attachWorkspaceAutoUnsettle({
+    agentManager,
+    workspaceRegistry,
+    logger,
+  });
   await agentStorage.initialize();
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
   await bootstrapWorkspaceRegistries({
@@ -1055,10 +1065,13 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
+    context?: { callerWorkspaceId?: string },
   ): Promise<string> => {
     const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
       cwd,
       resolveFirstAgentPromptTitle(firstAgentContext),
+      undefined,
+      context,
     );
     if (firstAgentContext) {
       workspaceAutoName.scheduleForDirectory({
@@ -1105,8 +1118,9 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateAndBroadcastExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
+    context?: { callerWorkspaceId?: string },
   ): Promise<string> => {
-    const workspaceId = await ensureWorkspaceForCreateExternal(cwd, firstAgentContext);
+    const workspaceId = await ensureWorkspaceForCreateExternal(cwd, firstAgentContext, context);
     await emitWorkspaceUpdatesExternal([workspaceId]);
     return workspaceId;
   };
@@ -1423,11 +1437,12 @@ export async function createPaseoDaemon(
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
     projectRegistry,
-    createDirectoryWorkspace: async (cwd, title, projectId) => {
+    createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
         cwd,
         title,
         projectId,
+        context,
       );
       await emitWorkspaceUpdatesExternal([workspace.workspaceId]);
       return workspace;
@@ -1848,6 +1863,7 @@ export async function createPaseoDaemon(
     }).catch((error) => logger.warn({ err: error }, "Plugin lifecycle events did not finish"));
     await agentManager.flushForShutdown().catch(() => undefined);
     detachAgentStoragePersistence();
+    detachWorkspaceAutoUnsettle();
     await agentStorage.flush().catch(() => undefined);
     await agentProviderRuntime.shutdown();
     unbindAccountRouting();
@@ -1902,7 +1918,7 @@ export async function createPaseoDaemon(
 const AGENT_CLOSE_TIMEOUT_MS = 5_000;
 
 async function closeAllAgents(logger: Logger, agentManager: AgentManager): Promise<void> {
-  const agents = agentManager.listAgents();
+  const agents = agentManager.listAgents({ includeInternal: true });
   await Promise.all(
     agents.map(async (agent) => {
       try {

@@ -267,9 +267,15 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     surface4: tint.surface4,
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
     surfaceSidebar: tint.surfaceSidebar,
-    surfaceSidebarHover: tint.surface1,
-    surfaceSidebarSelected: tint.surface3,
+    surfaceSidebarHover: tint.surface3,
+    surfaceSidebarSelected: tint.surface4,
     surfaceWorkspace: tint.surface0,
+    // Page backgrounds only (see docs/skins.md). An active skin turns them transparent and the
+    // backdrop dims its art to a contrast-safe opacity instead, so nested page backgrounds never
+    // stack. Never append alpha to them or use them as text/ring/fill colors.
+    canvas: tint.surface0,
+    canvasSidebar: tint.surfaceSidebar,
+    canvasWorkspace: tint.surface0,
     interactionHighlight: "rgba(0, 0, 0, 0.06)",
 
     foreground: tint.foreground,
@@ -401,6 +407,12 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
     surfaceSidebarHover: tint.surface1,
     surfaceSidebarSelected: tint.surface2,
     surfaceWorkspace: tint.surface1,
+    // Page backgrounds only (see docs/skins.md). An active skin turns them transparent and the
+    // backdrop dims its art to a contrast-safe opacity instead, so nested page backgrounds never
+    // stack. Never append alpha to them or use them as text/ring/fill colors.
+    canvas: tint.surface0,
+    canvasSidebar: tint.surfaceSidebar,
+    canvasWorkspace: tint.surface1,
     interactionHighlight: "rgba(255, 255, 255, 0.08)",
 
     foreground,

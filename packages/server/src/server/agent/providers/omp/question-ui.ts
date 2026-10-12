@@ -1,8 +1,10 @@
 import type {
+  AgentMetadata,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentProvider,
 } from "../../agent-sdk-types.js";
+import { readQuestionAnswerList } from "../../question-answers.js";
 import type { OmpAgentMessage, OmpRuntimeEvent } from "./rpc-types.js";
 
 type UiRequest = Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>;
@@ -167,7 +169,28 @@ function readQuestions(args: unknown): AskQuestion[] {
   });
 }
 
-function selectedAnswer(
+function askAnswer(
+  updatedInput: AgentMetadata | undefined,
+  labels: string[],
+  multi: boolean,
+): { selected: string[]; custom: string | null } | null {
+  const answerList = readQuestionAnswerList(updatedInput, ANSWER_HEADER);
+  if (answerList) {
+    // The app lists the checked labels, then the Other text. Any entry that is not
+    // exactly an option label is the Other text.
+    const custom = answerList.filter((item) => !labels.includes(item));
+    return {
+      selected: answerList.filter((item) => labels.includes(item)),
+      custom: custom.length > 0 ? custom.join(", ") : null,
+    };
+  }
+  const answer = record(updatedInput?.answers)?.[ANSWER_HEADER];
+  return typeof answer === "string" ? legacySelectedAnswer(answer, labels, multi) : null;
+}
+
+// COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before
+// v0.11.0 send only a comma-joined answer, so labels are peeled off its front.
+function legacySelectedAnswer(
   answer: string,
   labels: string[],
   multi: boolean,
@@ -177,8 +200,7 @@ function selectedAnswer(
       ? { selected: [answer], custom: null }
       : { selected: [], custom: answer };
 
-  // The shared question UI sends a comma-joined answer in click order. Consume
-  // exact option labels from the front; any remaining text is the Other answer.
+  // Consume exact option labels from the front; any remaining text is the Other answer.
   let remaining = answer;
   const selected: string[] = [];
   while (remaining.length > 0) {
@@ -281,25 +303,19 @@ export class OmpQuestionUi {
       return;
     }
     const question = this.questions.find((item) => item.title === request.title);
-    const answers = record(
-      response.behavior === "allow" ? response.updatedInput?.answers : undefined,
-    );
-    const answer = answers?.[ANSWER_HEADER];
-    if (response.behavior === "deny" || typeof answer !== "string" || !question) {
-      this.pending = null;
-      send(request.id, { cancelled: true });
-      return;
-    }
-
     const labels = Array.isArray(request.metadata.optionLabels)
       ? request.metadata.optionLabels.filter((item): item is string => typeof item === "string")
       : [];
-    const { selected, custom } = selectedAnswer(answer, labels, question.multi);
-    if (selected.length === 0 && custom === null) {
+    const answer =
+      response.behavior === "allow" && question
+        ? askAnswer(response.updatedInput, labels, question.multi)
+        : null;
+    if (!question || !answer || (answer.selected.length === 0 && answer.custom === null)) {
       this.pending = null;
       send(request.id, { cancelled: true });
       return;
     }
+    const { selected, custom } = answer;
     if (question.multi) {
       this.pending = { question, selected: selected.slice(1), custom, next: "select" };
       send(request.id, { value: selected[0] ?? OTHER });

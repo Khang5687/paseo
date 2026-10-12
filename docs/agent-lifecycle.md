@@ -50,6 +50,29 @@ older cancellation from settling a newer turn. If interruption is rejected or ti
 keeps its active foreground turn and replacement, reload, rewind, and Stop report the failure.
 Accepting new work after an ambiguous interruption would create a split-brain session.
 
+### Queued messages
+
+The daemon owns the queue. Each agent record carries `queuedMessages` in the encoded wire form (text,
+base64 images, agent attachments), so the daemon can replay an entry without the client that queued
+it and the queue survives a restart. `AgentMessageQueueDispatcher`
+(`packages/server/src/server/agent/agent-message-queue.ts`) pops the head on every transition to
+`idle` and sends it through the same path as `send_agent_message`, one entry per turn. Adding while
+the agent is already idle dispatches immediately. `send_now` pops a specific entry and sends it into
+the active turn with the caller's steer/interrupt behavior.
+
+Snapshots carry summaries only (`id`, `text`, counts, `createdAt`); the bytes stay on the record.
+Every client renders the same list from its agent subscription and edits it through the
+`agent.queue.*` RPCs. `remove` returns the full entry so the caller can put it back in a composer.
+
+The app keeps a per-client mirror of the entries it queued itself, keyed by the daemon's id
+(`packages/app/src/composer/daemon-queue.ts`). The daemon holds the wire form, which cannot be turned
+back into forge, workspace-file, or plugin composer attachments; a same-client edit restores from the
+mirror instead. The mirror is pruned against each snapshot, so a dispatched or cross-client-removed
+entry never lingers. Cross-client edits restore text, images, and uploaded files and drop the rest.
+
+Hosts without `features.messageQueue` fall back to the client-local queue the app shipped before
+(`// COMPAT(messageQueue)` marks both branches).
+
 ## Relationships
 
 Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and always stamps `paseo.parent-agent-id`, pointing back at the caller. Omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.
@@ -69,11 +92,11 @@ the marker. Closing a tab sets that client's label to `false`. Any `true` client
 open. Detach clears the parent and every open-tab label. The surviving child therefore becomes a
 normal root agent immediately, and closing its still-open tab archives it.
 
-Runtime ownership is resolved from explicit workspace ID and caller context, never from `cwd`. Workspace creation is a separate operation with `local | worktree` isolation; agent creation only selects an existing workspace.
+Runtime ownership is resolved from explicit workspace ID and caller context, never from `cwd`. Workspace creation is a separate operation with `local | worktree` isolation; agent creation reuses that workspace unless a new workspace is explicitly requested.
 
 Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an agent-facing MCP tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
 
-`notifyOnFinish` defaults to `true` for agent-scoped creation and background prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` only for truly fire-and-forget agents or prompts.
+`notifyOnFinish` defaults to `true` for agent-scoped creation and prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` only for truly fire-and-forget agents or prompts.
 Permission requests are notification checkpoints, not the end of that subscription. The caller is notified again after a permission response when the child finishes, errors, or requests another permission.
 The permission notification includes the normalized request plus the child and request IDs, so the caller can inspect it and respond without fetching agent status.
 A watched child that closes before its finish event also notifies the caller so delegated work cannot disappear silently during archive or workspace teardown.
@@ -83,6 +106,32 @@ A watched child that closes before its finish event also notifies the caller so 
 Some providers can create their own child sessions inside one provider runtime. OMP's task tool reports these with `child_session` events; `AgentManager` imports the live provider handle, stamps `paseo.parent-agent-id`, and surfaces the result as a normal subagent in the parent's subagents track.
 
 The provider still owns the underlying runtime. Paseo keeps an agent record so the child can be opened, tracked, archived, and cascaded with the parent, but prompts and history hydration route through the provider adapter for that native child handle.
+
+## Background workspaces
+
+`workspace.background` controls discovery only. Background workspaces contain ordinary durable
+agents and terminals: provider history, plugin hooks, parentage, archive, and restart recovery
+keep their normal behavior. Visibility is creation-only; selecting an existing workspace cannot
+change it. New workspaces default to false, inherit the caller workspace's value when an agent
+creates one without an override, and accept explicit true or false.
+
+The daemon derives agent discovery from workspace ownership. Default workspace and agent lists,
+including History requests, exclude background work; `filter.includeBackground` includes it.
+Exact-ID operations bypass discovery filtering. The app replicates both kinds and filters only
+its sidebar with **Show background**, so direct navigation and restored tabs remain available.
+
+Sequenced directories keep complete canonical collections. A filtered read must never replace
+those collections with its subset. Inclusive and default observations have distinct cursor
+scopes, so changing scope requires a fresh snapshot rather than reusing an incomplete cache.
+Clients gate creation and inclusive discovery on `features.backgroundWorkspaces`.
+
+### Private daemon helpers
+
+Branch-name and commit-message generators still use private disposable internal runtimes.
+`AgentManager` does not persist them or their provider sessions, excludes them from public
+discovery and plugin hooks, and drops their timelines on archive. An archived helper retains
+its exact-ID result briefly to cover completion before a waiter attaches. This internal
+lifecycle is separate from public workspace visibility and is not a public creation option.
 
 ## Archive
 
@@ -159,6 +208,10 @@ Agent lifecycle status stays literal: a parent agent is `idle` when its own turn
 Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. Same-workspace descendants contribute `running` to the nearest ancestor in that workspace; their non-running attention, permission, and error states stay in the parent's subagents track. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
 
 Running provider-native subagents contribute `running` to the workspace owned by their parent agent. Their completed, failed, and canceled states stay in the parent's subagents track.
+
+The sidebar uses the same ownership to place workspaces. Workspace W renders as an indented child row under workspace P when every unarchived workspace-root agent in W (an agent whose parent is not in W) is a subagent of an unarchived agent in P. W's own same-workspace helpers do not count. A root agent in W, or subagents of a second workspace, keep W at the top level. Detach and parent archive (which detaches cross-workspace children) return it there without user action. Nesting chains, and a parent cycle still places every row once. The client derives this from its agent list (`packages/app/src/subagents/workspace-parents.ts`); the daemon sends no relationship field.
+
+A child row keeps its own status, actions, and pin. It follows its parent's row: a collapsed project hides both, and pinning the parent brings its children into Pinned beneath it; settling the parent takes them into Settled the same way. A child pinned or settled on its own stays a top-level row in that section when its parent is not. A child in a different project from its parent stays in its own project. Status grouping is the exception: a child nests only inside its parent's status group, so a child that needs attention is never hidden under a finished parent.
 
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion

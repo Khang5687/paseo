@@ -18,6 +18,7 @@ import {
   parseOmpCapabilityProbe,
   type OmpCapabilityProbe,
 } from "./account-routing-bridge.js";
+import { writeOmpConfigOverlay } from "./config-overlay.js";
 import { establishOmpProtocol } from "./protocol-session.js";
 import {
   buildOmpLaunch,
@@ -38,9 +39,12 @@ import {
   OmpRpcCommandSchema,
   parseOmpRuntimeEvent,
   OMP_HOST_ACCOUNT_ROUTING_ENV,
+  OmpGoalCommandResultSchema,
   OmpSessionStateSchema,
   OmpSessionStatsSchema,
   type OmpThinkingLevel,
+  type OmpGoalAction,
+  type OmpGoalModeState,
   type OmpAgentMessage,
   type OmpModel,
   type OmpPromptAck,
@@ -95,6 +99,7 @@ export class OmpCliRuntime implements OmpRuntime {
       runtimeSettings: this.options.runtimeSettings,
       session: input,
     });
+    launch.argv.push("--config", writeOmpConfigOverlay());
     // No await on the independent path: the child must be wired in the same tick it was spawned.
     const plan: RoutingPlan = input.routing
       ? await this.planRouting(input.routing, launch)
@@ -218,6 +223,7 @@ function withRoutingMarker(env: Record<string, string>, plan: RoutingPlan): Reco
 
 class OmpCliRuntimeSession implements OmpRuntimeSession {
   private readonly subscribers = new Set<(event: OmpRuntimeEvent) => void>();
+  private refreshCommandsUnsupported = false;
   activeBranchEntryId?: string;
 
   constructor(
@@ -274,6 +280,11 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
 
   async setAutoCompaction(enabled: boolean): Promise<void> {
     await this.request({ type: "set_auto_compaction", enabled });
+  }
+
+  async goal(action: OmpGoalAction): Promise<OmpGoalModeState | null> {
+    const result = await this.request({ type: "goal", ...action });
+    return OmpGoalCommandResultSchema.parse(result).state;
   }
 
   async abort(): Promise<void> {
@@ -342,6 +353,25 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
   async getCommands(): Promise<OmpRpcSlashCommand[]> {
     const data = OmpCommandsResultSchema.parse(await this.request({ type: this.commandsRpcName }));
     return data.commands ?? [];
+  }
+
+  async refreshCommands(): Promise<OmpRpcSlashCommand[]> {
+    if (this.refreshCommandsUnsupported) {
+      return await this.getCommands();
+    }
+    try {
+      const data = OmpCommandsResultSchema.parse(await this.request({ type: "refresh_commands" }));
+      return data.commands ?? [];
+    } catch (error) {
+      // COMPAT(ompRefreshCommands): added in v0.11.0, remove after 2027-04-07 once the
+      // minimum supported OMP version answers `refresh_commands`. Older binaries reject it
+      // as an unknown command; list the commands they already know instead.
+      if (!(error instanceof Error) || error.message !== "Unknown command: refresh_commands") {
+        throw error;
+      }
+      this.refreshCommandsUnsupported = true;
+      return await this.getCommands();
+    }
   }
 
   async setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void> {

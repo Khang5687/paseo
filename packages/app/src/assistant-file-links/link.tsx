@@ -4,6 +4,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { isNative, isWeb } from "@/constants/platform";
 import { MarkdownTextSpan } from "@/components/markdown-text";
 import { MarkdownLinkText } from "@/components/markdown/link-text";
+import { FileLinkContextMenu } from "./context-menu";
 import { AssistantLinkPressProvider, type AssistantLinkPress } from "./link-press-context";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
@@ -31,7 +32,7 @@ export function AssistantMarkdownLink({
   monoSurface,
   children,
 }: AssistantMarkdownLinkProps) {
-  const { target, onHoverIn, onPress } = useFileLink(source);
+  const { target, fileCandidate, onHoverIn, onPress, resolveFile } = useFileLink(source);
   const { configRef } = useAssistantFileLinkResolverContext();
   const workspaceRoot = configRef.current.workspaceRoot;
   const tooltipPath = useMemo(
@@ -99,7 +100,17 @@ export function AssistantMarkdownLink({
     </a>
   );
 
-  return <FileLinkHoverTooltip filePath={tooltipPath}>{anchor}</FileLinkHoverTooltip>;
+  return (
+    <FileLinkHoverTooltip filePath={tooltipPath}>
+      {fileCandidate ? (
+        <FileLinkContextMenu fileCandidate={fileCandidate} resolveFile={resolveFile}>
+          {anchor}
+        </FileLinkContextMenu>
+      ) : (
+        anchor
+      )}
+    </FileLinkHoverTooltip>
+  );
 }
 
 interface AssistantMarkdownCodeLinkProps {

@@ -26,6 +26,7 @@ export const en = {
     back: "Back",
     loading: "Loading...",
     actions: {
+      save: "Save",
       back: "Back",
       cancel: "Cancel",
       close: "Close",
@@ -119,6 +120,8 @@ export const en = {
     input: {
       accessibilityLabel: "Message agent...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "Fullscreen",
+      exitFullscreen: "Exit fullscreen",
       focusHint: "{{shortcut}} to focus",
       addAttachment: "Add attachment",
       interruptAgent: "Interrupt agent",
@@ -464,6 +467,7 @@ export const en = {
       openToSide: "Open to the side",
       copyPath: "Copy path",
       copyRelativePath: "Copy relative path",
+      copyFullPath: "Copy full path",
       revealIn: "Reveal in {{target}}",
       download: "Download",
       addToChat: "Add to chat",
@@ -1147,6 +1151,7 @@ export const en = {
   },
   sidebar: {
     statusGroupAccessibility: "{{label}} group",
+    unsentDraft: "Unsent draft",
     statusBucket: {
       needsInput: "Needs input",
       failed: "Failed",
@@ -1155,6 +1160,7 @@ export const en = {
       done: "Done",
     },
     display: {
+      showBackground: "Show background",
       trigger: "Display preferences",
       heading: "Display",
       grouping: {
@@ -1201,6 +1207,10 @@ export const en = {
     },
     pinned: {
       title: "Pinned",
+    },
+    settled: {
+      title: "Settled",
+      titleWithCount: "Settled ({{count}})",
     },
     host: {
       noHost: "No host",
@@ -1292,6 +1302,10 @@ export const en = {
         rename: "Rename workspace",
         pin: "Pin to top",
         unpin: "Unpin",
+        settle: "Settle",
+        unsettle: "Unsettle",
+        settleWorkspace: "Settle workspace",
+        unsettleWorkspace: "Unsettle workspace",
         archive: "Archive",
         archiveWorkspace: "Archive workspace",
         hideFromSidebar: "Hide from sidebar",
@@ -1375,6 +1389,9 @@ export const en = {
     quitting: {
       title: "Quitting Paseo...",
       detail: "Stopping the local daemon.",
+    },
+    quitConfirm: {
+      hint: "Hold ⌘Q or press twice to quit",
     },
     daemon: {
       title: "Daemon",
@@ -2029,6 +2046,17 @@ export const en = {
     accessibility: "Context window {{percentage}}% used",
   },
   review: {
+    feedback: {
+      send: "Send feedback ({{count}})",
+      sending: "Sending feedback ({{count}})",
+      chooseAgent: "Choose an agent",
+      sent: "Feedback sent to {{recipient}}",
+      "no-agents": "Open an agent tab in this workspace to send feedback.",
+      disconnected: "Connect to the host to send feedback.",
+      "no-context": "Saved comments no longer match this diff.",
+      failed: "Failed to send feedback. Try again.",
+      prompt: "Please address this code review.",
+    },
     comment: {
       add: "Add review comment",
       edit: "Edit review comment",
@@ -2252,6 +2280,7 @@ export const en = {
           queue: "Queue",
         },
       },
+      defaultEditor: "Default editor",
       serviceUrls: {
         options: {
           ask: "Ask",
@@ -2384,6 +2413,84 @@ export const en = {
         },
         moveUp: "Move up",
         moveDown: "Move down",
+      },
+      background: {
+        title: "Background",
+        applyTo: {
+          title: "Apply to",
+          options: {
+            both: "Both",
+            light: "Light",
+            dark: "Dark",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Background images",
+          none: "None",
+          addImage: "Add image…",
+          importDefaultName: "Image",
+        },
+        menu: {
+          actions: "Actions for {{name}}",
+          edit: "Edit…",
+          delete: "Delete",
+          details: "Details",
+        },
+        undo: {
+          action: "Undo",
+          accessibilityLabel: "Undo background change",
+        },
+        catalog: {
+          browse: "Browse",
+          hint: "Install more skins from this plugin",
+        },
+        visibility: {
+          title: "Art visibility",
+          hint: "Paseo keeps text readable automatically, so bright images may show less art.",
+        },
+        blur: {
+          title: "Blur",
+          options: {
+            off: "Off",
+            low: "Low",
+            medium: "Medium",
+            high: "High",
+          },
+        },
+        showBehindSidebar: "Show behind sidebar",
+        showBehindContent: "Show behind content",
+        status: {
+          reducedTransparency: "Hidden because Reduce transparency is on in your system settings",
+          forcedColors: "Hidden while high contrast mode is on",
+          error: "The background could not be shown",
+        },
+        errors: {
+          select: "Could not apply background: {{message}}",
+          import: "Could not import image: {{message}}",
+          update: "Could not save changes: {{message}}",
+          remove: "Could not delete background: {{message}}",
+        },
+        edit: {
+          title: "Edit background",
+          name: "Name",
+          focal: "Focal point",
+          focalHint: "Tap the part of the image that should stay in view.",
+          focalAccessibility: "Choose focal point",
+          save: "Save",
+          saving: "Saving…",
+        },
+        delete: {
+          title: 'Delete "{{name}}"?',
+          message: "This removes the image from this device.",
+          confirm: "Delete",
+        },
+        details: {
+          title: "Details",
+          author: "Author",
+          license: "License",
+          source: "Source",
+          openSource: "Open source",
+        },
       },
       fonts: {
         title: "Fonts",
@@ -2829,6 +2936,9 @@ export const en = {
         discovered: "Discovered",
         custom: "Custom models",
         updated: "Updated {{time}}",
+        disabledCount: "{{count}} disabled",
+        toggleModel: "Enable {{model}}",
+        failedToToggle: "Failed to update {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",

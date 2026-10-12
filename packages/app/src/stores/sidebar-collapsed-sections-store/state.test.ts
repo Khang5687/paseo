@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   type CollapsedProjectsState,
+  createDefaultCollapsedProjectsState,
   mergePersistedCollapsedProjects,
   serializeCollapsedProjects,
   setProjectCollapsed,
   togglePinnedCollapsed,
   toggleProjectCollapsed,
+  toggleSettledCollapsed,
   toggleWorkspaceGroupCollapsed,
 } from "@/stores/sidebar-collapsed-sections-store/state";
 
@@ -14,6 +16,7 @@ function emptyState(): CollapsedProjectsState {
     collapsedProjectKeys: new Set(),
     collapsedWorkspaceGroupKeys: new Set(),
     collapsedPinned: false,
+    collapsedSettled: false,
   };
 }
 
@@ -35,12 +38,14 @@ describe("sidebar collapsed projects transitions", () => {
       collapsedProjectKeys: new Set(["project-a", "project-b"]),
       collapsedWorkspaceGroupKeys: new Set(["running"]),
       collapsedPinned: true,
+      collapsedSettled: false,
     };
 
     expect(serializeCollapsedProjects(state)).toEqual({
       collapsedProjectKeys: ["project-a", "project-b"],
       collapsedWorkspaceGroupKeys: ["running"],
       collapsedPinned: true,
+      collapsedSettled: false,
     });
   });
 
@@ -50,6 +55,25 @@ describe("sidebar collapsed projects transitions", () => {
 
     const restored = mergePersistedCollapsedProjects({ collapsedPinned: true }, emptyState());
     expect(restored.collapsedPinned).toBe(true);
+  });
+
+  it("starts the settled section collapsed, also under storage written before it", () => {
+    const initial = createDefaultCollapsedProjectsState();
+    expect(initial.collapsedSettled).toBe(true);
+
+    const restored = mergePersistedCollapsedProjects({ collapsedPinned: true }, initial);
+    expect(restored.collapsedSettled).toBe(true);
+  });
+
+  it("restores an expanded settled section across a reload", () => {
+    const expanded = toggleSettledCollapsed(createDefaultCollapsedProjectsState());
+    expect(expanded.collapsedSettled).toBe(false);
+
+    const restored = mergePersistedCollapsedProjects(
+      serializeCollapsedProjects(expanded),
+      createDefaultCollapsedProjectsState(),
+    );
+    expect(restored.collapsedSettled).toBe(false);
   });
 
   it("rejects the complete value when a persisted project key is invalid", () => {
