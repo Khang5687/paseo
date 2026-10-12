@@ -141,6 +141,9 @@ import {
 } from "./agent/tools/paseo-tools.js";
 import type { PaseoToolRuntimeContext } from "./agent/tools/types.js";
 import { createAgentProviderRuntime } from "./agent/provider-runtime.js";
+import { bindOmpAccountRouting } from "./agent/provider-registry.js";
+import { AccountRoutingAuthority } from "./account-routing/authority.js";
+import { AccountRoutingStore } from "./account-routing/store.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import {
@@ -240,6 +243,23 @@ const MCP_DEBUG_BATCH_LIMIT = 10;
 const MCP_DEBUG_SECRET = "[redacted]";
 const DOWNLOAD_OPEN_FLAGS =
   process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
+
+/**
+ * One host routing authority per daemon. An unreadable policy file disables host routing rather than
+ * the daemon: OMP then launches independent, and the file is left for the owner to repair.
+ */
+function openAccountRoutingAuthority(
+  paseoHome: string,
+  logger: Logger,
+): AccountRoutingAuthority | undefined {
+  try {
+    const store = AccountRoutingStore.open(path.join(paseoHome, "account-routing.json"));
+    return new AccountRoutingAuthority({ store });
+  } catch (error) {
+    logger.error({ err: error }, "Account routing policy is unreadable; host routing is disabled");
+    return undefined;
+  }
+}
 
 function formatHostForHttpUrl(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
@@ -916,6 +936,10 @@ export async function createPaseoDaemon(
     isDirectory: async (target) => (await stat(target).catch(() => null))?.isDirectory() ?? false,
     logger,
   });
+  const accountRouting = openAccountRoutingAuthority(config.paseoHome, logger);
+  const unbindAccountRouting = accountRouting
+    ? bindOmpAccountRouting(accountRouting)
+    : () => undefined;
   const agentProviderRuntime = await createAgentProviderRuntime({
     paseoHome: config.paseoHome,
     logger,
@@ -1792,6 +1816,8 @@ export async function createPaseoDaemon(
       await pluginRuntime.stopAllPlugins().catch(() => undefined);
       await serviceProxy.stopStandalone().catch(() => undefined);
       await agentProviderRuntime.shutdown().catch(() => undefined);
+      unbindAccountRouting();
+      accountRouting?.dispose();
       if (mainStarted) {
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
@@ -1824,6 +1850,8 @@ export async function createPaseoDaemon(
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
     await agentProviderRuntime.shutdown();
+    unbindAccountRouting();
+    accountRouting?.dispose();
     await pluginRuntime.stopAllPlugins();
     terminalManager.killAll();
     await speechService.stop();

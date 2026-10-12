@@ -13,7 +13,13 @@ import { resolveOmpProviderOptions } from "./provider-config.js";
 import { OmpRuntimeEventSchema } from "./rpc-types.js";
 import { OmpHarness } from "./test-utils/omp-harness.js";
 import { OmpAgentClient } from "./agent.js";
-import { FakeOmp } from "./test-utils/fake-omp.js";
+import {
+  FakeOmp,
+  FakeOmpChild,
+  ROUTING_MODEL,
+  routingBlockedCatalog,
+  routingHost,
+} from "./test-utils/fake-omp.js";
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 
 const TURN_LIFECYCLE_EVENTS = new Set<AgentStreamEvent["type"]>([
@@ -1479,6 +1485,122 @@ describe("OMP agent client and session", () => {
     omp.runtime().acceptPrompt("hello OMP", "user-1");
     expect(omp.timeline().filter((item) => item.type === "user_message")).toEqual([
       { type: "user_message", text: "hello OMP", messageId: "user-1" },
+    ]);
+  });
+});
+
+describe("OMP host account routing in the session adapter", () => {
+  const resetAt = 1_000_000 + 60_000;
+  const catalogFor = (runtimeInstanceId: string, revision: number, blocked: boolean) =>
+    routingBlockedCatalog(runtimeInstanceId, revision, blocked ? resetAt : null, 1_000_000);
+
+  test("a quota wait is running work: the turn is not terminalized until the call is admitted and OMP is idle", async () => {
+    const host = routingHost();
+    const child = new FakeOmpChild({ catalogs: (id) => [catalogFor(id, 1, true)] });
+    const scheduler = new ManualIdleScheduler();
+    const omp = new OmpHarness({
+      providerIdleScheduler: scheduler,
+      routing: { authority: host.authority, child },
+    });
+    await omp.start();
+    const runtimeInstanceId = String(
+      (await child.waitForFrame("account.routing.configure")).runtimeInstanceId,
+    );
+    const identity = { hostEpoch: host.authority.hostEpoch, runtimeInstanceId };
+
+    const { completion } = await omp.beginManagedTurn("summarize", "done");
+    // A title call hits the quota wait while the main turn finishes; OMP counts it as running work.
+    child.isStreaming = true;
+    child.emit({
+      type: "account.routing.admit.request",
+      id: "ar-title",
+      ...identity,
+      operationId: "op-title",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      purpose: "title",
+      provider: "anthropic",
+      modelId: ROUTING_MODEL,
+      requestGeneration: 1,
+      catalog: catalogFor(runtimeInstanceId, 1, true),
+    });
+    const waiting = await child.waitForFrame("account.routing.admit.response");
+    const waitId = String((waiting.decision as { waitId: string }).waitId);
+    child.emit({
+      type: "account.routing.paused",
+      ...identity,
+      waitId,
+      operationId: "op-title",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      modelId: ROUTING_MODEL,
+      reason: "all_unavailable",
+    });
+
+    omp.endManagedTurn();
+    await scheduler.waitForWaits(1);
+    scheduler.retry();
+    await scheduler.waitForWaits(2);
+    expect(omp.completedTurnCount()).toBe(0);
+    expect(omp.turnFailures()).toEqual([]);
+
+    // The reset arrives: the host sends a wake hint, the call re-admits, OMP goes idle.
+    host.clock.advance(60_000);
+    const resume = await child.waitForFrame("account.routing.resume");
+    expect(resume).toMatchObject({ waitId, ...identity });
+    child.emit({
+      type: "account.routing.admit.request",
+      id: "ar-title-2",
+      ...identity,
+      operationId: "op-title",
+      attemptId: "attempt-2",
+      sessionId: "native-session-1",
+      purpose: "title",
+      provider: "anthropic",
+      modelId: ROUTING_MODEL,
+      requestGeneration: 1,
+      previousWaitId: waitId,
+      catalog: catalogFor(runtimeInstanceId, 2, false),
+    });
+    await child.waitForFrame(
+      "account.routing.admit.response",
+      (frame) => frame.id === "ar-title-2",
+    );
+    child.isStreaming = false;
+    scheduler.retry();
+
+    await expect(completion).resolves.toMatchObject({ finalText: "done" });
+    expect(omp.completedTurnCount()).toBe(1);
+  });
+
+  test("an agent created with routing on gets a marked, configured runtime bound to its trusted agent id", async () => {
+    const host = routingHost();
+    const child = new FakeOmpChild();
+    const omp = new OmpHarness({
+      routing: { authority: host.authority, child, agentId: "agent-7" },
+    });
+    await omp.start();
+    const configure = await child.waitForFrame("account.routing.configure");
+    const runtimeInstanceId = String(configure.runtimeInstanceId);
+
+    child.emit({
+      type: "account.routing.admit.request",
+      id: "ar-1",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      purpose: "main",
+      provider: "anthropic",
+      modelId: ROUTING_MODEL,
+      requestGeneration: 1,
+      catalog: catalogFor(runtimeInstanceId, 1, false),
+    });
+    await child.waitForFrame("account.routing.admit.response");
+
+    expect(host.authority.snapshot().activeRequests).toEqual([
+      expect.objectContaining({ agentId: "agent-7", nativeSessionId: "native-session-1" }),
     ]);
   });
 });

@@ -1,3 +1,11 @@
+import {
+  OmpRoutingAccountRefSchema,
+  OmpRoutingBillingStateSchema,
+  OmpRoutingBlockSchema,
+  OmpRoutingRankSchema,
+  OmpRoutingWindowSchema,
+  RoutingRefusalCodeSchema,
+} from "@getpaseo/protocol/messages";
 import { z } from "zod";
 
 export const OmpThinkingLevelSchema = z.enum([
@@ -708,3 +716,191 @@ export interface OmpSubagentMessagesSelector {
   sessionFile?: string;
   fromByte?: number;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Host-owned account routing JSONL frames. Mirrors oh-my-pi `modes/rpc/account-routing.ts` and
+// `docs/rpc.md` ("Host-Owned Account Routing"). Metadata only: no frame carries a token, refresh
+// token, store path or exception text. Protocol 1 of that contract.
+// ---------------------------------------------------------------------------------------------
+
+/** Environment marker that puts an owned OMP launch into pending-configure (`metadata`: no dispatch). */
+export const OMP_HOST_ACCOUNT_ROUTING_ENV = "OMP_HOST_ACCOUNT_ROUTING";
+
+export const OmpRoutingPurposeSchema = z.enum([
+  "main",
+  "subagent",
+  "advisor",
+  "title",
+  "compaction",
+  "memory",
+  "vision",
+  "repair",
+  "eval",
+  "judgment",
+  "other_auxiliary",
+]);
+
+const OmpRpcRoutingAccountSchema = z.object({
+  ref: OmpRoutingAccountRefSchema,
+  display: z.object({
+    email: z.string().nullable(),
+    accountId: z.string().nullable(),
+    organizationId: z.string().nullable(),
+    organizationName: z.string().nullable(),
+  }),
+  credentialAvailable: z.boolean(),
+  quotaIdentity: z.object({ accountUuid: z.string(), organizationUuid: z.string() }).nullable(),
+  billing: OmpRoutingBillingStateSchema,
+  subscriptionTier: z.object({
+    kind: z.enum(["pro", "max5", "max20", "other", "unknown"]),
+    observedAt: z.number().finite().nullable(),
+    source: z.string().nullable(),
+  }),
+  windows: z.array(OmpRoutingWindowSchema),
+  quotaBlocks: z.array(OmpRoutingBlockSchema),
+  rank: OmpRoutingRankSchema,
+});
+
+export const OmpRpcRoutingCatalogSchema = z.object({
+  provider: z.literal("anthropic"),
+  runtimeInstanceId: z.string(),
+  storeNamespace: z.string(),
+  catalogRevision: z.number().int().nonnegative(),
+  nativeCredentialGeneration: z.number().int().nonnegative(),
+  observedAt: z.number().finite(),
+  authoritativeObservedAt: z.number().finite().nullable(),
+  authoritativeComplete: z.boolean(),
+  accounts: z.array(OmpRpcRoutingAccountSchema),
+});
+
+/** `account.routing.configure` response data. */
+export const OmpRpcRoutingConfigureDataSchema = z.object({
+  version: z.literal(1),
+  configured: z.literal(true),
+  completeCoverage: z.boolean(),
+  modelDispatch: z.enum(["allowed", "forbidden"]),
+  purposes: z.array(OmpRoutingPurposeSchema),
+  accessibleNamespaces: z.array(z.string()),
+  catalogs: z.array(OmpRpcRoutingCatalogSchema),
+});
+
+export const OmpRpcRoutingRefreshDataSchema = z.object({ catalog: OmpRpcRoutingCatalogSchema });
+
+export const OmpRpcRoutingRankDataSchema = z.object({
+  method: z.string(),
+  version: z.number(),
+  catalogRevision: z.number().int().nonnegative(),
+  anchorRef: OmpRoutingAccountRefSchema.nullable(),
+  bestCloseRefs: z.array(OmpRoutingAccountRefSchema),
+});
+
+const OmpRpcRoutingIdentity = {
+  hostEpoch: z.string(),
+  runtimeInstanceId: z.string(),
+};
+
+/** Native to host frames. Responses to host commands are ordinary `type:"response"` frames. */
+export const OmpRpcAccountRoutingFrameSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("account.routing.admit.request"),
+    id: z.string().min(1),
+    ...OmpRpcRoutingIdentity,
+    operationId: z.string().min(1),
+    attemptId: z.string().min(1),
+    sessionId: z.string(),
+    purpose: OmpRoutingPurposeSchema,
+    provider: z.literal("anthropic"),
+    modelId: z.string().min(1),
+    requestGeneration: z.number().int().nonnegative(),
+    previousWaitId: z.string().min(1).optional(),
+    catalog: OmpRpcRoutingCatalogSchema,
+  }),
+  z.object({
+    type: z.literal("account.routing.started"),
+    ...OmpRpcRoutingIdentity,
+    admissionId: z.string().min(1),
+    operationId: z.string(),
+    attemptId: z.string(),
+    sessionId: z.string(),
+    modelId: z.string(),
+    accountRef: OmpRoutingAccountRefSchema,
+    selectionGeneration: z.number().int().nonnegative(),
+    startedAt: z.number().finite(),
+  }),
+  z.object({
+    type: z.literal("account.routing.outcome"),
+    ...OmpRpcRoutingIdentity,
+    admissionId: z.string().min(1),
+    operationId: z.string(),
+    attemptId: z.string(),
+    sessionId: z.string(),
+    modelId: z.string(),
+    accountRef: OmpRoutingAccountRefSchema,
+    selectionGeneration: z.number().int().nonnegative(),
+    startedAt: z.number().finite().nullable(),
+    finishedAt: z.number().finite(),
+    code: z.string(),
+    dispatch: z.enum(["not_dispatched", "dispatched", "replay_unsafe"]),
+    replaySafe: z.boolean(),
+    refusalReason: RoutingRefusalCodeSchema.nullable(),
+    retryAfterMs: z.number().finite().nullable(),
+    quotaBlocks: z.array(OmpRoutingBlockSchema),
+    windows: z.array(OmpRoutingWindowSchema),
+  }),
+  z.object({
+    type: z.literal("account.routing.paused"),
+    ...OmpRpcRoutingIdentity,
+    waitId: z.string().min(1),
+    operationId: z.string(),
+    attemptId: z.string(),
+    sessionId: z.string(),
+    modelId: z.string(),
+    reason: z.string(),
+  }),
+  z.object({
+    type: z.literal("account.routing.resumed"),
+    ...OmpRpcRoutingIdentity,
+    waitId: z.string().min(1),
+    operationId: z.string(),
+    requestGeneration: z.number().int().nonnegative(),
+    sessionId: z.string(),
+    modelId: z.string(),
+  }),
+  z.object({
+    type: z.literal("account.routing.cancel"),
+    id: z.string(),
+    ...OmpRpcRoutingIdentity,
+    waitId: z.string().min(1).optional(),
+    admissionId: z.string().min(1).optional(),
+    operationId: z.string().min(1),
+    attemptId: z.string().min(1),
+    sessionId: z.string(),
+  }),
+]);
+export type OmpRpcAccountRoutingFrame = z.infer<typeof OmpRpcAccountRoutingFrameSchema>;
+export type OmpRpcRoutingCatalog = z.infer<typeof OmpRpcRoutingCatalogSchema>;
+
+/** `omp account-routing-capabilities --mode model` document. Any missing field means unsupported. */
+export const OmpAccountRoutingCapabilityDocumentSchema = z.object({
+  version: z.literal(1),
+  provider: z.literal("anthropic"),
+  managedAccountRouting: z.object({
+    modelDispatch: z.enum(["allowed", "forbidden"]),
+    completeCoverage: z.boolean(),
+    purposes: z.array(z.string()),
+    sourceIdentity: z.literal("v1"),
+    exactUsageRefresh: z.literal("v1"),
+  }),
+});
+
+/** Host to native decision, as `account.routing.admit.response` carries it. */
+export type OmpRpcAdmitDecision =
+  | {
+      kind: "admit";
+      admissionId: string;
+      accountRef: { storeNamespace: string; nativeRowId: number };
+      selectionGeneration: number;
+      policyRevision: number;
+    }
+  | { kind: "wait"; waitId: string; reason: string; reconsiderAt?: number }
+  | { kind: "refuse"; reason: string };

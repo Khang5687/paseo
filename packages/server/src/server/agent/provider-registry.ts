@@ -43,6 +43,7 @@ import { KiroACPAgentClient } from "./providers/kiro-acp-agent.js";
 import { OpenCodeRuntimeClient } from "./providers/opencode/runtime-client.js";
 import type { OpenCodeBridge } from "./providers/opencode/bridge.js";
 import { OmpAgentClient } from "./providers/omp/agent.js";
+import type { OmpRoutingAuthority } from "./providers/omp/account-routing-bridge.js";
 import type { OmpRuntime } from "./providers/omp/runtime.js";
 import { PiRpcAgentClient } from "./providers/pi/agent.js";
 import { TraeACPAgentClient } from "./providers/trae-acp-agent.js";
@@ -185,6 +186,18 @@ const HUB_E2E_PROVIDER_CONTRACT: ProviderContract = {
   },
 };
 
+// ponytail: module binding, not an option. The snapshot manager rebuilds this registry on its own and
+// threading the authority through it would touch files outside this slice; one daemon, one authority.
+let boundOmpAccountRouting: OmpRoutingAuthority | undefined;
+
+/** Bootstrap binds the one host routing authority before any provider client is built. */
+export function bindOmpAccountRouting(authority: OmpRoutingAuthority): () => void {
+  boundOmpAccountRouting = authority;
+  return () => {
+    if (boundOmpAccountRouting === authority) boundOmpAccountRouting = undefined;
+  };
+}
+
 const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
   claude: (logger, runtimeSettings) =>
     new ClaudeAgentClient({
@@ -222,6 +235,7 @@ const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
       logger,
       runtimeSettings,
       runtime: options?.ompRuntime,
+      accountRouting: boundOmpAccountRouting,
     }),
   mock: (logger) => new MockLoadTestAgentClient(logger),
   "mock-slow": () => new MockSlowProviderClient(),
