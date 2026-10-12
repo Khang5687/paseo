@@ -95,7 +95,9 @@ function DiscoveredModelRow({
   const isSaving = pendingValue !== undefined;
   const isEnabled = pendingValue ?? !toggles?.disabledModelIds.includes(model.id);
   const isDimmed = toggles !== null && !isEnabled;
-  const needsFiller = toggles !== null && !model.description;
+  // Some providers (OMP) echo the id as the description; skip lines that add nothing.
+  const showDescription =
+    !!model.description && model.description !== model.id && model.description !== model.label;
   const handleValueChange = useCallback(
     (next: boolean) => void toggles?.onToggle(model, next),
     [model, toggles],
@@ -103,26 +105,27 @@ function DiscoveredModelRow({
 
   return (
     <View style={sheetStyles.modelRow}>
-      <Text
-        style={[sheetStyles.modelTitle, isDimmed && sheetStyles.modelTitleDisabled]}
-        numberOfLines={1}
-      >
-        {model.label}
-      </Text>
-      <Text
-        style={sheetStyles.monoHint}
-        numberOfLines={1}
-        selectable
-        dataSet={CODE_SURFACE_DATASET}
-      >
-        {model.id}
-      </Text>
-      {model.description ? (
-        <Text style={sheetStyles.descriptionInline} numberOfLines={1}>
-          {model.description}
+      <View style={sheetStyles.modelText}>
+        <Text
+          style={[sheetStyles.modelTitle, isDimmed && sheetStyles.modelTitleDisabled]}
+          numberOfLines={1}
+        >
+          {model.label}
         </Text>
-      ) : null}
-      {needsFiller ? <View style={sheetStyles.modelRowFiller} /> : null}
+        <Text
+          style={sheetStyles.monoHint}
+          numberOfLines={1}
+          selectable
+          dataSet={CODE_SURFACE_DATASET}
+        >
+          {model.id}
+        </Text>
+        {showDescription ? (
+          <Text style={sheetStyles.descriptionInline} numberOfLines={1}>
+            {model.description}
+          </Text>
+        ) : null}
+      </View>
       {toggles ? (
         <Switch
           value={isEnabled}
@@ -159,18 +162,19 @@ function CustomModelRow({
 
   return (
     <View style={sheetStyles.modelRow}>
-      <Text style={sheetStyles.modelTitle} numberOfLines={1}>
-        {model.label}
-      </Text>
-      <Text
-        style={sheetStyles.monoHint}
-        numberOfLines={1}
-        selectable
-        dataSet={CODE_SURFACE_DATASET}
-      >
-        {model.id}
-      </Text>
-      <View style={sheetStyles.modelRowFiller} />
+      <View style={sheetStyles.modelText}>
+        <Text style={sheetStyles.modelTitle} numberOfLines={1}>
+          {model.label}
+        </Text>
+        <Text
+          style={sheetStyles.monoHint}
+          numberOfLines={1}
+          selectable
+          dataSet={CODE_SURFACE_DATASET}
+        >
+          {model.id}
+        </Text>
+      </View>
       <Pressable
         onPress={handleDelete}
         disabled={deleting}
@@ -864,10 +868,8 @@ const sheetStyles = StyleSheet.create((theme) => ({
     fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.code,
     color: theme.colors.foregroundMuted,
-    flexShrink: 0,
   },
   descriptionInline: {
-    flex: 1,
     fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,
   },
@@ -922,16 +924,22 @@ const sheetStyles = StyleSheet.create((theme) => ({
   modelRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: theme.spacing[2],
+    paddingVertical: theme.spacing[3],
     paddingHorizontal: theme.spacing[4],
     gap: theme.spacing[3],
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
   },
+  // ponytail: label, id and description stack in a shrinking column so long ids
+  // truncate instead of pushing the trailing switch out of the row.
+  modelText: {
+    flex: 1,
+    minWidth: 0,
+    gap: theme.spacing[1],
+  },
   modelTitle: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
-    flexShrink: 0,
   },
   modelTitleDisabled: {
     color: theme.colors.foregroundMuted,
@@ -939,9 +947,6 @@ const sheetStyles = StyleSheet.create((theme) => ({
   sectionError: {
     marginBottom: theme.spacing[2],
     marginLeft: theme.spacing[1],
-  },
-  modelRowFiller: {
-    flex: 1,
   },
   emptyState: {
     paddingVertical: theme.spacing[8],
