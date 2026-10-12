@@ -2090,6 +2090,92 @@ export const fr: TranslationResources = {
       saveAccessibility: "Enregistrer le commentaire de revue",
     },
   },
+  ompAccountRouting: {
+    labels: {
+      title: "Routage des comptes Claude",
+      scope:
+        "S'applique à tous les agents OMP gérés par Paseo sur cet hôte. Les autres hôtes et les terminaux autonomes ne changent pas.",
+      account: "Compte",
+      auto: "Routage automatique",
+      included: "Inclure dans le routage automatique",
+      priority: "Priorité de repli",
+      priorityHelp:
+        "La priorité départage les capacités proches quand un changement est nécessaire. Elle ne change pas le compte actuel.",
+      current: "Sélectionné",
+      serving: "En service",
+      lastServed: "Dernière utilisation",
+      excluded: "Exclu du routage automatique",
+      missing: "Compte enregistré indisponible",
+      fiveHour: "Utilisation sur cinq heures",
+      weekly: "Utilisation hebdomadaire",
+      modelWindow: "Utilisation du modèle",
+      tier: "Niveau d'abonnement",
+      unknownTier: "Niveau d'abonnement inconnu",
+      unknownBudget: "Quota absolu inconnu",
+      consumed: "Consommé",
+      remaining: "Restant",
+      stale: "Observation périmée",
+      unknownOrganization: "Organisation inconnue",
+      search: "Rechercher des comptes",
+    },
+    actions: {
+      moveUp: "Monter",
+      moveDown: "Descendre",
+    },
+    status: {
+      loading: "Chargement du routage des comptes",
+      empty: "Aucun compte Claude observé",
+      unsupported: "Cet hôte n'a pas vérifié la prise en charge du routage de comptes OMP",
+      offline: "Hôte hors ligne ; derniers réglages confirmés affichés",
+      readOnly: "Vous pouvez consulter ces réglages, mais pas les modifier",
+      pending: "Enregistrement des réglages",
+      conflict: "Les réglages ont changé ailleurs ; dernier état confirmé affiché",
+      paused: "En attente d'un compte inclus disponible",
+      recovered: "Compte inclus disponible",
+      unknownUsage: "Utilisation inconnue",
+    },
+    reason: {
+      no_account: "Aucun compte n'est sélectionné",
+      source_changed: "La source d'identifiants native sélectionnée a changé",
+      source_inaccessible:
+        "Cet environnement d'exécution ne peut pas accéder au compte natif sélectionné",
+      billing_enabled:
+        "Les crédits d'utilisation payants sont activés ; le routage limité à l'usage inclus ne peut pas utiliser ce compte",
+      billing_unknown:
+        "Les réglages des crédits d'utilisation payants n'ont pas été vérifiés récemment",
+      quota_blocked: "L'usage inclus n'est pas disponible pour cette requête",
+      entitlement_unavailable: "L'accès au modèle est indisponible ou non vérifié pour ce compte",
+      auth_unavailable: "L'authentification du compte natif est indisponible",
+      unsupported_transport:
+        "Ce transport du fournisseur ne prend pas en charge le routage limité à l'usage inclus",
+      unsupported_runtime:
+        "Cet environnement d'exécution OMP ne prend pas en charge le routage géré",
+      persistence_failed: "Les réglages de routage n'ont pas pu être enregistrés",
+      host_unavailable: "Hôte de routage indisponible",
+      cancelled: "Requête annulée",
+      metadata_pending: "Vérification de la disponibilité du compte",
+      all_unavailable: "Aucun compte inclus n'est disponible actuellement",
+      auto_disabled:
+        "Le routage automatique est désactivé ; sélectionnez un compte ou activez-le pour continuer",
+      provider_failed: "La disponibilité du compte n'a pas pu être vérifiée",
+    },
+    mutationError: {
+      conflict: "Les réglages ont changé ailleurs ; consultez le dernier état avant de réessayer",
+      invalid_account: "Ce compte natif n'est plus dans le catalogue",
+      unsupported: "Les commandes de routage de comptes sont indisponibles sur cet hôte",
+      persistence_failed:
+        "Les réglages n'ont pas été enregistrés ; les derniers réglages confirmés restent en place",
+    },
+    values: {
+      consumed: "{{percent}} % consommé",
+      remaining: "{{percent}} % restant",
+      reset: "Réinitialisation {{time}}",
+      observed: "Observé {{time}}",
+      account: "Compte {{row}}",
+      serving: "{{account}} sert {{agent}}",
+      priority: "Priorité {{position}}",
+    },
+  },
   settings: {
     title: "Paramètres",
     loading: "Chargement des paramètres…",

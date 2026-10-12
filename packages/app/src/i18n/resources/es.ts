@@ -2092,6 +2092,93 @@ export const es: TranslationResources = {
       saveAccessibility: "Guardar comentario de revisión",
     },
   },
+  ompAccountRouting: {
+    labels: {
+      title: "Enrutamiento de cuentas de Claude",
+      scope:
+        "Se aplica a todos los agentes OMP gestionados por Paseo en este host. Otros hosts y terminales independientes no cambian.",
+      account: "Cuenta",
+      auto: "Enrutamiento automático",
+      included: "Incluir en el enrutamiento automático",
+      priority: "Prioridad de reserva",
+      priorityHelp:
+        "La prioridad desempata cuando las capacidades son similares y hay que cambiar de cuenta. No cambia la cuenta actual.",
+      current: "Seleccionada",
+      serving: "En uso",
+      lastServed: "Último uso",
+      excluded: "Excluida del enrutamiento automático",
+      missing: "Cuenta guardada no disponible",
+      fiveHour: "Uso de cinco horas",
+      weekly: "Uso semanal",
+      modelWindow: "Uso del modelo",
+      tier: "Nivel de suscripción",
+      unknownTier: "Nivel de suscripción desconocido",
+      unknownBudget: "Límite absoluto desconocido",
+      consumed: "Consumido",
+      remaining: "Restante",
+      stale: "Observación desactualizada",
+      unknownOrganization: "Organización desconocida",
+      search: "Buscar cuentas",
+    },
+    actions: {
+      moveUp: "Subir",
+      moveDown: "Bajar",
+    },
+    status: {
+      loading: "Cargando el enrutamiento de cuentas",
+      empty: "No se han observado cuentas de Claude",
+      unsupported:
+        "Este host no ha verificado la compatibilidad con el enrutamiento de cuentas de OMP",
+      offline: "Host sin conexión; se muestran los últimos ajustes confirmados",
+      readOnly: "Puedes ver estos ajustes, pero no cambiarlos",
+      pending: "Guardando ajustes",
+      conflict: "Los ajustes cambiaron en otro lugar; se muestra el último estado confirmado",
+      paused: "Esperando una cuenta incluida disponible",
+      recovered: "Cuenta incluida disponible",
+      unknownUsage: "Uso desconocido",
+    },
+    reason: {
+      no_account: "No hay ninguna cuenta seleccionada",
+      source_changed: "Cambió el origen de credenciales nativo seleccionado",
+      source_inaccessible:
+        "Este entorno de ejecución no puede acceder a la cuenta nativa seleccionada",
+      billing_enabled:
+        "Los créditos de uso de pago están activados; el enrutamiento solo con uso incluido no puede usar esta cuenta",
+      billing_unknown: "Los ajustes de créditos de uso de pago no se han verificado recientemente",
+      quota_blocked: "El uso incluido no está disponible para esta solicitud",
+      entitlement_unavailable:
+        "El acceso al modelo no está disponible o no se ha verificado para esta cuenta",
+      auth_unavailable: "La autenticación de la cuenta nativa no está disponible",
+      unsupported_transport:
+        "Este transporte del proveedor no admite el enrutamiento solo con uso incluido",
+      unsupported_runtime: "Este entorno de ejecución de OMP no admite el enrutamiento gestionado",
+      persistence_failed: "No se pudieron guardar los ajustes de enrutamiento",
+      host_unavailable: "Host de enrutamiento no disponible",
+      cancelled: "Solicitud cancelada",
+      metadata_pending: "Verificando la disponibilidad de la cuenta",
+      all_unavailable: "Ninguna cuenta incluida está disponible ahora",
+      auto_disabled:
+        "El enrutamiento automático está desactivado; selecciona una cuenta o actívalo para continuar",
+      provider_failed: "No se pudo verificar la disponibilidad de la cuenta",
+    },
+    mutationError: {
+      conflict:
+        "Los ajustes cambiaron en otro lugar; revisa el último estado antes de volver a intentarlo",
+      invalid_account: "Esa cuenta nativa ya no está en el catálogo",
+      unsupported: "Los controles de enrutamiento de cuentas no están disponibles en este host",
+      persistence_failed:
+        "No se guardaron los ajustes; se mantienen los últimos ajustes confirmados",
+    },
+    values: {
+      consumed: "{{percent}}% consumido",
+      remaining: "{{percent}}% restante",
+      reset: "Se restablece {{time}}",
+      observed: "Observado {{time}}",
+      account: "Cuenta {{row}}",
+      serving: "{{account}} está atendiendo a {{agent}}",
+      priority: "Prioridad {{position}}",
+    },
+  },
   settings: {
     title: "Ajustes",
     loading: "Cargando configuración...",
