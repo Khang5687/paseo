@@ -8,7 +8,7 @@ import type {
 } from "@getpaseo/protocol/messages";
 import { relative } from "node:path";
 import { isAbsolute } from "node:path";
-import { CreationService } from "./creation/index.js";
+import { CreationService, type CreatedAgent } from "./creation/index.js";
 import type { CreationSnapshot, AgentCreateRequest } from "@getpaseo/protocol/messages";
 import type { MessageReceipts } from "./message-receipts/index.js";
 import type { AgentMessageQueueDispatcher } from "./agent/agent-message-queue.js";
@@ -16,7 +16,7 @@ import equal from "fast-deep-equal";
 import { SessionDelivery, type OwnedSubscription } from "./session/owned-subscriptions/index.js";
 import { v4 as uuidv4 } from "uuid";
 import { lstat, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
-import { basename, resolve, sep } from "path";
+import { basename, join, resolve, sep } from "path";
 import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import { formatPluginSourceReference } from "@getpaseo/protocol/plugin-source-reference";
@@ -4237,7 +4237,7 @@ export class Session {
         if (!record) throw new Error("Previously created agent no longer exists");
         agent = this.buildStoredAgentPayload(record);
       } else {
-        agent = await this.createSessionAgent(msg);
+        ({ agent } = await this.createSessionAgent(msg));
       }
       this.emit({
         type: "status",
@@ -4276,7 +4276,7 @@ export class Session {
     msg: CreateAgentRequestMessage,
     agentId?: string,
     onAgentReady?: (agent: AgentSnapshotPayload) => Promise<void>,
-  ): Promise<AgentSnapshotPayload> {
+  ): Promise<CreatedAgent> {
     const {
       config,
       worktreeName,
@@ -4334,7 +4334,7 @@ export class Session {
         throw new Error(`Working directory does not exist or is not a directory: ${resolvedCwd}`);
       }
 
-      const { snapshot, liveSnapshot } = await createAgentCommand(
+      const { snapshot, liveSnapshot, initialPromptStarted } = await createAgentCommand(
         {
           agentManager: this.agentManager,
           agentStorage: this.agentStorage,
@@ -4354,6 +4354,9 @@ export class Session {
           workspaceId: resolvedIntent.intent.workspaceId,
           worktreeName,
           initialPrompt,
+          source: msg.callerAgentId
+            ? { kind: "agent-message", agentId: msg.callerAgentId }
+            : undefined,
           clientMessageId,
           outputSchema,
           images,
@@ -4388,7 +4391,7 @@ export class Session {
         { agentId: snapshot.id, provider: snapshot.provider },
         "Created agent",
       );
-      return this.buildAgentPayload(liveSnapshot);
+      return { agent: await this.buildAgentPayload(liveSnapshot), initialPromptStarted };
     } catch (error) {
       await this.createAgentLifecycleDispatch.cleanupCreatedWorktreeAfterFailedAgentCreate({
         createdWorktree: createdWorktreeForCleanup,
@@ -5120,8 +5123,13 @@ export class Session {
     try {
       const workspaceCwd = cwd?.trim();
       const searchesWorkspace = Boolean(workspaceCwd);
+      const homeRoot = process.env.HOME ?? homedir();
+      // readdir on TCC-protected folders under ~/Library blocks forever for a process that cannot
+      // show a consent prompt, and each blocked call holds a libuv threadpool thread.
+      const excludedDiscoveryPaths =
+        !searchesWorkspace && process.platform === "darwin" ? [join(homeRoot, "Library")] : [];
       const entries = await searchDirectoryEntries({
-        root: workspaceCwd ? expandTilde(workspaceCwd) : (process.env.HOME ?? homedir()),
+        root: workspaceCwd ? expandTilde(workspaceCwd) : homeRoot,
         query,
         pathFormat: searchesWorkspace ? "relative" : "absolute",
         pathQueryPolicy: searchesWorkspace ? "slashes" : "rooted",
@@ -5132,6 +5140,7 @@ export class Session {
           : [],
         confidentResultScanThreshold: searchesWorkspace ? undefined : 5_000,
         respectGitIgnore: searchesWorkspace,
+        excludedDiscoveryPaths,
         includeFiles,
         includeDirectories,
         matchMode,
@@ -8361,6 +8370,9 @@ export class Session {
           agentStorage: this.agentStorage,
           agentId,
           prompt,
+          source: msg.sourceAgentId
+            ? { kind: "agent-message", agentId: msg.sourceAgentId }
+            : undefined,
           messageId: msg.messageId,
           activeTurnBehavior: msg.activeTurnBehavior ?? "interrupt",
           clearPendingPermissions: true,
@@ -8378,9 +8390,13 @@ export class Session {
         await this.messageReceipts.send({
           agentId,
           messageId: msg.messageId,
-          request: { prompt, activeTurnBehavior: msg.activeTurnBehavior ?? "interrupt" },
+          request: {
+            prompt,
+            sourceAgentId: msg.sourceAgentId,
+            activeTurnBehavior: msg.activeTurnBehavior ?? "interrupt",
+          },
           prepare: async () => {
-            await this.prepareAgentMessage(agentId, msg.text);
+            if (!msg.sourceAgentId) await this.prepareAgentMessage(agentId, msg.text);
           },
           send,
         });
