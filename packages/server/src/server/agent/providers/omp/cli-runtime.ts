@@ -291,6 +291,10 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     await this.requestStopWork({ type: "abort" });
   }
 
+  async login(providerId: string): Promise<void> {
+    await this.request({ type: "login", providerId }, JSONL_RPC_NO_TIMEOUT);
+  }
+
   async getState(): Promise<OmpSessionState> {
     return OmpSessionStateSchema.parse(await this.request({ type: "get_state" }));
   }

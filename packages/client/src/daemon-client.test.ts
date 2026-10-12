@@ -7700,6 +7700,72 @@ test("supported OMP account-routing reads correlate exact IDs and reject malform
   await expect(malformed).rejects.toMatchObject({ code: "invalid_response" });
 });
 
+test("OMP account login start, status, and cancel need the ompAccountLogin feature", async () => {
+  const off = createMockTransport();
+  const offClient = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-off",
+    reconnect: { enabled: false },
+    transportFactory: () => off.transport,
+  });
+  clients.push(offClient);
+  const offConnected = offClient.connect();
+  off.triggerOpen({ features: { ompAccountRouting: true } });
+  await offConnected;
+  await expect(offClient.startOmpAccountLogin()).rejects.toMatchObject({
+    name: "OmpAccountLoginUnsupportedError",
+  });
+
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-on",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ preserveSent: true, features: { ompAccountLogin: true } });
+  await connected;
+
+  const start = client.startOmpAccountLogin();
+  const startRequest = parseSentFrame(mock.sent.at(-1));
+  expect(startRequest).toMatchObject({ type: "account.routing.login.start.request" });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.start.response",
+      payload: {
+        requestId: startRequest.requestId,
+        status: { state: "running", startedAt: 1 },
+        error: null,
+      },
+    }),
+  );
+  await expect(start).resolves.toMatchObject({ status: { state: "running" }, error: null });
+
+  const status = client.getOmpAccountLoginStatus();
+  const statusRequest = parseSentFrame(mock.sent.at(-1));
+  expect(statusRequest).toMatchObject({ type: "account.routing.login.get_status.request" });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.get_status.response",
+      payload: { requestId: statusRequest.requestId, status: { state: "succeeded" } },
+    }),
+  );
+  await expect(status).resolves.toMatchObject({ status: { state: "succeeded" } });
+
+  const cancel = client.cancelOmpAccountLogin();
+  const cancelRequest = parseSentFrame(mock.sent.at(-1));
+  expect(cancelRequest).toMatchObject({ type: "account.routing.login.cancel.request" });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.cancel.response",
+      payload: { requestId: cancelRequest.requestId, status: { state: "cancelled" } },
+    }),
+  );
+  await expect(cancel).resolves.toMatchObject({ status: { state: "cancelled" } });
+});
+
 test("subscribed OMP snapshots filter stale updates and replace on a new epoch", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({

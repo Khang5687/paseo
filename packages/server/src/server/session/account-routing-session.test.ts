@@ -8,13 +8,16 @@ import { AccountRoutingStore } from "../account-routing/store.js";
 import type { SessionOutboundMessage } from "../messages.js";
 import { AccountRoutingSession } from "./account-routing-session.js";
 import { SessionDelivery } from "./owned-subscriptions/index.js";
+import type { OmpAccountLogin } from "../account-routing/login.js";
+
+type LoginPort = Pick<OmpAccountLogin, "start" | "status" | "cancel">;
 
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function setup(options: { withAuthority?: boolean; modern?: boolean } = {}) {
+function setup(options: { withAuthority?: boolean; modern?: boolean; login?: LoginPort } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "paseo-routing-session-"));
   dirs.push(dir);
   const authority =
@@ -29,6 +32,7 @@ function setup(options: { withAuthority?: boolean; modern?: boolean } = {}) {
   delivery.attach(source, options.modern ?? true);
   const session = new AccountRoutingSession({
     authority,
+    login: options.login,
     delivery,
     emit: (message) => delivery.reply(message),
     logger: pino({ level: "silent" }),
@@ -133,6 +137,66 @@ test("a host without an authority answers with a correlated rpc_error", async ()
         requestId: "r9",
         requestType: "account.routing.get_state.request",
         code: "account_routing_unavailable",
+      }),
+    },
+  ]);
+});
+
+test("login start, status, and cancel answer with the host login's status", async () => {
+  const running = { state: "running" as const, startedAt: 1 };
+  const calls: string[] = [];
+  const login: LoginPort = {
+    start: () => (calls.push("start"), { status: running, error: null }),
+    status: () => (calls.push("status"), running),
+    cancel: () => (calls.push("cancel"), { state: "cancelled" as const }),
+  };
+  const { delivery, source, session, sent } = setup({ login });
+  const a = { type: "account.routing.login.start.request" as const, requestId: "a" };
+  const b = { type: "account.routing.login.get_status.request" as const, requestId: "b" };
+  const c = { type: "account.routing.login.cancel.request" as const, requestId: "c" };
+  await delivery.request(source, a, () => session.handleLoginStart(a));
+  await delivery.request(source, b, () => session.handleLoginStatus(b));
+  await delivery.request(source, c, () => session.handleLoginCancel(c));
+  expect(calls).toEqual(["start", "status", "cancel"]);
+  expect(sent).toEqual([
+    {
+      type: "account.routing.login.start.response",
+      payload: { requestId: "a", status: running, error: null },
+    },
+    {
+      type: "account.routing.login.get_status.response",
+      payload: { requestId: "b", status: running, error: null },
+    },
+    {
+      type: "account.routing.login.cancel.response",
+      payload: { requestId: "c", status: { state: "cancelled" }, error: null },
+    },
+  ]);
+});
+
+test("a refused concurrent start carries already_running", async () => {
+  const login: LoginPort = {
+    start: () => ({ status: { state: "running" }, error: "already_running" }),
+    status: () => ({ state: "running" }),
+    cancel: () => ({ state: "cancelled" }),
+  };
+  const { delivery, source, session, sent } = setup({ login });
+  const a = { type: "account.routing.login.start.request" as const, requestId: "a" };
+  await delivery.request(source, a, () => session.handleLoginStart(a));
+  expect(sent[0]).toMatchObject({ payload: { error: "already_running" } });
+});
+
+test("a host without login answers with a correlated rpc_error", async () => {
+  const { delivery, source, session, sent } = setup();
+  const z = { type: "account.routing.login.start.request" as const, requestId: "z" };
+  await delivery.request(source, z, () => session.handleLoginStart(z));
+  expect(sent).toEqual([
+    {
+      type: "rpc_error",
+      payload: expect.objectContaining({
+        requestId: "z",
+        requestType: "account.routing.login.start.request",
+        code: "account_login_unavailable",
       }),
     },
   ]);

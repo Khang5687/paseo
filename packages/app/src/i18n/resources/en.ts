@@ -2070,6 +2070,27 @@ export const en = {
     },
   },
   ompAccountRouting: {
+    login: {
+      start: "Add Claude account",
+      explain:
+        "Sign in with a Claude account that is not listed here. Signing in with a listed account replaces its saved login.",
+      running: "Finish signing in in your browser",
+      cancel: "Cancel",
+      elsewhere: "Open Paseo on the host computer to add an account.",
+      saved:
+        "Account saved. It shows up here once an OMP agent next starts or sends a request. Turn off paid extra usage on that account in Claude: Paseo skips accounts that have it on.",
+      cancelled: "Sign-in cancelled.",
+      failure: {
+        timeout: "Sign-in timed out after 10 minutes. Try again.",
+        paste_code_unsupported:
+          "The browser could not return to Paseo, so sign-in was cancelled. Make sure nothing else is using port 54545, then try again.",
+        browser_open_failed: "Paseo could not open the browser on this computer.",
+        omp_failed:
+          "OMP could not finish signing in. Try again, or run omp in a terminal and type /login.",
+        spawn_failed: "Paseo could not start OMP on this computer.",
+        unreachable: "Lost contact with the host. Check the connection and try again.",
+      },
+    },
     labels: {
       title: "Claude accounts (Oh My Pi)",
       scope:

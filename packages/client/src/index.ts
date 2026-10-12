@@ -37,7 +37,10 @@ import {
   type OmpAccountRoutingRead,
   type OmpAccountRoutingSubscribedRead,
 } from "./daemon-client.js";
-export { OmpAccountRoutingUnsupportedError } from "./daemon-client.js";
+export {
+  OmpAccountLoginUnsupportedError,
+  OmpAccountRoutingUnsupportedError,
+} from "./daemon-client.js";
 export type { OmpAccountRoutingRead, OmpAccountRoutingSubscribedRead } from "./daemon-client.js";
 export type {
   OmpRoutingAccountRef,

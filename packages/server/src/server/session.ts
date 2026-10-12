@@ -189,6 +189,7 @@ import { ProviderCatalogSession } from "./session/provider/provider-catalog-sess
 import { UsageSession } from "./session/usage/usage-session.js";
 import { AccountRoutingSession } from "./session/account-routing-session.js";
 import type { AccountRoutingAuthority } from "./account-routing/authority.js";
+import type { OmpAccountLogin } from "./account-routing/login.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
@@ -476,6 +477,7 @@ export interface SessionOptions {
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
   accountRouting?: AccountRoutingAuthority;
+  accountLogin?: OmpAccountLogin;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -839,6 +841,7 @@ export class Session {
       directorySync,
       workspaceLabelService,
       accountRouting,
+      accountLogin,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -1020,6 +1023,7 @@ export class Session {
     });
     this.accountRoutingSession = new AccountRoutingSession({
       authority: accountRouting,
+      login: accountLogin,
       delivery: this.delivery,
       emit: (msg) => this.emit(msg),
       logger: this.sessionLogger,
@@ -3088,6 +3092,12 @@ export class Session {
         return this.accountRoutingSession.handleGetState(msg);
       case "account.routing.mutate.request":
         return this.accountRoutingSession.handleMutate(msg);
+      case "account.routing.login.start.request":
+        return this.accountRoutingSession.handleLoginStart(msg);
+      case "account.routing.login.get_status.request":
+        return this.accountRoutingSession.handleLoginStatus(msg);
+      case "account.routing.login.cancel.request":
+        return this.accountRoutingSession.handleLoginCancel(msg);
       default:
         return undefined;
     }

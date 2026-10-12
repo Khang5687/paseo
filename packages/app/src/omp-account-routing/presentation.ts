@@ -395,3 +395,19 @@ export function buildNotices(input: NoticeInput): Notice[] {
     ...fromState.filter((n) => !isSupportNotice(n)),
   ];
 }
+
+export type AddAccountMode = "button" | "elsewhere" | "terminal";
+
+/**
+ * The host signs the account in through its own browser, so only the desktop app on that same
+ * computer gets the button. Every other client is told where to go; a host that cannot do it
+ * keeps the terminal hint alone.
+ */
+export function addAccountMode(input: {
+  featureOn: boolean;
+  canEdit: boolean;
+  onHostComputer: boolean;
+}): AddAccountMode {
+  if (!input.featureOn) return "terminal";
+  return input.canEdit && input.onHostComputer ? "button" : "elsewhere";
+}

@@ -3,13 +3,22 @@ import type { OmpAccountRoutingState } from "@getpaseo/protocol/messages";
 import type { AccountRoutingAuthority } from "../account-routing/authority.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../messages.js";
 import type { SessionDelivery } from "./owned-subscriptions/index.js";
+import type { OmpAccountLogin } from "../account-routing/login.js";
 
 type GetState = Extract<SessionInboundMessage, { type: "account.routing.get_state.request" }>;
 type Mutate = Extract<SessionInboundMessage, { type: "account.routing.mutate.request" }>;
+type LoginStart = Extract<SessionInboundMessage, { type: "account.routing.login.start.request" }>;
+type LoginStatus = Extract<
+  SessionInboundMessage,
+  { type: "account.routing.login.get_status.request" }
+>;
+type LoginCancel = Extract<SessionInboundMessage, { type: "account.routing.login.cancel.request" }>;
 
 export interface AccountRoutingSessionOptions {
   /** Absent when the policy file was unreadable: host routing is off and requests fail typed. */
   authority?: Pick<AccountRoutingAuthority, "observe" | "mutate" | "snapshot">;
+  /** Absent unless the host can sign accounts in (macOS with account routing). */
+  login?: Pick<OmpAccountLogin, "start" | "status" | "cancel">;
   delivery: Pick<SessionDelivery, "begin" | "isModern" | "currentSource">;
   emit(message: SessionOutboundMessage): void;
   logger: pino.Logger;
@@ -87,6 +96,46 @@ export class AccountRoutingSession {
     } catch (error) {
       this.failed(msg, error);
     }
+  }
+
+  async handleLoginStart(msg: LoginStart): Promise<void> {
+    const { login, emit } = this.options;
+    if (!login) return this.loginUnavailable(msg);
+    const { status, error } = login.start();
+    emit({
+      type: "account.routing.login.start.response",
+      payload: { requestId: msg.requestId, status, error },
+    });
+  }
+
+  async handleLoginStatus(msg: LoginStatus): Promise<void> {
+    const { login, emit } = this.options;
+    if (!login) return this.loginUnavailable(msg);
+    emit({
+      type: "account.routing.login.get_status.response",
+      payload: { requestId: msg.requestId, status: login.status(), error: null },
+    });
+  }
+
+  async handleLoginCancel(msg: LoginCancel): Promise<void> {
+    const { login, emit } = this.options;
+    if (!login) return this.loginUnavailable(msg);
+    emit({
+      type: "account.routing.login.cancel.response",
+      payload: { requestId: msg.requestId, status: login.cancel(), error: null },
+    });
+  }
+
+  private loginUnavailable(msg: LoginStart | LoginStatus | LoginCancel): void {
+    this.options.emit({
+      type: "rpc_error",
+      payload: {
+        requestId: msg.requestId,
+        requestType: msg.type,
+        error: "Adding an account is unavailable on this host",
+        code: "account_login_unavailable",
+      },
+    });
   }
 
   private unavailable(msg: GetState | Mutate): void {

@@ -2066,6 +2066,27 @@ export const ja: TranslationResources = {
     },
   },
   ompAccountRouting: {
+    login: {
+      start: "Claude アカウントを追加",
+      explain:
+        "ここに表示されていない Claude アカウントでサインインしてください。一覧にあるアカウントでサインインすると、保存済みのログインが置き換わります。",
+      running: "ブラウザでサインインを完了してください",
+      cancel: "キャンセル",
+      elsewhere: "アカウントを追加するには、ホストのコンピューターで Paseo を開いてください。",
+      saved:
+        "アカウントを保存しました。OMP エージェントが次に起動するかリクエストを送ると、ここに表示されます。Claude でそのアカウントの有料の追加使用量をオフにしてください。オンのアカウントは Paseo が使用しません。",
+      cancelled: "サインインをキャンセルしました。",
+      failure: {
+        timeout: "サインインが 10 分でタイムアウトしました。もう一度お試しください。",
+        paste_code_unsupported:
+          "ブラウザが Paseo に戻れなかったため、サインインをキャンセルしました。ポート 54545 を他のものが使っていないか確認して、もう一度お試しください。",
+        browser_open_failed: "Paseo はこのコンピューターでブラウザを開けませんでした。",
+        omp_failed:
+          "OMP はサインインを完了できませんでした。もう一度お試しいただくか、ターミナルで omp を実行して /login と入力してください。",
+        spawn_failed: "Paseo はこのコンピューターで OMP を起動できませんでした。",
+        unreachable: "ホストとの接続が切れました。接続を確認してもう一度お試しください。",
+      },
+    },
     labels: {
       title: "Claude accounts (Oh My Pi)",
       scope:

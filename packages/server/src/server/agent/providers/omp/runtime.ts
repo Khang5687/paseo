@@ -61,6 +61,11 @@ export interface OmpRuntimeSession {
   setAutoCompaction(enabled: boolean): Promise<void>;
   goal(action: OmpGoalAction): Promise<OmpGoalModeState | null>;
   abort(): Promise<void>;
+  /**
+   * Signs `providerId` into OMP's native store. OMP drives the browser step through
+   * `open_url` / `input` extension UI events; the call settles when the login ends.
+   */
+  login(providerId: string): Promise<void>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;
   getMessages(): Promise<OmpAgentMessage[]>;

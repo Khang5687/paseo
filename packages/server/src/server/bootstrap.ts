@@ -145,6 +145,7 @@ import { createAgentProviderRuntime } from "./agent/provider-runtime.js";
 import { bindOmpAccountRouting } from "./agent/provider-registry.js";
 import { AccountRoutingAuthority } from "./account-routing/authority.js";
 import { AccountRoutingStore } from "./account-routing/store.js";
+import { createMacAccountLogin, type OmpAccountLogin } from "./account-routing/login.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import {
@@ -535,10 +536,23 @@ export interface PaseoDaemonDependencies {
   hubRelationshipClock?: HubRelationshipClock;
   hubRelationshipRetryPolicy?: HubRelationshipRetryPolicy;
   createHubDaemonId?: () => string;
+  /** Test seam: replaces the macOS-only host sign-in. */
+  accountLogin?: OmpAccountLogin;
   serverFeatureOverrides?: {
     daemonStatusRpc?: boolean;
     relayConfig?: boolean;
   };
+}
+
+function resolveAccountLogin(
+  dependencies: PaseoDaemonDependencies,
+  accountRouting: AccountRoutingAuthority | undefined,
+  logger: Logger,
+  config: PaseoDaemonConfig,
+): OmpAccountLogin | undefined {
+  if (dependencies.accountLogin) return dependencies.accountLogin;
+  if (!accountRouting) return undefined;
+  return createMacAccountLogin({ logger, runtimeSettings: config.agentProviderSettings?.omp });
 }
 
 function resolveBuiltinPluginLoader(dependencies: PaseoDaemonDependencies): BuiltinPluginLoader {
@@ -973,6 +987,12 @@ export async function createPaseoDaemon(
   const unbindAccountRouting = accountRouting
     ? bindOmpAccountRouting(accountRouting)
     : () => undefined;
+  // Mac-only: the browser opens on the host and OMP's own loopback callback finishes the login.
+  const accountLogin = resolveAccountLogin(dependencies, accountRouting, logger, config);
+  const disposeAccountRouting = () => {
+    accountLogin?.dispose();
+    accountRouting?.dispose();
+  };
   const agentProviderRuntime = await createAgentProviderRuntime({
     paseoHome: config.paseoHome,
     logger,
@@ -1811,6 +1831,7 @@ export async function createPaseoDaemon(
               orchestrationSkills,
               workspaceLabelService,
               accountRouting,
+              accountLogin,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
@@ -1866,7 +1887,7 @@ export async function createPaseoDaemon(
       await agentProviderRuntime.shutdown().catch(() => undefined);
       unsubscribeAccountRoutingDisposal();
       unbindAccountRouting();
-      accountRouting?.dispose();
+      disposeAccountRouting();
       if (mainStarted) {
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
@@ -1902,7 +1923,7 @@ export async function createPaseoDaemon(
     await agentProviderRuntime.shutdown();
     unsubscribeAccountRoutingDisposal();
     unbindAccountRouting();
-    accountRouting?.dispose();
+    disposeAccountRouting();
     await pluginRuntime.stopAllPlugins();
     terminalManager.killAll();
     await speechService.stop();

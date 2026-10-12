@@ -1,9 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type {
+  OmpAccountLoginStatus,
   OmpAccountRoutingMutation,
   OmpAccountRoutingState,
 } from "@getpaseo/protocol/messages";
+import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 
@@ -161,6 +163,166 @@ export class RoutingController {
     this.snapshot = { ...this.snapshot, ...patch };
     for (const listener of this.listeners) listener();
   }
+}
+
+export type LoginClient = Pick<
+  DaemonClient,
+  "startOmpAccountLogin" | "getOmpAccountLoginStatus" | "cancelOmpAccountLogin"
+>;
+
+export type LoginFailure = NonNullable<OmpAccountLoginStatus["failure"]> | "unreachable";
+
+export interface LoginSnapshot {
+  phase: "idle" | "starting" | "running" | "succeeded" | "failed" | "cancelled";
+  failure: LoginFailure | null;
+}
+
+const LOGIN_POLL_MS = 2_000;
+const LOGIN_IDLE: LoginSnapshot = { phase: "idle", failure: null };
+
+/**
+ * Drives one host-side Claude sign-in. The host opens the browser and finishes the login itself;
+ * this only starts it, polls the outcome, and cancels. Nothing secret is ever in a status.
+ */
+export class AccountLoginController {
+  private snapshot: LoginSnapshot = LOGIN_IDLE;
+  private readonly listeners = new Set<() => void>();
+  private client: LoginClient | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private attachId = 0;
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  readonly getSnapshot = (): LoginSnapshot => this.snapshot;
+
+  attach(client: LoginClient): void {
+    this.detach();
+    this.client = client;
+    const id = this.attachId;
+    // A page opened mid-login shows it; a finished one is old news.
+    void (async () => {
+      try {
+        const { status } = await client.getOmpAccountLoginStatus();
+        if (id === this.attachId && status.state === "running") this.adopt(status);
+      } catch {
+        // The first poll or a start will surface a dead connection.
+      }
+    })();
+  }
+
+  detach(): void {
+    this.attachId += 1;
+    this.client = null;
+    this.stopPolling();
+    if (this.snapshot.phase === "running" || this.snapshot.phase === "starting") {
+      this.set(LOGIN_IDLE);
+    }
+  }
+
+  async start(): Promise<void> {
+    const client = this.client;
+    const phase = this.snapshot.phase;
+    if (!client || phase === "starting" || phase === "running") return;
+    const id = this.attachId;
+    this.set({ phase: "starting", failure: null });
+    try {
+      const { status } = await client.startOmpAccountLogin();
+      if (id === this.attachId) this.adopt(status);
+    } catch {
+      if (id === this.attachId) this.set({ phase: "failed", failure: "unreachable" });
+    }
+  }
+
+  async cancel(): Promise<void> {
+    const client = this.client;
+    if (!client || this.snapshot.phase !== "running") return;
+    const id = this.attachId;
+    try {
+      const { status } = await client.cancelOmpAccountLogin();
+      if (id === this.attachId) this.adopt(status);
+    } catch {
+      if (id === this.attachId) this.set({ phase: "failed", failure: "unreachable" });
+    }
+  }
+
+  private adopt(status: OmpAccountLoginStatus): void {
+    if (status.state === "running") {
+      this.set({ phase: "running", failure: null });
+      this.startPolling();
+      return;
+    }
+    this.stopPolling();
+    if (status.state === "idle") this.set(LOGIN_IDLE);
+    else this.set({ phase: status.state, failure: status.failure ?? null });
+  }
+
+  private startPolling(): void {
+    if (this.timer) return;
+    const id = this.attachId;
+    this.timer = setInterval(() => void this.poll(id), LOGIN_POLL_MS);
+  }
+
+  private async poll(id: number): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    try {
+      const { status } = await client.getOmpAccountLoginStatus();
+      if (id === this.attachId) this.adopt(status);
+    } catch {
+      if (id !== this.attachId) return;
+      this.stopPolling();
+      this.set({ phase: "failed", failure: "unreachable" });
+    }
+  }
+
+  private stopPolling(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  private set(next: LoginSnapshot): void {
+    this.snapshot = next;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+export interface HostAccountLogin {
+  snapshot: LoginSnapshot;
+  /** The host can sign accounts in (macOS with routing). */
+  featureOn: boolean;
+  /** This app is the desktop app and the host is the daemon on this same computer. */
+  onHostComputer: boolean;
+  start: () => void;
+  cancel: () => void;
+}
+
+/** Add-account for one host. Mount with `key={serverId}` so hosts never share state. */
+export function useHostAccountLogin(serverId: string): HostAccountLogin {
+  const [controller] = useState(() => new AccountLoginController());
+  const client = useHostRuntimeClient(serverId);
+  const connected = useHostRuntimeIsConnected(serverId);
+  const featureOn = useHostFeature(serverId, "ompAccountLogin");
+  const onHostComputer = useIsLocalDaemon(serverId);
+  const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+
+  useEffect(() => {
+    if (!client || !connected || !featureOn || !onHostComputer) return undefined;
+    controller.attach(client);
+    return () => controller.detach();
+  }, [client, connected, controller, featureOn, onHostComputer]);
+
+  return {
+    snapshot,
+    featureOn,
+    onHostComputer,
+    start: () => void controller.start(),
+    cancel: () => void controller.cancel(),
+  };
 }
 
 export interface HostAccountRouting {

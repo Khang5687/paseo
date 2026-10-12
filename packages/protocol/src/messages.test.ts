@@ -810,3 +810,43 @@ describe("usage routing metadata", () => {
     expect(UsageSubscriptionSchema.safeParse({ ...nulls, source: "guess" }).success).toBe(false);
   });
 });
+
+describe("OMP account login messages", () => {
+  test("parses start, status, and cancel requests and their responses", () => {
+    for (const op of ["start", "get_status", "cancel"] as const) {
+      expect(
+        SessionInboundMessageSchema.parse({
+          type: `account.routing.login.${op}.request`,
+          requestId: "r1",
+        }),
+      ).toMatchObject({ requestId: "r1" });
+      const response = SessionOutboundMessageSchema.parse({
+        type: `account.routing.login.${op}.response`,
+        payload: {
+          requestId: "r1",
+          status: { state: "failed", failure: "paste_code_unsupported", startedAt: 5 },
+          error: op === "start" ? "already_running" : null,
+        },
+      });
+      expect(response).toMatchObject({ payload: { status: { state: "failed" } } });
+    }
+  });
+
+  test("rejects an unknown state and carries no credential fields", () => {
+    expect(() =>
+      SessionOutboundMessageSchema.parse({
+        type: "account.routing.login.get_status.response",
+        payload: { requestId: "r1", status: { state: "bogus" }, error: null },
+      }),
+    ).toThrow();
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "account.routing.login.get_status.response",
+      payload: {
+        requestId: "r1",
+        status: { state: "running", url: "https://x?code=secret", code: "secret" },
+        error: null,
+      },
+    });
+    expect(JSON.stringify(parsed)).not.toContain("secret");
+  });
+});

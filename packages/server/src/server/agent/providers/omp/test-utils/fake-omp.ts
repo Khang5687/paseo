@@ -171,6 +171,13 @@ export class FakeOmpSession implements OmpRuntimeSession {
   readonly hostToolUpdates: OmpRpcHostToolUpdate[] = [];
   getStateRequestCount = 0;
   abortRequested = false;
+  readonly loginRequests: string[] = [];
+  /** Scripts one login: emit events, await the reply to a UI request, then resolve or throw. */
+  loginHandler: ((session: FakeOmpSession) => Promise<void>) | null = null;
+  private rejectWhenClosed: (error: Error) => void = () => undefined;
+  private readonly closedSignal = new Promise<never>((_, reject) => {
+    this.rejectWhenClosed = reject;
+  });
   abortError: Error | null = null;
   onAbort: (() => void) | null = null;
   private heldStateRequests: Array<() => void> | null = null;
@@ -221,6 +228,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
     private readonly removedModels: ReadonlySet<string> = new Set(),
   ) {
     this.environment = launch.env ?? {};
+    this.closedSignal.catch(() => undefined);
     this.state = {
       model: null,
       thinkingLevel: "medium",
@@ -360,6 +368,12 @@ export class FakeOmpSession implements OmpRuntimeSession {
       ...this.state,
       autoCompactionEnabled: enabled,
     };
+  }
+
+  async login(providerId: string): Promise<void> {
+    this.loginRequests.push(providerId);
+    // Like the real transport, closing the process fails a login that is still waiting.
+    await Promise.race([this.loginHandler?.(this) ?? Promise.resolve(), this.closedSignal]);
   }
 
   async abort(): Promise<void> {
@@ -569,6 +583,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.rejectWhenClosed(new Error("OMP RPC session is closed"));
   }
 
   emit(event: OmpRuntimeEvent): void {

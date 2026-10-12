@@ -105,6 +105,7 @@ import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
 import type { AccountRoutingAuthority } from "./account-routing/authority.js";
+import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -546,6 +547,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
   private readonly accountRouting: AccountRoutingAuthority | undefined;
+  private readonly accountLogin: OmpAccountLogin | undefined;
   // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
   private accountRoutingSupported = false;
   private releaseAccountRoutingObserver: (() => void) | null = null;
@@ -668,6 +670,7 @@ export class VoiceAssistantWebSocketServer {
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
     accountRouting?: AccountRoutingAuthority,
+    accountLogin?: OmpAccountLogin,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -704,6 +707,7 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
     this.accountRouting = accountRouting;
+    this.accountLogin = accountLogin;
     this.observeAccountRoutingCapability();
     const requiredServices = requireWebSocketServices({
       scheduleService,
@@ -1528,6 +1532,7 @@ export class VoiceAssistantWebSocketServer {
       workspaceRegistry: this.workspaceRegistry,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
       accountRouting: this.accountRouting,
+      accountLogin: this.accountLogin,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -1843,6 +1848,8 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
         ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
+        // The host can open a browser and sign a Claude account in; only advertised with routing.
+        ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
