@@ -1,4 +1,4 @@
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +19,7 @@ import {
   ROUTING_MODEL,
   routingBlockedCatalog,
   routingHost,
+  routingRef,
 } from "./test-utils/fake-omp.js";
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 
@@ -1602,5 +1603,69 @@ describe("OMP host account routing in the session adapter", () => {
     expect(host.authority.snapshot().activeRequests).toEqual([
       expect.objectContaining({ agentId: "agent-7", nativeSessionId: "native-session-1" }),
     ]);
+  });
+
+  test("usageSession carries the authority's serving metadata for its trusted agent, never another agent's", async () => {
+    const host = routingHost();
+    const child = new FakeOmpChild();
+    const omp = new OmpHarness({
+      routing: { authority: host.authority, child, agentId: "agent-7" },
+    });
+    await omp.start();
+    const runtimeInstanceId = String(
+      (await child.waitForFrame("account.routing.configure")).runtimeInstanceId,
+    );
+    expect(omp.usageSession()?.managedRouting).toMatchObject({
+      agentId: "agent-7",
+      activeRequests: [],
+      lastServed: [],
+    });
+
+    child.emit({
+      type: "account.routing.admit.request",
+      id: "ar-1",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      purpose: "main",
+      provider: "anthropic",
+      modelId: ROUTING_MODEL,
+      requestGeneration: 1,
+      catalog: catalogFor(runtimeInstanceId, 1, false),
+    });
+    const response = await child.waitForFrame("account.routing.admit.response");
+    const decision = response.decision as { admissionId: string; selectionGeneration: number };
+    // Admitted is not serving.
+    expect(omp.usageSession()?.managedRouting?.lastServed).toEqual([]);
+
+    child.emit({
+      type: "account.routing.started",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      admissionId: decision.admissionId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      modelId: ROUTING_MODEL,
+      accountRef: routingRef(1),
+      selectionGeneration: decision.selectionGeneration,
+      startedAt: 1_000_005,
+    });
+    await vi.waitFor(() =>
+      expect(omp.usageSession()?.managedRouting?.activeRequests).toEqual([
+        expect.objectContaining({ accountRef: routingRef(1), phase: "serving" }),
+      ]),
+    );
+    expect(omp.usageSession()?.managedRouting?.lastServed).toEqual([
+      expect.objectContaining({ agentId: "agent-7", accountRef: routingRef(1) }),
+    ]);
+  });
+
+  test("an unmanaged OMP launch has no managed routing metadata", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    expect(omp.usageSession()?.managedRouting).toBeUndefined();
   });
 });
