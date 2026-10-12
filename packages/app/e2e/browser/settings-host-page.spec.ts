@@ -1,5 +1,16 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
+import { buildOpenProjectRoute } from "@/utils/host-routes";
+import {
+  expectRoutingLoaded,
+  installRoutingGate,
+  routingRow,
+  routingSection,
+  startRoutingFixtureHost,
+  type RoutingFixtureHost,
+} from "../support/helpers/account-routing";
 import { gotoAppShell, openSettings } from "../support/helpers/app";
+import { addConnectedHostAndReload } from "../support/helpers/hosts";
 import { getE2EDaemonPort } from "../support/helpers/daemon-port";
 import { TEST_HOST_LABEL } from "../support/helpers/daemon-registry";
 import { startIsolatedHostDaemon } from "../support/helpers/isolated-host-daemon";
@@ -8,6 +19,7 @@ import {
   expectSettingsHeader,
   openSettingsHost,
   openHostSection,
+  openCompactSettings,
   expectHostLabelDisplayed,
   clickEditHostLabel,
   expectHostLabelEditMode,
@@ -150,5 +162,177 @@ test.describe("Settings host page", () => {
     await openHostSection(page, serverId, "host");
     await expectHostLabelDisplayed(page);
     await expectHostActionCards(page, serverId);
+  });
+});
+
+async function openRoutingSection(
+  page: Page,
+  host: RoutingFixtureHost,
+  options: { compact: boolean; readOnly?: boolean },
+) {
+  await gotoAppShell(page);
+  const gate = await installRoutingGate(page, host.port, { readOnly: options.readOnly });
+  await addConnectedHostAndReload(page, {
+    serverId: host.serverId,
+    label: "Routing host",
+    port: host.port,
+  });
+  if (options.compact) {
+    await openCompactSettings(page, buildOpenProjectRoute());
+  } else {
+    await openSettings(page);
+  }
+  await selectSettingsHost(page, host.serverId);
+  await openHostSection(page, host.serverId, "providers");
+  await expectRoutingLoaded(page);
+  await routingSection(page).scrollIntoViewIfNeeded();
+  return gate;
+}
+
+async function shot(page: Page, name: string): Promise<void> {
+  // Start at the section title so the notices above the controls are in frame.
+  await routingSection(page).evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: `../../.scratch/routing-${name}.png` });
+}
+
+for (const layout of [
+  { name: "compact", compact: true, viewport: { width: 390, height: 844 } },
+  { name: "desktop", compact: false, viewport: { width: 1280, height: 860 } },
+]) {
+  test.describe(`Settings host providers: OMP account routing (${layout.name})`, () => {
+    test.use({ viewport: layout.viewport });
+
+    test("selects, toggles, excludes and reorders without coupling the controls", async ({
+      page,
+    }) => {
+      test.setTimeout(240_000);
+      const host = await startRoutingFixtureHost();
+      try {
+        const gate = await openRoutingSection(page, host, layout);
+        const auto = page.getByRole("switch", { name: "Auto-routing", exact: true });
+        const rows = page.locator('[data-testid^="omp-routing-row-"]');
+
+        await test.step("loaded: three accounts, duplicate email told apart, billing refusal explained", async () => {
+          await expect(rows).toHaveCount(3);
+          await expect(routingRow(page, "acct-2")).toContainText("North Co");
+          await expect(routingRow(page, "acct-3")).toContainText("South Co");
+          await expect(routingRow(page, "acct-3")).toContainText("Paid usage credits are enabled");
+          await expect(routingRow(page, "ada@example.test")).toContainText("40% consumed");
+          await expect(routingRow(page, "acct-2")).toContainText("100% consumed");
+          await shot(page, `${layout.name}-loaded`);
+        });
+
+        await test.step("selecting an account changes only the current account", async () => {
+          await page.getByTestId("omp-routing-account-trigger").click();
+          await page.getByPlaceholder("Search accounts").fill("ada");
+          await page.getByText("Atlas Labs", { exact: true }).last().click();
+          await expect(routingRow(page, "ada@example.test")).toContainText("Selected");
+          await expect(auto).toBeChecked();
+          await shot(page, `${layout.name}-selected`);
+        });
+
+        await test.step("auto-routing switch changes only auto", async () => {
+          await auto.click();
+          await expect(auto).not.toBeChecked();
+          await expect(routingRow(page, "ada@example.test")).toContainText("Selected");
+          await auto.click();
+          await expect(auto).toBeChecked();
+        });
+
+        await test.step("excluding an account does not select or disable auto, and excluding current keeps it selected", async () => {
+          await page.getByRole("switch", { name: "Include in auto-routing: acct-2" }).click();
+          await expect(routingRow(page, "acct-2")).toContainText("Excluded from auto-routing");
+          await page
+            .getByRole("switch", { name: "Include in auto-routing: ada@example.test" })
+            .click();
+          await expect(routingRow(page, "ada@example.test")).toContainText(
+            "Excluded from auto-routing",
+          );
+          await expect(routingRow(page, "ada@example.test")).toContainText("Selected");
+          await page
+            .getByRole("switch", { name: "Include in auto-routing: ada@example.test" })
+            .click();
+          await expect(auto).toBeChecked();
+          await shot(page, `${layout.name}-excluded`);
+        });
+
+        await test.step("priority moves reorder only; keyboard activates them", async () => {
+          const up = page.getByRole("button", { name: "Move up: acct-3" });
+          await up.focus();
+          await page.keyboard.press("Enter");
+          await expect(rows.nth(1)).toContainText("acct-3");
+          await expect(routingRow(page, "ada@example.test")).toContainText("Selected");
+          await expect(routingRow(page, "acct-3")).not.toContainText("Selected");
+          await shot(page, `${layout.name}-reordered`);
+        });
+
+        await test.step("a request being served is attributed to the serving account", async () => {
+          expect((await host.run({ op: "serve" })).decision).toMatchObject({ kind: "admit" });
+          await expect(routingRow(page, "ada@example.test")).toContainText("Serving");
+          await expect(routingRow(page, "ada@example.test")).toContainText("is serving");
+          await shot(page, `${layout.name}-serving`);
+        });
+
+        await test.step("quota pause and recovery", async () => {
+          await host.run({ op: "pause" });
+          await expect(page.getByTestId("omp-routing-notice-paused")).toBeVisible();
+          await shot(page, `${layout.name}-paused`);
+          await host.run({ op: "recover" });
+          await expect(page.getByTestId("omp-routing-notice-recovered")).toBeVisible();
+          await shot(page, `${layout.name}-recovered`);
+        });
+
+        await test.step("a stale revision shows the host's state and the conflict", async () => {
+          gate.hold();
+          await host.run({ op: "mutate", command: { kind: "set_auto", enabled: false } });
+          await page.getByRole("switch", { name: "Include in auto-routing: acct-2" }).click();
+          await expect(page.getByTestId("omp-routing-notice-conflict")).toBeVisible();
+          await expect(auto).not.toBeChecked();
+          await shot(page, `${layout.name}-conflict`);
+          gate.release();
+        });
+
+        await test.step("withdrawn host support keeps the section with controls disabled", async () => {
+          await host.run({ op: "archive-agent" });
+          await expect(page.getByTestId("omp-routing-notice-unsupported")).toBeVisible();
+          await expect(auto).toBeDisabled();
+          await shot(page, `${layout.name}-unsupported`);
+        });
+      } finally {
+        await host.close();
+      }
+    });
+  });
+}
+
+test.describe("Settings host providers: OMP account routing read-only and offline", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("a host without manage permission is read-only", async ({ page }) => {
+    test.setTimeout(180_000);
+    const host = await startRoutingFixtureHost();
+    try {
+      await openRoutingSection(page, host, { compact: true, readOnly: true });
+      await expect(page.getByTestId("omp-routing-notice-readOnly")).toBeVisible();
+      await expect(page.getByRole("switch", { name: "Auto-routing", exact: true })).toBeDisabled();
+      await shot(page, "compact-read-only");
+    } finally {
+      await host.close();
+    }
+  });
+
+  test("an offline host keeps its last confirmed settings, disabled", async ({ page }) => {
+    test.setTimeout(180_000);
+    const host = await startRoutingFixtureHost();
+    try {
+      await openRoutingSection(page, host, { compact: true });
+      await host.close();
+      await expect(page.getByTestId("omp-routing-notice-offline")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByRole("switch", { name: "Auto-routing", exact: true })).toBeDisabled();
+      await expect(page.locator('[data-testid^="omp-routing-row-"]')).not.toHaveCount(0);
+      await shot(page, "compact-offline");
+    } finally {
+      await host.close();
+    }
   });
 });

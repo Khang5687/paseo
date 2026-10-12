@@ -1,0 +1,308 @@
+import type {
+  OmpAccountRoutingState,
+  OmpRoutingAccount,
+  OmpRoutingAccountRef,
+  OmpRoutingWindow,
+  RoutingWaitOrRefusalCode,
+} from "@getpaseo/protocol/messages";
+
+/** Stable identity of a native account. Never derived from labels or list position. */
+export function refKey(ref: OmpRoutingAccountRef): string {
+  return JSON.stringify([ref.storeNamespace, ref.nativeRowId]);
+}
+
+export function sameRef(a: OmpRoutingAccountRef | null, b: OmpRoutingAccountRef | null): boolean {
+  return (
+    a !== null &&
+    b !== null &&
+    a.storeNamespace === b.storeNamespace &&
+    a.nativeRowId === b.nativeRowId
+  );
+}
+
+export type ServingRequest = OmpAccountRoutingState["activeRequests"][number];
+export type LastServed = OmpAccountRoutingState["lastServed"][number];
+
+export interface AccountRow {
+  key: string;
+  ref: OmpRoutingAccountRef;
+  /** Null for a saved ref the catalog no longer has (tombstone). */
+  account: OmpRoutingAccount | null;
+  /** 1-based position in the visible policy order. */
+  position: number;
+  included: boolean;
+  isCurrent: boolean;
+  serving: ServingRequest[];
+  admitted: ServingRequest[];
+  lastServed: LastServed[];
+}
+
+/** Rows in policy priority order; catalog accounts the policy has not ranked yet follow in catalog order. */
+export function buildAccountRows(state: OmpAccountRoutingState): AccountRow[] {
+  const byKey = new Map(state.accounts.map((account) => [refKey(account.ref), account] as const));
+  const ordered: OmpRoutingAccountRef[] = [];
+  const seen = new Set<string>();
+  const push = (ref: OmpRoutingAccountRef | null) => {
+    if (!ref || seen.has(refKey(ref))) return;
+    seen.add(refKey(ref));
+    ordered.push(ref);
+  };
+  state.policy.priorityOrder.forEach(push);
+  state.accounts.forEach((account) => push(account.ref));
+  push(state.policy.current);
+  return ordered.map((ref, index) => {
+    const key = refKey(ref);
+    const requests = state.activeRequests.filter((request) => sameRef(request.accountRef, ref));
+    return {
+      key,
+      ref,
+      account: byKey.get(key) ?? null,
+      position: index + 1,
+      // Included unless the policy says otherwise, matching the host authority.
+      included:
+        state.policy.inclusion.find((entry) => sameRef(entry.account, ref))?.included ?? true,
+      isCurrent: sameRef(state.policy.current, ref),
+      serving: requests.filter((request) => request.phase === "serving"),
+      admitted: requests.filter((request) => request.phase === "admitted"),
+      lastServed: state.lastServed.filter((entry) => sameRef(entry.accountRef, ref)),
+    };
+  });
+}
+
+export interface AccountTitle {
+  title: string;
+  /** Organization line, or null when the row falls back to the generic missing-account label. */
+  organization: string | null;
+}
+
+function organizationName(account: OmpRoutingAccount, shared: boolean): string | null {
+  if (!account.organizationLabel) return null;
+  return shared ? account.organizationIdentityLabel : account.organizationLabel;
+}
+
+/**
+ * Names an account with the server's labels. A label shared with another account switches to the
+ * server's identity label, and a shared organization to its organization identity label, so two
+ * accounts are never indistinguishable.
+ */
+export function describeAccount(
+  row: AccountRow,
+  rows: readonly AccountRow[],
+  fallbacks: { missing: (rowId: number) => string; unknownOrganization: string },
+): AccountTitle {
+  const account = row.account;
+  if (!account) return { title: fallbacks.missing(row.ref.nativeRowId), organization: null };
+  const others = rows.filter((other) => other.key !== row.key && other.account);
+  const labelShared = others.some((other) => other.account?.label === account.label);
+  const orgShared = others.some(
+    (other) =>
+      other.account?.label === account.label &&
+      other.account.organizationLabel === account.organizationLabel,
+  );
+  return {
+    title: labelShared ? account.identityLabel : account.label,
+    organization: organizationName(account, orgShared) ?? fallbacks.unknownOrganization,
+  };
+}
+
+export type WindowKind = "fiveHour" | "weekly" | "model" | "other";
+
+export interface WindowView {
+  key: string;
+  kind: WindowKind;
+  /** Server label; only shown for model and unclassified windows. */
+  serverLabel: string;
+  /** Whole percent in [0,100]; 100 only when nothing is left, 0 only when nothing is used. */
+  consumedPct: number | null;
+  remainingPct: number | null;
+  resetAt: number | null;
+  observedAt: number | null;
+  stale: boolean;
+}
+
+function windowKind(window: OmpRoutingWindow): WindowKind {
+  if (window.id === "5h") return "fiveHour";
+  if (window.id === "7d" && window.scope.kind === "shared") return "weekly";
+  if (window.scope.kind === "model" || window.scope.kind === "family") return "model";
+  return "other";
+}
+
+const KIND_ORDER: Record<WindowKind, number> = { fiveHour: 0, weekly: 1, model: 2, other: 3 };
+
+/** Rounds so 100% consumed means exhausted and 100% remaining means untouched. */
+export function consumedPercent(usedFraction: number): number {
+  return Math.min(100, Math.max(0, Math.ceil(usedFraction * 100 - 1e-9)));
+}
+
+/** Five-hour, shared weekly, then model/family windows; the server's order within each group. */
+export function buildWindowViews(account: OmpRoutingAccount, nowMs: number): WindowView[] {
+  return account.windows
+    .map((window, index) => ({ window, index }))
+    .toSorted(
+      (a, b) =>
+        KIND_ORDER[windowKind(a.window)] - KIND_ORDER[windowKind(b.window)] || a.index - b.index,
+    )
+    .map(({ window }) => {
+      const expired = window.validUntil !== null && window.validUntil <= nowMs;
+      const measured = window.usedFraction !== null && window.source !== "unknown" && !expired;
+      const consumed = measured ? consumedPercent(window.usedFraction as number) : null;
+      return {
+        key: `${window.id}:${JSON.stringify(window.scope)}`,
+        kind: windowKind(window),
+        serverLabel: window.label,
+        consumedPct: consumed,
+        remainingPct: consumed === null ? null : 100 - consumed,
+        resetAt: window.resetAt,
+        observedAt: window.observedAt,
+        stale: expired || window.source === "unknown",
+      };
+    });
+}
+
+export type BadgeKind =
+  | "current"
+  | "serving"
+  | "lastServed"
+  | "excluded"
+  | "missing"
+  | "billing"
+  | "quota";
+
+/** Which reason copy explains an account's refusal. Billing and credential state outrank quota. */
+export function accountRefusal(
+  row: AccountRow,
+  nowMs: number,
+): { kind: "billing" | "quota" | "unavailable"; code: RoutingWaitOrRefusalCode } | null {
+  const account = row.account;
+  if (!account) return null;
+  if (account.billing.state === "enabled") return { kind: "billing", code: "billing_enabled" };
+  if (account.billing.state === "unknown") return { kind: "billing", code: "billing_unknown" };
+  if (!account.available) return { kind: "unavailable", code: "source_inaccessible" };
+  const blocked = account.quotaBlocks.some(
+    (block) => block.resetAt === null || block.resetAt > nowMs,
+  );
+  return blocked ? { kind: "quota", code: "quota_blocked" } : null;
+}
+
+export type SectionNoticeKind =
+  | "unsupported"
+  | "offline"
+  | "readOnly"
+  | "pending"
+  | "conflict"
+  | "paused"
+  | "recovered";
+
+const NO_RECOVERIES: ReadonlySet<string> = new Set();
+
+export interface SectionState {
+  /** Pre-snapshot states render no controls. */
+  phase: "loading" | "ready";
+  catalog: "empty" | "incomplete" | "stale" | "loaded" | "loading" | "unsupported";
+  capabilitySupported: boolean;
+  capabilityReason: RoutingWaitOrRefusalCode | null;
+  paused: { reason: RoutingWaitOrRefusalCode } | null;
+  recovered: boolean;
+}
+
+/**
+ * `visibleRecoveries` holds the wait ids whose recovery the current state is the first to show, so
+ * "recovered" appears for one committed transition and then gives way to the normal state.
+ */
+export function describeSection(
+  state: OmpAccountRoutingState,
+  visibleRecoveries: ReadonlySet<string> = NO_RECOVERIES,
+): SectionState {
+  const paused = state.pausedRequests.find((request) => request.recoveredAt === null);
+  return {
+    phase: state.catalog.status === "loading" ? "loading" : "ready",
+    catalog: state.catalog.status,
+    capabilitySupported: state.capability.status === "supported",
+    capabilityReason: state.capability.reason,
+    paused: paused ? { reason: paused.reason } : null,
+    recovered:
+      !paused &&
+      state.pausedRequests.some(
+        (request) => request.recoveredAt !== null && visibleRecoveries.has(request.waitId),
+      ),
+  };
+}
+
+/** Local date and time, so a reading says when it was observed or resets, not how long ago. */
+export function formatTimestamp(ms: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(ms);
+}
+
+export interface Notice {
+  id: string;
+  /** i18n key under the shared `ompAccountRouting` namespace. */
+  key: string;
+  alert: boolean;
+}
+
+const notice = (id: string, key: string, alert = false): Notice => ({ id, key, alert });
+
+/** Notices that come from the host's committed state. */
+function stateNotices(
+  state: OmpAccountRoutingState,
+  hostSupportsFeature: boolean,
+  recoveries: ReadonlySet<string>,
+): Notice[] {
+  const section = describeSection(state, recoveries);
+  const notices: Notice[] = [];
+  if (!hostSupportsFeature || !section.capabilitySupported || section.catalog === "unsupported") {
+    notices.push(notice("unsupported", "ompAccountRouting.status.unsupported"));
+    if (section.capabilityReason) {
+      notices.push(
+        notice("capabilityReason", `ompAccountRouting.reason.${section.capabilityReason}`),
+      );
+    }
+  }
+  if (section.paused) {
+    notices.push(notice("paused", "ompAccountRouting.status.paused"));
+    notices.push(notice("pausedReason", `ompAccountRouting.reason.${section.paused.reason}`));
+  }
+  if (section.recovered) notices.push(notice("recovered", "ompAccountRouting.status.recovered"));
+  if (section.catalog === "incomplete") {
+    notices.push(notice("incomplete", "ompAccountRouting.status.unknownUsage"));
+  }
+  if (section.catalog === "stale") notices.push(notice("stale", "ompAccountRouting.labels.stale"));
+  return notices;
+}
+
+export interface NoticeInput {
+  state: OmpAccountRoutingState | null;
+  /** Wait ids whose recovery this state is the first to show. */
+  recoveries: ReadonlySet<string>;
+  featureOn: boolean;
+  offline: boolean;
+  readOnly: boolean;
+  pending: boolean;
+  conflict: boolean;
+  error: string | null;
+}
+
+/** Every notice the section shows, in display order. Each is stated once. */
+export function buildNotices(input: NoticeInput): Notice[] {
+  const flags: Notice[] = [];
+  if (input.offline) flags.push(notice("offline", "ompAccountRouting.status.offline"));
+  if (input.readOnly) flags.push(notice("readOnly", "ompAccountRouting.status.readOnly"));
+  if (input.pending) flags.push(notice("pending", "ompAccountRouting.status.pending"));
+  if (input.conflict) {
+    flags.push(notice("conflict", "ompAccountRouting.mutationError.conflict", true));
+  }
+  if (input.error) {
+    flags.push(notice("error", `ompAccountRouting.mutationError.${input.error}`, true));
+  }
+  let fromState: Notice[] = [];
+  if (input.state) fromState = stateNotices(input.state, input.featureOn, input.recoveries);
+  else if (!input.featureOn)
+    fromState = [notice("unsupported", "ompAccountRouting.status.unsupported")];
+  const isSupportNotice = (n: Notice) => n.id === "unsupported" || n.id === "capabilityReason";
+  // Support first, then connection and permission, then host-reported conditions.
+  return [
+    ...fromState.filter(isSupportNotice),
+    ...flags,
+    ...fromState.filter((n) => !isSupportNotice(n)),
+  ];
+}
