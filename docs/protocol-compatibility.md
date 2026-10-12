@@ -72,6 +72,20 @@ with `subscribe: {}` creates a host-owned stream; reconnect obtains a fresh boot
 replaying a request or falling back to a broadcast subscription. State updates are accepted only
 for the active subscription and in strictly increasing `stateSequence` within one `hostEpoch`.
 
+`PaseoApi.accountRouting` has three calls: `get` (optionally `subscribe: {}`), `observe` (the owned
+handle alone), and `mutate`. Handles from `get({ subscribe })` and `observe` are owned by the API
+and released on dispose; releasing twice sends one release. A host that drops the feature across a
+reconnect gets one diagnostic snapshot (`capability.status: "unsupported"`) on each live handle,
+then the handle releases. Nothing replays.
+
+`mutate` sends `account.routing.mutate.request` with the `expectedPolicyRevision` the caller read.
+The host's `conflict`, `invalid_account`, `unsupported` and `persistence_failed` results return as
+`error` on the resolved value; only transport and correlation failures throw. Responses match on
+`requestId` alone, so a missing, unknown or duplicate ID leaves every other call untouched. A
+disconnect rejects the pending call with `DaemonConnectionError` and the client never resends it:
+the caller re-reads state and decides. A mutation response never edits a retained snapshot; state
+reaches observers only through `account.routing.state.update`.
+
 Preserve established workflows when changing delivery internals. Independent filters and quiet
 connections require a capable daemon; opening the app, reading history and using terminals do not.
 Pre-registry workspace grouping and legacy event normalization belong inside the client boundary.

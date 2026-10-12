@@ -39,11 +39,13 @@ Account routing uses the same request/response pair and adds a retained `.update
 account.routing.get_state.request;
 account.routing.get_state.response;
 account.routing.state.update;
+account.routing.mutate.request;
+account.routing.mutate.response;
 ```
 
 The request keeps `requestId` at the top level and may include `subscribe: {}`. The response
 echoes that ID under `payload` with the full typed state and an optional host subscription ID.
-Retained updates carry the subscription ID and full state. Client routing and reconnect rules are
+Retained updates carry the subscription ID and full state. The mutate pair carries `requestId`, `expectedPolicyRevision` and a `select`, `set_auto`, `set_inclusion` or `move_priority` command; its response returns the state and a typed `error` or `null`. Client routing and reconnect rules are
 in [protocol-compatibility.md](protocol-compatibility.md#owned-observations).
 
 ## Message Shape

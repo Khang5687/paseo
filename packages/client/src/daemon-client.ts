@@ -2562,6 +2562,15 @@ export class DaemonClient {
     return { state: response.state };
   }
 
+  /** Lifecycle-only observation: the caller gets the owned handle and reads state through it. */
+  observeOmpAccountRoutingState(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<OmpAccountRoutingState> {
+    options?.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    return this.createOmpAccountRoutingSubscription(options?.signal);
+  }
+
   /**
    * Submits one revision-checked mutation. Host conflicts and other typed failures come back in
    * `error`; only transport and correlation failures throw. The frame is never queued or resent:

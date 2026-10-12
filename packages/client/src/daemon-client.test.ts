@@ -8421,3 +8421,166 @@ test("a disconnect rejects a pending OMP mutation and never replays it on the ne
   );
   expect(replayed).toHaveLength(0);
 });
+
+test("OMP observeOmpAccountRoutingState delivers a snapshot, unsupported preflight throws, release is idempotent", async () => {
+  const off = await connectMutationClient("routing-observe-off", {
+    features: { ownedSubscriptions: true },
+  });
+  const sentBefore = off.mock.sent.length;
+  expect(() => off.client.observeOmpAccountRoutingState()).toThrow(
+    OmpAccountRoutingUnsupportedError,
+  );
+  expect(off.mock.sent).toHaveLength(sentBefore);
+
+  const { mock, client } = await connectMutationClient("routing-observe");
+  const observation = client.observeOmpAccountRoutingState();
+  const request = parseSentFrame(mock.sent.at(-1));
+  expect(request).toMatchObject({ type: "account.routing.get_state.request", subscribe: {} });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(1),
+        subscriptionId: "observed",
+      },
+    }),
+  );
+  await expect(observation.ready).resolves.toMatchObject({ stateSequence: 1 });
+  const updates: number[] = [];
+  observation.subscribe({
+    snapshot: () => {},
+    update: (m) => {
+      if (m.type === "account.routing.state.update") updates.push(m.payload.state.stateSequence);
+    },
+  });
+  mock.triggerMessage(routingUpdate(accountRoutingState(2), "observed"));
+  await observation.release();
+  const sentAfterRelease = mock.sent.length;
+  await observation.release();
+  mock.triggerMessage(routingUpdate(accountRoutingState(3), "observed"));
+  expect(updates).toEqual([2]);
+  expect(mock.sent).toHaveLength(sentAfterRelease);
+});
+
+test("OMP account-routing smoke: snapshot, mutation, release, supported then unsupported reconnect", async () => {
+  const transports = [createMockTransport(), createMockTransport(), createMockTransport()];
+  let index = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-smoke",
+    reconnect: { enabled: true, baseDelayMs: 1, maxDelayMs: 1 },
+    transportFactory: () => transports[index++]!.transport,
+  });
+  clients.push(client);
+  const supported = { ownedSubscriptions: true, ompAccountRouting: true };
+  const [t1, t2, t3] = transports as [
+    ReturnType<typeof createMockTransport>,
+    ReturnType<typeof createMockTransport>,
+    ReturnType<typeof createMockTransport>,
+  ];
+  const connected = client.connect();
+  t1.triggerOpen({ features: supported });
+  await connected;
+
+  const subscribe = async (id: string) => {
+    const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+    const request = parseSentFrame(t1.sent.at(-1));
+    t1.triggerMessage(
+      wrapSessionMessage({
+        type: "account.routing.get_state.response",
+        payload: {
+          requestId: request.requestId,
+          state: accountRoutingState(1),
+          subscriptionId: id,
+        },
+      }),
+    );
+    const { subscription } = await reading;
+    const seen: number[] = [];
+    subscription!.subscribe({
+      snapshot: (s) => seen.push(s.stateSequence),
+      update: (m) => {
+        if (m.type === "account.routing.state.update") seen.push(m.payload.state.stateSequence);
+      },
+    });
+    return { subscription: subscription!, seen };
+  };
+  const a = await subscribe("smoke-a");
+  const b = await subscribe("smoke-b");
+
+  // Committed updates reach only their own observer; a stale one is dropped.
+  t1.triggerMessage(routingUpdate(accountRoutingState(2), "smoke-a"));
+  t1.triggerMessage(routingUpdate(accountRoutingState(2), "smoke-a"));
+  t1.triggerMessage(routingUpdate(accountRoutingState(3), "smoke-b"));
+  expect(a.seen).toEqual([1, 2]);
+  expect(b.seen).toEqual([1, 3]);
+
+  // A host conflict is a returned value, not a throw.
+  const conflict = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 1,
+    command: { kind: "set_auto", enabled: false },
+  });
+  const mutation = parseSentFrame(t1.sent.at(-1));
+  const error = { code: "conflict", message: "stale revision" };
+  t1.triggerMessage(mutationResponse(mutation.requestId, accountRoutingState(4), error));
+  await expect(conflict).resolves.toMatchObject({ error });
+
+  // Release one observer twice; only the other keeps receiving.
+  await a.subscription.release();
+  await a.subscription.release();
+  t1.triggerMessage(routingUpdate(accountRoutingState(4), "smoke-a"));
+  t1.triggerMessage(routingUpdate(accountRoutingState(4), "smoke-b"));
+  expect(a.seen).toEqual([1, 2]);
+  expect(b.seen).toEqual([1, 3, 4]);
+
+  // Disconnect with a mutation in flight, then reconnect to a supported host.
+  const inFlight = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 4,
+    command: { kind: "set_auto", enabled: true },
+  });
+  const inFlightSettled = inFlight.then(
+    () => "resolved",
+    (e: unknown) => e,
+  );
+  t1.triggerClose({ code: 1006, reason: "network lost" });
+  await expect(inFlightSettled).resolves.toBeInstanceOf(DaemonConnectionError);
+  await vi.waitFor(() => expect(index).toBe(2));
+  t2.triggerOpen({ features: supported });
+  await vi.waitFor(() => expect(b.seen.length).toBe(3));
+  const rebootstrap = parseSentFrame(t2.sent.at(-1));
+  expect(rebootstrap).toMatchObject({ type: "account.routing.get_state.request", subscribe: {} });
+  t2.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: rebootstrap.requestId,
+        state: accountRoutingState(1, "epoch-2"),
+        subscriptionId: "smoke-b2",
+      },
+    }),
+  );
+  await vi.waitFor(() => expect(b.seen.at(-1)).toBe(1));
+  const mutationFrames = (mock: ReturnType<typeof createMockTransport>) =>
+    mock.sent.filter(
+      (d) =>
+        typeof d === "string" &&
+        (JSON.parse(d) as { message?: { type?: string } }).message?.type ===
+          "account.routing.mutate.request",
+    );
+  expect(mutationFrames(t2)).toHaveLength(0);
+
+  // Reconnect to a host that dropped the feature: one diagnostic snapshot, then released.
+  t2.triggerClose({ code: 1006, reason: "network lost" });
+  await vi.waitFor(() => expect(index).toBe(3));
+  t3.triggerOpen({ features: { ownedSubscriptions: true } });
+  await vi.waitFor(() => expect(b.seen.length).toBe(5));
+  expect(mutationFrames(t3)).toHaveLength(0);
+  expect(t3.sent.some((d) => typeof d === "string" && d.includes("account.routing."))).toBe(false);
+  await expect(
+    client.mutateOmpAccountRouting({
+      expectedPolicyRevision: 1,
+      command: { kind: "set_auto", enabled: true },
+    }),
+  ).rejects.toBeInstanceOf(OmpAccountRoutingUnsupportedError);
+});

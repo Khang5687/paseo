@@ -12,6 +12,7 @@ import type {
   ListAvailableProvidersResponse,
   OmpAccountRoutingMutation,
   OmpAccountRoutingMutationResult,
+  OmpAccountRoutingState,
   ListCommandsResponse,
   ListProviderFeaturesRequestMessage,
   ListProviderFeaturesResponseMessage,
@@ -504,6 +505,8 @@ export interface PaseoAccountRoutingActions {
     signal?: AbortSignal;
   }): Promise<OmpAccountRoutingSubscribedRead>;
   get(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  /** Owned observation without a separate read; `ready` resolves with the first snapshot. */
+  observe(options?: { signal?: AbortSignal }): OwnedSubscription<OmpAccountRoutingState>;
   /** Revision-checked mutation. Host conflicts return in `error`; transport failures throw. */
   mutate(options: {
     expectedPolicyRevision: number;
@@ -813,6 +816,7 @@ export function createPaseoApi(
     },
     accountRouting: {
       get: getAccountRouting,
+      observe: (options) => own(() => daemonClient.observeOmpAccountRoutingState(options)),
       mutate: (options) => daemonClient.mutateOmpAccountRouting(options),
     },
     config: {
