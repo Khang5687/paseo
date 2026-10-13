@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
+  OmpAccountLoginPayload,
   OmpAccountRoutingMutationResult,
   OmpAccountRoutingState,
 } from "@getpaseo/protocol/messages";
-import { RoutingController, type RoutingClient } from "./queries";
+import {
+  AccountLoginController,
+  RoutingController,
+  type LoginClient,
+  type RoutingClient,
+} from "./queries";
 
 const ref = (row: number) => ({ storeNamespace: "ns", nativeRowId: row });
 
@@ -231,5 +237,134 @@ describe("RoutingController", () => {
     a.host.push(makeState({ sequence: 2, revision: 2, current: 2 }));
     expect(a.controller.getSnapshot().state?.policy.current).toEqual(ref(2));
     expect(b.controller.getSnapshot().state?.policy.policyRevision).toBe(1);
+  });
+});
+
+describe("AccountLoginController", () => {
+  const payload = (
+    status: OmpAccountLoginPayload["status"],
+    error: OmpAccountLoginPayload["error"] = null,
+  ): OmpAccountLoginPayload => ({ requestId: "r", status, error });
+
+  function loginClient(overrides: Partial<LoginClient> = {}): LoginClient {
+    return {
+      startOmpAccountLogin: vi.fn(async () => payload({ state: "running", startedAt: 1 })),
+      getOmpAccountLoginStatus: vi.fn(async () => payload({ state: "idle" })),
+      cancelOmpAccountLogin: vi.fn(async () => payload({ state: "cancelled" })),
+      ...overrides,
+    };
+  }
+
+  it("runs, polls the host until it succeeds, then stops polling", async () => {
+    vi.useFakeTimers();
+    const statuses: OmpAccountLoginPayload[] = [
+      payload({ state: "idle" }), // read once on attach
+      payload({ state: "running" }),
+      payload({ state: "succeeded" }),
+    ];
+    const client = loginClient({
+      getOmpAccountLoginStatus: vi.fn(async () => statuses.shift() ?? payload({ state: "idle" })),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await controller.start();
+    expect(controller.getSnapshot().phase).toBe("running");
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(controller.getSnapshot().phase).toBe("running");
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(controller.getSnapshot().phase).toBe("succeeded");
+    const polls = vi.mocked(client.getOmpAccountLoginStatus).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(vi.mocked(client.getOmpAccountLoginStatus).mock.calls.length).toBe(polls);
+    expect(polls).toBe(3);
+    controller.detach();
+    vi.useRealTimers();
+  });
+
+  it("reports the host's failure reason", async () => {
+    vi.useFakeTimers();
+    const client = loginClient({
+      getOmpAccountLoginStatus: vi
+        .fn()
+        .mockResolvedValueOnce(payload({ state: "idle" }))
+        .mockResolvedValue(payload({ state: "failed", failure: "paste_code_unsupported" })),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await controller.start();
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "failed",
+      failure: "paste_code_unsupported",
+    });
+    controller.detach();
+    vi.useRealTimers();
+  });
+
+  it("adopts a login another client already started when the host refuses a second one", async () => {
+    vi.useFakeTimers();
+    const client = loginClient({
+      startOmpAccountLogin: vi.fn(async () =>
+        payload({ state: "running", startedAt: 5 }, "already_running"),
+      ),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await controller.start();
+    expect(controller.getSnapshot().phase).toBe("running");
+    controller.detach();
+    vi.useRealTimers();
+  });
+
+  it("shows a login that is already running when the page opens", async () => {
+    vi.useFakeTimers();
+    const client = loginClient({
+      getOmpAccountLoginStatus: vi.fn(async () => payload({ state: "running" })),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.getSnapshot().phase).toBe("running");
+    controller.detach();
+    vi.useRealTimers();
+  });
+
+  it("does not show an old finished login as new state when the page opens", async () => {
+    const client = loginClient({
+      getOmpAccountLoginStatus: vi.fn(async () => payload({ state: "succeeded" })),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await Promise.resolve();
+    expect(controller.getSnapshot().phase).toBe("idle");
+    controller.detach();
+  });
+
+  it("cancel asks the host and shows cancelled", async () => {
+    vi.useFakeTimers();
+    const client = loginClient();
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await controller.start();
+    await controller.cancel();
+    expect(client.cancelOmpAccountLogin).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().phase).toBe("cancelled");
+    controller.detach();
+    vi.useRealTimers();
+  });
+
+  it("a transport failure on start is a failure, not a hang", async () => {
+    const client = loginClient({
+      startOmpAccountLogin: vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await controller.start();
+    expect(controller.getSnapshot()).toMatchObject({ phase: "failed", failure: "unreachable" });
+    controller.detach();
   });
 });

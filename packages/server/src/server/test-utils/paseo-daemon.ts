@@ -26,6 +26,7 @@ import {
   type FakeOmpChildOptions,
 } from "../agent/providers/omp/test-utils/fake-omp.js";
 import type { AccountRoutingAuthority } from "../account-routing/authority.js";
+import type { OmpAccountLogin } from "../account-routing/login.js";
 import type { RoutingCatalog } from "../account-routing/types.js";
 import type { OmpRoutingBlock } from "@getpaseo/protocol/messages";
 
@@ -72,6 +73,8 @@ interface TestPaseoDaemonOptions {
    * routing authority. Synthetic data only; no process is spawned.
    */
   ompRouting?: FakeOmpChildOptions;
+  /** Replaces the macOS-only host sign-in; tests pass one backed by FakeOmp. */
+  ompAccountLogin?: OmpAccountLogin;
 }
 
 /** Test-only control of the fake native peer. Drives the real JSONL frames; never the store. */
@@ -181,6 +184,7 @@ export async function createTestPaseoDaemon(
     }
     const daemon = await createPaseoDaemon(config, logger, {
       builtinPlugins: options.builtinPlugins ?? new BuiltinPluginLoader(undefined, []),
+      accountLogin: options.ompAccountLogin,
       serverFeatureOverrides: {
         daemonStatusRpc: options.daemonStatusRpcCapability,
         relayConfig: options.relayConfigCapability,

@@ -144,6 +144,8 @@ async function serve(): Promise<void> {
   const { DaemonClient } = await import(`${root}/test-utils/daemon-client.js`);
   const fake = await import(`${root}/agent/providers/omp/test-utils/fake-omp.js`);
   const { ROUTING_MODEL, routingAccount, routingCatalog } = fake;
+  const { OmpAccountLogin } = await import(`${root}/account-routing/login.js`);
+  const { default: pino } = await import("pino");
 
   const HOUR = 3_600_000;
   const hour = (n: number) => Date.now() + n * HOUR;
@@ -278,11 +280,31 @@ async function serve(): Promise<void> {
     });
   };
 
+  const loginRuntime = new fake.FakeOmp();
+  loginRuntime.queueSessionSetup((session: { loginHandler: unknown }) => {
+    session.loginHandler = () => new Promise(() => undefined);
+  });
+  loginRuntime.queueSessionSetup((session: { loginHandler: unknown }) => {
+    session.loginHandler = async (s: { emit(event: unknown): void }) =>
+      s.emit({
+        type: "extension_ui_request",
+        id: "u1",
+        method: "open_url",
+        url: "https://claude.example/authorize",
+      });
+  });
   const daemon = await createTestPaseoDaemon({
     mcpEnabled: false,
     listenPort: Number(process.env.ROUTING_FIXTURE_PORT ?? 0),
     corsAllowedOrigins: process.env.ROUTING_FIXTURE_CORS ? [process.env.ROUTING_FIXTURE_CORS] : [],
     ompRouting: { catalogs: (id: string) => [catalog(id, false)] },
+    // Synthetic sign-in: no omp binary, browser or network. The first login waits until cancelled,
+    // the second opens a URL and succeeds.
+    ompAccountLogin: new OmpAccountLogin({
+      runtime: loginRuntime,
+      openUrl: async () => undefined,
+      logger: pino({ level: "silent" }),
+    }),
   });
   if (daemon.port === 6767 || daemon.port === 6768)
     throw new Error("Refusing a reserved daemon port");

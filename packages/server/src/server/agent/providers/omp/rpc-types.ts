@@ -564,6 +564,7 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
     token_budget: z.number().optional(),
   }),
   z.object({ ...OmpCommandBase, type: z.literal("abort") }),
+  z.object({ ...OmpCommandBase, type: z.literal("login"), providerId: z.string().min(1) }),
   z.object({ ...OmpCommandBase, type: z.literal("get_state") }),
   z.object({
     ...OmpCommandBase,

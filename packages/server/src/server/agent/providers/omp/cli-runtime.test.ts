@@ -478,6 +478,38 @@ describe("OMP CLI runtime", () => {
     ]);
   });
 
+  test("login sends the provider id, streams UI requests, and waits past the control timeout", async () => {
+    vi.useFakeTimers();
+    const child = createOmpChild();
+    const pending = capturePendingCommand(child, "login");
+    const session = await createRuntime(child, [], { requestTimeoutMs: 100 }).startSession({
+      cwd: "/workspace/project",
+      protocolMode: "rpc",
+      noSession: true,
+    });
+    const events: unknown[] = [];
+    session.onEvent((event) => events.push(event));
+    try {
+      const login = session.login("anthropic");
+      const command = await pending;
+      expect(withoutRequestId(command)).toEqual({ type: "login", providerId: "anthropic" });
+      child.stdout.write(
+        `${JSON.stringify({ type: "extension_ui_request", id: "u1", method: "open_url", url: "https://claude.example/a" })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(101);
+      expect(events).toEqual([
+        expect.objectContaining({ type: "extension_ui_request", method: "open_url" }),
+      ]);
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: "login", success: true, data: { providerId: "anthropic" } })}\n`,
+      );
+      await expect(login).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+      await session.close();
+    }
+  });
+
   test("compact waits beyond the control-plane timeout for a late response", async () => {
     vi.useFakeTimers();
     const child = createOmpChild();

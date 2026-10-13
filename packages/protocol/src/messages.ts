@@ -3497,6 +3497,57 @@ export const AccountRoutingMutateResponseSchema = z.object({
 });
 export type AccountRoutingMutateResponse = z.infer<typeof AccountRoutingMutateResponseSchema>;
 
+// Host-side Claude sign-in. OMP finishes the login through its own loopback callback on the host,
+// so no URL, authorization code, or token ever crosses these messages. The host holds one login at
+// a time; clients start it, poll its status, and may cancel it.
+export const OmpAccountLoginStatusSchema = z.object({
+  state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
+  failure: z
+    .enum([
+      "timeout",
+      "paste_code_unsupported",
+      "browser_open_failed",
+      "omp_failed",
+      "spawn_failed",
+    ])
+    .optional(),
+  startedAt: z.number().finite().optional(),
+});
+export type OmpAccountLoginStatus = z.infer<typeof OmpAccountLoginStatusSchema>;
+
+const OmpAccountLoginPayloadSchema = z.object({
+  requestId: z.string(),
+  status: OmpAccountLoginStatusSchema,
+  /** Set on a start refused because another login is running; `status` is that login's. */
+  error: z.enum(["already_running"]).nullable().optional(),
+});
+export type OmpAccountLoginPayload = z.infer<typeof OmpAccountLoginPayloadSchema>;
+
+export const AccountRoutingLoginStartRequestSchema = z.object({
+  type: z.literal("account.routing.login.start.request"),
+  requestId: z.string(),
+});
+export const AccountRoutingLoginStartResponseSchema = z.object({
+  type: z.literal("account.routing.login.start.response"),
+  payload: OmpAccountLoginPayloadSchema,
+});
+export const AccountRoutingLoginGetStatusRequestSchema = z.object({
+  type: z.literal("account.routing.login.get_status.request"),
+  requestId: z.string(),
+});
+export const AccountRoutingLoginGetStatusResponseSchema = z.object({
+  type: z.literal("account.routing.login.get_status.response"),
+  payload: OmpAccountLoginPayloadSchema,
+});
+export const AccountRoutingLoginCancelRequestSchema = z.object({
+  type: z.literal("account.routing.login.cancel.request"),
+  requestId: z.string(),
+});
+export const AccountRoutingLoginCancelResponseSchema = z.object({
+  type: z.literal("account.routing.login.cancel.response"),
+  payload: OmpAccountLoginPayloadSchema,
+});
+
 // These connection event streams have no directory bootstrap or timeline membership.
 export const SessionEventSubscriptionSchema = z.enum([
   "project.update",
@@ -3556,6 +3607,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SessionEventsSetSubscriptionRequestSchema,
   AccountRoutingGetStateRequestSchema,
   AccountRoutingMutateRequestSchema,
+  AccountRoutingLoginStartRequestSchema,
+  AccountRoutingLoginGetStatusRequestSchema,
+  AccountRoutingLoginCancelRequestSchema,
   HubExecutionAgentCreateRequestSchema,
   HubExecutionAgentValidateRequestSchema,
   HubExecutionControlRequestSchema,
@@ -4088,6 +4142,7 @@ export const ServerInfoStatusPayloadSchema = z
         explicitEventSubscriptions: z.boolean().optional(),
         ownedSubscriptions: z.boolean().optional(),
         ompAccountRouting: z.boolean().optional(),
+        ompAccountLogin: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
         agentMessageProvenance: z.boolean().optional(),
@@ -7285,6 +7340,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AccountRoutingGetStateResponseSchema,
   AccountRoutingMutateResponseSchema,
   AccountRoutingStateUpdateSchema,
+  AccountRoutingLoginStartResponseSchema,
+  AccountRoutingLoginGetStatusResponseSchema,
+  AccountRoutingLoginCancelResponseSchema,
   HubExecutionAgentCreateResponseSchema,
   HubExecutionAgentValidateResponseSchema,
   HubExecutionControlResponseSchema,

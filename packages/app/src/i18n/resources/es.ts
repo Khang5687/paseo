@@ -2093,6 +2093,28 @@ export const es: TranslationResources = {
     },
   },
   ompAccountRouting: {
+    login: {
+      start: "Añadir cuenta de Claude",
+      explain:
+        "Inicia sesión con una cuenta de Claude que no aparezca aquí. Si inicias sesión con una cuenta de la lista, se reemplaza su inicio de sesión guardado.",
+      running: "Termina de iniciar sesión en tu navegador",
+      cancel: "Cancelar",
+      elsewhere: "Abre Paseo en el ordenador anfitrión para añadir una cuenta.",
+      saved:
+        "Cuenta guardada. Aparecerá aquí cuando un agente de OMP se inicie o envíe una solicitud. Desactiva el uso adicional de pago en esa cuenta en Claude: Paseo omite las cuentas que lo tienen activado.",
+      cancelled: "Inicio de sesión cancelado.",
+      failure: {
+        timeout: "El inicio de sesión caducó tras 10 minutos. Inténtalo de nuevo.",
+        paste_code_unsupported:
+          "El navegador no pudo volver a Paseo, así que se canceló el inicio de sesión. Comprueba que nada más use el puerto 54545 e inténtalo de nuevo.",
+        browser_open_failed: "Paseo no pudo abrir el navegador en este ordenador.",
+        omp_failed:
+          "OMP no pudo terminar el inicio de sesión. Inténtalo de nuevo o ejecuta omp en una terminal y escribe /login.",
+        spawn_failed: "Paseo no pudo iniciar OMP en este ordenador.",
+        unreachable:
+          "Se perdió el contacto con el anfitrión. Revisa la conexión e inténtalo de nuevo.",
+      },
+    },
     labels: {
       title: "Claude accounts (Oh My Pi)",
       scope:

@@ -27,6 +27,7 @@ import {
   DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
+  type OmpAccountLoginPayload,
   type OmpAccountRoutingMutation,
   type OmpAccountRoutingMutationResult,
   type OmpAccountRoutingState,
@@ -253,6 +254,13 @@ export class OmpAccountRoutingUnsupportedError extends Error {
   constructor(message = "The host does not support OMP account routing.") {
     super(message);
     this.name = "OmpAccountRoutingUnsupportedError";
+  }
+}
+
+export class OmpAccountLoginUnsupportedError extends Error {
+  constructor() {
+    super("This host cannot add an account from here");
+    this.name = "OmpAccountLoginUnsupportedError";
   }
 }
 
@@ -2706,6 +2714,40 @@ export class DaemonClient {
       responseType: "account.routing.mutate.response",
       signal: options.signal,
     });
+  }
+
+  private async sendOmpAccountLoginRequest(
+    type:
+      | "account.routing.login.start.request"
+      | "account.routing.login.get_status.request"
+      | "account.routing.login.cancel.request",
+  ): Promise<OmpAccountLoginPayload> {
+    const connected = this.connectionState.status === "connected" && this.transport !== null;
+    if (!connected || this.lastServerInfoMessage?.features?.ompAccountLogin !== true) {
+      throw new OmpAccountLoginUnsupportedError();
+    }
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({ type, requestId }),
+      responseType: type.replace(/\.request$/, ".response") as
+        | "account.routing.login.start.response"
+        | "account.routing.login.get_status.response"
+        | "account.routing.login.cancel.response",
+    });
+  }
+
+  /** Starts a host-side Claude sign-in. The host opens its own browser; nothing secret returns. */
+  startOmpAccountLogin(): Promise<OmpAccountLoginPayload> {
+    return this.sendOmpAccountLoginRequest("account.routing.login.start.request");
+  }
+
+  getOmpAccountLoginStatus(): Promise<OmpAccountLoginPayload> {
+    return this.sendOmpAccountLoginRequest("account.routing.login.get_status.request");
+  }
+
+  cancelOmpAccountLogin(): Promise<OmpAccountLoginPayload> {
+    return this.sendOmpAccountLoginRequest("account.routing.login.cancel.request");
   }
 
   // ============================================================================

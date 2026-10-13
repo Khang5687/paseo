@@ -165,13 +165,47 @@ test.describe("Settings host page", () => {
   });
 });
 
+/** Makes the page look like the desktop app whose built-in daemon is `serverId`. */
+async function installDesktopOnHost(page: Page, serverId: string): Promise<void> {
+  await page.addInitScript((localServerId) => {
+    (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+      platform: "darwin",
+      invoke: async (command: string) => {
+        if (command === "desktop_daemon_status") {
+          return {
+            serverId: localServerId,
+            status: "running",
+            listen: null,
+            hostname: null,
+            pid: null,
+            home: "",
+            version: null,
+            desktopManaged: true,
+            error: null,
+          };
+        }
+        if (command === "get_desktop_settings") {
+          return {
+            releaseChannel: "stable",
+            daemon: { manageBuiltInDaemon: false, keepRunningAfterQuit: true },
+          };
+        }
+        return null;
+      },
+      getPendingOpenProject: async () => null,
+      events: { on: async () => () => undefined },
+    };
+  }, serverId);
+}
+
 async function openRoutingSection(
   page: Page,
   host: RoutingFixtureHost,
-  options: { compact: boolean; readOnly?: boolean },
+  options: { compact: boolean; readOnly?: boolean; desktopOnHost?: boolean },
 ) {
   await gotoAppShell(page);
   const gate = await installRoutingGate(page, host.port, { readOnly: options.readOnly });
+  if (options.desktopOnHost) await installDesktopOnHost(page, host.serverId);
   await addConnectedHostAndReload(page, {
     serverId: host.serverId,
     label: "Routing host",
@@ -228,7 +262,16 @@ for (const layout of [
           );
           await expect(page.getByTestId("omp-routing-account-trigger")).toContainText("Automatic");
           await expect(page.getByTestId("omp-routing-add-hint")).toContainText("/login");
+          // A browser or phone cannot sign in on the host's behalf: it points at the host computer.
+          await expect(page.getByTestId("omp-routing-add-elsewhere")).toHaveText(
+            "Open Paseo on the host computer to add an account.",
+          );
+          await expect(page.getByTestId("omp-routing-add-button")).toHaveCount(0);
           await shot(page, `${layout.name}-loaded`);
+          await page.getByTestId("omp-routing-add-elsewhere").scrollIntoViewIfNeeded();
+          await page.screenshot({
+            path: `../../.scratch/routing-${layout.name}-add-elsewhere.png`,
+          });
         });
 
         await test.step("selecting an account changes only the current account", async () => {
@@ -352,6 +395,54 @@ test.describe("Settings host providers: OMP account routing with one exhausted a
     });
   }
 });
+
+for (const layout of [
+  { name: "compact", compact: true, viewport: { width: 390, height: 844 } },
+  { name: "desktop", compact: false, viewport: { width: 1280, height: 860 } },
+]) {
+  test.describe(`Settings host providers: add Claude account (${layout.name})`, () => {
+    test.use({ viewport: layout.viewport });
+
+    test("the desktop app on the host's computer starts, cancels, and finishes a sign-in", async ({
+      page,
+    }) => {
+      test.setTimeout(240_000);
+      const host = await startRoutingFixtureHost();
+      try {
+        await openRoutingSection(page, host, { ...layout, desktopOnHost: true });
+        const button = page.getByTestId("omp-routing-add-button");
+        await expect(button).toBeVisible();
+        await expect(page.getByTestId("omp-routing-add-elsewhere")).toHaveCount(0);
+        await expect(page.getByTestId("omp-routing-add-account")).toContainText(
+          "Sign in with a Claude account that is not listed here. Signing in with a listed account replaces its saved login.",
+        );
+        await button.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-account.png` });
+
+        await button.click();
+        await expect(page.getByTestId("omp-routing-add-account")).toContainText(
+          "Finish signing in in your browser",
+        );
+        await page.getByTestId("omp-routing-add-cancel").scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-running.png` });
+        await page.getByTestId("omp-routing-add-cancel").click();
+        await expect(page.getByTestId("omp-routing-add-result")).toHaveText("Sign-in cancelled.");
+
+        await page.getByTestId("omp-routing-add-button").click();
+        await expect(page.getByTestId("omp-routing-add-result")).toContainText("Account saved.", {
+          timeout: 15_000,
+        });
+        await expect(page.getByTestId("omp-routing-add-result")).toContainText(
+          "Turn off paid extra usage",
+        );
+        await page.getByTestId("omp-routing-add-result").scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-saved.png` });
+      } finally {
+        await host.close();
+      }
+    });
+  });
+}
 
 test.describe("Settings host providers: OMP account routing read-only and offline", () => {
   test.use({ viewport: { width: 390, height: 844 } });

@@ -6,6 +6,7 @@ import type {
 } from "@getpaseo/protocol/messages";
 import {
   accountRefusal,
+  addAccountMode,
   buildNotices,
   buildAccountRows,
   buildWindowViews,
@@ -503,5 +504,26 @@ describe("routing summary", () => {
     });
     const manual = rowsFor([account(1)], { policy: { ...base, autoEnabled: false } });
     expect(summarizeRouting(manual.s, manual.rows, NOW)).toBeNull();
+  });
+});
+
+describe("addAccountMode", () => {
+  it("shows the button only for an editor on the host's own desktop app", () => {
+    expect(addAccountMode({ featureOn: true, canEdit: true, onHostComputer: true })).toBe("button");
+  });
+
+  it("points every other client at the host computer", () => {
+    expect(addAccountMode({ featureOn: true, canEdit: true, onHostComputer: false })).toBe(
+      "elsewhere",
+    );
+    expect(addAccountMode({ featureOn: true, canEdit: false, onHostComputer: true })).toBe(
+      "elsewhere",
+    );
+  });
+
+  it("falls back to the terminal hint when the host cannot add accounts", () => {
+    expect(addAccountMode({ featureOn: false, canEdit: true, onHostComputer: true })).toBe(
+      "terminal",
+    );
   });
 });

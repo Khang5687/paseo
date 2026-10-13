@@ -2023,6 +2023,25 @@ export const zhCN: TranslationResources = {
     },
   },
   ompAccountRouting: {
+    login: {
+      start: "添加 Claude 账号",
+      explain: "请使用此处未列出的 Claude 账号登录。用列表中已有的账号登录会替换其已保存的登录。",
+      running: "请在浏览器中完成登录",
+      cancel: "取消",
+      elsewhere: "请在主机电脑上打开 Paseo 来添加账号。",
+      saved:
+        "账号已保存。OMP 代理下次启动或发送请求后，它会出现在这里。请在 Claude 中关闭该账号的付费额外用量：Paseo 会跳过已开启它的账号。",
+      cancelled: "登录已取消。",
+      failure: {
+        timeout: "登录在 10 分钟后超时。请重试。",
+        paste_code_unsupported:
+          "浏览器无法返回 Paseo，登录已取消。请确认没有其他程序占用 54545 端口，然后重试。",
+        browser_open_failed: "Paseo 无法在这台电脑上打开浏览器。",
+        omp_failed: "OMP 无法完成登录。请重试，或在终端运行 omp 并输入 /login。",
+        spawn_failed: "Paseo 无法在这台电脑上启动 OMP。",
+        unreachable: "与主机失去联系。请检查连接后重试。",
+      },
+    },
     labels: {
       title: "Claude accounts (Oh My Pi)",
       scope: "适用于此主机上所有由 Paseo 管理的 OMP 代理。其他主机和独立终端不受影响。",

@@ -2091,6 +2091,27 @@ export const fr: TranslationResources = {
     },
   },
   ompAccountRouting: {
+    login: {
+      start: "Ajouter un compte Claude",
+      explain:
+        "Connectez-vous avec un compte Claude qui n'apparaît pas ici. Se connecter avec un compte de la liste remplace sa connexion enregistrée.",
+      running: "Terminez la connexion dans votre navigateur",
+      cancel: "Annuler",
+      elsewhere: "Ouvrez Paseo sur l'ordinateur hôte pour ajouter un compte.",
+      saved:
+        "Compte enregistré. Il apparaîtra ici au prochain démarrage ou à la prochaine requête d'un agent OMP. Désactivez l'usage supplémentaire payant de ce compte dans Claude : Paseo ignore les comptes pour lesquels il est activé.",
+      cancelled: "Connexion annulée.",
+      failure: {
+        timeout: "La connexion a expiré après 10 minutes. Réessayez.",
+        paste_code_unsupported:
+          "Le navigateur n'a pas pu revenir vers Paseo, la connexion a donc été annulée. Vérifiez que rien d'autre n'utilise le port 54545, puis réessayez.",
+        browser_open_failed: "Paseo n'a pas pu ouvrir le navigateur sur cet ordinateur.",
+        omp_failed:
+          "OMP n'a pas pu terminer la connexion. Réessayez, ou lancez omp dans un terminal et tapez /login.",
+        spawn_failed: "Paseo n'a pas pu démarrer OMP sur cet ordinateur.",
+        unreachable: "Contact perdu avec l'hôte. Vérifiez la connexion et réessayez.",
+      },
+    },
     labels: {
       title: "Claude accounts (Oh My Pi)",
       scope:

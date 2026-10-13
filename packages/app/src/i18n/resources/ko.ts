@@ -2055,6 +2055,27 @@ export const ko: TranslationResources = {
     },
   },
   ompAccountRouting: {
+    login: {
+      start: "Claude 계정 추가",
+      explain:
+        "여기에 없는 Claude 계정으로 로그인하세요. 목록에 있는 계정으로 로그인하면 저장된 로그인이 바뀝니다.",
+      running: "브라우저에서 로그인을 마무리하세요",
+      cancel: "취소",
+      elsewhere: "계정을 추가하려면 호스트 컴퓨터에서 Paseo를 여세요.",
+      saved:
+        "계정을 저장했습니다. OMP 에이전트가 다음에 시작하거나 요청을 보내면 여기에 표시됩니다. Claude에서 해당 계정의 유료 추가 사용량을 끄세요. Paseo는 이 기능이 켜진 계정을 건너뜁니다.",
+      cancelled: "로그인이 취소되었습니다.",
+      failure: {
+        timeout: "로그인이 10분 후 시간 초과되었습니다. 다시 시도하세요.",
+        paste_code_unsupported:
+          "브라우저가 Paseo로 돌아오지 못해 로그인이 취소되었습니다. 포트 54545를 다른 프로그램이 쓰고 있지 않은지 확인한 뒤 다시 시도하세요.",
+        browser_open_failed: "Paseo가 이 컴퓨터에서 브라우저를 열지 못했습니다.",
+        omp_failed:
+          "OMP가 로그인을 마치지 못했습니다. 다시 시도하거나 터미널에서 omp를 실행하고 /login을 입력하세요.",
+        spawn_failed: "Paseo가 이 컴퓨터에서 OMP를 시작하지 못했습니다.",
+        unreachable: "호스트와 연결이 끊어졌습니다. 연결을 확인하고 다시 시도하세요.",
+      },
+    },
     labels: {
       title: "Claude accounts (Oh My Pi)",
       scope:

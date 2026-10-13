@@ -1,13 +1,19 @@
 import { afterEach, expect, test, vi } from "vitest";
 import type { OmpAccountRoutingState } from "@getpaseo/protocol/messages";
-import { OmpAccountRoutingUnsupportedError } from "@getpaseo/client";
+import {
+  OmpAccountLoginUnsupportedError,
+  OmpAccountRoutingUnsupportedError,
+} from "@getpaseo/client";
 import { DaemonClient } from "../test-utils/daemon-client.js";
+import pino from "pino";
+import { OmpAccountLogin } from "./login.js";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import {
   ROUTING_MODEL,
   routingAccount,
   routingCatalog,
   routingRef,
+  FakeOmp,
 } from "../agent/providers/omp/test-utils/fake-omp.js";
 
 // Synthetic accounts, a scripted JSONL child, a temp home and port zero. No credential is read and
@@ -193,4 +199,44 @@ test("a runtime without complete coverage never turns the feature on", async () 
   await expect(client.getOmpAccountRoutingState()).rejects.toBeInstanceOf(
     OmpAccountRoutingUnsupportedError,
   );
+});
+
+test("account login is advertised only with routing and a host login, and runs end to end", async () => {
+  const omp = new FakeOmp();
+  const opened: string[] = [];
+  omp.queueSessionSetup((session) => {
+    session.loginHandler = async (s) =>
+      s.emit({
+        type: "extension_ui_request",
+        id: "u1",
+        method: "open_url",
+        url: "https://claude.example/authorize?state=x",
+      });
+  });
+  const ompAccountLogin = new OmpAccountLogin({
+    runtime: omp,
+    logger: pino({ level: "silent" }),
+    openUrl: async (url) => void opened.push(url),
+  });
+  const daemon = await startDaemon({ cleanup: false, ompAccountLogin });
+  const client = await connect(daemon, modern);
+  const loginOn = () => client.getLastServerInfoMessage()?.features?.ompAccountLogin === true;
+  client.observeEvents(["status.server_info"], { notifications: true });
+
+  // No runtime negotiated yet: routing is off, so login is off too.
+  expect(loginOn()).toBe(false);
+  await expect(client.startOmpAccountLogin()).rejects.toBeInstanceOf(
+    OmpAccountLoginUnsupportedError,
+  );
+
+  await daemon.routingFixture!.openAgent(daemon.staticDir);
+  await expect.poll(loginOn).toBe(true);
+
+  const started = await client.startOmpAccountLogin();
+  expect(started.error).toBeNull();
+  await expect
+    .poll(async () => (await client.getOmpAccountLoginStatus()).status.state)
+    .toBe("succeeded");
+  expect(opened).toEqual(["https://claude.example/authorize?state=x"]);
+  expect(omp.latestSession().loginRequests).toEqual(["anthropic"]);
 });

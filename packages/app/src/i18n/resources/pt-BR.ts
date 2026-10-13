@@ -2078,6 +2078,27 @@ export const ptBR: TranslationResources = {
     },
   },
   ompAccountRouting: {
+    login: {
+      start: "Adicionar conta do Claude",
+      explain:
+        "Entre com uma conta do Claude que não aparece aqui. Entrar com uma conta da lista substitui o login salvo dela.",
+      running: "Termine de entrar no seu navegador",
+      cancel: "Cancelar",
+      elsewhere: "Abra o Paseo no computador host para adicionar uma conta.",
+      saved:
+        "Conta salva. Ela aparece aqui quando um agente OMP iniciar ou enviar uma solicitação. Desative o uso extra pago dessa conta no Claude: o Paseo ignora contas com ele ativado.",
+      cancelled: "Login cancelado.",
+      failure: {
+        timeout: "O login expirou após 10 minutos. Tente novamente.",
+        paste_code_unsupported:
+          "O navegador não conseguiu voltar ao Paseo, então o login foi cancelado. Confirme que nada mais usa a porta 54545 e tente novamente.",
+        browser_open_failed: "O Paseo não conseguiu abrir o navegador neste computador.",
+        omp_failed:
+          "O OMP não conseguiu concluir o login. Tente novamente ou execute omp em um terminal e digite /login.",
+        spawn_failed: "O Paseo não conseguiu iniciar o OMP neste computador.",
+        unreachable: "Contato com o host perdido. Verifique a conexão e tente novamente.",
+      },
+    },
     labels: {
       title: "Claude accounts (Oh My Pi)",
       scope:

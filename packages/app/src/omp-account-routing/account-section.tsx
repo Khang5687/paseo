@@ -25,6 +25,7 @@ import {
   buildWindowViews,
   accountRefusal,
   describeAccount,
+  addAccountMode,
   buildNotices,
   describeSection,
   formatTimestamp,
@@ -35,7 +36,7 @@ import {
   type ServingRequest,
   type WindowView,
 } from "./presentation";
-import { useHostAccountRouting } from "./queries";
+import { useHostAccountLogin, useHostAccountRouting, type HostAccountLogin } from "./queries";
 
 const ThemedArrowUp = withUnistyles(ArrowUp);
 const ThemedArrowDown = withUnistyles(ArrowDown);
@@ -307,6 +308,80 @@ function AddAccountHint() {
   );
 }
 
+interface AddAccountProps {
+  login: HostAccountLogin;
+  canEdit: boolean;
+  disabled: boolean;
+}
+
+/** Sign-in happens in the host's own browser, so only the desktop app on that computer starts it. */
+function AddAccount({ login, canEdit, disabled }: AddAccountProps) {
+  const { t } = useTranslation();
+  const mode = addAccountMode({
+    featureOn: login.featureOn,
+    canEdit,
+    onHostComputer: login.onHostComputer,
+  });
+  if (mode === "terminal") return <AddAccountHint />;
+  if (mode === "elsewhere") {
+    return (
+      <>
+        <Text style={styles.listHint} testID="omp-routing-add-elsewhere">
+          {t("ompAccountRouting.login.elsewhere")}
+        </Text>
+        <AddAccountHint />
+      </>
+    );
+  }
+
+  const { phase, failure } = login.snapshot;
+  const running = phase === "starting" || phase === "running";
+  let result: string | null = null;
+  if (phase === "succeeded") result = t("ompAccountRouting.login.saved");
+  else if (phase === "cancelled") result = t("ompAccountRouting.login.cancelled");
+  else if (phase === "failed")
+    result = t(`ompAccountRouting.login.failure.${failure ?? "omp_failed"}`);
+  return (
+    <View style={styles.addAccount} testID="omp-routing-add-account">
+      <Text style={styles.listHint}>
+        {running ? t("ompAccountRouting.login.running") : t("ompAccountRouting.login.explain")}
+      </Text>
+      {result ? (
+        <Text
+          accessibilityRole={phase === "failed" ? "alert" : undefined}
+          style={phase === "failed" ? styles.alert : styles.notice}
+          testID="omp-routing-add-result"
+        >
+          {result}
+        </Text>
+      ) : null}
+      <View style={styles.rowControls}>
+        {running ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={login.cancel}
+            disabled={phase === "starting"}
+            testID="omp-routing-add-cancel"
+          >
+            {t("ompAccountRouting.login.cancel")}
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={login.start}
+            disabled={disabled}
+            testID="omp-routing-add-button"
+          >
+            {t("ompAccountRouting.login.start")}
+          </Button>
+        )}
+      </View>
+    </View>
+  );
+}
+
 function MessageCard({ text }: { text: string }) {
   return (
     <View style={[settingsStyles.card, styles.messageCard]}>
@@ -320,9 +395,11 @@ interface ControlsBodyProps {
   state: OmpAccountRoutingState;
   disabled: boolean;
   mutate: Mutate;
+  login: HostAccountLogin;
+  canEdit: boolean;
 }
 
-function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) {
+function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: ControlsBodyProps) {
   const { t, i18n } = useTranslation();
   const compact = useIsCompactFormFactor();
   const rows = useMemo(() => buildAccountRows(state), [state]);
@@ -434,7 +511,7 @@ function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) 
           </View>
         ))}
       </View>
-      <AddAccountHint />
+      <AddAccount login={login} canEdit={canEdit} disabled={disabled} />
     </>
   );
 }
@@ -443,6 +520,7 @@ function ControlsBody({ serverId, state, disabled, mutate }: ControlsBodyProps) 
 export function AccountRoutingSection({ serverId }: { serverId: string }) {
   const { t } = useTranslation();
   const { snapshot, featureOn, connected, canEdit, mutate } = useHostAccountRouting(serverId);
+  const login = useHostAccountLogin(serverId);
   const { state } = snapshot;
   // Hidden until the host has ever advertised support; kept (disabled) once it has.
   if (!state && !(featureOn && connected)) return null;
@@ -467,11 +545,20 @@ export function AccountRoutingSection({ serverId }: { serverId: string }) {
     body = (
       <>
         <MessageCard text={t("ompAccountRouting.status.empty")} />
-        <AddAccountHint />
+        <AddAccount login={login} canEdit={canEdit} disabled={offline} />
       </>
     );
   } else if (state && section?.phase === "ready") {
-    body = <ControlsBody serverId={serverId} state={state} disabled={disabled} mutate={mutate} />;
+    body = (
+      <ControlsBody
+        serverId={serverId}
+        state={state}
+        disabled={disabled}
+        mutate={mutate}
+        login={login}
+        canEdit={canEdit}
+      />
+    );
   }
 
   return (
@@ -505,6 +592,7 @@ const styles = StyleSheet.create((theme) => ({
   summaryPaused: { color: theme.colors.statusWarning, fontSize: theme.fontSize.base },
   windowLine: { gap: theme.spacing[1] },
   meter: { maxWidth: 280 },
+  addAccount: { gap: theme.spacing[2] },
   listHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,

@@ -82,6 +82,36 @@ describe("SessionAuthorization", () => {
     ).toBe(false);
   });
 
+  test("account login needs daemon.manage; read-only and workspace authority are refused", () => {
+    const requests = [
+      "account.routing.login.start.request",
+      "account.routing.login.get_status.request",
+      "account.routing.login.cancel.request",
+    ] as const;
+    const responses = [
+      "account.routing.login.start.response",
+      "account.routing.login.get_status.response",
+      "account.routing.login.cancel.response",
+    ] as const;
+    const refused = [
+      new SessionAuthorization(["daemon.read"]),
+      new SessionAuthorization(["workspace.read", "workspace.write", "workspace.manage"]),
+    ];
+    const manage = new SessionAuthorization(["daemon.manage"]);
+    for (const type of requests) {
+      expect(manage.allowsInbound(inboundMessage(type))).toBe(true);
+      for (const authorization of refused) {
+        expect(authorization.allowsInbound(inboundMessage(type))).toBe(false);
+      }
+    }
+    for (const type of responses) {
+      expect(manage.allowsOutbound(outboundMessage(type))).toBe(true);
+      for (const authorization of refused) {
+        expect(authorization.allowsOutbound(outboundMessage(type))).toBe(false);
+      }
+    }
+  });
+
   test("workspace and hub authority never reach account routing", () => {
     const authorization = new SessionAuthorization([
       "workspace.read",
