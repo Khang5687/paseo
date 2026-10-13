@@ -108,6 +108,7 @@ function makeManagedAgent(args: {
     unsubscribeSession: null,
     internal: false,
     labels: {},
+    queuedMessages: [],
     lifecycle: "closed",
     session: null,
     activeForegroundTurnId: null,

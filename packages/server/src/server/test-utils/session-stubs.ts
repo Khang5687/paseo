@@ -35,6 +35,7 @@ export function asAgentManager(stub: {
 }): SessionOptions["agentManager"] {
   return createStub<SessionOptions["agentManager"]>({
     listProviderSubagentActivity: () => [],
+    getRetiredInternalAgent: () => null,
     ...stub,
   });
 }
@@ -289,6 +290,13 @@ export function createProviderSnapshotManagerStub(): {
 export function createMessageReceiptsStub(): SessionOptions["messageReceipts"] {
   return {
     send: (input) => input.send(),
+  };
+}
+
+export function createAgentMessageQueueStub(): SessionOptions["agentMessageQueue"] {
+  return {
+    sendNow: async () => {},
+    drainIfIdle: () => {},
   };
 }
 

@@ -1,4 +1,5 @@
 import {
+  createAgentMessageQueueStub,
   createMessageReceiptsStub,
   createTestCreationService,
 } from "./test-utils/session-stubs.js";
@@ -189,6 +190,7 @@ function createSessionForWorkspaceGitWatchTests(options?: {
 
   const session = new Session({
     messageReceipts: createMessageReceiptsStub(),
+    agentMessageQueue: createAgentMessageQueueStub(),
     creationService: createTestCreationService(),
     clientId: "test-client",
     permissions: OWNER_PERMISSIONS,

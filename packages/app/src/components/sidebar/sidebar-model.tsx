@@ -4,10 +4,13 @@ import {
   useSidebarWorkspacesList,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
+  type SidebarWorkspacePlacement,
   type SidebarWorkspacesListResult,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import { usePinnedSidebarKeys, type PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
+import { useSidebarWorkspaceParents } from "@/hooks/use-sidebar-workspace-parents";
+import { useSettledSidebarKeys } from "@/hooks/use-sidebar-settled";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import {
   hasActiveSidebarLabelFilter,
@@ -41,9 +44,11 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   workspaceGroups: SidebarWorkspaceGroup[];
   projectIconTargets: SidebarProjectIconTarget[];
   pinnedGroups: PinnedSidebarGroups;
+  settledRows: SidebarWorkspacePlacement[];
   collapsedProjectKeys: ReadonlySet<string>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   shortcutModel: SidebarShortcutModel;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
 const SidebarModelContext = createContext<SidebarModel | null>(null);
@@ -57,6 +62,7 @@ export function SidebarModelProvider({
 }) {
   const { t } = useTranslation();
   const list = useSidebarWorkspacesList({ enabled: active });
+  const showBackground = useSidebarViewStore((state) => state.showBackground);
   const groupMode = useSidebarViewStore((state) => state.groupMode);
   const labelFilter = useSidebarViewStore((state) => state.labelFilter);
   const projectFilters = useSidebarViewStore((state) => state.projectFilters);
@@ -107,9 +113,12 @@ export function SidebarModelProvider({
       workspaces: [...workspaceEntriesByKey.values()],
       projectFilters: resolvedProjectFilters,
     });
-    const filtered = filterWorkspacesByLabels({ workspaces: byProject, ...labelFilter });
+    const filtered = filterWorkspacesByLabels({
+      workspaces: byProject.filter((workspace) => showBackground || !workspace.background),
+      ...labelFilter,
+    });
     return new Map(filtered.map((workspace) => [workspace.workspaceKey, workspace]));
-  }, [labelFilter, resolvedProjectFilters, workspaceEntriesByKey]);
+  }, [showBackground, labelFilter, resolvedProjectFilters, workspaceEntriesByKey]);
   const visibleWorkspaceKeys = useMemo(
     () => new Set(filteredWorkspaceEntriesByKey.keys()),
     [filteredWorkspaceEntriesByKey],
@@ -124,16 +133,19 @@ export function SidebarModelProvider({
       const included = new Set(resolvedProjectFilters);
       projects = projects.filter((project) => included.has(project.viewKey));
     }
-    if (hasActiveLabelFilter) {
+    if (hasActiveLabelFilter || !showBackground) {
       projects = projects.flatMap((project) => {
         const workspaces = project.workspaces.filter((workspace) =>
           visibleWorkspaceKeys.has(workspace.workspaceKey),
         );
-        return workspaces.length > 0 ? [{ ...project, workspaces }] : [];
+        return workspaces.length > 0 || (!hasActiveLabelFilter && project.workspaces.length === 0)
+          ? [{ ...project, workspaces }]
+          : [];
       });
     }
     return projects;
   }, [
+    showBackground,
     hasActiveLabelFilter,
     hasActiveProjectFilter,
     resolvedProjectFilters,
@@ -141,10 +153,17 @@ export function SidebarModelProvider({
     visibleWorkspaceKeys,
   ]);
   const pinnedKeys = usePinnedSidebarKeys(filteredProjects);
+  const serverIds = useMemo(
+    () => Array.from(new Set(list.workspacePlacements.map((workspace) => workspace.serverId))),
+    [list.workspacePlacements],
+  );
+  const parentKeyByWorkspaceKey = useSidebarWorkspaceParents(serverIds);
+  const settledKeys = useSettledSidebarKeys(filteredProjects);
   const projectionInput = useMemo(
     () => ({
       projects: filteredProjects,
       pinnedKeys,
+      settledKeys,
       pinnedWorkspaceOrder,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
       projectNamesByViewKey: list.projectNamesByViewKey,
@@ -152,6 +171,7 @@ export function SidebarModelProvider({
       pinnedCollapsed,
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,
+      parentKeyByWorkspaceKey,
       t,
     }),
     [
@@ -162,8 +182,10 @@ export function SidebarModelProvider({
       filteredProjects,
       pinnedCollapsed,
       pinnedKeys,
+      settledKeys,
       pinnedWorkspaceOrder,
       filteredWorkspaceEntriesByKey,
+      parentKeyByWorkspaceKey,
       t,
     ],
   );
@@ -180,9 +202,11 @@ export function SidebarModelProvider({
       workspaceGroups: projection.workspaceGroups,
       projectIconTargets: projection.projectIconTargets,
       pinnedGroups: projection.pinnedGroups,
+      settledRows: projection.settledRows,
       collapsedProjectKeys,
       toggleProjectCollapsed,
       shortcutModel: projection.shortcutModel,
+      nestingDepthByWorkspaceKey: projection.nestingDepthByWorkspaceKey,
     }),
     [
       resolvedProjectFilters,

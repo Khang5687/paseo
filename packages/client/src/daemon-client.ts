@@ -5,13 +5,14 @@ import {
   ConnectionSubscriptions,
   type OwnedSubscription,
   DEFAULT_CLIENT_CAPABILITIES,
+  type SubscriptionObserver,
   type TimelineSubscription,
 } from "./connection/index.js";
 import { CreationClient } from "./creation/index.js";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import type { z } from "zod";
 import type { SessionEventSubscription } from "@getpaseo/protocol/messages";
-import type { ClientCapability } from "@getpaseo/protocol/client-capabilities";
+import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import {
   AgentCreateFailedStatusPayloadSchema,
@@ -26,6 +27,12 @@ import {
   DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
+  type AccountRoutingLoginSubmitCodeResponse,
+  type OmpAccountLoginPayload,
+  type OmpAccountRoutingMutation,
+  type OmpAccountRoutingMutationResult,
+  type OmpAccountRoutingState,
+  type OmpRoutingAccountRef,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
@@ -127,6 +134,9 @@ import type {
   AgentSkillSelection,
   AgentSkillsStatus,
   AgentSkillsSaveResult,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
+  AgentAttachment,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentPermissionRequest,
@@ -237,6 +247,198 @@ export class DaemonAuthenticationError extends Error {
     super(reason === "password_required" ? "Password required" : "Incorrect password");
     this.name = "DaemonAuthenticationError";
     this.reason = reason;
+  }
+}
+
+export class OmpAccountRoutingUnsupportedError extends Error {
+  readonly code = "unsupported" as const;
+
+  constructor(message = "The host does not support OMP account routing.") {
+    super(message);
+    this.name = "OmpAccountRoutingUnsupportedError";
+  }
+}
+
+export class OmpAccountLoginUnsupportedError extends Error {
+  constructor() {
+    super("This host cannot add an account from here");
+    this.name = "OmpAccountLoginUnsupportedError";
+  }
+}
+
+export interface OmpAccountRoutingRead {
+  state: OmpAccountRoutingState;
+  subscription?: OwnedSubscription<OmpAccountRoutingState>;
+}
+
+export interface OmpAccountRoutingSubscribedRead extends OmpAccountRoutingRead {
+  subscription: OwnedSubscription<OmpAccountRoutingState>;
+}
+
+type OmpAccountRoutingBootstrap = OmpAccountRoutingState & { subscriptionId: string };
+
+class OmpAccountRoutingSubscription implements OwnedSubscription<OmpAccountRoutingState> {
+  private readonly observers = new Set<SubscriptionObserver<OmpAccountRoutingBootstrap>>();
+  private readonly detachSource: () => void;
+  private readonly readyPromise: Promise<OmpAccountRoutingBootstrap>;
+  private readonly abortHandler: (() => void) | null;
+  private resolveReady!: (snapshot: OmpAccountRoutingBootstrap) => void;
+  private rejectReady!: (error: unknown) => void;
+  private currentBootstrap: OmpAccountRoutingBootstrap | null = null;
+  private readySettled = false;
+  private released = false;
+  private removed = false;
+
+  constructor(
+    private readonly source: OwnedSubscription<OmpAccountRoutingBootstrap>,
+    private readonly onRelease: () => void,
+    private readonly onFailure: (error: unknown) => void,
+    private readonly signal?: AbortSignal,
+  ) {
+    this.abortHandler = this.signal
+      ? () => {
+          const reason = this.signal?.reason;
+          this.cancel(reason instanceof Error ? reason : new Error("Request aborted"));
+        }
+      : null;
+    this.readyPromise = new Promise<OmpAccountRoutingBootstrap>((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
+    });
+    void this.readyPromise.catch(() => {});
+    this.detachSource = source.subscribe({
+      snapshot: (snapshot) => this.acceptSnapshot(snapshot),
+      update: (message) => {
+        if (this.released || message.type !== "account.routing.state.update") return;
+        const subscriptionId = this.source.subscriptionId;
+        if (!subscriptionId || message.payload.subscriptionId !== subscriptionId) return;
+        const nextState = message.payload.state;
+        const previousState = this.currentBootstrap;
+        if (
+          previousState &&
+          nextState.hostEpoch === previousState.hostEpoch &&
+          nextState.stateSequence <= previousState.stateSequence
+        ) {
+          return;
+        }
+        this.currentBootstrap = { ...nextState, subscriptionId };
+        for (const observer of this.observers) {
+          this.notify(() => observer.update(message));
+        }
+      },
+      error: (error) => {
+        this.rejectReadyIfPending(error);
+        for (const observer of this.observers) {
+          this.notify(() => observer.error?.(error));
+        }
+        this.finishReleased();
+      },
+    });
+    void source.ready.catch((error) => {
+      this.rejectReadyIfPending(error);
+      this.finishReleased();
+    });
+    if (this.signal && this.abortHandler) {
+      this.signal.addEventListener("abort", this.abortHandler, { once: true });
+      if (this.signal.aborted) this.abortHandler();
+    }
+  }
+
+  get subscriptionId(): string | null {
+    return this.source.subscriptionId;
+  }
+
+  get ready(): Promise<OmpAccountRoutingBootstrap> {
+    return this.readyPromise;
+  }
+
+  subscribe(observer: SubscriptionObserver<OmpAccountRoutingBootstrap>): () => void {
+    if (this.released) throw new Error("Subscription released");
+    this.observers.add(observer);
+    const snapshot = this.currentBootstrap;
+    if (snapshot) {
+      this.notify(() => observer.snapshot(snapshot));
+    }
+    return () => {
+      this.observers.delete(observer);
+    };
+  }
+
+  release(): Promise<void> {
+    this.released = true;
+    if (this.signal && this.abortHandler)
+      this.signal.removeEventListener("abort", this.abortHandler);
+    this.detachSource();
+    this.observers.clear();
+    // The owned source memoizes its teardown, so repeated calls share one release.
+    return this.source.release().finally(() => this.finishReleased());
+  }
+
+  cancel(reason: Error): void {
+    if (this.released) return;
+    this.rejectReadyIfPending(reason);
+    void this.release().catch((failure) => this.onFailure(failure));
+  }
+
+  unsupported(): void {
+    if (this.released) return;
+    const error = new OmpAccountRoutingUnsupportedError();
+    if (this.currentBootstrap) {
+      const diagnostic = {
+        ...this.currentBootstrap,
+        capability: { status: "unsupported" as const, reason: "host_unavailable" as const },
+      };
+      for (const observer of this.observers) {
+        this.notify(() => observer.snapshot(diagnostic));
+      }
+    } else {
+      this.rejectReadyIfPending(error);
+    }
+    void this.release().catch((failure) => this.onFailure(failure));
+  }
+
+  private acceptSnapshot(snapshot: OmpAccountRoutingBootstrap): void {
+    if (this.released) return;
+    this.currentBootstrap = snapshot;
+    this.resolveReadyIfPending(snapshot);
+    for (const observer of this.observers) {
+      this.notify(() => observer.snapshot(snapshot));
+    }
+  }
+
+  private notify(callback: () => void): void {
+    try {
+      callback();
+    } catch (error) {
+      this.onFailure(error);
+    }
+  }
+
+  private resolveReadyIfPending(snapshot: OmpAccountRoutingBootstrap): void {
+    if (this.readySettled) return;
+    this.readySettled = true;
+    this.resolveReady(snapshot);
+  }
+
+  private rejectReadyIfPending(error: unknown): void {
+    if (this.readySettled) return;
+    this.readySettled = true;
+    this.rejectReady(error);
+  }
+
+  private finishReleased(): void {
+    if (this.removed) return;
+    if (this.signal && this.abortHandler)
+      this.signal.removeEventListener("abort", this.abortHandler);
+    this.removed = true;
+    this.onRelease();
+  }
+
+  static withoutSubscriptionId({
+    subscriptionId: _subscriptionId,
+    ...state
+  }: OmpAccountRoutingBootstrap): OmpAccountRoutingState {
+    return state;
   }
 }
 
@@ -460,6 +662,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
   git?: GitSetupOptions;
   worktree?: CreateAgentRequestMessage["worktree"];
   autoArchive?: CreateAgentRequestMessage["autoArchive"];
+  background?: CreateAgentRequestMessage["background"];
   // COMPAT(createAgentWorktree): low-level old callers may still send the
   // create-agent worktree field. Added in v0.2.0; remove after 2027-01-17.
   worktreeName?: string;
@@ -470,6 +673,9 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
 export interface CreateWorkspaceRequestOptions {
   source: WorkspaceCreateRequest["source"];
   title?: string;
+  /** Workspace discovery visibility; contents retain normal durability. */
+  background?: boolean;
+  callerAgentId?: string;
   idempotencyKey?: string;
   workspaceId?: string;
   agent?: Omit<
@@ -942,6 +1148,7 @@ interface WaitHandle<T> {
 interface WaitOptions {
   skipQueue?: boolean;
   requestId?: string;
+  signal?: AbortSignal;
 }
 
 interface CorrelatedResponseIdentity {
@@ -1196,6 +1403,25 @@ export function supportsUsageReports(features: ServerInfoStatusPayload["features
   return features?.usageSources === true || features?.providerUsageList === true;
 }
 
+function buildFetchAgentsRequest(
+  options: FetchAgentsOptions | undefined,
+  requestId: string,
+): SessionInboundMessage {
+  return SessionInboundMessageSchema.parse({
+    type: "fetch_agents_request",
+    requestId,
+    ...(options?.scope ? { scope: options.scope } : {}),
+    ...(options?.filter ? { filter: options.filter } : {}),
+    ...(options?.sort ? { sort: options.sort } : {}),
+    ...(options?.page ? { page: options.page } : {}),
+    ...(options?.subscribe ? { subscribe: options.subscribe } : {}),
+    ...(options?.sync ? { sync: options.sync } : {}),
+    ...(options?.includeBackground !== undefined
+      ? { includeBackground: options.includeBackground }
+      : {}),
+  });
+}
+
 export class DaemonClient {
   private readonly providerSnapshotUpdates = new ProviderSnapshotUpdates({
     active: (message) => this.owned.owns(message),
@@ -1258,6 +1484,7 @@ export class DaemonClient {
   private readonly logGeneration: number | null;
   private lastServerInfoMessage: ServerInfoStatusPayload | null = null;
   private runtimeMetricsInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly ompAccountRoutingSubscriptions = new Set<OmpAccountRoutingSubscription>();
   private runtimeMetrics: DaemonClientRuntimeMetrics | null = null;
   private pingProbe: PingProbe | null = null;
   private connectionVerification: DaemonTransport | null = null;
@@ -1541,6 +1768,7 @@ export class DaemonClient {
     this.disposeTransport(1000, "Client closed");
     this.providerSnapshotUpdates.clear();
     this.clearWaiters(new Error("Daemon client closed"));
+    this.releaseOmpAccountRoutingSubscriptions(new Error("Daemon client closed"));
     await this.owned.close();
     this.creations.close();
     this.rejectPendingSendQueue(new Error("Daemon client closed"));
@@ -1891,7 +2119,7 @@ export class DaemonClient {
     message: SessionInboundMessage;
     timeout?: number;
     select: (msg: SessionOutboundMessage) => T | null;
-    options?: { skipQueue?: boolean };
+    options?: { skipQueue?: boolean; signal?: AbortSignal };
   }): Promise<T> {
     const wire = this.owned.prepareRequest(params.message);
     const timeout = params.timeout ?? DEFAULT_SESSION_RPC_TIMEOUT_MS;
@@ -1915,16 +2143,21 @@ export class DaemonClient {
         return { kind: "ok", value };
       },
       timeout,
-      { ...params.options, requestId: params.requestId },
+      { ...params.options, requestId: params.requestId, signal: params.options?.signal },
     );
 
-    try {
-      await this.sendSessionMessageOrThrow(wire.message);
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      cancel(err);
-      void promise.catch(() => undefined);
-      throw err;
+    if (params.options?.signal?.aborted) {
+      const reason = params.options.signal.reason;
+      cancel(reason instanceof Error ? reason : new Error("Request aborted"));
+    } else {
+      try {
+        await this.sendSessionMessageOrThrow(wire.message);
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        cancel(err);
+        void promise.catch(() => undefined);
+        throw err;
+      }
     }
 
     try {
@@ -1945,13 +2178,14 @@ export class DaemonClient {
     timeout?: number;
     responseType: TResponseType;
     options?: { skipQueue?: boolean };
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     return this.sendRequest({
       requestId: params.requestId,
       message: params.message,
       timeout: params.timeout,
-      options: params.options,
+      options: { ...params.options, signal: params.signal },
       select: (msg) => {
         const correlated = msg as CorrelatedResponseMessage;
         if (correlated.type !== params.responseType) {
@@ -1977,6 +2211,7 @@ export class DaemonClient {
     message: { type: SessionInboundMessage["type"] } & Record<string, unknown>;
     responseType: TResponseType;
     timeout?: number;
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const resolvedRequestId = this.createRequestId(params.requestId);
@@ -1989,7 +2224,7 @@ export class DaemonClient {
       message,
       responseType: params.responseType,
       timeout: params.timeout,
-      options: { skipQueue: true },
+      signal: params.signal,
       ...(params.selectPayload ? { selectPayload: params.selectPayload } : {}),
     });
   }
@@ -2004,6 +2239,7 @@ export class DaemonClient {
       unknown
     >;
     timeout?: number;
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const responseType = params.message.type.replace(/\.request$/, ".response") as TResponseType;
@@ -2085,6 +2321,91 @@ export class DaemonClient {
       });
     if (!response.success) {
       throw new Error(response.error ?? "Failed to mark workspace unread");
+    }
+  }
+
+  // Agent message queue (daemon-owned). Gate on `serverInfo.features.messageQueue`.
+
+  async addQueuedAgentMessage(
+    input: {
+      agentId: string;
+      text: string;
+      images?: AgentQueuedMessagePayload["images"];
+      attachments?: AgentAttachment[];
+    },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.add.response">({
+      requestId,
+      message: {
+        type: "agent.queue.add.request",
+        agentId: input.agentId,
+        text: input.text,
+        images: input.images,
+        attachments: input.attachments,
+      },
+    });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to queue agent message");
+    }
+    return response.message;
+  }
+
+  async removeQueuedAgentMessage(
+    input: { agentId: string; messageId: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.remove.response">({
+        requestId,
+        message: {
+          type: "agent.queue.remove.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to remove queued agent message");
+    }
+    return response.message;
+  }
+
+  async updateQueuedAgentMessage(
+    input: { agentId: string; messageId: string; text: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.update.response">({
+        requestId,
+        message: {
+          type: "agent.queue.update.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          text: input.text,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to update queued agent message");
+    }
+    return response.message;
+  }
+
+  async sendQueuedAgentMessageNow(
+    input: { agentId: string; messageId: string; activeTurnBehavior?: ActiveTurnBehavior },
+    requestId?: string,
+  ): Promise<void> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.send_now.response">({
+        requestId,
+        message: {
+          type: "agent.queue.send_now.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          activeTurnBehavior: input.activeTurnBehavior,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to send queued agent message");
     }
   }
 
@@ -2259,6 +2580,214 @@ export class DaemonClient {
     }, LIVENESS_HEARTBEAT_INTERVAL_MS);
   }
 
+  private getEffectiveClientCapabilities(): Partial<Record<ClientCapability, unknown>> {
+    return {
+      ...DEFAULT_CLIENT_CAPABILITIES,
+      ...this.config.capabilities,
+    };
+  }
+
+  private isOmpAccountRoutingSupported(): boolean {
+    const serverFeatures = this.lastServerInfoMessage?.features;
+    return (
+      serverFeatures?.ompAccountRouting === true &&
+      serverFeatures.ownedSubscriptions === true &&
+      this.getEffectiveClientCapabilities()[CLIENT_CAPS.ownedSubscriptions] === true
+    );
+  }
+
+  private requireOmpAccountRoutingSupport(): void {
+    const connected = this.connectionState.status === "connected" && this.transport !== null;
+    if (!connected || !this.isOmpAccountRoutingSupported())
+      throw new OmpAccountRoutingUnsupportedError();
+  }
+
+  private releaseUnsupportedOmpAccountRoutingSubscriptions(): void {
+    if (this.isOmpAccountRoutingSupported()) return;
+    for (const subscription of this.ompAccountRoutingSubscriptions) {
+      subscription.unsupported();
+    }
+  }
+  private releaseOmpAccountRoutingSubscriptions(error: Error): void {
+    for (const subscription of this.ompAccountRoutingSubscriptions) {
+      subscription.cancel(error);
+    }
+  }
+
+  private createOmpAccountRoutingSubscription(signal?: AbortSignal): OmpAccountRoutingSubscription {
+    // The adapter below is the only abort listener for the caller's signal. It cancels with the
+    // signal's reason, which the source's own release would replace with "Subscription released".
+    const source = this.owned.observe<OmpAccountRoutingBootstrap>(async (accept) => {
+      const requestId = this.createRequestId();
+      const response = await this.sendNamespacedCorrelatedSessionRequest<
+        "account.routing.get_state.response",
+        { state: OmpAccountRoutingState; subscriptionId: string }
+      >({
+        requestId,
+        message: { type: "account.routing.get_state.request", subscribe: {} },
+        signal,
+        selectPayload: (responsePayload) => {
+          if (typeof responsePayload.subscriptionId !== "string") {
+            throw new DaemonProtocolError({
+              requestId,
+              responseType: "account.routing.get_state.response",
+            });
+          }
+          return {
+            state: responsePayload.state,
+            subscriptionId: responsePayload.subscriptionId,
+          };
+        },
+      });
+      const bootstrap = {
+        ...response.state,
+        subscriptionId: response.subscriptionId,
+      };
+      accept(bootstrap);
+      return bootstrap;
+    });
+    let subscription: OmpAccountRoutingSubscription | null = null;
+    subscription = new OmpAccountRoutingSubscription(
+      source,
+      () => {
+        if (subscription) this.ompAccountRoutingSubscriptions.delete(subscription);
+      },
+      (error) => this.logger.error({ err: error }, "Subscription failed"),
+      signal,
+    );
+    this.ompAccountRoutingSubscriptions.add(subscription);
+    return subscription;
+  }
+
+  async getOmpAccountRoutingState(options?: {
+    subscribe?: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingRead> {
+    options?.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    if (options?.subscribe) {
+      const subscription = this.createOmpAccountRoutingSubscription(options.signal);
+      const snapshot = await subscription.ready;
+      return {
+        state: OmpAccountRoutingSubscription.withoutSubscriptionId(snapshot),
+        subscription,
+      };
+    }
+
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"account.routing.get_state.response">({
+        requestId: this.createRequestId(),
+        message: { type: "account.routing.get_state.request" },
+        signal: options?.signal,
+      });
+    return { state: response.state };
+  }
+
+  /** Lifecycle-only observation: the caller gets the owned handle and reads state through it. */
+  observeOmpAccountRoutingState(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<OmpAccountRoutingState> {
+    options?.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    return this.createOmpAccountRoutingSubscription(options?.signal);
+  }
+
+  /**
+   * Submits one revision-checked mutation. Host conflicts and other typed failures come back in
+   * `error`; only transport and correlation failures throw. The frame is never queued or resent:
+   * a disconnect rejects the call and the caller decides whether to retry against a fresh snapshot.
+   */
+  async mutateOmpAccountRouting(options: {
+    expectedPolicyRevision: number;
+    command: OmpAccountRoutingMutation;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingMutationResult> {
+    options.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "account.routing.mutate.request",
+        requestId,
+        expectedPolicyRevision: options.expectedPolicyRevision,
+        command: options.command,
+      }),
+      responseType: "account.routing.mutate.response",
+      signal: options.signal,
+    });
+  }
+
+  private requireOmpAccountLogin(feature: "ompAccountLogin" | "ompAccountLoginLink"): void {
+    const connected = this.connectionState.status === "connected" && this.transport !== null;
+    if (!connected || this.lastServerInfoMessage?.features?.[feature] !== true) {
+      throw new OmpAccountLoginUnsupportedError();
+    }
+  }
+
+  private async sendOmpAccountLoginRequest(
+    type:
+      | "account.routing.login.start.request"
+      | "account.routing.login.get_status.request"
+      | "account.routing.login.cancel.request",
+    fields: { mode?: "add" | "replace"; replaceAccount?: OmpRoutingAccountRef } = {},
+  ): Promise<OmpAccountLoginPayload> {
+    this.requireOmpAccountLogin("ompAccountLogin");
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({ type, requestId, ...fields }),
+      responseType: type.replace(/\.request$/, ".response") as
+        | "account.routing.login.start.response"
+        | "account.routing.login.get_status.response"
+        | "account.routing.login.cancel.response",
+    });
+  }
+
+  /**
+   * Starts a host-side Claude sign-in. Without options it is add-only: OMP refuses to overwrite a
+   * stored account. `replace` overwrites only `account`. The host's own app gets the sign-in link
+   * in `status.authorizeUrl` and opens it itself; no other client sees it.
+   */
+  async startOmpAccountLogin(
+    options: { mode: "replace"; account: OmpRoutingAccountRef } | { mode?: "add" } = {},
+  ): Promise<OmpAccountLoginPayload> {
+    if (!options.mode)
+      return this.sendOmpAccountLoginRequest("account.routing.login.start.request");
+    this.requireOmpAccountLogin("ompAccountLoginLink");
+    return this.sendOmpAccountLoginRequest(
+      "account.routing.login.start.request",
+      options.mode === "replace"
+        ? { mode: "replace", replaceAccount: options.account }
+        : { mode: "add" },
+    );
+  }
+
+  /** Answers the host's open paste prompt; only the host's own app may. Needs the link feature. */
+  async submitOmpAccountLoginCode(
+    input: string,
+  ): Promise<AccountRoutingLoginSubmitCodeResponse["payload"]> {
+    this.requireOmpAccountLogin("ompAccountLoginLink");
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "account.routing.login.submit_code.request",
+        requestId,
+        input,
+      }),
+      responseType: "account.routing.login.submit_code.response",
+    });
+  }
+
+  getOmpAccountLoginStatus(): Promise<OmpAccountLoginPayload> {
+    return this.sendOmpAccountLoginRequest("account.routing.login.get_status.request");
+  }
+
+  cancelOmpAccountLogin(): Promise<OmpAccountLoginPayload> {
+    return this.sendOmpAccountLoginRequest("account.routing.login.cancel.request");
+  }
+
   // ============================================================================
   // Agent RPCs (requestId-correlated)
   // ============================================================================
@@ -2342,6 +2871,8 @@ export class DaemonClient {
   observeAgents(
     options: Omit<FetchAgentsOptions, "subscribe"> = {},
   ): OwnedSubscription<FetchAgentsPayload> {
+    if (options.includeBackground || options.filter?.includeBackground)
+      this.requireBackgroundWorkspaces();
     const { signal, requestId, timeout, ...query } = options;
     return this.observe(
       "fetch_agents_response",
@@ -2353,6 +2884,8 @@ export class DaemonClient {
   observeWorkspaces(
     options: Omit<FetchWorkspacesOptions, "subscribe"> = {},
   ): OwnedSubscription<FetchWorkspacesPayload> {
+    if (options.includeBackground || options.filter?.includeBackground)
+      this.requireBackgroundWorkspaces();
     const { signal, requestId, ...query } = options;
     return this.observe(
       "fetch_workspaces_response",
@@ -2368,6 +2901,8 @@ export class DaemonClient {
   async fetchAgents(
     options?: FetchAgentsOptions,
   ): Promise<FetchAgentsPayload & { subscription?: OwnedSubscription<FetchAgentsPayload> }> {
+    if (options?.includeBackground || options?.filter?.includeBackground)
+      this.requireBackgroundWorkspaces();
     if (options?.subscribe) {
       if (options.subscribe.subscriptionId !== undefined)
         throw new Error("Subscription IDs are assigned by the host");
@@ -2375,16 +2910,7 @@ export class DaemonClient {
       return { ...(await subscription.ready), subscription };
     }
     const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "fetch_agents_request",
-      requestId: resolvedRequestId,
-      ...(options?.scope ? { scope: options.scope } : {}),
-      ...(options?.filter ? { filter: options.filter } : {}),
-      ...(options?.sort ? { sort: options.sort } : {}),
-      ...(options?.page ? { page: options.page } : {}),
-      ...(options?.subscribe ? { subscribe: options.subscribe } : {}),
-      ...(options?.sync ? { sync: options.sync } : {}),
-    });
+    const message = buildFetchAgentsRequest(options, resolvedRequestId);
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
@@ -2403,6 +2929,7 @@ export class DaemonClient {
   }
 
   async fetchAgentHistory(options?: FetchAgentHistoryOptions): Promise<FetchAgentHistoryPayload> {
+    if (options?.filter?.includeBackground) this.requireBackgroundWorkspaces();
     const resolvedRequestId = this.createRequestId(options?.requestId);
     const message = SessionInboundMessageSchema.parse({
       type: "fetch_agent_history_request",
@@ -2466,6 +2993,8 @@ export class DaemonClient {
   ): Promise<
     FetchWorkspacesPayload & { subscription?: OwnedSubscription<FetchWorkspacesPayload> }
   > {
+    if (options?.includeBackground || options?.filter?.includeBackground)
+      this.requireBackgroundWorkspaces();
     if (options?.subscribe) {
       if (options.subscribe.subscriptionId !== undefined)
         throw new Error("Subscription IDs are assigned by the host");
@@ -2475,12 +3004,8 @@ export class DaemonClient {
     const resolvedRequestId = this.createRequestId(options?.requestId);
     const message = SessionInboundMessageSchema.parse({
       type: "fetch_workspaces_request",
+      ...options,
       requestId: resolvedRequestId,
-      ...(options?.filter ? { filter: options.filter } : {}),
-      ...(options?.sort ? { sort: options.sort } : {}),
-      ...(options?.page ? { page: options.page } : {}),
-      ...(options?.subscribe ? { subscribe: options.subscribe } : {}),
-      ...(options?.sync ? { sync: options.sync } : {}),
     });
     return this.sendRequest({
       requestId: resolvedRequestId,
@@ -2853,7 +3378,19 @@ export class DaemonClient {
     legacyWorkspace: (input) => this.createLegacyWorkspace(input, input.requestId),
   });
 
+  // Background workspaces are gated once at the transport boundary.
+  private requireBackgroundWorkspaces(): void {
+    if (this.lastServerInfoMessage?.features?.backgroundWorkspaces !== true) {
+      throw new Error("Update the host to use background workspaces.");
+    }
+  }
+
+  supportsBackgroundWorkspaces(): boolean {
+    return this.lastServerInfoMessage?.features?.backgroundWorkspaces === true;
+  }
+
   async createAgent(options: CreateAgentRequestOptions): Promise<AgentSnapshotPayload> {
+    if (options.background !== undefined) this.requireBackgroundWorkspaces();
     const result = await this.creations.createAgent({
       ...options,
       config: resolveAgentConfig(options),
@@ -2886,6 +3423,7 @@ export class DaemonClient {
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktree ? { worktree: options.worktree } : {}),
       ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
+      ...(options.background !== undefined ? { background: options.background } : {}),
       ...(options.worktreeName ? { worktreeName: options.worktreeName } : {}),
       ...(options.labels && Object.keys(options.labels).length > 0
         ? { labels: options.labels }
@@ -3097,6 +3635,26 @@ export class DaemonClient {
       throw new Error(payload.error ?? "setWorkspacePinned rejected");
     }
     return { pinnedAt: payload.pinnedAt };
+  }
+
+  async setWorkspaceSettled(
+    workspaceId: string,
+    settled: boolean,
+    requestId?: string,
+  ): Promise<{ settledAt: string | null }> {
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "workspace.settle.set.request",
+        workspaceId,
+        settled,
+      },
+      responseType: "workspace.settle.set.response",
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "setWorkspaceSettled rejected");
+    }
+    return { settledAt: payload.settledAt };
   }
 
   async inspectWorkspaceRecovery(
@@ -4560,6 +5118,9 @@ export class DaemonClient {
     requestId?: string,
   ): Promise<WorkspaceCreatePayload> {
     const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
+    if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
+    if (input.agent?.background !== undefined)
+      throw new Error("Configure background on the workspace, not its initial agent.");
     const result = await this.creations.createWorkspace({
       ...input,
       requestId: resolvedRequestId,
@@ -4591,6 +5152,8 @@ export class DaemonClient {
           ? { idempotencyKey: input.idempotencyKey }
           : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.background !== undefined ? { background: input.background } : {}),
+        ...(input.callerAgentId ? { callerAgentId: input.callerAgentId } : {}),
         ...(input.firstAgentContext !== undefined
           ? { firstAgentContext: input.firstAgentContext }
           : {}),
@@ -6224,10 +6787,7 @@ export class DaemonClient {
         clientType: this.config.clientType ?? "cli",
         protocolVersion: 1,
         ...(auth ? { auth } : {}),
-        capabilities: {
-          ...DEFAULT_CLIENT_CAPABILITIES,
-          ...this.config.capabilities,
-        },
+        capabilities: this.getEffectiveClientCapabilities(),
         ...(this.config.appVersion ? { appVersion: this.config.appVersion } : {}),
       });
     } catch (error) {
@@ -6550,6 +7110,9 @@ export class DaemonClient {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+    if (!enabled && this.connectionState.status !== "connected") {
+      this.releaseOmpAccountRoutingSubscriptions(new DaemonConnectionError("Reconnect disabled"));
+    }
   }
 
   private scheduleReconnect(input?: {
@@ -6573,20 +7136,23 @@ export class DaemonClient {
 
     // Clear all pending waiters and queued sends since the connection was lost
     // and responses from the previous connection will never arrive.
-    this.clearWaiters(new DaemonConnectionError(reason ?? "Connection lost"));
-    this.rejectPendingSendQueue(new DaemonConnectionError(reason ?? "Connection lost"));
-    this.rejectPingProbe(new DaemonConnectionError(reason ?? "Connection lost"));
+    const connectionError = new DaemonConnectionError(reason ?? "Connection lost");
+    this.clearWaiters(connectionError);
+    this.rejectPendingSendQueue(connectionError);
+    this.rejectPingProbe(connectionError);
     this.terminalStreams.clearSlots();
     this.lastServerInfoMessage = null;
 
     if (this.authFailureReasonValue) this.setReconnectEnabled(false);
 
     if (wasDisposed) {
+      this.releaseOmpAccountRoutingSubscriptions(connectionError);
       this.rejectConnect(new Error(reason ?? "Daemon client is disposed"));
       return;
     }
     this.emitDisconnectedStateForReconnect(reason, input);
     if (!this.shouldReconnect || this.config.reconnect?.enabled === false) {
+      this.releaseOmpAccountRoutingSubscriptions(connectionError);
       this.rejectConnect(
         this.authFailureReasonValue
           ? new DaemonAuthenticationError(this.authFailureReasonValue)
@@ -6698,15 +7264,13 @@ export class DaemonClient {
       const serverInfo = parseServerInfoStatusPayload(consumerMessage.payload);
       if (serverInfo) {
         this.lastServerInfoMessage = serverInfo;
+        this.releaseUnsupportedOmpAccountRoutingSubscriptions();
         if (this.connectionState.status === "connecting") {
           this.resetConnectTimeout();
           this.reconnectAttempt = 0;
           this.updateConnectionState({ status: "connected" }, { event: "HELLO_SERVER_INFO" });
           this.startLivenessHeartbeat();
-          this.owned.restore(serverInfo, {
-            ...DEFAULT_CLIENT_CAPABILITIES,
-            ...this.config.capabilities,
-          });
+          this.owned.restore(serverInfo, this.getEffectiveClientCapabilities());
           this.creations.reconnect();
           this.flushPendingSendQueue();
           this.resolveConnect();
@@ -6864,15 +7428,21 @@ export class DaemonClient {
     let settled = false;
     let rejectFn: ((error: Error) => void) | null = null;
 
+    let abortHandler: (() => void) | null = null;
     const promise = new Promise<T>((resolve, reject) => {
+      const cleanupAbort = () => {
+        if (abortHandler) options?.signal?.removeEventListener("abort", abortHandler);
+      };
       const wrappedResolve = (value: T) => {
         if (settled) return;
         settled = true;
+        cleanupAbort();
         resolve(value);
       };
       const wrappedReject = (error: Error) => {
         if (settled) return;
         settled = true;
+        cleanupAbort();
         reject(error);
       };
       rejectFn = wrappedReject;
@@ -6895,6 +7465,18 @@ export class DaemonClient {
         requestId: options?.requestId,
       };
       this.waiters.add(waiter);
+      if (options?.signal) {
+        abortHandler = () => {
+          if (waiter) {
+            this.waiters.delete(waiter);
+            if (waiter.timeoutHandle) clearTimeout(waiter.timeoutHandle);
+          }
+          const reason = options.signal?.reason;
+          wrappedReject(reason instanceof Error ? reason : new Error("Request aborted"));
+        };
+        if (options.signal.aborted) abortHandler();
+        else options.signal.addEventListener("abort", abortHandler, { once: true });
+      }
     });
 
     const cancel = (error: Error) => {
@@ -6940,6 +7522,7 @@ function resolveAgentConfig(options: CreateAgentRequestOptions): AgentSessionCon
     attachments: _attachments,
     worktree: _worktree,
     autoArchive: _autoArchive,
+    background: _background,
     env: _env,
     workspaceId: _workspaceId,
     initialPrompt: _initialPrompt,

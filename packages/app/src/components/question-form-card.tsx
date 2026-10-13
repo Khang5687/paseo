@@ -12,6 +12,7 @@ import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 import {
   areQuestionsAnswered,
+  buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
   isQuestionAnswered,
   parseQuestionFormQuestions,
@@ -407,6 +408,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
       updatedInput: {
         ...permission.request.input,
         answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
       },
     });
   }, [
@@ -428,6 +430,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
         updatedInput: {
           ...permission.request.input,
           answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+          answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
         },
       });
       return;

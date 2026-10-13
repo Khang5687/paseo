@@ -569,7 +569,7 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   contentContainer: {
     padding: theme.spacing[4],

@@ -15,12 +15,12 @@ const [start, ...rest] = fixture.frames;
 const dialogs = rest.filter((frame: { type: string }) => frame.type === "extension_ui_request");
 const end = rest.find((frame: { type: string }) => frame.type === "tool_execution_end");
 
-function startedHost() {
+function startedHost(args: unknown = start.args) {
   const host = createPiExtensionHost();
   const permission = host.onToolStart({
     callId: start.toolCallId,
     toolName: start.toolName,
-    args: start.args,
+    args,
     status: "running",
     result: null,
   });
@@ -65,6 +65,39 @@ test("real rpiv RPC dialogs use one form and preserve choices, multi-select, and
   expect(host.mapDialog(dialogs[3], "pi")).toEqual({
     type: "response",
     response: { value: "Nebula" },
+  });
+});
+
+test("answer lists keep a multi-select label with a comma as one choice", () => {
+  const args = structuredClone(start.args);
+  args.questions[1].options[0].label = "Red, warm";
+  const { host, permission } = startedHost(args);
+  host.respondToPermission(permission, {
+    behavior: "allow",
+    updatedInput: {
+      answers: { Snack: "Cookie", Colors: "Red, warm, Blue", Project: "Nebula, codename" },
+      answerLists: {
+        Snack: ["Cookie"],
+        Colors: ["Red, warm", "Blue"],
+        Project: ["Nebula, codename"],
+      },
+    },
+  });
+  expect(host.mapDialog(dialogs[0], "pi")).toEqual({
+    type: "response",
+    response: { value: dialogs[0].options[1] },
+  });
+  expect(host.mapDialog(dialogs[1], "pi")).toEqual({
+    type: "response",
+    response: { value: "1,2" },
+  });
+  expect(host.mapDialog(dialogs[2], "pi")).toEqual({
+    type: "response",
+    response: { value: dialogs[2].options[2] },
+  });
+  expect(host.mapDialog(dialogs[3], "pi")).toEqual({
+    type: "response",
+    response: { value: "Nebula, codename" },
   });
 });
 
