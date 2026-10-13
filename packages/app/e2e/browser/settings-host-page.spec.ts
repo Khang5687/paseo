@@ -403,6 +403,25 @@ for (const layout of [
   test.describe(`Settings host providers: add Claude account (${layout.name})`, () => {
     test.use({ viewport: layout.viewport });
 
+    test("with no agent running the section shows its controls and the Add button", async ({
+      page,
+    }) => {
+      test.setTimeout(240_000);
+      const host = await startRoutingFixtureHost({ agent: false });
+      try {
+        await openRoutingSection(page, host, { ...layout, desktopOnHost: true });
+        await expect(page.getByTestId("omp-routing-no-runtime")).toHaveText(
+          "Accounts appear when an Oh My Pi agent is running.",
+        );
+        await expect(page.getByRole("switch", { name: "Auto-routing", exact: true })).toBeEnabled();
+        await expect(page.locator('[data-testid^="omp-routing-row-"]')).toHaveCount(0);
+        await expect(page.getByTestId("omp-routing-add-button")).toBeVisible();
+        await shot(page, `${layout.name}-no-runtime`);
+      } finally {
+        await host.close();
+      }
+    });
+
     test("the desktop app on the host's computer starts, cancels, and finishes a sign-in", async ({
       page,
     }) => {

@@ -278,7 +278,10 @@ export type SectionNoticeKind =
 const NO_RECOVERIES: ReadonlySet<string> = new Set();
 
 export interface SectionState {
-  /** Pre-snapshot states render no controls. */
+  /**
+   * Controls render once the host supports routing, even before any agent has reported a catalog:
+   * the auto toggle and saved policy work without one. Otherwise a loading catalog renders none.
+   */
   phase: "loading" | "ready";
   catalog: "empty" | "incomplete" | "stale" | "loaded" | "loading" | "unsupported";
   capabilitySupported: boolean;
@@ -297,7 +300,10 @@ export function describeSection(
 ): SectionState {
   const paused = state.pausedRequests.find((request) => request.recoveredAt === null);
   return {
-    phase: state.catalog.status === "loading" ? "loading" : "ready",
+    phase:
+      state.catalog.status === "loading" && state.capability.status !== "supported"
+        ? "loading"
+        : "ready",
     catalog: state.catalog.status,
     capabilitySupported: state.capability.status === "supported",
     capabilityReason: state.capability.reason,

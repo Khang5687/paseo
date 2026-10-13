@@ -1,4 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import pino from "pino";
@@ -1000,6 +1003,50 @@ describe("OMP host account routing", () => {
       build: { version: null },
     })}\n`;
     expect(parseOmpCapabilityProbe(stdout)).toEqual({ complete: true, version: 1 });
+  });
+
+  test("probeConfigured runs the configured binary: complete, old (exit code), and missing", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "omp-probe-"));
+    try {
+      const doc = JSON.stringify({
+        version: 1,
+        provider: "anthropic",
+        managedAccountRouting: {
+          modelDispatch: "allowed",
+          completeCoverage: true,
+          purposes: ["model-dispatch", "metadata", "usage-refresh"],
+          sourceIdentity: "v1",
+          exactUsageRefresh: "v1",
+        },
+        build: { version: null },
+      });
+      const fake = (name: string, body: string) => {
+        const file = path.join(dir, name);
+        writeFileSync(file, `#!/bin/sh\n${body}\n`);
+        chmodSync(file, 0o755);
+        return file;
+      };
+      const probe = (argv0: string) =>
+        new OmpCliRuntime({
+          logger: pino({ level: "silent" }),
+          runtimeSettings: { command: { mode: "replace", argv: [argv0] } },
+        }).probeConfigured();
+      await expect(probe(fake("new", `echo '${doc}'`))).resolves.toEqual({
+        complete: true,
+        version: 1,
+      });
+      await expect(probe(fake("old", "echo unknown option >&2; exit 2"))).resolves.toEqual({
+        complete: false,
+        version: 0,
+      });
+      await expect(probe(path.join(dir, "missing"))).resolves.toEqual({
+        complete: false,
+        version: 0,
+        unavailable: true,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("an agentless helper is marked metadata-only, never probed or configured", async () => {

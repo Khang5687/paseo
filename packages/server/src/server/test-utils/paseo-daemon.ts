@@ -7,6 +7,7 @@ import pino from "pino";
 import {
   createPaseoDaemon,
   type PaseoDaemonConfig,
+  type PaseoDaemonDependencies,
   type PaseoOpenAIConfig,
   type PaseoSpeechConfig,
 } from "../bootstrap.js";
@@ -75,6 +76,8 @@ interface TestPaseoDaemonOptions {
   ompRouting?: FakeOmpChildOptions;
   /** Replaces the macOS-only host sign-in; tests pass one backed by FakeOmp. */
   ompAccountLogin?: OmpAccountLogin;
+  /** Replaces the startup OMP capability probe. Defaults to one that learns nothing, never a real omp. */
+  ompCapabilityProbe?: PaseoDaemonDependencies["ompCapabilityProbe"];
 }
 
 /** Test-only control of the fake native peer. Drives the real JSONL frames; never the store. */
@@ -185,6 +188,10 @@ export async function createTestPaseoDaemon(
     const daemon = await createPaseoDaemon(config, logger, {
       builtinPlugins: options.builtinPlugins ?? new BuiltinPluginLoader(undefined, []),
       accountLogin: options.ompAccountLogin,
+      // Never spawn a real omp from a test daemon, inside vitest or a spawned fixture child.
+      ompCapabilityProbe:
+        options.ompCapabilityProbe ??
+        (async () => ({ complete: false, version: 0, unavailable: true })),
       serverFeatureOverrides: {
         daemonStatusRpc: options.daemonStatusRpcCapability,
         relayConfig: options.relayConfigCapability,

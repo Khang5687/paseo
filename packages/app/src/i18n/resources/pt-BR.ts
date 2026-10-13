@@ -2135,6 +2135,7 @@ export const ptBR: TranslationResources = {
     status: {
       loading: "Carregando o roteamento de contas",
       empty: "Nenhuma conta do Claude observada",
+      noRuntime: "As contas aparecem quando um agente do Oh My Pi está em execução.",
       unsupported: "Este host não verificou o suporte ao roteamento de contas do OMP",
       offline: "Host offline; mostrando as últimas configurações confirmadas",
       readOnly: "Você pode ver estas configurações, mas não alterá-las",

@@ -412,6 +412,36 @@ describe("AccountRoutingAuthority", () => {
     });
   });
 
+  it("follows the probed capability only while no runtime is attached", async () => {
+    const fresh = new AccountRoutingAuthority({ store: AccountRoutingStore.open(file), clock });
+    open.push(fresh);
+    const seen: string[] = [];
+    await fresh.observe((state) => seen.push(state.capability.status));
+    fresh.setProbedCapability({ status: "supported", reason: null });
+    expect(fresh.snapshot().capability.status).toBe("supported");
+    expect(fresh.snapshot().catalog.status).toBe("loading");
+    expect(fresh.snapshot().accounts).toEqual([]);
+    fresh.setProbedCapability({ status: "unsupported", reason: "unsupported_runtime" });
+    expect(fresh.snapshot().capability.status).toBe("unsupported");
+    fresh.setProbedCapability({ status: "supported", reason: null });
+    const runtime = fresh.attachRuntime(
+      {
+        runtimeInstanceId: "a",
+        agentId: "x",
+        accessibleNamespaces: [],
+        capabilityVersion: 1,
+        completeCoverage: null,
+      },
+      new FakeAdapter(),
+    );
+    // A running agent overrides the probe with today's rules.
+    expect(fresh.snapshot().capability.status).toBe("unknown");
+    runtime.dispose();
+    expect(fresh.snapshot().capability.status).toBe("supported");
+    await Promise.resolve();
+    expect(seen).toContain("supported");
+  });
+
   it("refuses mutation when unsupported", async () => {
     const fresh = new AccountRoutingAuthority({ store: AccountRoutingStore.open(file), clock });
     open.push(fresh);

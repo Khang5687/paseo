@@ -231,6 +231,11 @@ export class AccountRoutingAuthority {
   private lastBodyJson = "";
   private cancelTimer: (() => void) | null = null;
   private disposed = false;
+  /** What the configured binary's probe said; used only while no runtime is attached. */
+  private probedCapability: OmpAccountRoutingState["capability"] = {
+    status: "unknown",
+    reason: null,
+  };
 
   constructor(options: AccountRoutingAuthorityOptions) {
     this.store = options.store;
@@ -297,6 +302,13 @@ export class AccountRoutingAuthority {
       if (error instanceof AccountRoutingPersistenceError) return fail("persistence_failed");
       throw error;
     }
+  }
+
+  /** Startup probe of the configured OMP binary. Running agents take over once they attach. */
+  setProbedCapability(capability: OmpAccountRoutingState["capability"]): void {
+    if (this.disposed) return;
+    this.probedCapability = capability;
+    this.publish();
   }
 
   attachRuntime(input: AttachRuntimeInput, adapter: RoutingMetadataAdapter): { dispose(): void } {
@@ -435,7 +447,7 @@ export class AccountRoutingAuthority {
 
   private capability(): OmpAccountRoutingState["capability"] {
     const runtimes = [...this.runtimes.values()];
-    if (runtimes.length === 0) return { status: "unknown", reason: null };
+    if (runtimes.length === 0) return this.probedCapability;
     if (
       runtimes.some(
         (r) =>

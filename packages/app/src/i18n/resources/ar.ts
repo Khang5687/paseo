@@ -2101,6 +2101,7 @@ export const ar: TranslationResources = {
     status: {
       loading: "جارٍ تحميل توجيه الحسابات",
       empty: "لم تُرصد أي حسابات Claude",
+      noRuntime: "تظهر الحسابات عند تشغيل وكيل Oh My Pi.",
       unsupported: "لم يتحقق هذا المضيف من دعم توجيه حسابات OMP",
       offline: "المضيف غير متصل؛ تُعرض آخر إعدادات مؤكدة",
       readOnly: "يمكنك عرض هذه الإعدادات لكن لا يمكنك تغييرها",

@@ -192,6 +192,16 @@ export class OmpCliRuntime implements OmpRuntime {
       : { kind: "incomplete", runtimeInstanceId, agentId: routing.agentId, version: probe.version };
   }
 
+  /** Probes the configured binary without starting a session; the same probe every launch uses. */
+  probeConfigured(): Promise<OmpCapabilityProbe> {
+    const launch = buildOmpLaunch({
+      command: this.command,
+      runtimeSettings: this.options.runtimeSettings,
+      session: { cwd: process.cwd() },
+    });
+    return this.probe(launch);
+  }
+
   private async probe(launch: OmpRuntimeLaunch): Promise<OmpCapabilityProbe> {
     if (this.options.probeCapabilities) return this.options.probeCapabilities(launch);
     const settings = this.options.runtimeSettings?.command;
@@ -207,9 +217,13 @@ export class OmpCliRuntime implements OmpRuntime {
           { envOverlay: env, timeout: CAPABILITY_PROBE_TIMEOUT_MS },
         );
         return parseOmpCapabilityProbe(stdout);
-      } catch {
-        // An older binary rejects the subcommand: that is an incomplete runtime, not an error.
-        return { complete: false, version: 0 };
+      } catch (error) {
+        // An older binary rejects the subcommand with an exit code: that is an incomplete runtime.
+        // Anything else (missing binary, timeout) taught us nothing about the binary.
+        const exited = typeof (error as { code?: unknown } | null)?.code === "number";
+        return exited
+          ? { complete: false, version: 0 }
+          : { complete: false, version: 0, unavailable: true };
       }
     });
   }

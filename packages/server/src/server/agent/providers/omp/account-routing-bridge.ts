@@ -93,6 +93,8 @@ export interface OmpCapabilityProbe {
   complete: boolean;
   /** Document version, or 0 when the binary printed nothing this host understands. */
   version: number;
+  /** The probe could not run the binary at all (missing, not executable, timed out), so nothing was learned. */
+  unavailable?: boolean;
 }
 
 const REQUIRED_PURPOSES = ["model-dispatch", "metadata", "usage-refresh"];
