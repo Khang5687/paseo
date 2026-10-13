@@ -2114,6 +2114,7 @@ export const ja: TranslationResources = {
       remaining: "残り",
       stale: "古い観測",
       unknownOrganization: "組織は不明",
+      detailsPending: "Oh My Pi エージェントの実行中に詳細が表示されます",
       search: "アカウントを検索",
     },
     actions: {

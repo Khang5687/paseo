@@ -2067,6 +2067,7 @@ export const zhCN: TranslationResources = {
       remaining: "剩余",
       stale: "过期的观测",
       unknownOrganization: "组织未知",
+      detailsPending: "运行 Oh My Pi 智能体后将显示详细信息",
       search: "搜索账号",
     },
     actions: {

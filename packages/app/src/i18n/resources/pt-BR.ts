@@ -2126,6 +2126,7 @@ export const ptBR: TranslationResources = {
       remaining: "Restante",
       stale: "Observação desatualizada",
       unknownOrganization: "Organização desconhecida",
+      detailsPending: "Os detalhes aparecem quando um agente Oh My Pi está em execução",
       search: "Pesquisar contas",
     },
     actions: {

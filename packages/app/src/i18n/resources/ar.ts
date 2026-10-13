@@ -2092,6 +2092,7 @@ export const ar: TranslationResources = {
       remaining: "المتبقي",
       stale: "ملاحظة قديمة",
       unknownOrganization: "المؤسسة غير معروفة",
+      detailsPending: "تظهر التفاصيل عند تشغيل وكيل Oh My Pi",
       search: "بحث في الحسابات",
     },
     actions: {

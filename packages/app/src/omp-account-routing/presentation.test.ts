@@ -7,6 +7,7 @@ import type {
 import {
   accountRefusal,
   addAccountMode,
+  detailsPending,
   buildNotices,
   buildAccountRows,
   buildWindowViews,
@@ -132,6 +133,7 @@ describe("account names", () => {
   const fallbacks = {
     missing: (id: number) => `Account ${id}`,
     unknownOrganization: "unknown org",
+    detailsPending: "pending",
   };
 
   it("uses identity labels only when labels collide", () => {
@@ -256,7 +258,11 @@ describe("window names", () => {
 });
 
 describe("account names, default organization", () => {
-  const fallbacks = { missing: (id: number) => `Account ${id}`, unknownOrganization: "unknown" };
+  const fallbacks = {
+    missing: (id: number) => `Account ${id}`,
+    unknownOrganization: "unknown",
+    detailsPending: "pending",
+  };
 
   it("hides the organization line when it is the label's default personal organization", () => {
     const rows = buildAccountRows(
@@ -528,5 +534,74 @@ describe("addAccountMode", () => {
     expect(addAccountMode({ featureOn: false, canEdit: true, onHostComputer: true })).toBe(
       "terminal",
     );
+  });
+});
+
+describe("rows no agent has reported", () => {
+  const fallbacks = {
+    missing: (id: number) => `Account ${id}`,
+    unknownOrganization: "unknown",
+    detailsPending: "pending",
+  };
+  // What the host sends for a saved ref with no catalog, or a labels-only store listing.
+  const never = {
+    organizationLabel: null,
+    authoritativeObservedAt: null,
+    available: false,
+    billing: {
+      state: "unknown" as const,
+      observedAt: null,
+      validUntil: null,
+      source: null,
+      sourceRevision: null,
+      reason: null,
+    },
+  };
+  const rowOf = (patch: Partial<OmpRoutingAccount>) =>
+    buildAccountRows(state({ accounts: [account(7, patch)] }))[0];
+
+  it("says details appear later instead of unknown organization, with no billing notice", () => {
+    const saved = rowOf({ ...never, label: "Account 7" });
+    expect(detailsPending(saved.account)).toBe(true);
+    expect(describeAccount(saved, [saved], fallbacks).organization).toBe("pending");
+    expect(accountRefusal(saved, NOW)).toBeNull();
+    // A labels-only listing row (available, named) is pending too.
+    const listed = rowOf({ ...never, available: true, label: "me@example.test" });
+    expect(describeAccount(listed, [listed], fallbacks)).toMatchObject({
+      title: "me@example.test",
+      organization: "pending",
+    });
+    expect(accountRefusal(listed, NOW)).toBeNull();
+  });
+
+  it("keeps billing refusals and unknown organization once a catalog has reported", () => {
+    const reported = rowOf({ ...never, authoritativeObservedAt: NOW, label: "Account 7" });
+    expect(detailsPending(reported.account)).toBe(false);
+    expect(describeAccount(reported, [reported], fallbacks).organization).toBe("unknown");
+    expect(accountRefusal(reported, NOW)).toEqual({ kind: "billing", code: "billing_unknown" });
+    const expired = rowOf({
+      ...never,
+      billing: { ...never.billing, observedAt: NOW - 1, reason: "expired" },
+    });
+    expect(accountRefusal(expired, NOW)?.code).toBe("billing_unknown");
+    const enabled = rowOf({
+      ...never,
+      billing: { ...never.billing, state: "enabled", observedAt: NOW },
+    });
+    expect(accountRefusal(enabled, NOW)?.code).toBe("billing_enabled");
+  });
+
+  it("never treats a row with measured windows as pending", () => {
+    const measured: OmpRoutingWindow = {
+      id: "5h",
+      label: "5h",
+      scope: { kind: "shared" },
+      usedFraction: 0.2,
+      resetAt: null,
+      observedAt: NOW,
+      validUntil: null,
+      source: "usage-full",
+    };
+    expect(detailsPending(rowOf({ ...never, windows: [measured] }).account)).toBe(false);
   });
 });

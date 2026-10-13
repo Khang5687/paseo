@@ -10,7 +10,7 @@ import type {
   OmpLogoutAccount,
   OmpRuntimeEvent,
 } from "../agent/providers/omp/rpc-types.js";
-import { OmpCliRuntime } from "../agent/providers/omp/cli-runtime.js";
+import { createConfiguredOmpRuntime } from "./listing.js";
 import type { ProviderRuntimeSettings } from "../agent/provider-launch-config.js";
 import type { AccountRoutingAuthority } from "./authority.js";
 
@@ -26,7 +26,8 @@ export interface OmpAccountLoginOptions {
   runtime: OmpRuntime;
   logger: Logger;
   /** Resolves the new row's ref and lists it in the routing policy at once. */
-  accounts?: Pick<AccountRoutingAuthority, "refForSignedInRow" | "addSignedInAccount">;
+  accounts?: Pick<AccountRoutingAuthority, "refForSignedInRow" | "addSignedInAccount"> &
+    Partial<Pick<AccountRoutingAuthority, "publishListing">>;
   timeoutMs?: number;
 }
 
@@ -200,6 +201,14 @@ export class OmpAccountLogin {
     }
     try {
       const after = run.status.state === "running" ? await listAccounts(run.session) : null;
+      // The store listing this child just read also feeds the account list, so the new row shows
+      // by name with no agent running. Read-only, like the listing itself.
+      if (after) {
+        this.options.accounts?.publishListing?.(
+          "login",
+          oauthRows(after).map((a) => ({ nativeRowId: a.credentialId, label: a.label })),
+        );
+      }
       const outcome = this.outcomeOf(result, before, after, replace);
       if (result.kind === "credential_exists") {
         this.settle(run, { state: "failed", failure: "omp_failed", outcome });
@@ -301,15 +310,15 @@ export function parseCallbackInput(input: string): { code: string; state?: strin
   return state ? { code, state } : { code };
 }
 
-/** The macOS host login, or undefined elsewhere. */
+/** The macOS host login, or undefined elsewhere. `runtimeSettings` is read at each start. */
 export function createMacAccountLogin(input: {
   logger: Logger;
-  runtimeSettings?: ProviderRuntimeSettings;
+  runtimeSettings: () => ProviderRuntimeSettings | undefined;
   accounts?: OmpAccountLoginOptions["accounts"];
 }): OmpAccountLogin | undefined {
   if (process.platform !== "darwin") return undefined;
   return new OmpAccountLogin({
-    runtime: new OmpCliRuntime({ logger: input.logger, runtimeSettings: input.runtimeSettings }),
+    runtime: createConfiguredOmpRuntime(input.logger, input.runtimeSettings),
     accounts: input.accounts,
     logger: input.logger.child({ module: "omp-account-login" }),
   });

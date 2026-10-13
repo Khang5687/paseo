@@ -156,6 +156,7 @@ const AccountRowView = memo(function AccountRowView({
   const names = describeAccount(row, rows, {
     missing: (rowId) => t("ompAccountRouting.values.account", { row: rowId }),
     unknownOrganization: t("ompAccountRouting.labels.unknownOrganization"),
+    detailsPending: t("ompAccountRouting.labels.detailsPending"),
   });
   const refusal = accountRefusal(row, nowMs);
   const windows = useMemo(
@@ -286,10 +287,9 @@ const AccountRowView = memo(function AccountRowView({
 function optionFor(
   row: AccountRow,
   rows: readonly AccountRow[],
-  missingLabel: (rowId: number) => string,
-  unknownOrganization: string,
+  fallbacks: Parameters<typeof describeAccount>[2],
 ): SelectFieldOption<OmpRoutingAccountRef> {
-  const names = describeAccount(row, rows, { missing: missingLabel, unknownOrganization });
+  const names = describeAccount(row, rows, fallbacks);
   return {
     id: row.key,
     value: row.ref,
@@ -408,16 +408,21 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
     [t],
   );
   const unknownOrganization = t("ompAccountRouting.labels.unknownOrganization");
+  const detailsPending = t("ompAccountRouting.labels.detailsPending");
+  const fallbacks = useMemo(
+    () => ({ missing: missingLabel, unknownOrganization, detailsPending }),
+    [missingLabel, unknownOrganization, detailsPending],
+  );
   const options = useMemo(
-    () => rows.map((row) => optionFor(row, rows, missingLabel, unknownOrganization)),
-    [rows, missingLabel, unknownOrganization],
+    () => rows.map((row) => optionFor(row, rows, fallbacks)),
+    [rows, fallbacks],
   );
   const currentRow = rows.find((row) => row.isCurrent) ?? null;
   const selectedDisplay = useMemo(() => {
     if (!currentRow) return null;
-    const option = optionFor(currentRow, rows, missingLabel, unknownOrganization);
+    const option = optionFor(currentRow, rows, fallbacks);
     return { label: option.label, description: option.description };
-  }, [currentRow, rows, missingLabel, unknownOrganization]);
+  }, [currentRow, rows, fallbacks]);
   const select = useCallback(
     (account: OmpRoutingAccountRef) => mutate({ kind: "select", account }),
     [mutate],
@@ -439,10 +444,7 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
             time: formatTimestamp(summary.resumesAt, i18n.language),
           });
   } else if (summary?.kind === "using") {
-    const account = describeAccount(summary.row, rows, {
-      missing: missingLabel,
-      unknownOrganization,
-    }).title;
+    const account = describeAccount(summary.row, rows, fallbacks).title;
     summaryText = t("ompAccountRouting.status.summaryUsing", { account });
   } else if (summary?.kind === "auto") {
     summaryText = t("ompAccountRouting.status.summaryAuto");

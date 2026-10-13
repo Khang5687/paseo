@@ -139,6 +139,38 @@ describe("OmpAccountLogin", () => {
     expect(added).toEqual([ref(9)]);
   });
 
+  test("hands the post-login store listing to the authority, labels only", async () => {
+    const { omp } = setup();
+    const listings: unknown[] = [];
+    const wired = new OmpAccountLogin({
+      runtime: omp,
+      logger: pino({ level: "silent" }),
+      accounts: {
+        refForSignedInRow: (row) => ref(row),
+        addSignedInAccount: () => undefined,
+        publishListing: (source, rows) => {
+          listings.push({ source, rows });
+          return true;
+        },
+      },
+    });
+    script(omp, async (s) => {
+      s.logoutAccounts = [ROW_7, { credentialId: 3, label: "API key #3", type: "api_key" }, ROW_9];
+      return { kind: "stored", outcome: "added", rowId: 9, email: "b@example.com" };
+    });
+    wired.start();
+    await settled(wired);
+    expect(listings).toEqual([
+      {
+        source: "login",
+        rows: [
+          { nativeRowId: 7, label: ROW_7.label },
+          { nativeRowId: 9, label: ROW_9.label },
+        ],
+      },
+    ]);
+  });
+
   test("no new row in the listing reports an overwrite, and no listing reports nothing", async () => {
     const { omp, login, added } = setup();
     script(omp, async () => undefined);

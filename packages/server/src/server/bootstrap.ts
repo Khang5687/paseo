@@ -142,11 +142,18 @@ import {
 } from "./agent/tools/paseo-tools.js";
 import type { PaseoToolRuntimeContext } from "./agent/tools/types.js";
 import { createAgentProviderRuntime } from "./agent/provider-runtime.js";
-import { bindOmpAccountRouting } from "./agent/provider-registry.js";
+import {
+  bindOmpAccountRouting,
+  mergeRuntimeSettings,
+  toRuntimeSettings,
+} from "./agent/provider-registry.js";
+import type { OmpRuntime } from "./agent/providers/omp/runtime.js";
 import { AccountRoutingAuthority } from "./account-routing/authority.js";
 import { AccountRoutingStore } from "./account-routing/store.js";
 import { createMacAccountLogin, type OmpAccountLogin } from "./account-routing/login.js";
+import { createConfiguredOmpRuntime, createOmpAccountLister } from "./account-routing/listing.js";
 import { createOmpCapabilityProber } from "./account-routing/probe.js";
+import type { OmpAccountLister } from "./account-routing/listing.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import {
@@ -541,6 +548,8 @@ export interface PaseoDaemonDependencies {
   createHubDaemonId?: () => string;
   /** Test seam: replaces the macOS-only host sign-in. */
   accountLogin?: OmpAccountLogin;
+  /** Test seam: the plain OMP runtime the account listing reads through (never spawned in tests otherwise). */
+  ompRuntime?: OmpRuntime;
   /** Test seam: replaces the startup `omp account-routing-capabilities` probe. */
   ompCapabilityProbe?: (
     settings: ProviderRuntimeSettings | undefined,
@@ -555,15 +564,53 @@ function resolveAccountLogin(
   dependencies: PaseoDaemonDependencies,
   accountRouting: AccountRoutingAuthority | undefined,
   logger: Logger,
-  config: PaseoDaemonConfig,
+  ompSettings: () => ProviderRuntimeSettings | undefined,
 ): OmpAccountLogin | undefined {
   if (dependencies.accountLogin) return dependencies.accountLogin;
   if (!accountRouting) return undefined;
   return createMacAccountLogin({
     logger,
-    runtimeSettings: config.agentProviderSettings?.omp,
+    runtimeSettings: ompSettings,
     accounts: accountRouting,
   });
+}
+
+/**
+ * One OMP launch for the sign-in child, the listing child and the probe: base settings merged with
+ * the current provider override, the same way agents launch it.
+ */
+function createOmpLaunch(input: {
+  config: PaseoDaemonConfig;
+  store: DaemonConfigStore;
+  logger: Logger;
+  dependencies: PaseoDaemonDependencies;
+  accountRouting: AccountRoutingAuthority | undefined;
+}): {
+  settings: () => ProviderRuntimeSettings | undefined;
+  lister?: OmpAccountLister;
+  stop(): void;
+} {
+  let override = input.config.providerOverrides?.omp;
+  const stop = input.store.onChange((next) => {
+    override = next.providers?.omp;
+  });
+  const settings = () =>
+    mergeRuntimeSettings(input.config.agentProviderSettings?.omp, toRuntimeSettings(override));
+  // Tests never spawn a real omp: they inject a runtime or get no listing.
+  const runtime =
+    input.dependencies.ompRuntime ??
+    (process.env["VITEST"] || input.dependencies.ompCapabilityProbe
+      ? undefined
+      : createConfiguredOmpRuntime(input.logger, settings));
+  const lister =
+    input.accountRouting && runtime
+      ? createOmpAccountLister({
+          authority: input.accountRouting,
+          runtime,
+          logger: input.logger.child({ module: "omp-account-listing" }),
+        })
+      : undefined;
+  return { settings, lister, stop };
 }
 
 /** Learns OMP routing support without waiting for an agent, now and whenever the OMP config changes. */
@@ -574,6 +621,8 @@ function startOmpCapabilityProbing(input: {
   logger: Logger;
   probe: PaseoDaemonDependencies["ompCapabilityProbe"];
   accountLogin: OmpAccountLogin | undefined;
+  /** Reads the store's accounts once the probe finds routing supported. */
+  lister: OmpAccountLister | undefined;
 }): () => void {
   // Tests never spawn a real omp: they inject a probe or get none.
   if (!input.authority || !(input.probe || !process.env["VITEST"])) return () => undefined;
@@ -583,6 +632,7 @@ function startOmpCapabilityProbing(input: {
     logger: input.logger,
     probe: input.probe,
     onLoginGuard: (supported) => input.accountLogin?.setLinkSupported(supported),
+    onSupported: () => void input.lister?.refresh("listing"),
   });
   prober.update(input.config.providerOverrides?.omp);
   const unsubscribe = input.store.onChange((next) => prober.update(next.providers?.omp));
@@ -1026,7 +1076,14 @@ export async function createPaseoDaemon(
     : () => undefined;
   // Mac-only: the host's own app opens the sign-in link, and OMP's loopback callback or a pasted
   // redirect address finishes the login.
-  const accountLogin = resolveAccountLogin(dependencies, accountRouting, logger, config);
+  const omp = createOmpLaunch({
+    config,
+    store: daemonConfigStore,
+    logger,
+    dependencies,
+    accountRouting,
+  });
+  const accountLogin = resolveAccountLogin(dependencies, accountRouting, logger, omp.settings);
   const stopCapabilityProbing = startOmpCapabilityProbing({
     authority: accountRouting,
     store: daemonConfigStore,
@@ -1034,9 +1091,11 @@ export async function createPaseoDaemon(
     logger,
     probe: dependencies.ompCapabilityProbe,
     accountLogin,
+    lister: omp.lister,
   });
   const disposeAccountRouting = () => {
     stopCapabilityProbing();
+    omp.stop();
     accountLogin?.dispose();
     accountRouting?.dispose();
   };

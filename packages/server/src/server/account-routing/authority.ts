@@ -38,6 +38,8 @@ import {
 const MAX_ADMISSION_PASSES = 8;
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
+const LISTING_RUNTIME_ID = "host-listing";
+
 const systemClock: AccountRoutingClock = {
   now: () => Date.now(),
   setTimer(callback, delayMs) {
@@ -226,6 +228,9 @@ export class AccountRoutingAuthority {
   >();
   private readonly hostBlocks = new Map<string, OmpRoutingBlock[]>();
   private readonly observers = new Set<(state: OmpAccountRoutingState) => void>();
+  /** Labels-only store listing no agent produced. Fills in rows no runtime catalog covers. */
+  private listing: { source: "listing" | "login"; catalog: RoutingCatalog } | null = null;
+  private listingRevision = 0;
   private sequence = 0;
   private waitSeq = 0;
   private lastBodyJson = "";
@@ -309,14 +314,53 @@ export class AccountRoutingAuthority {
    * login child reports a bare native row id; with no or several known stores this refuses to guess.
    */
   refForSignedInRow(nativeRowId: number): OmpRoutingAccountRef | null {
+    const storeNamespace = this.singleNamespace();
+    return storeNamespace ? { storeNamespace, nativeRowId } : null;
+  }
+
+  private singleNamespace(): string | null {
     const policy = this.store.policy;
     const namespaces = new Set<string>();
     for (const r of policy.priorityOrder) namespaces.add(r.storeNamespace);
     for (const e of policy.inclusion) namespaces.add(e.account.storeNamespace);
     if (policy.current) namespaces.add(policy.current.storeNamespace);
     for (const { entry } of this.views().values()) namespaces.add(entry.ref.storeNamespace);
-    if (namespaces.size !== 1) return null;
-    return { storeNamespace: [...namespaces][0], nativeRowId };
+    return namespaces.size === 1 ? [...namespaces][0] : null;
+  }
+
+  /**
+   * Keeps OMP's own store listing (ids and labels, read with no token refresh) so rows show without
+   * a running agent. It is never authoritative: windows, billing and tier stay unknown, it cannot
+   * mark a row missing, it never reaches admission, and any runtime catalog for a row wins.
+   * Returns false when the store namespace is not known exactly, so nothing is invented.
+   */
+  publishListing(
+    source: "listing" | "login",
+    rows: ReadonlyArray<{ nativeRowId: number; label: string }>,
+  ): boolean {
+    const storeNamespace = this.singleNamespace();
+    if (this.disposed || !storeNamespace) return false;
+    const accounts = rows.map(({ nativeRowId, label }) => {
+      const entry = emptyEntry({ storeNamespace, nativeRowId });
+      return { ...entry, display: { ...entry.display, email: label }, credentialAvailable: true };
+    });
+    this.listingRevision += 1;
+    this.listing = {
+      source,
+      catalog: {
+        provider: "anthropic",
+        runtimeInstanceId: LISTING_RUNTIME_ID,
+        storeNamespace,
+        catalogRevision: this.listingRevision,
+        nativeCredentialGeneration: 0,
+        observedAt: this.clock.now(),
+        authoritativeObservedAt: null,
+        authoritativeComplete: false,
+        accounts,
+      },
+    };
+    this.publish();
+    return true;
   }
 
   /**
@@ -470,6 +514,7 @@ export class AccountRoutingAuthority {
       pending.controller.abort();
     }
     this.runtimes.clear();
+    this.listing = null;
     this.bindings.clear();
     this.waits.clear();
     this.lastServed.clear();
@@ -514,6 +559,18 @@ export class AccountRoutingAuthority {
                 billingRestrictiveness(held.entry.billing.state));
           if (wins) best.set(key, { entry, catalog });
         }
+      }
+    }
+    return best;
+  }
+
+  /** What the app may show: runtime views, plus listing rows no runtime catalog covers. */
+  private displayViews(): Map<string, { entry: RoutingCatalogAccount; catalog: RoutingCatalog }> {
+    const best = this.views();
+    if (this.listing) {
+      for (const entry of this.listing.catalog.accounts) {
+        if (!best.has(refKey(entry.ref)))
+          best.set(refKey(entry.ref), { entry, catalog: this.listing.catalog });
       }
     }
     return best;
@@ -592,6 +649,7 @@ export class AccountRoutingAuthority {
   ): OmpAccountRoutingState["catalog"] {
     const catalogs: RoutingCatalog[] = [];
     for (const runtime of this.runtimes.values()) catalogs.push(...runtime.catalogs.values());
+    if (this.listing) catalogs.push(this.listing.catalog);
     const complete = catalogs.filter((c) => c.authoritativeComplete);
     let authoritativeObservedAt: number | null = null;
     for (const c of complete) {
@@ -611,7 +669,7 @@ export class AccountRoutingAuthority {
   private orderedRefs(policy: OmpAccountRoutingPolicy): OmpRoutingAccountRef[] {
     const refs = new Map<string, OmpRoutingAccountRef>();
     for (const ref of policy.priorityOrder) refs.set(refKey(ref), ref);
-    for (const { entry } of this.views().values()) {
+    for (const { entry } of this.displayViews().values()) {
       if (!refs.has(refKey(entry.ref))) refs.set(refKey(entry.ref), entry.ref);
     }
     if (policy.current && !refs.has(refKey(policy.current))) {
@@ -626,7 +684,7 @@ export class AccountRoutingAuthority {
 
   /** Labels follow host D14: email, then account UUID, then Account+row; ns:row when ambiguous. */
   private buildAccounts(policy: OmpAccountRoutingPolicy): OmpRoutingAccount[] {
-    const views = this.views();
+    const views = this.displayViews();
     const { present, newest } = this.confirmedAbsent();
     const rows = this.orderedRefs(policy).map((ref) => {
       const view = views.get(refKey(ref));
@@ -683,7 +741,7 @@ export class AccountRoutingAuthority {
     return (
       policy.priorityOrder.some((r) => sameRef(r, ref)) ||
       sameRef(policy.current, ref) ||
-      this.views().has(refKey(ref))
+      this.displayViews().has(refKey(ref))
     );
   }
 
@@ -710,7 +768,7 @@ export class AccountRoutingAuthority {
     ref: OmpRoutingAccountRef,
     direction: "up" | "down",
   ): void {
-    const views = this.views();
+    const views = this.displayViews();
     const { present } = this.confirmedAbsent();
     const isPresent = (r: OmpRoutingAccountRef) =>
       views.has(refKey(r)) &&
