@@ -603,3 +603,70 @@ test("usage routing and subscription metadata are optional, nullable-unknown and
     expect(SessionOutboundMessageSchema.safeParse(message(report)).success).toBe(false);
   }
 });
+
+// Copied from the release before `ompAccountLoginLink`: what an older app parses.
+const LegacyOmpAccountLoginPayloadSchema = z.object({
+  requestId: z.string(),
+  status: z.object({
+    state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
+    failure: z
+      .enum([
+        "timeout",
+        "paste_code_unsupported",
+        "browser_open_failed",
+        "omp_failed",
+        "spawn_failed",
+      ])
+      .optional(),
+    startedAt: z.number().finite().optional(),
+  }),
+  error: z.enum(["already_running"]).nullable().optional(),
+});
+
+test("OMP login link fields are additive for older apps and older daemons", () => {
+  // New daemon to old app: every status the link daemon sends to an old app's requests parses.
+  const statuses = [
+    { state: "running", startedAt: 1, phase: "preparing" },
+    { state: "running", startedAt: 1, phase: "awaiting_browser", pasteAccepted: true },
+    {
+      state: "succeeded",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "added", label: "b@example.com", ref: { storeNamespace: "n", nativeRowId: 9 } },
+    },
+    {
+      state: "failed",
+      failure: "omp_failed",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "already_listed", label: "a@example.com" },
+    },
+  ];
+  for (const status of statuses) {
+    for (const op of ["start", "get_status", "cancel"]) {
+      const message = { type: `account.routing.login.${op}.response`, payload: { requestId: "r", status, error: null } };
+      expect(SessionOutboundMessageSchema.parse(message)).toMatchObject({ payload: { status } });
+      expect(LegacyOmpAccountLoginPayloadSchema.parse(message.payload).status.state).toBe(status.state);
+    }
+  }
+
+  // Old app to new daemon: a start without `mode` still parses (and means add-only).
+  expect(
+    SessionInboundMessageSchema.parse({ type: "account.routing.login.start.request", requestId: "r" }),
+  ).toEqual({ type: "account.routing.login.start.request", requestId: "r" });
+
+  // Old daemon to new app: the pre-link failures still parse.
+  expect(
+    SessionOutboundMessageSchema.parse({
+      type: "account.routing.login.get_status.response",
+      payload: { requestId: "r", status: { state: "failed", failure: "browser_open_failed" } },
+    }),
+  ).toMatchObject({ payload: { status: { failure: "browser_open_failed" } } });
+  expect(
+    ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "old",
+      features: { ompAccountLogin: true },
+    }).features?.ompAccountLoginLink,
+  ).toBeUndefined();
+});

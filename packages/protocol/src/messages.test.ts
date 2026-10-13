@@ -832,6 +832,74 @@ describe("OMP account login messages", () => {
     }
   });
 
+  test("link flow: start mode, status phase and outcome, and the submit_code pair", () => {
+    const ref = { storeNamespace: "ns", nativeRowId: 7 };
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "account.routing.login.start.request",
+        requestId: "r1",
+        mode: "replace",
+        replaceAccount: ref,
+      }),
+    ).toMatchObject({ mode: "replace", replaceAccount: ref });
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        type: "account.routing.login.start.request",
+        requestId: "r1",
+        mode: "overwrite",
+      }).success,
+    ).toBe(false);
+
+    const status = {
+      state: "failed",
+      failure: "omp_failed",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "already_listed", label: "a@example.com", ref },
+    };
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "account.routing.login.start.response",
+        payload: { requestId: "r1", status, error: "invalid_replace_target" },
+      }),
+    ).toMatchObject({ payload: { status } });
+    const running = {
+      state: "running",
+      phase: "awaiting_browser",
+      authorizeUrl: "https://claude.ai/oauth/authorize?state=s",
+      pasteAccepted: true,
+    };
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "account.routing.login.get_status.response",
+        payload: { requestId: "r1", status: running, error: null },
+      }),
+    ).toMatchObject({ payload: { status: running } });
+
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "account.routing.login.submit_code.request",
+        requestId: "r2",
+        input: "abc#s",
+      }),
+    ).toMatchObject({ input: "abc#s" });
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        type: "account.routing.login.submit_code.request",
+        requestId: "r2",
+        input: "x".repeat(4097),
+      }).success,
+    ).toBe(false);
+    for (const error of ["not_waiting", "invalid_input", "wrong_login", "not_allowed", null]) {
+      expect(
+        SessionOutboundMessageSchema.parse({
+          type: "account.routing.login.submit_code.response",
+          payload: { requestId: "r2", status: { state: "running" }, error },
+        }),
+      ).toMatchObject({ payload: { error } });
+    }
+  });
+
   test("rejects an unknown state and carries no credential fields", () => {
     expect(() =>
       SessionOutboundMessageSchema.parse({
