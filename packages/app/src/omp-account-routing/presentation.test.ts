@@ -517,23 +517,24 @@ describe("routing summary", () => {
 });
 
 describe("addAccountMode", () => {
+  const base = { featureOn: true, linkOn: true, canEdit: true, onHostComputer: true };
+
   it("shows the button only for an editor on the host's own desktop app", () => {
-    expect(addAccountMode({ featureOn: true, canEdit: true, onHostComputer: true })).toBe("button");
+    expect(addAccountMode(base)).toBe("button");
   });
 
   it("points every other client at the host computer", () => {
-    expect(addAccountMode({ featureOn: true, canEdit: true, onHostComputer: false })).toBe(
-      "elsewhere",
-    );
-    expect(addAccountMode({ featureOn: true, canEdit: false, onHostComputer: true })).toBe(
-      "elsewhere",
-    );
+    expect(addAccountMode({ ...base, onHostComputer: false })).toBe("elsewhere");
+    expect(addAccountMode({ ...base, canEdit: false })).toBe("elsewhere");
+  });
+
+  it("asks for an update when the host signs in but has no link flow", () => {
+    expect(addAccountMode({ ...base, linkOn: false })).toBe("update");
+    expect(addAccountMode({ ...base, linkOn: false, onHostComputer: false })).toBe("update");
   });
 
   it("falls back to the terminal hint when the host cannot add accounts", () => {
-    expect(addAccountMode({ featureOn: false, canEdit: true, onHostComputer: true })).toBe(
-      "terminal",
-    );
+    expect(addAccountMode({ ...base, featureOn: false, linkOn: false })).toBe("terminal");
   });
 });
 

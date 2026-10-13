@@ -1,9 +1,9 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ArrowDown, ArrowUp } from "lucide-react-native";
+import { ArrowDown, ArrowUp, Plus } from "lucide-react-native";
 import type {
   OmpAccountRoutingMutation,
   OmpAccountRoutingState,
@@ -31,11 +31,14 @@ import {
   formatTimestamp,
   quotaLimit,
   refKey,
+  sameRef,
   summarizeRouting,
   type AccountRow,
   type ServingRequest,
   type WindowView,
 } from "./presentation";
+import { AddAccountFlow, describeAddAccount, type AddAccountResult } from "./add-account-flow";
+import { AddAccountSheet, useResultHeadline } from "./add-account-sheet";
 import { useHostAccountLogin, useHostAccountRouting, type HostAccountLogin } from "./queries";
 
 const ThemedArrowUp = withUnistyles(ArrowUp);
@@ -134,6 +137,8 @@ interface AccountRowViewProps {
   /** Ordering only means something with two or more accounts. */
   showOrder: boolean;
   disabled: boolean;
+  /** The sign-in that just finished added this account. */
+  justAdded: boolean;
   nowMs: number;
   locale: string;
   mutate: Mutate;
@@ -147,6 +152,7 @@ const AccountRowView = memo(function AccountRowView({
   isLast,
   showOrder,
   disabled,
+  justAdded,
   nowMs,
   locale,
   mutate,
@@ -177,6 +183,12 @@ const AccountRowView = memo(function AccountRowView({
     [mutate, row.ref],
   );
   const badges: { id: string; label: string; variant: StatusBadgeVariant }[] = [];
+  if (justAdded)
+    badges.push({
+      id: "justAdded",
+      label: t("ompAccountRouting.login.justAdded"),
+      variant: "success",
+    });
   if (row.isCurrent)
     badges.push({
       id: "current",
@@ -312,73 +324,140 @@ interface AddAccountProps {
   login: HostAccountLogin;
   canEdit: boolean;
   disabled: boolean;
+  accounts: OmpAccountRoutingState["accounts"];
 }
 
-/** Sign-in happens in the host's own browser, so only the desktop app on that computer starts it. */
-function AddAccount({ login, canEdit, disabled }: AddAccountProps) {
+/** Sign-in happens in the user's own browser, so only the desktop app on the host's computer starts it. */
+function AddAccount({ login, canEdit, disabled, accounts }: AddAccountProps) {
   const { t } = useTranslation();
   const mode = addAccountMode({
     featureOn: login.featureOn,
+    linkOn: login.linkOn,
     canEdit,
     onHostComputer: login.onHostComputer,
   });
   if (mode === "terminal") return <AddAccountHint />;
-  if (mode === "elsewhere") {
+  if (mode === "elsewhere" || mode === "update") {
     return (
       <>
-        <Text style={styles.listHint} testID="omp-routing-add-elsewhere">
-          {t("ompAccountRouting.login.elsewhere")}
+        <Text
+          style={styles.listHint}
+          testID={mode === "update" ? "omp-routing-add-update" : "omp-routing-add-elsewhere"}
+        >
+          {t(
+            mode === "update"
+              ? "ompAccountRouting.login.update"
+              : "ompAccountRouting.login.elsewhere",
+          )}
         </Text>
         <AddAccountHint />
       </>
     );
   }
+  return <AddAccountButton login={login} disabled={disabled} accounts={accounts} />;
+}
 
-  const { phase, failure } = login.snapshot;
+function AddAccountButton({
+  login,
+  disabled,
+  accounts,
+}: {
+  login: HostAccountLogin;
+  disabled: boolean;
+  accounts: OmpAccountRoutingState["accounts"];
+}) {
+  const { t } = useTranslation();
+  const [flow] = useState(() => new AddAccountFlow());
+  const [open, setOpen] = useState(false);
+  const show = useCallback(() => {
+    flow.reset();
+    setOpen(true);
+  }, [flow]);
+  const hide = useCallback(() => setOpen(false), []);
+  const { phase } = login.snapshot;
   const running = phase === "starting" || phase === "running";
-  let result: string | null = null;
-  if (phase === "succeeded") result = t("ompAccountRouting.login.saved");
-  else if (phase === "cancelled") result = t("ompAccountRouting.login.cancelled");
-  else if (phase === "failed")
-    result = t(`ompAccountRouting.login.failure.${failure ?? "omp_failed"}`);
+  const finished = phase === "succeeded" || phase === "failed" || phase === "cancelled";
+  const view = describeAddAccount(login.snapshot, accounts, flow.getState());
   return (
     <View style={styles.addAccount} testID="omp-routing-add-account">
-      <Text style={styles.listHint}>
-        {running ? t("ompAccountRouting.login.running") : t("ompAccountRouting.login.explain")}
-      </Text>
-      {result ? (
-        <Text
-          accessibilityRole={phase === "failed" ? "alert" : undefined}
-          style={phase === "failed" ? styles.alert : styles.notice}
-          testID="omp-routing-add-result"
-        >
-          {result}
-        </Text>
+      {running ? (
+        <>
+          <Text style={styles.listHint} testID="omp-routing-add-progress">
+            {t("ompAccountRouting.login.inProgress")}
+          </Text>
+          <View style={styles.rowControls}>
+            <Button variant="outline" size="sm" onPress={show} testID="omp-routing-add-continue">
+              {t("ompAccountRouting.login.continue")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={login.cancel}
+              testID="omp-routing-add-cancel"
+            >
+              {t("ompAccountRouting.login.cancel")}
+            </Button>
+          </View>
+        </>
       ) : null}
-      <View style={styles.rowControls}>
-        {running ? (
+      {finished && view.result ? (
+        <FinishedLogin result={view.result} onDetails={show} onDone={login.dismiss} />
+      ) : null}
+      {!running && !finished ? (
+        <View style={styles.rowControls}>
           <Button
             variant="outline"
             size="sm"
-            onPress={login.cancel}
-            disabled={phase === "starting"}
-            testID="omp-routing-add-cancel"
-          >
-            {t("ompAccountRouting.login.cancel")}
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onPress={login.start}
+            leftIcon={Plus}
+            onPress={show}
             disabled={disabled}
             testID="omp-routing-add-button"
           >
             {t("ompAccountRouting.login.start")}
           </Button>
-        )}
-      </View>
+        </View>
+      ) : null}
+      <AddAccountSheet
+        login={login}
+        flow={flow}
+        accounts={accounts}
+        visible={open}
+        onClose={hide}
+      />
     </View>
+  );
+}
+
+function FinishedLogin({
+  result,
+  onDetails,
+  onDone,
+}: {
+  result: AddAccountResult;
+  onDetails: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useTranslation();
+  const headline = useResultHeadline(result);
+  const bad = result.kind === "failed" || result.kind === "alreadyListed";
+  return (
+    <>
+      <Text
+        accessibilityRole={bad ? "alert" : undefined}
+        style={bad ? styles.alert : styles.notice}
+        testID="omp-routing-add-result"
+      >
+        {headline}
+      </Text>
+      <View style={styles.rowControls}>
+        <Button variant="outline" size="sm" onPress={onDetails} testID="omp-routing-add-details">
+          {t("ompAccountRouting.login.details")}
+        </Button>
+        <Button variant="ghost" size="sm" onPress={onDone} testID="omp-routing-add-done">
+          {t("ompAccountRouting.login.done")}
+        </Button>
+      </View>
+    </>
   );
 }
 
@@ -512,6 +591,7 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
               isLast={index === rows.length - 1}
               showOrder={showOrder}
               disabled={disabled}
+              justAdded={sameRef(login.snapshot.justAdded, row.ref)}
               nowMs={nowMs}
               locale={i18n.language}
               mutate={mutate}
@@ -519,7 +599,7 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
           </View>
         ))}
       </View>
-      <AddAccount login={login} canEdit={canEdit} disabled={disabled} />
+      <AddAccount login={login} canEdit={canEdit} disabled={disabled} accounts={state.accounts} />
     </>
   );
 }
@@ -553,7 +633,7 @@ export function AccountRoutingSection({ serverId }: { serverId: string }) {
     body = (
       <>
         <MessageCard text={t("ompAccountRouting.status.empty")} />
-        <AddAccount login={login} canEdit={canEdit} disabled={offline} />
+        <AddAccount login={login} canEdit={canEdit} disabled={offline} accounts={state.accounts} />
       </>
     );
   } else if (state && section?.phase === "ready") {

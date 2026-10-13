@@ -2095,24 +2095,85 @@ export const es: TranslationResources = {
   ompAccountRouting: {
     login: {
       start: "Añadir cuenta de Claude",
-      explain:
-        "Inicia sesión con una cuenta de Claude que no aparezca aquí. Si inicias sesión con una cuenta de la lista, se reemplaza su inicio de sesión guardado.",
-      running: "Termina de iniciar sesión en tu navegador",
-      cancel: "Cancelar",
       elsewhere: "Abre Paseo en el ordenador anfitrión para añadir una cuenta.",
-      saved:
-        "Cuenta guardada. Aparecerá aquí cuando un agente de OMP se inicie o envíe una solicitud. Desactiva el uso adicional de pago en esa cuenta en Claude: Paseo omite las cuentas que lo tienen activado.",
-      cancelled: "Inicio de sesión cancelado.",
+      update: "Actualiza Paseo y Oh My Pi en el anfitrión para añadir cuentas aquí.",
+      inProgress: "Inicio de sesión en curso",
+      continue: "Continuar",
+      cancel: "Cancelar",
+      cancelSignIn: "Cancelar inicio de sesión",
+      done: "Listo",
+      details: "Detalles",
+      tryAgain: "Reintentar",
+      close: "Cerrar",
+      justAdded: "Recién añadida",
+      warning: {
+        body: "Paseo guarda un inicio de sesión por cada cuenta de Claude. Inicia sesión en claude.ai con la cuenta que quieres añadir.",
+        existing: "Ya añadidas: {{accounts}}",
+        alertTitle: "Comprueba qué cuenta usa tu navegador",
+        alertDescription:
+          "Si claude.ai sigue con la sesión de una cuenta ya añadida, cierra sesión o cambia de cuenta antes. Una ventana privada siempre empieza sin sesión.",
+        guard: "Si inicias sesión con una cuenta ya añadida, Paseo se detiene y no cambia nada.",
+      },
+      preparing: "Preparando el enlace de inicio de sesión...",
+      link: {
+        title: "Iniciar sesión en Claude",
+        step: "Abre el enlace e inicia sesión con la cuenta que quieres añadir",
+        open: "Abrir página de inicio de sesión",
+        copy: "Copiar enlace",
+        copied: "Copiado",
+        label: "Enlace de inicio de sesión",
+        hint: "Para usar una ventana privada u otro dispositivo, copia el enlace",
+        waiting: "Esperando al navegador...",
+        pasteInstead: "Pegar la dirección",
+      },
+      paste: {
+        label: "Dirección o código",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Tras aprobar, el navegador puede mostrar una página que no carga. Copia la dirección completa de la barra de direcciones, o el código que muestra Claude, y pégala aquí.",
+        submit: "Enviar",
+        checking: "Comprobando...",
+        error: {
+          invalid_input: "Eso no es una dirección ni un código de inicio de sesión",
+          wrong_login:
+            "Esa dirección pertenece a un enlace anterior. Usa el enlace que se muestra aquí.",
+          not_waiting: "Este inicio de sesión ya terminó",
+          not_allowed: "Solo Paseo en el ordenador anfitrión puede enviar esto",
+          unreachable: "No se pudo contactar con el anfitrión. Inténtalo de nuevo.",
+        },
+      },
+      verifying: "Comprobando el inicio de sesión...",
+      result: {
+        added: {
+          title: "Añadida {{account}}",
+          titleUnnamed: "Cuenta añadida",
+          description: "{{organization}}. El enrutamiento automático ya puede usarla.",
+          descriptionUnnamed: "El enrutamiento automático ya puede usarla.",
+          billingEnabled:
+            "El uso extra de pago está activado en esta cuenta. El enrutamiento automático la omite hasta que lo desactives en los ajustes de Claude.",
+          billingUnknown:
+            "Asegúrate de que el uso extra de pago esté desactivado para esta cuenta en los ajustes de Claude. El enrutamiento automático omite las cuentas que lo tienen activado.",
+        },
+        alreadyListed: {
+          title: "{{account}} ya está añadida",
+          titleUnnamed: "Esa cuenta ya está añadida",
+          description:
+            "No cambió nada. Tu navegador inició sesión con una cuenta que Paseo ya tiene. Cierra sesión en claude.ai o usa una ventana privada y vuelve a intentarlo.",
+        },
+        replaced: {
+          title: "Inicio de sesión reemplazado para {{account}}",
+          titleUnnamed: "Inicio de sesión guardado reemplazado",
+          description: "No se añadió ninguna cuenta. Se usa el nuevo inicio de sesión.",
+        },
+        failed: "Falló el inicio de sesión",
+        cancelled: "Inicio de sesión cancelado",
+      },
       failure: {
-        timeout: "El inicio de sesión caducó tras 10 minutos. Inténtalo de nuevo.",
-        paste_code_unsupported:
-          "El navegador no pudo volver a Paseo, así que se canceló el inicio de sesión. Comprueba que nada más use el puerto 54545 e inténtalo de nuevo.",
-        browser_open_failed: "Paseo no pudo abrir el navegador en este ordenador.",
+        timeout: "El enlace de inicio de sesión caducó tras 10 minutos. No cambió nada.",
         omp_failed:
-          "OMP no pudo terminar el inicio de sesión. Inténtalo de nuevo o ejecuta omp en una terminal y escribe /login.",
-        spawn_failed: "Paseo no pudo iniciar OMP en este ordenador.",
+          "Oh My Pi no pudo terminar el inicio de sesión. No cambió nada. Inténtalo de nuevo, o ejecuta omp en una terminal y escribe /login.",
+        spawn_failed: "Paseo no pudo iniciar Oh My Pi en este ordenador.",
         unreachable:
-          "Se perdió el contacto con el anfitrión. Revisa la conexión e inténtalo de nuevo.",
+          "Se perdió el contacto con el anfitrión. Cuando se reconecte, revisa la lista de cuentas antes de reintentar.",
       },
     },
     labels: {

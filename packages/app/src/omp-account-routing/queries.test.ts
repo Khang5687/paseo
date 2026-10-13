@@ -251,6 +251,11 @@ describe("AccountLoginController", () => {
       startOmpAccountLogin: vi.fn(async () => payload({ state: "running", startedAt: 1 })),
       getOmpAccountLoginStatus: vi.fn(async () => payload({ state: "idle" })),
       cancelOmpAccountLogin: vi.fn(async () => payload({ state: "cancelled" })),
+      submitOmpAccountLoginCode: vi.fn(async () => ({
+        requestId: "r",
+        status: { state: "running" as const, phase: "verifying" as const },
+        error: null,
+      })),
       ...overrides,
     };
   }
@@ -331,14 +336,156 @@ describe("AccountLoginController", () => {
     vi.useRealTimers();
   });
 
-  it("does not show an old finished login as new state when the page opens", async () => {
+  it("does not show an old finished login when the page opens", async () => {
+    const now = 10 * 60 * 1000;
+    for (const endedAt of [undefined, now - 5 * 60 * 1000 - 1]) {
+      const client = loginClient({
+        getOmpAccountLoginStatus: vi.fn(async () => payload({ state: "succeeded", endedAt })),
+      });
+      const controller = new AccountLoginController(() => now);
+      controller.attach(client);
+      await Promise.resolve();
+      expect(controller.getSnapshot().phase).toBe("idle");
+      controller.detach();
+    }
+  });
+
+  it("shows the outcome of a login that ended under five minutes ago when the page opens", async () => {
+    const now = 10 * 60 * 1000;
+    const addedRef = { storeNamespace: "s", nativeRowId: 3 };
     const client = loginClient({
-      getOmpAccountLoginStatus: vi.fn(async () => payload({ state: "succeeded" })),
+      getOmpAccountLoginStatus: vi.fn(async () =>
+        payload({
+          state: "succeeded",
+          endedAt: now - 60_000,
+          outcome: { kind: "added", label: "bob@example.com", ref: addedRef },
+        }),
+      ),
+    });
+    const controller = new AccountLoginController(() => now);
+    controller.attach(client);
+    await vi.waitFor(() => expect(controller.getSnapshot().phase).toBe("succeeded"));
+    expect(controller.getSnapshot()).toMatchObject({
+      outcome: { kind: "added", label: "bob@example.com" },
+      justAdded: addedRef,
+    });
+    controller.dismiss();
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "idle",
+      outcome: null,
+      justAdded: addedRef,
+    });
+    controller.detach();
+    expect(controller.getSnapshot().justAdded).toBeNull();
+  });
+
+  it("adopts the running step, link and paste prompt, and drops them when the login ends", async () => {
+    vi.useFakeTimers();
+    const statuses = [
+      payload({ state: "idle" }),
+      payload({
+        state: "running",
+        phase: "awaiting_browser",
+        authorizeUrl: "https://claude.ai/oauth/authorize?x=1",
+        pasteAccepted: true,
+      }),
+      payload({ state: "failed", failure: "timeout", endedAt: 5 }),
+    ];
+    const client = loginClient({
+      getOmpAccountLoginStatus: vi.fn(async () => statuses.shift() ?? payload({ state: "idle" })),
     });
     const controller = new AccountLoginController();
     controller.attach(client);
-    await Promise.resolve();
-    expect(controller.getSnapshot().phase).toBe("idle");
+    await controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "running",
+      step: "awaiting_browser",
+      authorizeUrl: "https://claude.ai/oauth/authorize?x=1",
+      pasteAccepted: true,
+    });
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "failed",
+      failure: "timeout",
+      authorizeUrl: null,
+      pasteAccepted: false,
+    });
+    controller.detach();
+    vi.useRealTimers();
+  });
+
+  it("starts add-only and never opens the link itself", async () => {
+    const client = loginClient();
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await controller.start();
+    expect(client.startOmpAccountLogin).toHaveBeenCalledWith({ mode: "add" });
+    controller.detach();
+  });
+
+  it("submits a pasted address only while the host's prompt is open and keeps a refusal", async () => {
+    vi.useFakeTimers();
+    const waiting = payload({
+      state: "running",
+      phase: "awaiting_browser",
+      authorizeUrl: "https://claude.ai/a",
+      pasteAccepted: true,
+    });
+    const client = loginClient({
+      startOmpAccountLogin: vi.fn(async () => waiting),
+      getOmpAccountLoginStatus: vi.fn(async () => waiting),
+      submitOmpAccountLoginCode: vi.fn(async () => ({
+        requestId: "r",
+        status: {
+          state: "running" as const,
+          phase: "awaiting_browser" as const,
+          authorizeUrl: "https://claude.ai/a",
+          pasteAccepted: true,
+        },
+        error: "wrong_login" as const,
+      })),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await controller.submitCode("ignored: no login yet");
+    expect(client.submitOmpAccountLoginCode).not.toHaveBeenCalled();
+    await controller.start();
+    await controller.submitCode("http://localhost:54545/callback?code=c&state=s");
+    expect(client.submitOmpAccountLoginCode).toHaveBeenCalledWith(
+      "http://localhost:54545/callback?code=c&state=s",
+    );
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "running",
+      pasteError: "wrong_login",
+      submitting: false,
+    });
+    // A poll between submits does not erase the message.
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(controller.getSnapshot().pasteError).toBe("wrong_login");
+    controller.detach();
+    vi.useRealTimers();
+  });
+
+  it("a lost connection while submitting is an unreachable paste error", async () => {
+    const client = loginClient({
+      startOmpAccountLogin: vi.fn(async () =>
+        payload({ state: "running", phase: "awaiting_browser", pasteAccepted: true }),
+      ),
+      submitOmpAccountLoginCode: vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    });
+    const controller = new AccountLoginController();
+    controller.attach(client);
+    await controller.start();
+    await controller.submitCode("x");
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "running",
+      pasteError: "unreachable",
+      submitting: false,
+    });
     controller.detach();
   });
 

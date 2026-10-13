@@ -2093,23 +2093,86 @@ export const fr: TranslationResources = {
   ompAccountRouting: {
     login: {
       start: "Ajouter un compte Claude",
-      explain:
-        "Connectez-vous avec un compte Claude qui n'apparaît pas ici. Se connecter avec un compte de la liste remplace sa connexion enregistrée.",
-      running: "Terminez la connexion dans votre navigateur",
-      cancel: "Annuler",
       elsewhere: "Ouvrez Paseo sur l'ordinateur hôte pour ajouter un compte.",
-      saved:
-        "Compte enregistré. Il apparaîtra ici au prochain démarrage ou à la prochaine requête d'un agent OMP. Désactivez l'usage supplémentaire payant de ce compte dans Claude : Paseo ignore les comptes pour lesquels il est activé.",
-      cancelled: "Connexion annulée.",
+      update: "Mettez à jour Paseo et Oh My Pi sur l'hôte pour ajouter des comptes ici.",
+      inProgress: "Connexion en cours",
+      continue: "Continuer",
+      cancel: "Annuler",
+      cancelSignIn: "Annuler la connexion",
+      done: "Terminé",
+      details: "Détails",
+      tryAgain: "Réessayer",
+      close: "Fermer",
+      justAdded: "Vient d'être ajouté",
+      warning: {
+        body: "Paseo enregistre une connexion par compte Claude. Connectez-vous à claude.ai avec le compte que vous voulez ajouter.",
+        existing: "Déjà ajoutés : {{accounts}}",
+        alertTitle: "Vérifiez quel compte votre navigateur utilise",
+        alertDescription:
+          "Si claude.ai est encore connecté avec un compte déjà ajouté, déconnectez-vous ou changez de compte d'abord. Une fenêtre privée démarre toujours déconnectée.",
+        guard:
+          "Si vous vous connectez avec un compte déjà ajouté, Paseo s'arrête et ne change rien.",
+      },
+      preparing: "Préparation du lien de connexion...",
+      link: {
+        title: "Se connecter à Claude",
+        step: "Ouvrez le lien et connectez-vous avec le compte que vous voulez ajouter",
+        open: "Ouvrir la page de connexion",
+        copy: "Copier le lien",
+        copied: "Copié",
+        label: "Lien de connexion",
+        hint: "Pour utiliser une fenêtre privée ou un autre appareil, copiez le lien",
+        waiting: "En attente du navigateur...",
+        pasteInstead: "Coller l'adresse à la place",
+      },
+      paste: {
+        label: "Adresse ou code",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Après votre accord, le navigateur peut afficher une page qui ne se charge pas. Copiez l'adresse complète de la barre d'adresse, ou le code affiché par Claude, et collez-la ici.",
+        submit: "Envoyer",
+        checking: "Vérification...",
+        error: {
+          invalid_input: "Ce n'est ni une adresse ni un code de connexion",
+          wrong_login:
+            "Cette adresse correspond à un ancien lien de connexion. Utilisez le lien affiché ici.",
+          not_waiting: "Cette connexion est déjà terminée",
+          not_allowed: "Seul Paseo sur l'ordinateur hôte peut envoyer ceci",
+          unreachable: "Impossible de joindre l'hôte. Réessayez.",
+        },
+      },
+      verifying: "Vérification de la connexion...",
+      result: {
+        added: {
+          title: "{{account}} ajouté",
+          titleUnnamed: "Compte ajouté",
+          description: "{{organization}}. Le routage automatique peut l'utiliser maintenant.",
+          descriptionUnnamed: "Le routage automatique peut l'utiliser maintenant.",
+          billingEnabled:
+            "L'usage supplémentaire payant est activé pour ce compte. Le routage automatique l'ignore tant que vous ne le désactivez pas dans les réglages de Claude.",
+          billingUnknown:
+            "Vérifiez que l'usage supplémentaire payant est désactivé pour ce compte dans les réglages de Claude. Le routage automatique ignore les comptes pour lesquels il est activé.",
+        },
+        alreadyListed: {
+          title: "{{account}} est déjà ajouté",
+          titleUnnamed: "Ce compte est déjà ajouté",
+          description:
+            "Rien n'a changé. Votre navigateur s'est connecté avec un compte que Paseo a déjà. Déconnectez-vous de claude.ai ou utilisez une fenêtre privée, puis réessayez.",
+        },
+        replaced: {
+          title: "Connexion remplacée pour {{account}}",
+          titleUnnamed: "Connexion enregistrée remplacée",
+          description: "Aucun compte n'a été ajouté. La nouvelle connexion est utilisée.",
+        },
+        failed: "Échec de la connexion",
+        cancelled: "Connexion annulée",
+      },
       failure: {
-        timeout: "La connexion a expiré après 10 minutes. Réessayez.",
-        paste_code_unsupported:
-          "Le navigateur n'a pas pu revenir vers Paseo, la connexion a donc été annulée. Vérifiez que rien d'autre n'utilise le port 54545, puis réessayez.",
-        browser_open_failed: "Paseo n'a pas pu ouvrir le navigateur sur cet ordinateur.",
+        timeout: "Le lien de connexion a expiré après 10 minutes. Rien n'a changé.",
         omp_failed:
-          "OMP n'a pas pu terminer la connexion. Réessayez, ou lancez omp dans un terminal et tapez /login.",
-        spawn_failed: "Paseo n'a pas pu démarrer OMP sur cet ordinateur.",
-        unreachable: "Contact perdu avec l'hôte. Vérifiez la connexion et réessayez.",
+          "Oh My Pi n'a pas pu terminer la connexion. Rien n'a changé. Réessayez, ou lancez omp dans un terminal et tapez /login.",
+        spawn_failed: "Paseo n'a pas pu démarrer Oh My Pi sur cet ordinateur.",
+        unreachable:
+          "Contact perdu avec l'hôte. À sa reconnexion, vérifiez la liste des comptes avant de réessayer.",
       },
     },
     labels: {

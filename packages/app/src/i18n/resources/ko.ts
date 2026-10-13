@@ -2057,23 +2057,84 @@ export const ko: TranslationResources = {
   ompAccountRouting: {
     login: {
       start: "Claude 계정 추가",
-      explain:
-        "여기에 없는 Claude 계정으로 로그인하세요. 목록에 있는 계정으로 로그인하면 저장된 로그인이 바뀝니다.",
-      running: "브라우저에서 로그인을 마무리하세요",
+      elsewhere: "호스트 컴퓨터에서 Paseo를 열어 계정을 추가하세요.",
+      update: "여기에서 계정을 추가하려면 호스트의 Paseo와 Oh My Pi를 업데이트하세요.",
+      inProgress: "로그인 진행 중",
+      continue: "계속",
       cancel: "취소",
-      elsewhere: "계정을 추가하려면 호스트 컴퓨터에서 Paseo를 여세요.",
-      saved:
-        "계정을 저장했습니다. OMP 에이전트가 다음에 시작하거나 요청을 보내면 여기에 표시됩니다. Claude에서 해당 계정의 유료 추가 사용량을 끄세요. Paseo는 이 기능이 켜진 계정을 건너뜁니다.",
-      cancelled: "로그인이 취소되었습니다.",
+      cancelSignIn: "로그인 취소",
+      done: "완료",
+      details: "자세히",
+      tryAgain: "다시 시도",
+      close: "닫기",
+      justAdded: "방금 추가됨",
+      warning: {
+        body: "Paseo는 Claude 계정마다 로그인 하나를 저장합니다. 추가하려는 계정으로 claude.ai에 로그인하세요.",
+        existing: "이미 추가됨: {{accounts}}",
+        alertTitle: "브라우저가 사용하는 계정을 확인하세요",
+        alertDescription:
+          "claude.ai가 이미 추가된 계정으로 로그인되어 있다면 먼저 로그아웃하거나 계정을 전환하세요. 비공개 창은 항상 로그아웃 상태로 시작합니다.",
+        guard: "이미 추가된 계정으로 로그인하면 Paseo는 중단하고 아무것도 변경하지 않습니다.",
+      },
+      preparing: "로그인 링크 준비 중...",
+      link: {
+        title: "Claude에 로그인",
+        step: "링크를 열고 추가하려는 계정으로 로그인하세요",
+        open: "로그인 페이지 열기",
+        copy: "링크 복사",
+        copied: "복사됨",
+        label: "로그인 링크",
+        hint: "비공개 창이나 다른 기기를 사용하려면 링크를 복사하세요",
+        waiting: "브라우저를 기다리는 중...",
+        pasteInstead: "주소 직접 붙여넣기",
+      },
+      paste: {
+        label: "주소 또는 코드",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "승인한 뒤 브라우저가 로드되지 않는 페이지를 보여줄 수 있습니다. 주소 표시줄의 전체 주소나 Claude가 보여주는 코드를 복사해 여기에 붙여넣으세요.",
+        submit: "제출",
+        checking: "확인 중...",
+        error: {
+          invalid_input: "로그인 주소나 코드가 아닙니다",
+          wrong_login: "이 주소는 이전 로그인 링크의 것입니다. 여기에 표시된 링크를 사용하세요.",
+          not_waiting: "이 로그인은 이미 끝났습니다",
+          not_allowed: "호스트 컴퓨터의 Paseo만 이것을 보낼 수 있습니다",
+          unreachable: "호스트에 연결할 수 없습니다. 다시 시도하세요.",
+        },
+      },
+      verifying: "로그인 확인 중...",
+      result: {
+        added: {
+          title: "{{account}} 추가됨",
+          titleUnnamed: "계정이 추가됨",
+          description: "{{organization}}. 이제 자동 라우팅에서 사용할 수 있습니다.",
+          descriptionUnnamed: "이제 자동 라우팅에서 사용할 수 있습니다.",
+          billingEnabled:
+            "이 계정은 유료 추가 사용량이 켜져 있습니다. Claude 설정에서 끌 때까지 자동 라우팅은 이 계정을 건너뜁니다.",
+          billingUnknown:
+            "Claude 설정에서 이 계정의 유료 추가 사용량이 꺼져 있는지 확인하세요. 자동 라우팅은 켜진 계정을 건너뜁니다.",
+        },
+        alreadyListed: {
+          title: "{{account}}은(는) 이미 추가됨",
+          titleUnnamed: "이 계정은 이미 추가됨",
+          description:
+            "변경된 것이 없습니다. 브라우저가 Paseo에 이미 있는 계정으로 로그인했습니다. claude.ai에서 로그아웃하거나 비공개 창을 사용한 뒤 다시 시도하세요.",
+        },
+        replaced: {
+          title: "{{account}}의 로그인을 교체함",
+          titleUnnamed: "저장된 로그인을 교체함",
+          description: "추가된 계정은 없습니다. 새 로그인이 사용됩니다.",
+        },
+        failed: "로그인 실패",
+        cancelled: "로그인이 취소됨",
+      },
       failure: {
-        timeout: "로그인이 10분 후 시간 초과되었습니다. 다시 시도하세요.",
-        paste_code_unsupported:
-          "브라우저가 Paseo로 돌아오지 못해 로그인이 취소되었습니다. 포트 54545를 다른 프로그램이 쓰고 있지 않은지 확인한 뒤 다시 시도하세요.",
-        browser_open_failed: "Paseo가 이 컴퓨터에서 브라우저를 열지 못했습니다.",
+        timeout: "로그인 링크가 10분 후 만료되었습니다. 변경된 것이 없습니다.",
         omp_failed:
-          "OMP가 로그인을 마치지 못했습니다. 다시 시도하거나 터미널에서 omp를 실행하고 /login을 입력하세요.",
-        spawn_failed: "Paseo가 이 컴퓨터에서 OMP를 시작하지 못했습니다.",
-        unreachable: "호스트와 연결이 끊어졌습니다. 연결을 확인하고 다시 시도하세요.",
+          "Oh My Pi가 로그인을 끝내지 못했습니다. 변경된 것이 없습니다. 다시 시도하거나 터미널에서 omp를 실행해 /login을 입력하세요.",
+        spawn_failed: "Paseo가 이 컴퓨터에서 Oh My Pi를 시작하지 못했습니다.",
+        unreachable:
+          "호스트와의 연결이 끊겼습니다. 다시 연결되면 다시 시도하기 전에 계정 목록을 확인하세요.",
       },
     },
     labels: {

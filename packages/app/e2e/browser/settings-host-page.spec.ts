@@ -194,7 +194,21 @@ async function installDesktopOnHost(page: Page, serverId: string): Promise<void>
       },
       getPendingOpenProject: async () => null,
       events: { on: async () => () => undefined },
+      // Records what the app opens and copies; a real browser tab or clipboard is never touched.
+      opener: {
+        openUrl: async (url: string) => {
+          ((window as unknown as { __opened?: string[] }).__opened ??= []).push(url);
+        },
+      },
     };
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          ((window as unknown as { __copied?: string[] }).__copied ??= []).push(text);
+        },
+      },
+    });
   }, serverId);
 }
 
@@ -221,6 +235,20 @@ async function openRoutingSection(
   await expectRoutingLoaded(page);
   await routingSection(page).scrollIntoViewIfNeeded();
   return gate;
+}
+
+/** What the stubbed desktop opener or clipboard recorded in the page. */
+function recorded(page: Page, key: "__opened" | "__copied"): Promise<string[]> {
+  return page.evaluate((name) => (window as unknown as Record<string, string[]>)[name] ?? [], key);
+}
+
+/** Reloads the page; the e2e seed would otherwise drop the host again. */
+async function reloadWithHost(page: Page, host: RoutingFixtureHost): Promise<void> {
+  await addConnectedHostAndReload(page, {
+    serverId: host.serverId,
+    label: "Routing host",
+    port: host.port,
+  });
 }
 
 async function shot(page: Page, name: string): Promise<void> {
@@ -422,40 +450,190 @@ for (const layout of [
       }
     });
 
-    test("the desktop app on the host's computer starts, cancels, and finishes a sign-in", async ({
+    test("the sheet shows the link, copies it and never opens it by itself", async ({ page }) => {
+      test.setTimeout(240_000);
+      const host = await startRoutingFixtureHost({ login: ["pending"] });
+      try {
+        await openRoutingSection(page, host, { ...layout, desktopOnHost: true });
+        await expect(page.getByTestId("omp-routing-add-elsewhere")).toHaveCount(0);
+        await page.getByTestId("omp-routing-add-button").scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-button.png` });
+        await page.getByTestId("omp-routing-add-button").click();
+
+        // Warning first: names the accounts already added, starts nothing.
+        await expect(page.getByTestId("omp-add-warning")).toContainText(
+          "Check which account your browser uses",
+        );
+        await expect(page.getByTestId("omp-add-existing")).toContainText("ada@example.test");
+        await expect(page.getByTestId("omp-add-continue")).toBeInViewport({ ratio: 1 });
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-warning.png` });
+        await page.getByTestId("omp-add-continue").click();
+
+        const link = page.getByTestId("omp-add-link");
+        await expect(link).toHaveValue(/^https:\/\/claude\.example\/authorize\?/);
+        const url = await link.inputValue();
+        await expect(page.getByTestId("omp-add-waiting")).toContainText("Waiting for the browser");
+        // OMP's paste prompt is not open, so there is no paste control.
+        await expect(page.getByTestId("omp-add-paste-toggle")).toHaveCount(0);
+        expect(await recorded(page, "__opened")).toEqual([]);
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-link.png` });
+
+        await page.getByTestId("omp-add-open").click();
+        await expect.poll(() => recorded(page, "__opened")).toEqual([url]);
+
+        await page.getByTestId("omp-add-copy").click();
+        await expect(page.getByTestId("omp-add-copy")).toContainText("Copied");
+        expect(await recorded(page, "__copied")).toEqual([url]);
+
+        await page.getByTestId("omp-add-cancel").click();
+        await expect(page.getByTestId("omp-add-result")).toContainText("Sign-in cancelled");
+        await page.getByTestId("omp-add-try-again").click();
+        await expect(page.getByTestId("omp-add-warning")).toBeVisible();
+      } finally {
+        await host.close();
+      }
+    });
+
+    test("a pasted address is checked, then adds the account and survives a reload", async ({
       page,
     }) => {
       test.setTimeout(240_000);
-      const host = await startRoutingFixtureHost();
+      const host = await startRoutingFixtureHost({ login: ["add"] });
       try {
         await openRoutingSection(page, host, { ...layout, desktopOnHost: true });
-        const button = page.getByTestId("omp-routing-add-button");
-        await expect(button).toBeVisible();
-        await expect(page.getByTestId("omp-routing-add-elsewhere")).toHaveCount(0);
-        await expect(page.getByTestId("omp-routing-add-account")).toContainText(
-          "Sign in with a Claude account that is not listed here. Signing in with a listed account replaces its saved login.",
-        );
-        await button.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-account.png` });
-
-        await button.click();
-        await expect(page.getByTestId("omp-routing-add-account")).toContainText(
-          "Finish signing in in your browser",
-        );
-        await page.getByTestId("omp-routing-add-cancel").scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-running.png` });
-        await page.getByTestId("omp-routing-add-cancel").click();
-        await expect(page.getByTestId("omp-routing-add-result")).toHaveText("Sign-in cancelled.");
-
         await page.getByTestId("omp-routing-add-button").click();
-        await expect(page.getByTestId("omp-routing-add-result")).toContainText("Account saved.", {
-          timeout: 15_000,
-        });
-        await expect(page.getByTestId("omp-routing-add-result")).toContainText(
-          "Turn off paid extra usage",
+        await page.getByTestId("omp-add-continue").click();
+        await page.getByTestId("omp-add-paste-toggle").click();
+        const input = page.getByTestId("omp-add-paste-input");
+
+        await input.fill("not a sign-in address");
+        await page.getByTestId("omp-add-paste-submit").click();
+        await expect(page.getByTestId("omp-add-paste-error")).toHaveText(
+          "That is not a sign-in address or code",
         );
-        await page.getByTestId("omp-routing-add-result").scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-saved.png` });
+
+        // An address from an older link is refused before anything reaches OMP.
+        await input.fill("http://localhost:54545/callback?code=abc&state=older");
+        await page.getByTestId("omp-add-paste-submit").click();
+        await expect(page.getByTestId("omp-add-paste-error")).toContainText(
+          "belongs to an older sign-in link",
+        );
+        await page.screenshot({
+          path: `../../.scratch/routing-${layout.name}-add-wrong-login.png`,
+        });
+
+        await input.fill("http://localhost:54545/callback?code=abc&state=fixture-state");
+        await page.getByTestId("omp-add-paste-submit").click();
+        await expect(page.getByTestId("omp-add-result")).toContainText("Added nine@example.test", {
+          timeout: 20_000,
+        });
+        await expect(page.getByTestId("omp-add-billing")).toContainText("paid extra usage");
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-added.png` });
+        await page.getByTestId("omp-add-done").click();
+        await expect(page.getByTestId("omp-add-result")).toHaveCount(0);
+
+        // The next report from an agent lists the new account with a badge.
+        await host.run({ op: "serve" });
+        const row = routingRow(page, "nine@example.test");
+        await expect(row).toContainText("Just added", { timeout: 20_000 });
+        await row.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-just-added.png` });
+
+        // A reload within five minutes still shows what the sign-in did.
+        await reloadWithHost(page, host);
+        await expectRoutingLoaded(page);
+        await expect(page.getByTestId("omp-routing-add-result")).toHaveText(
+          "Added nine@example.test",
+        );
+        await page.getByTestId("omp-routing-add-done").click();
+        await expect(page.getByTestId("omp-routing-add-button")).toBeVisible();
+      } finally {
+        await host.close();
+      }
+    });
+
+    test("signing in as an account that is already added changes nothing", async ({ page }) => {
+      test.setTimeout(240_000);
+      const host = await startRoutingFixtureHost({ login: ["duplicate"] });
+      try {
+        await openRoutingSection(page, host, { ...layout, desktopOnHost: true });
+        await page.getByTestId("omp-routing-add-button").click();
+        await page.getByTestId("omp-add-continue").click();
+        await page.getByTestId("omp-add-paste-toggle").click();
+        await page
+          .getByTestId("omp-add-paste-input")
+          .fill("http://localhost:54545/callback?code=abc&state=fixture-state");
+        await page.getByTestId("omp-add-paste-submit").click();
+        await expect(page.getByTestId("omp-add-result")).toContainText(
+          "ada@example.test is already added",
+          { timeout: 20_000 },
+        );
+        await expect(page.getByTestId("omp-add-result")).toContainText("Nothing changed");
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-duplicate.png` });
+        await expect(page.locator('[data-testid^="omp-routing-row-"]')).toHaveCount(3);
+        await page.getByTestId("omp-add-close").click();
+        await expect(page.getByTestId("omp-add-sheet")).toHaveCount(0);
+        await expect(page.getByTestId("omp-routing-add-button")).toBeVisible();
+      } finally {
+        await host.close();
+      }
+    });
+
+    test("closing the sheet keeps the sign-in running, and a reload adopts it", async ({
+      page,
+    }) => {
+      test.setTimeout(240_000);
+      const host = await startRoutingFixtureHost({ login: ["pending"] });
+      try {
+        await openRoutingSection(page, host, { ...layout, desktopOnHost: true });
+        await page.getByTestId("omp-routing-add-button").click();
+        await page.getByTestId("omp-add-continue").click();
+        const url = await page.getByTestId("omp-add-link").inputValue();
+        await page.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(page.getByTestId("omp-add-sheet")).toHaveCount(0);
+
+        const progress = page.getByTestId("omp-routing-add-progress");
+        await expect(progress).toHaveText("Sign-in in progress");
+        await expect(page.getByTestId("omp-routing-add-button")).toHaveCount(0);
+        await progress.scrollIntoViewIfNeeded();
+        await page.screenshot({
+          path: `../../.scratch/routing-${layout.name}-add-in-progress.png`,
+        });
+
+        await reloadWithHost(page, host);
+        await expectRoutingLoaded(page);
+        await expect(page.getByTestId("omp-routing-add-progress")).toHaveText(
+          "Sign-in in progress",
+        );
+        // The sheet does not pop open by itself; Continue shows the same link.
+        await expect(page.getByTestId("omp-add-sheet")).toHaveCount(0);
+        await page.getByTestId("omp-routing-add-continue").click();
+        await expect(page.getByTestId("omp-add-link")).toHaveValue(url);
+        await page.getByRole("button", { name: "Close", exact: true }).click();
+
+        await page.getByTestId("omp-routing-add-cancel").click();
+        await expect(page.getByTestId("omp-routing-add-result")).toHaveText("Sign-in cancelled");
+        await page.getByTestId("omp-routing-add-done").click();
+        await expect(page.getByTestId("omp-routing-add-button")).toBeVisible();
+      } finally {
+        await host.close();
+      }
+    });
+
+    test("a host without the sign-in link asks for an update and keeps the terminal hint", async ({
+      page,
+    }) => {
+      test.setTimeout(240_000);
+      const host = await startRoutingFixtureHost({ noLoginLink: true });
+      try {
+        await openRoutingSection(page, host, { ...layout, desktopOnHost: true });
+        await expect(page.getByTestId("omp-routing-add-update")).toHaveText(
+          "Update Paseo and Oh My Pi on the host to add accounts here.",
+        );
+        await expect(page.getByTestId("omp-routing-add-hint")).toContainText("/login");
+        await expect(page.getByTestId("omp-routing-add-button")).toHaveCount(0);
+        await page.getByTestId("omp-routing-add-update").scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../../.scratch/routing-${layout.name}-add-update.png` });
       } finally {
         await host.close();
       }

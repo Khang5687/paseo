@@ -2072,23 +2072,85 @@ export const en = {
   ompAccountRouting: {
     login: {
       start: "Add Claude account",
-      explain:
-        "Sign in with a Claude account that is not listed here. Signing in with a listed account replaces its saved login.",
-      running: "Finish signing in in your browser",
-      cancel: "Cancel",
       elsewhere: "Open Paseo on the host computer to add an account.",
-      saved:
-        "Account saved. It shows up here once an OMP agent next starts or sends a request. Turn off paid extra usage on that account in Claude: Paseo skips accounts that have it on.",
-      cancelled: "Sign-in cancelled.",
+      update: "Update Paseo and Oh My Pi on the host to add accounts here.",
+      inProgress: "Sign-in in progress",
+      continue: "Continue",
+      cancel: "Cancel",
+      cancelSignIn: "Cancel sign-in",
+      done: "Done",
+      details: "Details",
+      tryAgain: "Try again",
+      close: "Close",
+      justAdded: "Just added",
+      warning: {
+        body: "Paseo saves one sign-in per Claude account. Sign in to claude.ai as the account you want to add.",
+        existing: "Already added: {{accounts}}",
+        alertTitle: "Check which account your browser uses",
+        alertDescription:
+          "If claude.ai is still signed in as an account that is already added, sign out or switch accounts first. A private window always starts signed out.",
+        guard:
+          "If you sign in as an account that is already added, Paseo stops and changes nothing.",
+      },
+      preparing: "Preparing sign-in link...",
+      link: {
+        title: "Sign in to Claude",
+        step: "Open the link and sign in as the account you want to add",
+        open: "Open sign-in page",
+        copy: "Copy link",
+        copied: "Copied",
+        label: "Sign-in link",
+        hint: "To use a private window or another device, copy the link instead",
+        waiting: "Waiting for the browser...",
+        pasteInstead: "Paste address instead",
+      },
+      paste: {
+        label: "Address or code",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "After you approve, the browser may land on a page that does not load. Copy the full address from the address bar, or the code Claude shows, and paste it here.",
+        submit: "Submit",
+        checking: "Checking...",
+        error: {
+          invalid_input: "That is not a sign-in address or code",
+          wrong_login: "That address belongs to an older sign-in link. Use the link shown here.",
+          not_waiting: "This sign-in already finished",
+          not_allowed: "Only Paseo on the host computer can send this",
+          unreachable: "Could not reach the host. Try again.",
+        },
+      },
+      verifying: "Checking the sign-in...",
+      result: {
+        added: {
+          title: "Added {{account}}",
+          titleUnnamed: "Account added",
+          description: "{{organization}}. Auto-routing can use it now.",
+          descriptionUnnamed: "Auto-routing can use it now.",
+          billingEnabled:
+            "Paid extra usage is on for this account. Auto-routing skips it until you turn that off in Claude settings.",
+          billingUnknown:
+            "Make sure paid extra usage is off for this account in Claude settings. Auto-routing skips accounts that have it on.",
+        },
+        alreadyListed: {
+          title: "{{account}} is already added",
+          titleUnnamed: "That account is already added",
+          description:
+            "Nothing changed. Your browser signed in as an account Paseo already has. Sign out of claude.ai or use a private window, then try again.",
+        },
+        replaced: {
+          title: "Replaced the sign-in for {{account}}",
+          titleUnnamed: "Replaced a saved sign-in",
+          description: "No account was added. The new sign-in is in use.",
+        },
+        failed: "Sign-in failed",
+        cancelled: "Sign-in cancelled",
+      },
       failure: {
-        timeout: "Sign-in timed out after 10 minutes. Try again.",
-        paste_code_unsupported:
-          "The browser could not return to Paseo, so sign-in was cancelled. Make sure nothing else is using port 54545, then try again.",
-        browser_open_failed: "Paseo could not open the browser on this computer.",
+        timeout: "The sign-in link expired after 10 minutes. Nothing changed.",
         omp_failed:
-          "OMP could not finish signing in. Try again, or run omp in a terminal and type /login.",
-        spawn_failed: "Paseo could not start OMP on this computer.",
-        unreachable: "Lost contact with the host. Check the connection and try again.",
+          "Oh My Pi could not finish signing in. Nothing changed. Try again, or run omp in a terminal and type /login.",
+        spawn_failed: "Paseo could not start Oh My Pi on this computer.",
+        unreachable:
+          "Lost contact with the host. When it reconnects, check the account list before you try again.",
       },
     },
     labels: {
