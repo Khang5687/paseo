@@ -2123,6 +2123,7 @@ export const ja: TranslationResources = {
     status: {
       loading: "アカウントのルーティングを読み込み中",
       empty: "Claude アカウントが見つかりません",
+      noRuntime: "Oh My Pi エージェントの実行中にアカウントが表示されます。",
       unsupported: "このホストは OMP アカウントルーティングの対応を確認していません",
       offline: "ホストがオフラインです。最後に確認した設定を表示しています",
       readOnly: "これらの設定は表示のみで、変更できません",

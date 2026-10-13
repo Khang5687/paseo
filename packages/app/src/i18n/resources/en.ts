@@ -2127,6 +2127,7 @@ export const en = {
     status: {
       loading: "Loading account routing",
       empty: "No Claude accounts observed",
+      noRuntime: "Accounts appear when an Oh My Pi agent is running.",
       unsupported: "This host has not verified OMP account-routing support",
       offline: "Host offline; showing last confirmed settings",
       readOnly: "You can view these settings but cannot change them",

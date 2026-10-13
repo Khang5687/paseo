@@ -428,6 +428,7 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
   );
   const nowMs = Date.now();
   const summary = summarizeRouting(state, rows, nowMs);
+  const awaitingRuntime = state.catalog.status === "loading";
   const showOrder = rows.length >= 2;
   let summaryText: string | null = null;
   if (summary?.kind === "paused") {
@@ -457,6 +458,11 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
           {summaryText}
         </Text>
       ) : null}
+      {awaitingRuntime ? (
+        <Text style={styles.listHint} testID="omp-routing-no-runtime">
+          {t("ompAccountRouting.status.noRuntime")}
+        </Text>
+      ) : null}
       <SettingsCard testID="omp-routing-controls">
         <SettingsRow label={t("ompAccountRouting.labels.account")}>
           <SelectField
@@ -477,7 +483,7 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
             searchable
             searchPlaceholder={t("ompAccountRouting.labels.search")}
             title={t("ompAccountRouting.labels.account")}
-            disabled={disabled}
+            disabled={disabled || rows.length === 0}
             testID="omp-routing-account-select"
             triggerTestID="omp-routing-account-trigger"
           />
@@ -493,7 +499,7 @@ function ControlsBody({ serverId, state, disabled, mutate, login, canEdit }: Con
       {showOrder ? (
         <Text style={styles.listHint}>{t("ompAccountRouting.labels.priorityHelp")}</Text>
       ) : null}
-      <View style={settingsStyles.card} testID="omp-routing-accounts">
+      <View style={rows.length > 0 ? settingsStyles.card : undefined} testID="omp-routing-accounts">
         {rows.map((row, index) => (
           <View key={row.key} style={index > 0 ? settingsStyles.rowBorder : undefined}>
             <AccountRowView

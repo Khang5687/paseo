@@ -298,6 +298,10 @@ async function serve(): Promise<void> {
     listenPort: Number(process.env.ROUTING_FIXTURE_PORT ?? 0),
     corsAllowedOrigins: process.env.ROUTING_FIXTURE_CORS ? [process.env.ROUTING_FIXTURE_CORS] : [],
     ompRouting: { catalogs: (id: string) => [catalog(id, false)] },
+    // Without an agent the host learns support from the startup probe alone (synthetic, no omp).
+    ...(process.env.ROUTING_FIXTURE_AGENT === "0"
+      ? { ompCapabilityProbe: async () => ({ complete: true, version: 1 }) }
+      : {}),
     // Synthetic sign-in: no omp binary, browser or network. The first login waits until cancelled,
     // the second opens a URL and succeeds.
     ompAccountLogin: new OmpAccountLogin({

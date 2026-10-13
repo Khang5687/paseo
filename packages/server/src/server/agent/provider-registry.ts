@@ -262,7 +262,9 @@ function getProviderClientFactory(provider: string): ProviderClientFactory {
   return factory;
 }
 
-function toRuntimeSettings(override?: ProviderOverride): ProviderRuntimeSettings | undefined {
+export function toRuntimeSettings(
+  override?: ProviderOverride,
+): ProviderRuntimeSettings | undefined {
   if (!override?.command && !override?.env && !override?.disallowedTools) {
     return undefined;
   }
@@ -279,7 +281,7 @@ function toRuntimeSettings(override?: ProviderOverride): ProviderRuntimeSettings
   };
 }
 
-function mergeRuntimeSettings(
+export function mergeRuntimeSettings(
   base: ProviderRuntimeSettings | undefined,
   override: ProviderRuntimeSettings | undefined,
 ): ProviderRuntimeSettings | undefined {

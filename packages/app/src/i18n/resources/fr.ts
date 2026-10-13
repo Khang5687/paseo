@@ -2148,6 +2148,7 @@ export const fr: TranslationResources = {
     status: {
       loading: "Chargement du routage des comptes",
       empty: "Aucun compte Claude observé",
+      noRuntime: "Les comptes apparaissent quand un agent Oh My Pi est en cours d'exécution.",
       unsupported: "Cet hôte n'a pas vérifié la prise en charge du routage de comptes OMP",
       offline: "Hôte hors ligne ; derniers réglages confirmés affichés",
       readOnly: "Vous pouvez consulter ces réglages, mais pas les modifier",

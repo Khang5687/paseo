@@ -2112,6 +2112,7 @@ export const ko: TranslationResources = {
     status: {
       loading: "계정 라우팅 불러오는 중",
       empty: "관측된 Claude 계정 없음",
+      noRuntime: "Oh My Pi 에이전트가 실행 중이면 계정이 표시됩니다.",
       unsupported: "이 호스트는 OMP 계정 라우팅 지원을 확인하지 않았습니다",
       offline: "호스트가 오프라인입니다. 마지막으로 확인된 설정을 표시합니다",
       readOnly: "이 설정은 볼 수만 있고 변경할 수 없습니다",

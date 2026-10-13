@@ -345,8 +345,11 @@ describe("section state", () => {
       describeSection(state({ catalog: { status: "incomplete", authoritativeObservedAt: null } }))
         .catalog,
     ).toBe("incomplete");
+    const loading = { status: "loading", authoritativeObservedAt: null } as const;
+    // Supported host, no agent has reported a catalog yet: controls render (no runtime needed).
+    expect(describeSection(state({ catalog: loading })).phase).toBe("ready");
     expect(
-      describeSection(state({ catalog: { status: "loading", authoritativeObservedAt: null } }))
+      describeSection(state({ catalog: loading, capability: { status: "unknown", reason: null } }))
         .phase,
     ).toBe("loading");
   });

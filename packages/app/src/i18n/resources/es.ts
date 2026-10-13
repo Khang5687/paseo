@@ -2151,6 +2151,7 @@ export const es: TranslationResources = {
     status: {
       loading: "Cargando el enrutamiento de cuentas",
       empty: "No se han observado cuentas de Claude",
+      noRuntime: "Las cuentas aparecen cuando hay un agente de Oh My Pi en ejecución.",
       unsupported:
         "Este host no ha verificado la compatibilidad con el enrutamiento de cuentas de OMP",
       offline: "Host sin conexión; se muestran los últimos ajustes confirmados",

@@ -201,6 +201,35 @@ test("a runtime without complete coverage never turns the feature on", async () 
   );
 });
 
+test("a probe that reports support advertises routing and login with no agent running", async () => {
+  const ompAccountLogin = new OmpAccountLogin({
+    runtime: new FakeOmp(),
+    logger: pino({ level: "silent" }),
+    openUrl: async () => undefined,
+  });
+  const daemon = await startDaemon({
+    cleanup: false,
+    ompAccountLogin,
+    ompCapabilityProbe: async () => ({ complete: true, version: 1 }),
+  });
+  const client = await connect(daemon, modern);
+  await expect.poll(() => featureOn(client)).toBe(true);
+  expect(client.getLastServerInfoMessage()?.features?.ompAccountLogin).toBe(true);
+  const { state } = await client.getOmpAccountRoutingState();
+  expect(state.capability.status).toBe("supported");
+  expect(state.accounts).toEqual([]);
+});
+
+test("a probe that reports an old OMP keeps routing off", async () => {
+  const daemon = await startDaemon({
+    cleanup: false,
+    ompCapabilityProbe: async () => ({ complete: false, version: 0 }),
+  });
+  const client = await connect(daemon, modern);
+  expect(featureOn(client)).toBe(false);
+  expect(daemon.routingFixture!.authority.snapshot().capability.status).toBe("unsupported");
+});
+
 test("account login is advertised only with routing and a host login, and runs end to end", async () => {
   const omp = new FakeOmp();
   const opened: string[] = [];

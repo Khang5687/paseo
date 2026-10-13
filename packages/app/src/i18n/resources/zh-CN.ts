@@ -2076,6 +2076,7 @@ export const zhCN: TranslationResources = {
     status: {
       loading: "正在加载账号路由",
       empty: "未发现 Claude 账号",
+      noRuntime: "运行 Oh My Pi 智能体时会显示账户。",
       unsupported: "此主机尚未验证对 OMP 账号路由的支持",
       offline: "主机离线；显示最近一次确认的设置",
       readOnly: "你可以查看这些设置，但无法更改",
