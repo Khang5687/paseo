@@ -14,6 +14,7 @@ import {
   routingCatalog,
   routingRef,
   FakeOmp,
+  type FakeOmpSession,
 } from "../agent/providers/omp/test-utils/fake-omp.js";
 
 // Synthetic accounts, a scripted JSONL child, a temp home and port zero. No credential is read and
@@ -205,7 +206,6 @@ test("a probe that reports support advertises routing and login with no agent ru
   const ompAccountLogin = new OmpAccountLogin({
     runtime: new FakeOmp(),
     logger: pino({ level: "silent" }),
-    openUrl: async () => undefined,
   });
   const daemon = await startDaemon({
     cleanup: false,
@@ -215,6 +215,8 @@ test("a probe that reports support advertises routing and login with no agent ru
   const client = await connect(daemon, modern);
   await expect.poll(() => featureOn(client)).toBe(true);
   expect(client.getLastServerInfoMessage()?.features?.ompAccountLogin).toBe(true);
+  // An OMP without the add-only guard gets no link flow.
+  expect(client.getLastServerInfoMessage()?.features?.ompAccountLoginLink).toBeUndefined();
   const { state } = await client.getOmpAccountRoutingState();
   expect(state.capability.status).toBe("supported");
   expect(state.accounts).toEqual([]);
@@ -230,42 +232,82 @@ test("a probe that reports an old OMP keeps routing off", async () => {
   expect(daemon.routingFixture!.authority.snapshot().capability.status).toBe("unsupported");
 });
 
+const pasted = (s: FakeOmpSession) => () => {
+  if (!s.extensionUiResponses.some((r) => r.id === "u2")) throw new Error("no paste yet");
+};
+
 test("account login is advertised only with routing and a host login, and runs end to end", async () => {
   const omp = new FakeOmp();
-  const opened: string[] = [];
+  const C = routingRef(9);
   omp.queueSessionSetup((session) => {
-    session.loginHandler = async (s) =>
+    session.logoutAccounts = [{ credentialId: 1, label: "one", type: "oauth" }];
+    session.loginHandler = async (s) => {
       s.emit({
         type: "extension_ui_request",
         id: "u1",
         method: "open_url",
         url: "https://claude.example/authorize?state=x",
       });
+      s.emit({ type: "extension_ui_request", id: "u2", method: "input" });
+      await vi.waitFor(pasted(s));
+      s.logoutAccounts = [...s.logoutAccounts, { credentialId: 9, label: "nine", type: "oauth" }];
+      return { kind: "stored", outcome: "added", rowId: 9, email: "nine@example.test" };
+    };
   });
+  let daemon: TestPaseoDaemon | undefined;
   const ompAccountLogin = new OmpAccountLogin({
     runtime: omp,
     logger: pino({ level: "silent" }),
-    openUrl: async (url) => void opened.push(url),
+    accounts: {
+      refForSignedInRow: (row) => daemon!.routingFixture!.authority.refForSignedInRow(row),
+      addSignedInAccount: (ref) => daemon!.routingFixture!.authority.addSignedInAccount(ref),
+    },
   });
-  const daemon = await startDaemon({ cleanup: false, ompAccountLogin });
+  daemon = await startDaemon({
+    cleanup: false,
+    ompAccountLogin,
+    ompCapabilityProbe: async () => ({ complete: false, version: 0, loginExisting: true }),
+  });
   const client = await connect(daemon, modern);
-  const loginOn = () => client.getLastServerInfoMessage()?.features?.ompAccountLogin === true;
+  const features = () => client.getLastServerInfoMessage()?.features;
   client.observeEvents(["status.server_info"], { notifications: true });
 
   // No runtime negotiated yet: routing is off, so login is off too.
-  expect(loginOn()).toBe(false);
+  expect(features()?.ompAccountLogin).toBeUndefined();
+  expect(features()?.ompAccountLoginLink).toBeUndefined();
   await expect(client.startOmpAccountLogin()).rejects.toBeInstanceOf(
     OmpAccountLoginUnsupportedError,
   );
 
   await daemon.routingFixture!.openAgent(daemon.staticDir);
-  await expect.poll(loginOn).toBe(true);
+  await expect.poll(() => features()?.ompAccountLoginLink).toBe(true);
+  expect(features()?.ompAccountLogin).toBe(true);
 
-  const started = await client.startOmpAccountLogin();
+  const started = await client.startOmpAccountLogin({ mode: "add" });
   expect(started.error).toBeNull();
+  // A loopback client is the host's own app: it gets the link and may paste.
+  await expect
+    .poll(async () => (await client.getOmpAccountLoginStatus()).status.authorizeUrl)
+    .toBe("https://claude.example/authorize?state=x");
+  await expect
+    .poll(async () => (await client.getOmpAccountLoginStatus()).status.pasteAccepted)
+    .toBe(true);
+  expect((await client.submitOmpAccountLoginCode("code=C&state=other")).error).toBe("wrong_login");
+  expect((await client.submitOmpAccountLoginCode("C#x")).error).toBeNull();
   await expect
     .poll(async () => (await client.getOmpAccountLoginStatus()).status.state)
     .toBe("succeeded");
-  expect(opened).toEqual(["https://claude.example/authorize?state=x"]);
-  expect(omp.latestSession().loginRequests).toEqual(["anthropic"]);
+  expect((await client.getOmpAccountLoginStatus()).status.outcome).toEqual({
+    kind: "added",
+    label: "nine@example.test",
+    ref: C,
+  });
+  expect(omp.latestSession().extensionUiResponses).toEqual([
+    { id: "u2", response: { value: "C#x" } },
+  ]);
+  expect(omp.latestSession().loginOptions).toEqual([{ existing: "refuse" }]);
+  // The new row is in the policy and the list without any agent reporting it.
+  const { state } = await client.getOmpAccountRoutingState();
+  expect(state.policy.priorityOrder).toContainEqual(C);
+  expect(state.accounts.map((a) => a.ref)).toContainEqual(C);
 });

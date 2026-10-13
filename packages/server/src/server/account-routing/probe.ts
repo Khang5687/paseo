@@ -30,6 +30,8 @@ export function createOmpCapabilityProber(options: {
   baseSettings: ProviderRuntimeSettings | undefined;
   logger: Logger;
   probe?: (settings: ProviderRuntimeSettings | undefined) => Promise<OmpCapabilityProbe>;
+  /** Whether the probed OMP has the add-only login guard; false whenever nothing was learned. */
+  onLoginGuard?: (supported: boolean) => void;
 }): OmpCapabilityProber {
   const probe =
     options.probe ??
@@ -51,17 +53,23 @@ export function createOmpCapabilityProber(options: {
       lastKey = key;
       const mine = ++generation;
       if (!enabled) {
+        options.onLoginGuard?.(false);
         options.authority.setProbedCapability({ status: "unknown", reason: null });
         return;
       }
       void (async () => {
         let next: Capability = { status: "unknown", reason: null };
+        let loginGuard = false;
         try {
-          next = capabilityFromProbe(await probe(settings));
+          const result = await probe(settings);
+          next = capabilityFromProbe(result);
+          loginGuard = result.loginExisting === true;
         } catch (error) {
           options.logger.warn({ err: error }, "OMP account routing capability probe failed");
         }
-        if (mine === generation && !disposed) options.authority.setProbedCapability(next);
+        if (mine !== generation || disposed) return;
+        options.onLoginGuard?.(loginGuard);
+        options.authority.setProbedCapability(next);
       })();
     },
     dispose() {

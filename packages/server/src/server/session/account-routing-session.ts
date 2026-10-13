@@ -1,5 +1,5 @@
 import type pino from "pino";
-import type { OmpAccountRoutingState } from "@getpaseo/protocol/messages";
+import type { OmpAccountLoginStatus, OmpAccountRoutingState } from "@getpaseo/protocol/messages";
 import type { AccountRoutingAuthority } from "../account-routing/authority.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../messages.js";
 import type { SessionDelivery } from "./owned-subscriptions/index.js";
@@ -13,12 +13,22 @@ type LoginStatus = Extract<
   { type: "account.routing.login.get_status.request" }
 >;
 type LoginCancel = Extract<SessionInboundMessage, { type: "account.routing.login.cancel.request" }>;
+type LoginSubmit = Extract<
+  SessionInboundMessage,
+  { type: "account.routing.login.submit_code.request" }
+>;
+type LoginRequest = LoginStart | LoginStatus | LoginCancel | LoginSubmit;
 
 export interface AccountRoutingSessionOptions {
   /** Absent when the policy file was unreadable: host routing is off and requests fail typed. */
   authority?: Pick<AccountRoutingAuthority, "observe" | "mutate" | "snapshot">;
   /** Absent unless the host can sign accounts in (macOS with account routing). */
-  login?: Pick<OmpAccountLogin, "start" | "status" | "cancel">;
+  login?: Pick<OmpAccountLogin, "start" | "status" | "cancel" | "submitCode">;
+  /**
+   * True for a direct loopback or local IPC connection: the host's own app. Only such a source
+   * sees the sign-in link and may submit a code (plan D12 amendment). Absent means none is.
+   */
+  isHostLocal?: (source: object | undefined) => boolean;
   delivery: Pick<SessionDelivery, "begin" | "isModern" | "currentSource">;
   emit(message: SessionOutboundMessage): void;
   logger: pino.Logger;
@@ -99,12 +109,36 @@ export class AccountRoutingSession {
   }
 
   async handleLoginStart(msg: LoginStart): Promise<void> {
-    const { login, emit } = this.options;
+    const { login, authority, emit } = this.options;
     if (!login) return this.loginUnavailable(msg);
-    const { status, error } = login.start();
+    const replace = msg.mode === "replace" ? msg.replaceAccount : undefined;
+    if (
+      msg.mode === "replace" &&
+      !(
+        replace &&
+        authority
+          ?.snapshot()
+          .accounts.some(
+            (a) =>
+              a.ref.storeNamespace === replace.storeNamespace &&
+              a.ref.nativeRowId === replace.nativeRowId,
+          )
+      )
+    ) {
+      emit({
+        type: "account.routing.login.start.response",
+        payload: {
+          requestId: msg.requestId,
+          status: this.visible(login.status()),
+          error: "invalid_replace_target",
+        },
+      });
+      return;
+    }
+    const { status, error } = login.start(replace ? { replace } : {});
     emit({
       type: "account.routing.login.start.response",
-      payload: { requestId: msg.requestId, status, error },
+      payload: { requestId: msg.requestId, status: this.visible(status), error },
     });
   }
 
@@ -113,7 +147,7 @@ export class AccountRoutingSession {
     if (!login) return this.loginUnavailable(msg);
     emit({
       type: "account.routing.login.get_status.response",
-      payload: { requestId: msg.requestId, status: login.status(), error: null },
+      payload: { requestId: msg.requestId, status: this.visible(login.status()), error: null },
     });
   }
 
@@ -122,11 +156,33 @@ export class AccountRoutingSession {
     if (!login) return this.loginUnavailable(msg);
     emit({
       type: "account.routing.login.cancel.response",
-      payload: { requestId: msg.requestId, status: login.cancel(), error: null },
+      payload: { requestId: msg.requestId, status: this.visible(login.cancel()), error: null },
     });
   }
 
-  private loginUnavailable(msg: LoginStart | LoginStatus | LoginCancel): void {
+  /** The pasted text goes to the login and nowhere else: no log line, no error, no status. */
+  async handleLoginSubmitCode(msg: LoginSubmit): Promise<void> {
+    const { login, emit } = this.options;
+    if (!login) return this.loginUnavailable(msg);
+    const error = this.hostLocal() ? login.submitCode(msg.input) : "not_allowed";
+    emit({
+      type: "account.routing.login.submit_code.response",
+      payload: { requestId: msg.requestId, status: this.visible(login.status()), error },
+    });
+  }
+
+  private hostLocal(): boolean {
+    return this.options.isHostLocal?.(this.options.delivery.currentSource) === true;
+  }
+
+  /** Drops the sign-in link for every connection that is not the host's own app. */
+  private visible(status: OmpAccountLoginStatus): OmpAccountLoginStatus {
+    if (status.authorizeUrl === undefined || this.hostLocal()) return status;
+    const { authorizeUrl: _hidden, ...rest } = status;
+    return rest;
+  }
+
+  private loginUnavailable(msg: LoginRequest): void {
     this.options.emit({
       type: "rpc_error",
       payload: {

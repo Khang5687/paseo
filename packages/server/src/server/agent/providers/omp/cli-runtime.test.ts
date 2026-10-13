@@ -506,9 +506,81 @@ describe("OMP CLI runtime", () => {
       child.stdout.write(
         `${JSON.stringify({ id: command.id, type: "response", command: "login", success: true, data: { providerId: "anthropic" } })}\n`,
       );
-      await expect(login).resolves.toBeUndefined();
+      await expect(login).resolves.toMatchObject({ kind: "stored", outcome: undefined });
     } finally {
       vi.useRealTimers();
+      await session.close();
+    }
+  });
+
+  test("login passes the add-only guard and maps OMP's outcome and refusal; accounts list read-only", async () => {
+    const child = createOmpChild();
+    const commands: Record<string, unknown>[] = [];
+    const listing = {
+      success: true,
+      data: {
+        accounts: [
+          {
+            credentialId: 7,
+            provider: "anthropic",
+            label: "a",
+            detail: "d",
+            type: "oauth",
+            active: true,
+          },
+        ],
+      },
+    };
+    const logins: Array<Record<string, unknown>> = [
+      {
+        success: true,
+        data: { providerId: "anthropic", outcome: "added", rowId: 9, email: "b@x" },
+      },
+      {
+        success: false,
+        error: "credential_exists",
+        data: { code: "credential_exists", rowId: 7, email: "a@x" },
+      },
+      { success: false, error: "denied" },
+    ];
+    onOmpCommand(child, (command) => {
+      if (command.type !== "login" && command.type !== "get_logout_accounts") return;
+      commands.push(command);
+      const reply = command.type === "login" ? logins.shift() : listing;
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: command.type, ...reply })}\n`,
+      );
+    });
+    const session = await createRuntime(child).startSession({
+      cwd: "/workspace/project",
+      protocolMode: "rpc",
+      noSession: true,
+    });
+    try {
+      await expect(session.getLogoutAccounts("anthropic")).resolves.toEqual([
+        { credentialId: 7, label: "a", type: "oauth" },
+      ]);
+      await expect(session.login("anthropic", { existing: "refuse" })).resolves.toEqual({
+        kind: "stored",
+        outcome: "added",
+        rowId: 9,
+        email: "b@x",
+        orgName: undefined,
+      });
+      await expect(session.login("anthropic", { existing: { replaceRowId: 7 } })).resolves.toEqual({
+        kind: "credential_exists",
+        rowId: 7,
+        email: "a@x",
+        orgName: undefined,
+      });
+      await expect(session.login("anthropic")).rejects.toThrow("denied");
+      expect(commands.map(withoutRequestId)).toEqual([
+        { type: "get_logout_accounts", providerId: "anthropic" },
+        { type: "login", providerId: "anthropic", existing: "refuse" },
+        { type: "login", providerId: "anthropic", existing: { replaceRowId: 7 } },
+        { type: "login", providerId: "anthropic" },
+      ]);
+    } finally {
       await session.close();
     }
   });

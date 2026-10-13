@@ -3497,14 +3497,17 @@ export const AccountRoutingMutateResponseSchema = z.object({
 });
 export type AccountRoutingMutateResponse = z.infer<typeof AccountRoutingMutateResponseSchema>;
 
-// Host-side Claude sign-in. OMP finishes the login through its own loopback callback on the host,
-// so no URL, authorization code, or token ever crosses these messages. The host holds one login at
-// a time; clients start it, poll its status, and may cancel it.
+// Host-side Claude sign-in. A short-lived OMP child signs in and writes the credential into OMP's own
+// store; tokens never cross these messages. The authorize URL and a pasted one-time authorization
+// code cross only the loopback connection to the host's own app (plan D12 amendment): the daemon
+// sends `authorizeUrl` and accepts `submit_code` only from direct loopback or local IPC
+// connections. The host holds one login at a time; clients start it, poll it, and may cancel it.
 export const OmpAccountLoginStatusSchema = z.object({
   state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
   failure: z
     .enum([
       "timeout",
+      // Sent only by daemons before `ompAccountLoginLink`; still parsed.
       "paste_code_unsupported",
       "browser_open_failed",
       "omp_failed",
@@ -3512,20 +3515,48 @@ export const OmpAccountLoginStatusSchema = z.object({
     ])
     .optional(),
   startedAt: z.number().finite().optional(),
+  /** Only while `state` is `running`. */
+  phase: z.enum(["preparing", "awaiting_browser", "verifying"]).optional(),
+  /** https sign-in link, only while awaiting the browser and only to host-local connections. */
+  authorizeUrl: z.string().optional(),
+  /** OMP is waiting for a pasted redirect address or code (`submit_code`). */
+  pasteAccepted: z.boolean().optional(),
+  endedAt: z.number().finite().optional(),
+  /**
+   * What the sign-in did to the store. A refused duplicate is `state: "failed"`,
+   * `failure: "omp_failed"`, `outcome.kind: "already_listed"`; nothing was written.
+   * Labels are display labels only; `ref` is present when the host knows the row's store.
+   */
+  outcome: z
+    .object({
+      kind: z.enum(["added", "replaced", "already_listed"]),
+      label: z.string().optional(),
+      organizationLabel: z.string().optional(),
+      ref: OmpRoutingAccountRefSchema.optional(),
+    })
+    .optional(),
 });
 export type OmpAccountLoginStatus = z.infer<typeof OmpAccountLoginStatusSchema>;
 
 const OmpAccountLoginPayloadSchema = z.object({
   requestId: z.string(),
   status: OmpAccountLoginStatusSchema,
-  /** Set on a start refused because another login is running; `status` is that login's. */
-  error: z.enum(["already_running"]).nullable().optional(),
+  /**
+   * `already_running`: a start refused because another login runs; `status` is that login's.
+   * `invalid_replace_target`: a `mode: "replace"` start without a listed account; sent only to
+   * requests that carried `mode`.
+   */
+  error: z.enum(["already_running", "invalid_replace_target"]).nullable().optional(),
 });
 export type OmpAccountLoginPayload = z.infer<typeof OmpAccountLoginPayloadSchema>;
 
 export const AccountRoutingLoginStartRequestSchema = z.object({
   type: z.literal("account.routing.login.start.request"),
   requestId: z.string(),
+  /** Absent means `add`: OMP refuses to overwrite an account that is already stored. */
+  mode: z.enum(["add", "replace"]).optional(),
+  /** Required with `mode: "replace"`: the only stored account the sign-in may overwrite. */
+  replaceAccount: OmpRoutingAccountRefSchema.optional(),
 });
 export const AccountRoutingLoginStartResponseSchema = z.object({
   type: z.literal("account.routing.login.start.response"),
@@ -3547,6 +3578,23 @@ export const AccountRoutingLoginCancelResponseSchema = z.object({
   type: z.literal("account.routing.login.cancel.response"),
   payload: OmpAccountLoginPayloadSchema,
 });
+/** Answers OMP's open paste prompt with the browser's redirect address or the shown code. */
+export const AccountRoutingLoginSubmitCodeRequestSchema = z.object({
+  type: z.literal("account.routing.login.submit_code.request"),
+  requestId: z.string(),
+  input: z.string().max(4096),
+});
+export const AccountRoutingLoginSubmitCodeResponseSchema = z.object({
+  type: z.literal("account.routing.login.submit_code.response"),
+  payload: z.object({
+    requestId: z.string(),
+    status: OmpAccountLoginStatusSchema,
+    error: z.enum(["not_waiting", "invalid_input", "wrong_login", "not_allowed"]).nullable(),
+  }),
+});
+export type AccountRoutingLoginSubmitCodeResponse = z.infer<
+  typeof AccountRoutingLoginSubmitCodeResponseSchema
+>;
 
 // These connection event streams have no directory bootstrap or timeline membership.
 export const SessionEventSubscriptionSchema = z.enum([
@@ -3610,6 +3658,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AccountRoutingLoginStartRequestSchema,
   AccountRoutingLoginGetStatusRequestSchema,
   AccountRoutingLoginCancelRequestSchema,
+  AccountRoutingLoginSubmitCodeRequestSchema,
   HubExecutionAgentCreateRequestSchema,
   HubExecutionAgentValidateRequestSchema,
   HubExecutionControlRequestSchema,
@@ -4143,6 +4192,9 @@ export const ServerInfoStatusPayloadSchema = z
         ownedSubscriptions: z.boolean().optional(),
         ompAccountRouting: z.boolean().optional(),
         ompAccountLogin: z.boolean().optional(),
+        // Sign-in link, paste and add-only guard: needs `ompAccountLogin` and an OMP whose
+        // capability document reports `login.existing`.
+        ompAccountLoginLink: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
         agentMessageProvenance: z.boolean().optional(),
@@ -7343,6 +7395,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AccountRoutingLoginStartResponseSchema,
   AccountRoutingLoginGetStatusResponseSchema,
   AccountRoutingLoginCancelResponseSchema,
+  AccountRoutingLoginSubmitCodeResponseSchema,
   HubExecutionAgentCreateResponseSchema,
   HubExecutionAgentValidateResponseSchema,
   HubExecutionControlResponseSchema,

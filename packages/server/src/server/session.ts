@@ -478,6 +478,8 @@ export interface SessionOptions {
   workspaceLabelService?: WorkspaceLabelService;
   accountRouting?: AccountRoutingAuthority;
   accountLogin?: OmpAccountLogin;
+  /** The source is a direct loopback or local IPC socket: the host's own app. */
+  isHostLocalSource?: (source: object | undefined) => boolean;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -842,6 +844,7 @@ export class Session {
       workspaceLabelService,
       accountRouting,
       accountLogin,
+      isHostLocalSource,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -1024,6 +1027,7 @@ export class Session {
     this.accountRoutingSession = new AccountRoutingSession({
       authority: accountRouting,
       login: accountLogin,
+      isHostLocal: isHostLocalSource,
       delivery: this.delivery,
       emit: (msg) => this.emit(msg),
       logger: this.sessionLogger,
@@ -3098,6 +3102,8 @@ export class Session {
         return this.accountRoutingSession.handleLoginStatus(msg);
       case "account.routing.login.cancel.request":
         return this.accountRoutingSession.handleLoginCancel(msg);
+      case "account.routing.login.submit_code.request":
+        return this.accountRoutingSession.handleLoginSubmitCode(msg);
       default:
         return undefined;
     }

@@ -8,6 +8,7 @@ import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
 import {
   JSONL_RPC_NO_TIMEOUT,
   JsonlRpcProcess,
+  JsonlRpcResponseError,
   type JsonlRpcLaunch,
 } from "../jsonl-rpc-process.js";
 import { execCommand } from "../../../../utils/spawn.js";
@@ -40,11 +41,17 @@ import {
   parseOmpRuntimeEvent,
   OMP_HOST_ACCOUNT_ROUTING_ENV,
   OmpGoalCommandResultSchema,
+  OmpLoginRefusalSchema,
+  OmpLoginResultSchema,
+  OmpLogoutAccountsResultSchema,
   OmpSessionStateSchema,
   OmpSessionStatsSchema,
   type OmpThinkingLevel,
   type OmpGoalAction,
   type OmpGoalModeState,
+  type OmpLoginExisting,
+  type OmpLoginResult,
+  type OmpLogoutAccount,
   type OmpAgentMessage,
   type OmpModel,
   type OmpPromptAck,
@@ -305,8 +312,34 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     await this.requestStopWork({ type: "abort" });
   }
 
-  async login(providerId: string): Promise<void> {
-    await this.request({ type: "login", providerId }, JSONL_RPC_NO_TIMEOUT);
+  async login(
+    providerId: string,
+    options: { existing?: OmpLoginExisting } = {},
+  ): Promise<OmpLoginResult> {
+    let data: unknown;
+    try {
+      data = await this.request(
+        { type: "login", providerId, ...(options.existing ? { existing: options.existing } : {}) },
+        JSONL_RPC_NO_TIMEOUT,
+      );
+    } catch (error) {
+      const refusal =
+        error instanceof JsonlRpcResponseError ? OmpLoginRefusalSchema.safeParse(error.data) : null;
+      if (!refusal?.success) throw error;
+      const { rowId, email, orgName } = refusal.data;
+      return { kind: "credential_exists", rowId, email, orgName };
+    }
+    const parsed = OmpLoginResultSchema.safeParse(data);
+    if (!parsed.success) return { kind: "stored" };
+    const { outcome, rowId, email, orgName } = parsed.data;
+    return { kind: "stored", outcome, rowId, email, orgName };
+  }
+
+  async getLogoutAccounts(providerId: string): Promise<OmpLogoutAccount[]> {
+    const data = OmpLogoutAccountsResultSchema.parse(
+      await this.request({ type: "get_logout_accounts", providerId }),
+    );
+    return data.accounts.map(({ credentialId, label, type }) => ({ credentialId, label, type }));
   }
 
   async getState(): Promise<OmpSessionState> {

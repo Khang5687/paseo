@@ -27,10 +27,12 @@ import {
   DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
+  type AccountRoutingLoginSubmitCodeResponse,
   type OmpAccountLoginPayload,
   type OmpAccountRoutingMutation,
   type OmpAccountRoutingMutationResult,
   type OmpAccountRoutingState,
+  type OmpRoutingAccountRef,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
@@ -2716,20 +2718,25 @@ export class DaemonClient {
     });
   }
 
+  private requireOmpAccountLogin(feature: "ompAccountLogin" | "ompAccountLoginLink"): void {
+    const connected = this.connectionState.status === "connected" && this.transport !== null;
+    if (!connected || this.lastServerInfoMessage?.features?.[feature] !== true) {
+      throw new OmpAccountLoginUnsupportedError();
+    }
+  }
+
   private async sendOmpAccountLoginRequest(
     type:
       | "account.routing.login.start.request"
       | "account.routing.login.get_status.request"
       | "account.routing.login.cancel.request",
+    fields: { mode?: "add" | "replace"; replaceAccount?: OmpRoutingAccountRef } = {},
   ): Promise<OmpAccountLoginPayload> {
-    const connected = this.connectionState.status === "connected" && this.transport !== null;
-    if (!connected || this.lastServerInfoMessage?.features?.ompAccountLogin !== true) {
-      throw new OmpAccountLoginUnsupportedError();
-    }
+    this.requireOmpAccountLogin("ompAccountLogin");
     const requestId = this.createRequestId();
     return this.sendCorrelatedRequest({
       requestId,
-      message: SessionInboundMessageSchema.parse({ type, requestId }),
+      message: SessionInboundMessageSchema.parse({ type, requestId, ...fields }),
       responseType: type.replace(/\.request$/, ".response") as
         | "account.routing.login.start.response"
         | "account.routing.login.get_status.response"
@@ -2737,9 +2744,40 @@ export class DaemonClient {
     });
   }
 
-  /** Starts a host-side Claude sign-in. The host opens its own browser; nothing secret returns. */
-  startOmpAccountLogin(): Promise<OmpAccountLoginPayload> {
-    return this.sendOmpAccountLoginRequest("account.routing.login.start.request");
+  /**
+   * Starts a host-side Claude sign-in. Without options it is add-only: OMP refuses to overwrite a
+   * stored account. `replace` overwrites only `account`. The host's own app gets the sign-in link
+   * in `status.authorizeUrl` and opens it itself; no other client sees it.
+   */
+  async startOmpAccountLogin(
+    options: { mode: "replace"; account: OmpRoutingAccountRef } | { mode?: "add" } = {},
+  ): Promise<OmpAccountLoginPayload> {
+    if (!options.mode)
+      return this.sendOmpAccountLoginRequest("account.routing.login.start.request");
+    this.requireOmpAccountLogin("ompAccountLoginLink");
+    return this.sendOmpAccountLoginRequest(
+      "account.routing.login.start.request",
+      options.mode === "replace"
+        ? { mode: "replace", replaceAccount: options.account }
+        : { mode: "add" },
+    );
+  }
+
+  /** Answers the host's open paste prompt; only the host's own app may. Needs the link feature. */
+  async submitOmpAccountLoginCode(
+    input: string,
+  ): Promise<AccountRoutingLoginSubmitCodeResponse["payload"]> {
+    this.requireOmpAccountLogin("ompAccountLoginLink");
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "account.routing.login.submit_code.request",
+        requestId,
+        input,
+      }),
+      responseType: "account.routing.login.submit_code.response",
+    });
   }
 
   getOmpAccountLoginStatus(): Promise<OmpAccountLoginPayload> {

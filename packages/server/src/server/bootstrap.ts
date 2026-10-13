@@ -559,7 +559,11 @@ function resolveAccountLogin(
 ): OmpAccountLogin | undefined {
   if (dependencies.accountLogin) return dependencies.accountLogin;
   if (!accountRouting) return undefined;
-  return createMacAccountLogin({ logger, runtimeSettings: config.agentProviderSettings?.omp });
+  return createMacAccountLogin({
+    logger,
+    runtimeSettings: config.agentProviderSettings?.omp,
+    accounts: accountRouting,
+  });
 }
 
 /** Learns OMP routing support without waiting for an agent, now and whenever the OMP config changes. */
@@ -569,6 +573,7 @@ function startOmpCapabilityProbing(input: {
   config: PaseoDaemonConfig;
   logger: Logger;
   probe: PaseoDaemonDependencies["ompCapabilityProbe"];
+  accountLogin: OmpAccountLogin | undefined;
 }): () => void {
   // Tests never spawn a real omp: they inject a probe or get none.
   if (!input.authority || !(input.probe || !process.env["VITEST"])) return () => undefined;
@@ -577,6 +582,7 @@ function startOmpCapabilityProbing(input: {
     baseSettings: input.config.agentProviderSettings?.omp,
     logger: input.logger,
     probe: input.probe,
+    onLoginGuard: (supported) => input.accountLogin?.setLinkSupported(supported),
   });
   prober.update(input.config.providerOverrides?.omp);
   const unsubscribe = input.store.onChange((next) => prober.update(next.providers?.omp));
@@ -1018,7 +1024,8 @@ export async function createPaseoDaemon(
   const unbindAccountRouting = accountRouting
     ? bindOmpAccountRouting(accountRouting)
     : () => undefined;
-  // Mac-only: the browser opens on the host and OMP's own loopback callback finishes the login.
+  // Mac-only: the host's own app opens the sign-in link, and OMP's loopback callback or a pasted
+  // redirect address finishes the login.
   const accountLogin = resolveAccountLogin(dependencies, accountRouting, logger, config);
   const stopCapabilityProbing = startOmpCapabilityProbing({
     authority: accountRouting,
@@ -1026,6 +1033,7 @@ export async function createPaseoDaemon(
     config,
     logger,
     probe: dependencies.ompCapabilityProbe,
+    accountLogin,
   });
   const disposeAccountRouting = () => {
     stopCapabilityProbing();

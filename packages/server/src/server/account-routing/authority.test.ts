@@ -254,6 +254,39 @@ describe("AccountRoutingAuthority", () => {
     expect(policy.inclusion.every((e) => e.included)).toBe(true);
   });
 
+  it("adds a signed-in row at the end of the order, included, without selecting", async () => {
+    seed([account(1)]);
+    await mutate({ kind: "select", account: ref(1) });
+    const before = authority.snapshot().policy;
+    const signedIn = authority.refForSignedInRow(9);
+    expect(signedIn).toEqual(ref(9));
+    authority.addSignedInAccount(signedIn!);
+    const { policy, accounts } = authority.snapshot();
+    expect(policy.policyRevision).toBe(before.policyRevision + 1);
+    expect(policy.selectionGeneration).toBe(before.selectionGeneration);
+    expect(policy.current).toEqual(ref(1));
+    expect(policy.priorityOrder).toEqual([ref(1), ref(9)]);
+    expect(policy.inclusion).toContainEqual({ account: ref(9), included: true });
+    expect(accounts.map((a) => a.ref)).toEqual([ref(1), ref(9)]);
+    // Twice is a no-op, and a restart with no runtime still lists the row.
+    authority.addSignedInAccount(ref(9));
+    expect(authority.snapshot().policy.policyRevision).toBe(policy.policyRevision);
+    const restarted = new AccountRoutingAuthority({ store: AccountRoutingStore.open(file), clock });
+    open.push(restarted);
+    expect(restarted.snapshot().accounts.map((a) => a.ref)).toEqual([ref(1), ref(9)]);
+  });
+
+  it("finds the signed-in row's store only when exactly one store is known", () => {
+    const empty = new AccountRoutingAuthority({
+      store: AccountRoutingStore.open(path.join(dir, "empty.json")),
+      clock,
+    });
+    open.push(empty);
+    expect(empty.refForSignedInRow(9)).toBeNull();
+    seed([account(1), account(2, {}, "22222222-2222-4222-8222-222222222222")]);
+    expect(authority.refForSignedInRow(9)).toBeNull();
+  });
+
   it("rejects a stale revision with the current state and never replays", async () => {
     seed([account(1), account(2)]);
     await mutate({ kind: "set_auto", enabled: false });
