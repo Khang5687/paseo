@@ -304,6 +304,39 @@ export class AccountRoutingAuthority {
     }
   }
 
+  /**
+   * The ref of a row a host sign-in just wrote, when the host knows exactly one OMP store. The
+   * login child reports a bare native row id; with no or several known stores this refuses to guess.
+   */
+  refForSignedInRow(nativeRowId: number): OmpRoutingAccountRef | null {
+    const policy = this.store.policy;
+    const namespaces = new Set<string>();
+    for (const r of policy.priorityOrder) namespaces.add(r.storeNamespace);
+    for (const e of policy.inclusion) namespaces.add(e.account.storeNamespace);
+    if (policy.current) namespaces.add(policy.current.storeNamespace);
+    for (const { entry } of this.views().values()) namespaces.add(entry.ref.storeNamespace);
+    if (namespaces.size !== 1) return null;
+    return { storeNamespace: [...namespaces][0], nativeRowId };
+  }
+
+  /**
+   * Lists a newly signed-in account now, before any runtime reports it: the same default-adding
+   * commit a new catalog identity gets (end of priority, included, never selected; D3, D5).
+   */
+  addSignedInAccount(ref: OmpRoutingAccountRef): void {
+    if (this.disposed) return;
+    const policy = this.store.policy;
+    const draft = this.withDefaults(policy, [ref]);
+    if (draft.priorityOrder.length === policy.priorityOrder.length) return;
+    try {
+      this.store.commit(policy.policyRevision, draft);
+    } catch (error) {
+      if (!(error instanceof AccountRoutingPersistenceError)) throw error;
+      // The next catalog that lists the row retries the same default commit.
+    }
+    this.publish();
+  }
+
   /** Startup probe of the configured OMP binary. Running agents take over once they attach. */
   setProbedCapability(capability: OmpAccountRoutingState["capability"]): void {
     if (this.disposed) return;

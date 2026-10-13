@@ -29,6 +29,9 @@ import type {
   OmpGoalAction,
   OmpGoalModeState,
   OmpModel,
+  OmpLoginExisting,
+  OmpLoginResult,
+  OmpLogoutAccount,
   OmpPromptAck,
   OmpRpcSlashCommand,
   OmpRuntimeEvent,
@@ -172,8 +175,16 @@ export class FakeOmpSession implements OmpRuntimeSession {
   getStateRequestCount = 0;
   abortRequested = false;
   readonly loginRequests: string[] = [];
-  /** Scripts one login: emit events, await the reply to a UI request, then resolve or throw. */
-  loginHandler: ((session: FakeOmpSession) => Promise<void>) | null = null;
+  readonly loginOptions: Array<{ existing?: OmpLoginExisting }> = [];
+  /**
+   * Scripts one login: emit events, await the reply to a UI request, then resolve or throw.
+   * Resolving with nothing is an old OMP's bare success.
+   */
+  loginHandler: ((session: FakeOmpSession) => Promise<OmpLoginResult | void>) | null = null;
+  /** What `get_logout_accounts` lists; a handler may change it to model the login's write. */
+  logoutAccounts: OmpLogoutAccount[] = [];
+  logoutAccountsError: Error | null = null;
+  getLogoutAccountsRequests = 0;
   private rejectWhenClosed: (error: Error) => void = () => undefined;
   private readonly closedSignal = new Promise<never>((_, reject) => {
     this.rejectWhenClosed = reject;
@@ -370,10 +381,24 @@ export class FakeOmpSession implements OmpRuntimeSession {
     };
   }
 
-  async login(providerId: string): Promise<void> {
+  async login(
+    providerId: string,
+    options: { existing?: OmpLoginExisting } = {},
+  ): Promise<OmpLoginResult> {
     this.loginRequests.push(providerId);
+    this.loginOptions.push(options);
     // Like the real transport, closing the process fails a login that is still waiting.
-    await Promise.race([this.loginHandler?.(this) ?? Promise.resolve(), this.closedSignal]);
+    const result = await Promise.race([
+      this.loginHandler?.(this) ?? Promise.resolve(),
+      this.closedSignal,
+    ]);
+    return result ?? { kind: "stored" };
+  }
+
+  async getLogoutAccounts(_providerId: string): Promise<OmpLogoutAccount[]> {
+    this.getLogoutAccountsRequests += 1;
+    if (this.logoutAccountsError) throw this.logoutAccountsError;
+    return this.logoutAccounts.map((account) => ({ ...account }));
   }
 
   async abort(): Promise<void> {

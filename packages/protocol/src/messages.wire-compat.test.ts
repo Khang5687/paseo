@@ -632,7 +632,11 @@ test("OMP login link fields are additive for older apps and older daemons", () =
       state: "succeeded",
       startedAt: 1,
       endedAt: 2,
-      outcome: { kind: "added", label: "b@example.com", ref: { storeNamespace: "n", nativeRowId: 9 } },
+      outcome: {
+        kind: "added",
+        label: "b@example.com",
+        ref: { storeNamespace: "n", nativeRowId: 9 },
+      },
     },
     {
       state: "failed",
@@ -644,15 +648,23 @@ test("OMP login link fields are additive for older apps and older daemons", () =
   ];
   for (const status of statuses) {
     for (const op of ["start", "get_status", "cancel"]) {
-      const message = { type: `account.routing.login.${op}.response`, payload: { requestId: "r", status, error: null } };
+      const message = {
+        type: `account.routing.login.${op}.response`,
+        payload: { requestId: "r", status, error: null },
+      };
       expect(SessionOutboundMessageSchema.parse(message)).toMatchObject({ payload: { status } });
-      expect(LegacyOmpAccountLoginPayloadSchema.parse(message.payload).status.state).toBe(status.state);
+      expect(LegacyOmpAccountLoginPayloadSchema.parse(message.payload).status.state).toBe(
+        status.state,
+      );
     }
   }
 
   // Old app to new daemon: a start without `mode` still parses (and means add-only).
   expect(
-    SessionInboundMessageSchema.parse({ type: "account.routing.login.start.request", requestId: "r" }),
+    SessionInboundMessageSchema.parse({
+      type: "account.routing.login.start.request",
+      requestId: "r",
+    }),
   ).toEqual({ type: "account.routing.login.start.request", requestId: "r" });
 
   // Old daemon to new app: the pre-link failures still parse.

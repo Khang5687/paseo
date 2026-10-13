@@ -10,14 +10,21 @@ import { AccountRoutingSession } from "./account-routing-session.js";
 import { SessionDelivery } from "./owned-subscriptions/index.js";
 import type { OmpAccountLogin } from "../account-routing/login.js";
 
-type LoginPort = Pick<OmpAccountLogin, "start" | "status" | "cancel">;
+type LoginPort = Pick<OmpAccountLogin, "start" | "status" | "cancel" | "submitCode">;
 
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function setup(options: { withAuthority?: boolean; modern?: boolean; login?: LoginPort } = {}) {
+function setup(
+  options: {
+    withAuthority?: boolean;
+    modern?: boolean;
+    login?: LoginPort;
+    hostLocal?: boolean;
+  } = {},
+) {
   const dir = mkdtempSync(path.join(tmpdir(), "paseo-routing-session-"));
   dirs.push(dir);
   const authority =
@@ -33,6 +40,7 @@ function setup(options: { withAuthority?: boolean; modern?: boolean; login?: Log
   const session = new AccountRoutingSession({
     authority,
     login: options.login,
+    isHostLocal: (candidate) => candidate === source && options.hostLocal === true,
     delivery,
     emit: (message) => delivery.reply(message),
     logger: pino({ level: "silent" }),
@@ -149,6 +157,7 @@ test("login start, status, and cancel answer with the host login's status", asyn
     start: () => (calls.push("start"), { status: running, error: null }),
     status: () => (calls.push("status"), running),
     cancel: () => (calls.push("cancel"), { state: "cancelled" as const }),
+    submitCode: () => null,
   };
   const { delivery, source, session, sent } = setup({ login });
   const a = { type: "account.routing.login.start.request" as const, requestId: "a" };
@@ -179,6 +188,7 @@ test("a refused concurrent start carries already_running", async () => {
     start: () => ({ status: { state: "running" }, error: "already_running" }),
     status: () => ({ state: "running" }),
     cancel: () => ({ state: "cancelled" }),
+    submitCode: () => null,
   };
   const { delivery, source, session, sent } = setup({ login });
   const a = { type: "account.routing.login.start.request" as const, requestId: "a" };
@@ -200,4 +210,89 @@ test("a host without login answers with a correlated rpc_error", async () => {
       }),
     },
   ]);
+});
+
+const LINK = "https://claude.ai/oauth/authorize?state=s";
+function linkLogin() {
+  const submitted: string[] = [];
+  const starts: unknown[] = [];
+  const status = {
+    state: "running" as const,
+    phase: "awaiting_browser" as const,
+    authorizeUrl: LINK,
+  };
+  const login: LoginPort = {
+    start: (options) => (starts.push(options), { status, error: null }),
+    status: () => status,
+    cancel: () => ({ state: "cancelled" }),
+    submitCode: (input) => (submitted.push(input), null),
+  };
+  return { login, submitted, starts };
+}
+
+test("only the host's own app sees the sign-in link", async () => {
+  for (const hostLocal of [true, false]) {
+    const { login } = linkLogin();
+    const { delivery, source, session, sent } = setup({ login, hostLocal });
+    const a = { type: "account.routing.login.start.request" as const, requestId: "a" };
+    const b = { type: "account.routing.login.get_status.request" as const, requestId: "b" };
+    const c = {
+      type: "account.routing.login.submit_code.request" as const,
+      requestId: "c",
+      input: "x",
+    };
+    await delivery.request(source, a, () => session.handleLoginStart(a));
+    await delivery.request(source, b, () => session.handleLoginStatus(b));
+    await delivery.request(source, c, () => session.handleLoginSubmitCode(c));
+    for (const message of sent) {
+      expect(message).toMatchObject({ payload: { status: { state: "running" } } });
+      expect(JSON.stringify(message).includes("claude.ai")).toBe(hostLocal);
+    }
+  }
+});
+
+test("submit_code is refused for any connection but the host's own app", async () => {
+  const remote = linkLogin();
+  const r = setup({ login: remote.login, hostLocal: false });
+  const msg = {
+    type: "account.routing.login.submit_code.request" as const,
+    requestId: "c",
+    input: "SECRETCODE#s",
+  };
+  await r.delivery.request(r.source, msg, () => r.session.handleLoginSubmitCode(msg));
+  expect(remote.submitted).toEqual([]);
+  expect(r.sent[0]).toMatchObject({
+    type: "account.routing.login.submit_code.response",
+    payload: { requestId: "c", error: "not_allowed" },
+  });
+
+  const local = linkLogin();
+  const l = setup({ login: local.login, hostLocal: true });
+  await l.delivery.request(l.source, msg, () => l.session.handleLoginSubmitCode(msg));
+  expect(local.submitted).toEqual(["SECRETCODE#s"]);
+  expect(l.sent[0]).toMatchObject({ payload: { requestId: "c", error: null } });
+  expect(JSON.stringify(l.sent)).not.toContain("SECRETCODE");
+});
+
+test("replace mode needs a listed account and passes only that target to the login", async () => {
+  const { login, starts } = linkLogin();
+  const { authority, delivery, source, session, sent } = setup({ login, hostLocal: true });
+  const listed = { storeNamespace: "11111111-1111-4111-8111-111111111111", nativeRowId: 7 };
+  const send = (requestId: string, extra: object) => {
+    const msg = { type: "account.routing.login.start.request" as const, requestId, ...extra };
+    return delivery.request(source, msg, () => session.handleLoginStart(msg));
+  };
+  await send("a", { mode: "replace" });
+  await send("b", { mode: "replace", replaceAccount: listed });
+  expect(starts).toEqual([]);
+  expect(sent.map((m) => (m.payload as { error?: unknown }).error)).toEqual([
+    "invalid_replace_target",
+    "invalid_replace_target",
+  ]);
+
+  authority!.addSignedInAccount(listed);
+  await send("c", { mode: "replace", replaceAccount: listed });
+  await send("d", { mode: "add", replaceAccount: listed });
+  await send("e", {});
+  expect(starts).toEqual([{ replace: listed }, {}, {}]);
 });

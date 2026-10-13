@@ -87,11 +87,13 @@ describe("SessionAuthorization", () => {
       "account.routing.login.start.request",
       "account.routing.login.get_status.request",
       "account.routing.login.cancel.request",
+      "account.routing.login.submit_code.request",
     ] as const;
     const responses = [
       "account.routing.login.start.response",
       "account.routing.login.get_status.response",
       "account.routing.login.cancel.response",
+      "account.routing.login.submit_code.response",
     ] as const;
     const refused = [
       new SessionAuthorization(["daemon.read"]),

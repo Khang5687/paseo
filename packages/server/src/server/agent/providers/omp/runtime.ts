@@ -2,6 +2,9 @@ import type {
   OmpAgentMessage,
   OmpGoalAction,
   OmpGoalModeState,
+  OmpLoginExisting,
+  OmpLoginResult,
+  OmpLogoutAccount,
   OmpModel,
   OmpPromptAck,
   OmpRpcHostToolDefinition,
@@ -63,9 +66,12 @@ export interface OmpRuntimeSession {
   abort(): Promise<void>;
   /**
    * Signs `providerId` into OMP's native store. OMP drives the browser step through
-   * `open_url` / `input` extension UI events; the call settles when the login ends.
+   * `open_url` / `input` extension UI events; the call settles when the login ends. A guard
+   * refusal (`credential_exists`) resolves as such; any other failure throws.
    */
-  login(providerId: string): Promise<void>;
+  login(providerId: string, options?: { existing?: OmpLoginExisting }): Promise<OmpLoginResult>;
+  /** Stored accounts for `providerId`, as OMP's `/logout` lists them. Never refreshes a token. */
+  getLogoutAccounts(providerId: string): Promise<OmpLogoutAccount[]>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;
   getMessages(): Promise<OmpAgentMessage[]>;

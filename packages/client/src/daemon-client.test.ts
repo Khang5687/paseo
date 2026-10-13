@@ -7766,6 +7766,75 @@ test("OMP account login start, status, and cancel need the ompAccountLogin featu
   await expect(cancel).resolves.toMatchObject({ status: { state: "cancelled" } });
 });
 
+test("OMP login link calls need the ompAccountLoginLink feature and send the new fields", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-link",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ preserveSent: true, features: { ompAccountLogin: true } });
+  await connected;
+  const account = { storeNamespace: "ns", nativeRowId: 7 };
+  await expect(client.submitOmpAccountLoginCode("abc")).rejects.toMatchObject({
+    name: "OmpAccountLoginUnsupportedError",
+  });
+  await expect(client.startOmpAccountLogin({ mode: "replace", account })).rejects.toMatchObject({
+    name: "OmpAccountLoginUnsupportedError",
+  });
+
+  const link = createMockTransport();
+  const linkClient = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-link-on",
+    reconnect: { enabled: false },
+    transportFactory: () => link.transport,
+  });
+  clients.push(linkClient);
+  const linkConnected = linkClient.connect();
+  link.triggerOpen({
+    preserveSent: true,
+    features: { ompAccountLogin: true, ompAccountLoginLink: true },
+  });
+  await linkConnected;
+
+  const start = linkClient.startOmpAccountLogin({ mode: "replace", account });
+  const startRequest = parseSentFrame(link.sent.at(-1));
+  expect(startRequest).toMatchObject({
+    type: "account.routing.login.start.request",
+    mode: "replace",
+    replaceAccount: account,
+  });
+  link.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.start.response",
+      payload: { requestId: startRequest.requestId, status: { state: "running" }, error: null },
+    }),
+  );
+  await expect(start).resolves.toMatchObject({ status: { state: "running" } });
+
+  const submit = linkClient.submitOmpAccountLoginCode("abc#s");
+  const submitRequest = parseSentFrame(link.sent.at(-1));
+  expect(submitRequest).toMatchObject({
+    type: "account.routing.login.submit_code.request",
+    input: "abc#s",
+  });
+  link.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.submit_code.response",
+      payload: {
+        requestId: submitRequest.requestId,
+        status: { state: "running", phase: "verifying" },
+        error: "wrong_login",
+      },
+    }),
+  );
+  await expect(submit).resolves.toMatchObject({ error: "wrong_login" });
+});
+
 test("subscribed OMP snapshots filter stale updates and replace on a new epoch", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({

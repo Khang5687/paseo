@@ -95,6 +95,8 @@ export interface OmpCapabilityProbe {
   version: number;
   /** The probe could not run the binary at all (missing, not executable, timed out), so nothing was learned. */
   unavailable?: boolean;
+  /** `login` accepts `existing` and refuses to overwrite a stored account (add-only guard). */
+  loginExisting?: boolean;
 }
 
 const REQUIRED_PURPOSES = ["model-dispatch", "metadata", "usage-refresh"];
@@ -116,6 +118,7 @@ export function parseOmpCapabilityProbe(stdout: string): OmpCapabilityProbe {
       caps.completeCoverage &&
       caps.modelDispatch === "allowed" &&
       REQUIRED_PURPOSES.every((purpose) => caps.purposes.includes(purpose)),
+    ...(parsed.data.login?.existing === true ? { loginExisting: true } : {}),
   };
 }
 

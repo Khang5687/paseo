@@ -564,7 +564,18 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
     token_budget: z.number().optional(),
   }),
   z.object({ ...OmpCommandBase, type: z.literal("abort") }),
-  z.object({ ...OmpCommandBase, type: z.literal("login"), providerId: z.string().min(1) }),
+  z.object({
+    ...OmpCommandBase,
+    type: z.literal("login"),
+    providerId: z.string().min(1),
+    existing: z
+      .union([
+        z.enum(["replace", "refuse"]),
+        z.object({ replaceRowId: z.number().int().nonnegative() }),
+      ])
+      .optional(),
+  }),
+  z.object({ ...OmpCommandBase, type: z.literal("get_logout_accounts"), providerId: z.string() }),
   z.object({ ...OmpCommandBase, type: z.literal("get_state") }),
   z.object({
     ...OmpCommandBase,
@@ -935,7 +946,58 @@ export const OmpAccountRoutingCapabilityDocumentSchema = z.object({
     sourceIdentity: z.literal("v1"),
     exactUsageRefresh: z.literal("v1"),
   }),
+  /** `existing: true`: `login` takes `existing` and refuses to overwrite a stored account. */
+  login: z.object({ existing: z.boolean().optional() }).passthrough().optional(),
 });
+
+/**
+ * `login` success data from an OMP with the add-only guard. Older OMP answers `{ providerId }`
+ * only, so every field is optional. A guard refusal fails the request with error
+ * `credential_exists` and the same identity fields as data.
+ */
+export const OmpLoginResultSchema = z
+  .object({
+    outcome: z.enum(["added", "replaced"]).optional(),
+    rowId: z.number().int().nonnegative().optional(),
+    email: z.string().optional(),
+    orgName: z.string().optional(),
+  })
+  .passthrough();
+export const OmpLoginRefusalSchema = z
+  .object({
+    code: z.literal("credential_exists"),
+    rowId: z.number().int().nonnegative().optional(),
+    email: z.string().optional(),
+    orgName: z.string().optional(),
+  })
+  .passthrough();
+export interface OmpLoginIdentity {
+  rowId?: number;
+  email?: string;
+  orgName?: string;
+}
+export type OmpLoginResult =
+  | ({ kind: "stored"; outcome?: "added" | "replaced" } & OmpLoginIdentity)
+  | ({ kind: "credential_exists" } & OmpLoginIdentity);
+export type OmpLoginExisting = "replace" | "refuse" | { replaceRowId: number };
+
+/** `get_logout_accounts` rows: what OMP's own `/logout` lists. Read-only, no token refresh. */
+export const OmpLogoutAccountsResultSchema = z.object({
+  accounts: z.array(
+    z
+      .object({
+        credentialId: z.number().int(),
+        label: z.string(),
+        type: z.string(),
+      })
+      .passthrough(),
+  ),
+});
+export interface OmpLogoutAccount {
+  credentialId: number;
+  label: string;
+  type: string;
+}
 
 /** Host to native decision, as `account.routing.admit.response` carries it. */
 export type OmpRpcAdmitDecision =
