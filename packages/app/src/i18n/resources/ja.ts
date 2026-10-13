@@ -2068,23 +2068,85 @@ export const ja: TranslationResources = {
   ompAccountRouting: {
     login: {
       start: "Claude アカウントを追加",
-      explain:
-        "ここに表示されていない Claude アカウントでサインインしてください。一覧にあるアカウントでサインインすると、保存済みのログインが置き換わります。",
-      running: "ブラウザでサインインを完了してください",
+      elsewhere: "ホストのコンピュータで Paseo を開いてアカウントを追加してください。",
+      update: "ここでアカウントを追加するには、ホストの Paseo と Oh My Pi を更新してください。",
+      inProgress: "サインイン中",
+      continue: "続ける",
       cancel: "キャンセル",
-      elsewhere: "アカウントを追加するには、ホストのコンピューターで Paseo を開いてください。",
-      saved:
-        "アカウントを保存しました。OMP エージェントが次に起動するかリクエストを送ると、ここに表示されます。Claude でそのアカウントの有料の追加使用量をオフにしてください。オンのアカウントは Paseo が使用しません。",
-      cancelled: "サインインをキャンセルしました。",
+      cancelSignIn: "サインインをキャンセル",
+      done: "完了",
+      details: "詳細",
+      tryAgain: "やり直す",
+      close: "閉じる",
+      justAdded: "追加したばかり",
+      warning: {
+        body: "Paseo は Claude アカウントごとに 1 つのサインインを保存します。追加したいアカウントで claude.ai にサインインしてください。",
+        existing: "追加済み: {{accounts}}",
+        alertTitle: "ブラウザが使うアカウントを確認してください",
+        alertDescription:
+          "claude.ai が追加済みのアカウントでサインインしたままの場合は、先にサインアウトするかアカウントを切り替えてください。プライベートウィンドウは常にサインアウト状態で始まります。",
+        guard: "追加済みのアカウントでサインインすると、Paseo は停止し、何も変更しません。",
+      },
+      preparing: "サインインリンクを準備中...",
+      link: {
+        title: "Claude にサインイン",
+        step: "リンクを開き、追加したいアカウントでサインインしてください",
+        open: "サインインページを開く",
+        copy: "リンクをコピー",
+        copied: "コピーしました",
+        label: "サインインリンク",
+        hint: "プライベートウィンドウや別のデバイスを使うには、リンクをコピーしてください",
+        waiting: "ブラウザを待っています...",
+        pasteInstead: "アドレスを貼り付ける",
+      },
+      paste: {
+        label: "アドレスまたはコード",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "承認後、ブラウザが読み込めないページを表示することがあります。アドレスバーの完全なアドレス、または Claude が表示するコードをコピーして、ここに貼り付けてください。",
+        submit: "送信",
+        checking: "確認中...",
+        error: {
+          invalid_input: "サインインのアドレスでもコードでもありません",
+          wrong_login:
+            "このアドレスは古いサインインリンクのものです。ここに表示されているリンクを使ってください。",
+          not_waiting: "このサインインはすでに完了しています",
+          not_allowed: "これを送れるのはホストのコンピュータ上の Paseo だけです",
+          unreachable: "ホストに接続できませんでした。もう一度お試しください。",
+        },
+      },
+      verifying: "サインインを確認中...",
+      result: {
+        added: {
+          title: "{{account}} を追加しました",
+          titleUnnamed: "アカウントを追加しました",
+          description: "{{organization}}。自動ルーティングで使用できます。",
+          descriptionUnnamed: "自動ルーティングで使用できます。",
+          billingEnabled:
+            "このアカウントでは有料の追加使用量がオンです。Claude の設定でオフにするまで、自動ルーティングはこのアカウントをスキップします。",
+          billingUnknown:
+            "Claude の設定で、このアカウントの有料の追加使用量がオフになっていることを確認してください。オンのアカウントは自動ルーティングがスキップします。",
+        },
+        alreadyListed: {
+          title: "{{account}} は追加済みです",
+          titleUnnamed: "そのアカウントは追加済みです",
+          description:
+            "何も変更されていません。ブラウザは Paseo にすでにあるアカウントでサインインしました。claude.ai からサインアウトするかプライベートウィンドウを使って、もう一度お試しください。",
+        },
+        replaced: {
+          title: "{{account}} のサインインを置き換えました",
+          titleUnnamed: "保存済みのサインインを置き換えました",
+          description: "アカウントは追加されていません。新しいサインインが使われます。",
+        },
+        failed: "サインインに失敗しました",
+        cancelled: "サインインをキャンセルしました",
+      },
       failure: {
-        timeout: "サインインが 10 分でタイムアウトしました。もう一度お試しください。",
-        paste_code_unsupported:
-          "ブラウザが Paseo に戻れなかったため、サインインをキャンセルしました。ポート 54545 を他のものが使っていないか確認して、もう一度お試しください。",
-        browser_open_failed: "Paseo はこのコンピューターでブラウザを開けませんでした。",
+        timeout: "サインインリンクは 10 分で期限切れになりました。何も変更されていません。",
         omp_failed:
-          "OMP はサインインを完了できませんでした。もう一度お試しいただくか、ターミナルで omp を実行して /login と入力してください。",
-        spawn_failed: "Paseo はこのコンピューターで OMP を起動できませんでした。",
-        unreachable: "ホストとの接続が切れました。接続を確認してもう一度お試しください。",
+          "Oh My Pi はサインインを完了できませんでした。何も変更されていません。もう一度お試しいただくか、ターミナルで omp を実行して /login と入力してください。",
+        spawn_failed: "Paseo はこのコンピュータで Oh My Pi を起動できませんでした。",
+        unreachable:
+          "ホストとの接続が切れました。再接続したら、やり直す前にアカウント一覧を確認してください。",
       },
     },
     labels: {

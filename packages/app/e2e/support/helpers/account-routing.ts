@@ -33,7 +33,15 @@ export interface RoutingFixtureHost {
 }
 
 export async function startRoutingFixtureHost(
-  options: { corsOrigin?: string; agent?: boolean; scenario?: "exhausted" } = {},
+  options: {
+    corsOrigin?: string;
+    agent?: boolean;
+    scenario?: "exhausted";
+    /** One scripted sign-in per Add click, in order. Default: one that waits until cancelled. */
+    login?: Array<"pending" | "add" | "duplicate">;
+    /** The probed OMP lacks the add-only guard, so the host never offers the link flow. */
+    noLoginLink?: boolean;
+  } = {},
 ): Promise<RoutingFixtureHost> {
   const metroPort = process.env.E2E_METRO_PORT;
   const child: ChildProcess = spawnTsx(SELF, ["--serve"], {
@@ -44,6 +52,8 @@ export async function startRoutingFixtureHost(
         options.corsOrigin ?? (metroPort ? `http://localhost:${metroPort}` : ""),
       ROUTING_FIXTURE_AGENT: options.agent === false ? "0" : "1",
       ROUTING_FIXTURE_SCENARIO: options.scenario ?? "",
+      ROUTING_FIXTURE_LOGIN: (options.login ?? ["pending"]).join(","),
+      ROUTING_FIXTURE_LINK: options.noLoginLink ? "0" : "1",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -169,6 +179,8 @@ async function serve(): Promise<void> {
       billing: { ...account.billing, observedAt: Date.now(), validUntil: hour(1) },
     };
   };
+  // The signed-in account joins the catalog once an agent next reports (the "serve" op).
+  let nineAdded = false;
   const accounts = (blocked: boolean) => {
     if (process.env.ROUTING_FIXTURE_SCENARIO === "exhausted") {
       // One personal account whose weekly limit is used up: the owner's real screen.
@@ -213,7 +225,22 @@ async function serve(): Promise<void> {
           },
         ]
       : [];
+    const added = nineAdded
+      ? [
+          fresh(
+            9,
+            { windows: [window("5h", "5h", 0, shared)], quotaBlocks: block },
+            {
+              email: "nine@example.test",
+              organizationName: "Nine Org",
+              accountId: "acct-9",
+              organizationId: "org-9",
+            },
+          ),
+        ]
+      : [];
     return [
+      ...added,
       fresh(
         1,
         {
@@ -280,36 +307,85 @@ async function serve(): Promise<void> {
     });
   };
 
-  const loginRuntime = new fake.FakeOmp();
-  loginRuntime.queueSessionSetup((session: { loginHandler: unknown }) => {
-    session.loginHandler = () => new Promise(() => undefined);
-  });
-  loginRuntime.queueSessionSetup((session: { loginHandler: unknown }) => {
-    session.loginHandler = async (s: { emit(event: unknown): void }) =>
+  // Scripted sign-ins, one per Add click. The authorize link and the paste prompt are what the real
+  // OMP emits; the "browser" never answers, so a pasted address finishes the login.
+  const waitFor = async (done: () => boolean) => {
+    while (!done()) await new Promise((resolve) => setTimeout(resolve, 50));
+  };
+  interface LoginSession {
+    emit(event: unknown): void;
+    extensionUiResponses: Array<{ id: string }>;
+  }
+  const awaitPaste = async (s: LoginSession) => {
+    s.emit({
+      type: "extension_ui_request",
+      id: "u1",
+      method: "open_url",
+      url: "https://claude.example/authorize?client_id=fixture&state=fixture-state",
+    });
+    s.emit({ type: "extension_ui_request", id: "u2", method: "input" });
+    await waitFor(() => s.extensionUiResponses.some((response) => response.id === "u2"));
+  };
+  const scripts: Record<string, (s: LoginSession) => Promise<unknown>> = {
+    // A link and no paste prompt: the browser callback never comes and nothing can be pasted.
+    pending: (s) => {
       s.emit({
         type: "extension_ui_request",
         id: "u1",
         method: "open_url",
-        url: "https://claude.example/authorize",
+        url: "https://claude.example/authorize?client_id=fixture&state=fixture-state",
       });
-  });
+      return new Promise(() => undefined);
+    },
+    add: async (s) => {
+      await awaitPaste(s);
+      nineAdded = true;
+      return { kind: "stored", outcome: "added", rowId: 9, email: "nine@example.test" };
+    },
+    duplicate: async (s) => {
+      await awaitPaste(s);
+      return { kind: "credential_exists", rowId: 1, email: "ada@example.test" };
+    },
+  };
+  const loginRuntime = new fake.FakeOmp();
+  for (const name of (process.env.ROUTING_FIXTURE_LOGIN || "pending").split(",")) {
+    loginRuntime.queueSessionSetup((session: { loginHandler: unknown }) => {
+      session.loginHandler = scripts[name];
+    });
+  }
+  // The login needs the daemon's authority, which exists only after the daemon is built.
+  let daemonRef: {
+    routingFixture?: {
+      authority: {
+        refForSignedInRow(row: number): unknown;
+        addSignedInAccount(ref: unknown): unknown;
+      };
+    };
+  } = {};
   const daemon = await createTestPaseoDaemon({
     mcpEnabled: false,
     listenPort: Number(process.env.ROUTING_FIXTURE_PORT ?? 0),
     corsAllowedOrigins: process.env.ROUTING_FIXTURE_CORS ? [process.env.ROUTING_FIXTURE_CORS] : [],
     ompRouting: { catalogs: (id: string) => [catalog(id, false)] },
     // Without an agent the host learns support from the startup probe alone (synthetic, no omp).
-    ...(process.env.ROUTING_FIXTURE_AGENT === "0"
-      ? { ompCapabilityProbe: async () => ({ complete: true, version: 1 }) }
-      : {}),
-    // Synthetic sign-in: no omp binary, browser or network. The first login waits until cancelled,
-    // the second opens a URL and succeeds.
+    ompCapabilityProbe: async () => ({
+      complete: process.env.ROUTING_FIXTURE_AGENT === "0",
+      version: process.env.ROUTING_FIXTURE_AGENT === "0" ? 1 : 0,
+      loginExisting: process.env.ROUTING_FIXTURE_LINK !== "0",
+    }),
+    // Synthetic sign-in: no omp binary, browser or network.
     ompAccountLogin: new OmpAccountLogin({
       runtime: loginRuntime,
-      openUrl: async () => undefined,
       logger: pino({ level: "silent" }),
+      accounts: {
+        refForSignedInRow: (row: number) =>
+          daemonRef.routingFixture!.authority.refForSignedInRow(row),
+        addSignedInAccount: (ref: unknown) =>
+          daemonRef.routingFixture!.authority.addSignedInAccount(ref),
+      },
     }),
   });
+  daemonRef = daemon;
   if (daemon.port === 6767 || daemon.port === 6768)
     throw new Error("Refusing a reserved daemon port");
   const fixture = daemon.routingFixture!;

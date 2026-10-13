@@ -402,18 +402,21 @@ export function buildNotices(input: NoticeInput): Notice[] {
   ];
 }
 
-export type AddAccountMode = "button" | "elsewhere" | "terminal";
+export type AddAccountMode = "button" | "elsewhere" | "update" | "terminal";
 
 /**
- * The host signs the account in through its own browser, so only the desktop app on that same
- * computer gets the button. Every other client is told where to go; a host that cannot do it
- * keeps the terminal hint alone.
+ * The sign-in link opens in the user's own browser, so only the desktop app on the host's
+ * computer gets the button. Every other client is told where to go. A host that can sign in but
+ * lacks the link flow asks for an update; a host that cannot sign in at all keeps the terminal
+ * hint alone.
  */
 export function addAccountMode(input: {
   featureOn: boolean;
+  linkOn: boolean;
   canEdit: boolean;
   onHostComputer: boolean;
 }): AddAccountMode {
   if (!input.featureOn) return "terminal";
+  if (!input.linkOn) return "update";
   return input.canEdit && input.onHostComputer ? "button" : "elsewhere";
 }

@@ -1,9 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type {
+  AccountRoutingLoginSubmitCodeResponse,
   OmpAccountLoginStatus,
   OmpAccountRoutingMutation,
   OmpAccountRoutingState,
+  OmpRoutingAccountRef,
 } from "@getpaseo/protocol/messages";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useHostFeature } from "@/runtime/host-features";
@@ -167,22 +169,57 @@ export class RoutingController {
 
 export type LoginClient = Pick<
   DaemonClient,
-  "startOmpAccountLogin" | "getOmpAccountLoginStatus" | "cancelOmpAccountLogin"
+  | "startOmpAccountLogin"
+  | "getOmpAccountLoginStatus"
+  | "cancelOmpAccountLogin"
+  | "submitOmpAccountLoginCode"
 >;
 
 export type LoginFailure = NonNullable<OmpAccountLoginStatus["failure"]> | "unreachable";
 
+export type LoginOutcome = NonNullable<OmpAccountLoginStatus["outcome"]>;
+
+/** Why the host refused a pasted address or code, or `unreachable` when it never answered. */
+export type PasteError =
+  | NonNullable<AccountRoutingLoginSubmitCodeResponse["payload"]["error"]>
+  | "unreachable";
+
 export interface LoginSnapshot {
   phase: "idle" | "starting" | "running" | "succeeded" | "failed" | "cancelled";
   failure: LoginFailure | null;
+  /** The host's step while running. */
+  step: "preparing" | "awaiting_browser" | "verifying" | null;
+  /** https sign-in link. Held in memory only; the host sends it to its own app alone. */
+  authorizeUrl: string | null;
+  /** OMP is waiting for a pasted address or code. */
+  pasteAccepted: boolean;
+  outcome: LoginOutcome | null;
+  endedAt: number | null;
+  submitting: boolean;
+  pasteError: PasteError | null;
+  /** The account the last sign-in added. Survives dismissing the result; cleared on leaving the page. */
+  justAdded: OmpRoutingAccountRef | null;
 }
 
 const LOGIN_POLL_MS = 2_000;
-const LOGIN_IDLE: LoginSnapshot = { phase: "idle", failure: null };
+/** A login that ended this recently is still shown after a reload. */
+export const FINISHED_LOGIN_VISIBLE_MS = 5 * 60 * 1000;
+const LOGIN_IDLE: LoginSnapshot = {
+  phase: "idle",
+  failure: null,
+  step: null,
+  authorizeUrl: null,
+  pasteAccepted: false,
+  outcome: null,
+  endedAt: null,
+  submitting: false,
+  pasteError: null,
+  justAdded: null,
+};
 
 /**
- * Drives one host-side Claude sign-in. The host opens the browser and finishes the login itself;
- * this only starts it, polls the outcome, and cancels. Nothing secret is ever in a status.
+ * Drives one host-side Claude sign-in. The app opens the link itself; this only starts the login,
+ * polls its status, forwards a pasted address, and cancels. No token is ever in a status.
  */
 export class AccountLoginController {
   private snapshot: LoginSnapshot = LOGIN_IDLE;
@@ -190,6 +227,8 @@ export class AccountLoginController {
   private client: LoginClient | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private attachId = 0;
+
+  constructor(private readonly now: () => number = Date.now) {}
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -204,11 +243,14 @@ export class AccountLoginController {
     this.detach();
     this.client = client;
     const id = this.attachId;
-    // A page opened mid-login shows it; a finished one is old news.
+    // A page opened mid-login adopts it; one that ended minutes ago still shows its outcome.
     void (async () => {
       try {
         const { status } = await client.getOmpAccountLoginStatus();
-        if (id === this.attachId && status.state === "running") this.adopt(status);
+        if (id !== this.attachId) return;
+        const recent =
+          status.endedAt !== undefined && this.now() - status.endedAt < FINISHED_LOGIN_VISIBLE_MS;
+        if (status.state === "running" || (status.state !== "idle" && recent)) this.adopt(status);
       } catch {
         // The first poll or a start will surface a dead connection.
       }
@@ -219,9 +261,7 @@ export class AccountLoginController {
     this.attachId += 1;
     this.client = null;
     this.stopPolling();
-    if (this.snapshot.phase === "running" || this.snapshot.phase === "starting") {
-      this.set(LOGIN_IDLE);
-    }
+    this.set(LOGIN_IDLE);
   }
 
   async start(): Promise<void> {
@@ -229,36 +269,82 @@ export class AccountLoginController {
     const phase = this.snapshot.phase;
     if (!client || phase === "starting" || phase === "running") return;
     const id = this.attachId;
-    this.set({ phase: "starting", failure: null });
+    this.set({ ...LOGIN_IDLE, phase: "starting", step: "preparing", justAdded: null });
     try {
-      const { status } = await client.startOmpAccountLogin();
+      const { status } = await client.startOmpAccountLogin({ mode: "add" });
       if (id === this.attachId) this.adopt(status);
     } catch {
-      if (id === this.attachId) this.set({ phase: "failed", failure: "unreachable" });
+      if (id === this.attachId) this.fail("unreachable");
     }
   }
 
   async cancel(): Promise<void> {
     const client = this.client;
-    if (!client || this.snapshot.phase !== "running") return;
+    if (!client || (this.snapshot.phase !== "running" && this.snapshot.phase !== "starting"))
+      return;
     const id = this.attachId;
     try {
       const { status } = await client.cancelOmpAccountLogin();
       if (id === this.attachId) this.adopt(status);
     } catch {
-      if (id === this.attachId) this.set({ phase: "failed", failure: "unreachable" });
+      if (id === this.attachId) this.fail("unreachable");
     }
   }
 
-  private adopt(status: OmpAccountLoginStatus): void {
-    if (status.state === "running") {
-      this.set({ phase: "running", failure: null });
-      this.startPolling();
+  /** Sends the pasted address or code to the host's open prompt. */
+  async submitCode(input: string): Promise<void> {
+    const client = this.client;
+    const { phase, pasteAccepted, submitting } = this.snapshot;
+    if (!client || phase !== "running" || !pasteAccepted || submitting) return;
+    const id = this.attachId;
+    this.set({ submitting: true, pasteError: null });
+    try {
+      const { status, error } = await client.submitOmpAccountLoginCode(input);
+      if (id === this.attachId) this.adopt(status, { pasteError: error });
+    } catch {
+      if (id === this.attachId) this.set({ submitting: false, pasteError: "unreachable" });
+    }
+  }
+
+  /** Clears a finished result. A running login is untouched. */
+  dismiss(): void {
+    const { phase, justAdded } = this.snapshot;
+    if (phase === "running" || phase === "starting") return;
+    this.set({ ...LOGIN_IDLE, justAdded });
+  }
+
+  private fail(failure: LoginFailure): void {
+    this.stopPolling();
+    this.set({ ...LOGIN_IDLE, phase: "failed", failure, justAdded: this.snapshot.justAdded });
+  }
+
+  private adopt(
+    status: OmpAccountLoginStatus,
+    extra: { pasteError?: PasteError | null } = {},
+  ): void {
+    if (status.state === "idle") {
+      this.stopPolling();
+      this.set({ ...LOGIN_IDLE, justAdded: this.snapshot.justAdded });
       return;
     }
-    this.stopPolling();
-    if (status.state === "idle") this.set(LOGIN_IDLE);
-    else this.set({ phase: status.state, failure: status.failure ?? null });
+    const running = status.state === "running";
+    if (running) this.startPolling();
+    else this.stopPolling();
+    const outcome = status.outcome ?? null;
+    const added =
+      status.state === "succeeded" && outcome?.kind === "added" ? outcome.ref : undefined;
+    this.set({
+      phase: status.state,
+      failure: running ? null : (status.failure ?? null),
+      step: running ? (status.phase ?? "preparing") : null,
+      authorizeUrl: running ? (status.authorizeUrl ?? null) : null,
+      pasteAccepted: running && status.pasteAccepted === true,
+      outcome,
+      endedAt: status.endedAt ?? null,
+      submitting: false,
+      pasteError: extra.pasteError ?? null,
+      justAdded: added ?? this.snapshot.justAdded,
+    });
   }
 
   private startPolling(): void {
@@ -272,11 +358,12 @@ export class AccountLoginController {
     if (!client) return;
     try {
       const { status } = await client.getOmpAccountLoginStatus();
-      if (id === this.attachId) this.adopt(status);
+      // Keep a paste error on screen until the next submit or the login moves on.
+      if (id === this.attachId) {
+        this.adopt(status, { pasteError: this.snapshot.pasteError });
+      }
     } catch {
-      if (id !== this.attachId) return;
-      this.stopPolling();
-      this.set({ phase: "failed", failure: "unreachable" });
+      if (id === this.attachId) this.fail("unreachable");
     }
   }
 
@@ -285,8 +372,8 @@ export class AccountLoginController {
     this.timer = null;
   }
 
-  private set(next: LoginSnapshot): void {
-    this.snapshot = next;
+  private set(patch: Partial<LoginSnapshot>): void {
+    this.snapshot = { ...this.snapshot, ...patch };
     for (const listener of this.listeners) listener();
   }
 }
@@ -295,10 +382,14 @@ export interface HostAccountLogin {
   snapshot: LoginSnapshot;
   /** The host can sign accounts in (macOS with routing). */
   featureOn: boolean;
+  /** The host shows the sign-in link and accepts a pasted address (`ompAccountLoginLink`). */
+  linkOn: boolean;
   /** This app is the desktop app and the host is the daemon on this same computer. */
   onHostComputer: boolean;
   start: () => void;
   cancel: () => void;
+  submitCode: (input: string) => void;
+  dismiss: () => void;
 }
 
 /** Add-account for one host. Mount with `key={serverId}` so hosts never share state. */
@@ -307,21 +398,25 @@ export function useHostAccountLogin(serverId: string): HostAccountLogin {
   const client = useHostRuntimeClient(serverId);
   const connected = useHostRuntimeIsConnected(serverId);
   const featureOn = useHostFeature(serverId, "ompAccountLogin");
+  const linkOn = useHostFeature(serverId, "ompAccountLoginLink");
   const onHostComputer = useIsLocalDaemon(serverId);
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
 
   useEffect(() => {
-    if (!client || !connected || !featureOn || !onHostComputer) return undefined;
+    if (!client || !connected || !featureOn || !linkOn || !onHostComputer) return undefined;
     controller.attach(client);
     return () => controller.detach();
-  }, [client, connected, controller, featureOn, onHostComputer]);
+  }, [client, connected, controller, featureOn, linkOn, onHostComputer]);
 
   return {
     snapshot,
     featureOn,
+    linkOn,
     onHostComputer,
     start: () => void controller.start(),
     cancel: () => void controller.cancel(),
+    submitCode: (input) => void controller.submitCode(input),
+    dismiss: () => controller.dismiss(),
   };
 }
 

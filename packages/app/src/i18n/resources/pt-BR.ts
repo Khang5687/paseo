@@ -2080,23 +2080,85 @@ export const ptBR: TranslationResources = {
   ompAccountRouting: {
     login: {
       start: "Adicionar conta do Claude",
-      explain:
-        "Entre com uma conta do Claude que não aparece aqui. Entrar com uma conta da lista substitui o login salvo dela.",
-      running: "Termine de entrar no seu navegador",
-      cancel: "Cancelar",
       elsewhere: "Abra o Paseo no computador host para adicionar uma conta.",
-      saved:
-        "Conta salva. Ela aparece aqui quando um agente OMP iniciar ou enviar uma solicitação. Desative o uso extra pago dessa conta no Claude: o Paseo ignora contas com ele ativado.",
-      cancelled: "Login cancelado.",
+      update: "Atualize o Paseo e o Oh My Pi no host para adicionar contas aqui.",
+      inProgress: "Login em andamento",
+      continue: "Continuar",
+      cancel: "Cancelar",
+      cancelSignIn: "Cancelar login",
+      done: "Concluído",
+      details: "Detalhes",
+      tryAgain: "Tentar de novo",
+      close: "Fechar",
+      justAdded: "Recém-adicionada",
+      warning: {
+        body: "O Paseo guarda um login por conta do Claude. Entre no claude.ai com a conta que você quer adicionar.",
+        existing: "Já adicionadas: {{accounts}}",
+        alertTitle: "Confira qual conta o navegador usa",
+        alertDescription:
+          "Se o claude.ai ainda estiver logado com uma conta já adicionada, saia ou troque de conta antes. Uma janela privada sempre começa sem login.",
+        guard: "Se você entrar com uma conta já adicionada, o Paseo para e não altera nada.",
+      },
+      preparing: "Preparando o link de login...",
+      link: {
+        title: "Entrar no Claude",
+        step: "Abra o link e entre com a conta que você quer adicionar",
+        open: "Abrir página de login",
+        copy: "Copiar link",
+        copied: "Copiado",
+        label: "Link de login",
+        hint: "Para usar uma janela privada ou outro dispositivo, copie o link",
+        waiting: "Aguardando o navegador...",
+        pasteInstead: "Colar o endereço",
+      },
+      paste: {
+        label: "Endereço ou código",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Depois de aprovar, o navegador pode abrir uma página que não carrega. Copie o endereço completo da barra de endereços, ou o código mostrado pelo Claude, e cole aqui.",
+        submit: "Enviar",
+        checking: "Verificando...",
+        error: {
+          invalid_input: "Isso não é um endereço nem um código de login",
+          wrong_login:
+            "Esse endereço pertence a um link de login anterior. Use o link mostrado aqui.",
+          not_waiting: "Este login já terminou",
+          not_allowed: "Somente o Paseo no computador host pode enviar isto",
+          unreachable: "Não foi possível falar com o host. Tente de novo.",
+        },
+      },
+      verifying: "Verificando o login...",
+      result: {
+        added: {
+          title: "{{account}} adicionada",
+          titleUnnamed: "Conta adicionada",
+          description: "{{organization}}. O roteamento automático já pode usá-la.",
+          descriptionUnnamed: "O roteamento automático já pode usá-la.",
+          billingEnabled:
+            "O uso extra pago está ativado nesta conta. O roteamento automático a ignora até você desativá-lo nas configurações do Claude.",
+          billingUnknown:
+            "Confirme que o uso extra pago está desativado nesta conta nas configurações do Claude. O roteamento automático ignora contas com ele ativado.",
+        },
+        alreadyListed: {
+          title: "{{account}} já foi adicionada",
+          titleUnnamed: "Essa conta já foi adicionada",
+          description:
+            "Nada mudou. Seu navegador entrou com uma conta que o Paseo já tem. Saia do claude.ai ou use uma janela privada e tente de novo.",
+        },
+        replaced: {
+          title: "Login substituído para {{account}}",
+          titleUnnamed: "Login salvo substituído",
+          description: "Nenhuma conta foi adicionada. O novo login está em uso.",
+        },
+        failed: "Falha no login",
+        cancelled: "Login cancelado",
+      },
       failure: {
-        timeout: "O login expirou após 10 minutos. Tente novamente.",
-        paste_code_unsupported:
-          "O navegador não conseguiu voltar ao Paseo, então o login foi cancelado. Confirme que nada mais usa a porta 54545 e tente novamente.",
-        browser_open_failed: "O Paseo não conseguiu abrir o navegador neste computador.",
+        timeout: "O link de login expirou após 10 minutos. Nada mudou.",
         omp_failed:
-          "O OMP não conseguiu concluir o login. Tente novamente ou execute omp em um terminal e digite /login.",
-        spawn_failed: "O Paseo não conseguiu iniciar o OMP neste computador.",
-        unreachable: "Contato com o host perdido. Verifique a conexão e tente novamente.",
+          "O Oh My Pi não conseguiu concluir o login. Nada mudou. Tente de novo, ou execute omp em um terminal e digite /login.",
+        spawn_failed: "O Paseo não conseguiu iniciar o Oh My Pi neste computador.",
+        unreachable:
+          "Contato com o host perdido. Quando reconectar, confira a lista de contas antes de tentar de novo.",
       },
     },
     labels: {
