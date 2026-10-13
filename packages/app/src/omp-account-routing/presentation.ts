@@ -89,6 +89,20 @@ function isDefaultOrganization(account: OmpRoutingAccount): boolean {
 }
 
 /**
+ * Known only by a saved ref or a labels-only store listing: no catalog has measured or checked
+ * anything for it yet. The unknowns are then "not reported", not a problem with the account.
+ */
+export function detailsPending(account: OmpRoutingAccount | null): boolean {
+  return (
+    account !== null &&
+    account.authoritativeObservedAt === null &&
+    account.billing.state === "unknown" &&
+    account.billing.observedAt === null &&
+    account.windows.length === 0
+  );
+}
+
+/**
  * Names an account with the server's labels. A label shared with another account switches to the
  * server's identity label, and a shared organization to its organization identity label, so two
  * accounts are never indistinguishable.
@@ -96,7 +110,11 @@ function isDefaultOrganization(account: OmpRoutingAccount): boolean {
 export function describeAccount(
   row: AccountRow,
   rows: readonly AccountRow[],
-  fallbacks: { missing: (rowId: number) => string; unknownOrganization: string },
+  fallbacks: {
+    missing: (rowId: number) => string;
+    unknownOrganization: string;
+    detailsPending: string;
+  },
 ): AccountTitle {
   const account = row.account;
   if (!account) return { title: fallbacks.missing(row.ref.nativeRowId), organization: null };
@@ -113,7 +131,8 @@ export function describeAccount(
     organization:
       !labelShared && isDefaultOrganization(account)
         ? null
-        : (organizationName(account, orgShared) ?? fallbacks.unknownOrganization),
+        : (organizationName(account, orgShared) ??
+          (detailsPending(account) ? fallbacks.detailsPending : fallbacks.unknownOrganization)),
   };
 }
 
@@ -208,7 +227,7 @@ export function accountRefusal(
   nowMs: number,
 ): { kind: "billing" | "quota" | "unavailable"; code: RoutingWaitOrRefusalCode } | null {
   const account = row.account;
-  if (!account) return null;
+  if (!account || detailsPending(account)) return null;
   if (account.billing.state === "enabled") return { kind: "billing", code: "billing_enabled" };
   if (account.billing.state === "unknown") return { kind: "billing", code: "billing_unknown" };
   if (!account.available) return { kind: "unavailable", code: "source_inaccessible" };

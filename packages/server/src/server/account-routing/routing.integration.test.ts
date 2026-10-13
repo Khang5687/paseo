@@ -311,3 +311,82 @@ test("account login is advertised only with routing and a host login, and runs e
   expect(state.policy.priorityOrder).toContainEqual(C);
   expect(state.accounts.map((a) => a.ref)).toContainEqual(C);
 });
+
+test("with no agent running, startup and a login list accounts by label, and no refresh path is used", async () => {
+  // A first daemon learns the store through a real agent, then goes away: only the policy file stays.
+  const first = await startDaemon({ cleanup: false });
+  await first.routingFixture!.openAgent(first.staticDir);
+  await first.close();
+
+  const listOmp = new FakeOmp();
+  listOmp.queueSessionSetup((s) => {
+    s.logoutAccounts = [
+      { credentialId: 1, label: "one@example.test (Org One)", type: "oauth" },
+      { credentialId: 2, label: "two@example.test", type: "oauth" },
+    ];
+  });
+  const loginOmp = new FakeOmp();
+  loginOmp.queueSessionSetup((s) => {
+    s.logoutAccounts = [
+      { credentialId: 1, label: "one@example.test (Org One)", type: "oauth" },
+      { credentialId: 2, label: "two@example.test", type: "oauth" },
+    ];
+    s.loginHandler = async (session) => {
+      session.logoutAccounts = [
+        ...session.logoutAccounts,
+        { credentialId: 9, label: "nine@example.test", type: "oauth" },
+      ];
+      return { kind: "stored", outcome: "added", rowId: 9, email: "nine@example.test" };
+    };
+  });
+  let daemon: TestPaseoDaemon | undefined;
+  const authority = () => daemon!.routingFixture!.authority;
+  const ompAccountLogin = new OmpAccountLogin({
+    runtime: loginOmp,
+    logger: pino({ level: "silent" }),
+    accounts: {
+      refForSignedInRow: (row) => authority().refForSignedInRow(row),
+      addSignedInAccount: (ref) => authority().addSignedInAccount(ref),
+      publishListing: (source, rows) => authority().publishListing(source, rows),
+    },
+  });
+  daemon = await startDaemon({
+    paseoHomeRoot: first.paseoHome.replace(/\/\.paseo$/, ""),
+    ompRuntime: listOmp,
+    ompAccountLogin,
+    ompCapabilityProbe: async () => ({ complete: true, version: 1, loginExisting: true }),
+  });
+  const client = await connect(daemon, modern);
+  await expect.poll(() => featureOn(client)).toBe(true);
+
+  // Startup: labels from the store listing, usage and billing unknown, no runtime attached.
+  await expect
+    .poll(async () => (await client.getOmpAccountRoutingState()).state.accounts[0]?.label)
+    .toBe("one@example.test (Org One)");
+  let { state } = await client.getOmpAccountRoutingState();
+  expect(state.catalog.status).toBe("incomplete");
+  expect(state.accounts.map((a) => a.ref)).toEqual([routingRef(1), routingRef(2)]);
+  expect(state.accounts.every((a) => a.windows.length === 0 && a.billing.state === "unknown")).toBe(
+    true,
+  );
+
+  // Login: the new row appears by label with still no runtime.
+  expect((await client.startOmpAccountLogin({ mode: "add" })).error).toBeNull();
+  await expect
+    .poll(async () => (await client.getOmpAccountLoginStatus()).status.state)
+    .toBe("succeeded");
+  ({ state } = await client.getOmpAccountRoutingState());
+  expect(state.accounts.find((a) => a.ref.nativeRowId === 9)).toMatchObject({
+    label: "nine@example.test",
+    windows: [],
+    billing: { state: "unknown", observedAt: null },
+  });
+
+  // Cache-only: each child saw its listing and the login, nothing else.
+  const listSession = listOmp.latestSession();
+  expect(listSession.getLogoutAccountsRequests).toBe(1);
+  expect(listSession.loginRequests).toEqual([]);
+  expect(listSession.closed).toBe(true);
+  expect(loginOmp.latestSession().getLogoutAccountsRequests).toBe(2);
+  expect(loginOmp.latestSession().loginRequests).toEqual(["anthropic"]);
+});

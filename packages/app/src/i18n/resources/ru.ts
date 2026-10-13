@@ -2126,6 +2126,7 @@ export const ru: TranslationResources = {
       remaining: "Осталось",
       stale: "Устаревшее наблюдение",
       unknownOrganization: "Организация неизвестна",
+      detailsPending: "Подробности появятся, когда запущен агент Oh My Pi",
       search: "Поиск аккаунтов",
     },
     actions: {

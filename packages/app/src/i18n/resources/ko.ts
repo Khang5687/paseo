@@ -2103,6 +2103,7 @@ export const ko: TranslationResources = {
       remaining: "남음",
       stale: "오래된 관측",
       unknownOrganization: "조직을 알 수 없음",
+      detailsPending: "Oh My Pi 에이전트가 실행되면 세부 정보가 표시됩니다",
       search: "계정 검색",
     },
     actions: {

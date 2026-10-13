@@ -76,6 +76,8 @@ interface TestPaseoDaemonOptions {
   ompRouting?: FakeOmpChildOptions;
   /** Replaces the macOS-only host sign-in; tests pass one backed by FakeOmp. */
   ompAccountLogin?: OmpAccountLogin;
+  /** The plain OMP runtime the account listing reads through; tests pass FakeOmp. */
+  ompRuntime?: PaseoDaemonDependencies["ompRuntime"];
   /** Replaces the startup OMP capability probe. Defaults to one that learns nothing, never a real omp. */
   ompCapabilityProbe?: PaseoDaemonDependencies["ompCapabilityProbe"];
 }
@@ -188,6 +190,7 @@ export async function createTestPaseoDaemon(
     const daemon = await createPaseoDaemon(config, logger, {
       builtinPlugins: options.builtinPlugins ?? new BuiltinPluginLoader(undefined, []),
       accountLogin: options.ompAccountLogin,
+      ompRuntime: options.ompRuntime,
       // Never spawn a real omp from a test daemon, inside vitest or a spawned fixture child.
       ompCapabilityProbe:
         options.ompCapabilityProbe ??

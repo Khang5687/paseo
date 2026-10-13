@@ -2118,6 +2118,7 @@ export const en = {
       remaining: "Remaining",
       stale: "Stale observation",
       unknownOrganization: "Organization unknown",
+      detailsPending: "Details appear when an Oh My Pi agent is running",
       search: "Search accounts",
     },
     actions: {

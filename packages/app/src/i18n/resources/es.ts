@@ -2142,6 +2142,7 @@ export const es: TranslationResources = {
       remaining: "Restante",
       stale: "Observación desactualizada",
       unknownOrganization: "Organización desconocida",
+      detailsPending: "Los detalles aparecen cuando un agente de Oh My Pi está en ejecución",
       search: "Buscar cuentas",
     },
     actions: {

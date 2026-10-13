@@ -98,6 +98,34 @@ describe("createOmpCapabilityProber", () => {
     });
   });
 
+  it("calls onSupported after each probe that finds support, and only then", async () => {
+    const onSupported = vi.fn();
+    const probe = vi.fn().mockResolvedValue({ complete: true, version: 1 });
+    const prober = createOmpCapabilityProber({
+      authority: { setProbedCapability: vi.fn() },
+      baseSettings: undefined,
+      logger,
+      probe,
+      onSupported,
+    });
+    prober.update(undefined);
+    await flush();
+    expect(onSupported).toHaveBeenCalledTimes(1);
+    prober.update(undefined);
+    await flush();
+    expect(onSupported).toHaveBeenCalledTimes(1);
+    prober.update({ command: ["/opt/omp"] });
+    await flush();
+    expect(onSupported).toHaveBeenCalledTimes(2);
+    probe.mockResolvedValue({ complete: false, version: 0 });
+    prober.update({ command: ["/opt/other"] });
+    probe.mockRejectedValueOnce(new Error("boom"));
+    prober.update({ command: ["/opt/third"] });
+    prober.update({ enabled: false });
+    await flush();
+    expect(onSupported).toHaveBeenCalledTimes(2);
+  });
+
   it("reports unknown without probing when OMP is disabled", async () => {
     const probe = vi.fn();
     const { prober, setProbedCapability } = setup(probe);

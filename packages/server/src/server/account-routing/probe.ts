@@ -32,6 +32,8 @@ export function createOmpCapabilityProber(options: {
   probe?: (settings: ProviderRuntimeSettings | undefined) => Promise<OmpCapabilityProbe>;
   /** Whether the probed OMP has the add-only login guard; false whenever nothing was learned. */
   onLoginGuard?: (supported: boolean) => void;
+  /** Called after each probe that finds routing supported: startup and every OMP config change. */
+  onSupported?: () => void;
 }): OmpCapabilityProber {
   const probe =
     options.probe ??
@@ -70,6 +72,7 @@ export function createOmpCapabilityProber(options: {
         if (mine !== generation || disposed) return;
         options.onLoginGuard?.(loginGuard);
         options.authority.setProbedCapability(next);
+        if (next.status === "supported") options.onSupported?.();
       })();
     },
     dispose() {

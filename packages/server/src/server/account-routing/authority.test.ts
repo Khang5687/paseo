@@ -287,6 +287,123 @@ describe("AccountRoutingAuthority", () => {
     expect(authority.refForSignedInRow(9)).toBeNull();
   });
 
+  const listed = [
+    { nativeRowId: 7, label: "a@example.test (Org A)" },
+    { nativeRowId: 9, label: "b@example.test" },
+  ];
+
+  /** A restarted daemon: policy on disk names row 7, no runtime has attached. */
+  function restart() {
+    seed([account(7)]);
+    const restarted = new AccountRoutingAuthority({
+      store: AccountRoutingStore.open(file),
+      clock,
+    });
+    open.push(restarted);
+    return restarted;
+  }
+
+  it("listing: shows listed labels with unknown usage and billing, never zero", () => {
+    const restarted = restart();
+    expect(restarted.snapshot().accounts[0]).toMatchObject({ label: "Account 7" });
+    expect(restarted.publishListing("listing", listed)).toBe(true);
+    const state = restarted.snapshot();
+    expect(state.catalog.status).toBe("incomplete");
+    expect(state.accounts.map((a) => [a.ref.nativeRowId, a.label])).toEqual([
+      [7, "a@example.test (Org A)"],
+      [9, "b@example.test"],
+    ]);
+    for (const a of state.accounts) {
+      expect(a).toMatchObject({
+        available: true,
+        missing: false,
+        windows: [],
+        billing: { state: "unknown", observedAt: null },
+        authoritativeObservedAt: null,
+        rankingCoverage: "unknown",
+      });
+    }
+    // Listed listed are display only: the saved policy is untouched.
+    expect(restarted.snapshot().policy.priorityOrder).toEqual([ref(7)]);
+  });
+
+  it("listing: is not authoritative: an absent row is not marked missing", () => {
+    const restarted = restart();
+    restarted.publishListing("listing", [listed[1]]);
+    expect(restarted.snapshot().accounts.find((a) => a.ref.nativeRowId === 7)).toMatchObject({
+      missing: false,
+    });
+  });
+
+  it("listing: is superseded by a runtime catalog and survives its detach", () => {
+    const restarted = restart();
+    const adapter2 = new FakeAdapter();
+    restarted.publishListing("listing", listed);
+    const attached = restarted.attachRuntime(
+      {
+        runtimeInstanceId: "rt-live",
+        agentId: "agent-2",
+        accessibleNamespaces: [NS],
+        capabilityVersion: 1,
+        completeCoverage: true,
+      },
+      adapter2,
+    );
+    restarted.publishCatalog(
+      "rt-live",
+      catalog([account(7)], { runtimeInstanceId: "rt-live", observedAt: T0 - 1 }),
+    );
+    let state = restarted.snapshot();
+    // Row 7 takes the live view even though the listing is newer; row 9 only has the listing.
+    expect(state.accounts.find((a) => a.ref.nativeRowId === 7)).toMatchObject({
+      label: "user7@example.test",
+      billing: { state: "disabled" },
+    });
+    expect(state.accounts.find((a) => a.ref.nativeRowId === 9)?.label).toBe("b@example.test");
+    expect(state.catalog.status).toBe("loaded");
+
+    attached.dispose();
+    state = restarted.snapshot();
+    expect(state.accounts.map((a) => a.label)).toEqual([
+      "a@example.test (Org A)",
+      "b@example.test",
+    ]);
+    expect(state.accounts.every((a) => a.billing.state === "unknown")).toBe(true);
+  });
+
+  it("listing: a newer listing replaces the older one and the source is kept apart from runtimes", () => {
+    const restarted = restart();
+    restarted.publishListing("listing", listed);
+    restarted.publishListing("login", [listed[0]]);
+    expect(restarted.snapshot().accounts.map((a) => a.ref.nativeRowId)).toEqual([7]);
+  });
+
+  it("listing: never reaches admission or the policy", async () => {
+    const restarted = restart();
+    restarted.publishListing("listing", listed);
+    const decision = await restarted.admit(req());
+    expect(decision.kind).not.toBe("admit");
+    expect(restarted.snapshot().policy.policyRevision).toBe(1);
+  });
+
+  it("listing: lets a listed row be reordered and refuses to invent a store", async () => {
+    const restarted = restart();
+    restarted.publishListing("listing", listed);
+    restarted.addSignedInAccount(ref(9));
+    const result = await restarted.mutate({
+      expectedPolicyRevision: restarted.snapshot().policy.policyRevision,
+      command: { kind: "move_priority", account: ref(9), direction: "up" },
+    });
+    expect(result.state.policy.priorityOrder).toEqual([ref(9), ref(7)]);
+    const empty = new AccountRoutingAuthority({
+      store: AccountRoutingStore.open(path.join(dir, "empty.json")),
+      clock,
+    });
+    open.push(empty);
+    expect(empty.publishListing("listing", listed)).toBe(false);
+    expect(empty.snapshot().accounts).toEqual([]);
+  });
+
   it("rejects a stale revision with the current state and never replays", async () => {
     seed([account(1), account(2)]);
     await mutate({ kind: "set_auto", enabled: false });
