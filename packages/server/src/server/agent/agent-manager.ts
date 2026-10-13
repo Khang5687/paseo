@@ -18,7 +18,10 @@ import {
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
-import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
+import type {
+  ProviderFeatureDefaults,
+  ProviderPaseoToolsPolicy,
+} from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
 
@@ -348,6 +351,7 @@ export interface AgentManagerOptions {
   paseoToolsEnabled?: boolean;
   paseoToolCatalogFactory?: PaseoToolCatalogFactory;
   resolvePaseoToolPolicy?: (provider: AgentProvider) => ProviderPaseoToolsPolicy | undefined;
+  resolveFeatureDefaults?: (provider: AgentProvider) => ProviderFeatureDefaults | undefined;
   appendSystemPrompt?: string;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
@@ -788,6 +792,9 @@ export class AgentManager {
   private readonly resolvePaseoToolPolicy: (
     provider: AgentProvider,
   ) => ProviderPaseoToolsPolicy | undefined;
+  private readonly resolveFeatureDefaults?: (
+    provider: AgentProvider,
+  ) => ProviderFeatureDefaults | undefined;
   private appendSystemPrompt: string;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
@@ -808,6 +815,7 @@ export class AgentManager {
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configurePaseoTools(options);
     this.resolvePaseoToolPolicy = options.resolvePaseoToolPolicy ?? (() => undefined);
+    this.resolveFeatureDefaults = options.resolveFeatureDefaults;
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
     this.logger = options.logger.child({ module: "agent", component: "agent-manager" });
     this.rescueTimeouts = {
@@ -5399,6 +5407,14 @@ export class AgentManager {
       if (defaultModelId) {
         normalized.model = defaultModelId;
       }
+    }
+
+    // Daemon work such as naming a branch keeps the provider's own behavior.
+    const featureDefaults = normalized.internal
+      ? undefined
+      : this.resolveFeatureDefaults?.(normalized.provider);
+    if (featureDefaults) {
+      normalized.featureValues = { ...featureDefaults, ...normalized.featureValues };
     }
 
     return this.applyProviderConfiguration(normalized);
