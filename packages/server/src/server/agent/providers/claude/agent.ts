@@ -2943,9 +2943,11 @@ class ClaudeAgentSession implements AgentSession {
       this.startFreshConversationSession();
       return;
     }
+    const currentSessionId = this.claudeSessionId;
     await revertClaudeConversation({
       sdk: this.rewindSdk,
-      sessionId: this.claudeSessionId,
+      sessionId: currentSessionId,
+      transcriptPath: currentSessionId ? this.resolveHistoryPath(currentSessionId) : null,
       messageId: target.messageId,
       resolveMessageId: (messageId) => this.resolveClaudeMessageId(messageId),
       setSessionId: (sessionId) => {
