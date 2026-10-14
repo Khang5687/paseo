@@ -2866,7 +2866,7 @@ export const fr: TranslationResources = {
       agents: {
         defaultStyle: {
           title: "Style par défaut",
-          hint: "La façon dont les nouveaux agents rédigent leurs réponses. La valeur par défaut d'un fournisseur dans Fournisseurs l'emporte.",
+          hint: "Modifiable par fournisseur",
         },
         unavailable: "Connectez-vous à cet hôte pour gérer les agents",
       },

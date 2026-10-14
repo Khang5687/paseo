@@ -101,8 +101,21 @@ export function DefaultOutputStyleCard({ serverId }: { serverId: string }) {
     [featureDefaults, patchConfig, queryClient, serverId, toast],
   );
 
-  const feature = styleQuery.data;
-  if (!isConnected || !supportsGlobalDefaults || !feature) {
+  // Providers report their styles only once their probe finishes; until then the row keeps its
+  // place and shows the stored value, so the cards below do not jump.
+  const loadedFeature = styleQuery.data;
+  const feature = useMemo<AgentFeatureSelect>(
+    () =>
+      loadedFeature ?? {
+        type: "select",
+        id: OUTPUT_STYLE_FEATURE_ID,
+        label: t("settings.host.agents.defaultStyle.title"),
+        value: null,
+        options: [],
+      },
+    [loadedFeature, t],
+  );
+  if (!isConnected || !supportsGlobalDefaults) {
     return null;
   }
 
@@ -112,7 +125,7 @@ export function DefaultOutputStyleCard({ serverId }: { serverId: string }) {
         feature={feature}
         stored={featureDefaults[OUTPUT_STYLE_FEATURE_ID]}
         isFirst
-        disabled={isSaving}
+        disabled={isSaving || !styleQuery.data}
         size={controlSize}
         title={t("settings.host.agents.defaultStyle.title")}
         hint={t("settings.host.agents.defaultStyle.hint")}

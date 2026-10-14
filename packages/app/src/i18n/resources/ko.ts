@@ -2811,7 +2811,7 @@ export const ko: TranslationResources = {
       agents: {
         defaultStyle: {
           title: "기본 스타일",
-          hint: "새 에이전트가 답변을 작성하는 방식입니다. 제공자 설정의 기본값이 우선합니다.",
+          hint: "제공자별로 바꿀 수 있습니다",
         },
         unavailable: "에이전트를 관리하려면 이 호스트에 연결하세요",
       },

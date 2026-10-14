@@ -2927,7 +2927,7 @@ export const en = {
       agents: {
         defaultStyle: {
           title: "Default style",
-          hint: "How new agents write their replies. A provider's own default under Providers wins.",
+          hint: "Providers can override it",
         },
         unavailable: "Connect to this host to manage agents",
       },

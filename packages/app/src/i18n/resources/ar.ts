@@ -2798,7 +2798,7 @@ export const ar: TranslationResources = {
       agents: {
         defaultStyle: {
           title: "النمط الافتراضي",
-          hint: "طريقة كتابة الوكلاء الجدد لردودهم. الإعداد الافتراضي للمزوّد في المزوّدين له الأولوية.",
+          hint: "يمكن للمزوّدين تجاوزه",
         },
         unavailable: "Connect to this host to manage agents",
       },
