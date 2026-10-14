@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
+  isOneTapQuestion,
   parseQuestionFormQuestions,
   questionShowsTextInput,
   resolveDismissLabel,
@@ -146,5 +147,27 @@ describe("question form card core", () => {
     expect(buildQuestionFormAnswers(questions, {}, { 0: "custom" })).toEqual({
       Response: "custom",
     });
+  });
+
+  test("answers with one tap only a lone single-choice question with bare options", () => {
+    const base = {
+      question: "Dangerous command",
+      header: "Answer",
+      options: [{ label: "Allow once" }, { label: "Deny" }],
+      multiSelect: false,
+    };
+    const oneTap = (questions: Record<string, unknown>[]) => {
+      const parsed = parseQuestionFormQuestions({ questions });
+      if (!parsed) throw new Error("questions did not parse");
+      return isOneTapQuestion(parsed);
+    };
+
+    expect(oneTap([base])).toBe(true);
+    expect(oneTap([{ ...base, multiSelect: true }])).toBe(false);
+    expect(oneTap([{ ...base, allowOther: true }])).toBe(false);
+    expect(oneTap([{ ...base, options: [] }])).toBe(false);
+    expect(oneTap([{ ...base, options: [{ label: "A", description: "detail" }] }])).toBe(false);
+    expect(oneTap([{ ...base, options: [{ label: "A", description: " \n" }] }])).toBe(true);
+    expect(oneTap([base, { ...base, header: "Second" }])).toBe(false);
   });
 });

@@ -140,6 +140,19 @@ export function shouldSubmitEmptyOnDismiss(questions: QuestionFormQuestion[]): b
   );
 }
 
+// One question that takes exactly one listed option and nothing typed is answered by the
+// tap itself: each option becomes a button that submits. Option descriptions keep the form,
+// because a button has room for a label only.
+export function isOneTapQuestion(questions: QuestionFormQuestion[]): boolean {
+  if (questions.length !== 1) return false;
+  const [question] = questions;
+  return (
+    !question.multiSelect &&
+    !questionShowsTextInput(question) &&
+    question.options.every((option) => !option.description?.trim())
+  );
+}
+
 export function resolveDismissLabel(
   questions: QuestionFormQuestion[],
   fallbackLabel = "Dismiss",

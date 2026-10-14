@@ -13,6 +13,12 @@ void testI18n;
 // App sources compile against the classic JSX runtime, which expects React on the global.
 beforeEach(() => vi.stubGlobal("React", React));
 
+// The Markdown stack (syntax themes, clipboard, diagram icons) does not load under the browser
+// test stubs. These tests cover answering, so the question renders as its raw text.
+vi.mock("@/components/markdown/renderer", () => ({
+  MarkdownRenderer: ({ text }: { text: string }) => text,
+}));
+
 /**
  * A real browser with the real web `EditingTextInput`, because the bug under test lives in the
  * gap between that input and React state: the input owns its text and never replays state, so a
@@ -83,7 +89,7 @@ function mountCard(question: Record<string, unknown>) {
     if (!response || response.behavior !== "allow") throw new Error("card did not submit");
     return (response.updatedInput as { answers: Record<string, string> }).answers;
   };
-  return { check, type, otherInput, submit, submittedAnswers };
+  return { view, onRespond, check, type, otherInput, submit, submittedAnswers };
 }
 
 const multiSelectQuestion = {
@@ -145,5 +151,41 @@ describe("QuestionFormCard other answers", () => {
     expect(card.otherInput().value).toBe("");
     card.submit();
     expect(card.submittedAnswers()).toEqual({ Provider: "Codex" });
+  });
+});
+
+describe("QuestionFormCard one-tap answers", () => {
+  const approvalQuestion = {
+    question: "Dangerous command: recursive force delete\n\n```sh\nrm -rf build\n```",
+    header: "Answer",
+    options: [
+      { label: "Allow once" },
+      { label: "Allow for session" },
+      { label: "Deny" },
+      { label: "Decline and stop" },
+    ],
+    multiSelect: false,
+  };
+
+  it("submits the tapped option without a separate Submit step", () => {
+    const card = mountCard(approvalQuestion);
+
+    expect(card.view.queryByRole("radio")).toBeNull();
+    expect(card.view.queryByRole("button", { name: "Submit" })).toBeNull();
+    act(() => card.view.getByRole("button", { name: "Allow for session" }).click());
+
+    expect(card.onRespond).toHaveBeenCalledTimes(1);
+    expect(card.submittedAnswers()).toEqual({ Answer: "Allow for session" });
+  });
+
+  it("dismisses without answering", () => {
+    const card = mountCard(approvalQuestion);
+
+    act(() => card.view.getByRole("button", { name: "Dismiss" }).click());
+
+    expect(card.onRespond).toHaveBeenCalledWith({
+      behavior: "deny",
+      message: "Dismissed by user",
+    });
   });
 });
