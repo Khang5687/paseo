@@ -475,6 +475,7 @@ export const ptBR: TranslationResources = {
       openToSide: "Abrir ao lado",
       copyPath: "Copiar caminho",
       copyRelativePath: "Copiar caminho relativo",
+      copyFullPath: "Copiar caminho completo",
       revealIn: "Mostrar no {{target}}",
       download: "Baixar",
       addToChat: "Adicionar ao chat",
@@ -1171,6 +1172,7 @@ export const ptBR: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
+    unsentDraft: "Rascunho não enviado",
     statusBucket: {
       needsInput: "Precisa de resposta",
       failed: "Com falha",
@@ -1226,6 +1228,10 @@ export const ptBR: TranslationResources = {
     },
     pinned: {
       title: "Fixados",
+    },
+    settled: {
+      title: "Resolvidos",
+      titleWithCount: "Resolvidos ({{count}})",
     },
     host: {
       noHost: "Nenhum host",
@@ -1317,6 +1323,10 @@ export const ptBR: TranslationResources = {
         rename: "Renomear workspace",
         pin: "Fixar no topo",
         unpin: "Desafixar",
+        settle: "Resolver",
+        unsettle: "Reabrir",
+        settleWorkspace: "Marcar workspace como resolvido",
+        unsettleWorkspace: "Reabrir workspace",
         archive: "Arquivar",
         archiveWorkspace: "Arquivar workspace",
         hideFromSidebar: "Ocultar da barra lateral",
@@ -1400,6 +1410,9 @@ export const ptBR: TranslationResources = {
     quitting: {
       title: "Saindo do Paseo...",
       detail: "Parando o daemon local.",
+    },
+    quitConfirm: {
+      hint: "Segure ⌘Q ou pressione duas vezes para sair",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2067,6 +2080,184 @@ export const ptBR: TranslationResources = {
       saveAccessibility: "Salvar comentário de revisão",
     },
   },
+  ompAccountRouting: {
+    login: {
+      start: "Adicionar conta do Claude",
+      elsewhere: "Abra o Paseo no computador host para adicionar uma conta.",
+      update: "Atualize o Paseo e o Oh My Pi no host para adicionar contas aqui.",
+      inProgress: "Login em andamento",
+      continue: "Continuar",
+      cancel: "Cancelar",
+      cancelSignIn: "Cancelar login",
+      done: "Concluído",
+      details: "Detalhes",
+      tryAgain: "Tentar de novo",
+      close: "Fechar",
+      justAdded: "Recém-adicionada",
+      warning: {
+        body: "O Paseo guarda um login por conta do Claude. Entre no claude.ai com a conta que você quer adicionar.",
+        existing: "Já adicionadas: {{accounts}}",
+        alertTitle: "Confira qual conta o navegador usa",
+        alertDescription:
+          "Se o claude.ai ainda estiver logado com uma conta já adicionada, saia ou troque de conta antes. Uma janela privada sempre começa sem login.",
+        guard: "Se você entrar com uma conta já adicionada, o Paseo para e não altera nada.",
+      },
+      preparing: "Preparando o link de login...",
+      link: {
+        title: "Entrar no Claude",
+        step: "Abra o link e entre com a conta que você quer adicionar",
+        open: "Abrir página de login",
+        copy: "Copiar link",
+        copied: "Copiado",
+        label: "Link de login",
+        hint: "Para usar uma janela privada ou outro dispositivo, copie o link",
+        waiting: "Aguardando o navegador...",
+        pasteInstead: "Colar o endereço",
+      },
+      paste: {
+        label: "Endereço ou código",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Depois de aprovar, o navegador pode abrir uma página que não carrega. Copie o endereço completo da barra de endereços, ou o código mostrado pelo Claude, e cole aqui.",
+        submit: "Enviar",
+        checking: "Verificando...",
+        error: {
+          invalid_input: "Isso não é um endereço nem um código de login",
+          wrong_login:
+            "Esse endereço pertence a um link de login anterior. Use o link mostrado aqui.",
+          not_waiting: "Este login já terminou",
+          not_allowed: "Somente o Paseo no computador host pode enviar isto",
+          unreachable: "Não foi possível falar com o host. Tente de novo.",
+        },
+      },
+      verifying: "Verificando o login...",
+      result: {
+        added: {
+          title: "{{account}} adicionada",
+          titleUnnamed: "Conta adicionada",
+          description: "{{organization}}. O roteamento automático já pode usá-la.",
+          descriptionUnnamed: "O roteamento automático já pode usá-la.",
+          billingEnabled:
+            "O uso extra pago está ativado nesta conta. O roteamento automático a ignora até você desativá-lo nas configurações do Claude.",
+          billingUnknown:
+            "Confirme que o uso extra pago está desativado nesta conta nas configurações do Claude. O roteamento automático ignora contas com ele ativado.",
+        },
+        alreadyListed: {
+          title: "{{account}} já foi adicionada",
+          titleUnnamed: "Essa conta já foi adicionada",
+          description:
+            "Nada mudou. Seu navegador entrou com uma conta que o Paseo já tem. Saia do claude.ai ou use uma janela privada e tente de novo.",
+        },
+        replaced: {
+          title: "Login substituído para {{account}}",
+          titleUnnamed: "Login salvo substituído",
+          description: "Nenhuma conta foi adicionada. O novo login está em uso.",
+        },
+        failed: "Falha no login",
+        cancelled: "Login cancelado",
+      },
+      failure: {
+        timeout: "O link de login expirou após 10 minutos. Nada mudou.",
+        omp_failed:
+          "O Oh My Pi não conseguiu concluir o login. Nada mudou. Tente de novo, ou execute omp em um terminal e digite /login.",
+        spawn_failed: "O Paseo não conseguiu iniciar o Oh My Pi neste computador.",
+        unreachable:
+          "Contato com o host perdido. Quando reconectar, confira a lista de contas antes de tentar de novo.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Vale para todos os agentes OMP gerenciados pelo Paseo neste host. Outros hosts e terminais independentes não mudam.",
+      account: "Conta",
+      automatic: "Automática",
+      useForAuto: "Usar no roteamento automático",
+      auto: "Roteamento automático",
+      priority: "Prioridade de reserva",
+      priorityHelp:
+        "Quando a conta atual se esgota, o Paseo troca para a conta incluída com mais uso disponível. Esta ordem desempata.",
+      addAccountHint:
+        "Para adicionar uma conta, execute omp em um terminal, digite /login e entre com outra conta do Claude.",
+      current: "Selecionada",
+      serving: "Em uso",
+      lastServed: "Último uso",
+      excluded: "Excluída do roteamento automático",
+      missing: "Conta salva indisponível",
+      fiveHour: "5 horas",
+      weekly: "Semanal",
+      tier: "Nível da assinatura",
+      unknownTier: "Nível da assinatura desconhecido",
+      unknownBudget: "Limite absoluto desconhecido",
+      consumed: "Consumido",
+      remaining: "Restante",
+      stale: "Observação desatualizada",
+      unknownOrganization: "Organização desconhecida",
+      detailsPending: "Os detalhes aparecem quando um agente Oh My Pi está em execução",
+      search: "Pesquisar contas",
+    },
+    actions: {
+      moveUp: "Mover para cima",
+      moveDown: "Mover para baixo",
+    },
+    status: {
+      loading: "Carregando o roteamento de contas",
+      empty: "Nenhuma conta do Claude observada",
+      noRuntime: "As contas aparecem quando um agente do Oh My Pi está em execução.",
+      unsupported: "Este host não verificou o suporte ao roteamento de contas do OMP",
+      offline: "Host offline; mostrando as últimas configurações confirmadas",
+      readOnly: "Você pode ver estas configurações, mas não alterá-las",
+      pending: "Salvando configurações",
+      conflict: "As configurações mudaram em outro lugar; mostrando o último estado confirmado",
+      paused: "Aguardando uma conta incluída disponível",
+      recovered: "Conta incluída disponível",
+      unknownUsage: "Uso desconhecido",
+      summaryPaused: "Pausado: nenhuma conta incluída tem uso disponível.",
+      summaryPausedResumes: "Pausado: nenhuma conta incluída tem uso disponível. Retoma {{time}}",
+      summaryUsing: "Usando {{account}}",
+      summaryAuto: "O modo automático escolhe a conta com mais uso disponível",
+    },
+    reason: {
+      no_account: "Nenhuma conta está selecionada",
+      source_changed: "A origem de credenciais nativa selecionada mudou",
+      source_inaccessible: "Este runtime não consegue acessar a conta nativa selecionada",
+      billing_enabled:
+        "Os créditos de uso pagos estão ativados; o roteamento apenas com uso incluído não pode usar esta conta",
+      billing_unknown:
+        "As configurações de créditos de uso pagos não foram verificadas recentemente",
+      quota_blocked: "O uso incluído não está disponível para esta solicitação",
+      entitlement_unavailable:
+        "O acesso ao modelo está indisponível ou não foi verificado para esta conta",
+      auth_unavailable: "A autenticação da conta nativa está indisponível",
+      unsupported_transport:
+        "Este transporte do provedor não oferece suporte ao roteamento apenas com uso incluído",
+      unsupported_runtime: "Este runtime do OMP não oferece suporte ao roteamento gerenciado",
+      persistence_failed: "Não foi possível salvar as configurações de roteamento",
+      host_unavailable: "Host de roteamento indisponível",
+      cancelled: "Solicitação cancelada",
+      metadata_pending: "Verificando a disponibilidade da conta",
+      all_unavailable: "Nenhuma conta incluída está disponível no momento",
+      auto_disabled:
+        "O roteamento automático está desativado; selecione uma conta ou ative-o para continuar",
+      provider_failed: "Não foi possível verificar a disponibilidade da conta",
+    },
+    mutationError: {
+      conflict:
+        "As configurações mudaram em outro lugar; revise o último estado antes de tentar de novo",
+      invalid_account: "Essa conta nativa não está mais no catálogo",
+      unsupported: "Os controles de roteamento de contas estão indisponíveis neste host",
+      persistence_failed:
+        "As configurações não foram salvas; as últimas configurações confirmadas continuam valendo",
+    },
+    values: {
+      used: "{{percent}}% usado",
+      reset: "reinicia {{time}}",
+      observed: "observado {{time}}",
+      limitReached: "Limite {{window}} atingido",
+      limitReachedReset: "Limite {{window}} atingido · reinicia {{time}}",
+      account: "Conta {{row}}",
+      serving: "{{account}} está atendendo {{agent}}",
+      priority: "Prioridade {{position}}",
+    },
+  },
   settings: {
     title: "Configurações",
     loading: "Carregando configurações...",
@@ -2180,6 +2371,7 @@ export const ptBR: TranslationResources = {
           queue: "Fila",
         },
       },
+      defaultEditor: "Editor padrão",
       serviceUrls: {
         options: {
           ask: "Perguntar",
@@ -2313,6 +2505,85 @@ export const ptBR: TranslationResources = {
         },
         moveUp: "Mover para cima",
         moveDown: "Mover para baixo",
+      },
+      background: {
+        title: "Plano de fundo",
+        applyTo: {
+          title: "Aplicar a",
+          options: {
+            both: "Ambos",
+            light: "Claro",
+            dark: "Escuro",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Imagens de plano de fundo",
+          none: "Nenhum",
+          addImage: "Adicionar imagem…",
+          importDefaultName: "Imagem",
+        },
+        menu: {
+          actions: "Ações para {{name}}",
+          edit: "Editar…",
+          delete: "Excluir",
+          details: "Detalhes",
+        },
+        undo: {
+          action: "Desfazer",
+          accessibilityLabel: "Desfazer mudança de plano de fundo",
+        },
+        catalog: {
+          browse: "Explorar",
+          hint: "Instale mais planos de fundo deste plugin",
+        },
+        visibility: {
+          title: "Visibilidade da imagem",
+          hint: "O Paseo mantém o texto legível automaticamente, então imagens claras podem mostrar menos da arte.",
+        },
+        blur: {
+          title: "Desfoque",
+          options: {
+            off: "Desligado",
+            low: "Baixo",
+            medium: "Médio",
+            high: "Alto",
+          },
+        },
+        showBehindSidebar: "Mostrar atrás da barra lateral",
+        showBehindContent: "Mostrar atrás do conteúdo",
+        status: {
+          reducedTransparency:
+            "Oculto porque Reduzir transparência está ativado nos ajustes do sistema",
+          forcedColors: "Oculto enquanto o modo de alto contraste está ativado",
+          error: "Não foi possível mostrar o plano de fundo",
+        },
+        errors: {
+          select: "Não foi possível aplicar o plano de fundo: {{message}}",
+          import: "Não foi possível importar a imagem: {{message}}",
+          update: "Não foi possível salvar as alterações: {{message}}",
+          remove: "Não foi possível excluir o plano de fundo: {{message}}",
+        },
+        edit: {
+          title: "Editar plano de fundo",
+          name: "Nome",
+          focal: "Ponto focal",
+          focalHint: "Toque na parte da imagem que deve permanecer visível.",
+          focalAccessibility: "Escolher ponto focal",
+          save: "Salvar",
+          saving: "Salvando…",
+        },
+        delete: {
+          title: 'Excluir "{{name}}"?',
+          message: "Isso remove a imagem deste dispositivo.",
+          confirm: "Excluir",
+        },
+        details: {
+          title: "Detalhes",
+          author: "Autor",
+          license: "Licença",
+          source: "Fonte",
+          openSource: "Abrir fonte",
+        },
       },
       fonts: {
         title: "Fontes",
@@ -2761,6 +3032,9 @@ export const ptBR: TranslationResources = {
         discovered: "Descobertos",
         custom: "Modelos personalizados",
         updated: "Atualizado {{time}}",
+        disabledCount: "{{count}} desativados",
+        toggleModel: "Ativar {{model}}",
+        failedToToggle: "Não foi possível atualizar {{model}}",
       },
       diagnostic: {
         title: "Diagnóstico",
@@ -2776,6 +3050,12 @@ export const ptBR: TranslationResources = {
         none: "Nenhum diagnóstico disponível",
         failedToFetch: "Falha ao buscar diagnóstico",
         unknownError: "Erro desconhecido",
+      },
+      featureDefaults: {
+        title: "Padrões para novos agentes",
+        providerDefault: "Padrão do provedor",
+        on: "Ativado",
+        off: "Desativado",
       },
     },
     project: {

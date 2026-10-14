@@ -1,7 +1,7 @@
 # Plugins
 
 Local plugins contribute daemon RPCs, native app surfaces, workspace panels, Command Center items,
-client slash commands, timeline items, header buttons, composer pills, app themes, composer attachment sources, and settings screens.
+client slash commands, timeline items, header buttons, composer pills, app themes, background skins, composer attachment sources, and settings screens.
 Paseo executes `index.server.ts` in a subprocess and `index.client.tsx` in every connected app.
 
 > **Trust every plugin you add.** `paseo plugin add` and `paseo plugin install` mean “I trust this codebase.” Plugins are unsandboxed: server code and preparation commands run with the daemon user's access on the daemon host, and client contributions run inside Paseo. The repository's dependencies and future updates are part of that trust decision. With `--host`, preparation runs on that remote daemon host.
@@ -693,6 +693,18 @@ not repaint the app. Without a preference the sorted registry snapshot decides, 
 stable rather than arrival-ordered. The app resolves that id
 against the installed catalog on every change; an id nothing contributes falls back to the default
 preference instead of painting the reserved slot's placeholder colors.
+
+## Contribute a skin
+
+`addSkin` and `applySkin` are client registrations evaluated in the app (`plugins/evaluate.ts`);
+the daemon has no capability flag for them. A plugin that calls `addSkin` on an older app fails with
+`addSkin is not a function`, so authors feature-detect (`typeof client.addSkin === "function"`).
+Contributions are validated in `plugins/skins.ts` and handed to `@/skins`, which owns caching,
+selection, and the contrast gate; plugin code never touches pixels or tokens.
+
+Skin ids are `<pluginId>/skin/<skinId>`, the same shape as themes. `applySkin(id)` only resolves
+skins the calling plugin registered, and attributes them to the host the plugin was installed from
+(`PluginClientRuntime.serverId`). See [skins.md](skins.md) for the rendering and storage design.
 
 Existing plugin authors should follow the standalone [v0.8 runtime-entry migration guide](../public-docs/plugins/migration.md).
 

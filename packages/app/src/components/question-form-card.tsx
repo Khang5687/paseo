@@ -14,6 +14,7 @@ import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 import {
   areQuestionsAnswered,
+  buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
   isOneTapQuestion,
   isQuestionAnswered,
@@ -399,6 +400,7 @@ function OneTapQuestionCard({
         updatedInput: {
           ...permission.request.input,
           answers: buildQuestionFormAnswers(questions, { 0: new Set([optIndex]) }, {}),
+          answerLists: buildQuestionFormAnswerLists(questions, { 0: new Set([optIndex]) }, {}),
         },
       });
     },
@@ -537,6 +539,7 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
       updatedInput: {
         ...permission.request.input,
         answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
       },
     });
   }, [
@@ -557,6 +560,7 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
         updatedInput: {
           ...permission.request.input,
           answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+          answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
         },
       });
       return;

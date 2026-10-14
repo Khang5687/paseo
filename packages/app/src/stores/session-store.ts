@@ -36,6 +36,7 @@ import type {
 import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
+  AgentQueuedMessageSummaryPayload,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
@@ -53,6 +54,7 @@ import {
   buildWorkspaceAgentActivityIndex,
   type WorkspaceAgentActivity,
 } from "@/utils/workspace-agent-activity";
+import { buildWorkspaceParentIndex } from "@/subagents/policies";
 import {
   resolveTurnPresentation,
   TURN_LIVENESS_IDLE,
@@ -100,6 +102,8 @@ export interface Agent {
   parentAgentId: string | null;
   labels: Record<string, string>;
   projectPlacement?: ProjectPlacementPayload | null;
+  /** Daemon-owned queue summaries. Absent or empty on hosts without `features.messageQueue`. */
+  queuedMessages?: AgentQueuedMessageSummaryPayload[];
 }
 
 export interface WorkspaceDescriptor {
@@ -117,6 +121,7 @@ export interface WorkspaceDescriptor {
   name: string;
   title?: string | null;
   pinnedAt?: string | null;
+  settledAt?: string | null;
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
@@ -155,6 +160,8 @@ export function normalizeWorkspaceDescriptor(
     name: payload.name,
     title: payload.title ?? null,
     pinnedAt: payload.pinnedAt ?? null,
+    // COMPAT(workspaceSettling): added in v0.11.0, remove fallback after 2027-04-01.
+    settledAt: payload.settledAt ?? null,
     // COMPAT(workspaceLabels): old daemons omit assignments.
     labels: payload.labels ?? [],
     status: payload.status,
@@ -417,6 +424,8 @@ export interface SessionState {
   // Agents
   agents: Map<string, Agent>;
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
+  // Subagent workspace id -> the workspace id it nests under in the sidebar.
+  workspaceParents: Map<string, string>;
   agentDetails: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   // All active project descriptors, keyed by host-local projectId.
@@ -661,6 +670,7 @@ function createInitialSessionState(
     initializingAgents: new Map(),
     agents: new Map(),
     workspaceAgentActivity: new Map(),
+    workspaceParents: new Map(),
     agentDetails: new Map(),
     workspaces: new Map(),
     projects: new Map(),
@@ -1502,6 +1512,7 @@ export const useSessionStore = create<SessionStore>()(
                   nextAgents,
                   session.workspaceAgentActivity,
                 ),
+                workspaceParents: buildWorkspaceParentIndex(nextAgents, session.workspaceParents),
               },
             },
           };

@@ -706,19 +706,44 @@ When an `additionalModels` entry has the same `id` as a discovered model, it upd
 
 Every entry under `agents.providers` accepts these fields:
 
-| Field              | Type                      | Required          | Description                                                        |
-| ------------------ | ------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `extends`          | `string`                  | Yes (custom only) | Built-in provider ID to inherit from, or `"acp"`                   |
-| `label`            | `string`                  | Yes (custom only) | Display name in the UI                                             |
-| `description`      | `string`                  | No                | Short description shown in the UI                                  |
-| `command`          | `string[]`                | Yes (ACP only)    | Command to spawn the agent process                                 |
-| `env`              | `Record<string, string>`  | No                | Environment variables to set for the agent process                 |
-| `options`          | `Record<string, unknown>` | No                | Provider-specific options such as `supportsMcpServers: false`      |
-| `models`           | `ProviderProfileModel[]`  | No                | Static model list (overrides runtime discovery)                    |
-| `additionalModels` | `ProviderProfileModel[]`  | No                | Static model additions (merged with runtime discovery or `models`) |
-| `disallowedTools`  | `string[]`                | No                | Tool names to disable for this provider (e.g. `["WebSearch"]`)     |
-| `enabled`          | `boolean`                 | No                | Set to `false` to hide the provider (default: `true`)              |
-| `order`            | `number`                  | No                | Sort order in the provider list                                    |
+| Field              | Type                                | Required          | Description                                                              |
+| ------------------ | ----------------------------------- | ----------------- | ------------------------------------------------------------------------ |
+| `extends`          | `string`                            | Yes (custom only) | Built-in provider ID to inherit from, or `"acp"`                         |
+| `label`            | `string`                            | Yes (custom only) | Display name in the UI                                                   |
+| `description`      | `string`                            | No                | Short description shown in the UI                                        |
+| `command`          | `string[]`                          | Yes (ACP only)    | Command to spawn the agent process                                       |
+| `env`              | `Record<string, string>`            | No                | Environment variables to set for the agent process                       |
+| `options`          | `Record<string, unknown>`           | No                | Provider-specific options such as `supportsMcpServers: false`            |
+| `models`           | `ProviderProfileModel[]`            | No                | Static model list (overrides runtime discovery)                          |
+| `additionalModels` | `ProviderProfileModel[]`            | No                | Static model additions (merged with runtime discovery or `models`)       |
+| `disabledModels`   | `string[]`                          | No                | Model IDs hidden from model lists and refused for new agents (see below) |
+| `disallowedTools`  | `string[]`                          | No                | Tool names to disable for this provider (e.g. `["WebSearch"]`)           |
+| `featureDefaults`  | `Record<string, boolean \| string>` | No                | Feature values new agents start with, e.g. `{ "output_style": "ELI5" }`  |
+| `enabled`          | `boolean`                           | No                | Set to `false` to hide the provider (default: `true`)                    |
+| `order`            | `number`                            | No                | Sort order in the provider list                                          |
+
+### Disabling models
+
+`disabledModels` hides models a provider reports without replacing its list, so runtime discovery keeps working. The Provider settings sheet writes it: each discovered model has a toggle, and the header search filters long lists. You can also set it by hand:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "omp": { "disabledModels": ["openai/gpt-4.1", "zai/glm-4.5"] }
+    }
+  }
+}
+```
+
+Entries are exact model IDs as listed in Provider settings or by `list_models`, not aliases. Absent or empty means nothing is disabled. A config patch replaces the whole array.
+
+- **Lists.** Disabled models are removed from the provider snapshot's `models`, so every model picker, the `list_models` MCP tool, and `paseo provider models` omit them. The snapshot carries them separately in `disabledModels` for the settings sheet. Toggling republishes the snapshot without re-running provider discovery.
+- **New selections.** Creating an agent, changing an agent's model, or validating a Hub agent with a disabled model fails with `Model '<id>' is disabled for provider '<provider>' in Provider settings`.
+- **Running agents.** An agent already on a model when it becomes disabled keeps running on it; re-selecting its current model is not refused.
+- **Defaults.** If the provider's default model is disabled, it is not advertised as the default. An agent created without a model gets the first enabled model in the provider's order, the same model pickers preselect. If every model is disabled, creating an agent without a model fails.
+
+The settings toggles require a daemon that advertises `server_info.features.providerDisabledModels`; older daemons drop the key when they rewrite the config.
 
 ### Model definition
 
@@ -740,6 +765,15 @@ Each entry in the `models` array:
 | `label`       | `string`  | Yes      | Display name                        |
 | `description` | `string`  | No       | Short description                   |
 | `isDefault`   | `boolean` | No       | Mark as the default thinking option |
+
+### Feature defaults and output styles
+
+`featureDefaults` fills in agent features (`fast_mode`, `output_style`, and so on) that a create request leaves out. A value the request sets wins. Daemon-internal agents such as branch naming ignore defaults. The provider sheet in Settings → Providers edits this map under "Defaults for new agents".
+
+`output_style` takes the name of a Claude Code output style: `default`, `Proactive`, `Concise`, `Explanatory`, `Learning`, or a custom style file. Paseo reads custom styles in Claude Code's format from `$CLAUDE_CONFIG_DIR/output-styles` (default `~/.claude/output-styles`) and from every `.claude/output-styles` between the agent's cwd and its git root; the closest file wins a name clash. Plugin styles are not read.
+
+- **Claude** passes the name as `settings.outputStyle`, so Claude Code resolves the style itself. Changing it mid-session applies from the next message on Claude Code 2.1.251 and later.
+- **OMP** has no output-style setting. Paseo appends the style file's body to `--append-system-prompt`, which means OMP offers only `default` and custom styles (the built-in style text ships inside Claude Code). Changing the style relaunches OMP on the same session file, so wait for the current turn to end.
 
 ### Claude settings.json model discovery
 

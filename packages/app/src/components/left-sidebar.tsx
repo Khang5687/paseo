@@ -44,6 +44,7 @@ import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import {
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
+  type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { density } from "@/styles/density";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
@@ -81,6 +82,7 @@ interface SidebarSharedProps {
   workspaceGroups: SidebarWorkspaceGroup[];
   projectIconTargets: SidebarProjectIconTarget[];
   pinnedGroups: PinnedSidebarGroups;
+  settledRows: SidebarWorkspacePlacement[];
   projects: SidebarProjectEntry[];
   hasProjectsBeforeFilter: boolean;
   hasActiveProjectFilter: boolean;
@@ -91,6 +93,7 @@ interface SidebarSharedProps {
   groupMode: SidebarGroupMode;
   collapsedProjectKeys: ReadonlySet<string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   handleRefresh: () => void;
   handleOpenProject: () => void;
@@ -140,10 +143,12 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     workspaceGroups,
     projectIconTargets,
     pinnedGroups,
+    settledRows,
     collapsedProjectKeys,
     toggleProjectCollapsed,
     groupMode,
     shortcutModel,
+    nestingDepthByWorkspaceKey,
   } = useSidebarModel();
   const { shortcutIndexByWorkspaceKey } = shortcutModel;
 
@@ -224,6 +229,7 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     workspaceGroups,
     projectIconTargets,
     pinnedGroups,
+    settledRows,
     projects,
     hasProjectsBeforeFilter,
     hasActiveProjectFilter: resolvedProjectFilters.length > 0,
@@ -234,6 +240,7 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     groupMode,
     collapsedProjectKeys,
     shortcutIndexByWorkspaceKey,
+    nestingDepthByWorkspaceKey,
     toggleProjectCollapsed,
     handleRefresh,
     labels,
@@ -511,6 +518,7 @@ function MobileSidebar({
   workspaceGroups,
   projectIconTargets,
   pinnedGroups,
+  settledRows,
   projects,
   hasProjectsBeforeFilter,
   hasActiveProjectFilter,
@@ -521,6 +529,7 @@ function MobileSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -589,10 +598,12 @@ function MobileSidebar({
             collapsedProjectKeys={collapsedProjectKeys}
             onToggleProjectCollapsed={toggleProjectCollapsed}
             shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+            nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
             groupMode={groupMode}
             workspaceGroups={workspaceGroups}
             projectIconTargets={projectIconTargets}
             pinnedGroups={pinnedGroups}
+            settledRows={settledRows}
             projects={projects}
             hasProjectsBeforeFilter={hasProjectsBeforeFilter}
             hasActiveProjectFilter={hasActiveProjectFilter}
@@ -626,6 +637,7 @@ function DesktopSidebar({
   workspaceGroups,
   projectIconTargets,
   pinnedGroups,
+  settledRows,
   projects,
   hasProjectsBeforeFilter,
   hasActiveProjectFilter,
@@ -636,6 +648,7 @@ function DesktopSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -766,10 +779,12 @@ function DesktopSidebar({
             collapsedProjectKeys={collapsedProjectKeys}
             onToggleProjectCollapsed={toggleProjectCollapsed}
             shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+            nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
             groupMode={groupMode}
             workspaceGroups={workspaceGroups}
             projectIconTargets={projectIconTargets}
             pinnedGroups={pinnedGroups}
+            settledRows={settledRows}
             projects={projects}
             hasProjectsBeforeFilter={hasProjectsBeforeFilter}
             hasActiveProjectFilter={hasActiveProjectFilter}
@@ -899,7 +914,7 @@ const styles = StyleSheet.create((theme) => ({
   desktopSidebarBorder: {
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   },
   sidebarDragArea: {
     position: "relative",

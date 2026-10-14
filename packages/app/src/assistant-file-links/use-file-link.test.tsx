@@ -183,6 +183,25 @@ describe("useFileLink", () => {
     expect(getDirectorySuggestions).toHaveBeenCalledTimes(2);
   });
 
+  it("resolveFile returns the daemon-resolved path for an ambiguous token, keeping its line", async () => {
+    const getDirectorySuggestions = vi.fn(async () =>
+      resolvedSuggestions([{ path: "src/app.ts", kind: "file" }]),
+    );
+    const { result } = renderHook(
+      () => useFileLink({ href: "app.ts:42", text: "app.ts:42", sourceType: "inline-code" }),
+      { wrapper: createWrapper({ client: { getDirectorySuggestions }, openedFiles: [] }) },
+    );
+
+    expect(result.current.fileCandidate?.path).toBe("/Users/test/project/app.ts");
+    await expect(result.current.resolveFile()).resolves.toMatchObject({
+      path: "/Users/test/project/src/app.ts",
+      lineStart: 42,
+    });
+    expect(getDirectorySuggestions).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "app.ts", cwd: "/Users/test/project" }),
+    );
+  });
+
   it("click retries after hover prefetch fails", async () => {
     const getDirectorySuggestions = vi
       .fn()

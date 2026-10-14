@@ -4,22 +4,33 @@ import { useToast } from "@/contexts/toast-context";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { resolvePreferredEditorId, usePreferredEditor } from "@/hooks/use-preferred-editor";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
-import { planWorkspaceOpenTargets } from "@/workspace/open-in-editor/planner";
+import type { WorkspaceFileLocation } from "@/workspace/file-open";
+import {
+  planWorkspaceOpenTargets,
+  type PlanWorkspaceOpenTargetsInput,
+} from "@/workspace/open-in-editor/planner";
 
-interface UseOpenDirectoryInEditorInput {
+interface UseOpenInPreferredEditorInput {
   serverId: string;
   workspaceDirectory: string;
 }
 
-interface OpenDirectoryInEditorAction {
+interface OpenInPreferredEditorAction {
   targetName: string;
-  open: (directoryPath: string) => void;
+  openDirectory: (directoryPath: string) => void;
+  openFile: (file: WorkspaceFileLocation) => void;
 }
 
-export function useOpenDirectoryInEditor({
+type OpenRequest = Pick<PlanWorkspaceOpenTargetsInput, "directoryPath" | "activeFile">;
+
+/**
+ * Opens a directory or file in the user's preferred desktop editor. Null when no editor can be
+ * launched for this host: a remote daemon, or a client without the desktop editor bridge.
+ */
+export function useOpenInPreferredEditor({
   serverId,
   workspaceDirectory,
-}: UseOpenDirectoryInEditorInput): OpenDirectoryInEditorAction | null {
+}: UseOpenInPreferredEditorInput): OpenInPreferredEditorAction | null {
   const { t } = useTranslation();
   const toast = useToast();
   const isLocalExecution = useIsLocalDaemon(serverId);
@@ -38,13 +49,13 @@ export function useOpenDirectoryInEditor({
   }, [editorTargets, preferredEditorId]);
 
   const open = useCallback(
-    (directoryPath: string) => {
+    (request: OpenRequest, failureMessage: string) => {
       if (!preferredTarget) {
         return;
       }
       const target = planWorkspaceOpenTargets({
+        ...request,
         workspaceDirectory,
-        directoryPath,
         desktopTargets: [preferredTarget],
         canUseDesktopBridge: isAvailable,
         isLocalExecution,
@@ -53,16 +64,28 @@ export function useOpenDirectoryInEditor({
         return;
       }
       void openDesktopTarget(target.openInput).catch((cause: unknown) => {
-        toast.error(
-          cause instanceof Error ? cause.message : t("sidebar.project.actions.openFolderFailed"),
-        );
+        toast.error(cause instanceof Error ? cause.message : failureMessage);
       });
     },
-    [isAvailable, isLocalExecution, preferredTarget, t, toast, workspaceDirectory],
+    [isAvailable, isLocalExecution, preferredTarget, toast, workspaceDirectory],
+  );
+
+  const openDirectory = useCallback(
+    (directoryPath: string) => {
+      open({ directoryPath }, t("sidebar.project.actions.openFolderFailed"));
+    },
+    [open, t],
+  );
+
+  const openFile = useCallback(
+    (file: WorkspaceFileLocation) => {
+      open({ activeFile: file }, t("workspace.git.openInEditor.failedOpen"));
+    },
+    [open, t],
   );
 
   return useMemo(
-    () => (preferredTarget ? { targetName: preferredTarget.label, open } : null),
-    [open, preferredTarget],
+    () => (preferredTarget ? { targetName: preferredTarget.label, openDirectory, openFile } : null),
+    [openDirectory, openFile, preferredTarget],
   );
 }

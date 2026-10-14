@@ -100,6 +100,12 @@ const PersistedWorkspaceRecordSchema = z.object({
     .nullable()
     .optional()
     .transform((value) => value ?? null),
+  // Set when the user settles the workspace; cleared by unsettling, pinning, or a new agent turn.
+  settledAt: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((value) => value ?? null),
   labels: z.array(z.string()).optional(),
   untrustedSource: UntrustedWorkspaceSourceSchema.optional(),
   // Public discovery visibility. Contents retain their ordinary lifecycle.
@@ -684,6 +690,7 @@ export function createPersistedWorkspaceRecord(input: {
   archivedAt?: string | null;
   autoArchivedChangeRequestUrl?: string | null;
   pinnedAt?: string | null;
+  settledAt?: string | null;
   labels?: string[];
   untrustedSource?: UntrustedWorkspaceSource;
   background?: boolean;
@@ -701,6 +708,7 @@ export function createPersistedWorkspaceRecord(input: {
     archivedAt: input.archivedAt ?? null,
     autoArchivedChangeRequestUrl: input.autoArchivedChangeRequestUrl ?? null,
     pinnedAt: input.pinnedAt ?? null,
+    settledAt: input.settledAt ?? null,
   });
 }
 

@@ -23,6 +23,7 @@ function installation(): InstalledPlugin {
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
   };

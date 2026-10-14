@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -5,8 +6,13 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { agentCommandsQueryKey, type AgentCommandsDraftConfig } from "@/hooks/agent-commands-query";
 
-const DRAFT_COMMANDS_STALE_TIME = Number.POSITIVE_INFINITY;
-const SESSION_COMMANDS_STALE_TIME = 60_000;
+// Commands change on disk (new skills, edited prompt files) without any daemon event, so the
+// list revalidates each time the command menu opens after this long. Cached rows stay visible
+// while the refetch runs.
+const COMMANDS_STALE_TIME = 10_000;
+// A query that matches nothing may be looking for a command that landed after the last fetch.
+// Refetch for it only when the cached list is older than this, so typing does not refetch per key.
+const MISS_REVALIDATE_MIN_AGE = 3_000;
 
 export interface AgentSlashCommand {
   name: string;
@@ -59,9 +65,10 @@ export function useAgentCommandsQuery({
 }: UseAgentCommandsQueryOptions) {
   const { t } = useTranslation();
   const retainedPanelActive = useRetainedPanelActive();
-  const queryEnabled = enabled && retainedPanelActive;
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const queryEnabled =
+    enabled && retainedPanelActive && !!client && isConnected && (!!agentId || !!draftConfig);
 
   const query = useQuery({
     queryKey: agentCommandsQueryKey({ serverId, agentId, draftConfig }),
@@ -71,8 +78,8 @@ export function useAgentCommandsQuery({
       }
       return fetchAgentCommands({ client, agentId, draftConfig });
     },
-    enabled: queryEnabled && !!client && isConnected && (!!agentId || !!draftConfig),
-    staleTime: draftConfig ? DRAFT_COMMANDS_STALE_TIME : SESSION_COMMANDS_STALE_TIME,
+    enabled: queryEnabled,
+    staleTime: COMMANDS_STALE_TIME,
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
   });
@@ -80,11 +87,22 @@ export function useAgentCommandsQuery({
   // isPending is true when the query has never run yet (no cached data and not fetching)
   // isLoading is true when fetching and no data yet
   const isLoading = query.isPending || query.isLoading;
+  const { refetch, isFetching, dataUpdatedAt } = query;
+
+  const revalidateForMiss = useCallback(() => {
+    if (!queryEnabled || isFetching || Date.now() - dataUpdatedAt < MISS_REVALIDATE_MIN_AGE) {
+      return;
+    }
+    void refetch();
+  }, [queryEnabled, isFetching, dataUpdatedAt, refetch]);
 
   return {
     commands: query.data ?? [],
     isLoading,
-    isError: query.isError,
-    error: query.error,
+    isFetching,
+    // A failed background refetch keeps the cached list; only a failed first load is an error.
+    isError: query.isLoadingError,
+    error: query.isLoadingError ? query.error : null,
+    revalidateForMiss,
   };
 }

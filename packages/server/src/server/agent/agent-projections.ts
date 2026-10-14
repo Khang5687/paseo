@@ -1,5 +1,7 @@
 import type {
   AgentListItemPayload,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
   AgentSnapshotPayload,
   RecentProviderSessionDescriptorPayload,
 } from "../messages.js";
@@ -98,6 +100,7 @@ export function toStoredAgentRecord(
       : null,
     internal: options?.internal,
     owner: agent.owner,
+    queuedMessages: agent.queuedMessages,
   } satisfies StoredAgentRecord;
 }
 
@@ -139,6 +142,7 @@ export function toAgentPayload(
     persistence: projectPersistenceHandleForWire(agent.persistence),
     title: options?.title ?? null,
     labels: agent.labels,
+    queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
     ...(agent.internal ? { internal: true } : {}),
   };
 
@@ -250,8 +254,29 @@ export function buildStoredAgentPayload(
     archivedAt: record.archivedAt ?? null,
     ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),
+    queuedMessages: summarizeQueuedMessages(record.queuedMessages),
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
+  };
+}
+
+function summarizeQueuedMessages(
+  messages: AgentQueuedMessagePayload[] = [],
+): AgentQueuedMessageSummaryPayload[] {
+  return messages.map(summarizeQueuedMessage);
+}
+
+// Snapshots carry summaries only: image bytes stay in the record and are
+// replayed by the daemon on dispatch.
+export function summarizeQueuedMessage(
+  message: AgentQueuedMessagePayload,
+): AgentQueuedMessageSummaryPayload {
+  return {
+    id: message.id,
+    text: message.text,
+    imageCount: message.images.length,
+    attachmentCount: message.attachments.length,
+    createdAt: message.createdAt,
   };
 }
 
