@@ -205,6 +205,32 @@ describe("question form card core", () => {
     expect(oneTap([{ ...base, options: [] }])).toBe(false);
     expect(oneTap([{ ...base, options: [{ label: "A", description: "detail" }] }])).toBe(false);
     expect(oneTap([{ ...base, options: [{ label: "A", description: " \n" }] }])).toBe(true);
+    expect(oneTap([{ ...base, options: [{ label: "A", preview: "<Tabs />" }] }])).toBe(false);
     expect(oneTap([base, { ...base, header: "Second" }])).toBe(false);
+  });
+
+  test("keeps option previews so options can be compared", () => {
+    const questions = parseQuestionFormQuestions({
+      questions: [
+        {
+          question: "Which layout?",
+          header: "Layout",
+          options: [
+            {
+              label: "Tabs",
+              description: "One tab per section",
+              preview: "<Tabs>\n  <Tab />\n</Tabs>",
+            },
+            { label: "Single page" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    });
+
+    expect(questions?.[0]?.options).toEqual([
+      { label: "Tabs", description: "One tab per section", preview: "<Tabs>\n  <Tab />\n</Tabs>" },
+      { label: "Single page", description: undefined, preview: undefined },
+    ]);
   });
 });

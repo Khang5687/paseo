@@ -210,9 +210,6 @@ export class FakeOmpSession implements OmpRuntimeSession {
   subagents: FakeOmpSubagentSnapshot[] = [];
   readonly subagentSubscriptionErrors = new Map<FakeOmpSubagentSubscriptionLevel, Error>();
   compactError: Error | null = null;
-  // Real OMP RPC answers `compact` without streaming compaction_start/end
-  // (those only reach the TUI). Opt in to mirror runtimes that do stream them.
-  streamCompactionEvents = false;
   getStateError: Error | null = null;
   promptAck: OmpPromptAck = {};
   branchResponse: { text?: string; cancelled?: boolean } = { text: "" };
@@ -311,15 +308,10 @@ export class FakeOmpSession implements OmpRuntimeSession {
   }
 
   async compact(customInstructions?: string): Promise<void> {
+    // Like OMP, answer a manual compact with the response alone, no compaction events.
     this.compactRequests.push(customInstructions === undefined ? {} : { customInstructions });
-    if (this.streamCompactionEvents) {
-      this.emit({ type: "compaction_start", reason: "manual" });
-    }
     if (this.compactError) {
       throw this.compactError;
-    }
-    if (this.streamCompactionEvents) {
-      this.emit({ type: "compaction_end", reason: "manual" });
     }
   }
 

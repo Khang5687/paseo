@@ -1,6 +1,7 @@
 export interface QuestionOption {
   label: string;
   description?: string;
+  preview?: string;
 }
 
 export interface QuestionFormQuestion {
@@ -46,6 +47,7 @@ export function parseQuestionFormQuestions(input: unknown): QuestionFormQuestion
       options.push({
         label: o.label,
         description: typeof o.description === "string" ? o.description : undefined,
+        preview: readOptionalString(o, "preview"),
       });
     }
     questions.push({
@@ -160,15 +162,15 @@ export function shouldSubmitEmptyOnDismiss(questions: QuestionFormQuestion[]): b
 }
 
 // One question that takes exactly one listed option and nothing typed is answered by the
-// tap itself: each option becomes a button that submits. Option descriptions keep the form,
-// because a button has room for a label only.
+// tap itself: each option becomes a button that submits. Option descriptions and previews keep
+// the form, because a button has room for a label only.
 export function isOneTapQuestion(questions: QuestionFormQuestion[]): boolean {
   if (questions.length !== 1) return false;
   const [question] = questions;
   return (
     !question.multiSelect &&
     !questionShowsTextInput(question) &&
-    question.options.every((option) => !option.description?.trim())
+    question.options.every((option) => !option.description?.trim() && !option.preview?.trim())
   );
 }
 

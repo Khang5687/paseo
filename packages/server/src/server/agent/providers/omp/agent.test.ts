@@ -222,6 +222,55 @@ function createToolCatalog(): PaseoToolCatalog {
 }
 
 describe("OMP agent client and session", () => {
+  test("failed manual compact closes its progress row and shows the error", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const events = await omp.compact({}, new Error("compaction refused"));
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        item: { type: "compaction", status: "loading", trigger: "manual" },
+      }),
+      expect.objectContaining({
+        item: { type: "compaction", status: "completed", trigger: "manual" },
+      }),
+      expect.objectContaining({
+        item: {
+          type: "assistant_message",
+          text: "[Error] Failed to compact context: compaction refused",
+        },
+      }),
+    ]);
+  });
+
+  test("manual compact shows its progress and publishes the compacted context usage", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+
+    const events = await omp.compact({
+      contextUsage: { tokens: 13_447, contextWindow: 272_000 },
+    });
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "timeline",
+        item: { type: "compaction", status: "loading", trigger: "manual" },
+      }),
+      expect.objectContaining({
+        type: "timeline",
+        item: { type: "compaction", status: "completed", trigger: "manual" },
+      }),
+      expect.objectContaining({
+        type: "usage_updated",
+        usage: expect.objectContaining({
+          contextWindowUsedTokens: 13_447,
+          contextWindowMaxTokens: 272_000,
+        }),
+      }),
+    ]);
+  });
+
   test("owns launch configuration and registers native host tools", async () => {
     const omp = new OmpHarness();
     await omp.start({ modeId: "ask" }, createToolCatalog());
@@ -1001,20 +1050,6 @@ describe("OMP agent client and session", () => {
         provider: "omp",
         item: { type: "compaction", status: "completed", trigger: "manual" },
       },
-    ]);
-    expect(omp.timeline()).toEqual([]);
-  });
-
-  test("/compact does not duplicate timeline items when OMP streams compaction events", async () => {
-    const omp = new OmpHarness();
-    await omp.start();
-    omp.configureCompact({ streamCompactionEvents: true });
-
-    const events = await omp.runOutOfBandCommand("/compact");
-    expect(omp.compactRequests()).toEqual([{}]);
-    expect(events.map((event) => (event.type === "timeline" ? event.item : event.type))).toEqual([
-      { type: "compaction", status: "loading", trigger: "manual" },
-      { type: "compaction", status: "completed", trigger: "manual" },
     ]);
     expect(omp.timeline()).toEqual([]);
   });

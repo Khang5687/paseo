@@ -25,6 +25,7 @@ import type {
   OmpRpcSlashCommand,
   OmpRuntimeEvent,
   OmpSessionState,
+  OmpSessionStats,
 } from "../rpc-types.js";
 import type { OmpRoutingAuthority } from "../account-routing-bridge.js";
 import { OmpCliRuntime } from "../cli-runtime.js";
@@ -207,6 +208,18 @@ export class OmpHarness {
     for await (const event of session.streamHistory()) events.push(event);
     await session.close();
     return events;
+  }
+
+  async compact(statsAfter: OmpSessionStats, error?: Error): Promise<AgentStreamEvent[]> {
+    const handler = this.requireSession().tryHandleOutOfBand("/compact");
+    if (!handler) throw new Error("OMP session did not handle /compact out-of-band");
+    const runtime = this.omp.latestSession();
+    const sessionEventCount = this.events.length;
+    const emitted: AgentStreamEvent[] = [];
+    runtime.stats = statsAfter;
+    runtime.compactError = error ?? null;
+    await handler.run({ emit: (event) => emitted.push(event) });
+    return [...emitted, ...this.events.slice(sessionEventCount)];
   }
 
   async runPrompt(
@@ -567,10 +580,8 @@ export class OmpHarness {
     return events;
   }
 
-  configureCompact(options: { error?: Error; streamCompactionEvents?: boolean }): void {
-    const runtime = this.omp.latestSession();
-    runtime.compactError = options.error ?? null;
-    runtime.streamCompactionEvents = options.streamCompactionEvents ?? false;
+  configureCompact(options: { error?: Error }): void {
+    this.omp.latestSession().compactError = options.error ?? null;
   }
 
   compactRequests() {
