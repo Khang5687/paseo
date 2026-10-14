@@ -2866,6 +2866,10 @@ export const es: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Estilo predeterminado",
+          hint: "Los proveedores pueden cambiarlo",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {

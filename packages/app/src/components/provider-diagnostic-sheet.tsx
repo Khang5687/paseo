@@ -16,11 +16,7 @@ import { type FieldControlSize } from "@/components/ui/control-geometry";
 import { Switch } from "@/components/ui/switch";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { ScrollableCodeSurface, SurfaceCard } from "@/components/ui/scrollable-code-surface";
-import {
-  SelectField,
-  type SelectFieldDisplay,
-  type SelectFieldOption,
-} from "@/components/ui/select-field";
+import { FEATURE_DEFAULTS_CWD, FeatureDefaultRow } from "@/components/feature-default-row";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-context";
@@ -217,131 +213,6 @@ function SectionHeader({ title, count, hint }: { title: string; count?: number; 
           <Text style={settingsStyles.sectionHeaderTitle}>·</Text>
         ) : null}
         {hint ? <Text style={settingsStyles.sectionHeaderTitle}>{hint}</Text> : null}
-      </View>
-    </View>
-  );
-}
-
-/**
- * Feature defaults are provider-wide, so the feature catalog is probed in the
- * daemon's home directory rather than a workspace, as agent profiles do.
- */
-const FEATURE_DEFAULTS_CWD = "~";
-/** Select value meaning "no Paseo default": the provider's own settings decide. */
-const PROVIDER_DEFAULT_VALUE = "";
-const PROVIDER_DEFAULT_OPTION_ID = "__provider_default__";
-
-function toFeatureDefaultKey(feature: AgentFeature, stored: boolean | string | undefined): string {
-  if (feature.type === "toggle") {
-    return typeof stored === "boolean" ? String(stored) : PROVIDER_DEFAULT_VALUE;
-  }
-  return typeof stored === "string" ? stored : PROVIDER_DEFAULT_VALUE;
-}
-
-function fromFeatureDefaultKey(feature: AgentFeature, key: string): boolean | string | null {
-  if (key === PROVIDER_DEFAULT_VALUE) {
-    return null;
-  }
-  if (feature.type === "toggle") {
-    return key === "true";
-  }
-  return key;
-}
-
-function FeatureDefaultRow({
-  feature,
-  stored,
-  isFirst,
-  disabled,
-  size,
-  onChange,
-}: {
-  feature: AgentFeature;
-  stored: boolean | string | undefined;
-  isFirst: boolean;
-  disabled: boolean;
-  size: FieldControlSize;
-  onChange: (feature: AgentFeature, value: boolean | string | null) => void;
-}) {
-  const { t } = useTranslation();
-  const rowStyle = useMemo(
-    () => [settingsStyles.row, isFirst ? null : settingsStyles.rowBorder],
-    [isFirst],
-  );
-  const value = toFeatureDefaultKey(feature, stored);
-  const options = useMemo<SelectFieldOption<string>[]>(() => {
-    const providerDefault: SelectFieldOption<string> = {
-      id: PROVIDER_DEFAULT_OPTION_ID,
-      value: PROVIDER_DEFAULT_VALUE,
-      label: t("settings.providers.featureDefaults.providerDefault"),
-      testID: `provider-feature-default-option-${feature.id}-default`,
-    };
-    if (feature.type === "toggle") {
-      return [
-        providerDefault,
-        {
-          id: "true",
-          value: "true",
-          label: t("settings.providers.featureDefaults.on"),
-          testID: `provider-feature-default-option-${feature.id}-on`,
-        },
-        {
-          id: "false",
-          value: "false",
-          label: t("settings.providers.featureDefaults.off"),
-          testID: `provider-feature-default-option-${feature.id}-off`,
-        },
-      ];
-    }
-    return [
-      providerDefault,
-      ...feature.options.map((option) => ({
-        id: option.id,
-        value: option.id,
-        label: option.label,
-        ...(option.description ? { description: option.description } : {}),
-        testID: `provider-feature-default-option-${feature.id}-${option.id}`,
-      })),
-    ];
-  }, [feature, t]);
-  // A stored value the provider no longer offers still shows, so the user can clear it.
-  const selectedDisplay = useMemo<SelectFieldDisplay>(() => {
-    const option = options.find((candidate) => candidate.value === value);
-    return { label: option?.label ?? value };
-  }, [options, value]);
-  const handleChange = useCallback(
-    (key: string) => onChange(feature, fromFeatureDefaultKey(feature, key)),
-    [feature, onChange],
-  );
-
-  return (
-    <View style={rowStyle} testID={`provider-feature-default-row-${feature.id}`}>
-      <View style={settingsStyles.rowContent}>
-        <Text style={settingsStyles.rowTitle} numberOfLines={1}>
-          {feature.label}
-        </Text>
-        {feature.description ? (
-          <Text style={settingsStyles.rowHint} numberOfLines={2}>
-            {feature.description}
-          </Text>
-        ) : null}
-      </View>
-      <View style={sheetStyles.featureDefaultPicker}>
-        <SelectField
-          field={false}
-          label={feature.label}
-          value={value}
-          selectedDisplay={selectedDisplay}
-          options={options}
-          onChange={handleChange}
-          placeholder={feature.label}
-          emptyText={feature.label}
-          disabled={disabled}
-          searchable={options.length > 6}
-          title={feature.label}
-          size={size}
-          triggerTestID={`provider-feature-default-trigger-${feature.id}`}
-        />
       </View>
     </View>
   );
@@ -1181,10 +1052,6 @@ const sheetStyles = StyleSheet.create((theme) => ({
   sectionError: {
     marginBottom: theme.spacing[2],
     marginLeft: theme.spacing[1],
-  },
-  featureDefaultPicker: {
-    width: 200,
-    flexShrink: 0,
   },
   emptyState: {
     paddingVertical: theme.spacing[8],

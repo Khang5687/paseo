@@ -33,7 +33,10 @@ export const ProviderPaseoToolsPolicySchema = z.object({
   disabledTools: z.array(z.string()).optional(),
 });
 
-/** Feature values a new agent starts with when its create request names none. */
+/**
+ * Feature values a new agent starts with when its create request names none. Used per provider
+ * and daemon-wide; a provider's map wins over the daemon-wide one.
+ */
 export const ProviderFeatureDefaultsSchema = z.record(
   z.string(),
   z.union([z.boolean(), z.string()]),

@@ -2812,6 +2812,10 @@ export const ko: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "기본 스타일",
+          hint: "제공자별로 바꿀 수 있습니다",
+        },
         unavailable: "에이전트를 관리하려면 이 호스트에 연결하세요",
       },
       workspaces: {

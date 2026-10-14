@@ -768,12 +768,23 @@ Each entry in the `models` array:
 
 ### Feature defaults and output styles
 
-`featureDefaults` fills in agent features (`fast_mode`, `output_style`, and so on) that a create request leaves out. A value the request sets wins. Daemon-internal agents such as branch naming ignore defaults. The provider sheet in Settings → Providers edits this map under "Defaults for new agents".
+`featureDefaults` fills in agent features (`fast_mode`, `output_style`, and so on) that a create request leaves out. It exists at two levels: `agents.featureDefaults` for every provider, and `agents.providers.<id>.featureDefaults` for one. For each feature the request wins, then the provider's map, then the daemon-wide map. Daemon-internal agents such as branch naming ignore defaults. Both maps are replaced whole on every patch, so a key left out is cleared.
 
-`output_style` takes the name of a Claude Code output style: `default`, `Proactive`, `Concise`, `Explanatory`, `Learning`, or a custom style file. Paseo reads custom styles in Claude Code's format from `$CLAUDE_CONFIG_DIR/output-styles` (default `~/.claude/output-styles`) and from every `.claude/output-styles` between the agent's cwd and its git root; the closest file wins a name clash. Plugin styles are not read.
+```json
+{
+  "agents": {
+    "featureDefaults": { "output_style": "Concise" },
+    "providers": { "omp": { "featureDefaults": { "output_style": "ELI5" } } }
+  }
+}
+```
 
-- **Claude** passes the name as `settings.outputStyle`, so Claude Code resolves the style itself. Changing it mid-session applies from the next message on Claude Code 2.1.251 and later.
-- **OMP** has no output-style setting. Paseo appends the style file's body to `--append-system-prompt`, which means OMP offers only `default` and custom styles (the built-in style text ships inside Claude Code). Changing the style relaunches OMP on the same session file, so wait for the current turn to end.
+Settings → Agents → Default style edits the daemon-wide `output_style`; its list is every style any ready provider offers. Settings → Providers → a provider → "Defaults for new agents" edits the provider's map. A provider that has no Style feature ignores the key.
+
+`output_style` takes a style name: `default`, `Proactive`, `Concise`, `Explanatory`, `Learning`, or a custom style file. Paseo reads custom styles in Claude Code's format from `$CLAUDE_CONFIG_DIR/output-styles` (default `~/.claude/output-styles`) and from every `.claude/output-styles` between the agent's cwd and its git root; the closest file wins a name clash, and a custom style named like a built-in replaces it. Plugin styles are not read.
+
+- **Claude** passes the name as `settings.outputStyle`, so Claude Code resolves the style, built-ins included. Changing it mid-session applies from the next message on Claude Code 2.1.251 and later.
+- **OMP** has no output-style setting, so Paseo appends the style's text to `--append-system-prompt`. Claude Code's built-in text ships inside its CLI and is not copied, so OMP's `Proactive`, `Concise`, `Explanatory`, and `Learning` use Paseo's own instructions with the same intent (`packages/server/src/server/agent/output-styles.ts`). Changing the style relaunches OMP on the same session file, so wait for the current turn to end.
 
 ### Claude settings.json model discovery
 

@@ -163,7 +163,11 @@ import {
 } from "./workspace-registry.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
-import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
+import {
+  DaemonConfigStore,
+  resolveFeatureDefaults,
+  type MutableDaemonConfig,
+} from "./daemon-config-store.js";
 import { createOrchestrationSkills } from "./orchestration-skills/index.js";
 import { resolveConfigFromPersisted, type CliConfigOverrides } from "./config.js";
 import { resolvePaseoToolPolicy } from "./agent/paseo-tool-policy.js";
@@ -510,6 +514,7 @@ export interface PaseoDaemonConfig {
       thinkingOptionId?: string;
     }>;
   };
+  featureDefaults?: Record<string, boolean | string>;
   providerOverrides?: Record<string, ProviderOverride>;
   log?: PersistedConfig["log"];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
@@ -709,6 +714,7 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
     metadataGeneration: {
       providers: config.metadataGeneration?.providers ?? [],
     },
+    featureDefaults: config.featureDefaults,
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
     appendSystemPrompt: config.appendSystemPrompt ?? "",
@@ -1137,8 +1143,7 @@ export async function createPaseoDaemon(
     mcpAuthToken: agentMcpAuthToken,
     resolvePaseoToolPolicy: (provider) =>
       resolvePaseoToolPolicy(provider, daemonConfigStore.get().providers),
-    resolveFeatureDefaults: (provider) =>
-      daemonConfigStore.get().providers[provider]?.featureDefaults,
+    resolveFeatureDefaults: (provider) => resolveFeatureDefaults(daemonConfigStore.get(), provider),
     logger,
   });
   const syncPluginProviders = () => {

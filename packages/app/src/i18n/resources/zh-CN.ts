@@ -2766,6 +2766,10 @@ export const zhCN: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "默认风格",
+          hint: "提供方可单独覆盖",
+        },
         unavailable: "连接到这个 Host 以管理 Agent",
       },
       workspaces: {

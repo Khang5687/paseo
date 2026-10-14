@@ -2852,6 +2852,10 @@ export const ru: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Стиль по умолчанию",
+          hint: "Провайдеры могут изменить его",
+        },
         unavailable: "Подключитесь к этому хосту, чтобы управлять агентами",
       },
       workspaces: {

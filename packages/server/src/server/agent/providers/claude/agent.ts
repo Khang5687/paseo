@@ -64,8 +64,9 @@ import {
 import { readClaudeWorkflowResultFile } from "./subagents/workflow-output.js";
 import { buildClaudeFeatures, claudeModelSupportsFastMode } from "./feature-definitions.js";
 import {
+  CLAUDE_BUILTIN_OUTPUT_STYLES,
   discoverOutputStyleFiles,
-  mergeClaudeOutputStyles,
+  mergeOutputStyles,
   OUTPUT_STYLE_FEATURE_ID,
   readOutputStyleValue,
   type DiscoverOutputStyles,
@@ -1557,7 +1558,8 @@ export class ClaudeAgentClient implements AgentClient {
   }
 
   private async listOutputStyles(cwd: string, launchEnv?: Record<string, string>) {
-    return mergeClaudeOutputStyles(
+    return mergeOutputStyles(
+      CLAUDE_BUILTIN_OUTPUT_STYLES,
       await this.discoverOutputStyles({ cwd, env: this.buildProviderEnv(launchEnv) }),
     );
   }

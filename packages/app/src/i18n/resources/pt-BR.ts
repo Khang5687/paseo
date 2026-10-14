@@ -2846,6 +2846,10 @@ export const ptBR: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Estilo padrão",
+          hint: "Provedores podem substituí-lo",
+        },
         unavailable: "Conecte-se a este host para gerenciar agentes",
       },
       workspaces: {

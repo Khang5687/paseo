@@ -2830,6 +2830,10 @@ export const ja: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "デフォルトのスタイル",
+          hint: "プロバイダーごとに上書きできます",
+        },
         unavailable: "エージェントを管理するにはこのホストに接続してください",
       },
       workspaces: {

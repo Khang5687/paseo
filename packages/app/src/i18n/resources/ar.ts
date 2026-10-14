@@ -2799,6 +2799,10 @@ export const ar: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "النمط الافتراضي",
+          hint: "يمكن للمزوّدين تجاوزه",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {

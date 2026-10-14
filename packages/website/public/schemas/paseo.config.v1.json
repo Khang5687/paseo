@@ -546,6 +546,22 @@
                   }
                 }
               },
+              "featureDefaults": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
               "enabled": {
                 "type": "boolean"
               },
@@ -587,6 +603,23 @@
             }
           },
           "additionalProperties": false
+        },
+        "featureDefaults": {
+          "description": "Feature values every new agent starts with, e.g. { \"output_style\": \"Concise\" }. A provider's own featureDefaults win.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
         },
         "skills": {
           "type": "object",

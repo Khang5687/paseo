@@ -50,6 +50,59 @@ export const CLAUDE_BUILTIN_OUTPUT_STYLES: readonly OutputStyle[] = [
   },
 ];
 
+/**
+ * The Claude Code built-ins, minus `default`, with Paseo's own instructions for providers that take
+ * a style as appended system-prompt text. Claude Code's wording ships inside its CLI and is not
+ * copied; these keep the names and intent so a style picked once means the same on every provider.
+ */
+export const APPENDED_BUILTIN_OUTPUT_STYLES: readonly OutputStyle[] = [
+  {
+    name: "Proactive",
+    description: "Executes immediately, minimizes interruptions, and prefers action over planning",
+    body: `Work autonomously. When a request is clear enough to act on, act: make the change, run the checks, and report what you did.
+
+- Do not stop to confirm routine or easily reversible steps.
+- When a detail is unspecified, pick the reasonable default and say which one you picked.
+- Ask only when a wrong guess would be costly to undo, or when the request has two materially different readings.
+- Keep plans brief and internal. Show results, not intentions.
+- Still pause before destructive or irreversible actions, such as deleting data, rewriting shared history, or touching production systems.`,
+  },
+  {
+    name: "Concise",
+    description: "Responds tersely, leading with results and skipping preamble and narration",
+    body: `Keep replies short. Open with the answer or the outcome, then stop.
+
+- Skip warm-up sentences, restating the question, and step-by-step accounts of what you are about to do or just did.
+- For a simple question, one to three plain sentences. Use lists or tables only when the content really is a list or a table.
+- Mention a caveat only when it changes what the user should do.
+- Do the work as thoroughly as ever. Only the reply gets shorter.
+- Keep anything the user needs to act safely intact: exact error text, failing checks, risks, and confirmations before destructive steps. When the user asks for detail, give all of it.`,
+  },
+  {
+    name: "Explanatory",
+    description: "Explains its implementation choices and codebase patterns",
+    body: `Alongside the task, help the user understand the code you are working in.
+
+- When you make a choice that is not obvious, say briefly why, and what the alternative was.
+- Point out the patterns, conventions, and constraints in this codebase that your change relies on, especially ones that would surprise someone new to it.
+- Gather these notes into a short "Why this way" section after the work rather than interrupting every step.
+- Replies may run longer because of this, but keep the notes about this codebase and this change, not general programming tutorials.
+- Finish the task fully. The explanations come in addition to the work, never instead of it.`,
+  },
+  {
+    name: "Learning",
+    description: "Pauses and asks you to write small pieces of code for hands-on practice",
+    body: `Help the user learn by writing part of the code themselves while you handle the rest.
+
+- When the task contains a small, meaningful decision (a few lines of logic, an error-handling choice, a data structure to pick), leave that piece to the user.
+- Prepare the surrounding code first so their part is small and well defined. Mark the spot with a \`TODO(you)\` comment and explain what the code should do, its inputs and outputs, and the trade-offs worth weighing.
+- Then stop and wait for them to write it. Do not continue past that point in the same reply.
+- Write boilerplate, repetitive edits, and setup yourself.
+- When they hand their code back, review it kindly: what works, what to change, and why.
+- Explain the reasoning behind your own choices briefly as you go.`,
+  },
+];
+
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 function parseOutputStyleFile(fileName: string, source: string): OutputStyle | null {
@@ -143,13 +196,13 @@ export function readOutputStyleValue(
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-/** Claude Code built-ins followed by custom styles; a custom style named like a built-in wins. */
-export function mergeClaudeOutputStyles(custom: readonly OutputStyle[]): OutputStyle[] {
+/** Built-ins followed by custom styles; a custom style named like a built-in replaces it. */
+export function mergeOutputStyles(
+  builtins: readonly OutputStyle[],
+  custom: readonly OutputStyle[],
+): OutputStyle[] {
   const customNames = new Set(custom.map((style) => style.name));
-  return [
-    ...CLAUDE_BUILTIN_OUTPUT_STYLES.filter((style) => !customNames.has(style.name)),
-    ...custom,
-  ];
+  return [...builtins.filter((style) => !customNames.has(style.name)), ...custom];
 }
 
 export function buildOutputStyleFeature(input: {

@@ -1983,6 +1983,8 @@ export class VoiceAssistantWebSocketServer {
         providerRemoval: true,
         // COMPAT(providerFeatureDefaults): added in v0.11.2, remove gate after 2027-04-08.
         providerFeatureDefaults: true,
+        // COMPAT(globalFeatureDefaults): added in v0.11.3, remove gate after 2027-04-14.
+        globalFeatureDefaults: true,
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: true,
         // COMPAT(importSessionSearch): added in v0.7.3, remove gate after 2027-03-02.

@@ -2928,6 +2928,10 @@ export const en = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Default style",
+          hint: "Providers can override it",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {
