@@ -2843,6 +2843,10 @@ export const ptBR: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Estilo padrão",
+          hint: "Como novos agentes escrevem as respostas. O padrão de um provedor em Provedores tem prioridade.",
+        },
         unavailable: "Conecte-se a este host para gerenciar agentes",
       },
       workspaces: {

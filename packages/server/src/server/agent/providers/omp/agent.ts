@@ -53,9 +53,11 @@ import {
 import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
 import { composeSystemPromptParts } from "../../system-prompt.js";
 import {
+  APPENDED_BUILTIN_OUTPUT_STYLES,
   buildOutputStyleFeature,
   DEFAULT_OUTPUT_STYLE,
   discoverOutputStyleFiles,
+  mergeOutputStyles,
   OUTPUT_STYLE_FEATURE_ID,
   readOutputStyleValue,
   renderOutputStylePrompt,
@@ -489,12 +491,10 @@ function buildResumeStartInput(input: {
   };
 }
 
-// The picker only appears once a custom style exists; "default" alone is no choice.
 function buildOmpOutputStyleFeatures(
   outputStyles: readonly OutputStyle[],
   config: AgentSessionConfig,
 ): AgentFeature[] {
-  if (outputStyles.length < 2) return [];
   return [
     buildOutputStyleFeature({
       styles: outputStyles,
@@ -2459,10 +2459,17 @@ export class OmpAgentClient implements AgentClient {
       cwd,
       env: { ...process.env, ...this.runtimeSettings?.env, ...launchEnv },
     });
-    return [
-      { name: DEFAULT_OUTPUT_STYLE, description: "OMP's own voice, no style appended", body: null },
-      ...custom.filter((style) => style.name !== DEFAULT_OUTPUT_STYLE),
-    ];
+    return mergeOutputStyles(
+      [
+        {
+          name: DEFAULT_OUTPUT_STYLE,
+          description: "OMP's own voice, no style appended",
+          body: null,
+        },
+        ...APPENDED_BUILTIN_OUTPUT_STYLES,
+      ],
+      custom.filter((style) => style.name !== DEFAULT_OUTPUT_STYLE),
+    );
   }
 
   /** Managed launch request. `agentId` comes only from the trusted launch context. */

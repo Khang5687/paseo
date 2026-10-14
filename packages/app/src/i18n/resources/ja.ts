@@ -2827,6 +2827,10 @@ export const ja: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "デフォルトのスタイル",
+          hint: "新しいエージェントの返答の書き方です。プロバイダー設定のデフォルトが優先されます。",
+        },
         unavailable: "エージェントを管理するにはこのホストに接続してください",
       },
       workspaces: {

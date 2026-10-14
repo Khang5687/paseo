@@ -2863,6 +2863,10 @@ export const es: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Estilo predeterminado",
+          hint: "Cómo escriben sus respuestas los nuevos agentes. El valor predeterminado de un proveedor en Proveedores tiene prioridad.",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {

@@ -2925,6 +2925,10 @@ export const en = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Default style",
+          hint: "How new agents write their replies. A provider's own default under Providers wins.",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {

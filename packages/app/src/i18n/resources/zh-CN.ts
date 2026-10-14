@@ -2763,6 +2763,10 @@ export const zhCN: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "默认风格",
+          hint: "新 Agent 回复的写法。Providers 中某个提供方自己的默认值优先。",
+        },
         unavailable: "连接到这个 Host 以管理 Agent",
       },
       workspaces: {

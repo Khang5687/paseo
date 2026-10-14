@@ -612,7 +612,7 @@ describe("OMP agent client and session", () => {
     expect(omp.requireSession().describePersistence()?.metadata?.model).toBe(
       "openrouter/google/gemini-3.8-flash",
     );
-    expect(omp.requireSession().features).toEqual([
+    expect(omp.requireSession().features.filter((feature) => feature.id === "fast_mode")).toEqual([
       expect.objectContaining({
         value: true,
         description: expect.stringMatching(/does not apply/i),
@@ -627,7 +627,7 @@ describe("OMP agent client and session", () => {
     omp.runtime().fastModeResult = { enabled: true, active: false };
     await session.setFeature?.("fast_mode", true);
     expect(omp.runtime().setFastModeRequests).toEqual([true]);
-    expect(session.features).toEqual([
+    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([
       expect.objectContaining({
         id: "fast_mode",
         value: true,
@@ -648,11 +648,11 @@ describe("OMP agent client and session", () => {
     } = omp.runtime().state;
     omp.runtime().state = olderState;
     await session.getRuntimeInfo();
-    expect(session.features).toEqual([]);
+    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([]);
     await expect(session.setFeature?.("fast_mode", true)).rejects.toThrow(/unavailable/i);
     omp.runtime().state = { ...olderState, fastModeEnabled: false, fastModeActive: false };
     await session.getRuntimeInfo();
-    expect(session.features).toHaveLength(1);
+    expect(session.features.filter((feature) => feature.id === "fast_mode")).toHaveLength(1);
   });
 
   test("switching model refreshes whether Fast applies", async () => {
@@ -661,7 +661,9 @@ describe("OMP agent client and session", () => {
     const session = omp.requireSession();
     omp.runtime().fastModeResult = { enabled: true, active: true };
     await session.setFeature?.("fast_mode", true);
-    expect(session.features).toEqual([expect.objectContaining({ value: true })]);
+    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([
+      expect.objectContaining({ value: true }),
+    ]);
 
     omp.runtime().setModelResult = { provider: "openrouter", id: "other/model" };
     omp.runtime().queueStateReports([
@@ -673,7 +675,7 @@ describe("OMP agent client and session", () => {
       },
     ]);
     await session.setModel?.("openrouter/other/model");
-    expect(session.features).toEqual([
+    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([
       expect.objectContaining({
         value: true,
         description: expect.stringMatching(/does not apply/i),
@@ -1465,6 +1467,10 @@ describe("OMP agent client and session", () => {
       value: "default",
       options: [
         { id: "default", label: "Default" },
+        { id: "Proactive" },
+        { id: "Concise" },
+        { id: "Explanatory" },
+        { id: "Learning" },
         { id: "ELI5", label: "ELI5", description: "keep it simple pls" },
       ],
     });
@@ -1478,8 +1484,8 @@ describe("OMP agent client and session", () => {
     expect(relaunch?.argv).toContain("yolo");
     expect(outputStyleFeature()?.value).toBe("ELI5");
 
-    await expect(session.setFeature?.("output_style", "Explanatory")).rejects.toThrow(
-      "OMP output style 'Explanatory' is not available",
+    await expect(session.setFeature?.("output_style", "Pirate")).rejects.toThrow(
+      "OMP output style 'Pirate' is not available",
     );
     expect(omp.runtimeLaunches()).toHaveLength(2);
   });
@@ -1490,6 +1496,32 @@ describe("OMP agent client and session", () => {
     });
     await omp.start({ featureValues: { output_style: "ELI5" } });
     expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("# Output style: ELI5\n\nSmall words.");
+  });
+
+  test("offers Paseo's built-in styles, and a custom style of the same name replaces one", async () => {
+    const builtin = new OmpHarness();
+    await builtin.start({ featureValues: { output_style: "Concise" } });
+    expect(builtin.runtimeLaunches()[0]?.systemPrompt).toMatch(
+      /^# Output style: Concise\n\nKeep replies short\./,
+    );
+
+    const shadowed = new OmpHarness({
+      outputStyles: [{ name: "Concise", description: "Mine", body: "Three words max." }],
+    });
+    await shadowed.start({ featureValues: { output_style: "Concise" } });
+    expect(shadowed.runtimeLaunches()[0]?.systemPrompt).toBe(
+      "# Output style: Concise\n\nThree words max.",
+    );
+    const options = shadowed
+      .requireSession()
+      .features.find((feature) => feature.id === "output_style");
+    expect(options?.type === "select" ? options.options.map((option) => option.id) : []).toEqual([
+      "default",
+      "Proactive",
+      "Explanatory",
+      "Learning",
+      "Concise",
+    ]);
   });
 
   describe("command refresh", () => {
