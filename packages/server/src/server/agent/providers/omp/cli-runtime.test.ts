@@ -1,11 +1,29 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
 
+import {
+  OmpAccountRoutingRefusedError,
+  parseOmpCapabilityProbe,
+} from "./account-routing-bridge.js";
 import { OmpCliRuntime } from "./cli-runtime.js";
 import type { OmpRuntimeLaunch } from "./runtime.js";
+import {
+  FakeOmpChild,
+  type FakeOmpChildOptions,
+  ROUTING_MODEL,
+  ROUTING_T0,
+  routingAccount,
+  routingBlockedCatalog,
+  routingCatalog,
+  routingHost,
+  routingRef,
+} from "./test-utils/fake-omp.js";
 
 type OmpChild = ChildProcessWithoutNullStreams & {
   stdin: PassThrough;
@@ -512,6 +530,110 @@ describe("OMP CLI runtime", () => {
     ]);
   });
 
+  test("login sends the provider id, streams UI requests, and waits past the control timeout", async () => {
+    vi.useFakeTimers();
+    const child = createOmpChild();
+    const pending = capturePendingCommand(child, "login");
+    const session = await createRuntime(child, [], { requestTimeoutMs: 100 }).startSession({
+      cwd: "/workspace/project",
+      protocolMode: "rpc",
+      noSession: true,
+    });
+    const events: unknown[] = [];
+    session.onEvent((event) => events.push(event));
+    try {
+      const login = session.login("anthropic");
+      const command = await pending;
+      expect(withoutRequestId(command)).toEqual({ type: "login", providerId: "anthropic" });
+      child.stdout.write(
+        `${JSON.stringify({ type: "extension_ui_request", id: "u1", method: "open_url", url: "https://claude.example/a" })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(101);
+      expect(events).toEqual([
+        expect.objectContaining({ type: "extension_ui_request", method: "open_url" }),
+      ]);
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: "login", success: true, data: { providerId: "anthropic" } })}\n`,
+      );
+      await expect(login).resolves.toMatchObject({ kind: "stored", outcome: undefined });
+    } finally {
+      vi.useRealTimers();
+      await session.close();
+    }
+  });
+
+  test("login passes the add-only guard and maps OMP's outcome and refusal; accounts list read-only", async () => {
+    const child = createOmpChild();
+    const commands: Record<string, unknown>[] = [];
+    const listing = {
+      success: true,
+      data: {
+        accounts: [
+          {
+            credentialId: 7,
+            provider: "anthropic",
+            label: "a",
+            detail: "d",
+            type: "oauth",
+            active: true,
+          },
+        ],
+      },
+    };
+    const logins: Array<Record<string, unknown>> = [
+      {
+        success: true,
+        data: { providerId: "anthropic", outcome: "added", rowId: 9, email: "b@x" },
+      },
+      {
+        success: false,
+        error: "credential_exists",
+        data: { code: "credential_exists", rowId: 7, email: "a@x" },
+      },
+      { success: false, error: "denied" },
+    ];
+    onOmpCommand(child, (command) => {
+      if (command.type !== "login" && command.type !== "get_logout_accounts") return;
+      commands.push(command);
+      const reply = command.type === "login" ? logins.shift() : listing;
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: command.type, ...reply })}\n`,
+      );
+    });
+    const session = await createRuntime(child).startSession({
+      cwd: "/workspace/project",
+      protocolMode: "rpc",
+      noSession: true,
+    });
+    try {
+      await expect(session.getLogoutAccounts("anthropic")).resolves.toEqual([
+        { credentialId: 7, label: "a", type: "oauth" },
+      ]);
+      await expect(session.login("anthropic", { existing: "refuse" })).resolves.toEqual({
+        kind: "stored",
+        outcome: "added",
+        rowId: 9,
+        email: "b@x",
+        orgName: undefined,
+      });
+      await expect(session.login("anthropic", { existing: { replaceRowId: 7 } })).resolves.toEqual({
+        kind: "credential_exists",
+        rowId: 7,
+        email: "a@x",
+        orgName: undefined,
+      });
+      await expect(session.login("anthropic")).rejects.toThrow("denied");
+      expect(commands.map(withoutRequestId)).toEqual([
+        { type: "get_logout_accounts", providerId: "anthropic" },
+        { type: "login", providerId: "anthropic", existing: "refuse" },
+        { type: "login", providerId: "anthropic", existing: { replaceRowId: 7 } },
+        { type: "login", providerId: "anthropic" },
+      ]);
+    } finally {
+      await session.close();
+    }
+  });
+
   test("compact waits beyond the control-plane timeout for a late response", async () => {
     vi.useFakeTimers();
     const child = createOmpChild();
@@ -719,5 +841,744 @@ describe("OMP CLI runtime", () => {
     exitOnCommand(child, "abort");
 
     await expect(session.abort()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Host-owned account routing over real JSONL pipes, against the real routing authority.
+// ---------------------------------------------------------------------------------------------
+
+const OTHER_NAMESPACE = "22222222-2222-4222-8222-222222222222";
+
+async function startManaged(
+  host: ReturnType<typeof routingHost>,
+  childOptions: FakeOmpChildOptions = {},
+  routing: { agentId?: string } = { agentId: "agent-1" },
+  probe: { complete: boolean; version: number } = { complete: true, version: 1 },
+) {
+  const child = new FakeOmpChild(childOptions);
+  const launches: OmpRuntimeLaunch[] = [];
+  const probes: OmpRuntimeLaunch[] = [];
+  const runtime = new OmpCliRuntime({
+    logger: pino({ level: "silent" }),
+    command: ["omp"],
+    spawnProcess: (launch) => {
+      launches.push(launch);
+      return child.process;
+    },
+    probeCapabilities: async (launch) => {
+      probes.push(launch);
+      return probe;
+    },
+  });
+  const session = await runtime.startSession({
+    cwd: "/workspace/project",
+    routing: { authority: host.authority, ...routing },
+  });
+  return { child, launches, probes, session };
+}
+
+function admitRequest(
+  host: ReturnType<typeof routingHost>,
+  runtimeInstanceId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const n = String(overrides.n ?? "1");
+  return {
+    type: "account.routing.admit.request",
+    id: `ar-${runtimeInstanceId}-${n}`,
+    hostEpoch: host.authority.hostEpoch,
+    runtimeInstanceId,
+    operationId: `op-${n}`,
+    attemptId: `attempt-${n}`,
+    sessionId: "native-session-1",
+    purpose: "main",
+    provider: "anthropic",
+    modelId: ROUTING_MODEL,
+    requestGeneration: 1,
+    catalog: routingCatalog(runtimeInstanceId, [routingAccount(1), routingAccount(2)], {
+      catalogRevision: 1,
+      observedAt: host.clock.time,
+    }),
+    ...overrides,
+  };
+}
+
+async function admission(
+  child: FakeOmpChild,
+  host: ReturnType<typeof routingHost>,
+  runtimeInstanceId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const request = admitRequest(host, runtimeInstanceId, overrides);
+  child.emit(request);
+  const response = await child.waitForFrame(
+    "account.routing.admit.response",
+    (frame) => frame.id === request.id,
+  );
+  return { request, decision: response.decision as Record<string, unknown> };
+}
+
+function runtimeInstanceOf(child: FakeOmpChild): string {
+  return String(child.framesOfType("account.routing.configure")[0]?.runtimeInstanceId);
+}
+
+function activeRequests(host: ReturnType<typeof routingHost>) {
+  return host.authority.snapshot().activeRequests;
+}
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+describe("OMP host account routing", () => {
+  test("a managed launch is marked, probed first, configured, and attached to the authority", async () => {
+    const host = routingHost();
+    const { child, launches, probes } = await startManaged(host);
+    const configure = child.framesOfType("account.routing.configure")[0];
+
+    expect(probes).toHaveLength(1);
+    expect(launches[0]?.env?.OMP_HOST_ACCOUNT_ROUTING).toBe("1");
+    expect(configure).toMatchObject({
+      version: 1,
+      hostEpoch: host.authority.hostEpoch,
+      scope: "host-owned",
+      provider: "anthropic",
+      includedOnly: true,
+    });
+    expect(typeof configure.runtimeInstanceId).toBe("string");
+    expect(host.authority.snapshot().capability.status).toBe("supported");
+    expect(host.authority.snapshot().accounts.map((a) => a.ref.nativeRowId)).toEqual([1, 2]);
+  });
+
+  test("accepts OMP's own billing shape: an absent reason and native reason names", async () => {
+    const host = routingHost();
+    const nativeCatalog = (runtimeInstanceId: string) => {
+      const catalog = JSON.parse(
+        JSON.stringify(
+          routingCatalog(runtimeInstanceId, [
+            routingAccount(1),
+            routingAccount(2),
+            routingAccount(3),
+          ]),
+        ),
+      );
+      // OMP omits `reason` when there is none and uses its own reason vocabulary.
+      delete catalog.accounts[0].billing.reason;
+      catalog.accounts[1].billing = {
+        state: "unknown",
+        observedAt: null,
+        validUntil: null,
+        source: null,
+        sourceRevision: null,
+        reason: "no_evidence",
+      };
+      catalog.accounts[2].billing = { ...catalog.accounts[1].billing, reason: "conflict" };
+      return catalog;
+    };
+    await startManaged(host, {
+      configure: (command) => ({ catalogs: [nativeCatalog(String(command.runtimeInstanceId))] }),
+    });
+
+    const snapshot = host.authority.snapshot();
+    expect(snapshot.capability.status).toBe("supported");
+    expect(
+      snapshot.accounts.map((a) => [a.ref.nativeRowId, a.billing.state, a.billing.reason]),
+    ).toEqual([
+      [1, "disabled", null],
+      [2, "unknown", null],
+      [3, "unknown", "conflicting"],
+    ]);
+  });
+
+  test("frames the child sends in the same burst as its configure reply are queued, not lost", async () => {
+    const host = routingHost();
+    let runtimeInstanceId = "";
+    const { child } = await startManaged(host, {
+      afterConfigure: (id) => {
+        runtimeInstanceId = id;
+        return [admitRequest(host, id)];
+      },
+    });
+
+    const response = await child.waitForFrame("account.routing.admit.response");
+    expect(response).toMatchObject({
+      id: `ar-${runtimeInstanceId}-1`,
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      decision: { kind: "admit", accountRef: routingRef(1) },
+    });
+    // The wire decision is exactly native's shape: no host-only fields leak.
+    expect(Object.keys(response.decision as object).sort()).toEqual([
+      "accountRef",
+      "admissionId",
+      "kind",
+      "policyRevision",
+      "selectionGeneration",
+    ]);
+  });
+
+  test("a child that refuses configure fails the launch closed and registers nothing", async () => {
+    const host = routingHost();
+    const child = new FakeOmpChild({ configure: () => ({ error: "unsupported_runtime" }) });
+    const runtime = new OmpCliRuntime({
+      logger: pino({ level: "silent" }),
+      command: ["omp"],
+      spawnProcess: () => child.process,
+      probeCapabilities: async () => ({ complete: true, version: 1 }),
+    });
+
+    await expect(
+      runtime.startSession({
+        cwd: "/workspace/project",
+        routing: { authority: host.authority, agentId: "agent-1" },
+      }),
+    ).rejects.toMatchObject({ code: "unsupported_runtime" });
+    expect(host.authority.snapshot().capability.status).toBe("unknown");
+    expect(child.framesOfType("account.routing.admit.response")).toEqual([]);
+  });
+
+  test.each([
+    ["incomplete coverage", { completeCoverage: false }],
+    ["forbidden dispatch", { modelDispatch: "forbidden" }],
+  ])("configure reporting %s is refused", async (_name, reply) => {
+    const host = routingHost();
+    const child = new FakeOmpChild({ configure: () => reply });
+    const runtime = new OmpCliRuntime({
+      logger: pino({ level: "silent" }),
+      command: ["omp"],
+      spawnProcess: () => child.process,
+      probeCapabilities: async () => ({ complete: true, version: 1 }),
+    });
+
+    const start = runtime.startSession({
+      cwd: "/workspace/project",
+      routing: { authority: host.authority, agentId: "agent-1" },
+    });
+    await expect(start).rejects.toBeInstanceOf(OmpAccountRoutingRefusedError);
+    expect(host.authority.snapshot().capability.status).toBe("unknown");
+  });
+
+  test("a binary whose probe is incomplete launches unmarked and reports the capability unsupported", async () => {
+    const host = routingHost();
+    const { child, launches, session } = await startManaged(
+      host,
+      {},
+      { agentId: "agent-1" },
+      { complete: false, version: 1 },
+    );
+
+    expect(launches[0]?.env?.OMP_HOST_ACCOUNT_ROUTING).toBeUndefined();
+    expect(child.framesOfType("account.routing.configure")).toEqual([]);
+    expect(host.authority.snapshot().capability).toMatchObject({ status: "unsupported" });
+
+    await session.close();
+    expect(host.authority.snapshot().capability.status).toBe("unknown");
+  });
+
+  test.each([
+    ["old binary, empty output", ""],
+    ["not JSON", "usage: omp [options]"],
+    ["missing coverage fields", JSON.stringify({ version: 1, provider: "anthropic" })],
+    [
+      "completeCoverage false",
+      JSON.stringify({
+        version: 1,
+        provider: "anthropic",
+        managedAccountRouting: {
+          modelDispatch: "allowed",
+          completeCoverage: false,
+          purposes: ["model-dispatch", "metadata", "usage-refresh"],
+          sourceIdentity: "v1",
+          exactUsageRefresh: "v1",
+        },
+      }),
+    ],
+    [
+      "metadata mode document",
+      JSON.stringify({
+        version: 1,
+        provider: "anthropic",
+        managedAccountRouting: {
+          modelDispatch: "forbidden",
+          completeCoverage: false,
+          purposes: ["model-dispatch", "metadata", "usage-refresh"],
+          sourceIdentity: "v1",
+          exactUsageRefresh: "v1",
+        },
+      }),
+    ],
+  ])("capability probe treats %s as incomplete", (_name, stdout) => {
+    expect(parseOmpCapabilityProbe(stdout).complete).toBe(false);
+  });
+
+  test("capability probe accepts the native version-1 document", () => {
+    const stdout = `${JSON.stringify({
+      version: 1,
+      provider: "anthropic",
+      managedAccountRouting: {
+        modelDispatch: "allowed",
+        completeCoverage: true,
+        purposes: ["model-dispatch", "metadata", "usage-refresh"],
+        sourceIdentity: "v1",
+        exactUsageRefresh: "v1",
+      },
+      build: { version: null },
+    })}\n`;
+    expect(parseOmpCapabilityProbe(stdout)).toEqual({ complete: true, version: 1 });
+  });
+
+  test("probeConfigured runs the configured binary: complete, old (exit code), and missing", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "omp-probe-"));
+    try {
+      const doc = JSON.stringify({
+        version: 1,
+        provider: "anthropic",
+        managedAccountRouting: {
+          modelDispatch: "allowed",
+          completeCoverage: true,
+          purposes: ["model-dispatch", "metadata", "usage-refresh"],
+          sourceIdentity: "v1",
+          exactUsageRefresh: "v1",
+        },
+        build: { version: null },
+      });
+      const fake = (name: string, body: string) => {
+        const file = path.join(dir, name);
+        writeFileSync(file, `#!/bin/sh\n${body}\n`);
+        chmodSync(file, 0o755);
+        return file;
+      };
+      const probe = (argv0: string) =>
+        new OmpCliRuntime({
+          logger: pino({ level: "silent" }),
+          runtimeSettings: { command: { mode: "replace", argv: [argv0] } },
+        }).probeConfigured();
+      await expect(probe(fake("new", `echo '${doc}'`))).resolves.toEqual({
+        complete: true,
+        version: 1,
+      });
+      await expect(probe(fake("old", "echo unknown option >&2; exit 2"))).resolves.toEqual({
+        complete: false,
+        version: 0,
+      });
+      await expect(probe(path.join(dir, "missing"))).resolves.toEqual({
+        complete: false,
+        version: 0,
+        unavailable: true,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an agentless helper is marked metadata-only, never probed or configured", async () => {
+    const host = routingHost();
+    const { child, launches, probes } = await startManaged(host, {}, {});
+
+    expect(launches[0]?.env?.OMP_HOST_ACCOUNT_ROUTING).toBe("metadata");
+    expect(probes).toEqual([]);
+    expect(child.framesOfType("account.routing.configure")).toEqual([]);
+    expect(host.authority.snapshot().capability.status).toBe("unknown");
+  });
+
+  test("an independent launch carries no marker, no probe and no routing frames", async () => {
+    const child = new FakeOmpChild();
+    const launches: OmpRuntimeLaunch[] = [];
+    const probe = vi.fn();
+    const runtime = new OmpCliRuntime({
+      logger: pino({ level: "silent" }),
+      command: ["omp"],
+      spawnProcess: (launch) => {
+        launches.push(launch);
+        return child.process;
+      },
+      probeCapabilities: probe,
+    });
+
+    const session = await runtime.startSession({ cwd: "/workspace/project" });
+    await session.getState();
+
+    expect(launches[0]?.env?.OMP_HOST_ACCOUNT_ROUTING).toBeUndefined();
+    expect(probe).not.toHaveBeenCalled();
+    expect(child.received.map((frame) => frame.type)).toEqual(["get_state"]);
+  });
+
+  test("a manual selection mid-request moves the next call, not the one in flight, and sends no command", async () => {
+    const host = routingHost();
+    const { child } = await startManaged(host);
+    const runtimeInstanceId = runtimeInstanceOf(child);
+
+    const first = await admission(child, host, runtimeInstanceId, { n: 1 });
+    expect(first.decision).toMatchObject({ kind: "admit", accountRef: routingRef(1) });
+    child.emit({
+      type: "account.routing.started",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      admissionId: first.decision.admissionId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      modelId: ROUTING_MODEL,
+      accountRef: routingRef(1),
+      selectionGeneration: first.decision.selectionGeneration,
+      startedAt: ROUTING_T0 + 5,
+    });
+    await flush();
+    const framesBefore = child.received.length;
+
+    const committed = await host.authority.mutate({
+      expectedPolicyRevision: host.authority.snapshot().policy.policyRevision,
+      command: { kind: "select", account: routingRef(2) },
+    });
+    expect(committed.error).toBeNull();
+    await flush();
+
+    // The request in flight is still attributed to the account that serves it.
+    expect(activeRequests(host)).toEqual([
+      expect.objectContaining({
+        admissionId: first.decision.admissionId,
+        accountRef: routingRef(1),
+        phase: "serving",
+      }),
+    ]);
+    // Selecting moved policy only: nothing was written to the child, no pin, no restart.
+    expect(child.received.length).toBe(framesBefore);
+
+    const second = await admission(child, host, runtimeInstanceId, { n: 2, requestGeneration: 2 });
+    expect(second.decision).toMatchObject({ kind: "admit", accountRef: routingRef(2) });
+
+    // The stale outcome for A settles A's binding and does not mutate the selection.
+    child.emit({
+      type: "account.routing.outcome",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      admissionId: first.decision.admissionId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      modelId: ROUTING_MODEL,
+      accountRef: routingRef(1),
+      selectionGeneration: first.decision.selectionGeneration,
+      startedAt: ROUTING_T0 + 5,
+      finishedAt: ROUTING_T0 + 50,
+      code: "success",
+      dispatch: "dispatched",
+      replaySafe: false,
+      refusalReason: null,
+      retryAfterMs: null,
+      quotaBlocks: [],
+      windows: [],
+    });
+    await flush();
+    const state = host.authority.snapshot();
+    expect(state.policy.current).toEqual(routingRef(2));
+    expect(state.activeRequests.map((r) => r.accountRef)).toEqual([routingRef(2)]);
+    expect(
+      child.received
+        .map((frame) => String(frame.type))
+        .filter((type) => type.startsWith("account.routing.") === false),
+    ).toEqual([]);
+  });
+
+  test("a model-scoped quota block holds that model only", async () => {
+    const host = routingHost();
+    const { child } = await startManaged(host);
+    const runtimeInstanceId = runtimeInstanceOf(child);
+    for (const command of [
+      { kind: "select", account: routingRef(1) },
+      { kind: "set_auto", enabled: false },
+    ] as const) {
+      const result = await host.authority.mutate({
+        expectedPolicyRevision: host.authority.snapshot().policy.policyRevision,
+        command,
+      });
+      expect(result.error).toBeNull();
+    }
+
+    const held = await admission(child, host, runtimeInstanceId, { n: 1 });
+    child.emit({
+      type: "account.routing.outcome",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      admissionId: held.decision.admissionId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      modelId: ROUTING_MODEL,
+      accountRef: routingRef(1),
+      selectionGeneration: held.decision.selectionGeneration,
+      startedAt: ROUTING_T0 + 1,
+      finishedAt: ROUTING_T0 + 2,
+      code: "quota_exhausted",
+      dispatch: "dispatched",
+      replaySafe: false,
+      refusalReason: null,
+      retryAfterMs: null,
+      quotaBlocks: [
+        {
+          limitId: "weekly-sonnet",
+          scope: { kind: "model", modelId: ROUTING_MODEL },
+          resetAt: ROUTING_T0 + 3_600_000,
+          observedAt: ROUTING_T0 + 2,
+          source: "provider-rejection",
+          confirmed: true,
+        },
+      ],
+      windows: [],
+    });
+    await flush();
+
+    const sameModel = await admission(child, host, runtimeInstanceId, { n: 2 });
+    const otherModel = await admission(child, host, runtimeInstanceId, {
+      n: 3,
+      modelId: "claude-haiku-4-5",
+    });
+    expect(sameModel.decision).toMatchObject({ kind: "wait", reason: "auto_disabled" });
+    expect(otherModel.decision).toMatchObject({ kind: "admit", accountRef: routingRef(1) });
+  });
+
+  test("a quota wait wakes with a resume hint, then the call re-admits; a cancelled wait never wakes", async () => {
+    const host = routingHost();
+    const resetAt = ROUTING_T0 + 60_000;
+    const blockedCatalog = (runtimeInstanceId: string, revision: number, blocked: boolean) =>
+      routingBlockedCatalog(runtimeInstanceId, revision, blocked ? resetAt : null, host.clock.time);
+    const { child } = await startManaged(host, {
+      catalogs: (id) => [blockedCatalog(id, 1, true)],
+    });
+    const runtimeInstanceId = runtimeInstanceOf(child);
+
+    const waiting = await admission(child, host, runtimeInstanceId, {
+      n: 1,
+      catalog: blockedCatalog(runtimeInstanceId, 1, true),
+    });
+    expect(waiting.decision).toMatchObject({
+      kind: "wait",
+      reason: "all_unavailable",
+      reconsiderAt: resetAt,
+    });
+    const waitId = String(waiting.decision.waitId);
+    child.emit({
+      type: "account.routing.paused",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      waitId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      modelId: ROUTING_MODEL,
+      reason: "all_unavailable",
+    });
+    await flush();
+    expect(host.authority.snapshot().pausedRequests.map((w) => w.waitId)).toEqual([waitId]);
+    expect(child.framesOfType("account.routing.resume")).toEqual([]);
+
+    // A second call waits too, then native cancels it: only the live wait may wake.
+    const doomed = await admission(child, host, runtimeInstanceId, {
+      n: 2,
+      catalog: blockedCatalog(runtimeInstanceId, 1, true),
+    });
+    child.emit({
+      type: "account.routing.cancel",
+      id: `ar-${runtimeInstanceId}-2`,
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      waitId: doomed.decision.waitId,
+      operationId: "op-2",
+      attemptId: "attempt-2",
+      sessionId: "native-session-1",
+    });
+    await flush();
+
+    host.clock.advance(60_000);
+    await flush();
+    const resumes = child.framesOfType("account.routing.resume");
+    expect(resumes).toEqual([
+      {
+        type: "account.routing.resume",
+        hostEpoch: host.authority.hostEpoch,
+        runtimeInstanceId,
+        waitId,
+      },
+    ]);
+
+    // Resume is a hint, not a grant: the child asks again, retiring the wait.
+    const again = await admission(child, host, runtimeInstanceId, {
+      n: 3,
+      operationId: "op-1",
+      attemptId: "attempt-3",
+      previousWaitId: waitId,
+      catalog: blockedCatalog(runtimeInstanceId, 2, false),
+    });
+    expect(again.decision).toMatchObject({ kind: "admit" });
+    expect(host.authority.snapshot().pausedRequests.map((w) => w.waitId)).not.toContain(
+      doomed.decision.waitId,
+    );
+  });
+
+  test("cancelling an admission still being decided sends no response and leaves nothing bound", async () => {
+    const host = routingHost();
+    const gate = Promise.withResolvers<void>();
+    const { child } = await startManaged(host, {
+      rank: async () => {
+        await gate.promise;
+        return { error: "metadata_pending" };
+      },
+    });
+    const runtimeInstanceId = runtimeInstanceOf(child);
+
+    const request = admitRequest(host, runtimeInstanceId);
+    child.emit(request);
+    await child.waitForFrame("account.routing.rank");
+    child.emit({
+      type: "account.routing.cancel",
+      id: request.id,
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      operationId: request.operationId,
+      attemptId: request.attemptId,
+      sessionId: request.sessionId,
+    });
+    await flush();
+    gate.resolve();
+    await flush();
+
+    expect(child.framesOfType("account.routing.admit.response")).toEqual([]);
+    expect(activeRequests(host)).toEqual([]);
+  });
+
+  test("a catalog from a namespace the child did not declare is refused as an inaccessible source", async () => {
+    const host = routingHost();
+    const { child } = await startManaged(host);
+    const runtimeInstanceId = runtimeInstanceOf(child);
+
+    const { decision } = await admission(child, host, runtimeInstanceId, {
+      catalog: routingCatalog(runtimeInstanceId, [routingAccount(1, {}, OTHER_NAMESPACE)], {
+        storeNamespace: OTHER_NAMESPACE,
+      }),
+    });
+
+    expect(decision).toEqual({ kind: "refuse", reason: "source_inaccessible" });
+    expect(activeRequests(host)).toEqual([]);
+  });
+
+  test("a selection in a namespace this runtime cannot open refuses instead of substituting", async () => {
+    const host = routingHost();
+    const owner = await startManaged(host, {}, { agentId: "agent-1" });
+    const selected = await host.authority.mutate({
+      expectedPolicyRevision: host.authority.snapshot().policy.policyRevision,
+      command: { kind: "select", account: routingRef(1) },
+    });
+    expect(selected.error).toBeNull();
+    const disjoint = await startManaged(
+      host,
+      {
+        configure: () => ({ accessibleNamespaces: [OTHER_NAMESPACE] }),
+        catalogs: (id) => [
+          routingCatalog(id, [routingAccount(1, {}, OTHER_NAMESPACE)], {
+            storeNamespace: OTHER_NAMESPACE,
+          }),
+        ],
+      },
+      { agentId: "agent-2" },
+    );
+    const runtimeInstanceId = runtimeInstanceOf(disjoint.child);
+
+    const { decision } = await admission(disjoint.child, host, runtimeInstanceId, {
+      catalog: routingCatalog(runtimeInstanceId, [routingAccount(1, {}, OTHER_NAMESPACE)], {
+        storeNamespace: OTHER_NAMESPACE,
+      }),
+    });
+
+    // The lookalike row 1 in the other store is never substituted, and the choice does not move.
+    expect(decision).toEqual({ kind: "refuse", reason: "source_inaccessible" });
+    expect(host.authority.snapshot().policy.current).toEqual(routingRef(1));
+    expect(host.authority.snapshot().capability.status).toBe("supported");
+    expect(owner.child.framesOfType("account.routing.admit.response")).toEqual([]);
+  });
+
+  test("an outcome naming another account does not settle the admission", async () => {
+    const host = routingHost();
+    const { child } = await startManaged(host);
+    const runtimeInstanceId = runtimeInstanceOf(child);
+    const granted = await admission(child, host, runtimeInstanceId);
+
+    child.emit({
+      type: "account.routing.outcome",
+      hostEpoch: host.authority.hostEpoch,
+      runtimeInstanceId,
+      admissionId: granted.decision.admissionId,
+      operationId: "op-1",
+      attemptId: "attempt-1",
+      sessionId: "native-session-1",
+      modelId: ROUTING_MODEL,
+      accountRef: routingRef(2),
+      selectionGeneration: granted.decision.selectionGeneration,
+      startedAt: null,
+      finishedAt: ROUTING_T0 + 1,
+      code: "cancelled",
+      dispatch: "not_dispatched",
+      replaySafe: true,
+      refusalReason: "cancelled",
+      retryAfterMs: null,
+      quotaBlocks: [],
+      windows: [],
+    });
+    await flush();
+
+    expect(activeRequests(host).map((r) => r.admissionId)).toEqual([granted.decision.admissionId]);
+  });
+
+  test("frames for another epoch or instance are ignored and answered with nothing", async () => {
+    const host = routingHost();
+    const { child } = await startManaged(host);
+    const runtimeInstanceId = runtimeInstanceOf(child);
+
+    child.emit(admitRequest(host, runtimeInstanceId, { hostEpoch: "stale-epoch", n: 1 }));
+    child.emit(admitRequest(host, "another-instance", { n: 2 }));
+    await flush();
+
+    expect(child.framesOfType("account.routing.admit.response")).toEqual([]);
+    expect(activeRequests(host)).toEqual([]);
+  });
+
+  test("a malformed admit request is refused by name so the model call cannot hang", async () => {
+    const host = routingHost();
+    const { child } = await startManaged(host);
+    const runtimeInstanceId = runtimeInstanceOf(child);
+
+    child.emit({ type: "account.routing.admit.request", id: "ar-bad", hostEpoch: "x" });
+    const response = await child.waitForFrame("account.routing.admit.response");
+
+    expect(response).toMatchObject({
+      id: "ar-bad",
+      decision: { kind: "refuse", reason: "host_unavailable" },
+    });
+    expect(runtimeInstanceId).not.toBe("");
+  });
+
+  test("closing the session detaches the runtime, clears transient work and keeps policy", async () => {
+    const host = routingHost();
+    const { child, session } = await startManaged(host);
+    const runtimeInstanceId = runtimeInstanceOf(child);
+    await admission(child, host, runtimeInstanceId);
+    const policy = host.authority.snapshot().policy;
+
+    await session.close();
+
+    const state = host.authority.snapshot();
+    expect(state.capability.status).toBe("unknown");
+    expect(state.activeRequests).toEqual([]);
+    expect(state.policy).toEqual(policy);
+  });
+
+  test("the child exiting detaches the runtime", async () => {
+    const host = routingHost();
+    const { child } = await startManaged(host);
+    await admission(child, host, runtimeInstanceOf(child));
+
+    child.exit(1);
+    await flush();
+
+    expect(activeRequests(host)).toEqual([]);
+    expect(host.authority.snapshot().capability.status).toBe("unknown");
   });
 });

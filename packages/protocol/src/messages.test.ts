@@ -1,8 +1,20 @@
 import { describe, expect, test } from "vitest";
 import {
+  AccountRoutingGetStateRequestSchema,
+  AccountRoutingGetStateResponseSchema,
+  AccountRoutingMutateRequestSchema,
+  AccountRoutingMutateResponseSchema,
+  AccountRoutingStateUpdateSchema,
+  AgentTimelineItemPayloadSchema,
   FileExplorerRequestSchema,
+  OmpAccountRoutingMutationSchema,
+  OmpAccountRoutingStateSchema,
   PaseoWorktreeArchiveRequestSchema,
   parseServerInfoStatusPayload,
+  RoutingRefusalCodeSchema,
+  RoutingWaitReasonSchema,
+  UsageRoutingSchema,
+  UsageSubscriptionSchema,
   SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WorkspaceProjectDescriptorPayloadSchema,
@@ -518,5 +530,391 @@ describe("viewed timeline subscription messages", () => {
         },
       },
     });
+  });
+});
+
+test("agent messages are an optional semantic payload on existing tool rows", () => {
+  const legacy = {
+    type: "tool_call",
+    callId: "delivery",
+    name: "agent_message",
+    status: "completed",
+    error: null,
+    detail: { type: "plain_text", text: "Done" },
+  };
+  const agentMessage = {
+    event: "finished",
+    sender: { id: "server::worker", title: "Reviewer" },
+    text: "Done",
+  };
+  expect(AgentTimelineItemPayloadSchema.parse(legacy)).toEqual(legacy);
+  expect(AgentTimelineItemPayloadSchema.parse({ ...legacy, agentMessage })).toEqual({
+    ...legacy,
+    agentMessage,
+  });
+  expect(
+    AgentTimelineItemPayloadSchema.safeParse({
+      ...legacy,
+      agentMessage: { ...agentMessage, sender: { id: 42 } },
+    }).success,
+  ).toBe(false);
+});
+
+function accountRoutingState(overrides: Record<string, unknown> = {}) {
+  const accountRef = { storeNamespace: "store-a", nativeRowId: 7 };
+  return {
+    hostEpoch: "epoch-1",
+    stateSequence: 4,
+    policy: {
+      policyRevision: 2,
+      selectionGeneration: 3,
+      current: accountRef,
+      autoEnabled: true,
+      priorityOrder: [accountRef],
+      inclusion: [{ account: accountRef, included: true }],
+    },
+    capability: { status: "supported", reason: null },
+    catalog: { status: "loaded", authoritativeObservedAt: 100 },
+    accounts: [
+      {
+        ref: accountRef,
+        label: "Primary",
+        organizationLabel: "Example",
+        identityLabel: "primary@example.com",
+        organizationIdentityLabel: "Example",
+        available: true,
+        missing: false,
+        authoritativeObservedAt: 100,
+        quotaIdentity: { accountUuid: "account-uuid", organizationUuid: "org-uuid" },
+        subscriptionTier: { kind: "pro", observedAt: 100, source: "supported-login" },
+        absoluteAllowance: null,
+        windows: [
+          {
+            id: "five-hour",
+            label: "Five hours",
+            scope: { kind: "shared" },
+            usedFraction: 0.25,
+            resetAt: 200,
+            observedAt: 100,
+            validUntil: 300,
+            source: "usage-full",
+          },
+        ],
+        billing: {
+          state: "disabled",
+          observedAt: 100,
+          validUntil: 300,
+          source: null,
+          sourceRevision: null,
+          reason: null,
+        },
+        rank: {
+          method: "claude-native-window-pressure-v1",
+          version: 1,
+          modelId: "claude-sonnet",
+          modelFamily: "claude",
+          planGateApplies: true,
+          planEligibility: true,
+          billingEligibility: "eligible",
+          applicableLimitIds: ["five-hour"],
+          coverage: "complete",
+          unknownReasons: [],
+          usageMeasured: true,
+          primaryHot: false,
+          primaryUsed: 0.25,
+          secondaryUsed: null,
+          primaryRequiredDrain: 0.1,
+          secondaryRequiredDrain: null,
+        },
+        quotaBlocks: [
+          {
+            limitId: "five-hour",
+            scope: { kind: "shared" },
+            resetAt: 200,
+            observedAt: 100,
+            source: "native-usage",
+            confirmed: true,
+          },
+        ],
+        rankingCoverage: "complete",
+      },
+    ],
+    activeRequests: [
+      {
+        admissionId: "admission-1",
+        agentId: "agent-1",
+        nativeSessionId: "session-1",
+        model: "claude-sonnet",
+        accountRef,
+        selectionGeneration: 3,
+        phase: "serving",
+        observedAt: 100,
+      },
+    ],
+    lastServed: [{ agentId: "agent-1", accountRef, model: "claude-sonnet", servedAt: 100 }],
+    pausedRequests: [
+      {
+        waitId: "wait-1",
+        agentId: "agent-2",
+        nativeSessionId: "session-2",
+        model: "claude-sonnet",
+        reason: "metadata_pending",
+        nextCheckAt: 200,
+        requiresUserAction: false,
+        accountRef: null,
+        recoveredAt: null,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe("OMP account-routing messages", () => {
+  test("parses get, mutate, and retained update messages", () => {
+    const state = accountRoutingState();
+    const getRequest = {
+      type: "account.routing.get_state.request",
+      requestId: "routing-get-1",
+      subscribe: {},
+    };
+    const getResponse = {
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: getRequest.requestId,
+        state,
+        subscriptionId: "routing-subscription-1",
+      },
+    };
+    const update = {
+      type: "account.routing.state.update",
+      payload: {
+        subscriptionId: "routing-subscription-1",
+        state,
+      },
+    };
+    const commands = [
+      { kind: "select", account: { storeNamespace: "store-a", nativeRowId: 7 } },
+      { kind: "set_auto", enabled: false },
+      {
+        kind: "set_inclusion",
+        account: { storeNamespace: "store-a", nativeRowId: 7 },
+        included: false,
+      },
+      {
+        kind: "move_priority",
+        account: { storeNamespace: "store-a", nativeRowId: 7 },
+        direction: "down",
+      },
+    ] as const;
+
+    expect(AccountRoutingGetStateRequestSchema.parse(getRequest)).toEqual(getRequest);
+    expect(AccountRoutingGetStateResponseSchema.parse(getResponse)).toEqual(getResponse);
+    expect(
+      AccountRoutingGetStateResponseSchema.parse({
+        type: "account.routing.get_state.response",
+        payload: { requestId: "routing-get-2", state },
+      }),
+    ).toEqual({
+      type: "account.routing.get_state.response",
+      payload: { requestId: "routing-get-2", state },
+    });
+    expect(AccountRoutingStateUpdateSchema.parse(update)).toEqual(update);
+    expect(SessionInboundMessageSchema.parse(getRequest)).toEqual(getRequest);
+    expect(SessionOutboundMessageSchema.parse(getResponse)).toEqual(getResponse);
+    expect(SessionOutboundMessageSchema.parse(update)).toEqual(update);
+    expect(OmpAccountRoutingStateSchema.parse(state)).toEqual(state);
+
+    for (const command of commands) {
+      const request = {
+        type: "account.routing.mutate.request",
+        requestId: `routing-mutate-${command.kind}`,
+        expectedPolicyRevision: 2,
+        command,
+      };
+      const response = {
+        type: "account.routing.mutate.response",
+        payload: {
+          requestId: request.requestId,
+          state,
+          error:
+            command.kind === "select" ? { code: "conflict", message: "The policy changed." } : null,
+        },
+      };
+      expect(OmpAccountRoutingMutationSchema.parse(command)).toEqual(command);
+      expect(AccountRoutingMutateRequestSchema.parse(request)).toEqual(request);
+      expect(AccountRoutingMutateResponseSchema.parse(response)).toEqual(response);
+      expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+      expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
+    }
+  });
+
+  test("enforces structural numeric boundaries without repairing malformed state", () => {
+    const state = accountRoutingState();
+    expect(
+      OmpAccountRoutingStateSchema.safeParse({
+        ...state,
+        stateSequence: Number.MAX_SAFE_INTEGER + 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      OmpAccountRoutingStateSchema.safeParse({
+        ...state,
+        policy: {
+          ...state.policy,
+          current: { storeNamespace: "store-a", nativeRowId: 1.5 },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      OmpAccountRoutingStateSchema.safeParse({
+        ...state,
+        accounts: [
+          {
+            ...state.accounts[0],
+            windows: [{ ...state.accounts[0].windows[0], usedFraction: 1.1 }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      AccountRoutingMutateRequestSchema.safeParse({
+        type: "account.routing.mutate.request",
+        requestId: "routing-mutate-invalid",
+        expectedPolicyRevision: 1,
+        command: { kind: "unknown" },
+      }).success,
+    ).toBe(false);
+    expect(RoutingRefusalCodeSchema.parse("host_unavailable")).toBe("host_unavailable");
+    expect(RoutingWaitReasonSchema.parse("metadata_pending")).toBe("metadata_pending");
+  });
+});
+
+describe("usage routing metadata", () => {
+  test("routing accepts a null account ref for unknown state and rejects string row ids", () => {
+    const base = { state: "unknown", hostEpoch: "e", stateSequence: 0 };
+    expect(UsageRoutingSchema.safeParse({ ...base, accountRef: null }).success).toBe(true);
+    expect(
+      UsageRoutingSchema.safeParse({
+        ...base,
+        accountRef: { storeNamespace: "n", nativeRowId: "1" },
+      }).success,
+    ).toBe(false);
+  });
+
+  test("subscription keeps explicit nulls as unknown and rejects unknown sources", () => {
+    const nulls = { subscriptionType: null, rateLimitTier: null, observedAt: null };
+    expect(UsageSubscriptionSchema.parse({ ...nulls, source: "unknown" })).toEqual({
+      ...nulls,
+      source: "unknown",
+    });
+    expect(UsageSubscriptionSchema.safeParse({ ...nulls, source: "guess" }).success).toBe(false);
+  });
+});
+
+describe("OMP account login messages", () => {
+  test("parses start, status, and cancel requests and their responses", () => {
+    for (const op of ["start", "get_status", "cancel"] as const) {
+      expect(
+        SessionInboundMessageSchema.parse({
+          type: `account.routing.login.${op}.request`,
+          requestId: "r1",
+        }),
+      ).toMatchObject({ requestId: "r1" });
+      const response = SessionOutboundMessageSchema.parse({
+        type: `account.routing.login.${op}.response`,
+        payload: {
+          requestId: "r1",
+          status: { state: "failed", failure: "paste_code_unsupported", startedAt: 5 },
+          error: op === "start" ? "already_running" : null,
+        },
+      });
+      expect(response).toMatchObject({ payload: { status: { state: "failed" } } });
+    }
+  });
+
+  test("link flow: start mode, status phase and outcome, and the submit_code pair", () => {
+    const ref = { storeNamespace: "ns", nativeRowId: 7 };
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "account.routing.login.start.request",
+        requestId: "r1",
+        mode: "replace",
+        replaceAccount: ref,
+      }),
+    ).toMatchObject({ mode: "replace", replaceAccount: ref });
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        type: "account.routing.login.start.request",
+        requestId: "r1",
+        mode: "overwrite",
+      }).success,
+    ).toBe(false);
+
+    const status = {
+      state: "failed",
+      failure: "omp_failed",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "already_listed", label: "a@example.com", ref },
+    };
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "account.routing.login.start.response",
+        payload: { requestId: "r1", status, error: "invalid_replace_target" },
+      }),
+    ).toMatchObject({ payload: { status } });
+    const running = {
+      state: "running",
+      phase: "awaiting_browser",
+      authorizeUrl: "https://claude.ai/oauth/authorize?state=s",
+      pasteAccepted: true,
+    };
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "account.routing.login.get_status.response",
+        payload: { requestId: "r1", status: running, error: null },
+      }),
+    ).toMatchObject({ payload: { status: running } });
+
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "account.routing.login.submit_code.request",
+        requestId: "r2",
+        input: "abc#s",
+      }),
+    ).toMatchObject({ input: "abc#s" });
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        type: "account.routing.login.submit_code.request",
+        requestId: "r2",
+        input: "x".repeat(4097),
+      }).success,
+    ).toBe(false);
+    for (const error of ["not_waiting", "invalid_input", "wrong_login", "not_allowed", null]) {
+      expect(
+        SessionOutboundMessageSchema.parse({
+          type: "account.routing.login.submit_code.response",
+          payload: { requestId: "r2", status: { state: "running" }, error },
+        }),
+      ).toMatchObject({ payload: { error } });
+    }
+  });
+
+  test("rejects an unknown state and carries no credential fields", () => {
+    expect(() =>
+      SessionOutboundMessageSchema.parse({
+        type: "account.routing.login.get_status.response",
+        payload: { requestId: "r1", status: { state: "bogus" }, error: null },
+      }),
+    ).toThrow();
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "account.routing.login.get_status.response",
+      payload: {
+        requestId: "r1",
+        status: { state: "running", url: "https://x?code=secret", code: "secret" },
+        error: null,
+      },
+    });
+    expect(JSON.stringify(parsed)).not.toContain("secret");
   });
 });

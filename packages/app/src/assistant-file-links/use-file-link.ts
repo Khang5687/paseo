@@ -12,15 +12,24 @@ import {
 import {
   classifyForResolution,
   fetchDaemonResolution,
+  getAssistantFileLinkToken,
+  UnresolvedFileLinkError,
   type AssistantFileLinkResolution,
   type AssistantFileLinkSource,
 } from "./resolver";
 
 export interface UseFileLinkResult {
   target: InlinePathTarget | null;
+  /**
+   * The file this link names before any daemon lookup, or null when it is not a local file.
+   * An ambiguous token's real path is only known after `resolveFile`.
+   */
+  fileCandidate: InlinePathTarget | null;
   onHoverIn: () => void;
   onPress: () => void;
   open: (source: AssistantFileLinkSource, disposition: OpenFileDisposition) => void;
+  /** The link's file, looked up through the daemon when the token is ambiguous. */
+  resolveFile: () => Promise<InlinePathTarget>;
 }
 
 export interface AssistantFileLinkActions {
@@ -29,14 +38,21 @@ export interface AssistantFileLinkActions {
   canResolveFile(source: AssistantFileLinkSource): boolean;
 }
 
+interface AssistantFileLinkLookupKey {
+  query: string;
+  path: string;
+  lineStart: number | null;
+  lineEnd: number | null;
+}
+
 type AssistantFileLinkQueryKey = readonly [
   "assistantFileLink",
   string | null,
   string | null,
-  string,
+  AssistantFileLinkLookupKey | null,
 ];
 
-const DISABLED_QUERY_KEY = ["assistantFileLink", null, null, ""] as const;
+const DISABLED_QUERY_KEY = ["assistantFileLink", null, null, null] as const;
 
 export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult {
   const { t } = useTranslation();
@@ -59,26 +75,28 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
         ? assistantFileLinkQueryKey({
             serverId,
             workspaceRoot,
-            token: resolution.token,
+            resolution,
           })
         : DISABLED_QUERY_KEY,
     [resolution, serverId, workspaceRoot],
   );
 
+  const fetchLookup = useStableEvent(() => {
+    if (resolution.kind !== "needsLookup") {
+      throw new Error("Assistant file link lookup requested for a sync link.");
+    }
+    return fetchDaemonResolution({
+      ambiguousQuery: resolution.ambiguousQuery,
+      token: resolution.token,
+      target: resolution.target,
+      workspaceRoot,
+      getDirectorySuggestions: context.getDirectorySuggestions,
+    });
+  });
+
   const query = useQuery({
     queryKey,
-    queryFn: () => {
-      if (resolution.kind !== "needsLookup") {
-        throw new Error("Assistant file link lookup requested for a sync link.");
-      }
-      return fetchDaemonResolution({
-        ambiguousQuery: resolution.ambiguousQuery,
-        token: resolution.token,
-        target: resolution.target,
-        workspaceRoot,
-        getDirectorySuggestions: context.getDirectorySuggestions,
-      });
-    },
+    queryFn: fetchLookup,
     enabled: false,
     retry: 0,
     staleTime: Infinity,
@@ -103,14 +121,7 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
 
     void queryClient.prefetchQuery({
       queryKey,
-      queryFn: () =>
-        fetchDaemonResolution({
-          ambiguousQuery: resolution.ambiguousQuery,
-          token: resolution.token,
-          target: resolution.target,
-          workspaceRoot,
-          getDirectorySuggestions: context.getDirectorySuggestions,
-        }),
+      queryFn: fetchLookup,
       retry: 0,
       staleTime: Infinity,
     });
@@ -127,7 +138,32 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
     return query.data ?? null;
   }, [query.data, resolution]);
 
-  return useMemo(() => ({ target, onHoverIn, onPress, open }), [target, onHoverIn, onPress, open]);
+  const fileCandidate = useMemo(() => {
+    if (resolution.kind === "needsLookup") {
+      return resolution.target;
+    }
+    return resolution.value.kind === "file" ? resolution.value.target : null;
+  }, [resolution]);
+
+  const resolveFile = useStableEvent(async (): Promise<InlinePathTarget> => {
+    if (resolution.kind === "needsLookup") {
+      return queryClient.fetchQuery({
+        queryKey,
+        queryFn: fetchLookup,
+        retry: 0,
+        staleTime: Infinity,
+      });
+    }
+    if (resolution.value.kind === "file") {
+      return resolution.value.target;
+    }
+    throw new UnresolvedFileLinkError(getAssistantFileLinkToken(stableSource));
+  });
+
+  return useMemo(
+    () => ({ target, fileCandidate, onHoverIn, onPress, open, resolveFile }),
+    [target, fileCandidate, onHoverIn, onPress, open, resolveFile],
+  );
 }
 
 export function useAssistantFileLinkActions(): AssistantFileLinkActions {
@@ -179,7 +215,7 @@ function openAssistantFileLink(input: {
   const capturedQueryKey = assistantFileLinkQueryKey({
     serverId: capturedConfig.serverId,
     workspaceRoot: capturedConfig.workspaceRoot,
-    token: capturedResolution.token,
+    resolution: capturedResolution,
   });
 
   const run = async () => {
@@ -245,9 +281,19 @@ function useStableSource(source: AssistantFileLinkSource): AssistantFileLinkSour
 function assistantFileLinkQueryKey(input: {
   serverId?: string;
   workspaceRoot?: string;
-  token: string;
+  resolution: Extract<AssistantFileLinkResolution, { kind: "needsLookup" }>;
 }): AssistantFileLinkQueryKey {
-  return ["assistantFileLink", input.serverId ?? null, input.workspaceRoot ?? null, input.token];
+  return [
+    "assistantFileLink",
+    input.serverId ?? null,
+    input.workspaceRoot ?? null,
+    {
+      query: input.resolution.ambiguousQuery,
+      path: input.resolution.target.path,
+      lineStart: input.resolution.target.lineStart ?? null,
+      lineEnd: input.resolution.target.lineEnd ?? null,
+    },
+  ];
 }
 
 async function dispatchResolvedLink(input: {

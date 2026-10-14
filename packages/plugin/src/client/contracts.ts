@@ -18,6 +18,39 @@ import type {
   PluginCleanup,
 } from "../contracts.js";
 
+/** One encoded raster image. PNG, JPEG, or WebP; at most 16 MiB decoded from base64. */
+export interface PluginSkinImage {
+  base64: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+}
+
+export interface PluginSkinContribution {
+  id: string;
+  /** Display name, 1–60 characters. */
+  name: string;
+  /** Cache key. Change it when the image changes so devices fetch the new bytes. */
+  version: string;
+  /** Whether the art reads as light or dark. Used for gallery filtering. */
+  appearance: "light" | "dark";
+  /** Point of the image to keep in view when it is cropped, each axis 0–1. Defaults to the center. */
+  focal?: { x: number; y: number };
+  /**
+   * How strongly the art shows per area, each 0–1: `home` (new workspace), `workspace` (agent
+   * chat), `utility` (settings, sessions, schedules). Paseo still enforces text contrast.
+   */
+  intensity?: { home?: number; workspace?: number; utility?: number };
+  /**
+   * Relative luminance (WCAG, 0–1) of the darkest and brightest 1% of pixels. When present Paseo
+   * lets more of the art show; when absent it assumes pure black and pure white.
+   */
+  luminance?: { low: number; high: number };
+  attribution?: { author?: string; license?: string; sourceUrl?: string };
+  /** A small preview for the gallery, ideally about 512×288. */
+  loadThumbnail?: () => Promise<PluginSkinImage>;
+  /** The full image. Paseo downsizes it for the device before caching. */
+  loadImage: () => Promise<PluginSkinImage>;
+}
+
 export interface PluginHostProps {
   theme: PluginTheme;
   host: {
@@ -144,6 +177,18 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addComposerPill(contribution: PluginComposerPillContribution): PluginButtonRegistration;
   addAttachmentSource(contribution: PluginAttachmentSourceContribution): PluginCleanup;
   addTheme(contribution: PluginThemeContribution): PluginCleanup;
+  /**
+   * Add background art to Settings → Appearance → Background. Paseo copies the image into a
+   * device-local cache the first time a user picks the skin, so it keeps rendering while the host
+   * is offline. Feature-detect with `typeof client.addSkin === "function"` on older apps.
+   */
+  addSkin(contribution: PluginSkinContribution): PluginCleanup;
+  /**
+   * Make one of this plugin's registered skins the active background on this device. Resolves after
+   * the image is cached and applied; rejects when the id was never registered or the image fails
+   * to load.
+   */
+  applySkin(id: string): Promise<void>;
   addTimelineTransformer<ItemType extends AgentTimelineItem["type"]>(
     contribution: PluginTimelineTransformerContribution<ItemType>,
   ): PluginCleanup;
@@ -170,6 +215,11 @@ export interface PluginSettingsScreenContribution {
   title: string;
   icon: string;
   Component: ComponentType<PluginSurfaceProps>;
+  /**
+   * Also link this screen from Settings → Appearance → Background, as a place to find more
+   * skins. Use it for a screen that browses and installs skins registered with `addSkin`.
+   */
+  skinCatalog?: boolean;
 }
 
 /** The screen header's title: fixed, or derived from the params the screen was opened with. */

@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import { CreationService } from "./creation/index.js";
 import { MessageReceipts } from "./message-receipts/index.js";
+import { AgentMessageQueueDispatcher } from "./agent/agent-message-queue.js";
 import { WebSocket, WebSocketServer } from "ws";
 import type { IncomingMessage, Server as HTTPServer } from "http";
 import { join } from "path";
@@ -33,6 +34,7 @@ import {
 } from "./messages.js";
 import { asUint8Array, decodeBinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
+import { MAX_WEBSOCKET_MESSAGE_BYTES } from "@getpaseo/protocol/websocket-message-limit";
 import type { HostnamesConfig } from "./hostnames.js";
 import { isHostnameAllowed } from "./hostnames.js";
 import {
@@ -103,6 +105,8 @@ import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
+import type { AccountRoutingAuthority } from "./account-routing/authority.js";
+import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -246,6 +250,7 @@ function createFallbackWorkspaceGitService(): WorkspaceGitService {
     suggestBranchesForCwd: async () => [],
     listStashes: async () => [],
     listWorktrees: async () => [],
+    invalidateWorktrees: () => {},
     getProjectSlug: async (cwd: string) => {
       const snapshot = createFallbackWorkspaceGitSnapshot(cwd);
       return deriveProjectSlug(cwd, snapshot.git.isGit ? snapshot.git.remoteUrl : null);
@@ -537,10 +542,17 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
   private readonly messageReceipts: MessageReceipts;
+  private readonly agentMessageQueue: AgentMessageQueueDispatcher;
   private readonly creationService: CreationService;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly accountRouting: AccountRoutingAuthority | undefined;
+  private readonly accountLogin: OmpAccountLogin | undefined;
+  // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
+  private accountRoutingSupported = false;
+  private releaseAccountRoutingObserver: (() => void) | null = null;
+  private releaseLoginLinkObserver: (() => void) | null = null;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -659,6 +671,8 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
+    accountRouting?: AccountRoutingAuthority,
+    accountLogin?: OmpAccountLogin,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -679,6 +693,12 @@ export class VoiceAssistantWebSocketServer {
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.messageReceipts = new MessageReceipts(join(paseoHome, "agent-requests"));
+    this.agentMessageQueue = new AgentMessageQueueDispatcher({
+      agentManager,
+      agentStorage,
+      logger: this.logger.child({ module: "agent-message-queue" }),
+    });
+    this.agentMessageQueue.attach();
     this.creationService = new CreationService(
       join(paseoHome, "creations"),
       this.logger.child({ module: "creation" }),
@@ -688,6 +708,9 @@ export class VoiceAssistantWebSocketServer {
     this.projectRegistry = projectRegistry ?? createNoopProjectRegistry();
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
+    this.accountRouting = accountRouting;
+    this.accountLogin = accountLogin;
+    this.observeAccountRoutingCapability();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -821,6 +844,7 @@ export class VoiceAssistantWebSocketServer {
     const wss = new WebSocketServer({
       server,
       path: "/ws",
+      maxPayload: MAX_WEBSOCKET_MESSAGE_BYTES,
       handleProtocols: (protocols) => selectWebSocketProtocol(protocols, password),
       verifyClient: ({ req }, callback) => {
         this.verifyWsUpgrade(
@@ -989,6 +1013,30 @@ export class VoiceAssistantWebSocketServer {
     this.updateServerCapabilities(buildServerCapabilities({ readiness }));
   }
 
+  /** The advertised feature follows the authority's negotiated runtime coverage, never code presence. */
+  private observeAccountRoutingCapability(): void {
+    const authority = this.accountRouting;
+    if (!authority) return;
+    this.releaseLoginLinkObserver =
+      this.accountLogin?.onLinkSupportChange(() => this.broadcastCapabilitiesUpdate()) ?? null;
+    const apply = (supported: boolean): void => {
+      if (supported === this.accountRoutingSupported) return;
+      this.accountRoutingSupported = supported;
+      this.broadcastCapabilitiesUpdate();
+    };
+    void (async () => {
+      try {
+        const { state, release } = await authority.observe((next) =>
+          apply(next.capability.status === "supported"),
+        );
+        this.releaseAccountRoutingObserver = release;
+        apply(state.capability.status === "supported");
+      } catch (error) {
+        this.logger.warn({ err: error }, "Account routing observer failed");
+      }
+    })();
+  }
+
   public updateServerCapabilities(capabilities: ServerCapabilities | null | undefined): void {
     const next = capabilities ?? undefined;
     if (areServerCapabilitiesEqual(this.serverCapabilities, next)) {
@@ -1061,8 +1109,13 @@ export class VoiceAssistantWebSocketServer {
 
   public async close(): Promise<void> {
     this.prepareForShutdown();
+    this.agentMessageQueue.detach();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
+    this.releaseAccountRoutingObserver?.();
+    this.releaseAccountRoutingObserver = null;
+    this.releaseLoginLinkObserver?.();
+    this.releaseLoginLinkObserver = null;
     this.unsubscribeDaemonConfigChange?.();
     this.unsubscribeDaemonConfigChange = null;
     this.unsubscribeTerminalActivity?.();
@@ -1480,10 +1533,20 @@ export class VoiceAssistantWebSocketServer {
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
       messageReceipts: this.messageReceipts,
+      agentMessageQueue: this.agentMessageQueue,
       creationService: this.creationService,
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      accountRouting: this.accountRouting,
+      accountLogin: this.accountLogin,
+      isHostLocalSource: (source) => {
+        const identity = source ? this.socketIdentities.get(source as WebSocketLike) : undefined;
+        return (
+          identity?.transport === "direct" &&
+          (identity.peer === "loopback" || identity.peer === "local_ipc")
+        );
+      },
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -1793,10 +1856,17 @@ export class VoiceAssistantWebSocketServer {
         workspaceRequestReceipts: true,
         creationLifecycle: true,
         hubAgentRpc: true,
+        backgroundWorkspaces: true,
         // COMPAT(directorySync): added in v0.3.x, remove gate after 2027-02-12.
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
+        // The host can open a browser and sign a Claude account in; only advertised with routing.
+        ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
+        ...(this.accountRoutingSupported && this.accountLogin?.linkSupported
+          ? { ompAccountLoginLink: true }
+          : {}),
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
@@ -1897,6 +1967,8 @@ export class VoiceAssistantWebSocketServer {
         workspacePinning: true,
         // COMPAT(workspaceMarkUnread): added in v0.5.0, remove after 2027-08-20.
         workspaceMarkUnread: true,
+        // COMPAT(workspaceSettling): added in v0.11.0, remove gate after 2027-04-01.
+        workspaceSettling: true,
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
         hubRelationship: true,
         // COMPAT(projectGithubClone): added in v0.1.108, remove gate after 2027-01-15.
@@ -1911,6 +1983,10 @@ export class VoiceAssistantWebSocketServer {
         commitBaseClassification: true,
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
         providerRemoval: true,
+        // COMPAT(providerFeatureDefaults): added in v0.11.2, remove gate after 2027-04-08.
+        providerFeatureDefaults: true,
+        // COMPAT(globalFeatureDefaults): added in v0.11.3, remove gate after 2027-04-14.
+        globalFeatureDefaults: true,
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: true,
         // COMPAT(importSessionSearch): added in v0.7.3, remove gate after 2027-03-02.
@@ -1923,6 +1999,7 @@ export class VoiceAssistantWebSocketServer {
         explicitEventSubscriptions: true,
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: true,
+        agentMessageProvenance: true,
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
         stableProjectIdentity: true,
         // COMPAT(workspaceScriptManagement): added in v0.1.105, remove gate after 2027-01-10.
@@ -1939,6 +2016,10 @@ export class VoiceAssistantWebSocketServer {
         agentProfiles: true,
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: true,
+        // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02.
+        messageQueue: true,
+        // COMPAT(providerDisabledModels): added in v0.11.2, remove gate after 2027-04-08.
+        providerDisabledModels: true,
       },
     };
   }

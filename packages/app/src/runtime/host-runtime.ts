@@ -2398,6 +2398,10 @@ export class HostRuntimeStore {
     if (this.queuedAgentDrainInFlight.has(drainKey)) return;
     const store = useSessionStore.getState();
     const session = store.sessions[serverId];
+    // COMPAT(messageQueue): added in v0.10.0, remove the client-local drain after
+    // 2027-10-02 once the daemon floor >= v0.10.0. When the host owns the queue it
+    // dispatches on idle itself; the local map only mirrors this client's entries.
+    if (session?.serverInfo?.features?.messageQueue === true) return;
     const queue = session?.queuedMessages.get(agentId);
     const client = session?.client;
     if (!client || !queue?.length || session.initializingAgents.get(agentId) === true) {
@@ -2426,6 +2430,11 @@ export class HostRuntimeStore {
           }),
           encodeImages,
           submission: createMessageSubmissionWriter(serverId),
+          // The queue drains when the agent goes idle, but the agent can start a turn of its own
+          // in that same moment (a wake-up after background work). Steering folds the message
+          // into that turn instead of interrupting it; with no turn running, the daemon starts
+          // a normal one.
+          activeTurnBehavior: "steer",
         });
       },
     })

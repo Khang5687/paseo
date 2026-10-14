@@ -651,6 +651,7 @@ export function resolveConfigFromPersisted(
     agentProviderSettings: extractAgentProviderSettings(providerOverrides),
     providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
     metadataGeneration: persisted.agents?.metadataGeneration,
+    featureDefaults: persisted.agents?.featureDefaults,
     providerOverrides,
     log: resolveLogConfigFromEnv(env, persisted),
     configReload: {

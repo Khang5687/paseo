@@ -95,6 +95,7 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
     historyPrimed: true,
     lastUserMessageAt: now,
     attention: { requiresAttention: false },
+    queuedMessages: [],
   };
 
   return {
@@ -405,6 +406,17 @@ describe("toAgentPayload", () => {
     expect(payload.persistence?.metadata).toEqual({
       conversationId: "conversation-stored",
     });
+  });
+
+  it("carries a stored lastError onto the payload", () => {
+    const record = toStoredAgentRecord(
+      createManagedAgent({ provider: "codex", config: { provider: "codex" }, lastError: "boom" }),
+    );
+
+    expect(buildStoredAgentPayload(record, ["codex"]).lastError).toBe("boom");
+    expect(buildStoredAgentPayload({ ...record, lastError: null }, ["codex"])).not.toHaveProperty(
+      "lastError",
+    );
   });
 
   it("omits lastUsage when not available", () => {

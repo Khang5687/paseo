@@ -1,5 +1,6 @@
 import { createExternalProcessEnv } from "../../../paseo-env.js";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import { z } from "zod";
 
@@ -7,8 +8,18 @@ import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
 import {
   JSONL_RPC_NO_TIMEOUT,
   JsonlRpcProcess,
+  JsonlRpcResponseError,
   type JsonlRpcLaunch,
 } from "../jsonl-rpc-process.js";
+import { execCommand } from "../../../../utils/spawn.js";
+import {
+  inertRoutingAdapter,
+  memoizeProbe,
+  OmpAccountRoutingBridge,
+  parseOmpCapabilityProbe,
+  type OmpCapabilityProbe,
+} from "./account-routing-bridge.js";
+import { writeOmpConfigOverlay } from "./config-overlay.js";
 import { establishOmpProtocol } from "./protocol-session.js";
 import {
   buildOmpLaunch,
@@ -28,9 +39,19 @@ import {
   OmpPromptAckSchema,
   OmpRpcCommandSchema,
   parseOmpRuntimeEvent,
+  OMP_HOST_ACCOUNT_ROUTING_ENV,
+  OmpGoalCommandResultSchema,
+  OmpLoginRefusalSchema,
+  OmpLoginResultSchema,
+  OmpLogoutAccountsResultSchema,
   OmpSessionStateSchema,
   OmpSessionStatsSchema,
   type OmpThinkingLevel,
+  type OmpGoalAction,
+  type OmpGoalModeState,
+  type OmpLoginExisting,
+  type OmpLoginResult,
+  type OmpLogoutAccount,
   type OmpAgentMessage,
   type OmpModel,
   type OmpPromptAck,
@@ -47,6 +68,7 @@ import {
 
 const DEFAULT_OMP_COMMAND: [string, ...string[]] = [process.env.OMP_COMMAND ?? "omp"];
 const DEFAULT_COMMANDS_RPC_NAME = "get_available_commands";
+const CAPABILITY_PROBE_TIMEOUT_MS = 10_000;
 // OMP's builtin that rediscovers skills and file slash commands. Paseo runs it for OMP builds
 // without `refresh_commands`, and drops its confirmation line so it never reaches the timeline.
 const RELOAD_PLUGINS_COMMAND = "reload-plugins";
@@ -60,7 +82,16 @@ export interface OmpCliRuntimeOptions {
   readyTimeoutMs?: number;
   requestTimeoutMs?: number;
   spawnProcess?: (launch: OmpRuntimeLaunch) => ChildProcessWithoutNullStreams;
+  /** Test seam: replaces `omp account-routing-capabilities`. Receives the launch the probe vets. */
+  probeCapabilities?: (launch: OmpRuntimeLaunch) => Promise<OmpCapabilityProbe>;
 }
+
+/** What a routed launch resolved to before any child exists. */
+type RoutingPlan =
+  | { kind: "none" }
+  | { kind: "metadata" }
+  | { kind: "managed"; runtimeInstanceId: string; agentId: string }
+  | { kind: "incomplete"; runtimeInstanceId: string; agentId: string; version: number };
 
 export class OmpCliRuntime implements OmpRuntime {
   private readonly command: [string, ...string[]];
@@ -79,7 +110,15 @@ export class OmpCliRuntime implements OmpRuntime {
       runtimeSettings: this.options.runtimeSettings,
       session: input,
     });
-    launch.env = createExternalProcessEnv(globalThis.process.env, launch.env ?? {});
+    launch.argv.push("--config", writeOmpConfigOverlay());
+    // No await on the independent path: the child must be wired in the same tick it was spawned.
+    const plan: RoutingPlan = input.routing
+      ? await this.planRouting(input.routing, launch)
+      : { kind: "none" };
+    launch.env = createExternalProcessEnv(
+      globalThis.process.env,
+      withRoutingMarker(launch.env ?? {}, plan),
+    );
     const [command, ...args] = launch.argv;
     const processLaunch: JsonlRpcLaunch = {
       command,
@@ -98,21 +137,113 @@ export class OmpCliRuntime implements OmpRuntime {
     const process = new JsonlRpcProcess(processOptions);
     const handleAbort = () => void process.close(input.signal?.reason).catch(() => undefined);
     input.signal?.addEventListener("abort", handleAbort, { once: true });
+    // The bridge listens before the readiness handshake, so nothing the child writes during
+    // startup is missed, and the pending-configure latch is in place before any model call.
+    const routing = input.routing;
+    const bridge =
+      plan.kind === "managed" && routing
+        ? new OmpAccountRoutingBridge({
+            authority: routing.authority,
+            transport: process,
+            logger: this.options.logger,
+            runtimeInstanceId: plan.runtimeInstanceId,
+            agentId: plan.agentId,
+          })
+        : undefined;
+    // An unmarked binary that cannot cover every caller registers as incomplete, so the host reports
+    // the capability as unsupported instead of guessing. It has no control channel to bridge.
+    const incomplete =
+      plan.kind === "incomplete" && routing
+        ? routing.authority.attachRuntime(
+            {
+              runtimeInstanceId: plan.runtimeInstanceId,
+              agentId: plan.agentId,
+              accessibleNamespaces: [],
+              capabilityVersion: plan.version,
+              completeCoverage: false,
+            },
+            inertRoutingAdapter(),
+          )
+        : undefined;
+    const detachRouting = () => {
+      bridge?.close();
+      incomplete?.dispose();
+    };
     try {
       await establishOmpProtocol(process, this.options.logger, {
         readyTimeoutMs: this.options.readyTimeoutMs,
         requestTimeoutMs: this.options.requestTimeoutMs,
       });
       input.signal?.throwIfAborted();
-      return new OmpCliRuntimeSession(process, this.commandsRpcName, launch.env);
+      await bridge?.configure();
+      return new OmpCliRuntimeSession(process, this.commandsRpcName, launch.env, detachRouting);
     } catch (error) {
       const startupError = error instanceof Error ? error : new Error(String(error));
       await process.close(startupError);
+      detachRouting();
       throw startupError;
     } finally {
       input.signal?.removeEventListener("abort", handleAbort);
     }
   }
+
+  /**
+   * Decides, before spawning, how this launch relates to host routing. A managed launch needs a
+   * trusted agent and a binary whose probe reports complete coverage; anything less is never marked.
+   */
+  private async planRouting(
+    routing: NonNullable<OmpStartSessionInput["routing"]>,
+    launch: OmpRuntimeLaunch,
+  ): Promise<RoutingPlan> {
+    if (!routing.agentId) return { kind: "metadata" };
+    const probe = await this.probe(launch);
+    const runtimeInstanceId = randomUUID();
+    return probe.complete
+      ? { kind: "managed", runtimeInstanceId, agentId: routing.agentId }
+      : { kind: "incomplete", runtimeInstanceId, agentId: routing.agentId, version: probe.version };
+  }
+
+  /** Probes the configured binary without starting a session; the same probe every launch uses. */
+  probeConfigured(): Promise<OmpCapabilityProbe> {
+    const launch = buildOmpLaunch({
+      command: this.command,
+      runtimeSettings: this.options.runtimeSettings,
+      session: { cwd: process.cwd() },
+    });
+    return this.probe(launch);
+  }
+
+  private async probe(launch: OmpRuntimeLaunch): Promise<OmpCapabilityProbe> {
+    if (this.options.probeCapabilities) return this.options.probeCapabilities(launch);
+    const settings = this.options.runtimeSettings?.command;
+    const base = settings?.mode === "replace" && settings.argv[0] ? settings.argv : this.command;
+    const [command, ...args] = base;
+    const env = launch.env;
+    const key = JSON.stringify([command, ...args, env ?? {}]);
+    return memoizeProbe(key, async () => {
+      try {
+        const { stdout } = await execCommand(
+          command,
+          [...args, "account-routing-capabilities", "--mode", "model"],
+          { envOverlay: env, timeout: CAPABILITY_PROBE_TIMEOUT_MS },
+        );
+        return parseOmpCapabilityProbe(stdout);
+      } catch (error) {
+        // An older binary rejects the subcommand with an exit code: that is an incomplete runtime.
+        // Anything else (missing binary, timeout) taught us nothing about the binary.
+        const exited = typeof (error as { code?: unknown } | null)?.code === "number";
+        return exited
+          ? { complete: false, version: 0 }
+          : { complete: false, version: 0, unavailable: true };
+      }
+    });
+  }
+}
+
+function withRoutingMarker(env: Record<string, string>, plan: RoutingPlan): Record<string, string> {
+  if (plan.kind === "managed") return { ...env, [OMP_HOST_ACCOUNT_ROUTING_ENV]: "1" };
+  if (plan.kind === "metadata") return { ...env, [OMP_HOST_ACCOUNT_ROUTING_ENV]: "metadata" };
+  return env;
 }
 
 class OmpCliRuntimeSession implements OmpRuntimeSession {
@@ -125,6 +256,7 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     private readonly process: JsonlRpcProcess,
     private readonly commandsRpcName: "get_available_commands",
     private readonly launchEnvironment: Record<string, string>,
+    private readonly detachRouting: () => void = () => undefined,
   ) {
     process.onMessage((message) => {
       const event = parseOmpRuntimeEvent(message);
@@ -143,6 +275,7 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
       this.emit(event);
     });
     process.onExit(({ error }) => {
+      this.detachRouting();
       this.emit({ type: "process_exit", error: error.message });
     });
   }
@@ -185,8 +318,43 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     await this.request({ type: "set_auto_compaction", enabled });
   }
 
+  async goal(action: OmpGoalAction): Promise<OmpGoalModeState | null> {
+    const result = await this.request({ type: "goal", ...action });
+    return OmpGoalCommandResultSchema.parse(result).state;
+  }
+
   async abort(): Promise<void> {
     await this.requestStopWork({ type: "abort" });
+  }
+
+  async login(
+    providerId: string,
+    options: { existing?: OmpLoginExisting } = {},
+  ): Promise<OmpLoginResult> {
+    let data: unknown;
+    try {
+      data = await this.request(
+        { type: "login", providerId, ...(options.existing ? { existing: options.existing } : {}) },
+        JSONL_RPC_NO_TIMEOUT,
+      );
+    } catch (error) {
+      const refusal =
+        error instanceof JsonlRpcResponseError ? OmpLoginRefusalSchema.safeParse(error.data) : null;
+      if (!refusal?.success) throw error;
+      const { rowId, email, orgName } = refusal.data;
+      return { kind: "credential_exists", rowId, email, orgName };
+    }
+    const parsed = OmpLoginResultSchema.safeParse(data);
+    if (!parsed.success) return { kind: "stored" };
+    const { outcome, rowId, email, orgName } = parsed.data;
+    return { kind: "stored", outcome, rowId, email, orgName };
+  }
+
+  async getLogoutAccounts(providerId: string): Promise<OmpLogoutAccount[]> {
+    const data = OmpLogoutAccountsResultSchema.parse(
+      await this.request({ type: "get_logout_accounts", providerId }),
+    );
+    return data.accounts.map(({ credentialId, label, type }) => ({ credentialId, label, type }));
   }
 
   async getState(): Promise<OmpSessionState> {
@@ -360,7 +528,9 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
   }
 
   async close(): Promise<void> {
+    // Detach after the child exits: closing stdin makes it report its final outcomes and cancels.
     await this.process.close(new Error("OMP RPC session is closed"));
+    this.detachRouting();
   }
 
   private request(command: OmpRpcCommand, timeoutMs?: number | null): Promise<unknown> {

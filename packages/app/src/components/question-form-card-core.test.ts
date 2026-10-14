@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
   areQuestionsAnswered,
+  buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
+  isOneTapQuestion,
   parseQuestionFormQuestions,
   questionShowsTextInput,
   resolveDismissLabel,
@@ -80,6 +82,42 @@ describe("question form card core", () => {
     expect(buildQuestionFormAnswers(questions, {}, { 0: "durian" })).toEqual({ Fruits: "durian" });
   });
 
+  test("lists answers per question so commas in labels and custom text survive", () => {
+    const questions = parseQuestionFormQuestions({
+      questions: [
+        {
+          question: "Which colors?",
+          header: "Colors",
+          options: [{ label: "Red, warm" }, { label: "Blue" }, { label: "Green" }],
+          multiSelect: true,
+          allowOther: true,
+        },
+        {
+          question: "Which provider?",
+          header: "Provider",
+          options: [{ label: "Claude Code" }, { label: "Codex" }],
+          multiSelect: false,
+          allowOther: true,
+        },
+        { question: "Anything else?", header: "Notes", options: [], allowEmpty: true },
+      ],
+    });
+
+    if (!questions) throw new Error("questions did not parse");
+    const selections = { 0: new Set([1, 0]), 1: new Set([1]) };
+    const otherTexts = { 0: " teal, or anything cool ", 1: "OpenCode, v2 forms" };
+    expect(buildQuestionFormAnswerLists(questions, selections, otherTexts)).toEqual({
+      Colors: ["Red, warm", "Blue", "teal, or anything cool"],
+      Provider: ["OpenCode, v2 forms"],
+      Notes: [],
+    });
+    expect(buildQuestionFormAnswers(questions, selections, otherTexts)).toEqual({
+      Colors: "Red, warm, Blue, teal, or anything cool",
+      Provider: "OpenCode, v2 forms",
+      Notes: "",
+    });
+  });
+
   test("replaces the selected option with the other answer for single-select", () => {
     const questions = parseQuestionFormQuestions({
       questions: [
@@ -146,5 +184,53 @@ describe("question form card core", () => {
     expect(buildQuestionFormAnswers(questions, {}, { 0: "custom" })).toEqual({
       Response: "custom",
     });
+  });
+
+  test("answers with one tap only a lone single-choice question with bare options", () => {
+    const base = {
+      question: "Dangerous command",
+      header: "Answer",
+      options: [{ label: "Allow once" }, { label: "Deny" }],
+      multiSelect: false,
+    };
+    const oneTap = (questions: Record<string, unknown>[]) => {
+      const parsed = parseQuestionFormQuestions({ questions });
+      if (!parsed) throw new Error("questions did not parse");
+      return isOneTapQuestion(parsed);
+    };
+
+    expect(oneTap([base])).toBe(true);
+    expect(oneTap([{ ...base, multiSelect: true }])).toBe(false);
+    expect(oneTap([{ ...base, allowOther: true }])).toBe(false);
+    expect(oneTap([{ ...base, options: [] }])).toBe(false);
+    expect(oneTap([{ ...base, options: [{ label: "A", description: "detail" }] }])).toBe(false);
+    expect(oneTap([{ ...base, options: [{ label: "A", description: " \n" }] }])).toBe(true);
+    expect(oneTap([{ ...base, options: [{ label: "A", preview: "<Tabs />" }] }])).toBe(false);
+    expect(oneTap([base, { ...base, header: "Second" }])).toBe(false);
+  });
+
+  test("keeps option previews so options can be compared", () => {
+    const questions = parseQuestionFormQuestions({
+      questions: [
+        {
+          question: "Which layout?",
+          header: "Layout",
+          options: [
+            {
+              label: "Tabs",
+              description: "One tab per section",
+              preview: "<Tabs>\n  <Tab />\n</Tabs>",
+            },
+            { label: "Single page" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    });
+
+    expect(questions?.[0]?.options).toEqual([
+      { label: "Tabs", description: "One tab per section", preview: "<Tabs>\n  <Tab />\n</Tabs>" },
+      { label: "Single page", description: undefined, preview: undefined },
+    ]);
   });
 });

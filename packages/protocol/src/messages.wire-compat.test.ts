@@ -9,6 +9,7 @@ import {
   WorkspaceSetupSnapshotSchema,
   WorkspaceSetupProgressMessageSchema,
   AgentTimelineEntryPayloadSchema,
+  SessionInboundMessageSchema,
 } from "./messages.js";
 
 test("terminal listings accept older rows and retain new per-terminal directories", () => {
@@ -138,6 +139,24 @@ describe("wire schema compatibility", () => {
       version: null,
       features: { agentTurnIdentity: true },
     });
+  });
+
+  test("routing capability is additive and stays separate from server capabilities", () => {
+    const legacy = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "legacy-routing-server",
+      features: { ownedSubscriptions: true },
+    });
+    const capable = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "routing-server",
+      capabilities: { owned_subscriptions: true },
+      features: { ownedSubscriptions: true, ompAccountRouting: true },
+    });
+
+    expect(legacy.features?.ompAccountRouting).toBeUndefined();
+    expect(capable.features?.ompAccountRouting).toBe(true);
+    expect(capable.capabilities).toMatchObject({ owned_subscriptions: true });
   });
 
   test("assistant timeline message ids are optional on the wire", () => {
@@ -390,6 +409,92 @@ test("blocked setup preserves the legacy failed shape and optional provenance", 
   );
 });
 
+describe("agent message queue", () => {
+  test("snapshots without queuedMessages still parse, and old clients ignore the new field", () => {
+    const base = {
+      id: "agent-1",
+      provider: "codex",
+      cwd: "/workspace",
+      status: "idle",
+      model: "gpt-5",
+      lastUserMessageAt: null,
+      createdAt: "2026-10-02T00:00:00.000Z",
+      updatedAt: "2026-10-02T00:00:00.000Z",
+      capabilities: {
+        supportsStreaming: true,
+        supportsSessionPersistence: true,
+        supportsDynamicModes: false,
+        supportsMcpServers: false,
+        supportsReasoningStream: false,
+        supportsToolInvocations: true,
+        supportsRewindConversation: false,
+        supportsRewindFiles: false,
+        supportsRewindBoth: false,
+      },
+      currentModeId: null,
+      availableModes: [],
+      pendingPermissions: [],
+      persistence: null,
+      title: null,
+      labels: {},
+    };
+    expect(AgentSnapshotPayloadSchema.parse(base)).toMatchObject(base);
+
+    const withQueue = {
+      ...base,
+      queuedMessages: [
+        {
+          id: "q-1",
+          text: "after this, run the tests",
+          imageCount: 0,
+          attachmentCount: 1,
+          createdAt: "2026-10-02T00:00:01.000Z",
+        },
+      ],
+    };
+    expect(AgentSnapshotPayloadSchema.parse(withQueue)).toMatchObject(withQueue);
+    // The pre-queue snapshot shape (copied from v0.9) must still accept the new payload.
+    const LegacyAgentSnapshotSchema = AgentSnapshotPayloadSchema.omit({ queuedMessages: true });
+    expect(LegacyAgentSnapshotSchema.parse(withQueue)).not.toHaveProperty("queuedMessages");
+  });
+
+  test("queue RPC request/response pairs round-trip", () => {
+    const add = {
+      type: "agent.queue.add.request",
+      requestId: "r1",
+      agentId: "agent-1",
+      text: "queued text",
+      attachments: [{ type: "text", mimeType: "text/plain", title: "note", text: "context" }],
+    };
+    expect(SessionInboundMessageSchema.parse(add)).toEqual(add);
+    const remove = {
+      type: "agent.queue.remove.response",
+      payload: {
+        requestId: "r2",
+        agentId: "agent-1",
+        message: {
+          id: "q-1",
+          text: "queued text",
+          createdAt: "2026-10-02T00:00:01.000Z",
+          images: [],
+          attachments: [{ type: "text", mimeType: "text/plain", title: "note", text: "context" }],
+        },
+        success: true,
+        error: null,
+      },
+    };
+    expect(SessionOutboundMessageSchema.parse(remove)).toEqual(remove);
+    const sendNow = {
+      type: "agent.queue.send_now.request",
+      requestId: "r3",
+      agentId: "agent-1",
+      messageId: "q-1",
+      activeTurnBehavior: "steer",
+    };
+    expect(SessionInboundMessageSchema.parse(sendNow)).toEqual(sendNow);
+  });
+});
+
 test("usage login errors are additive and older reports still parse", () => {
   const entry = {
     id: "codex:account",
@@ -435,4 +540,145 @@ test("usage login errors are additive and older reports still parse", () => {
   expect(SessionOutboundMessageSchema.parse(oldMessage)).toEqual(oldMessage);
   expect(SessionOutboundMessageSchema.parse(newMessage)).toEqual(newMessage);
   expect(legacy.parse(newMessage)).toEqual(oldMessage);
+});
+
+test("usage routing and subscription metadata are optional, nullable-unknown and strictly typed", () => {
+  const legacyEntry = {
+    id: "claude:a",
+    account: {},
+    fetchedAt: "2026-10-05T00:00:00.000Z",
+    sourceId: "claude",
+    sourceLabel: "Claude",
+    report: { status: "available", windows: [] },
+  };
+  const message = (report: unknown) => ({
+    type: "usage.list_reports.update",
+    payload: { requestId: "usage", report },
+  });
+  const extended = {
+    ...legacyEntry,
+    report: {
+      status: "available",
+      windows: [],
+      quotaIdentity: { accountUuid: "a", organizationUuid: "o" },
+      subscription: {
+        subscriptionType: null,
+        rateLimitTier: "max_5x",
+        observedAt: null,
+        source: "claude-supported-login",
+      },
+    },
+    routing: {
+      accountRef: { storeNamespace: "11111111-1111-4111-8111-111111111111", nativeRowId: 3 },
+      state: "serving",
+      hostEpoch: "epoch",
+      stateSequence: 4,
+    },
+  };
+  expect(SessionOutboundMessageSchema.parse(message(legacyEntry))).toEqual(message(legacyEntry));
+  expect(SessionOutboundMessageSchema.parse(message(extended))).toEqual(message(extended));
+  const unknownRouting = {
+    ...legacyEntry,
+    routing: { ...extended.routing, accountRef: null, state: "unknown" },
+  };
+  expect(SessionOutboundMessageSchema.parse(message(unknownRouting))).toEqual(
+    message(unknownRouting),
+  );
+  const bad = [
+    { ...legacyEntry, report: { ...extended.report, quotaIdentity: { accountUuid: "a" } } },
+    {
+      ...legacyEntry,
+      report: {
+        ...extended.report,
+        subscription: { ...extended.report.subscription, source: "x" },
+      },
+    },
+    { ...extended, routing: { ...extended.routing, state: "idle" } },
+    {
+      ...extended,
+      routing: { ...extended.routing, accountRef: { storeNamespace: "n", nativeRowId: "3" } },
+    },
+  ];
+  for (const report of bad) {
+    expect(SessionOutboundMessageSchema.safeParse(message(report)).success).toBe(false);
+  }
+});
+
+// Copied from the release before `ompAccountLoginLink`: what an older app parses.
+const LegacyOmpAccountLoginPayloadSchema = z.object({
+  requestId: z.string(),
+  status: z.object({
+    state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
+    failure: z
+      .enum([
+        "timeout",
+        "paste_code_unsupported",
+        "browser_open_failed",
+        "omp_failed",
+        "spawn_failed",
+      ])
+      .optional(),
+    startedAt: z.number().finite().optional(),
+  }),
+  error: z.enum(["already_running"]).nullable().optional(),
+});
+
+test("OMP login link fields are additive for older apps and older daemons", () => {
+  // New daemon to old app: every status the link daemon sends to an old app's requests parses.
+  const statuses = [
+    { state: "running", startedAt: 1, phase: "preparing" },
+    { state: "running", startedAt: 1, phase: "awaiting_browser", pasteAccepted: true },
+    {
+      state: "succeeded",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: {
+        kind: "added",
+        label: "b@example.com",
+        ref: { storeNamespace: "n", nativeRowId: 9 },
+      },
+    },
+    {
+      state: "failed",
+      failure: "omp_failed",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "already_listed", label: "a@example.com" },
+    },
+  ];
+  for (const status of statuses) {
+    for (const op of ["start", "get_status", "cancel"]) {
+      const message = {
+        type: `account.routing.login.${op}.response`,
+        payload: { requestId: "r", status, error: null },
+      };
+      expect(SessionOutboundMessageSchema.parse(message)).toMatchObject({ payload: { status } });
+      expect(LegacyOmpAccountLoginPayloadSchema.parse(message.payload).status.state).toBe(
+        status.state,
+      );
+    }
+  }
+
+  // Old app to new daemon: a start without `mode` still parses (and means add-only).
+  expect(
+    SessionInboundMessageSchema.parse({
+      type: "account.routing.login.start.request",
+      requestId: "r",
+    }),
+  ).toEqual({ type: "account.routing.login.start.request", requestId: "r" });
+
+  // Old daemon to new app: the pre-link failures still parse.
+  expect(
+    SessionOutboundMessageSchema.parse({
+      type: "account.routing.login.get_status.response",
+      payload: { requestId: "r", status: { state: "failed", failure: "browser_open_failed" } },
+    }),
+  ).toMatchObject({ payload: { status: { failure: "browser_open_failed" } } });
+  expect(
+    ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "old",
+      features: { ompAccountLogin: true },
+    }).features?.ompAccountLoginLink,
+  ).toBeUndefined();
 });

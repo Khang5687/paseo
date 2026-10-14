@@ -1134,3 +1134,61 @@ it("session Keychain input retains the selected config-directory locator through
   });
   expect(reads).toEqual(Array(3).fill(`${service}:fixture-user`));
 });
+
+describe("Claude routing metadata projection", () => {
+  const profileBody = { account: { uuid: "acct-1" }, organization: { uuid: "org-1" } };
+  function fixture(token: string, creds?: Record<string, unknown>) {
+    const dir = mkdtempSync(join(tmpdir(), "claude-routing-meta-"));
+    tokenDirectories.push(dir);
+    writeFileSync(
+      join(dir, ".credentials.json"),
+      JSON.stringify({ claudeAiOauth: { accessToken: token, ...creds } }),
+    );
+    return { input: credentialInput(dir), lookup: { claudeHome: dir, home: dir } };
+  }
+  const api = (urls: string[]): typeof fetch =>
+    (async (url: RequestInfo | URL) => {
+      urls.push(String(url));
+      return String(url).endsWith("/profile")
+        ? jsonResponse(profileBody)
+        : jsonResponse(makeClaudeResponse());
+    }) as typeof fetch;
+
+  it("exposes raw plan strings, validated identity and the metadata-read time", async () => {
+    const { input, lookup } = fixture("routing-meta-1", {
+      subscriptionType: "max",
+      rateLimitTier: "default_claude_max_5x",
+    });
+    const urls: string[] = [];
+    await discover({ kind: "global" }, { ...lookup, env: {}, platform: "linux" }, api(urls));
+    let clock = 1_000;
+    const report = await fetchUsage(input, api(urls), { ...lookup, now: () => clock });
+    clock = 9_000;
+    expect(report).toMatchObject({
+      status: "available",
+      quotaIdentity: { accountUuid: "acct-1", organizationUuid: "org-1" },
+      subscription: {
+        subscriptionType: "max",
+        rateLimitTier: "default_claude_max_5x",
+        observedAt: 1_000,
+        source: "claude-supported-login",
+      },
+    });
+    // Profile came from cache: only the discovery call hit /profile.
+    expect(urls.filter((u) => u.endsWith("/profile"))).toHaveLength(1);
+  });
+
+  it("keeps missing metadata unknown and omits identity when no profile is cached", async () => {
+    const { input, lookup } = fixture("routing-meta-2");
+    const report = await fetchUsage(input, api([]), { ...lookup, now: () => 5 });
+    expect(report).toMatchObject({
+      subscription: {
+        subscriptionType: null,
+        rateLimitTier: null,
+        observedAt: null,
+        source: "unknown",
+      },
+    });
+    expect(report).not.toHaveProperty("quotaIdentity");
+  });
+});
