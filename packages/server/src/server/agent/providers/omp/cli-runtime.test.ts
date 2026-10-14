@@ -378,6 +378,55 @@ describe("OMP CLI runtime", () => {
     ]);
   });
 
+  test("rediscovers commands through /reload-plugins when OMP does not support refresh_commands", async () => {
+    const child = createOmpChild();
+    const requests: string[] = [];
+    let reloaded = false;
+    const reply = (id: unknown, command: unknown, response: Record<string, unknown>) =>
+      child.stdout.write(`${JSON.stringify({ id, type: "response", command, ...response })}\n`);
+    onOmpCommand(child, (command) => {
+      requests.push(command.type === "prompt" ? `prompt ${command.message}` : String(command.type));
+      if (command.type === "refresh_commands") {
+        reply(command.id, command.type, {
+          success: false,
+          error: "Unknown command: refresh_commands",
+        });
+        return;
+      }
+      if (command.type === "prompt") {
+        reloaded = true;
+        child.stdout.write(
+          `${JSON.stringify({ type: "command_output", text: "Plugins reloaded." })}\n`,
+        );
+        reply(command.id, command.type, { success: true, data: { agentInvoked: false } });
+        return;
+      }
+      const commands = [{ name: "reload-plugins", source: "builtin" }];
+      if (reloaded) commands.push({ name: "skill:deploy", source: "skill" });
+      reply(command.id, command.type, { success: true, data: { commands } });
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+    const events: unknown[] = [];
+    session.onEvent((event) => events.push(event));
+
+    await expect(session.refreshCommands()).resolves.toEqual([
+      { name: "reload-plugins", source: "builtin" },
+      { name: "skill:deploy", source: "skill" },
+    ]);
+    expect(requests).toEqual([
+      "refresh_commands",
+      "get_available_commands",
+      "prompt /reload-plugins",
+      "get_available_commands",
+    ]);
+    expect(events).toEqual([]);
+
+    child.stdout.write(
+      `${JSON.stringify({ type: "command_output", text: "Plugins reloaded." })}\n`,
+    );
+    expect(events).toEqual([{ type: "command_output", text: "Plugins reloaded." }]);
+  });
+
   test("surfaces refresh_commands failures other than an unknown command", async () => {
     const child = createOmpChild();
     onOmpCommand(child, (command) => {

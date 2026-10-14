@@ -47,6 +47,10 @@ import {
 
 const DEFAULT_OMP_COMMAND: [string, ...string[]] = [process.env.OMP_COMMAND ?? "omp"];
 const DEFAULT_COMMANDS_RPC_NAME = "get_available_commands";
+// OMP's builtin that rediscovers skills and file slash commands. Paseo runs it for OMP builds
+// without `refresh_commands`, and drops its confirmation line so it never reaches the timeline.
+const RELOAD_PLUGINS_COMMAND = "reload-plugins";
+const RELOAD_PLUGINS_OUTPUT = "Plugins reloaded.";
 
 export interface OmpCliRuntimeOptions {
   logger: Logger;
@@ -114,6 +118,7 @@ export class OmpCliRuntime implements OmpRuntime {
 class OmpCliRuntimeSession implements OmpRuntimeSession {
   private readonly subscribers = new Set<(event: OmpRuntimeEvent) => void>();
   private refreshCommandsUnsupported = false;
+  private silentReloads = 0;
   activeBranchEntryId?: string;
 
   constructor(
@@ -123,9 +128,19 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
   ) {
     process.onMessage((message) => {
       const event = parseOmpRuntimeEvent(message);
-      if (event) {
-        this.emit(event);
+      if (!event) {
+        return;
       }
+      // OMP writes the builtin's output before its prompt response, so it lands while the reload
+      // is still pending.
+      if (
+        this.silentReloads > 0 &&
+        event.type === "command_output" &&
+        event.text === RELOAD_PLUGINS_OUTPUT
+      ) {
+        return;
+      }
+      this.emit(event);
     });
     process.onExit(({ error }) => {
       this.emit({ type: "process_exit", error: error.message });
@@ -239,22 +254,39 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
   }
 
   async refreshCommands(): Promise<OmpRpcSlashCommand[]> {
-    if (this.refreshCommandsUnsupported) {
-      return await this.getCommands();
-    }
-    try {
-      const data = OmpCommandsResultSchema.parse(await this.request({ type: "refresh_commands" }));
-      return data.commands ?? [];
-    } catch (error) {
-      // COMPAT(ompRefreshCommands): added in v0.11.0, remove after 2027-04-07 once the
-      // minimum supported OMP version answers `refresh_commands`. Older binaries reject it
-      // as an unknown command; list the commands they already know instead.
-      if (!(error instanceof Error) || error.message !== "Unknown command: refresh_commands") {
-        throw error;
+    if (!this.refreshCommandsUnsupported) {
+      try {
+        const data = OmpCommandsResultSchema.parse(
+          await this.request({ type: "refresh_commands" }),
+        );
+        return data.commands ?? [];
+      } catch (error) {
+        // COMPAT(ompRefreshCommands): added in v0.11.0, remove after 2027-04-07 once the
+        // minimum supported OMP version answers `refresh_commands`. Older binaries reject it
+        // as an unknown command; rediscover through `/reload-plugins` instead.
+        if (!(error instanceof Error) || error.message !== "Unknown command: refresh_commands") {
+          throw error;
+        }
+        this.refreshCommandsUnsupported = true;
       }
-      this.refreshCommandsUnsupported = true;
-      return await this.getCommands();
     }
+    const known = await this.getCommands();
+    // Only a binary that advertises the builtin runs it locally; anywhere else the text would
+    // reach the model as a user prompt.
+    if (
+      !known.some(
+        (command) => command.name === RELOAD_PLUGINS_COMMAND && command.source === "builtin",
+      )
+    ) {
+      return known;
+    }
+    this.silentReloads += 1;
+    try {
+      await this.request({ type: "prompt", message: `/${RELOAD_PLUGINS_COMMAND}` });
+    } finally {
+      this.silentReloads -= 1;
+    }
+    return await this.getCommands();
   }
 
   async setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void> {
