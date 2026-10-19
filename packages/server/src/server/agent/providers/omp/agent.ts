@@ -731,6 +731,10 @@ export class OmpAgentSession implements AgentSession {
   private closed = false;
   private live: boolean;
   private readonly emittedUserMessageIds = new Set<string>();
+  // User entries that existed before the current turn's prompt; a live echo never resolves to one.
+  private userEntriesBeforeTurn: Promise<ReadonlySet<string>> = Promise.resolve(new Set());
+  // Native ID lookups resolve in message_end order so each echo takes its own client message.
+  private userMessageEchoTail: Promise<void> = Promise.resolve();
 
   private readonly usageSessionKey = randomUUID();
 
@@ -871,6 +875,11 @@ export class OmpAgentSession implements AgentSession {
       try {
         if (this.runtimeDead) await this.replaceRuntime(this.currentModeId ?? "full");
         if (this.closed) throw new Error("OMP session is closed");
+        // Sent ahead of the prompt on the same RPC stream, so it reads the entries before it.
+        this.userEntriesBeforeTurn = this.runtimeSession.getBranchMessages().then(
+          (messages) => new Set(messages.map((message) => message.entryId)),
+          () => new Set(),
+        );
         const ack = await this.runtimeSession.prompt(payload.text, payload.images);
         this.activePromptRequestId = ack.requestId ?? null;
         const correlatedResult = ack.requestId
@@ -2034,18 +2043,38 @@ export class OmpAgentSession implements AgentSession {
       emitUserMessage(messageId);
       return;
     }
-    void this.runtimeSession
-      .getBranchMessages()
-      .then((messages) =>
-        emitUserMessage(messages.toReversed().find((message) => message.text === text)?.entryId),
-      )
-      .catch((error: unknown) => {
+    const branchText = getUserMessageText(event.message.content, "");
+    const echo = this.userMessageEchoTail
+      .then(() => this.findUserEntryId(branchText))
+      .then(emitUserMessage, (error: unknown) => {
         this.logger.debug(
           { err: error, sessionFile: this.state.sessionFile },
           "OMP native user message ID lookup failed",
         );
         emitUserMessage();
       });
+    this.userMessageEchoTail = echo.catch(() => undefined);
+  }
+
+  // OMP's user message_end carries no entry ID, and it persists the entry after notifying
+  // listeners, so the entry can be missing from get_branch_messages on the first read.
+  private async findUserEntryId(text: string): Promise<string | undefined> {
+    const before = await this.userEntriesBeforeTurn;
+    let messages: Array<{ entryId: string; text: string }> = [];
+    for (const waitMs of [0, 50, 150, 400]) {
+      if (waitMs) await delay(waitMs);
+      messages = (await this.runtimeSession.getBranchMessages()).filter(
+        (message) => message.text === text,
+      );
+      const fresh = messages.findLast(
+        (message) =>
+          !before.has(message.entryId) && !this.emittedUserMessageIds.has(message.entryId),
+      );
+      if (fresh) return fresh.entryId;
+    }
+    // A re-emitted frame for an entry already surfaced; emitUserMessage drops it. Otherwise
+    // emit without an ID: an older entry with the same text would rewind to the wrong place.
+    return messages.findLast((message) => this.emittedUserMessageIds.has(message.entryId))?.entryId;
   }
 
   private emitSkillPromptEcho(turnId: string | undefined): void {
