@@ -221,6 +221,12 @@ function createToolCatalog(): PaseoToolCatalog {
   };
 }
 
+async function userEcho(omp: OmpHarness) {
+  const userMessages = () => omp.timeline().filter((item) => item.type === "user_message");
+  await expect.poll(userMessages).toHaveLength(1);
+  return userMessages()[0];
+}
+
 describe("OMP agent client and session", () => {
   test("failed manual compact closes its progress row and shows the error", async () => {
     const omp = new OmpHarness();
@@ -1883,6 +1889,51 @@ describe("OMP agent client and session", () => {
       { type: "user_message", text: "next step", messageId: "user-1" },
       { type: "assistant_message", text: "on it", messageId: "omp-assistant-1" },
     ]);
+  });
+
+  describe("resolves the rewind entry ID when OMP's user message_end has none", () => {
+    async function startTurn(
+      text: string,
+      branchMessages: Array<{ entryId: string; text: string }> = [],
+    ) {
+      const omp = new OmpHarness();
+      await omp.start();
+      omp.runtime().branchMessages = branchMessages;
+      await omp.requireSession().startTurn(text, { clientMessageId: "client-1" });
+      omp.runtime().beginTurn();
+      return omp;
+    }
+
+    function acceptPromptWithoutId(omp: OmpHarness, content: OmpAgentMessage["content"]): void {
+      omp.runtime().emit({
+        type: "message_end",
+        message: { role: "user", content } as OmpAgentMessage,
+      });
+    }
+
+    test("matches multi-part prompt text the way OMP joins it", async () => {
+      const omp = await startTurn("first\n\nsecond");
+      omp.runtime().branchMessages.push({ entryId: "entry-1", text: "firstsecond" });
+      acceptPromptWithoutId(omp, [
+        { type: "text", text: "first" },
+        { type: "text", text: "second" },
+      ]);
+      expect(await userEcho(omp)).toMatchObject({
+        messageId: "entry-1",
+        clientMessageId: "client-1",
+      });
+    });
+
+    test("waits for an entry OMP persists after the frame", async () => {
+      const omp = await startTurn("continue", [{ entryId: "entry-old", text: "continue" }]);
+      acceptPromptWithoutId(omp, "continue");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      omp.runtime().branchMessages.push({ entryId: "entry-new", text: "continue" });
+      expect(await userEcho(omp)).toMatchObject({
+        messageId: "entry-new",
+        clientMessageId: "client-1",
+      });
+    });
   });
 
   test("re-emitted user message_end frames dedupe by native entry id", async () => {
