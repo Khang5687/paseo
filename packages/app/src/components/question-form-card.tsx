@@ -1,3 +1,4 @@
+import { Alert } from "@/components/ui/alert";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
@@ -31,6 +32,7 @@ interface QuestionFormCardProps {
   permission: PendingPermission;
   onRespond: (response: AgentPermissionResponse) => void;
   isResponding: boolean;
+  responseError: string | null;
 }
 
 const IS_WEB = isWeb;
@@ -380,7 +382,7 @@ function QuestionText({ text }: { text: string }) {
   return (
     <View style={styles.questionHeader}>
       <View testID="question-form-current-question" style={styles.questionText}>
-        <MarkdownRenderer text={text} compact enableHtmlish={false} />
+        <MarkdownRenderer text={text} compact />
       </View>
     </View>
   );
@@ -396,6 +398,7 @@ function OneTapQuestionCard({
   questions,
   onRespond,
   isResponding,
+  responseError,
 }: QuestionCardBodyProps) {
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
@@ -413,6 +416,7 @@ function OneTapQuestionCard({
     (optIndex: number) => {
       if (isResponding) return;
       setRespondingOption(optIndex);
+      setIsDismissing(false);
       onRespond({
         behavior: "allow",
         updatedInput: {
@@ -425,9 +429,11 @@ function OneTapQuestionCard({
     [isResponding, onRespond, permission.request.input, questions],
   );
   const handleDismiss = useCallback(() => {
+    if (isResponding) return;
+    setRespondingOption(null);
     setIsDismissing(true);
     onRespond({ behavior: "deny", message: "Dismissed by user" });
-  }, [onRespond]);
+  }, [isResponding, onRespond]);
 
   return (
     <View style={styles.container} testID="question-form-card">
@@ -440,7 +446,7 @@ function OneTapQuestionCard({
             label={option.label}
             size={size}
             isResponding={isResponding}
-            isRespondingOption={respondingOption === optIndex}
+            isRespondingOption={isResponding && respondingOption === optIndex}
             onAnswer={handleAnswer}
           />
         ))}
@@ -450,13 +456,14 @@ function OneTapQuestionCard({
           leftIcon={X}
           onPress={handleDismiss}
           disabled={isResponding}
-          loading={isDismissing}
+          loading={isResponding && isDismissing}
           accessibilityLabel={dismissLabel}
           testID="question-form-dismiss"
         >
           {dismissLabel}
         </Button>
       </View>
+      {responseError ? <Alert variant="error" description={responseError} size="sm" /> : null}
     </View>
   );
 }
@@ -474,7 +481,13 @@ export function QuestionFormCard(props: QuestionFormCardProps) {
   );
 }
 
-function QuestionForm({ permission, questions, onRespond, isResponding }: QuestionCardBodyProps) {
+function QuestionForm({
+  permission,
+  questions,
+  onRespond,
+  isResponding,
+  responseError,
+}: QuestionCardBodyProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
@@ -571,6 +584,7 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
   ]);
 
   const handleDeny = useCallback(() => {
+    if (!questions || isResponding) return;
     setRespondingAction("dismiss");
     if (shouldSubmitEmptyOnDismiss(questions)) {
       onRespond({
@@ -587,7 +601,7 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
       behavior: "deny",
       message: "Dismissed by user",
     });
-  }, [questions, onRespond, otherTexts, permission.request.input, selections]);
+  }, [questions, isResponding, onRespond, otherTexts, permission.request.input, selections]);
 
   const handleSelectQuestion = useCallback((index: number) => {
     setActiveQuestionIndex(index);
@@ -619,6 +633,7 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
     [theme.colors.surface2, theme.colors.surface1, theme.colors.borderAccent],
   );
 
+  const pendingAction = isResponding ? respondingAction : null;
   const primaryDisabled = isResponding || (isLastQuestion ? !allAnswered : !activeQuestionAnswered);
   const primaryActionLabel = isLastQuestion
     ? t("message.question.submit")
@@ -712,6 +727,8 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
         ) : null}
       </View>
 
+      {responseError ? <Alert variant="error" description={responseError} size="sm" /> : null}
+
       <View style={actionsContainerStyle}>
         <Pressable
           style={dismissButtonStyle}
@@ -721,7 +738,7 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
           accessibilityLabel={dismissLabel}
           testID="question-form-dismiss"
         >
-          {respondingAction === "dismiss" ? (
+          {pendingAction === "dismiss" ? (
             <LoadingSpinner size="small" color={theme.colors.foregroundMuted} />
           ) : (
             <View style={styles.actionContent}>
@@ -739,7 +756,7 @@ function QuestionForm({ permission, questions, onRespond, isResponding }: Questi
           accessibilityLabel={primaryActionLabel}
           testID="question-form-primary-action"
         >
-          {respondingAction === "submit" ? (
+          {pendingAction === "submit" ? (
             <LoadingSpinner size="small" color={theme.colors.accentForeground} />
           ) : (
             <View style={styles.actionContent}>

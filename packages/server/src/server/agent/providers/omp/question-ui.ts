@@ -5,6 +5,7 @@ import type {
   AgentProvider,
 } from "../../agent-sdk-types.js";
 import { readQuestionAnswerList } from "../../question-answers.js";
+import { splitMultiSelectAnswer } from "../question-card-answer.js";
 import type { OmpAgentMessage, OmpRuntimeEvent } from "./rpc-types.js";
 
 type UiRequest = Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>;
@@ -199,20 +200,7 @@ function legacySelectedAnswer(
     return labels.includes(answer)
       ? { selected: [answer], custom: null }
       : { selected: [], custom: answer };
-
-  // Consume exact option labels from the front; any remaining text is the Other answer.
-  let remaining = answer;
-  const selected: string[] = [];
-  while (remaining.length > 0) {
-    const label = labels
-      .filter((candidate) => !selected.includes(candidate))
-      .sort((left, right) => right.length - left.length)
-      .find((candidate) => remaining === candidate || remaining.startsWith(`${candidate}, `));
-    if (!label) break;
-    selected.push(label);
-    remaining = remaining === label ? "" : remaining.slice(label.length + 2);
-  }
-  return { selected, custom: remaining || null };
+  return splitMultiSelectAnswer(answer, labels);
 }
 
 /** Owns OMP question mapping and the ask tool's multi-RPC answer sequence. */

@@ -1987,6 +1987,7 @@ export class VoiceAssistantWebSocketServer {
         providerFeatureDefaults: true,
         // COMPAT(globalFeatureDefaults): added in v0.11.3, remove gate after 2027-04-14.
         globalFeatureDefaults: true,
+        hopliteProvider: this.providerSnapshotManager.supportsConfigRequiredProvider("hoplite"),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: true,
         // COMPAT(importSessionSearch): added in v0.7.3, remove gate after 2027-03-02.

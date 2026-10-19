@@ -549,6 +549,7 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
     type: z.literal("prompt"),
     message: z.string(),
     images: z.array(OmpImageContentSchema).optional(),
+    streamingBehavior: z.enum(["steer", "followUp"]).optional(),
   }),
   z.object({
     ...OmpCommandBase,

@@ -62,6 +62,7 @@ export class UsageSourceRegistry {
     { hostEpoch: string; stateSequence: number; entries: UsageReportEntry[] }
   >();
   private readonly cache = new Map<string, { at: number; entry: UsageReportEntry }>();
+  private readonly successful = new Map<string, NonNullable<UsageReportEntry["lastSuccessful"]>>();
   private readonly pending = new Map<string, Promise<UsageReportEntry>>();
 
   constructor(
@@ -87,6 +88,8 @@ export class UsageSourceRegistry {
     }
     for (const key of this.known.keys()) if (key.startsWith(`${id}:`)) this.known.delete(key);
     for (const key of this.cache.keys()) if (key.startsWith(`${id}:`)) this.cache.delete(key);
+    for (const key of this.successful.keys())
+      if (key.startsWith(`${id}:`)) this.successful.delete(key);
     for (const key of this.pending.keys()) if (key.startsWith(`${id}:`)) this.pending.delete(key);
   }
 
@@ -107,7 +110,7 @@ export class UsageSourceRegistry {
     } else if (options.reportIds !== undefined) {
       ids = options.reportIds;
     } else {
-      this.defaults = await this.discover({ kind: "global" });
+      this.defaults = await this.discover({ kind: "global" }, this.defaults);
       this.mergeKnown();
       ids = [...this.known.keys()];
     }
@@ -163,7 +166,11 @@ export class UsageSourceRegistry {
   private async discoverAgent(agentId: string): Promise<string[]> {
     if (!this.agents.hasAgent(agentId)) throw new Error(`Unknown agent: ${agentId}`);
     const session = this.agents.usageSession(agentId);
-    if (!session) return [];
+    if (!session) {
+      this.byAgent.delete(agentId);
+      this.mergeKnown();
+      return [];
+    }
     const previous = this.byAgent.get(agentId);
     const sameScope =
       previous?.sessionKey === session.sessionKey &&
@@ -207,9 +214,26 @@ export class UsageSourceRegistry {
         }
       }
     }
+    // Fetch freshness expires independently of successful snapshots. Retain only live identities.
+    const active = this.activeCacheKeys();
+    for (const key of this.successful.keys()) if (!active.has(key)) this.successful.delete(key);
+    for (const key of this.cache.keys()) if (!active.has(key)) this.cache.delete(key);
   }
 
-  private async discover(scope: UsageScope): Promise<Map<string, KnownReport>> {
+  private activeCacheKeys(): Set<string> {
+    return new Set(
+      [
+        this.known,
+        this.defaults,
+        ...[...this.byAgent.values()].map((agent) => agent.reports),
+      ].flatMap((reports) => [...reports].map(([id, report]) => cacheIdentity(id, report))),
+    );
+  }
+
+  private async discover(
+    scope: UsageScope,
+    previous: ReadonlyMap<string, KnownReport> = new Map(),
+  ): Promise<Map<string, KnownReport>> {
     const discovered = await Promise.all(
       [...this.sources.values()].map(async (source) => {
         const reports = new Map<string, KnownReport>();
@@ -236,6 +260,11 @@ export class UsageSourceRegistry {
           }
         } catch (error) {
           this.logger.warn({ sourceId: source.id, err: error }, "Usage source discovery failed");
+          // A failed store read does not confirm removal. Session discovery has no previous
+          // mapping because a resumed agent may use a different launch environment.
+          for (const [id, report] of previous) {
+            if (report.source === source) reports.set(id, report);
+          }
         }
         return reports;
       }),
@@ -274,25 +303,42 @@ export class UsageSourceRegistry {
 
   private fetchId(id: string, known: KnownReport, forceRefresh = false): Promise<UsageReportEntry> {
     // Account identity groups cards; the ordered login set identifies a fetch result.
-    const cacheKey = `${id}:${createHash("sha256")
-      .update(JSON.stringify([known.label, known.logins.map(loginKey)]))
-      .digest("hex")}`;
+    const cacheKey = cacheIdentity(id, known);
     const cached = this.cache.get(cacheKey);
     if (!forceRefresh && cached && this.now() - cached.at < this.ttlMs)
       return Promise.resolve(cached.entry);
     const pending = this.pending.get(cacheKey);
     if (pending) return pending;
     const request = (async () => {
+      const fetchedAt = new Date(this.now()).toISOString();
+      const outcome = await this.fetchWithFallback(known);
+      const completedAt = new Date(this.now()).toISOString();
       const entry: UsageReportEntry = {
         id,
         sourceId: known.source.id,
         sourceLabel: known.source.label,
         icon: known.source.icon,
         account: { label: known.label },
-        fetchedAt: new Date(this.now()).toISOString(),
-        ...(await this.fetchWithFallback(known)),
+        fetchedAt,
+        ...outcome,
       };
-      if (this.sources.get(known.source.id) === known.source) this.writeCache(cacheKey, entry);
+      if (entry.report.status === "available") {
+        entry.successfulAt = completedAt;
+      } else {
+        entry.lastSuccessful = this.successful.get(cacheKey);
+      }
+      if (
+        this.sources.get(known.source.id) === known.source &&
+        this.activeCacheKeys().has(cacheKey)
+      ) {
+        if (entry.report.status === "available") {
+          this.successful.set(cacheKey, {
+            fetchedAt: completedAt,
+            report: entry.report,
+          });
+        }
+        this.writeCache(cacheKey, entry);
+      }
       return entry;
     })();
     this.pending.set(cacheKey, request);
@@ -384,4 +430,10 @@ function loginKey(login: Login): string {
       ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
       : value,
   );
+}
+
+function cacheIdentity(id: string, known: KnownReport): string {
+  return `${id}:${createHash("sha256")
+    .update(JSON.stringify([known.label, known.logins.map(loginKey)]))
+    .digest("hex")}`;
 }

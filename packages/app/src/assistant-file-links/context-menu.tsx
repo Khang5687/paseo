@@ -29,9 +29,9 @@ interface FileLinkContextMenuProps {
 }
 
 const TRIGGER_STYLE: ViewStyle = {
-  // Same as the tooltip wrapper: RN-web honors "inline-flex", which keeps the link in the
-  // paragraph's inline flow.
-  display: "inline-flex" as ViewStyle["display"],
+  // The trigger sits inside a prose paragraph; "contents" leaves no box, so a long path still
+  // wraps across lines like the bare link does.
+  display: "contents" as ViewStyle["display"],
 };
 
 /**

@@ -9,6 +9,7 @@ import type {
   AgentSessionConfig,
   AgentStreamEvent,
 } from "../../../agent-sdk-types.js";
+import { splitMultiSelectAnswer } from "../../question-card-answer.js";
 
 export class SessionPermissions {
   private readonly pending = new Map<string, AgentPermissionRequest>();
@@ -145,15 +146,9 @@ function fieldAnswer(
   const header = field.title ?? field.key;
   const answerList = readQuestionAnswerList(updatedInput, header);
   if (answerList) return field.type === "multiselect" ? answerList : answerList.join(", ");
-  const value: unknown = Reflect.get(answers, field.key) ?? Reflect.get(answers, header);
   // COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before
-  // v0.11.0 send only a comma-joined string, so a comma inside an answer still splits it here.
-  if (field.type === "multiselect" && typeof value === "string")
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-  return value;
+  // v0.11.0 send only a comma-joined string; formAnswer splits it against the option labels.
+  return Reflect.get(answers, field.key) ?? Reflect.get(answers, header);
 }
 
 function formAnswer(field: FormInfo["fields"][number], value: unknown): FormValue | undefined {
@@ -168,8 +163,8 @@ function formAnswer(field: FormInfo["fields"][number], value: unknown): FormValu
     );
   };
   if (field.type === "multiselect") {
-    if (Array.isArray(value) && value.every((item: unknown) => typeof item === "string"))
-      return value.map(labelValue);
+    const selected = multiSelectAnswer(field, value);
+    if (selected) return selected.map(labelValue);
   } else if (field.type === "string" && typeof value === "string") {
     return labelValue(value);
   } else if (field.type === "boolean") {
@@ -186,4 +181,18 @@ function formAnswer(field: FormInfo["fields"][number], value: unknown): FormValu
       return numeric;
   }
   throw new Error(`Invalid answer for OpenCode question ${field.key}`);
+}
+
+type MultiSelectField = Extract<FormInfo["fields"][number], { type: "multiselect" }>;
+
+function multiSelectAnswer(field: MultiSelectField, value: unknown): string[] | undefined {
+  if (Array.isArray(value) && value.every((item: unknown) => typeof item === "string"))
+    return value;
+  if (typeof value !== "string") return undefined;
+  const { selected, custom } = splitMultiSelectAnswer(
+    value,
+    field.options.map((option) => option.label),
+  );
+  if (custom === null) return selected;
+  return field.custom === true ? [...selected, custom] : undefined;
 }

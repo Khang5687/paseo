@@ -757,6 +757,7 @@ export class OmpAgentSession implements AgentSession {
   // Bumped by every run start and yield: a wait for provider idle belongs to the latest
   // yield, and a goal continuation's run ends with its own yield and its own wait.
   private providerIdleWait = 0;
+  private outOfBandTurnStartAnnounced = false;
   private activeTurnHasUserMessage = false;
   private activeNoTurnPromptText: string | null = null;
   private readonly pendingNoTurnOutputs: Array<{ turnId: string; message: string }> = [];
@@ -950,6 +951,20 @@ export class OmpAgentSession implements AgentSession {
   }
 
   async startTurn(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<StartTurnResult> {
+    return this.startPrompt({ prompt, options });
+  }
+
+  private async startPrompt({
+    prompt,
+    options,
+    streamingBehavior,
+    announceTurn = false,
+  }: {
+    prompt: AgentPromptInput;
+    options?: AgentRunOptions;
+    streamingBehavior?: "steer" | "followUp";
+    announceTurn?: boolean;
+  }): Promise<StartTurnResult> {
     if (this.activeTurnId) {
       throw new Error("An OMP turn is already active");
     }
@@ -962,11 +977,16 @@ export class OmpAgentSession implements AgentSession {
     this.activeAssistantMessageId = null;
     this.activeTurnTerminalAssistantMessage = null;
     this.activeTurnStarted = false;
+    this.outOfBandTurnStartAnnounced = false;
     this.activeTurnHasUserMessage = false;
     this.activePromptRequestId = null;
     this.clearNoTurnBuffers();
     this.activeNoTurnPromptText = payload.text;
     this.usagePoller.startTurn();
+    if (announceTurn) {
+      this.outOfBandTurnStartAnnounced = true;
+      this.emit({ type: "turn_started", provider: this.provider, turnId });
+    }
 
     void (async () => {
       try {
@@ -977,7 +997,11 @@ export class OmpAgentSession implements AgentSession {
           (messages) => new Set(messages.map((message) => message.entryId)),
           () => new Set(),
         );
-        const ack = await this.runtimeSession.prompt(payload.text, payload.images);
+        const ack = await this.runtimeSession.prompt({
+          message: payload.text,
+          images: payload.images,
+          streamingBehavior,
+        });
         this.activePromptRequestId = ack.requestId ?? null;
         const correlatedResult = ack.requestId
           ? this.pendingPromptResults.get(ack.requestId)
@@ -1301,6 +1325,7 @@ export class OmpAgentSession implements AgentSession {
     this.activeAssistantMessageId = null;
     this.activeTurnTerminalAssistantMessage = null;
     this.activeTurnStarted = false;
+    this.outOfBandTurnStartAnnounced = false;
     this.activeTurnHasUserMessage = false;
     this.pendingClientMessages.length = 0;
     this.clearNoTurnBuffers();
@@ -1363,12 +1388,13 @@ export class OmpAgentSession implements AgentSession {
       if (!message) {
         return null;
       }
+      const streamingBehavior = commandName === "steer" ? "steer" : "followUp";
       return {
         run: async () => {
-          if (commandName === "steer") {
-            this.runtimeSession.steer(message);
+          if (!this.activeTurnId && !this.activeTurnStarted) {
+            await this.startPrompt({ prompt: message, streamingBehavior, announceTurn: true });
           } else {
-            this.runtimeSession.followUp(message);
+            await this.runtimeSession.prompt({ message, streamingBehavior });
           }
         },
       };
@@ -1969,11 +1995,11 @@ export class OmpAgentSession implements AgentSession {
         this.activeTurnStarted = true;
         this.providerIdleWait += 1;
         this.clearNoTurnBuffers();
-        this.emit({
-          type: "turn_started",
-          provider: this.provider,
-          turnId,
-        });
+        if (this.outOfBandTurnStartAnnounced) {
+          this.outOfBandTurnStartAnnounced = false;
+        } else {
+          this.emit({ type: "turn_started", provider: this.provider, turnId });
+        }
         return;
       case "message_start":
         this.handleMessageStart(event);

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import type { OpenFileDisposition } from "@/workspace/file-open";
 import { openExternalUrl } from "@/utils/open-external-url";
+import { formatFileLinkTooltipPath } from "./tooltip-path";
 import type { InlinePathTarget } from "./parse";
 import {
   useAssistantFileLinkResolverContext,
@@ -25,6 +26,7 @@ export interface UseFileLinkResult {
    * An ambiguous token's real path is only known after `resolveFile`.
    */
   fileCandidate: InlinePathTarget | null;
+  tooltipPath: string | null;
   onHoverIn: () => void;
   onPress: () => void;
   open: (source: AssistantFileLinkSource, disposition: OpenFileDisposition) => void;
@@ -160,9 +162,10 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
     throw new UnresolvedFileLinkError(getAssistantFileLinkToken(stableSource));
   });
 
+  const tooltipPath = target ? formatFileLinkTooltipPath({ target, workspaceRoot }) : null;
   return useMemo(
-    () => ({ target, fileCandidate, onHoverIn, onPress, open, resolveFile }),
-    [target, fileCandidate, onHoverIn, onPress, open, resolveFile],
+    () => ({ target, fileCandidate, tooltipPath, onHoverIn, onPress, open, resolveFile }),
+    [target, fileCandidate, tooltipPath, onHoverIn, onPress, open, resolveFile],
   );
 }
 

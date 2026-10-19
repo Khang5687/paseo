@@ -995,6 +995,7 @@ const sheetStyles = StyleSheet.create((theme) => ({
   iconButton: {
     width: 28,
     height: 28,
+    flexShrink: 0,
     borderRadius: theme.borderRadius.full,
     alignItems: "center",
     justifyContent: "center",

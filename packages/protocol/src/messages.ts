@@ -4187,6 +4187,8 @@ export const ServerInfoStatusPayloadSchema = z
         providerFeatureDefaults: z.boolean().optional(),
         // COMPAT(globalFeatureDefaults): added in v0.11.3, remove gate after 2027-04-14.
         globalFeatureDefaults: z.boolean().optional(),
+        // COMPAT(hopliteProvider): added after v0.11.2, remove after 2027-04-15 once host floor includes the bundled adapter.
+        hopliteProvider: z.boolean().optional(),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: z.boolean().optional(),
         // COMPAT(importSessionSearch): added in v0.8.0, remove gate after 2027-03-02.
@@ -6854,16 +6856,17 @@ export const UsageRoutingSchema = z.object({
   hostEpoch: z.string(),
   stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
+const AvailableUsageReportSchema = z.object({
+  status: z.literal("available"),
+  planLabel: z.string().optional(),
+  windows: z.array(ProviderUsageWindowSchema),
+  balances: z.array(ProviderUsageBalanceSchema).optional(),
+  details: z.array(ProviderUsageDetailSchema).optional(),
+  quotaIdentity: UsageQuotaIdentitySchema.optional(),
+  subscription: UsageSubscriptionSchema.optional(),
+});
 export const UsageReportSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("available"),
-    planLabel: z.string().optional(),
-    windows: z.array(ProviderUsageWindowSchema),
-    balances: z.array(ProviderUsageBalanceSchema).optional(),
-    details: z.array(ProviderUsageDetailSchema).optional(),
-    quotaIdentity: UsageQuotaIdentitySchema.optional(),
-    subscription: UsageSubscriptionSchema.optional(),
-  }),
+  AvailableUsageReportSchema,
   z.object({ status: z.literal("unavailable"), problem: UsageProblemSchema }),
   z.object({ status: z.literal("error"), error: z.string() }),
 ]);
@@ -6876,6 +6879,11 @@ export const UsageReportEntrySchema = z.object({
   icon: z.string().optional(),
   report: UsageReportSchema,
   routing: UsageRoutingSchema.optional(),
+  // Successful completion time; fetchedAt remains the attempt timestamp for ordering.
+  successfulAt: z.string().optional(),
+  lastSuccessful: z
+    .object({ fetchedAt: z.string(), report: AvailableUsageReportSchema })
+    .optional(),
   loginErrors: z
     .array(
       z.object({
