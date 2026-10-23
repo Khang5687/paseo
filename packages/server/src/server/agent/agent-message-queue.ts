@@ -13,10 +13,11 @@ export interface AgentMessageQueueDispatcherOptions {
 
 /**
  * Drains the daemon-owned message queue: whenever an agent settles idle with
- * nothing blocking it and messages queued, the head is sent through the same
- * path `send_agent_message` uses. One dispatch per agent is in flight at a
- * time, and the dispatch holds the slot until the run has actually started so
- * the idle state preceding a run start cannot drain a second entry.
+ * nothing blocking it, messages queued, and the queue not paused, the head is
+ * sent through the same path `send_agent_message` uses. One dispatch per agent
+ * is in flight at a time, and the dispatch holds the slot until the run has
+ * actually started so the idle state preceding a run start cannot drain a
+ * second entry. Pausing only stops the automatic drain; send-now still works.
  */
 export class AgentMessageQueueDispatcher {
   private readonly agentManager: AgentManager;
@@ -40,6 +41,7 @@ export class AgentMessageQueueDispatcher {
         if (agent.lifecycle !== "idle") return;
         if (agent.pendingPermissions.size > 0) return;
         if (agent.queuedMessages.length === 0) return;
+        if (agent.queuePaused) return;
         this.dispatch(agent.id, { reason: "idle" });
       },
       { replayState: false },
@@ -67,9 +69,9 @@ export class AgentMessageQueueDispatcher {
   }
 
   /**
-   * Drains the head if the agent is currently idle. Called after an add so a
-   * message queued against an agent that already finished does not sit until
-   * the next state event.
+   * Drains the head if the agent is currently idle and its queue is not paused.
+   * Called after an add, so a message queued against an agent that already
+   * finished does not sit until the next state event, and after unpausing.
    */
   drainIfIdle(agentId: string): void {
     const agent = this.agentManager.getAgent(agentId);
@@ -77,6 +79,7 @@ export class AgentMessageQueueDispatcher {
     if (agent.lifecycle !== "idle") return;
     if (agent.pendingPermissions.size > 0) return;
     if (agent.queuedMessages.length === 0) return;
+    if (agent.queuePaused) return;
     this.dispatch(agentId, { reason: "idle" });
   }
 

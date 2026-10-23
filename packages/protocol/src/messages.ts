@@ -857,6 +857,8 @@ export const AgentSnapshotPayloadSchema = z.object({
   providerUnavailable: z.boolean().optional(),
   // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02. Absent on older daemons.
   queuedMessages: z.array(AgentQueuedMessageSummaryPayloadSchema).optional(),
+  // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24. Absent = not paused.
+  queuePaused: z.boolean().optional(),
 });
 
 export type AgentSnapshotPayload = z.infer<typeof AgentSnapshotPayloadSchema>;
@@ -2726,6 +2728,30 @@ export const AgentQueueSendNowRequestSchema = z.object({
   activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
 });
 
+// COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+export const AgentQueueMoveRequestSchema = z.object({
+  type: z.literal("agent.queue.move.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  messageId: z.string(),
+  toIndex: z.number().int().nonnegative(),
+});
+
+// COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+export const AgentQueueClearRequestSchema = z.object({
+  type: z.literal("agent.queue.clear.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+});
+
+// COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+export const AgentQueueSetPausedRequestSchema = z.object({
+  type: z.literal("agent.queue.set_paused.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  paused: z.boolean(),
+});
+
 // Highlighted diff token schema
 // Note: style can be a compound class name (e.g., "heading meta") from the syntax highlighter
 const HighlightTokenSchema = z.object({
@@ -3385,6 +3411,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueRemoveRequestSchema,
   AgentQueueUpdateRequestSchema,
   AgentQueueSendNowRequestSchema,
+  AgentQueueMoveRequestSchema,
+  AgentQueueClearRequestSchema,
+  AgentQueueSetPausedRequestSchema,
   FileExplorerRequestSchema,
   FileSubscribeRequestSchema,
   FileUnsubscribeRequestSchema,
@@ -3780,6 +3809,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02 once daemon floor >= v0.10.0.
         // Daemon owns the per-agent message queue (agent.queue.* RPCs, queuedMessages on snapshots).
         messageQueue: z.boolean().optional(),
+        // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+        // Daemon supports agent.queue.move/clear/set_paused and queuePaused on snapshots.
+        messageQueueControls: z.boolean().optional(),
       })
       .optional(),
   })
@@ -5027,6 +5059,38 @@ export const AgentQueueSendNowResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     agentId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentQueueMoveResponseSchema = z.object({
+  type: z.literal("agent.queue.move.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentQueueClearResponseSchema = z.object({
+  type: z.literal("agent.queue.clear.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    removedCount: z.number(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentQueueSetPausedResponseSchema = z.object({
+  type: z.literal("agent.queue.set_paused.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    paused: z.boolean(),
     success: z.boolean(),
     error: z.string().nullable(),
   }),
@@ -7000,6 +7064,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueRemoveResponseSchema,
   AgentQueueUpdateResponseSchema,
   AgentQueueSendNowResponseSchema,
+  AgentQueueMoveResponseSchema,
+  AgentQueueClearResponseSchema,
+  AgentQueueSetPausedResponseSchema,
   SendAgentMessageResponseMessageSchema,
   SetVoiceModeResponseMessageSchema,
   DaemonGetStatusResponseSchema,
@@ -7511,10 +7578,16 @@ export type AgentQueueAddRequest = z.infer<typeof AgentQueueAddRequestSchema>;
 export type AgentQueueRemoveRequest = z.infer<typeof AgentQueueRemoveRequestSchema>;
 export type AgentQueueUpdateRequest = z.infer<typeof AgentQueueUpdateRequestSchema>;
 export type AgentQueueSendNowRequest = z.infer<typeof AgentQueueSendNowRequestSchema>;
+export type AgentQueueMoveRequest = z.infer<typeof AgentQueueMoveRequestSchema>;
+export type AgentQueueClearRequest = z.infer<typeof AgentQueueClearRequestSchema>;
+export type AgentQueueSetPausedRequest = z.infer<typeof AgentQueueSetPausedRequestSchema>;
 export type AgentQueueAddResponse = z.infer<typeof AgentQueueAddResponseSchema>;
 export type AgentQueueRemoveResponse = z.infer<typeof AgentQueueRemoveResponseSchema>;
 export type AgentQueueUpdateResponse = z.infer<typeof AgentQueueUpdateResponseSchema>;
 export type AgentQueueSendNowResponse = z.infer<typeof AgentQueueSendNowResponseSchema>;
+export type AgentQueueMoveResponse = z.infer<typeof AgentQueueMoveResponseSchema>;
+export type AgentQueueClearResponse = z.infer<typeof AgentQueueClearResponseSchema>;
+export type AgentQueueSetPausedResponse = z.infer<typeof AgentQueueSetPausedResponseSchema>;
 export type FileExplorerRequest = z.infer<typeof FileExplorerRequestSchema>;
 export type FileExplorerResponse = z.infer<typeof FileExplorerResponseSchema>;
 export type FileVersion = z.infer<typeof FileVersionSchema>;

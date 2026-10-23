@@ -80,6 +80,8 @@ const STORED_AGENT_SCHEMA = z.object({
   // Daemon-owned message queue. Full payloads (image bytes, attachments) so the
   // daemon can replay a queued message without the client that queued it.
   queuedMessages: z.array(AgentQueuedMessagePayloadSchema).optional(),
+  // Stops the automatic drain; absent = not paused.
+  queuePaused: z.boolean().optional(),
   archivedAt: z.string().nullable().optional(),
   owner: AgentOwnerSchema.optional(),
 });

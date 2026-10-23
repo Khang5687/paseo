@@ -38,6 +38,7 @@ export interface DaemonQueueClient {
     messageId: string;
     activeTurnBehavior?: ActiveTurnBehavior;
   }) => Promise<void>;
+  clearQueuedAgentMessages: (input: { agentId: string }) => Promise<number>;
 }
 
 export interface QueueMessageOnDaemonInput {
@@ -178,6 +179,121 @@ export async function sendQueuedMessageNowOnDaemon(
   }
   input.submission.accept(input.agentId, input.messageId);
   takeFromLocalMirror(input.localMirror, input.agentId, input.messageId);
+}
+
+export interface DeleteQueuedMessageOnDaemonInput {
+  client: DaemonQueueClient;
+  agentId: string;
+  messageId: string;
+  localMirror: QueueWriter;
+}
+
+export async function deleteQueuedMessageOnDaemon(
+  input: DeleteQueuedMessageOnDaemonInput,
+): Promise<void> {
+  await input.client.removeQueuedAgentMessage({
+    agentId: input.agentId,
+    messageId: input.messageId,
+  });
+  takeFromLocalMirror(input.localMirror, input.agentId, input.messageId);
+}
+
+export interface ClearQueueOnDaemonInput {
+  client: DaemonQueueClient;
+  agentId: string;
+  localMirror: QueueWriter;
+}
+
+export async function clearQueueOnDaemon(input: ClearQueueOnDaemonInput): Promise<void> {
+  await input.client.clearQueuedAgentMessages({ agentId: input.agentId });
+  if (input.localMirror.read(input.agentId).length === 0) return;
+  input.localMirror.write((prev) => {
+    const next = new Map(prev);
+    next.delete(input.agentId);
+    return next;
+  });
+}
+
+interface QueueEntry {
+  id: string;
+}
+
+export interface QueueMove {
+  messageId: string;
+  toIndex: number;
+}
+
+/** Same semantics as the daemon's move: take the entry out, insert at `toIndex` of what remains. */
+export function moveQueueEntry<T extends QueueEntry>(items: readonly T[], move: QueueMove): T[] {
+  const fromIndex = items.findIndex((item) => item.id === move.messageId);
+  if (fromIndex === -1) return [...items];
+  const next = items.filter((_, index) => index !== fromIndex);
+  next.splice(Math.min(move.toIndex, next.length), 0, items[fromIndex]);
+  return next;
+}
+
+/**
+ * Recovers the single move a drag produced. `after` is a permutation of
+ * `before` that moved one entry; returns null when the order did not change.
+ */
+export function findQueueMove<T extends QueueEntry>(
+  before: readonly T[],
+  after: readonly T[],
+): QueueMove | null {
+  let first = 0;
+  while (first < before.length && before[first].id === after[first].id) first++;
+  if (first === before.length) return null;
+  let last = before.length - 1;
+  while (last > first && before[last].id === after[last].id) last--;
+  if (after[first].id === before[last].id) {
+    return { messageId: before[last].id, toIndex: first };
+  }
+  return { messageId: before[first].id, toIndex: last };
+}
+
+/**
+ * A reorder shown before the daemon confirms it. It holds only while the daemon
+ * still lists the order it was applied over; any newer daemon order wins.
+ */
+export interface OptimisticQueueOrder {
+  baselineIds: readonly string[];
+  ids: readonly string[];
+}
+
+export function createOptimisticQueueOrder(
+  daemonQueue: readonly QueueEntry[],
+  reordered: readonly QueueEntry[],
+): OptimisticQueueOrder {
+  return {
+    baselineIds: daemonQueue.map((item) => item.id),
+    ids: reordered.map((item) => item.id),
+  };
+}
+
+export function isOptimisticQueueOrderCurrent(
+  daemonQueue: readonly QueueEntry[],
+  order: OptimisticQueueOrder,
+): boolean {
+  return (
+    daemonQueue.length === order.baselineIds.length &&
+    daemonQueue.every((item, index) => item.id === order.baselineIds[index])
+  );
+}
+
+/**
+ * Entries the reorder did not list (hidden while their send-now was in flight)
+ * keep their daemon order after the reordered ones.
+ */
+export function applyOptimisticQueueOrder<T extends QueueEntry>(
+  daemonQueue: readonly T[],
+  order: OptimisticQueueOrder | null,
+): readonly T[] {
+  if (!order || !isOptimisticQueueOrderCurrent(daemonQueue, order)) return daemonQueue;
+  const rank = new Map(order.ids.map((id, index) => [id, index]));
+  const unranked = order.ids.length;
+  return [...daemonQueue].sort(
+    (left, right) => (rank.get(left.id) ?? unranked) - (rank.get(right.id) ?? unranked),
+  );
 }
 
 /**

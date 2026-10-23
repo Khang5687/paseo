@@ -60,9 +60,14 @@ it and the queue survives a restart. `AgentMessageQueueDispatcher`
 the agent is already idle dispatches immediately. `send_now` pops a specific entry and sends it into
 the active turn with the caller's steer/interrupt behavior.
 
-Snapshots carry summaries only (`id`, `text`, counts, `createdAt`); the bytes stay on the record.
-Every client renders the same list from its agent subscription and edits it through the
-`agent.queue.*` RPCs. `remove` returns the full entry so the caller can put it back in a composer.
+`queuePaused` on the record stops the automatic drain and survives a restart; `send_now` still
+works while paused, and resuming drains the head if the agent is idle.
+
+Snapshots carry summaries only (`id`, `text`, counts, `createdAt`) plus `queuePaused` when set; the
+bytes stay on the record. Every client renders the same list from its agent subscription and edits
+it through the `agent.queue.*` RPCs: `add`, `update`, `remove`, `move`, `clear`, `set_paused`,
+`send_now`. `remove` returns the full entry so the caller can put it back in a composer. `move`
+clamps the target index to the end of the list.
 
 The app keeps a per-client mirror of the entries it queued itself, keyed by the daemon's id
 (`packages/app/src/composer/daemon-queue.ts`). The daemon holds the wire form, which cannot be turned
@@ -70,8 +75,16 @@ back into forge, workspace-file, or plugin composer attachments; a same-client e
 mirror instead. The mirror is pruned against each snapshot, so a dispatched or cross-client-removed
 entry never lingers. Cross-client edits restore text, images, and uploaded files and drop the rest.
 
+The composer shows a reorder before the daemon confirms it. The optimistic order holds only while the
+daemon still lists the order it was applied over, not until the RPC resolves: the `move` response and
+the snapshot that carries the new order can arrive in either order, and unrelated agent updates
+resend an unchanged queue. Once the daemon lists any other order, the optimistic one is dropped for
+good. A failed `move` reverts and toasts. On phones the row menu is the reorder path; the drag handle
+(long press on native) is a shortcut.
+
 Hosts without `features.messageQueue` fall back to the client-local queue the app shipped before
-(`// COMPAT(messageQueue)` marks both branches).
+(`// COMPAT(messageQueue)` marks both branches). Hosts without `features.messageQueueControls` lack
+`move`, `clear`, and `set_paused`; the app hides those controls (`// COMPAT(messageQueueControls)`).
 
 ## Relationships
 

@@ -101,6 +101,7 @@ export function toStoredAgentRecord(
     internal: options?.internal,
     owner: agent.owner,
     queuedMessages: agent.queuedMessages,
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
   } satisfies StoredAgentRecord;
 }
 
@@ -143,6 +144,7 @@ export function toAgentPayload(
     title: options?.title ?? null,
     labels: agent.labels,
     queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
   };
 
   const usage = sanitizeUsage(agent.lastUsage);
@@ -253,6 +255,7 @@ export function buildStoredAgentPayload(
     archivedAt: record.archivedAt ?? null,
     labels: normalizeLabels(record.labels),
     queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
+    ...(record.queuePaused ? { queuePaused: true } : {}),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
   };
 }

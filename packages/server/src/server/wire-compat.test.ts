@@ -110,6 +110,7 @@ class InMemoryAgentManager {
       activeForegroundTurnId: null,
       labels: {},
       queuedMessages: [],
+      queuePaused: false,
     };
   }
 
