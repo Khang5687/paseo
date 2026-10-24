@@ -6,6 +6,7 @@ import {
   AccountRoutingMutateResponseSchema,
   AccountRoutingStateUpdateSchema,
   AgentTimelineItemPayloadSchema,
+  SendAgentMessageRequestSchema,
   FileExplorerRequestSchema,
   OmpAccountRoutingMutationSchema,
   OmpAccountRoutingStateSchema,
@@ -918,3 +919,25 @@ describe("OMP account login messages", () => {
     expect(JSON.stringify(parsed)).not.toContain("secret");
   });
 });
+
+test.each(["all", "base", "uncommitted"] as const)(
+  "preserves %s review attachments while ignoring unknown attachments",
+  (mode) => {
+    const attachment = {
+      type: "review",
+      mimeType: "application/paseo-review",
+      cwd: "/repo",
+      mode,
+      baseRef: "main",
+      comments: [],
+    };
+    const parsed = SendAgentMessageRequestSchema.parse({
+      type: "send_agent_message_request",
+      requestId: "review",
+      agentId: "agent",
+      text: "Review",
+      attachments: [{ type: "future_attachment" }, attachment],
+    });
+    expect(parsed.attachments).toEqual([attachment]);
+  },
+);

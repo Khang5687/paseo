@@ -22,7 +22,7 @@ const BLUR_RADIUS: Record<Exclude<SkinBlur, "off">, number> = {
 
 // Static layout only: Reanimated views must not take Unistyles styles.
 const layout = StyleSheet.create({
-  fill: StyleSheet.absoluteFillObject,
+  fill: { ...StyleSheet.absoluteFill },
 });
 
 interface ShownSkin {
