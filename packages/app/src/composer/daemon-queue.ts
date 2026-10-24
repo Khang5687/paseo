@@ -1,5 +1,6 @@
 import type { ComposerAttachment } from "@/attachments/types";
 import type { AttachmentMetadata } from "@/attachments/types";
+import { retainAttachmentForGarbageCollection } from "@/attachments/gc-retention";
 import type {
   ActiveTurnBehavior,
   AgentQueuedMessagePayload,
@@ -9,7 +10,7 @@ import {
   splitComposerAttachmentsForSubmit,
   type ComposerAttachmentSubmitFormat,
 } from "@/composer/attachments/submit";
-import { createUserMessage } from "@/types/stream";
+import { createUserMessage, type StreamItem, type UserMessageItem } from "@/types/stream";
 import type {
   AttachmentPersister,
   MessageSubmissionWriter,
@@ -58,29 +59,40 @@ export interface QueueMessageOnDaemonInput {
   localMirror: QueueWriter;
 }
 
+/**
+ * Call before the composer clears: the queued images lose their draft reference then, and stay
+ * retained against attachment cleanup until the mirror entry references them.
+ */
 export async function queueMessageOnDaemon(
   input: QueueMessageOnDaemonInput,
 ): Promise<AgentQueuedMessageSummaryPayload> {
   const wirePayload = splitComposerAttachmentsForSubmit(input.attachments, {
     format: input.attachmentSubmitFormat,
   });
-  const imagesData = await input.encodeImages(wirePayload.images);
-  const summary = await input.client.addQueuedAgentMessage({
-    agentId: input.agentId,
-    text: input.text,
-    images: imagesData ?? [],
-    attachments: wirePayload.attachments,
-  });
-  input.localMirror.write((prev) => {
-    const next = new Map(prev);
-    const existing = next.get(input.agentId) ?? [];
-    next.set(input.agentId, [
-      ...existing,
-      { id: summary.id, text: input.text, attachments: input.attachments },
-    ]);
-    return next;
-  });
-  return summary;
+  const releaseImages = wirePayload.images.map((image) =>
+    retainAttachmentForGarbageCollection(image.id),
+  );
+  try {
+    const imagesData = await input.encodeImages(wirePayload.images);
+    const summary = await input.client.addQueuedAgentMessage({
+      agentId: input.agentId,
+      text: input.text,
+      images: imagesData ?? [],
+      attachments: wirePayload.attachments,
+    });
+    input.localMirror.write((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(input.agentId) ?? [];
+      next.set(input.agentId, [
+        ...existing,
+        { id: summary.id, text: input.text, attachments: input.attachments },
+      ]);
+      return next;
+    });
+    return summary;
+  } finally {
+    for (const release of releaseImages) release();
+  }
 }
 
 export interface RestoreQueuedMessageFromDaemonInput {
@@ -297,27 +309,94 @@ export function applyOptimisticQueueOrder<T extends QueueEntry>(
 }
 
 /**
- * Drops mirror entries the daemon no longer lists (dispatched, or removed by
- * another client). Call whenever the agent's `queuedMessages` summary changes.
+ * How long the mirror keeps an entry the daemon dropped without a matching timeline row. Past
+ * it, the entry was removed on another client rather than dispatched.
  */
-export function pruneLocalMirror(
-  localMirror: QueueWriter,
-  agentId: string,
-  daemonQueue: readonly AgentQueuedMessageSummaryPayload[],
-): void {
-  const liveIds = new Set(daemonQueue.map((item) => item.id));
-  const current = localMirror.read(agentId);
-  if (current.every((item) => liveIds.has(item.id))) return;
-  localMirror.write((prev) => {
+export const DISPATCH_ECHO_WAIT_MS = 60_000;
+
+export interface ReconcileLocalMirrorInput {
+  localMirror: QueueWriter;
+  agentId: string;
+  daemonQueue: readonly AgentQueuedMessageSummaryPayload[];
+  /** Reads the agent's loaded timeline rows; called only when an entry is settling. */
+  readTimeline: () => readonly StreamItem[];
+  attachmentSubmitFormat?: ComposerAttachmentSubmitFormat;
+  /** Puts a dispatched entry's local images and attachments on its timeline row. */
+  handoff: (message: UserMessageItem) => void;
+  nowMs: number;
+}
+
+/**
+ * Settles mirror entries the daemon no longer lists. The daemon records a dispatched entry's
+ * user message under the entry id but never echoes its images, so the row only shows them if
+ * this client hands its copy over. The queue snapshot drops the entry before that row arrives:
+ * keep the entry (and its images' cleanup reference) until the row shows up, or until
+ * `DISPATCH_ECHO_WAIT_MS` says it was removed elsewhere. Call when the agent's queue summary or
+ * timeline changes.
+ */
+export function reconcileLocalMirror(input: ReconcileLocalMirrorInput): void {
+  const current = input.localMirror.read(input.agentId);
+  if (current.length === 0) return;
+  const liveIds = new Set(input.daemonQueue.map((item) => item.id));
+  const settling = current.filter((entry) => !liveIds.has(entry.id));
+  if (settling.length === 0) return;
+  const settlingIds = new Set(settling.map((entry) => entry.id));
+  const echoes = new Map<string, UserMessageItem>();
+  for (const item of input.readTimeline()) {
+    if (
+      item.kind === "user_message" &&
+      item.clientMessageId &&
+      settlingIds.has(item.clientMessageId)
+    ) {
+      echoes.set(item.clientMessageId, item);
+    }
+  }
+
+  let changed = false;
+  const kept: QueuedComposerMessage[] = [];
+  const handoffs: UserMessageItem[] = [];
+  for (const entry of current) {
+    if (liveIds.has(entry.id)) {
+      kept.push(entry);
+      continue;
+    }
+    const echo = echoes.get(entry.id);
+    if (echo) {
+      const wire = splitComposerAttachmentsForSubmit(entry.attachments, {
+        format: input.attachmentSubmitFormat,
+      });
+      if (wire.images.length > 0 || wire.attachments.length > 0) {
+        handoffs.push(
+          createUserMessage({ ...echo, images: wire.images, attachments: wire.attachments }),
+        );
+      }
+      changed = true;
+      continue;
+    }
+    if (entry.leftDaemonQueueAt === undefined) {
+      kept.push({ ...entry, leftDaemonQueueAt: input.nowMs });
+      changed = true;
+      continue;
+    }
+    if (input.nowMs - entry.leftDaemonQueueAt >= DISPATCH_ECHO_WAIT_MS) {
+      changed = true;
+      continue;
+    }
+    kept.push(entry);
+  }
+  if (!changed) return;
+  // Settle the mirror before handing off: the handoff writes the store the caller reconciles
+  // from, and a re-entrant reconcile must not find the entry again.
+  input.localMirror.write((prev) => {
     const next = new Map(prev);
-    const kept = (next.get(agentId) ?? []).filter((item) => liveIds.has(item.id));
     if (kept.length === 0) {
-      next.delete(agentId);
+      next.delete(input.agentId);
     } else {
-      next.set(agentId, kept);
+      next.set(input.agentId, kept);
     }
     return next;
   });
+  for (const message of handoffs) input.handoff(message);
 }
 
 function takeFromLocalMirror(
