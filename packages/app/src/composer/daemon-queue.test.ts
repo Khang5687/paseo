@@ -4,6 +4,12 @@ import type { AgentQueuedMessagePayload } from "@getpaseo/protocol/messages";
 import type { UserMessageItem } from "@/types/stream";
 import type { MessageSubmissionWriter, QueuedComposerMessage, QueueWriter } from "./actions";
 import {
+  applyOptimisticQueueOrder,
+  clearQueueOnDaemon,
+  createOptimisticQueueOrder,
+  deleteQueuedMessageOnDaemon,
+  findQueueMove,
+  moveQueueEntry,
   pruneLocalMirror,
   queueMessageOnDaemon,
   restoreQueuedMessageFromDaemon,
@@ -62,6 +68,7 @@ function createClient(): DaemonQueueClient & {
       const index = queue.findIndex((item) => item.id === input.messageId);
       if (index !== -1) queue.splice(index, 1);
     },
+    clearQueuedAgentMessages: async () => queue.splice(0, queue.length).length,
   };
 }
 
@@ -297,5 +304,90 @@ describe("daemon-owned queue", () => {
     // The daemon still lists the entry; nothing local claims it.
     expect(client.queue.map((item) => item.id)).toEqual([theirs.id]);
     expect(mirror.state.has("agent-1")).toBe(false);
+  });
+
+  it("delete and clear drop the entries from the daemon and the local mirror", async () => {
+    const client = createClient();
+    const mirror = createMirror();
+    const queueText = (text: string) =>
+      queueMessageOnDaemon({
+        client,
+        agentId: "agent-1",
+        text,
+        attachments: [],
+        encodeImages: async () => [],
+        localMirror: mirror,
+      });
+    const first = await queueText("first");
+    await queueText("second");
+    await queueText("third");
+
+    await deleteQueuedMessageOnDaemon({
+      client,
+      agentId: "agent-1",
+      messageId: first.id,
+      localMirror: mirror,
+    });
+    expect(client.queue.map((item) => item.text)).toEqual(["second", "third"]);
+    expect(mirror.read("agent-1").map((item) => item.text)).toEqual(["second", "third"]);
+
+    await clearQueueOnDaemon({ client, agentId: "agent-1", localMirror: mirror });
+    expect(client.queue).toEqual([]);
+    expect(mirror.state.has("agent-1")).toBe(false);
+  });
+});
+
+describe("queue reordering", () => {
+  const summary = (id: string) => ({
+    id,
+    text: id,
+    imageCount: 0,
+    attachmentCount: 0,
+    createdAt: "2026-10-24T00:00:00.000Z",
+  });
+  const a = summary("a");
+  const b = summary("b");
+  const c = summary("c");
+  const d = summary("d");
+  const ids = (items: readonly { id: string }[]) => items.map((item) => item.id);
+
+  it("recovers the daemon move from a drag, and replaying it yields the dragged order", () => {
+    const before = [a, b, c, d];
+    const drags = [
+      [c, a, b, d],
+      [b, c, a, d],
+      [a, b, d, c],
+      [d, a, b, c],
+      [b, a, c, d],
+    ];
+    for (const after of drags) {
+      const move = findQueueMove(before, after);
+      expect(move).not.toBeNull();
+      if (move) expect(ids(moveQueueEntry(before, move))).toEqual(ids(after));
+    }
+    expect(findQueueMove(before, [a, b, c, d])).toBeNull();
+    // The daemon clamps an index past the end to the last slot.
+    expect(ids(moveQueueEntry(before, { messageId: "a", toIndex: 99 }))).toEqual([
+      "b",
+      "c",
+      "d",
+      "a",
+    ]);
+  });
+
+  it("shows an optimistic order until the daemon lists any other order", () => {
+    const daemonQueue = [a, b, c];
+    const order = createOptimisticQueueOrder(
+      daemonQueue,
+      moveQueueEntry(daemonQueue, { messageId: "c", toIndex: 0 }),
+    );
+
+    expect(ids(applyOptimisticQueueOrder(daemonQueue, order))).toEqual(["c", "a", "b"]);
+    // A fresh snapshot with the same order (an unrelated agent update) keeps the move.
+    expect(ids(applyOptimisticQueueOrder([a, b, c], order))).toEqual(["c", "a", "b"]);
+    // The daemon's confirmed order, or anything another client did, wins.
+    expect(ids(applyOptimisticQueueOrder([c, a, b], order))).toEqual(["c", "a", "b"]);
+    expect(ids(applyOptimisticQueueOrder([b, c], order))).toEqual(["b", "c"]);
+    expect(applyOptimisticQueueOrder(daemonQueue, null)).toBe(daemonQueue);
   });
 });

@@ -104,6 +104,8 @@ export interface Agent {
   projectPlacement?: ProjectPlacementPayload | null;
   /** Daemon-owned queue summaries. Absent or empty on hosts without `features.messageQueue`. */
   queuedMessages?: AgentQueuedMessageSummaryPayload[];
+  /** Whether the host holds the queue instead of draining it. Absent on older hosts. */
+  queuePaused?: boolean;
 }
 
 export interface WorkspaceDescriptor {

@@ -2827,6 +2827,12 @@ export class Session {
         return this.handleAgentQueueUpdateRequest(msg);
       case "agent.queue.send_now.request":
         return this.handleAgentQueueSendNowRequest(msg);
+      case "agent.queue.move.request":
+        return this.handleAgentQueueMoveRequest(msg);
+      case "agent.queue.clear.request":
+        return this.handleAgentQueueClearRequest(msg);
+      case "agent.queue.set_paused.request":
+        return this.handleAgentQueueSetPausedRequest(msg);
       default:
         return undefined;
     }
@@ -8418,6 +8424,136 @@ export class Session {
           requestId: msg.requestId,
           agentId: resolved.agentId,
           message: null,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentQueueMoveRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.queue.move.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveQueueAgent(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.queue.move.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          success: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      await this.agentManager.moveQueuedMessage(resolved.agentId, msg.messageId, msg.toIndex);
+      this.emit({
+        type: "agent.queue.move.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          success: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.queue.move.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentQueueClearRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.queue.clear.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveQueueAgent(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.queue.clear.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          removedCount: 0,
+          success: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      const removedCount = await this.agentManager.clearQueuedMessages(resolved.agentId);
+      this.emit({
+        type: "agent.queue.clear.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          removedCount,
+          success: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.queue.clear.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          removedCount: 0,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentQueueSetPausedRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.queue.set_paused.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveQueueAgent(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.queue.set_paused.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          paused: false,
+          success: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      const paused = await this.agentManager.setQueuePaused(resolved.agentId, msg.paused);
+      this.emit({
+        type: "agent.queue.set_paused.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          paused,
+          success: true,
+          error: null,
+        },
+      });
+      // Resuming an idle agent drains the head now rather than at its next idle.
+      if (!paused) {
+        this.agentMessageQueue.drainIfIdle(resolved.agentId);
+      }
+    } catch (error) {
+      this.emit({
+        type: "agent.queue.set_paused.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          paused: this.agentManager.getAgent(resolved.agentId)?.queuePaused ?? false,
           success: false,
           error: error instanceof Error ? error.message : String(error),
         },

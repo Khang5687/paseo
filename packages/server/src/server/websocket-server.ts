@@ -2019,6 +2019,8 @@ export class VoiceAssistantWebSocketServer {
         agentConfigApply: true,
         // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02.
         messageQueue: true,
+        // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+        messageQueueControls: true,
         // COMPAT(providerDisabledModels): added in v0.11.2, remove gate after 2027-04-08.
         providerDisabledModels: true,
       },

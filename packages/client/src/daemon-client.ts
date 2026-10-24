@@ -2426,6 +2426,62 @@ export class DaemonClient {
     }
   }
 
+  // Queue controls. Gate on `serverInfo.features.messageQueueControls`.
+
+  async moveQueuedAgentMessage(
+    input: { agentId: string; messageId: string; toIndex: number },
+    requestId?: string,
+  ): Promise<void> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.move.response">(
+      {
+        requestId,
+        message: {
+          type: "agent.queue.move.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          toIndex: input.toIndex,
+        },
+      },
+    );
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to move queued agent message");
+    }
+  }
+
+  async clearQueuedAgentMessages(input: { agentId: string }, requestId?: string): Promise<number> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.clear.response">({
+        requestId,
+        message: {
+          type: "agent.queue.clear.request",
+          agentId: input.agentId,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to clear queued agent messages");
+    }
+    return response.removedCount;
+  }
+
+  async setAgentQueuePaused(
+    input: { agentId: string; paused: boolean },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.set_paused.response">({
+        requestId,
+        message: {
+          type: "agent.queue.set_paused.request",
+          agentId: input.agentId,
+          paused: input.paused,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to set agent queue paused state");
+    }
+    return response.paused;
+  }
+
   sendHeartbeat(params: {
     deviceType: "web" | "mobile";
     focusedAgentId: string | null;

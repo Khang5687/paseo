@@ -381,6 +381,89 @@ test("a message queued after the turn already ended dispatches on drainIfIdle", 
   expect(started.prompt).toBe("late add");
 });
 
+test("move reorders the shared list and clamps the target index", async () => {
+  const { agentId } = await createRunningAgent();
+  const a = await manager.addQueuedMessage(agentId, { text: "a" });
+  const b = await manager.addQueuedMessage(agentId, { text: "b" });
+  const c = await manager.addQueuedMessage(agentId, { text: "c" });
+  const queuedIds = () => manager.getAgent(agentId)?.queuedMessages.map((item) => item.id);
+
+  await manager.moveQueuedMessage(agentId, c.id, 0);
+  expect(queuedIds()).toEqual([c.id, a.id, b.id]);
+
+  await manager.moveQueuedMessage(agentId, c.id, 99);
+  expect(queuedIds()).toEqual([a.id, b.id, c.id]);
+
+  await manager.moveQueuedMessage(agentId, b.id, 0);
+  expect(queuedIds()).toEqual([b.id, a.id, c.id]);
+  expect(toAgentPayload(manager.getAgent(agentId)!).queuedMessages?.map((item) => item.id)).toEqual(
+    [b.id, a.id, c.id],
+  );
+
+  await expect(manager.moveQueuedMessage(agentId, "missing", 0)).rejects.toThrow(
+    `Queued message 'missing' not found on agent '${agentId}'`,
+  );
+
+  await storage.flush();
+  expect((await storage.get(agentId))?.queuedMessages?.map((item) => item.id)).toEqual([
+    b.id,
+    a.id,
+    c.id,
+  ]);
+});
+
+test("clear empties the queue and returns the removed count", async () => {
+  const { agentId } = await createRunningAgent();
+  await manager.addQueuedMessage(agentId, { text: "one" });
+  await manager.addQueuedMessage(agentId, { text: "two" });
+
+  expect(await manager.clearQueuedMessages(agentId)).toBe(2);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([]);
+  expect(await manager.clearQueuedMessages(agentId)).toBe(0);
+
+  await storage.flush();
+  expect((await storage.get(agentId))?.queuedMessages).toEqual([]);
+});
+
+test("a paused queue does not drain on idle, send_now still works, and resuming drains the head", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const first = await manager.addQueuedMessage(agentId, { text: "first queued" });
+  const second = await manager.addQueuedMessage(agentId, { text: "second queued" });
+
+  expect(await manager.setQueuePaused(agentId, true)).toBe(true);
+  expect(toAgentPayload(manager.getAgent(agentId)!).queuePaused).toBe(true);
+  await storage.flush();
+  expect((await storage.get(agentId))?.queuePaused).toBe(true);
+
+  session.completeTurn(session.turns[0].turnId);
+  await waitForLifecycle(manager, agentId, "idle");
+  dispatcher.drainIfIdle(agentId);
+  // Queue mutations share the agent's lifecycle lane, so this runs after any
+  // dispatch the idle state could have started.
+  await manager.setQueuePaused(agentId, true);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([first, second]);
+  expect(session.turns).toHaveLength(1);
+
+  const sentNow = session.waitForNextTurn();
+  await dispatcher.sendNow(agentId, second.id, "steer");
+  expect((await sentNow).prompt).toBe("second queued");
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([first]);
+
+  session.completeTurn(session.turns[1].turnId);
+  await waitForLifecycle(manager, agentId, "idle");
+  await manager.setQueuePaused(agentId, true);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([first]);
+  expect(session.turns).toHaveLength(2);
+
+  const resumedTurn = session.waitForNextTurn();
+  expect(await manager.setQueuePaused(agentId, false)).toBe(false);
+  dispatcher.drainIfIdle(agentId);
+  expect((await resumedTurn).prompt).toBe("first queued");
+  await waitForLifecycle(manager, agentId, "running");
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([]);
+  expect(toAgentPayload(manager.getAgent(agentId)!)).not.toHaveProperty("queuePaused");
+});
+
 test("the queue survives a daemon restart and drains once the agent is resumed", async () => {
   const { agentId, session } = await createRunningAgent();
   const queued = await manager.addQueuedMessage(agentId, { text: "after restart" });
@@ -418,6 +501,55 @@ test("the queue survives a daemon restart and drains once the agent is resumed",
     expect(started.prompt).toBe("after restart");
     await waitForLifecycle(restarted, agentId, "running");
     expect(restarted.getAgent(agentId)?.queuedMessages).toEqual([]);
+  } finally {
+    restartedDispatcher.detach();
+    for (const agent of restarted.listAgents()) {
+      await restarted.closeAgent(agent.id).catch(() => undefined);
+    }
+  }
+});
+
+test("a paused queue stays paused across a daemon restart", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const queued = await manager.addQueuedMessage(agentId, { text: "held over restart" });
+  await manager.setQueuePaused(agentId, true);
+  dispatcher.detach();
+  session.completeTurn(session.turns[0].turnId);
+  await manager.closeAgent(agentId);
+  await storage.flush();
+
+  const restartedClient = new HeldTurnClient();
+  const restarted = new AgentManager({
+    clients: { codex: restartedClient },
+    registry: storage,
+    logger,
+  });
+  const restartedDispatcher = new AgentMessageQueueDispatcher({
+    agentManager: restarted,
+    agentStorage: storage,
+    logger,
+  });
+  restartedDispatcher.attach();
+  try {
+    const record = await storage.get(agentId);
+    expect(record?.queuePaused).toBe(true);
+    const resumed = await restarted.resumeAgentFromPersistence(
+      { provider: "codex", sessionId: session.id },
+      { cwd: workdir, provider: "codex" },
+      agentId,
+      { queuedMessages: record?.queuedMessages ?? [], queuePaused: record?.queuePaused ?? false },
+    );
+    expect(resumed.queuePaused).toBe(true);
+    await waitForLifecycle(restarted, agentId, "idle");
+    restartedDispatcher.drainIfIdle(agentId);
+    await restarted.setQueuePaused(agentId, true);
+    expect(restarted.getAgent(agentId)?.queuedMessages).toEqual([queued]);
+    expect(restartedClient.latest.turns).toHaveLength(0);
+
+    const resumedTurn = restartedClient.latest.waitForNextTurn();
+    await restarted.setQueuePaused(agentId, false);
+    restartedDispatcher.drainIfIdle(agentId);
+    expect((await resumedTurn).prompt).toBe("held over restart");
   } finally {
     restartedDispatcher.detach();
     for (const agent of restarted.listAgents()) {

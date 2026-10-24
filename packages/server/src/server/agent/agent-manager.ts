@@ -467,6 +467,11 @@ interface ManagedAgentBase {
    * agent goes idle (see agent-message-queue.ts). Persisted with the record.
    */
   queuedMessages: AgentQueuedMessagePayload[];
+  /**
+   * Stops the automatic drain while true; send-now still dispatches. Persisted
+   * with the record so a pause survives a daemon restart.
+   */
+  queuePaused: boolean;
 }
 
 type ManagedAgentWithSession = ManagedAgentBase & {
@@ -1406,6 +1411,7 @@ export class AgentManager {
       owner?: AgentOwner;
       attention?: AttentionState;
       queuedMessages?: AgentQueuedMessagePayload[];
+      queuePaused?: boolean;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1439,6 +1445,7 @@ export class AgentManager {
       owner?: AgentOwner;
       attention?: AttentionState;
       queuedMessages?: AgentQueuedMessagePayload[];
+      queuePaused?: boolean;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1689,6 +1696,8 @@ export class AgentManager {
         lastUsage: preservedLastUsage,
         lastError: preservedLastError,
         attention: preservedAttention,
+        queuedMessages: existing.queuedMessages,
+        queuePaused: existing.queuePaused,
         restoring: true,
       });
     } catch (error) {
@@ -2073,6 +2082,7 @@ export class AgentManager {
         attention,
         internal: record.internal,
         queuedMessages: record.queuedMessages ?? [],
+        queuePaused: record.queuePaused ?? false,
         labels: record.labels,
       },
     });
@@ -2256,6 +2266,44 @@ export class AgentManager {
         agent.queuedMessages.filter((item) => item.id !== messageId),
       );
       return existing;
+    });
+  }
+
+  /** Moves an entry to `toIndex`, clamped to the end of the remaining list. */
+  async moveQueuedMessage(agentId: string, messageId: string, toIndex: number): Promise<void> {
+    await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const existing = agent.queuedMessages.find((item) => item.id === messageId);
+      if (!existing) {
+        throw new Error(`Queued message '${messageId}' not found on agent '${agent.id}'`);
+      }
+      const next = agent.queuedMessages.filter((item) => item.id !== messageId);
+      next.splice(Math.min(toIndex, next.length), 0, existing);
+      await this.writeQueuedMessages(agent, next);
+    });
+  }
+
+  /** Empties the queue and returns how many entries were removed. */
+  async clearQueuedMessages(agentId: string): Promise<number> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const removedCount = agent.queuedMessages.length;
+      await this.writeQueuedMessages(agent, []);
+      return removedCount;
+    });
+  }
+
+  /**
+   * Pauses or resumes the automatic drain. The caller drains the head after a
+   * resume (see `AgentMessageQueueDispatcher.drainIfIdle`).
+   */
+  async setQueuePaused(agentId: string, paused: boolean): Promise<boolean> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      agent.queuePaused = paused;
+      await this.persistSnapshot(agent);
+      this.emitState(agent, { persist: false });
+      return paused;
     });
   }
 
@@ -3730,6 +3778,7 @@ export class AgentManager {
       lastError?: string;
       attention?: AttentionState;
       queuedMessages?: AgentQueuedMessagePayload[];
+      queuePaused?: boolean;
       /**
        * Bringing a known agent back, rather than starting a new one. Its timestamps and
        * attention come from what was already recorded, and installing the session is not
@@ -3919,6 +3968,7 @@ export class AgentManager {
           workspaceId?: string;
           owner?: AgentOwner;
           queuedMessages?: AgentQueuedMessagePayload[];
+          queuePaused?: boolean;
         }
       | undefined;
   }): ActiveManagedAgent {
@@ -3961,6 +4011,7 @@ export class AgentManager {
       internal: config.internal ?? false,
       labels: options.labels ?? {},
       queuedMessages: options.queuedMessages ?? [],
+      queuePaused: options.queuePaused ?? false,
     } as ActiveManagedAgent;
   }
 

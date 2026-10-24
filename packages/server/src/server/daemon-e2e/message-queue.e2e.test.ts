@@ -93,3 +93,63 @@ test("a message queued by one client is visible to another and dispatched once b
     rmSync(cwd, { recursive: true, force: true });
   }
 }, 60_000);
+
+/**
+ * Queue controls by one client show up in the other client's snapshots: a
+ * move reorders B's list, a pause flags it, and a clear empties it.
+ */
+test("queue controls by one client are reflected in another client's snapshots", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-controls-"));
+  let daemon: TestPaseoDaemon | null = null;
+  let clientA: DaemonClient | null = null;
+  let clientB: DaemonClient | null = null;
+  try {
+    daemon = await createTestPaseoDaemon({ agentClients: createTestAgentClients() });
+    const url = `ws://127.0.0.1:${daemon.port}/ws`;
+    clientA = new DaemonClient({ url });
+    clientB = new DaemonClient({ url });
+    await clientA.connect();
+    await clientB.connect();
+    expect(clientA.getLastServerInfoMessage()?.features?.messageQueueControls).toBe(true);
+
+    const snapshotsSeenByB: AgentSnapshotPayload[] = [];
+    clientB.subscribeRawMessages((message) => {
+      if (message.type === "agent_update" && message.payload.kind === "upsert") {
+        snapshotsSeenByB.push(message.payload.agent);
+      }
+    });
+    await clientB.fetchAgents({ subscribe: {} });
+
+    const agent = await clientA.createAgent({ provider: "codex", cwd });
+    // Park the turn on a permission prompt so nothing drains while we edit.
+    await clientA.sendMessage(agent.id, "run echo hello");
+    const parked = await clientA.waitForFinish(agent.id, 30_000);
+    expect(parked.final?.pendingPermissions?.[0]?.id).toBeTruthy();
+
+    const first = await clientA.addQueuedAgentMessage({ agentId: agent.id, text: "first" });
+    const second = await clientA.addQueuedAgentMessage({ agentId: agent.id, text: "second" });
+
+    await clientA.moveQueuedAgentMessage({ agentId: agent.id, messageId: second.id, toIndex: 0 });
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuedMessages?.map((item) => item.id)).toEqual([second.id, first.id]);
+    });
+
+    expect(await clientA.setAgentQueuePaused({ agentId: agent.id, paused: true })).toBe(true);
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuePaused).toBe(true);
+    });
+
+    expect(await clientA.clearQueuedAgentMessages({ agentId: agent.id })).toBe(2);
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuedMessages).toEqual([]);
+    });
+  } finally {
+    await clientA?.close().catch(() => undefined);
+    await clientB?.close().catch(() => undefined);
+    await daemon?.close().catch(() => undefined);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 60_000);

@@ -101,6 +101,7 @@ export function toStoredAgentRecord(
     internal: options?.internal,
     owner: agent.owner,
     queuedMessages: agent.queuedMessages,
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
   } satisfies StoredAgentRecord;
 }
 
@@ -143,6 +144,7 @@ export function toAgentPayload(
     title: options?.title ?? null,
     labels: agent.labels,
     queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
     ...(agent.internal ? { internal: true } : {}),
   };
 
@@ -254,16 +256,19 @@ export function buildStoredAgentPayload(
     archivedAt: record.archivedAt ?? null,
     ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),
-    queuedMessages: summarizeQueuedMessages(record.queuedMessages),
+    ...projectStoredQueue(record),
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
   };
 }
 
-function summarizeQueuedMessages(
-  messages: AgentQueuedMessagePayload[] = [],
-): AgentQueuedMessageSummaryPayload[] {
-  return messages.map(summarizeQueuedMessage);
+function projectStoredQueue(
+  record: Pick<StoredAgentRecord, "queuedMessages" | "queuePaused">,
+): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused"> {
+  return {
+    queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
+    ...(record.queuePaused ? { queuePaused: true } : {}),
+  };
 }
 
 // Snapshots carry summaries only: image bytes stay in the record and are

@@ -362,6 +362,7 @@ function makeManagedAgent(input: {
     activeTurnId: input.activeTurn?.turnId ?? null,
     activeTurnStartedAt: input.activeTurn ? new Date(input.activeTurn.startedAt) : null,
     queuedMessages: [],
+    queuePaused: false,
   };
 }
 
