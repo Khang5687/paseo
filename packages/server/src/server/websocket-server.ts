@@ -511,11 +511,28 @@ const WS_CLOSE_INVALID_HELLO = 4002;
 const WS_CLOSE_INCOMPATIBLE_PROTOCOL = 4003;
 const WS_CLOSE_SERVER_SHUTDOWN = 1001;
 const WS_PROTOCOL_VERSION = 1;
+// The hosted relay replaces a daemon close with its own `1012 Server disconnected` and drops
+// frames still in flight when the daemon side closes, so a relay client learns why its hello
+// was refused only from a `hello.rejected` frame that reached it before the close.
+export const RELAY_HELLO_REJECTION_CLOSE_DELAY_MS = 1_000;
 const WS_RUNTIME_METRICS_FLUSH_MS = 30_000;
 const OWNER_SESSION_ADMISSION: SessionAdmission = {
   principalId: "owner",
   permissions: OWNER_PERMISSIONS,
 };
+
+/** Resolves when the peer closes the socket or after `timeoutMs`, whichever comes first. */
+async function waitForPeerClose(ws: WebSocketLike, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const elapsed = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  const closed = new Promise<void>((resolve) => {
+    ws.once("close", () => resolve());
+  });
+  await Promise.race([elapsed, closed]);
+  clearTimeout(timer);
+}
 
 export class MissingDaemonVersionError extends Error {
   constructor() {
@@ -1757,7 +1774,7 @@ export class VoiceAssistantWebSocketServer {
         },
         "Rejected hello due to protocol version mismatch",
       );
-      await this.rejectHello(ws, message, "incompatible_protocol");
+      await this.rejectHello(ws, message, "incompatible_protocol", pending.identity.transport);
       return;
     }
 
@@ -1880,7 +1897,7 @@ export class VoiceAssistantWebSocketServer {
       if (this.pendingConnections.get(ws) !== pending) return false;
       if ("rejection" in resolved) {
         this.clearPendingConnection(ws);
-        await this.rejectHello(ws, message, resolved.rejection);
+        await this.rejectHello(ws, message, resolved.rejection, pending.identity.transport);
         return false;
       }
       pending.admission = resolved.admission;
@@ -1889,7 +1906,7 @@ export class VoiceAssistantWebSocketServer {
       pending.connectionLogger.error({ err: error }, "Failed to resolve hello credential");
       if (this.pendingConnections.get(ws) === pending) {
         this.clearPendingConnection(ws);
-        await this.rejectHello(ws, message, "incorrect_password");
+        await this.rejectHello(ws, message, "incorrect_password", pending.identity.transport);
       }
       return false;
     }
@@ -1899,15 +1916,21 @@ export class VoiceAssistantWebSocketServer {
     ws: WebSocketLike,
     hello: WSHelloMessage,
     reason: "password_required" | "incorrect_password" | "incompatible_protocol",
+    transport: WebSocketConnectionIdentity["transport"],
   ): Promise<void> {
     // Older clients discard unknown frames, then use the close code and reason.
     // They never send hello.auth, so avoid sending an unknown envelope to them.
+    let sentRejection = false;
     if (hello.auth || hello.capabilities?.[CLIENT_CAPS.helloRejection] === true) {
       try {
         await ws.send(JSON.stringify({ type: "hello.rejected", reason, accepts: ["password"] }));
+        sentRejection = true;
       } catch {
         // The close reason remains the compatibility signal.
       }
+    }
+    if (sentRejection && transport === "relay") {
+      await waitForPeerClose(ws, RELAY_HELLO_REJECTION_CLOSE_DELAY_MS);
     }
     const closeReason = {
       password_required: "Password required",
