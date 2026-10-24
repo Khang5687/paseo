@@ -90,7 +90,7 @@ import {
   deleteQueuedMessageOnDaemon,
   isOptimisticQueueOrderCurrent,
   moveQueueEntry,
-  pruneLocalMirror,
+  reconcileLocalMirror,
   queueMessageOnDaemon,
   restoreQueuedMessageFromDaemon,
   sendQueuedMessageNowOnDaemon,
@@ -129,7 +129,10 @@ import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
 import { submitAgentInput } from "@/composer/submit";
-import { createMessageSubmissionWriter } from "@/composer/submission/writer";
+import {
+  createMessageSubmissionWriter,
+  handoffCreatedAgentMessageSubmission,
+} from "@/composer/submission/writer";
 import { ComposerKeyboardScopeProvider, useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { useAppSettings } from "@/hooks/use-settings";
 import { RenderProfile } from "@/utils/render-profiler";
@@ -1588,12 +1591,34 @@ function ComposerContentImpl({
     [serverId, setQueuedMessages],
   );
 
-  // The daemon list is authoritative; drop mirror entries it no longer holds
-  // (dispatched, or removed from another client).
+  // The daemon list is authoritative. Entries it dropped stay in the mirror until their
+  // dispatched row reaches the timeline, which gets this client's copy of their images.
+  // A store subscription, not a render dependency: the timeline changes on every stream tick.
   useEffect(() => {
-    if (!hostOwnsQueue || !daemonQueuedMessages) return;
-    pruneLocalMirror(queueWriter, agentId, daemonQueuedMessages);
-  }, [agentId, daemonQueuedMessages, hostOwnsQueue, queueWriter]);
+    if (!hostOwnsQueue) return undefined;
+    const attachmentSubmitFormat = resolveComposerAttachmentSubmitFormat({
+      supportsForgeAttachments: supportsForgeSearch,
+    });
+    const reconcile = () => {
+      const session = useSessionStore.getState().sessions[serverId];
+      const hostQueue = session?.agents.get(agentId)?.queuedMessages;
+      if (!session || !hostQueue) return;
+      reconcileLocalMirror({
+        localMirror: queueWriter,
+        agentId,
+        daemonQueue: hostQueue,
+        readTimeline: () => [
+          ...(session.agentStreamTail.get(agentId) ?? []),
+          ...(session.agentStreamHead.get(agentId) ?? []),
+        ],
+        attachmentSubmitFormat,
+        handoff: (message) => handoffCreatedAgentMessageSubmission(serverId, agentId, message),
+        nowMs: Date.now(),
+      });
+    };
+    reconcile();
+    return useSessionStore.subscribe(reconcile);
+  }, [agentId, hostOwnsQueue, queueWriter, serverId, supportsForgeSearch]);
 
   const queueMessage = useCallback(
     (queuedMessage: string, queuedAttachments: ComposerAttachment[]) => {
@@ -1602,11 +1627,9 @@ function ComposerContentImpl({
           setSendError(t("workspace.terminal.hostDisconnected"));
           return;
         }
-        // Optimistic: clear the composer now, restore it if the host rejects.
-        replaceUserInput("");
-        setSelectedAttachments([]);
-        resetSuppression();
-        void queueMessageOnDaemon({
+        // Queue before clearing: clearing drops the draft's reference to the images, and
+        // queueMessageOnDaemon retains them until its mirror entry holds them.
+        const queued = queueMessageOnDaemon({
           client,
           agentId,
           text: queuedMessage,
@@ -1616,7 +1639,12 @@ function ComposerContentImpl({
           }),
           encodeImages,
           localMirror: queueWriter,
-        })
+        });
+        // Optimistic: clear the composer now, restore it if the host rejects.
+        replaceUserInput("");
+        setSelectedAttachments([]);
+        resetSuppression();
+        void queued
           .then(() => {
             clearSentAttachments(queuedAttachments);
             return undefined;
