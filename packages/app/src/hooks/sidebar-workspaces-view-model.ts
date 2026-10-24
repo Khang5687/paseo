@@ -27,6 +27,7 @@ export interface SidebarWorkspacePlacement {
   workspaceDirectory?: string;
   projectKind: WorkspaceStructureProject["projectKind"];
   workspaceKind: WorkspaceDescriptor["workspaceKind"];
+  background?: boolean;
   name: string;
 }
 
@@ -42,6 +43,7 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   // Prefills the rename input and signals whether a reset is available.
   title: string | null;
   pinnedAt?: string | null;
+  settledAt?: string | null;
   labels?: string[];
   // Checkout branch (null when not a git checkout or detached HEAD).
   currentBranch: string | null;
@@ -164,9 +166,11 @@ export function createSidebarWorkspaceEntry(input: {
       input.workspace.worktreeSlug ?? shortenPath(input.workspace.workspaceDirectory),
     projectKind: input.workspace.projectKind,
     workspaceKind: input.workspace.workspaceKind,
+    background: input.workspace.background,
     name: input.workspace.name,
     title: input.workspace.title ?? null,
     pinnedAt: input.workspace.pinnedAt,
+    settledAt: input.workspace.settledAt,
     labels: input.workspace.labels ?? EMPTY_WORKSPACE_LABELS,
     currentBranch: normalizeCurrentBranch(input.workspace.gitRuntime?.currentBranch),
     statusBucket: effectiveStatus.status,
@@ -367,13 +371,15 @@ export function buildSidebarWorkspaceEntries(input: {
   sessions: SidebarWorkspaceSession[];
   pendingCreateAttempts?: Record<string, PendingCreateAttempt>;
   previousEntries?: ReadonlyMap<string, SidebarWorkspaceEntry>;
-}): Map<string, SidebarWorkspaceEntry> {
+}): ReadonlyMap<string, SidebarWorkspaceEntry> {
   if (input.placements.length === 0 || input.sessions.length === 0) {
     return new Map();
   }
 
   const sessionByServerId = new Map(input.sessions.map((session) => [session.serverId, session]));
   const entries = new Map<string, SidebarWorkspaceEntry>();
+  const previousKeys = input.previousEntries?.keys();
+  let unchanged = input.previousEntries !== undefined;
 
   for (const placement of input.placements) {
     const session = sessionByServerId.get(placement.serverId);
@@ -393,15 +399,22 @@ export function buildSidebarWorkspaceEntries(input: {
       workspaceAgentActivity: session.workspaceAgentActivity,
     });
     const previousEntry = input.previousEntries?.get(placement.workspaceKey);
-    entries.set(
-      placement.workspaceKey,
+    const nextEntry =
       previousEntry && areSidebarWorkspaceEntriesEqual(previousEntry, entry)
         ? previousEntry
-        : entry,
-    );
+        : entry;
+    entries.set(placement.workspaceKey, nextEntry);
+    unchanged =
+      previousKeys?.next().value === placement.workspaceKey &&
+      previousEntry === nextEntry &&
+      unchanged;
   }
 
-  return entries;
+  // Resuming a retained sidebar must not invalidate its project/filter projections
+  // when the directory has not changed while it was hidden.
+  return unchanged && input.previousEntries?.size === entries.size
+    ? input.previousEntries
+    : entries;
 }
 
 function areSidebarWorkspaceEntriesEqual(

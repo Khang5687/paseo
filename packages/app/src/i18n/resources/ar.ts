@@ -30,6 +30,7 @@ export const ar: TranslationResources = {
     back: "خلف",
     loading: "تحميل...",
     actions: {
+      save: "حفظ",
       back: "خلف",
       cancel: "يلغي",
       close: "يغلق",
@@ -123,6 +124,8 @@ export const ar: TranslationResources = {
     input: {
       accessibilityLabel: "وكيل الرسائل...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "ملء الشاشة",
+      exitFullscreen: "الخروج من ملء الشاشة",
       focusHint: "{{shortcut}}للتركيز",
       addAttachment: "إضافة مرفق",
       interruptAgent: "عامل المقاطعة",
@@ -375,6 +378,7 @@ export const ar: TranslationResources = {
       details: "تفاصيل",
     },
     dictation: {
+      paused: "تمت مقاطعة الميكروفون. في انتظار الاستئناف…",
       start: "بدء الإملاء الصوتي",
       cancel: "إلغاء الإملاء",
       retry: "أعد محاولة الإملاء",
@@ -384,6 +388,7 @@ export const ar: TranslationResources = {
       failedRetry: "فشل الإملاء. اضغط على إعادة المحاولة.",
     },
     question: {
+      responseFailed: "تعذر إرسال ردك. حاول مرة أخرى.",
       submit: "يُقدِّم",
       next: "التالي",
       answerPlaceholder: "اكتب إجابتك...",
@@ -399,6 +404,9 @@ export const ar: TranslationResources = {
         started: "بدأت",
         completed: "اكتملت",
       },
+    },
+    turnFooter: {
+      workedFor: "عمل لمدة {{duration}}",
     },
     compaction: {
       loading: "الضغط...",
@@ -482,6 +490,7 @@ export const ar: TranslationResources = {
       openToSide: "فتح إلى الجانب",
       copyPath: "نسخ المسار",
       copyRelativePath: "نسخ المسار النسبي",
+      copyFullPath: "نسخ المسار الكامل",
       revealIn: "إظهار في {{target}}",
       download: "تحميل",
       addToChat: "إضافة إلى الدردشة",
@@ -625,6 +634,9 @@ export const ar: TranslationResources = {
       updateHost: "حدّث المضيف لاستخدام عارض الطرفية الأصلي.",
       unableToSubscribe: "غير قادر على الاشتراك في المحطة",
     },
+    sheet: {
+      openAsTab: "فتح كعلامة تبويب",
+    },
     tabs: {
       loading: "تحميل...",
       modified: "تغييرات غير محفوظة",
@@ -640,7 +652,7 @@ export const ar: TranslationResources = {
       },
       switcher: {
         trigger: "تبديل علامات التبويب (فتح{{count}})",
-        title: "علامة التبويب التبديل",
+        title: "علامات تبويب الـ Workspace",
         searchPlaceholder: "علامات تبويب البحث",
       },
       menu: {
@@ -738,6 +750,7 @@ export const ar: TranslationResources = {
     header: {
       actions: {
         workspaceActions: "إجراءات Workspace",
+        workspaceActionsUnhealthy: "إجراءات Workspace، توجد خدمة غير سليمة",
         newAgent: "وكيل جديد",
         newTerminal: "محطة جديدة",
         newBrowser: "علامة تبويب متصفح جديدة",
@@ -785,6 +798,8 @@ export const ar: TranslationResources = {
         exitCode: "الخروج من{{code}}",
         startFailed: "فشل بدء تشغيل{{scriptName}}",
         stopFailed: "فشل إيقاف{{scriptName}}",
+        running: "قيد التشغيل",
+        runningCount: "{{count}} قيد التشغيل",
       },
     },
     tree: {
@@ -988,6 +1003,47 @@ export const ar: TranslationResources = {
         actions: {
           viewPullRequest: "عرض",
           openOn: "فتح على {{brand}}",
+          addToChat: "إضافة إلى الدردشة",
+          addAllToChat: "إضافة الكل إلى الدردشة",
+          addingToChat: "جارٍ الإضافة...",
+        },
+        checksOverview: {
+          headline: {
+            actionRequired: "بعض الفحوصات تحتاج إلى انتباهك",
+            failure: "بعض الفحوصات لم تنجح",
+            pending: "بعض الفحوصات لم تكتمل بعد",
+            success: "نجحت جميع الفحوصات",
+            none: "لا توجد فحوصات",
+          },
+          count: {
+            actionRequired: "{{count}} تحتاج إجراءً",
+            warning: "{{count}} مع تحذير",
+            failure: "{{count}} فاشلة",
+            pending: "{{count}} قيد التشغيل",
+            manual: "{{count}} يدوية",
+            success: "{{count}} ناجحة",
+            ignored: "{{count}} متخطاة",
+          },
+          detailOne: "الفحص: {{parts}}",
+          detailMany: "الفحوصات: {{parts}}",
+          groupOne: {
+            actionRequired: "{{count}} فحص يحتاج إجراءً",
+            warning: "{{count}} فحص مع تحذير",
+            failure: "{{count}} فحص فاشل",
+            pending: "{{count}} فحص قيد التشغيل",
+            manual: "{{count}} فحص يدوي",
+            success: "{{count}} فحص ناجح",
+            ignored: "{{count}} فحص متخطى",
+          },
+          groupMany: {
+            actionRequired: "{{count}} فحوصات تحتاج إجراءً",
+            warning: "{{count}} فحوصات مع تحذير",
+            failure: "{{count}} فحوصات فاشلة",
+            pending: "{{count}} فحوصات قيد التشغيل",
+            manual: "{{count}} فحوصات يدوية",
+            success: "{{count}} فحوصات ناجحة",
+            ignored: "{{count}} فحوصات متخطاة",
+          },
         },
         checksSummary: {
           passedLabel: "نجح",
@@ -1001,17 +1057,21 @@ export const ar: TranslationResources = {
           checks: "الشيكات",
           pipeline: "خط المعالجة",
           reviews: "التعليقات",
+          activity: "النشاط",
         },
         empty: {
           noJobs: "لا توجد مهام",
           loadingPipeline: "جارٍ تحميل خط المعالجة...",
           pipelineJobsLoadFailed: "تعذر تحميل مهام خط المعالجة",
           allowedToFail: "مسموح بالفشل",
+          noActivity: "لا يوجد نشاط بعد",
         },
         approvals: "{{given}} من {{required}} موافقات",
         accessibility: {
           pullRequest: "سحب الطلب #{{number}}",
           pullRequest_mr: "طلب دمج !{{number}}",
+          commentActions: "إجراءات التعليق",
+          threadActions: "إجراءات سلسلة النقاش",
           checkStatus: {
             passed: "ناجح",
             failed: "فاشل",
@@ -1040,6 +1100,8 @@ export const ar: TranslationResources = {
         },
         thread: {
           discussion: "سلسلة المناقشة",
+          resolved: "تم الحل",
+          outdated: "قديم",
         },
         errors: {
           statusLoadFailed: "غير قادر على تحميل حالة طلب السحب",
@@ -1106,7 +1168,17 @@ export const ar: TranslationResources = {
     },
   },
   sidebar: {
+    statusGroupAccessibility: "مجموعة {{label}}",
+    unsentDraft: "مسودة غير مرسلة",
+    statusBucket: {
+      needsInput: "تحتاج إدخالاً",
+      failed: "فشل",
+      readyToReview: "جاهزة للمراجعة",
+      working: "قيد العمل",
+      done: "تم",
+    },
     display: {
+      showBackground: "إظهار مساحات العمل في الخلفية",
       trigger: "تفضيلات العرض",
       heading: "العرض",
       grouping: {
@@ -1153,6 +1225,10 @@ export const ar: TranslationResources = {
     },
     pinned: {
       title: "المثبتة",
+    },
+    settled: {
+      title: "المُنجزة",
+      titleWithCount: "المُنجزة ({{count}})",
     },
     host: {
       noHost: "لا مضيف",
@@ -1244,6 +1320,10 @@ export const ar: TranslationResources = {
         rename: "إعادة تسمية مساحة العمل",
         pin: "تثبيت في الأعلى",
         unpin: "إلغاء التثبيت",
+        settle: "تعيين كمُنجزة",
+        unsettle: "إلغاء الإنجاز",
+        settleWorkspace: "تعيين مساحة العمل كمُنجزة",
+        unsettleWorkspace: "إلغاء إنجاز مساحة العمل",
         archive: "أرشيف",
         archiveWorkspace: "أرشفة مساحة العمل",
         hideFromSidebar: "إخفاء من الشريط الجانبي",
@@ -1282,8 +1362,9 @@ export const ar: TranslationResources = {
     },
     fields: {
       project: "المشروع",
-      base: "الأساس",
+      branch: "الفرع",
       baseNotApplicable: "غير قابل للتطبيق",
+      host: "المضيف",
     },
     titlePlaceholder: "العنوان (اختياري)",
     errors: {
@@ -1327,6 +1408,9 @@ export const ar: TranslationResources = {
     quitting: {
       title: "جارٍ إنهاء Paseo...",
       detail: "إيقاف البرنامج الخفي المحلي.",
+    },
+    quitConfirm: {
+      hint: "اضغط مع الاستمرار على ⌘Q أو اضغط مرتين للإنهاء",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -1610,13 +1694,18 @@ export const ar: TranslationResources = {
     title: "إضافة مزود",
     search: "مقدمي البحث",
     noProviders: "لم يتم العثور على مقدمي الخدمات",
+    clearSearch: "مسح البحث",
     actions: {
       add: "يضيف",
+      addProvider: "إضافة {{provider}}",
       adding: "إضافة",
       installed: "تم التثبيت",
       cancel: "يلغي",
       installInstructions: "تعليمات التثبيت",
       installInstructionsFor: "تعليمات تثبيت{{provider}}",
+    },
+    types: {
+      acp: "ACP",
     },
     errors: {
       unableToInstall: "غير قادر على تثبيت الموفر",
@@ -1721,6 +1810,12 @@ export const ar: TranslationResources = {
       helper: "الاتصال بخادم Paseo يعمل على المضيف البعيد.",
       fields: {
         target: "مضيف SSH",
+        password: "كلمة مرور الدايمون",
+        optional: "خياري",
+      },
+      passwordVisibility: {
+        show: "إظهار كلمة المرور",
+        hide: "إخفاء كلمة المرور",
       },
       actions: {
         cancel: "إلغاء",
@@ -1949,6 +2044,8 @@ export const ar: TranslationResources = {
     dismiss: "رفض",
   },
   contextWindow: {
+    noData: "لا توجد بيانات للسياق",
+    accessibilityNoData: "نافذة السياق: لا توجد بيانات للسياق",
     title: "نافذة السياق",
     used: "تم استخدام{{percentage}}%",
     tokens: "رموز{{used}}/{{max}}",
@@ -1956,6 +2053,17 @@ export const ar: TranslationResources = {
     accessibility: "تم استخدام نافذة السياق{{percentage}}%",
   },
   review: {
+    feedback: {
+      send: "إرسال الملاحظات ({{count}})",
+      sending: "جارٍ إرسال الملاحظات ({{count}})",
+      chooseAgent: "اختر وكيلاً",
+      sent: "تم إرسال الملاحظات إلى {{recipient}}",
+      "no-agents": "افتح علامة تبويب وكيل في مساحة العمل هذه لإرسال الملاحظات.",
+      disconnected: "اتصل بالمضيف لإرسال الملاحظات.",
+      "no-context": "لم تعد التعليقات المحفوظة تتطابق مع هذا الفرق.",
+      failed: "تعذر إرسال الملاحظات. حاول مرة أخرى.",
+      prompt: "يرجى معالجة مراجعة الكود هذه.",
+    },
     comment: {
       add: "إضافة تعليق المراجعة",
       edit: "تحرير تعليق المراجعة",
@@ -1966,6 +2074,176 @@ export const ar: TranslationResources = {
       cancelAccessibility: "إلغاء تعليق المراجعة",
       save: "تعليق",
       saveAccessibility: "حفظ تعليق المراجعة",
+    },
+  },
+  ompAccountRouting: {
+    login: {
+      start: "إضافة حساب Claude",
+      elsewhere: "افتح Paseo على الكمبيوتر المضيف لإضافة حساب.",
+      update: "حدّث Paseo وOh My Pi على المضيف لإضافة الحسابات هنا.",
+      inProgress: "تسجيل الدخول قيد التنفيذ",
+      continue: "متابعة",
+      cancel: "إلغاء",
+      cancelSignIn: "إلغاء تسجيل الدخول",
+      done: "تم",
+      details: "التفاصيل",
+      tryAgain: "حاول مرة أخرى",
+      close: "إغلاق",
+      justAdded: "أُضيف للتو",
+      warning: {
+        body: "يحفظ Paseo تسجيل دخول واحدًا لكل حساب Claude. سجّل الدخول إلى claude.ai بالحساب الذي تريد إضافته.",
+        existing: "تمت إضافتها: {{accounts}}",
+        alertTitle: "تحقق من الحساب الذي يستخدمه متصفحك",
+        alertDescription:
+          "إذا كان claude.ai لا يزال مسجّلًا الدخول بحساب تمت إضافته، فسجّل الخروج أو بدّل الحساب أولًا. تبدأ النافذة الخاصة دائمًا بلا تسجيل دخول.",
+        guard: "إذا سجّلت الدخول بحساب تمت إضافته، يتوقف Paseo ولا يغيّر شيئًا.",
+      },
+      preparing: "جارٍ تجهيز رابط تسجيل الدخول...",
+      link: {
+        title: "تسجيل الدخول إلى Claude",
+        step: "افتح الرابط وسجّل الدخول بالحساب الذي تريد إضافته",
+        open: "فتح صفحة تسجيل الدخول",
+        copy: "نسخ الرابط",
+        copied: "تم النسخ",
+        label: "رابط تسجيل الدخول",
+        hint: "لاستخدام نافذة خاصة أو جهاز آخر، انسخ الرابط",
+        waiting: "في انتظار المتصفح...",
+        pasteInstead: "لصق العنوان بدلًا من ذلك",
+      },
+      paste: {
+        label: "العنوان أو الرمز",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "بعد الموافقة قد يعرض المتصفح صفحة لا تُحمَّل. انسخ العنوان الكامل من شريط العنوان، أو الرمز الذي يعرضه Claude، والصقه هنا.",
+        submit: "إرسال",
+        checking: "جارٍ التحقق...",
+        error: {
+          invalid_input: "هذا ليس عنوان تسجيل دخول ولا رمزًا",
+          wrong_login: "هذا العنوان يخص رابط تسجيل دخول أقدم. استخدم الرابط المعروض هنا.",
+          not_waiting: "انتهى تسجيل الدخول هذا بالفعل",
+          not_allowed: "وحده Paseo على الكمبيوتر المضيف يمكنه إرسال هذا",
+          unreachable: "تعذّر الوصول إلى المضيف. حاول مرة أخرى.",
+        },
+      },
+      verifying: "جارٍ التحقق من تسجيل الدخول...",
+      result: {
+        added: {
+          title: "تمت إضافة {{account}}",
+          titleUnnamed: "تمت إضافة الحساب",
+          description: "{{organization}}. يمكن للتوجيه التلقائي استخدامه الآن.",
+          descriptionUnnamed: "يمكن للتوجيه التلقائي استخدامه الآن.",
+          billingEnabled:
+            "الاستخدام الإضافي المدفوع مفعّل لهذا الحساب. يتخطاه التوجيه التلقائي حتى توقفه في إعدادات Claude.",
+          billingUnknown:
+            "تأكد من أن الاستخدام الإضافي المدفوع متوقف لهذا الحساب في إعدادات Claude. يتخطى التوجيه التلقائي الحسابات المفعّل فيها.",
+        },
+        alreadyListed: {
+          title: "{{account}} مضاف بالفعل",
+          titleUnnamed: "هذا الحساب مضاف بالفعل",
+          description:
+            "لم يتغير شيء. سجّل متصفحك الدخول بحساب لدى Paseo بالفعل. سجّل الخروج من claude.ai أو استخدم نافذة خاصة ثم حاول مرة أخرى.",
+        },
+        replaced: {
+          title: "تم استبدال تسجيل الدخول لـ {{account}}",
+          titleUnnamed: "تم استبدال تسجيل دخول محفوظ",
+          description: "لم تتم إضافة أي حساب. يُستخدم تسجيل الدخول الجديد.",
+        },
+        failed: "فشل تسجيل الدخول",
+        cancelled: "أُلغي تسجيل الدخول",
+      },
+      failure: {
+        timeout: "انتهت صلاحية رابط تسجيل الدخول بعد 10 دقائق. لم يتغير شيء.",
+        omp_failed:
+          "تعذّر على Oh My Pi إكمال تسجيل الدخول. لم يتغير شيء. حاول مرة أخرى، أو شغّل omp في الطرفية واكتب /login.",
+        spawn_failed: "تعذّر على Paseo تشغيل Oh My Pi على هذا الكمبيوتر.",
+        unreachable:
+          "انقطع الاتصال بالمضيف. عند إعادة الاتصال، تحقق من قائمة الحسابات قبل المحاولة مرة أخرى.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "ينطبق على جميع وكلاء OMP التي يديرها Paseo على هذا المضيف. لا تتغير المضيفات الأخرى ولا الطرفيات المستقلة.",
+      account: "الحساب",
+      automatic: "تلقائي",
+      useForAuto: "استخدام للتوجيه التلقائي",
+      auto: "التوجيه التلقائي",
+      priority: "أولوية الاحتياط",
+      priorityHelp:
+        "عند نفاد الحساب الحالي، ينتقل Paseo إلى الحساب المضمَّن الأكثر استخدامًا متبقيًا. يحسم هذا الترتيب حالات التعادل.",
+      addAccountHint: "لإضافة حساب، شغّل omp في الطرفية واكتب /login ثم سجّل الدخول بحساب Claude آخر.",
+      current: "محدد",
+      serving: "قيد الخدمة",
+      lastServed: "آخر خدمة",
+      excluded: "مستبعد من التوجيه التلقائي",
+      missing: "الحساب المحفوظ غير متاح",
+      fiveHour: "5 ساعات",
+      weekly: "أسبوعي",
+      tier: "مستوى الاشتراك",
+      unknownTier: "مستوى الاشتراك غير معروف",
+      unknownBudget: "الحد المطلق غير معروف",
+      consumed: "المستهلك",
+      remaining: "المتبقي",
+      stale: "ملاحظة قديمة",
+      unknownOrganization: "المؤسسة غير معروفة",
+      detailsPending: "تظهر التفاصيل عند تشغيل وكيل Oh My Pi",
+      search: "بحث في الحسابات",
+    },
+    actions: {
+      moveUp: "نقل لأعلى",
+      moveDown: "نقل لأسفل",
+    },
+    status: {
+      loading: "جارٍ تحميل توجيه الحسابات",
+      empty: "لم تُرصد أي حسابات Claude",
+      noRuntime: "تظهر الحسابات عند تشغيل وكيل Oh My Pi.",
+      unsupported: "لم يتحقق هذا المضيف من دعم توجيه حسابات OMP",
+      offline: "المضيف غير متصل؛ تُعرض آخر إعدادات مؤكدة",
+      readOnly: "يمكنك عرض هذه الإعدادات لكن لا يمكنك تغييرها",
+      pending: "جارٍ حفظ الإعدادات",
+      conflict: "تغيرت الإعدادات في مكان آخر؛ تُعرض أحدث حالة مؤكدة",
+      paused: "في انتظار حساب مضمّن متاح",
+      recovered: "حساب مضمّن متاح",
+      unknownUsage: "الاستخدام غير معروف",
+      summaryPaused: "متوقف مؤقتًا: لا يوجد حساب مضمَّن لديه استخدام متبقٍ.",
+      summaryPausedResumes: "متوقف مؤقتًا: لا يوجد حساب مضمَّن لديه استخدام متبقٍ. يُستأنف {{time}}",
+      summaryUsing: "يُستخدم {{account}}",
+      summaryAuto: "يختار الوضع التلقائي الحساب الأكثر استخدامًا متبقيًا",
+    },
+    reason: {
+      no_account: "لم يتم تحديد أي حساب",
+      source_changed: "تغيّر مصدر بيانات الاعتماد الأصلي المحدد",
+      source_inaccessible: "لا يستطيع وقت التشغيل هذا الوصول إلى الحساب الأصلي المحدد",
+      billing_enabled:
+        "أرصدة الاستخدام المدفوعة مفعّلة؛ لا يمكن للتوجيه المقتصر على الاستخدام المضمّن استخدام هذا الحساب",
+      billing_unknown: "لم يُتحقق حديثًا من إعدادات أرصدة الاستخدام المدفوعة",
+      quota_blocked: "الاستخدام المضمّن غير متاح لهذا الطلب",
+      entitlement_unavailable: "الوصول إلى النموذج غير متاح أو لم يُتحقق منه لهذا الحساب",
+      auth_unavailable: "مصادقة الحساب الأصلي غير متاحة",
+      unsupported_transport: "ناقل هذا المزوّد لا يدعم التوجيه المقتصر على الاستخدام المضمّن",
+      unsupported_runtime: "وقت تشغيل OMP هذا لا يدعم التوجيه المُدار",
+      persistence_failed: "تعذّر حفظ إعدادات التوجيه",
+      host_unavailable: "مضيف التوجيه غير متاح",
+      cancelled: "أُلغي الطلب",
+      metadata_pending: "جارٍ التحقق من توفر الحساب",
+      all_unavailable: "لا يتوفر حاليًا أي حساب مضمّن",
+      auto_disabled: "التوجيه التلقائي متوقف؛ حدّد حسابًا أو فعّله للمتابعة",
+      provider_failed: "تعذّر التحقق من توفر الحساب",
+    },
+    mutationError: {
+      conflict: "تغيرت الإعدادات في مكان آخر؛ راجع أحدث حالة قبل المحاولة مجددًا",
+      invalid_account: "هذا الحساب الأصلي لم يعد في الفهرس",
+      unsupported: "عناصر التحكم في توجيه الحسابات غير متاحة على هذا المضيف",
+      persistence_failed: "لم تُحفظ الإعدادات؛ تبقى آخر إعدادات مؤكدة",
+    },
+    values: {
+      used: "استُخدم {{percent}}%",
+      reset: "يُعاد الضبط {{time}}",
+      observed: "رُصد {{time}}",
+      limitReached: "تم بلوغ حد {{window}}",
+      limitReachedReset: "تم بلوغ حد {{window}} · يُعاد الضبط {{time}}",
+      account: "الحساب {{row}}",
+      serving: "{{account}} يخدم {{agent}}",
+      priority: "الأولوية {{position}}",
     },
   },
   settings: {
@@ -2080,6 +2358,7 @@ export const ar: TranslationResources = {
           queue: "طابور",
         },
       },
+      defaultEditor: "المحرر الافتراضي",
       serviceUrls: {
         options: {
           ask: "بسأل",
@@ -2212,6 +2491,84 @@ export const ar: TranslationResources = {
         },
         moveUp: "نقل لأعلى",
         moveDown: "نقل لأسفل",
+      },
+      background: {
+        title: "الخلفية",
+        applyTo: {
+          title: "تطبيق على",
+          options: {
+            both: "كلاهما",
+            light: "فاتح",
+            dark: "داكن",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "صور الخلفية",
+          none: "بلا",
+          addImage: "إضافة صورة…",
+          importDefaultName: "صورة",
+        },
+        menu: {
+          actions: "إجراءات {{name}}",
+          edit: "تعديل…",
+          delete: "حذف",
+          details: "التفاصيل",
+        },
+        undo: {
+          action: "تراجع",
+          accessibilityLabel: "التراجع عن تغيير الخلفية",
+        },
+        catalog: {
+          browse: "تصفح",
+          hint: "ثبّت المزيد من الخلفيات من هذه الإضافة",
+        },
+        visibility: {
+          title: "وضوح الصورة",
+          hint: "يحافظ Paseo على وضوح النص تلقائيًا، لذا قد تظهر الصور الساطعة بشكل أخف.",
+        },
+        blur: {
+          title: "التمويه",
+          options: {
+            off: "إيقاف",
+            low: "منخفض",
+            medium: "متوسط",
+            high: "مرتفع",
+          },
+        },
+        showBehindSidebar: "إظهار خلف الشريط الجانبي",
+        showBehindContent: "إظهار خلف المحتوى",
+        status: {
+          reducedTransparency: "مخفية لأن «تقليل الشفافية» مفعّل في إعدادات النظام",
+          forcedColors: "مخفية أثناء تفعيل وضع التباين العالي",
+          error: "تعذّر عرض الخلفية",
+        },
+        errors: {
+          select: "تعذّر تطبيق الخلفية: {{message}}",
+          import: "تعذّر استيراد الصورة: {{message}}",
+          update: "تعذّر حفظ التغييرات: {{message}}",
+          remove: "تعذّر حذف الخلفية: {{message}}",
+        },
+        edit: {
+          title: "تعديل الخلفية",
+          name: "الاسم",
+          focal: "نقطة التركيز",
+          focalHint: "اضغط على الجزء من الصورة الذي يجب أن يبقى ظاهرًا.",
+          focalAccessibility: "اختيار نقطة التركيز",
+          save: "حفظ",
+          saving: "جارٍ الحفظ…",
+        },
+        delete: {
+          title: "حذف «{{name}}»؟",
+          message: "سيؤدي هذا إلى إزالة الصورة من هذا الجهاز.",
+          confirm: "حذف",
+        },
+        details: {
+          title: "التفاصيل",
+          author: "المؤلف",
+          license: "الترخيص",
+          source: "المصدر",
+          openSource: "فتح المصدر",
+        },
       },
       fonts: {
         title: "الخطوط",
@@ -2471,6 +2828,10 @@ export const ar: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "النمط الافتراضي",
+          hint: "يمكن للمزوّدين تجاوزه",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {
@@ -2653,6 +3014,9 @@ export const ar: TranslationResources = {
         discovered: "اكتشف",
         custom: "نماذج مخصصة",
         updated: "تم تحديث{{time}}",
+        disabledCount: "{{count}} معطّل",
+        toggleModel: "تفعيل {{model}}",
+        failedToToggle: "تعذّر تحديث {{model}}",
       },
       diagnostic: {
         title: "التشخيص",
@@ -2668,6 +3032,12 @@ export const ar: TranslationResources = {
         none: "لا يوجد تشخيص متاح",
         failedToFetch: "فشل جلب التشخيص",
         unknownError: "خطأ غير معروف",
+      },
+      featureDefaults: {
+        title: "الإعدادات الافتراضية للوكلاء الجدد",
+        providerDefault: "الإعداد الافتراضي للمزوّد",
+        on: "تشغيل",
+        off: "إيقاف",
       },
     },
     project: {

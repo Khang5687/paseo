@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactElement } from "react";
-import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
+import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
@@ -26,6 +26,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { MenuTriggerState } from "@/components/ui/menu";
+import { ToolbarButton } from "@/components/ui/pane-content-toolbar";
+import { PressHighlight } from "@/components/ui/press-highlight";
 import { isWeb } from "@/constants/platform";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { confirmDialog } from "@/utils/confirm-dialog";
@@ -130,14 +132,14 @@ function BasicQueuedMessageRow({
         {item.text}
       </Text>
       <View style={styles.queueActions}>
-        <Pressable
+        <ToolbarButton
           onPress={handleEdit}
+          round
           style={styles.queueActionButton}
-          accessibilityLabel={editLabel}
-          accessibilityRole="button"
+          label={editLabel}
         >
           <ThemedPencil size={ICON_SIZE.sm} uniProps={iconForegroundMapping} />
-        </Pressable>
+        </ToolbarButton>
         <SendNowButton messageId={item.id} onSendNow={onSendNow} label={sendNowLabel} />
       </View>
     </View>
@@ -155,14 +157,14 @@ function SendNowButton({ messageId, onSendNow, label }: SendNowButtonProps) {
     onSendNow(messageId);
   }, [onSendNow, messageId]);
   return (
-    <Pressable
+    <ToolbarButton
       onPress={handleSendNow}
+      round
       style={[styles.queueActionButton, styles.queueSendButton]}
-      accessibilityLabel={label}
-      accessibilityRole="button"
+      label={label}
     >
       <ThemedArrowUp size={ICON_SIZE.sm} uniProps={iconAccentForegroundMapping} />
-    </Pressable>
+    </ToolbarButton>
   );
 }
 
@@ -283,26 +285,20 @@ function ControlledQueueTrack({
           {headerLabel}
         </Text>
         <View style={styles.queueHeaderActions}>
-          <Pressable
+          <ToolbarButton
             onPress={handleTogglePaused}
-            style={headerButtonStyle}
-            accessibilityLabel={pauseToggleLabel}
-            accessibilityRole="button"
-            hitSlop={4}
+            label={pauseToggleLabel}
             testID="composer-queue-pause-toggle"
           >
             {paused ? playIcon : pauseIcon}
-          </Pressable>
-          <Pressable
+          </ToolbarButton>
+          <ToolbarButton
             onPress={handleClear}
-            style={headerButtonStyle}
-            accessibilityLabel={t("composer.attachments.clearQueue")}
-            accessibilityRole="button"
-            hitSlop={4}
+            label={t("composer.attachments.clearQueue")}
             testID="composer-queue-clear"
           >
             {clearIcon}
-          </Pressable>
+          </ToolbarButton>
         </View>
       </View>
       <DraggableList
@@ -418,7 +414,7 @@ function QueueDragHandle({ drag, dragHandleProps, label }: QueueDragHandleProps)
     );
   }
   return (
-    <Pressable
+    <PressHighlight
       onLongPress={drag}
       delayLongPress={NATIVE_DRAG_LONG_PRESS_MS}
       accessibilityLabel={label}
@@ -426,7 +422,7 @@ function QueueDragHandle({ drag, dragHandleProps, label }: QueueDragHandleProps)
       style={styles.queueDragHandle}
     >
       {gripIcon}
-    </Pressable>
+    </PressHighlight>
   );
 }
 
@@ -510,13 +506,6 @@ function queuedMessageKey(item: QueuedMessage): string {
   return item.id;
 }
 
-function headerButtonStyle({
-  hovered = false,
-  pressed,
-}: PressableStateCallbackType & { hovered?: boolean }) {
-  return [styles.queueHeaderButton, (hovered || pressed) && styles.queueHeaderButtonHighlighted];
-}
-
 function menuTriggerStyle({ hovered, pressed, open }: MenuTriggerState) {
   return [styles.queueMenuTrigger, (hovered || pressed || open) && styles.queueMenuTriggerActive];
 }
@@ -543,16 +532,6 @@ const styles = StyleSheet.create((theme: Theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
-  },
-  queueHeaderButton: {
-    width: 28,
-    height: 28,
-    borderRadius: theme.borderRadius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  queueHeaderButtonHighlighted: {
-    backgroundColor: theme.colors.interactionHighlight,
   },
   queueList: {
     flexGrow: 0,

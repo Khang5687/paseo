@@ -10,6 +10,9 @@ import type {
   FetchWorkspacesResponseMessage,
   GetProvidersSnapshotResponseMessage,
   ListAvailableProvidersResponse,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
+  OmpAccountRoutingState,
   ListCommandsResponse,
   ListProviderFeaturesRequestMessage,
   ListProviderFeaturesResponseMessage,
@@ -28,7 +31,25 @@ import type {
   WorkspaceDescriptorPayload,
   WorkspaceCreateRequest,
 } from "@getpaseo/protocol/messages";
-import { DaemonClient, type CreateAgentRequestOptions } from "./daemon-client.js";
+import {
+  DaemonClient,
+  type CreateAgentRequestOptions,
+  type OmpAccountRoutingRead,
+  type OmpAccountRoutingSubscribedRead,
+} from "./daemon-client.js";
+export {
+  OmpAccountLoginUnsupportedError,
+  OmpAccountRoutingUnsupportedError,
+} from "./daemon-client.js";
+export type { OmpAccountRoutingRead, OmpAccountRoutingSubscribedRead } from "./daemon-client.js";
+export type {
+  OmpRoutingAccountRef,
+  OmpRoutingAccount,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
+  OmpAccountRoutingPolicy,
+  OmpAccountRoutingState,
+} from "@getpaseo/protocol/messages";
 import {
   createTerminalActions,
   type PaseoTerminalActions,
@@ -257,6 +278,8 @@ export interface PaseoAgentCreateOptions {
   git?: CreateAgentRequestMessage["git"];
   worktree?: CreateAgentRequestMessage["worktree"];
   autoArchive?: CreateAgentRequestMessage["autoArchive"];
+  /** Visibility intent for a NEW workspace. Existing targets reject this option. */
+  background?: CreateAgentRequestMessage["background"];
   requestId?: string;
   labels?: Record<string, string>;
 }
@@ -481,6 +504,22 @@ export interface PaseoConfigActions {
   ): Promise<{ requestId: string; config: MutableDaemonConfig }>;
 }
 
+export interface PaseoAccountRoutingActions {
+  get(options: {
+    subscribe: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingSubscribedRead>;
+  get(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  /** Owned observation without a separate read; `ready` resolves with the first snapshot. */
+  observe(options?: { signal?: AbortSignal }): OwnedSubscription<OmpAccountRoutingState>;
+  /** Revision-checked mutation. Host conflicts return in `error`; transport failures throw. */
+  mutate(options: {
+    expectedPolicyRevision: number;
+    command: OmpAccountRoutingMutation;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingMutationResult>;
+}
+
 export interface PaseoApi {
   dispose(): Promise<void>;
   observeEvents: DaemonClient["observeEvents"];
@@ -490,6 +529,7 @@ export interface PaseoApi {
   readonly agents: PaseoAgentActions;
   readonly providers: PaseoProviderActions;
   readonly config: PaseoConfigActions;
+  readonly accountRouting: PaseoAccountRoutingActions;
 }
 
 export interface PaseoClient extends PaseoApi {
@@ -691,6 +731,32 @@ export function createPaseoApi(
     return { ...(await subscription.ready), subscription };
   }
 
+  function getAccountRouting(options: {
+    subscribe: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingSubscribedRead>;
+  function getAccountRouting(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  async function getAccountRouting(options?: {
+    subscribe?: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingRead> {
+    if (lifetime.signal.aborted) throw new Error("Paseo API is disposed");
+    const result = await daemonClient.getOmpAccountRoutingState(options);
+    if (!options?.subscribe) return { state: result.state };
+    const subscription = result.subscription;
+    if (!subscription) throw new Error("The daemon did not return an account-routing subscription");
+    try {
+      return { state: result.state, subscription: own(() => subscription) };
+    } catch (error) {
+      // The API was disposed while the subscription bootstrapped; nothing owns it yet. A failed
+      // release is logged so it cannot replace the disposal error the caller is waiting on.
+      await subscription.release().catch((releaseError) => {
+        console.error("Account routing subscription cleanup failed", releaseError);
+      });
+      throw error;
+    }
+  }
+
   return {
     dispose,
     observeEvents,
@@ -753,6 +819,11 @@ export function createPaseoApi(
         });
       },
     },
+    accountRouting: {
+      get: getAccountRouting,
+      observe: (options) => own(() => daemonClient.observeOmpAccountRoutingState(options)),
+      mutate: (options) => daemonClient.mutateOmpAccountRouting(options),
+    },
     config: {
       get: (requestId) => daemonClient.getDaemonConfig(requestId),
       patch: (patch, requestId) => daemonClient.patchDaemonConfig(patch, requestId),
@@ -780,9 +851,12 @@ function createWorkspaceHandleFactory(
     const refresh = async (options?: { requestId?: string }) => {
       let cursor: string | undefined;
       let requestId = options?.requestId;
+      // A ref addresses one workspace by id, so a background one resolves too.
+      const filter = daemonClient.supportsBackgroundWorkspaces() ? { includeBackground: true } : {};
       do {
         const result = await daemonClient.fetchWorkspaces({
           requestId,
+          filter,
           page: { limit: 200, ...(cursor ? { cursor } : {}) },
         });
         const match = result.entries.find((entry) => entry.id === id);
@@ -1046,7 +1120,7 @@ async function waitForProvidersReady(
 
   try {
     await observation.ready;
-    signal.throwIfAborted();
+    if (signal.aborted) throw new Error("Paseo API is disposed");
     return await new Promise<PaseoProviderSnapshotResult>((resolve, reject) => {
       let settled = false;
       let requestId: string | null = null;

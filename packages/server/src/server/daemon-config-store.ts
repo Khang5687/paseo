@@ -23,6 +23,7 @@ interface SupportedMutableConfigPatch {
   providers?: MutableDaemonConfig["providers"];
   removeProviders?: string[];
   metadataGeneration?: MutableDaemonConfig["metadataGeneration"];
+  featureDefaults?: MutableDaemonConfig["featureDefaults"];
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   appendSystemPrompt?: string;
@@ -187,6 +188,7 @@ const RELOADABLE_PATHS = [
   "agents.providers",
   "agents.catalogRefreshTimeoutMs",
   "agents.metadataGeneration",
+  "agents.featureDefaults",
   "agents.skills.selection",
   "pluginsEnabled",
 ] as const;
@@ -210,6 +212,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.providers", "providers"],
   ["agents.catalogRefreshTimeoutMs", "catalogRefreshTimeoutMs"],
   ["agents.metadataGeneration", "metadataGeneration"],
+  ["agents.featureDefaults", "featureDefaults"],
   ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
 ]);
@@ -263,6 +266,7 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.metadataGeneration?.providers !== undefined
       ? { metadataGeneration: { providers: patch.metadataGeneration.providers } }
       : {}),
+    ...(patch.featureDefaults !== undefined ? { featureDefaults: patch.featureDefaults } : {}),
     ...(patch.autoArchiveAfterMerge !== undefined
       ? { autoArchiveAfterMerge: patch.autoArchiveAfterMerge }
       : {}),
@@ -306,6 +310,16 @@ export function applyMutableProviderConfigToOverrides(
   }
 
   return nextOverrides;
+}
+
+/** Feature values a new agent of `provider` starts with: daemon-wide defaults under the provider's. */
+export function resolveFeatureDefaults(
+  config: MutableDaemonConfig,
+  provider: string,
+): Record<string, boolean | string> | undefined {
+  const providerDefaults = config.providers[provider]?.featureDefaults;
+  if (!config.featureDefaults) return providerDefaults;
+  return { ...config.featureDefaults, ...providerDefaults };
 }
 
 export class DaemonConfigStore {
@@ -366,6 +380,16 @@ export class DaemonConfigStore {
     const merged = deepMerge(this.current, configPatch);
     if (parsedPatch.skills?.selection !== undefined) {
       merged.skills = { selection: parsedPatch.skills.selection };
+    }
+    // Feature-default maps are replaced wholesale, so leaving a key out clears it.
+    if (parsedPatch.featureDefaults !== undefined) {
+      merged.featureDefaults = parsedPatch.featureDefaults;
+    }
+    for (const [providerId, providerPatch] of Object.entries(parsedPatch.providers ?? {})) {
+      const mergedProvider = merged.providers[providerId];
+      if (providerPatch.featureDefaults !== undefined && mergedProvider) {
+        mergedProvider.featureDefaults = providerPatch.featureDefaults;
+      }
     }
     if (parsedPatch.plugins !== undefined) merged.plugins = parsedPatch.plugins;
     const next = MutableDaemonConfigSchema.parse(
@@ -601,6 +625,7 @@ function mergeMutableAgentPatch(
   if (
     patch.providers === undefined &&
     patch.metadataGeneration === undefined &&
+    patch.featureDefaults === undefined &&
     patch.skills === undefined &&
     removeProviders.length === 0
   ) {
@@ -628,6 +653,14 @@ function mergeMutableAgentPatch(
         (entry) => !removed.has(entry.provider),
       ),
     };
+  }
+
+  if (patch.featureDefaults !== undefined) {
+    if (Object.keys(patch.featureDefaults).length > 0) {
+      next["featureDefaults"] = patch.featureDefaults;
+    } else {
+      delete next["featureDefaults"];
+    }
   }
 
   if (patch.skills?.selection !== undefined) {

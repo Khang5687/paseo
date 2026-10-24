@@ -3,6 +3,9 @@ import { playwright } from "@vitest/browser-playwright";
 import path from "path";
 import fs from "fs";
 
+// Set this before Vite resolves dependencies and Vitest starts its workers.
+Object.assign(process.env, { NODE_ENV: "test" });
+
 const appNodeModules = path.resolve(__dirname, "node_modules");
 const rootNodeModules = path.resolve(__dirname, "../../node_modules");
 const resolvePackageEntry = (packageName: string) => {
@@ -22,7 +25,12 @@ export default defineConfig({
         test: {
           name: "unit",
           environment: "node",
-          include: ["src/**/*.{test,spec}.{ts,tsx}", "native-release-version.test.ts"],
+          include: [
+            "src/**/*.{test,spec}.{ts,tsx}",
+            "native-release-version.test.ts",
+            "app.config.test.ts",
+            "vitest-environment.test.ts",
+          ],
           setupFiles: [path.resolve(__dirname, "vitest.setup.ts")],
           exclude: [...configDefaults.exclude, "e2e/**", "src/**/*.browser.{test,spec}.{ts,tsx}"],
         },
@@ -81,6 +89,10 @@ export default defineConfig({
       "react-native-reanimated",
       "react-native-gesture-handler",
       "react-native-keyboard-controller",
+      // Reached through the Markdown renderer's code-block copy button. Bundling it pulls in
+      // expo-modules-core's native registry, which react-native-web lacks, and the failed
+      // optimize run takes down every browser test. Tests that render Markdown mock it.
+      "expo-clipboard",
     ],
   },
   // The globals a React Native bundler defines, which esbuild is no longer there to supply for

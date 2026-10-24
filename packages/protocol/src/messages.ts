@@ -1,3 +1,5 @@
+import { AgentMessageSchema } from "./agent-message.js";
+import { PluginRegistryIdentitySchema } from "./plugin-registry.js";
 import { AgentProfileSchema, AgentSkillSelectionSchema } from "./agent-profile.js";
 export {
   AgentProfileSchema,
@@ -22,7 +24,10 @@ import { CLIENT_CAPS } from "./client-capabilities.js";
 import { AGENT_LIFECYCLE_STATUSES } from "./agent-lifecycle.js";
 import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "./agent-title-limits.js";
 import { AgentProviderSchema } from "./provider-manifest.js";
-import { ProviderPaseoToolsPolicySchema } from "./provider-config.js";
+import {
+  ProviderFeatureDefaultsSchema,
+  ProviderPaseoToolsPolicySchema,
+} from "./provider-config.js";
 import { TOOL_CALL_ICON_NAMES } from "./agent-types.js";
 import { WORKSPACE_LABEL_COLORS } from "./workspace-labels.js";
 import {
@@ -141,6 +146,8 @@ const MutableDaemonProviderConfigSchema = z
     paseoTools: ProviderPaseoToolsPolicySchema.optional(),
     enabled: z.boolean().optional(),
     additionalModels: z.array(MutableDaemonProviderModelSchema).optional(),
+    featureDefaults: ProviderFeatureDefaultsSchema.optional(),
+    disabledModels: z.array(z.string().min(1)).optional(),
   })
   .passthrough();
 
@@ -198,6 +205,7 @@ export const MutableDaemonConfigSchema = z
     browserTools: MutableBrowserToolsConfigSchema.default({ enabled: false }),
     providers: z.record(z.string(), MutableDaemonProviderConfigSchema).default({}),
     metadataGeneration: MutableMetadataGenerationConfigSchema.default({ providers: [] }),
+    featureDefaults: ProviderFeatureDefaultsSchema.optional(),
     autoArchiveAfterMerge: z.boolean().default(false),
     enableTerminalAgentHooks: z.boolean().default(false),
     appendSystemPrompt: z.string().default(""),
@@ -219,6 +227,7 @@ export const MutableDaemonConfigPatchSchema = z
       .optional(),
     removeProviders: z.array(z.string().min(1)).optional(),
     metadataGeneration: MutableMetadataGenerationConfigSchema.partial().optional(),
+    featureDefaults: ProviderFeatureDefaultsSchema.optional(),
     autoArchiveAfterMerge: z.boolean().optional(),
     enableTerminalAgentHooks: z.boolean().optional(),
     appendSystemPrompt: z.string().optional(),
@@ -332,6 +341,8 @@ export const ProviderSnapshotEntrySchema = z.object({
   source: z.enum(["builtin", "custom"]).optional(),
   error: z.string().optional(),
   models: z.array(AgentModelDefinitionSchema).optional(),
+  // Models the provider reports that Provider settings disabled. They are absent from `models`.
+  disabledModels: z.array(AgentModelDefinitionSchema).optional(),
   modes: z.array(AgentModeSchema).optional(),
   fetchedAt: z.string().optional(),
   label: z.string().optional(),
@@ -354,8 +365,10 @@ export const ProviderSnapshotThinkingSetSchema = z.object({
 
 export const CompactProviderSnapshotEntrySchema = ProviderSnapshotEntrySchema.omit({
   models: true,
+  disabledModels: true,
 }).extend({
   models: z.array(CompactProviderSnapshotModelSchema).optional(),
+  disabledModels: z.array(CompactProviderSnapshotModelSchema).optional(),
 });
 
 export const CompactProviderSnapshotSchema = z.object({
@@ -624,6 +637,7 @@ const ToolCallDetailPayloadSchema: z.ZodType<ToolCallDetail, unknown> = z.discri
 );
 
 const ToolCallBasePayloadSchema = z.object({
+  agentMessage: AgentMessageSchema.optional(),
   type: z.literal("tool_call"),
   callId: z.string(),
   name: z.string(),
@@ -859,6 +873,8 @@ export const AgentSnapshotPayloadSchema = z.object({
   queuedMessages: z.array(AgentQueuedMessageSummaryPayloadSchema).optional(),
   // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24. Absent = not paused.
   queuePaused: z.boolean().optional(),
+  // Private helper marker, retained for exact-ID snapshots and older wire messages.
+  internal: z.boolean().optional(),
 });
 
 export type AgentSnapshotPayload = z.infer<typeof AgentSnapshotPayloadSchema>;
@@ -930,6 +946,9 @@ const AgentDirectoryFilterSchema = z.object({
   includeArchived: z.boolean().optional(),
   requiresAttention: z.boolean().optional(),
   thinkingOptionId: z.string().nullable().optional(),
+  // Retained for wire parsing; private helpers are excluded from public discovery.
+  includeInternal: z.boolean().optional(),
+  includeBackground: z.boolean().optional(),
 });
 
 export const DeleteAgentRequestMessageSchema = z.object({
@@ -999,6 +1018,13 @@ export const WorkspacePinSetRequestSchema = z.object({
   type: z.literal("workspace.pin.set.request"),
   workspaceId: z.string(),
   pinned: z.boolean(),
+  requestId: z.string(),
+});
+
+export const WorkspaceSettleSetRequestSchema = z.object({
+  type: z.literal("workspace.settle.set.request"),
+  workspaceId: z.string(),
+  settled: z.boolean(),
   requestId: z.string(),
 });
 
@@ -1257,6 +1283,7 @@ export const FetchAgentsRequestMessageSchema = z.object({
   type: z.literal("fetch_agents_request"),
   requestId: z.string(),
   scope: z.enum(["active"]).optional(),
+  includeBackground: z.boolean().optional(),
   filter: AgentDirectoryFilterSchema.optional(),
   sort: z
     .array(
@@ -1290,6 +1317,7 @@ const WorkspaceStateBucketSchema = z.enum([
 ]);
 
 export const FetchWorkspacesRequestMessageSchema = z.object({
+  includeBackground: z.boolean().optional(),
   type: z.literal("fetch_workspaces_request"),
   requestId: z.string(),
   filter: z
@@ -1298,6 +1326,9 @@ export const FetchWorkspacesRequestMessageSchema = z.object({
       projectId: z.string().optional(),
       // Unused: accepted so older clients still parse, but the server does not filter on it.
       idPrefix: z.string().optional(),
+      // Retained for wire parsing of older requests.
+      includeInternal: z.boolean().optional(),
+      includeBackground: z.boolean().optional(),
     })
     .optional(),
   sort: z
@@ -1376,6 +1407,8 @@ export const SendAgentMessageRequestSchema = z.object({
   /** Accepts full ID, unique prefix, or exact full title (server resolves). */
   agentId: z.string(),
   text: z.string(),
+  /** Opaque sender identity for agent-originated prompts. */
+  sourceAgentId: z.string().min(1).optional(),
   messageId: z.string().optional(), // Client-provided ID for deduplication
   activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
   images: z.array(ImageAttachmentSchema).optional(),
@@ -1474,8 +1507,18 @@ export const PluginSourceInstallRequestSchema = z.object({
 
 export const PluginSourceIdentitySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("directory"), path: z.string() }),
-  z.object({ kind: z.literal("git"), remote: z.string(), pluginPath: z.string() }),
-  z.object({ kind: z.literal("npm"), packageName: z.string(), pluginPath: z.string() }),
+  z.object({
+    kind: z.literal("git"),
+    remote: z.string(),
+    pluginPath: z.string(),
+    registry: PluginRegistryIdentitySchema.optional(),
+  }),
+  z.object({
+    kind: z.literal("npm"),
+    packageName: z.string(),
+    pluginPath: z.string(),
+    registry: PluginRegistryIdentitySchema.optional(),
+  }),
 ]);
 export const PluginInstallationSchema = z.object({
   identity: PluginSourceIdentitySchema,
@@ -1722,6 +1765,13 @@ export const CreateAgentRequestMessageSchema = z.object({
   git: GitSetupOptionsSchema.optional(),
   worktree: CreateAgentWorktreeTargetSchema.optional(),
   autoArchive: z.boolean().optional(),
+  // An ephemeral helper: the daemon never persists, lists, flags or announces
+  // it, and plugin lifecycle hooks skip it. Lives on the request rather than
+  // in the config schema, which is reused for updates. Retained for wire parsing;
+  // public internal creation is no longer supported.
+  internal: z.boolean().optional(),
+  // Workspace creation intent, rejected when selecting an existing workspace.
+  background: z.boolean().optional(),
   labels: z.record(z.string(), z.string()).default({}),
   requestId: z.string(),
 });
@@ -1800,6 +1850,7 @@ export const ProviderUsageListRequestMessageSchema = z.object({
 
 export const UsageListReportsRequestMessageSchema = z.object({
   type: z.literal("usage.list_reports.request"),
+  agentId: z.string().optional(),
   requestId: z.string(),
   reportIds: z.array(z.string()).optional(),
   forceRefresh: z.boolean().optional(),
@@ -2100,6 +2151,19 @@ export const WorkspacePinSetResponsePayloadSchema = z.object({
 export const WorkspacePinSetResponseSchema = z.object({
   type: z.literal("workspace.pin.set.response"),
   payload: WorkspacePinSetResponsePayloadSchema,
+});
+
+export const WorkspaceSettleSetResponsePayloadSchema = z.object({
+  requestId: z.string(),
+  workspaceId: z.string(),
+  accepted: z.boolean(),
+  settledAt: z.string().nullable(),
+  error: z.string().nullable(),
+});
+
+export const WorkspaceSettleSetResponseSchema = z.object({
+  type: z.literal("workspace.settle.set.response"),
+  payload: WorkspaceSettleSetResponsePayloadSchema,
 });
 
 export const WorkspaceRecoveryStateSchema = z.discriminatedUnion("kind", [
@@ -2640,6 +2704,10 @@ export const WorkspaceCreateRequestSchema = z.object({
   title: z.string().optional(),
   // Optional prompt context for workspace-level name/branch generation.
   firstAgentContext: FirstAgentContextSchema.optional(),
+  // Retained for wire parsing; public internal creation is no longer supported.
+  internal: z.boolean().optional(),
+  background: z.boolean().optional(),
+  callerAgentId: z.string().optional(),
   source: z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("directory"),
@@ -3200,6 +3268,366 @@ export const HubExecutionControlRequestSchema = z.object({
 
 export type HubExecutionControlRequest = z.infer<typeof HubExecutionControlRequestSchema>;
 
+export const RoutingRefusalCodeSchema = z.enum([
+  "no_account",
+  "source_changed",
+  "source_inaccessible",
+  "billing_enabled",
+  "billing_unknown",
+  "quota_blocked",
+  "entitlement_unavailable",
+  "auth_unavailable",
+  "unsupported_transport",
+  "unsupported_runtime",
+  "persistence_failed",
+  "host_unavailable",
+  "cancelled",
+]);
+export type RoutingRefusalCode = z.infer<typeof RoutingRefusalCodeSchema>;
+
+export const RoutingWaitReasonSchema = z.enum([
+  "metadata_pending",
+  "all_unavailable",
+  "auto_disabled",
+]);
+export type RoutingWaitReason = z.infer<typeof RoutingWaitReasonSchema>;
+
+export const RoutingWaitOrRefusalCodeSchema = z.union([
+  RoutingRefusalCodeSchema,
+  RoutingWaitReasonSchema,
+]);
+export type RoutingWaitOrRefusalCode = z.infer<typeof RoutingWaitOrRefusalCodeSchema>;
+
+export const OmpRoutingAccountRefSchema = z.object({
+  storeNamespace: z.string(),
+  nativeRowId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+export type OmpRoutingAccountRef = z.infer<typeof OmpRoutingAccountRefSchema>;
+
+export const OmpRoutingScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("shared") }),
+  z.object({ kind: z.literal("model"), modelId: z.string() }),
+  z.object({ kind: z.literal("family"), family: z.string() }),
+]);
+export type OmpRoutingScope = z.infer<typeof OmpRoutingScopeSchema>;
+
+export const OmpRoutingBlockSchema = z.object({
+  limitId: z.string(),
+  scope: OmpRoutingScopeSchema,
+  resetAt: z.number().finite().nullable(),
+  observedAt: z.number().finite(),
+  source: z.enum(["provider-rejection", "native-usage"]),
+  confirmed: z.literal(true),
+});
+export type OmpRoutingBlock = z.infer<typeof OmpRoutingBlockSchema>;
+
+export const OmpRoutingWindowSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  scope: OmpRoutingScopeSchema,
+  usedFraction: z.number().finite().min(0).max(1).nullable(),
+  resetAt: z.number().finite().nullable(),
+  observedAt: z.number().finite().nullable(),
+  validUntil: z.number().finite().nullable(),
+  source: z.enum(["usage-full", "usage-header", "unknown"]),
+});
+export type OmpRoutingWindow = z.infer<typeof OmpRoutingWindowSchema>;
+
+export const OmpRoutingBillingStateSchema = z.object({
+  state: z.enum(["disabled", "enabled", "unknown"]),
+  observedAt: z.number().finite().nullable(),
+  validUntil: z.number().finite().nullable(),
+  source: z.enum(["claude-usage-spend", "claude-usage-legacy"]).nullable(),
+  sourceRevision: z.string().nullable(),
+  reason: z
+    .enum([
+      "malformed",
+      "conflicting",
+      "expired",
+      "identity_mismatch",
+      "not_full_response",
+      "untrusted_source",
+    ])
+    .nullable(),
+});
+export type OmpRoutingBillingState = z.infer<typeof OmpRoutingBillingStateSchema>;
+
+export const OmpRoutingRankSchema = z.object({
+  method: z.literal("claude-native-window-pressure-v1"),
+  version: z.literal(1),
+  modelId: z.string().nullable(),
+  modelFamily: z.string().nullable(),
+  planGateApplies: z.boolean(),
+  planEligibility: z.union([z.boolean(), z.literal("unknown")]),
+  billingEligibility: z.enum(["eligible", "enabled", "unknown"]),
+  applicableLimitIds: z.array(z.string()),
+  coverage: z.enum(["complete", "partial", "unknown"]),
+  unknownReasons: z.array(RoutingWaitOrRefusalCodeSchema),
+  usageMeasured: z.boolean(),
+  primaryHot: z.boolean().nullable(),
+  primaryUsed: z.number().finite().nullable(),
+  secondaryUsed: z.number().finite().nullable(),
+  primaryRequiredDrain: z.number().finite().nullable(),
+  secondaryRequiredDrain: z.number().finite().nullable(),
+});
+export type OmpRoutingRank = z.infer<typeof OmpRoutingRankSchema>;
+
+export const OmpRoutingAccountSchema = z.object({
+  ref: OmpRoutingAccountRefSchema,
+  label: z.string(),
+  organizationLabel: z.string().nullable(),
+  identityLabel: z.string(),
+  organizationIdentityLabel: z.string(),
+  available: z.boolean(),
+  missing: z.boolean(),
+  authoritativeObservedAt: z.number().finite().nullable(),
+  quotaIdentity: z.object({ accountUuid: z.string(), organizationUuid: z.string() }).nullable(),
+  subscriptionTier: z.object({
+    kind: z.enum(["pro", "max5", "max20", "other", "unknown"]),
+    observedAt: z.number().finite().nullable(),
+    source: z.string().nullable(),
+  }),
+  absoluteAllowance: z.null(),
+  windows: z.array(OmpRoutingWindowSchema),
+  billing: OmpRoutingBillingStateSchema,
+  rank: OmpRoutingRankSchema,
+  quotaBlocks: z.array(OmpRoutingBlockSchema),
+  rankingCoverage: z.enum(["complete", "partial", "unknown"]),
+});
+export type OmpRoutingAccount = z.infer<typeof OmpRoutingAccountSchema>;
+
+export const OmpAccountRoutingPolicySchema = z.object({
+  policyRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  selectionGeneration: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  current: OmpRoutingAccountRefSchema.nullable(),
+  autoEnabled: z.boolean(),
+  priorityOrder: z.array(OmpRoutingAccountRefSchema),
+  inclusion: z.array(z.object({ account: OmpRoutingAccountRefSchema, included: z.boolean() })),
+});
+export type OmpAccountRoutingPolicy = z.infer<typeof OmpAccountRoutingPolicySchema>;
+
+export const OmpAccountRoutingCapabilitySchema = z.object({
+  status: z.enum(["supported", "unknown", "unsupported"]),
+  reason: RoutingRefusalCodeSchema.nullable(),
+});
+export type OmpAccountRoutingCapability = z.infer<typeof OmpAccountRoutingCapabilitySchema>;
+
+export const OmpAccountRoutingCatalogSchema = z.object({
+  status: z.enum(["loading", "loaded", "empty", "incomplete", "stale", "unsupported"]),
+  authoritativeObservedAt: z.number().finite().nullable(),
+});
+export type OmpAccountRoutingCatalog = z.infer<typeof OmpAccountRoutingCatalogSchema>;
+
+export const OmpAccountRoutingStateSchema = z.object({
+  hostEpoch: z.string(),
+  stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  policy: OmpAccountRoutingPolicySchema,
+  capability: OmpAccountRoutingCapabilitySchema,
+  catalog: OmpAccountRoutingCatalogSchema,
+  accounts: z.array(OmpRoutingAccountSchema),
+  activeRequests: z.array(
+    z.object({
+      admissionId: z.string(),
+      agentId: z.string(),
+      nativeSessionId: z.string(),
+      model: z.string(),
+      accountRef: OmpRoutingAccountRefSchema,
+      selectionGeneration: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      phase: z.enum(["admitted", "serving"]),
+      observedAt: z.number().finite(),
+    }),
+  ),
+  lastServed: z.array(
+    z.object({
+      agentId: z.string(),
+      accountRef: OmpRoutingAccountRefSchema,
+      model: z.string(),
+      servedAt: z.number().finite(),
+    }),
+  ),
+  pausedRequests: z.array(
+    z.object({
+      waitId: z.string(),
+      agentId: z.string(),
+      nativeSessionId: z.string(),
+      model: z.string(),
+      reason: RoutingWaitReasonSchema,
+      nextCheckAt: z.number().finite().nullable(),
+      requiresUserAction: z.boolean(),
+      accountRef: OmpRoutingAccountRefSchema.nullable(),
+      recoveredAt: z.number().finite().nullable(),
+    }),
+  ),
+});
+export type OmpAccountRoutingState = z.infer<typeof OmpAccountRoutingStateSchema>;
+
+export const OmpAccountRoutingMutationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("select"), account: OmpRoutingAccountRefSchema }),
+  z.object({ kind: z.literal("set_auto"), enabled: z.boolean() }),
+  z.object({
+    kind: z.literal("set_inclusion"),
+    account: OmpRoutingAccountRefSchema,
+    included: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("move_priority"),
+    account: OmpRoutingAccountRefSchema,
+    direction: z.enum(["up", "down"]),
+  }),
+]);
+export type OmpAccountRoutingMutation = z.infer<typeof OmpAccountRoutingMutationSchema>;
+
+const OmpAccountRoutingMutationErrorSchema = z.object({
+  code: z.enum(["conflict", "invalid_account", "unsupported", "persistence_failed"]),
+  message: z.string(),
+});
+
+export const OmpAccountRoutingMutationResultSchema = z.object({
+  requestId: z.string(),
+  state: OmpAccountRoutingStateSchema,
+  error: OmpAccountRoutingMutationErrorSchema.nullable(),
+});
+export type OmpAccountRoutingMutationResult = z.infer<typeof OmpAccountRoutingMutationResultSchema>;
+
+export const AccountRoutingGetStateRequestSchema = z.object({
+  type: z.literal("account.routing.get_state.request"),
+  requestId: z.string(),
+  subscribe: z.object({}).optional(),
+});
+export type AccountRoutingGetStateRequest = z.infer<typeof AccountRoutingGetStateRequestSchema>;
+
+export const AccountRoutingGetStateResponseSchema = z.object({
+  type: z.literal("account.routing.get_state.response"),
+  payload: z.object({
+    requestId: z.string(),
+    state: OmpAccountRoutingStateSchema,
+    subscriptionId: z.string().optional(),
+  }),
+});
+export type AccountRoutingGetStateResponse = z.infer<typeof AccountRoutingGetStateResponseSchema>;
+
+export const AccountRoutingStateUpdateSchema = z.object({
+  type: z.literal("account.routing.state.update"),
+  payload: z.object({
+    subscriptionId: z.string(),
+    state: OmpAccountRoutingStateSchema,
+  }),
+});
+export type AccountRoutingStateUpdate = z.infer<typeof AccountRoutingStateUpdateSchema>;
+
+export const AccountRoutingMutateRequestSchema = z.object({
+  type: z.literal("account.routing.mutate.request"),
+  requestId: z.string(),
+  expectedPolicyRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  command: OmpAccountRoutingMutationSchema,
+});
+export type AccountRoutingMutateRequest = z.infer<typeof AccountRoutingMutateRequestSchema>;
+
+export const AccountRoutingMutateResponseSchema = z.object({
+  type: z.literal("account.routing.mutate.response"),
+  payload: OmpAccountRoutingMutationResultSchema,
+});
+export type AccountRoutingMutateResponse = z.infer<typeof AccountRoutingMutateResponseSchema>;
+
+// Host-side Claude sign-in. A short-lived OMP child signs in and writes the credential into OMP's own
+// store; tokens never cross these messages. The authorize URL and a pasted one-time authorization
+// code cross only the loopback connection to the host's own app (plan D12 amendment): the daemon
+// sends `authorizeUrl` and accepts `submit_code` only from direct loopback or local IPC
+// connections. The host holds one login at a time; clients start it, poll it, and may cancel it.
+export const OmpAccountLoginStatusSchema = z.object({
+  state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
+  failure: z
+    .enum([
+      "timeout",
+      // Sent only by daemons before `ompAccountLoginLink`; still parsed.
+      "paste_code_unsupported",
+      "browser_open_failed",
+      "omp_failed",
+      "spawn_failed",
+    ])
+    .optional(),
+  startedAt: z.number().finite().optional(),
+  /** Only while `state` is `running`. */
+  phase: z.enum(["preparing", "awaiting_browser", "verifying"]).optional(),
+  /** https sign-in link, only while awaiting the browser and only to host-local connections. */
+  authorizeUrl: z.string().optional(),
+  /** OMP is waiting for a pasted redirect address or code (`submit_code`). */
+  pasteAccepted: z.boolean().optional(),
+  endedAt: z.number().finite().optional(),
+  /**
+   * What the sign-in did to the store. A refused duplicate is `state: "failed"`,
+   * `failure: "omp_failed"`, `outcome.kind: "already_listed"`; nothing was written.
+   * Labels are display labels only; `ref` is present when the host knows the row's store.
+   */
+  outcome: z
+    .object({
+      kind: z.enum(["added", "replaced", "already_listed"]),
+      label: z.string().optional(),
+      organizationLabel: z.string().optional(),
+      ref: OmpRoutingAccountRefSchema.optional(),
+    })
+    .optional(),
+});
+export type OmpAccountLoginStatus = z.infer<typeof OmpAccountLoginStatusSchema>;
+
+const OmpAccountLoginPayloadSchema = z.object({
+  requestId: z.string(),
+  status: OmpAccountLoginStatusSchema,
+  /**
+   * `already_running`: a start refused because another login runs; `status` is that login's.
+   * `invalid_replace_target`: a `mode: "replace"` start without a listed account; sent only to
+   * requests that carried `mode`.
+   */
+  error: z.enum(["already_running", "invalid_replace_target"]).nullable().optional(),
+});
+export type OmpAccountLoginPayload = z.infer<typeof OmpAccountLoginPayloadSchema>;
+
+export const AccountRoutingLoginStartRequestSchema = z.object({
+  type: z.literal("account.routing.login.start.request"),
+  requestId: z.string(),
+  /** Absent means `add`: OMP refuses to overwrite an account that is already stored. */
+  mode: z.enum(["add", "replace"]).optional(),
+  /** Required with `mode: "replace"`: the only stored account the sign-in may overwrite. */
+  replaceAccount: OmpRoutingAccountRefSchema.optional(),
+});
+export const AccountRoutingLoginStartResponseSchema = z.object({
+  type: z.literal("account.routing.login.start.response"),
+  payload: OmpAccountLoginPayloadSchema,
+});
+export const AccountRoutingLoginGetStatusRequestSchema = z.object({
+  type: z.literal("account.routing.login.get_status.request"),
+  requestId: z.string(),
+});
+export const AccountRoutingLoginGetStatusResponseSchema = z.object({
+  type: z.literal("account.routing.login.get_status.response"),
+  payload: OmpAccountLoginPayloadSchema,
+});
+export const AccountRoutingLoginCancelRequestSchema = z.object({
+  type: z.literal("account.routing.login.cancel.request"),
+  requestId: z.string(),
+});
+export const AccountRoutingLoginCancelResponseSchema = z.object({
+  type: z.literal("account.routing.login.cancel.response"),
+  payload: OmpAccountLoginPayloadSchema,
+});
+/** Answers OMP's open paste prompt with the browser's redirect address or the shown code. */
+export const AccountRoutingLoginSubmitCodeRequestSchema = z.object({
+  type: z.literal("account.routing.login.submit_code.request"),
+  requestId: z.string(),
+  input: z.string().max(4096),
+});
+export const AccountRoutingLoginSubmitCodeResponseSchema = z.object({
+  type: z.literal("account.routing.login.submit_code.response"),
+  payload: z.object({
+    requestId: z.string(),
+    status: OmpAccountLoginStatusSchema,
+    error: z.enum(["not_waiting", "invalid_input", "wrong_login", "not_allowed"]).nullable(),
+  }),
+});
+export type AccountRoutingLoginSubmitCodeResponse = z.infer<
+  typeof AccountRoutingLoginSubmitCodeResponseSchema
+>;
+
 // These connection event streams have no directory bootstrap or timeline membership.
 export const SessionEventSubscriptionSchema = z.enum([
   "project.update",
@@ -3257,6 +3685,12 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   BrowserHostRegisterRequestSchema,
   SubscriptionReleaseRequestSchema,
   SessionEventsSetSubscriptionRequestSchema,
+  AccountRoutingGetStateRequestSchema,
+  AccountRoutingMutateRequestSchema,
+  AccountRoutingLoginStartRequestSchema,
+  AccountRoutingLoginGetStatusRequestSchema,
+  AccountRoutingLoginCancelRequestSchema,
+  AccountRoutingLoginSubmitCodeRequestSchema,
   HubExecutionAgentCreateRequestSchema,
   HubExecutionAgentValidateRequestSchema,
   HubExecutionControlRequestSchema,
@@ -3279,6 +3713,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
   WorkspacePinSetRequestSchema,
+  WorkspaceSettleSetRequestSchema,
   WorkspaceLabelListRequestSchema,
   WorkspaceLabelAssignmentSetRequestSchema,
   WorkspaceLabelUpdateRequestSchema,
@@ -3644,6 +4079,11 @@ export const ServerInfoStatusPayloadSchema = z
         creationLifecycle: z.boolean().optional(),
         // COMPAT(hubAgentRpc): added in v0.8.0; remove gate after 2027-03-05.
         hubAgentRpc: z.boolean().optional(),
+        // COMPAT(internalAgents): added in v0.9.0; remove gate after 2027-03-17.
+        internalAgents: z.boolean().optional(),
+        // COMPAT(internalWorkspaces): added in v0.9.0; remove gate after 2027-03-17.
+        internalWorkspaces: z.boolean().optional(),
+        backgroundWorkspaces: z.boolean().optional(),
         providersSnapshot: z.boolean().optional(),
         usageSources: z.boolean().optional(),
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
@@ -3754,6 +4194,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspacePinning: z.boolean().optional(),
         // COMPAT(workspaceMarkUnread): added in v0.5.0, remove after 2027-08-20.
         workspaceMarkUnread: z.boolean().optional(),
+        // COMPAT(workspaceSettling): added in v0.11.0, remove gate after 2027-04-01.
+        workspaceSettling: z.boolean().optional(),
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
         hubRelationship: z.boolean().optional(),
         // COMPAT(projectGithubClone): added in v0.1.108, remove gate after 2027-01-15.
@@ -3770,6 +4212,12 @@ export const ServerInfoStatusPayloadSchema = z
         commitBaseClassification: z.boolean().optional(),
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
         providerRemoval: z.boolean().optional(),
+        // COMPAT(providerFeatureDefaults): added in v0.11.2, remove gate after 2027-04-08.
+        providerFeatureDefaults: z.boolean().optional(),
+        // COMPAT(globalFeatureDefaults): added in v0.11.3, remove gate after 2027-04-14.
+        globalFeatureDefaults: z.boolean().optional(),
+        // COMPAT(hopliteProvider): added after v0.11.2, remove after 2027-04-15 once host floor includes the bundled adapter.
+        hopliteProvider: z.boolean().optional(),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: z.boolean().optional(),
         // COMPAT(importSessionSearch): added in v0.8.0, remove gate after 2027-03-02.
@@ -3783,8 +4231,14 @@ export const ServerInfoStatusPayloadSchema = z
         selectiveAgentTimeline: z.boolean().optional(),
         explicitEventSubscriptions: z.boolean().optional(),
         ownedSubscriptions: z.boolean().optional(),
+        ompAccountRouting: z.boolean().optional(),
+        ompAccountLogin: z.boolean().optional(),
+        // Sign-in link, paste and add-only guard: needs `ompAccountLogin` and an OMP whose
+        // capability document reports `login.existing`.
+        ompAccountLoginLink: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
+        agentMessageProvenance: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): accept peers that observed pre-release v0.2.6 through 2027-01-31.
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -3812,6 +4266,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
         // Daemon supports agent.queue.move/clear/set_paused and queuePaused on snapshots.
         messageQueueControls: z.boolean().optional(),
+        // COMPAT(providerDisabledModels): added in v0.11.2, remove gate after 2027-04-08.
+        // Daemon honors agents.providers.<id>.disabledModels and sends snapshot disabledModels.
+        providerDisabledModels: z.boolean().optional(),
       })
       .optional(),
   })
@@ -4113,8 +4570,13 @@ export const WorkspaceDescriptorPayloadSchema = z
     title: z.string().nullable().optional(),
     // COMPAT(workspacePinning): added in v0.1.107, remove optional after 2027-01-12.
     pinnedAt: z.string().nullable().optional(),
+    // COMPAT(workspaceSettling): added in v0.11.0, remove optional after 2027-04-01.
+    settledAt: z.string().nullable().optional(),
     // COMPAT(workspaceLabels): added in v0.5.0, remove optional after 2027-08-14.
     labels: z.array(z.string()).optional(),
+    // Retained for wire parsing of older daemon descriptors.
+    internal: z.boolean().optional(),
+    background: z.boolean().optional(),
     archivingAt: z.string().nullable().optional().default(null),
     status: WorkspaceStateBucketSchema,
     // Best-effort workspace status entry timestamp. Old daemons omit the
@@ -6442,14 +6904,33 @@ export const UsageProblemSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("no_quota"), detail: z.string() }),
 ]);
+export const UsageQuotaIdentitySchema = z.object({
+  accountUuid: z.string(),
+  organizationUuid: z.string(),
+});
+export const UsageSubscriptionSchema = z.object({
+  subscriptionType: z.string().nullable(),
+  rateLimitTier: z.string().nullable(),
+  observedAt: z.number().nullable(),
+  source: z.enum(["claude-supported-login", "native-usage", "unknown"]),
+});
+export const UsageRoutingSchema = z.object({
+  accountRef: OmpRoutingAccountRefSchema.nullable(),
+  state: z.enum(["serving", "last_served", "unknown"]),
+  hostEpoch: z.string(),
+  stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
+const AvailableUsageReportSchema = z.object({
+  status: z.literal("available"),
+  planLabel: z.string().optional(),
+  windows: z.array(ProviderUsageWindowSchema),
+  balances: z.array(ProviderUsageBalanceSchema).optional(),
+  details: z.array(ProviderUsageDetailSchema).optional(),
+  quotaIdentity: UsageQuotaIdentitySchema.optional(),
+  subscription: UsageSubscriptionSchema.optional(),
+});
 export const UsageReportSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("available"),
-    planLabel: z.string().optional(),
-    windows: z.array(ProviderUsageWindowSchema),
-    balances: z.array(ProviderUsageBalanceSchema).optional(),
-    details: z.array(ProviderUsageDetailSchema).optional(),
-  }),
+  AvailableUsageReportSchema,
   z.object({ status: z.literal("unavailable"), problem: UsageProblemSchema }),
   z.object({ status: z.literal("error"), error: z.string() }),
 ]);
@@ -6461,10 +6942,31 @@ export const UsageReportEntrySchema = z.object({
   sourceLabel: z.string(),
   icon: z.string().optional(),
   report: UsageReportSchema,
+  routing: UsageRoutingSchema.optional(),
+  // Successful completion time; fetchedAt remains the attempt timestamp for ordering.
+  successfulAt: z.string().optional(),
+  lastSuccessful: z
+    .object({ fetchedAt: z.string(), report: AvailableUsageReportSchema })
+    .optional(),
+  loginErrors: z
+    .array(
+      z.object({
+        harness: z.string(),
+        report: z.discriminatedUnion("status", [
+          z.object({ status: z.literal("unavailable"), problem: UsageProblemSchema }),
+          z.object({ status: z.literal("error"), error: z.string() }),
+        ]),
+      }),
+    )
+    .optional(),
+});
+export const UsageListReportsUpdateMessageSchema = z.object({
+  type: z.literal("usage.list_reports.update"),
+  payload: z.object({ requestId: z.string(), report: UsageReportEntrySchema }),
 });
 export const UsageListReportsResponseMessageSchema = z.object({
   type: z.literal("usage.list_reports.response"),
-  payload: z.object({ requestId: z.string(), reports: z.array(UsageReportEntrySchema) }),
+  payload: z.object({ requestId: z.string(), error: z.string().nullable() }),
 });
 
 const AgentSlashCommandSchema = z.object({
@@ -6789,6 +7291,9 @@ export const PluginNpmInstallationSchema = z.object({
 
 export const PluginListItemSchema = z.object({
   id: PluginIdSchema,
+  name: z.string().optional(),
+  icon: z.string().optional(),
+  media: z.array(z.string()).optional(),
   description: z.string().optional(),
   path: z.string(),
   enabled: z.boolean(),
@@ -6966,6 +7471,13 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   BrowserHostRegisterResponseSchema,
   SubscriptionReleaseResponseSchema,
   SessionEventsSetSubscriptionResponseSchema,
+  AccountRoutingGetStateResponseSchema,
+  AccountRoutingMutateResponseSchema,
+  AccountRoutingStateUpdateSchema,
+  AccountRoutingLoginStartResponseSchema,
+  AccountRoutingLoginGetStatusResponseSchema,
+  AccountRoutingLoginCancelResponseSchema,
+  AccountRoutingLoginSubmitCodeResponseSchema,
   HubExecutionAgentCreateResponseSchema,
   HubExecutionAgentValidateResponseSchema,
   HubExecutionControlResponseSchema,
@@ -7094,6 +7606,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
   WorkspacePinSetResponseSchema,
+  WorkspaceSettleSetResponseSchema,
   WorkspaceRecoveryInspectResponseSchema,
   WorkspaceRecoveryRestoreResponseSchema,
   WaitForFinishResponseMessageSchema,
@@ -7159,6 +7672,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   RefreshProvidersSnapshotResponseMessageSchema,
   ProviderDiagnosticResponseMessageSchema,
   ProviderUsageListResponseMessageSchema,
+  UsageListReportsUpdateMessageSchema,
   UsageListReportsResponseMessageSchema,
   ListCommandsResponseSchema,
   ListTerminalsResponseSchema,
@@ -7298,6 +7812,10 @@ export type WorkspaceTitleSetResponsePayload = z.infer<
 >;
 export type WorkspacePinSetResponse = z.infer<typeof WorkspacePinSetResponseSchema>;
 export type WorkspacePinSetResponsePayload = z.infer<typeof WorkspacePinSetResponsePayloadSchema>;
+export type WorkspaceSettleSetResponse = z.infer<typeof WorkspaceSettleSetResponseSchema>;
+export type WorkspaceSettleSetResponsePayload = z.infer<
+  typeof WorkspaceSettleSetResponsePayloadSchema
+>;
 export type WorkspaceRecoveryState = z.infer<typeof WorkspaceRecoveryStateSchema>;
 export type WorkspaceRecoveryInspectResponse = z.infer<
   typeof WorkspaceRecoveryInspectResponseSchema
@@ -7448,6 +7966,7 @@ export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;
 export type WorkspacePinSetRequest = z.infer<typeof WorkspacePinSetRequestSchema>;
+export type WorkspaceSettleSetRequest = z.infer<typeof WorkspaceSettleSetRequestSchema>;
 export type WorkspaceRecoveryInspectRequest = z.infer<typeof WorkspaceRecoveryInspectRequestSchema>;
 export type WorkspaceRecoveryRestoreRequest = z.infer<typeof WorkspaceRecoveryRestoreRequestSchema>;
 export type SetAgentModeRequestMessage = z.infer<typeof SetAgentModeRequestMessageSchema>;

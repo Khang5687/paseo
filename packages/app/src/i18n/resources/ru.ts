@@ -31,6 +31,7 @@ export const ru: TranslationResources = {
     back: "Назад",
     loading: "Загрузка...",
     actions: {
+      save: "Сохранить",
       back: "Назад",
       cancel: "Отмена",
       close: "Закрыть",
@@ -124,6 +125,8 @@ export const ru: TranslationResources = {
     input: {
       accessibilityLabel: "Написать агенту...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "Полный экран",
+      exitFullscreen: "Выйти из полноэкранного режима",
       focusHint: "{{shortcut}}, для фокуса",
       addAttachment: "Добавить вложение",
       interruptAgent: "Прервать агента",
@@ -379,6 +382,7 @@ export const ru: TranslationResources = {
       details: "Подробности",
     },
     dictation: {
+      paused: "Микрофон прерван. Ожидание возобновления…",
       start: "Начать диктовку голосом",
       cancel: "Отменить диктовку",
       retry: "Повторить диктовку",
@@ -388,6 +392,7 @@ export const ru: TranslationResources = {
       failedRetry: "Диктовка не удалась. Нажмите «Повторить».",
     },
     question: {
+      responseFailed: "Не удалось отправить ответ. Попробуйте ещё раз.",
       submit: "Отправить",
       next: "Далее",
       answerPlaceholder: "Введите ответ...",
@@ -403,6 +408,9 @@ export const ru: TranslationResources = {
         started: "Начата",
         completed: "Завершена",
       },
+    },
+    turnFooter: {
+      workedFor: "Время работы: {{duration}}",
     },
     compaction: {
       loading: "Сжатие контекста...",
@@ -487,6 +495,7 @@ export const ru: TranslationResources = {
       openToSide: "Открыть сбоку",
       copyPath: "Копировать путь",
       copyRelativePath: "Копировать относительный путь",
+      copyFullPath: "Копировать полный путь",
       revealIn: "Показать в {{target}}",
       download: "Скачать",
       addToChat: "Добавить в чат",
@@ -632,6 +641,9 @@ export const ru: TranslationResources = {
       updateHost: "Обновите хост, чтобы использовать нативный рендерер терминала.",
       unableToSubscribe: "Не удалось подключиться к терминалу",
     },
+    sheet: {
+      openAsTab: "Открыть во вкладке",
+    },
     tabs: {
       loading: "Загрузка...",
       modified: "Несохранённые изменения",
@@ -647,7 +659,7 @@ export const ru: TranslationResources = {
       },
       switcher: {
         trigger: "Переключить вкладки (открыто: {{count}})",
-        title: "Переключить вкладку",
+        title: "Вкладки рабочего пространства",
         searchPlaceholder: "Поиск вкладок",
       },
       menu: {
@@ -745,6 +757,7 @@ export const ru: TranslationResources = {
     header: {
       actions: {
         workspaceActions: "Действия с рабочим пространством",
+        workspaceActionsUnhealthy: "Действия с рабочим пространством, есть неисправный сервис",
         newAgent: "Новый агент",
         newTerminal: "Новый терминал",
         newBrowser: "Новая вкладка браузера",
@@ -793,6 +806,8 @@ export const ru: TranslationResources = {
         exitCode: "Код выхода: {{code}}",
         startFailed: "Не удалось запустить скрипт {{scriptName}}",
         stopFailed: "Не удалось остановить скрипт {{scriptName}}",
+        running: "Запущен",
+        runningCount: "Запущено: {{count}}",
       },
     },
     tree: {
@@ -1005,6 +1020,47 @@ export const ru: TranslationResources = {
         actions: {
           viewPullRequest: "Просмотреть",
           openOn: "Открыть на {{brand}}",
+          addToChat: "Добавить в чат",
+          addAllToChat: "Добавить всё в чат",
+          addingToChat: "Добавление...",
+        },
+        checksOverview: {
+          headline: {
+            actionRequired: "Некоторые проверки требуют внимания",
+            failure: "Некоторые проверки не пройдены",
+            pending: "Некоторые проверки ещё не завершены",
+            success: "Все проверки пройдены",
+            none: "Нет проверок",
+          },
+          count: {
+            actionRequired: "требует действий: {{count}}",
+            warning: "с предупреждением: {{count}}",
+            failure: "не пройдено: {{count}}",
+            pending: "выполняется: {{count}}",
+            manual: "вручную: {{count}}",
+            success: "пройдено: {{count}}",
+            ignored: "пропущено: {{count}}",
+          },
+          detailOne: "Проверка ({{parts}})",
+          detailMany: "Проверки ({{parts}})",
+          groupOne: {
+            actionRequired: "Требует действий: {{count}}",
+            warning: "С предупреждением: {{count}}",
+            failure: "Не пройдена: {{count}}",
+            pending: "Выполняется: {{count}}",
+            manual: "Ручная: {{count}}",
+            success: "Пройдена: {{count}}",
+            ignored: "Пропущена: {{count}}",
+          },
+          groupMany: {
+            actionRequired: "Требуют действий: {{count}}",
+            warning: "С предупреждением: {{count}}",
+            failure: "Не пройдены: {{count}}",
+            pending: "Выполняются: {{count}}",
+            manual: "Ручные: {{count}}",
+            success: "Пройдены: {{count}}",
+            ignored: "Пропущены: {{count}}",
+          },
         },
         checksSummary: {
           passedLabel: "успешно",
@@ -1018,17 +1074,21 @@ export const ru: TranslationResources = {
           checks: "Проверки",
           pipeline: "Пайплайн",
           reviews: "Ревью",
+          activity: "Активность",
         },
         empty: {
           noJobs: "Нет заданий",
           loadingPipeline: "Загрузка пайплайна...",
           pipelineJobsLoadFailed: "Не удалось загрузить задания пайплайна",
           allowedToFail: "допускается сбой",
+          noActivity: "Активности пока нет",
         },
         approvals: "Одобрено: {{given}} из {{required}}",
         accessibility: {
           pullRequest: "PR #{{number}}",
           pullRequest_mr: "MR !{{number}}",
+          commentActions: "Действия с комментарием",
+          threadActions: "Действия с обсуждением",
           checkStatus: {
             passed: "Успешно",
             failed: "Ошибка",
@@ -1057,6 +1117,8 @@ export const ru: TranslationResources = {
         },
         thread: {
           discussion: "Ветка обсуждения",
+          resolved: "Решено",
+          outdated: "Устарело",
         },
         errors: {
           statusLoadFailed: "Не удалось загрузить статус PR",
@@ -1123,7 +1185,17 @@ export const ru: TranslationResources = {
     },
   },
   sidebar: {
+    statusGroupAccessibility: "Группа «{{label}}»",
+    unsentDraft: "Неотправленный черновик",
+    statusBucket: {
+      needsInput: "Ожидает ввода",
+      failed: "Ошибка",
+      readyToReview: "На проверку",
+      working: "В работе",
+      done: "Готово",
+    },
     display: {
+      showBackground: "Показать фоновые пространства",
       trigger: "Настройки отображения",
       heading: "Отображение",
       grouping: {
@@ -1171,6 +1243,10 @@ export const ru: TranslationResources = {
     },
     pinned: {
       title: "Закреплённые",
+    },
+    settled: {
+      title: "Завершённые",
+      titleWithCount: "Завершённые ({{count}})",
     },
     host: {
       noHost: "Нет хоста",
@@ -1262,6 +1338,10 @@ export const ru: TranslationResources = {
         rename: "Переименовать рабочее пространство",
         pin: "Закрепить вверху",
         unpin: "Открепить",
+        settle: "Завершить",
+        unsettle: "Вернуть",
+        settleWorkspace: "Отметить рабочее пространство завершённым",
+        unsettleWorkspace: "Вернуть рабочее пространство",
         archive: "Архивировать",
         archiveWorkspace: "Архивировать рабочее пространство",
         hideFromSidebar: "Скрыть на боковой панели",
@@ -1300,8 +1380,9 @@ export const ru: TranslationResources = {
     },
     fields: {
       project: "Проект",
-      base: "Базовая ветка",
+      branch: "Ветка",
       baseNotApplicable: "Неприменимо",
+      host: "Хост",
     },
     titlePlaceholder: "Заголовок (необязательно)",
     errors: {
@@ -1346,6 +1427,9 @@ export const ru: TranslationResources = {
     quitting: {
       title: "Завершение работы Paseo...",
       detail: "Остановка локального демона.",
+    },
+    quitConfirm: {
+      hint: "Удерживайте ⌘Q или нажмите дважды для выхода",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -1639,13 +1723,18 @@ export const ru: TranslationResources = {
     title: "Добавить провайдера",
     search: "Поиск провайдеров",
     noProviders: "Провайдеры не найдены",
+    clearSearch: "Очистить поиск",
     actions: {
       add: "Добавить",
+      addProvider: "Добавить {{provider}}",
       adding: "Добавление",
       installed: "Установлено",
       cancel: "Отмена",
       installInstructions: "Инструкции по установке",
       installInstructionsFor: "Инструкции по установке {{provider}}",
+    },
+    types: {
+      acp: "ACP",
     },
     errors: {
       unableToInstall: "Не удалось установить провайдера",
@@ -1750,6 +1839,12 @@ export const ru: TranslationResources = {
       helper: "Подключитесь к демону Paseo на удалённом хосте.",
       fields: {
         target: "Хост SSH",
+        password: "Пароль демона",
+        optional: "Необязательно",
+      },
+      passwordVisibility: {
+        show: "Показать пароль",
+        hide: "Скрыть пароль",
       },
       actions: {
         cancel: "Отмена",
@@ -1982,6 +2077,8 @@ export const ru: TranslationResources = {
     dismiss: "Закрыть",
   },
   contextWindow: {
+    noData: "Нет данных о контексте",
+    accessibilityNoData: "Контекстное окно: нет данных о контексте",
     title: "Контекстное окно",
     used: "Использовано: {{percentage}}%",
     tokens: "Токены: {{used}} / {{max}}",
@@ -1989,6 +2086,17 @@ export const ru: TranslationResources = {
     accessibility: "Использовано {{percentage}}% контекстного окна",
   },
   review: {
+    feedback: {
+      send: "Отправить отзыв ({{count}})",
+      sending: "Отправка отзыва ({{count}})",
+      chooseAgent: "Выберите агента",
+      sent: "Отзыв отправлен: {{recipient}}",
+      "no-agents": "Откройте вкладку агента в этой рабочей области, чтобы отправить отзыв.",
+      disconnected: "Подключитесь к хосту, чтобы отправить отзыв.",
+      "no-context": "Сохранённые комментарии больше не соответствуют этому diff.",
+      failed: "Не удалось отправить отзыв. Повторите попытку.",
+      prompt: "Пожалуйста, учтите эту проверку кода.",
+    },
     comment: {
       add: "Добавить комментарий к ревью",
       edit: "Изменить комментарий к ревью",
@@ -1999,6 +2107,182 @@ export const ru: TranslationResources = {
       cancelAccessibility: "Отменить ввод комментария к ревью",
       save: "Сохранить",
       saveAccessibility: "Сохранить комментарий к ревью",
+    },
+  },
+  ompAccountRouting: {
+    login: {
+      start: "Добавить аккаунт Claude",
+      elsewhere: "Откройте Paseo на компьютере-хосте, чтобы добавить аккаунт.",
+      update: "Обновите Paseo и Oh My Pi на хосте, чтобы добавлять аккаунты здесь.",
+      inProgress: "Идёт вход",
+      continue: "Продолжить",
+      cancel: "Отмена",
+      cancelSignIn: "Отменить вход",
+      done: "Готово",
+      details: "Подробнее",
+      tryAgain: "Повторить",
+      close: "Закрыть",
+      justAdded: "Только что добавлен",
+      warning: {
+        body: "Paseo хранит один вход на каждый аккаунт Claude. Войдите на claude.ai в тот аккаунт, который хотите добавить.",
+        existing: "Уже добавлены: {{accounts}}",
+        alertTitle: "Проверьте, какой аккаунт использует браузер",
+        alertDescription:
+          "Если на claude.ai всё ещё выполнен вход в уже добавленный аккаунт, сначала выйдите или смените аккаунт. Приватное окно всегда открывается без входа.",
+        guard: "Если вы войдёте в уже добавленный аккаунт, Paseo остановится и ничего не изменит.",
+      },
+      preparing: "Подготовка ссылки для входа...",
+      link: {
+        title: "Вход в Claude",
+        step: "Откройте ссылку и войдите в аккаунт, который хотите добавить",
+        open: "Открыть страницу входа",
+        copy: "Копировать ссылку",
+        copied: "Скопировано",
+        label: "Ссылка для входа",
+        hint: "Чтобы использовать приватное окно или другое устройство, скопируйте ссылку",
+        waiting: "Ожидание браузера...",
+        pasteInstead: "Вставить адрес вручную",
+      },
+      paste: {
+        label: "Адрес или код",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "После подтверждения браузер может открыть страницу, которая не загружается. Скопируйте полный адрес из адресной строки или код, который показывает Claude, и вставьте сюда.",
+        submit: "Отправить",
+        checking: "Проверка...",
+        error: {
+          invalid_input: "Это не адрес и не код для входа",
+          wrong_login:
+            "Этот адрес относится к более старой ссылке для входа. Используйте ссылку, показанную здесь.",
+          not_waiting: "Этот вход уже завершён",
+          not_allowed: "Отправить это может только Paseo на компьютере-хосте",
+          unreachable: "Не удалось связаться с хостом. Повторите попытку.",
+        },
+      },
+      verifying: "Проверка входа...",
+      result: {
+        added: {
+          title: "Добавлен {{account}}",
+          titleUnnamed: "Аккаунт добавлен",
+          description: "{{organization}}. Автомаршрутизация уже может его использовать.",
+          descriptionUnnamed: "Автомаршрутизация уже может его использовать.",
+          billingEnabled:
+            "Для этого аккаунта включено платное дополнительное использование. Автомаршрутизация пропускает его, пока вы не отключите это в настройках Claude.",
+          billingUnknown:
+            "Убедитесь, что платное дополнительное использование для этого аккаунта отключено в настройках Claude. Автомаршрутизация пропускает аккаунты, где оно включено.",
+        },
+        alreadyListed: {
+          title: "{{account}} уже добавлен",
+          titleUnnamed: "Этот аккаунт уже добавлен",
+          description:
+            "Ничего не изменилось. Браузер вошёл в аккаунт, который у Paseo уже есть. Выйдите из claude.ai или используйте приватное окно и повторите.",
+        },
+        replaced: {
+          title: "Вход заменён для {{account}}",
+          titleUnnamed: "Сохранённый вход заменён",
+          description: "Новый аккаунт не добавлен. Используется новый вход.",
+        },
+        failed: "Не удалось войти",
+        cancelled: "Вход отменён",
+      },
+      failure: {
+        timeout: "Ссылка для входа истекла через 10 минут. Ничего не изменилось.",
+        omp_failed:
+          "Oh My Pi не смог завершить вход. Ничего не изменилось. Повторите или запустите omp в терминале и введите /login.",
+        spawn_failed: "Paseo не смог запустить Oh My Pi на этом компьютере.",
+        unreachable:
+          "Связь с хостом потеряна. После переподключения проверьте список аккаунтов, прежде чем повторять.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Действует для всех агентов OMP под управлением Paseo на этом хосте. Другие хосты и отдельные терминалы не затрагиваются.",
+      account: "Аккаунт",
+      automatic: "Автоматически",
+      useForAuto: "Использовать для автомаршрутизации",
+      auto: "Автомаршрутизация",
+      priority: "Приоритет резерва",
+      priorityHelp:
+        "Когда текущий аккаунт исчерпан, Paseo переключается на включённый аккаунт с наибольшим остатком. Этот порядок решает при равенстве.",
+      addAccountHint:
+        "Чтобы добавить аккаунт, запустите omp в терминале, введите /login и войдите с другим аккаунтом Claude.",
+      current: "Выбран",
+      serving: "Обслуживает",
+      lastServed: "Последнее обслуживание",
+      excluded: "Исключен из автомаршрутизации",
+      missing: "Сохраненный аккаунт недоступен",
+      fiveHour: "5 часов",
+      weekly: "Неделя",
+      tier: "Уровень подписки",
+      unknownTier: "Уровень подписки неизвестен",
+      unknownBudget: "Абсолютный лимит неизвестен",
+      consumed: "Использовано",
+      remaining: "Осталось",
+      stale: "Устаревшее наблюдение",
+      unknownOrganization: "Организация неизвестна",
+      detailsPending: "Подробности появятся, когда запущен агент Oh My Pi",
+      search: "Поиск аккаунтов",
+    },
+    actions: {
+      moveUp: "Выше",
+      moveDown: "Ниже",
+    },
+    status: {
+      loading: "Загрузка маршрутизации аккаунтов",
+      empty: "Аккаунты Claude не обнаружены",
+      noRuntime: "Аккаунты появятся, когда запущен агент Oh My Pi.",
+      unsupported: "Этот хост не подтвердил поддержку маршрутизации аккаунтов OMP",
+      offline: "Хост не в сети; показаны последние подтвержденные настройки",
+      readOnly: "Вы можете просматривать эти настройки, но не изменять их",
+      pending: "Сохранение настроек",
+      conflict: "Настройки изменены в другом месте; показано последнее подтвержденное состояние",
+      paused: "Ожидание доступного включенного аккаунта",
+      recovered: "Включенный аккаунт доступен",
+      unknownUsage: "Использование неизвестно",
+      summaryPaused: "Пауза: у включённых аккаунтов не осталось лимита.",
+      summaryPausedResumes:
+        "Пауза: у включённых аккаунтов не осталось лимита. Возобновится {{time}}",
+      summaryUsing: "Используется {{account}}",
+      summaryAuto: "Авто выбирает аккаунт с наибольшим остатком",
+    },
+    reason: {
+      no_account: "Аккаунт не выбран",
+      source_changed: "Выбранный нативный источник учетных данных изменился",
+      source_inaccessible: "Эта среда выполнения не имеет доступа к выбранному нативному аккаунту",
+      billing_enabled:
+        "Платные кредиты использования включены; маршрутизация только по включенному лимиту не может использовать этот аккаунт",
+      billing_unknown: "Настройки платных кредитов использования давно не проверялись",
+      quota_blocked: "Включенный лимит недоступен для этого запроса",
+      entitlement_unavailable: "Доступ к модели недоступен или не проверен для этого аккаунта",
+      auth_unavailable: "Аутентификация нативного аккаунта недоступна",
+      unsupported_transport:
+        "Этот транспорт провайдера не поддерживает маршрутизацию только по включенному лимиту",
+      unsupported_runtime: "Эта среда выполнения OMP не поддерживает управляемую маршрутизацию",
+      persistence_failed: "Не удалось сохранить настройки маршрутизации",
+      host_unavailable: "Хост маршрутизации недоступен",
+      cancelled: "Запрос отменен",
+      metadata_pending: "Проверка доступности аккаунта",
+      all_unavailable: "Сейчас нет доступных включенных аккаунтов",
+      auto_disabled:
+        "Автомаршрутизация выключена; выберите аккаунт или включите ее, чтобы продолжить",
+      provider_failed: "Не удалось проверить доступность аккаунта",
+    },
+    mutationError: {
+      conflict:
+        "Настройки изменены в другом месте; посмотрите последнее состояние, прежде чем повторять",
+      invalid_account: "Этого нативного аккаунта больше нет в каталоге",
+      unsupported: "Элементы управления маршрутизацией аккаунтов недоступны на этом хосте",
+      persistence_failed: "Настройки не сохранены; остаются последние подтвержденные настройки",
+    },
+    values: {
+      used: "использовано {{percent}}%",
+      reset: "сброс {{time}}",
+      observed: "замер {{time}}",
+      limitReached: "Лимит ({{window}}) исчерпан",
+      limitReachedReset: "Лимит ({{window}}) исчерпан · сброс {{time}}",
+      account: "Аккаунт {{row}}",
+      serving: "{{account}} обслуживает {{agent}}",
+      priority: "Приоритет {{position}}",
     },
   },
   settings: {
@@ -2115,6 +2399,7 @@ export const ru: TranslationResources = {
           queue: "Поставить в очередь",
         },
       },
+      defaultEditor: "Редактор по умолчанию",
       serviceUrls: {
         options: {
           ask: "Спрашивать",
@@ -2251,6 +2536,85 @@ export const ru: TranslationResources = {
         },
         moveUp: "Переместить вверх",
         moveDown: "Переместить вниз",
+      },
+      background: {
+        title: "Фон",
+        applyTo: {
+          title: "Применить к",
+          options: {
+            both: "Обеим",
+            light: "Светлой",
+            dark: "Тёмной",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Фоновые изображения",
+          none: "Нет",
+          addImage: "Добавить изображение…",
+          importDefaultName: "Изображение",
+        },
+        menu: {
+          actions: "Действия для {{name}}",
+          edit: "Изменить…",
+          delete: "Удалить",
+          details: "Подробности",
+        },
+        undo: {
+          action: "Отменить",
+          accessibilityLabel: "Отменить изменение фона",
+        },
+        catalog: {
+          browse: "Обзор",
+          hint: "Установите больше фонов из этого плагина",
+        },
+        visibility: {
+          title: "Видимость изображения",
+          hint: "Paseo автоматически сохраняет читаемость текста, поэтому яркие изображения могут быть видны слабее.",
+        },
+        blur: {
+          title: "Размытие",
+          options: {
+            off: "Выкл.",
+            low: "Слабое",
+            medium: "Среднее",
+            high: "Сильное",
+          },
+        },
+        showBehindSidebar: "Показывать за боковой панелью",
+        showBehindContent: "Показывать за содержимым",
+        status: {
+          reducedTransparency:
+            "Скрыто, так как в системных настройках включено «Уменьшить прозрачность»",
+          forcedColors: "Скрыто, пока включён режим высокой контрастности",
+          error: "Не удалось показать фон",
+        },
+        errors: {
+          select: "Не удалось применить фон: {{message}}",
+          import: "Не удалось импортировать изображение: {{message}}",
+          update: "Не удалось сохранить изменения: {{message}}",
+          remove: "Не удалось удалить фон: {{message}}",
+        },
+        edit: {
+          title: "Изменить фон",
+          name: "Название",
+          focal: "Фокусная точка",
+          focalHint: "Нажмите на часть изображения, которая должна остаться в кадре.",
+          focalAccessibility: "Выбрать фокусную точку",
+          save: "Сохранить",
+          saving: "Сохранение…",
+        },
+        delete: {
+          title: "Удалить «{{name}}»?",
+          message: "Изображение будет удалено с этого устройства.",
+          confirm: "Удалить",
+        },
+        details: {
+          title: "Подробности",
+          author: "Автор",
+          license: "Лицензия",
+          source: "Источник",
+          openSource: "Открыть источник",
+        },
       },
       fonts: {
         title: "Шрифты",
@@ -2517,6 +2881,10 @@ export const ru: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Стиль по умолчанию",
+          hint: "Провайдеры могут изменить его",
+        },
         unavailable: "Подключитесь к этому хосту, чтобы управлять агентами",
       },
       workspaces: {
@@ -2704,6 +3072,9 @@ export const ru: TranslationResources = {
         discovered: "Обнаруженные модели",
         custom: "Пользовательские модели",
         updated: "Обновлено {{time}}",
+        disabledCount: "Отключено: {{count}}",
+        toggleModel: "Включить {{model}}",
+        failedToToggle: "Не удалось обновить {{model}}",
       },
       diagnostic: {
         title: "Диагностика",
@@ -2719,6 +3090,12 @@ export const ru: TranslationResources = {
         none: "Диагностика недоступна",
         failedToFetch: "Не удалось получить диагностику.",
         unknownError: "Неизвестная ошибка",
+      },
+      featureDefaults: {
+        title: "Значения по умолчанию для новых агентов",
+        providerDefault: "По умолчанию у провайдера",
+        on: "Вкл.",
+        off: "Выкл.",
       },
     },
     project: {

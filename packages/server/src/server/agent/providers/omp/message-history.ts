@@ -1,3 +1,4 @@
+import { mapCustomMessageToToolCall } from "../custom-message.js";
 import type { AgentStreamEvent, AgentTimelineItem, ToolCallDetail } from "../../agent-sdk-types.js";
 import type { OmpAgentMessage, OmpImageContent, OmpTextContent } from "./rpc-types.js";
 import type { OmpBridgedToolIdentity } from "./mcp-bridge.js";
@@ -46,7 +47,10 @@ function isTextContentBlock(block: unknown): block is OmpTextContent {
   );
 }
 
-export function getUserMessageText(content: string | (OmpTextContent | OmpImageContent)[]): string {
+export function getUserMessageText(
+  content: string | (OmpTextContent | OmpImageContent)[],
+  separator = "\n\n",
+): string {
   if (typeof content === "string") {
     return content;
   }
@@ -57,7 +61,7 @@ export function getUserMessageText(content: string | (OmpTextContent | OmpImageC
       textParts.push(block.text);
     }
   }
-  return textParts.join("\n\n");
+  return textParts.join(separator);
 }
 
 export class OmpHistoryMapper {
@@ -155,7 +159,7 @@ export class OmpHistoryMapper {
       {
         type: "timeline",
         provider: this.provider,
-        item: { type: "assistant_message", text, messageId },
+        item: mapCustomMessageToToolCall(message, text, messageId),
       },
     ];
   }

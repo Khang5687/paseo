@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
 
 export interface UsageWindow {
@@ -43,6 +43,23 @@ export type UsageProblem =
   | { kind: "rejected"; status: number; refreshedBy?: string }
   | { kind: "no_quota"; detail: string };
 
+/** Set only after the producer validated account and organization; omit when either is unknown. */
+export interface UsageQuotaIdentity {
+  accountUuid: string;
+  organizationUuid: string;
+}
+
+/**
+ * Plan strings as a producer read them locally. `observedAt` (epoch ms) is when they were read,
+ * kept through cache re-emission; it is not provider entitlement verification time. Null is unknown.
+ */
+export interface UsageSubscription {
+  subscriptionType: string | null;
+  rateLimitTier: string | null;
+  observedAt: number | null;
+  source: "claude-supported-login" | "native-usage" | "unknown";
+}
+
 export type UsageReport =
   | {
       status: "available";
@@ -50,6 +67,8 @@ export type UsageReport =
       windows: UsageWindow[];
       balances?: UsageBalance[];
       details?: UsageDetail[];
+      quotaIdentity?: UsageQuotaIdentity;
+      subscription?: UsageSubscription;
     }
   | { status: "unavailable"; problem: UsageProblem }
   | { status: "error"; error: string };
@@ -58,17 +77,30 @@ export interface UsageAccount {
   /** Stable across token rotation; [A-Za-z0-9._-]{1,128}. Never a credential or raw email. */
   key: string;
   label?: string;
+  /** Harness owning this login, e.g. Codex, OpenCode, Pi or OMP. */
+  harness?: string;
   /** Store locator, opaque to the daemon. */
   input: JsonValue;
 }
+
+export const UsageScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("global") }),
+  z.object({
+    kind: z.literal("session"),
+    provider: z.string(),
+    model: z.string().optional(),
+    env: z.record(z.string(), z.string()),
+  }),
+]);
+export type UsageScope = z.infer<typeof UsageScopeSchema>;
 
 export interface UsageSourceRegistration {
   id: string;
   label: string;
   icon?: string;
   input: ZodType;
-  /** Every account whose login exists on this machine. Empty when none. */
-  discover(): Promise<UsageAccount[]>;
+  /** Accounts for this scope only. The same key in any scope identifies the same account. */
+  discover(scope: UsageScope): Promise<UsageAccount[]>;
   /** Re-reads the login store; never writes it. */
   fetch(input: unknown): Promise<UsageReport>;
 }

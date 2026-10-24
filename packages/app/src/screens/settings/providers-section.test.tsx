@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
 import type { MutableDaemonConfig } from "@getpaseo/protocol/messages";
+import { ToastApiProvider } from "@/contexts/toast-api-context";
 
 const { theme, snapshotState, configState, patchConfigMock, openProviderSettingsMock } = vi.hoisted(
   () => ({
@@ -275,11 +276,25 @@ vi.mock("@/runtime/host-features", () => ({
   useHostFeature: () => false,
 }));
 
+vi.mock("@/omp-account-routing/account-section", () => ({
+  AccountRoutingSection: ({ serverId }: { serverId: string }) =>
+    React.createElement("div", {
+      "data-testid": "account-routing-section",
+      "data-server": serverId,
+    }),
+}));
+
 vi.mock("@/utils/confirm-dialog", () => ({
   confirmDialog: vi.fn(async () => true),
 }));
 
 import { ProvidersSection } from "./providers-section";
+
+function unexpectedToast(): never {
+  throw new Error("Provider row interactions should not display a toast");
+}
+
+const toastApi = { show: unexpectedToast, copied: unexpectedToast, error: unexpectedToast };
 
 const claudeEntry: ProviderSnapshotEntry = {
   provider: "claude",
@@ -366,7 +381,11 @@ describe("ProvidersSection", () => {
 
   function render(): void {
     act(() => {
-      root?.render(<ProvidersSection serverId="server-1" />);
+      root?.render(
+        <ToastApiProvider api={toastApi}>
+          <ProvidersSection serverId="server-1" />
+        </ToastApiProvider>,
+      );
     });
   }
 
@@ -421,6 +440,20 @@ describe("ProvidersSection", () => {
     expect(status).toBeGreaterThan(label);
     expect(modelCount).toBeGreaterThan(status);
     expect(switchEl).toBeGreaterThan(modelCount);
+  });
+
+  it("renders the account routing section for the selected host after the provider rows", () => {
+    snapshotState.entries = [claudeEntry];
+    configState.config = makeConfig();
+
+    render();
+
+    const nodes = descendants(container as HTMLElement);
+    const providerRow = indexOfMatches(nodes, '[aria-label="Claude provider details"]');
+    const routing = indexOfMatches(nodes, '[data-testid="account-routing-section"]');
+    expect(providerRow).toBeGreaterThanOrEqual(0);
+    expect(routing).toBeGreaterThan(providerRow);
+    expect(nodes[routing]?.getAttribute("data-server")).toBe("server-1");
   });
 
   it("opens the diagnostic sheet when the outer row is pressed for a disabled provider", () => {

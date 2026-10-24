@@ -8,8 +8,10 @@ import type {
   ProviderOptions,
   ToolPolicy,
 } from "@getpaseo/protocol/agent-types";
+import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { PaseoToolCatalog } from "./tools/types.js";
+import type { ManagedRoutingSnapshot } from "../account-routing/usage-projection.js";
 
 export type {
   AgentFeature,
@@ -130,6 +132,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;
@@ -342,6 +346,8 @@ interface ToolCallBase {
   name: string;
   detail: ToolCallDetail;
   metadata?: Record<string, unknown>;
+  /** Set when the row is a delivered agent message rather than a provider tool call. */
+  agentMessage?: AgentMessage;
 }
 
 type ToolCallRunningTimelineItem = ToolCallBase & {
@@ -628,6 +634,11 @@ export interface AgentCreateSessionOptions {
    * Defaults to true. Providers that cannot honor false should no-op.
    */
   persistSession?: boolean;
+  /**
+   * Model ids added by provider configuration (`models` / `additionalModels`).
+   * Providers that validate against runtime-advertised models must accept these.
+   */
+  configuredModelIds?: readonly string[];
 }
 
 /** What a resumed session is for: driving the agent, or reading what it already did. */
@@ -637,6 +648,8 @@ export type AgentResumePurpose = "interactive" | "history";
 export interface AgentResumeSessionOptions {
   /** Defaults to interactive. History loading may be read-only for archived native sessions. */
   purpose?: AgentResumePurpose;
+  /** See AgentCreateSessionOptions.configuredModelIds. */
+  configuredModelIds?: readonly string[];
 }
 
 /**
@@ -647,7 +660,20 @@ export interface AgentPermissionResult {
   followUpPrompt?: AgentPromptInput;
 }
 
+export interface AgentUsageSession {
+  provider: string;
+  model?: string;
+  env: Record<string, string>;
+  sessionKey: string;
+  /**
+   * Present only for OMP launches whose accounts the host routes. Usage then comes from this
+   * authority snapshot, never from `env`. Other providers leave it unset.
+   */
+  managedRouting?: ManagedRoutingSnapshot;
+}
+
 export interface AgentSession {
+  usageSession?(): AgentUsageSession | null;
   readonly provider: AgentProvider;
   readonly id: string | null;
   readonly capabilities: AgentCapabilityFlags;

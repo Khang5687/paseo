@@ -486,6 +486,21 @@ function holdSessionCleanup(session: (typeof sessionMock.instances)[number]): {
 }
 
 describe("relay external socket reconnect behavior", () => {
+  test("only a direct loopback socket counts as the host's own app for account sign-in", async () => {
+    const server = createServer();
+    const direct = new MockSocket();
+    const relay = new MockSocket();
+    await attachDirectAndHello({ server, socket: direct, clientId: "host-app" });
+    await attachRelayAndHello({ server, socket: relay, clientId: "phone" });
+    const [hostSession, phoneSession] = sessionMock.instances.slice(-2);
+    const hostLocal = (session: typeof hostSession, source: object | undefined) =>
+      (session.args.isHostLocalSource as (source: object | undefined) => boolean)(source);
+    expect(hostLocal(hostSession, direct)).toBe(true);
+    expect(hostLocal(phoneSession, relay)).toBe(false);
+    expect(hostLocal(hostSession, undefined)).toBe(false);
+    expect(hostLocal(hostSession, {})).toBe(false);
+  });
+
   test("closes only a hello socket when post-admission setup throws", async () => {
     const server = createServer();
     class ThrowOnceSocket extends MockSocket {
@@ -1141,6 +1156,7 @@ describe("relay external socket reconnect behavior", () => {
     expect(serverInfo.features?.stableProjectIdentity).toBe(true);
     expect(serverInfo.features?.canonicalSubmittedPrompts).toBe(true);
     expect(serverInfo.features?.providersSnapshotCwd).toBe(true);
+    expect(serverInfo.features?.hopliteProvider).toBe(false);
     expect(serverInfo.features?.pluginLogs).toBe(true);
     expect(serverInfo.features?.workspaceMarkUnread).toBe(true);
     expect(serverInfo.features?.["terminal-input-mode-replay"]).toBe(true);

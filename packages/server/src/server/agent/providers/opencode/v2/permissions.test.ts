@@ -64,6 +64,118 @@ describe("OpenCode v2 questions", () => {
       await session.close();
     }
   });
+
+  test("asks multiselect fields as multi-select questions and replies with every answer intact", async () => {
+    const harness = new V2Harness();
+    harness.api.session.form.list = async () => [
+      {
+        id: "question",
+        sessionID: "session",
+        title: "Preferences",
+        fields: [
+          {
+            key: "colors",
+            title: "Colors",
+            type: "multiselect",
+            options: [
+              { label: "Red, warm", value: "red" },
+              { label: "Blue", value: "blue" },
+            ],
+            custom: true,
+          },
+          { key: "count", title: "Count", type: "integer" },
+        ],
+      },
+    ];
+    const answers: Parameters<V2Api["session"]["form"]["reply"]>[0][] = [];
+    harness.api.session.form.reply = async (input) => {
+      answers.push(input);
+    };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    const session = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
+    try {
+      const [request] = session.getPendingPermissions();
+      expect(request.input).toEqual({
+        questions: [
+          {
+            header: "Colors",
+            question: "Colors",
+            options: [{ label: "Red, warm" }, { label: "Blue" }],
+            multiSelect: true,
+            allowOther: true,
+          },
+          {
+            header: "Count",
+            question: "Count",
+            options: [],
+            multiSelect: false,
+            allowOther: false,
+          },
+        ],
+      });
+      await session.respondToPermission("question", {
+        behavior: "allow",
+        updatedInput: {
+          answers: { Colors: "Red, warm, Blue, teal, or cyan", Count: "3" },
+          answerLists: { Colors: ["Red, warm", "Blue", "teal, or cyan"], Count: ["3"] },
+        },
+      });
+      expect(answers).toEqual([
+        {
+          sessionID: "session",
+          formID: "question",
+          answer: { colors: ["red", "blue", "teal, or cyan"], count: 3 },
+        },
+      ]);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("splits a multiselect answer from an app that sends only joined answers", async () => {
+    const harness = new V2Harness();
+    harness.api.session.form.list = async () => [
+      {
+        id: "question",
+        sessionID: "session",
+        title: "Preferences",
+        fields: [
+          {
+            key: "colors",
+            title: "Colors",
+            type: "multiselect",
+            options: [
+              { label: "Red", value: "red" },
+              { label: "Blue", value: "blue" },
+            ],
+          },
+        ],
+      },
+    ];
+    const answers: Parameters<V2Api["session"]["form"]["reply"]>[0][] = [];
+    harness.api.session.form.reply = async (input) => {
+      answers.push(input);
+    };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    const session = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
+    try {
+      await session.respondToPermission("question", {
+        behavior: "allow",
+        updatedInput: { answers: { Colors: "Red, Blue" } },
+      });
+      expect(answers).toEqual([
+        { sessionID: "session", formID: "question", answer: { colors: ["red", "blue"] } },
+      ]);
+    } finally {
+      await session.close();
+    }
+  });
 });
 
 describe("OpenCode v2 question tool", () => {
@@ -106,10 +218,10 @@ describe("OpenCode v2 question tool", () => {
             header: "Next task",
             question: "What would you like me to work on next?",
             options: [
-              { value: "Explore", label: "Explore", description: "Map the codebase" },
-              { value: "Fix a bug", label: "Fix a bug", description: "Track down a bug" },
+              { label: "Explore", description: "Map the codebase" },
+              { label: "Fix a bug", description: "Track down a bug" },
             ],
-            multiple: false,
+            multiSelect: false,
             allowOther: true,
           },
         ],
@@ -125,6 +237,99 @@ describe("OpenCode v2 question tool", () => {
           answer: { q0: "Write the release notes" },
         },
       ]);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("answers a multi-select question with the checked options and a typed answer", async () => {
+    const harness = new V2Harness();
+    harness.api.session.form.list = async () => [
+      {
+        id: "question",
+        sessionID: "session",
+        title: "Questions",
+        fields: [
+          {
+            key: "q0",
+            title: "Fixes",
+            description: "Which fixes should I make?",
+            type: "multiselect",
+            options: [
+              { value: "delete", label: "Delete both" },
+              { value: "delete-and-fix", label: "Delete both, fix code" },
+              { value: "email", label: "Email the user" },
+            ],
+            custom: true,
+          },
+        ],
+      },
+    ];
+    const answers: Parameters<V2Api["session"]["form"]["reply"]>[0][] = [];
+    harness.api.session.form.reply = async (input) => {
+      answers.push(input);
+    };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    const session = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
+    try {
+      const [request] = session.getPendingPermissions();
+      expect(request.input).toMatchObject({ questions: [{ header: "Fixes", multiSelect: true }] });
+      await session.respondToPermission("question", {
+        behavior: "allow",
+        updatedInput: {
+          answers: { Fixes: "Delete both, fix code, Email the user, Also check the logs" },
+        },
+      });
+      expect(answers).toEqual([
+        {
+          sessionID: "session",
+          formID: "question",
+          answer: { q0: ["delete-and-fix", "email", "Also check the logs"] },
+        },
+      ]);
+      expect(session.getPendingPermissions()).toHaveLength(0);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("rejects typed text on a multi-select question that has no typed answer", async () => {
+    const harness = new V2Harness();
+    harness.api.session.form.list = async () => [
+      {
+        id: "question",
+        sessionID: "session",
+        title: "Questions",
+        fields: [
+          {
+            key: "q0",
+            title: "Fixes",
+            type: "multiselect",
+            options: [{ value: "delete", label: "Delete both" }],
+          },
+        ],
+      },
+    ];
+    const answers: Parameters<V2Api["session"]["form"]["reply"]>[0][] = [];
+    harness.api.session.form.reply = async (input) => {
+      answers.push(input);
+    };
+    const client = new OpenCodeV2AgentClient({
+      logger: createTestLogger(),
+      runtime: harness.runtime,
+    });
+    const session = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
+    try {
+      await expect(
+        session.respondToPermission("question", {
+          behavior: "allow",
+          updatedInput: { answers: { Fixes: "Delete both, Something else" } },
+        }),
+      ).rejects.toThrow("Invalid answer for OpenCode question q0");
+      expect(answers).toEqual([]);
     } finally {
       await session.close();
     }

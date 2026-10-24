@@ -2,8 +2,16 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, expect, test, vi } from "vitest";
 import { createPaseoApi, createPaseoClient } from "./index.js";
-import { DaemonClient } from "./daemon-client.js";
-import type { PaseoAgent, PaseoClient, PaseoWorkspace } from "./index.js";
+import { DaemonClient, type DaemonClientConfig } from "./daemon-client.js";
+import type {
+  OmpAccountRoutingRead,
+  OmpAccountRoutingState,
+  OmpAccountRoutingSubscribedRead,
+  PaseoAgent,
+  PaseoClient,
+  PaseoClientConfig,
+  PaseoWorkspace,
+} from "./index.js";
 
 type FakeWebSocketHandler = (...args: unknown[]) => void;
 
@@ -102,13 +110,22 @@ async function connectClient(
     ownedSubscriptions: true,
   },
 ): Promise<{ client: PaseoClient; ws: FakeWebSocket }> {
-  const client = createPaseoClient({
+  // createPaseoClient spreads its config into DaemonClient, so the test-only socket factory passes
+  // through even though PaseoClientConfig does not declare it.
+  const config: PaseoClientConfig & Pick<DaemonClientConfig, "webSocketFactory"> = {
     url: "ws://daemon.test",
     webSocketFactory: (url) => new FakeWebSocket(url),
     reconnect: { enabled: false },
-  });
+  };
+  const client = createPaseoClient(config);
+  const ws = await completeHandshake(client.connect(), features);
+  return { client, ws };
+}
 
-  const connectPromise = client.connect();
+async function completeHandshake(
+  connectPromise: Promise<unknown>,
+  features: Record<string, boolean>,
+): Promise<FakeWebSocket> {
   const ws = FakeWebSocket.instances[0];
   ws.open();
   const hello = parseSentFrame(ws.sent.at(-1));
@@ -131,8 +148,7 @@ async function connectClient(
     }),
   );
   await connectPromise;
-
-  return { client, ws };
+  return ws;
 }
 
 function acknowledgeObservation(ws: FakeWebSocket, subscriptionId: string): void {
@@ -208,6 +224,26 @@ function createAgent(input: Partial<PaseoAgent> = {}): PaseoAgent {
     ...input,
   };
 }
+function accountRoutingState(stateSequence = 1, hostEpoch = "epoch-1"): OmpAccountRoutingState {
+  return {
+    hostEpoch,
+    stateSequence,
+    policy: {
+      policyRevision: 1,
+      selectionGeneration: 1,
+      current: null,
+      autoEnabled: true,
+      priorityOrder: [],
+      inclusion: [],
+    },
+    capability: { status: "supported", reason: null },
+    catalog: { status: "empty", authoritativeObservedAt: null },
+    accounts: [],
+    activeRequests: [],
+    lastServed: [],
+    pausedRequests: [],
+  };
+}
 
 test("createPaseoClient exposes workspace list through the daemon client", async () => {
   const { client, ws } = await connectClient();
@@ -264,6 +300,7 @@ test("createPaseoApi borrows daemon capabilities without exposing connection own
   const paseo = createPaseoApi(daemonClient);
 
   expect(Object.keys(paseo).sort()).toEqual([
+    "accountRouting",
     "agents",
     "config",
     "dispose",
@@ -276,6 +313,315 @@ test("createPaseoApi borrows daemon capabilities without exposing connection own
   expect("connect" in paseo).toBe(false);
   expect("close" in paseo).toBe(false);
   expect("skills" in paseo.agents).toBe(false);
+});
+test("account routing exposes get overloads and owns subscribed reads", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  expect(Object.keys(client.accountRouting)).toEqual(["get", "observe", "mutate"]);
+
+  const subscribedPromise = client.accountRouting.get({ subscribe: {} });
+  const subscribedRequest = parseSentSessionMessage(ws.sent.at(-1));
+  expect(subscribedRequest).toMatchObject({
+    type: "account.routing.get_state.request",
+    subscribe: {},
+  });
+  const subscribedState = accountRoutingState();
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: subscribedRequest.requestId,
+        state: subscribedState,
+        subscriptionId: "routing-sdk",
+      },
+    }),
+  );
+  const subscribedByType: Promise<OmpAccountRoutingSubscribedRead> = subscribedPromise;
+  const subscribed = await subscribedByType;
+  expect(subscribed).toMatchObject({ state: subscribedState });
+  expect(subscribed.subscription.subscriptionId).toBe("routing-sdk");
+
+  const releaseStart = ws.sent.length;
+  await subscribed.subscription.release();
+  const releaseFrames = ws.sent
+    .slice(releaseStart)
+    .map((frame) => parseSentSessionMessage(frame))
+    .filter((message) => message.type === "subscription.release.request");
+  expect(releaseFrames).toHaveLength(1);
+  expect(releaseFrames[0]).toMatchObject({ subscriptionId: "routing-sdk" });
+  await client.dispose();
+  expect(
+    ws.sent
+      .slice(releaseStart)
+      .map((frame) => parseSentSessionMessage(frame))
+      .filter((message) => message.type === "subscription.release.request"),
+  ).toHaveLength(1);
+  await client.close();
+});
+
+test("account routing observe and mutate are owned or stateless on the API", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  const observation = client.accountRouting.observe();
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(),
+        subscriptionId: "obs",
+      },
+    }),
+  );
+  await observation.ready;
+
+  const mutation = client.accountRouting.mutate({
+    expectedPolicyRevision: 1,
+    command: { kind: "set_auto", enabled: false },
+  });
+  const mutateRequest = parseSentSessionMessage(ws.sent.at(-1));
+  expect(mutateRequest).toMatchObject({
+    type: "account.routing.mutate.request",
+    expectedPolicyRevision: 1,
+  });
+  ws.message(
+    sessionMessage({
+      type: "account.routing.mutate.response",
+      payload: { requestId: mutateRequest.requestId, state: accountRoutingState(2), error: null },
+    }),
+  );
+  await expect(mutation).resolves.toMatchObject({ error: null });
+
+  const sentBeforeDispose = ws.sent.length;
+  await client.dispose();
+  expect(
+    ws.sent
+      .slice(sentBeforeDispose)
+      .map((frame) => parseSentSessionMessage(frame))
+      .filter((message) => message.type === "subscription.release.request"),
+  ).toHaveLength(1);
+  await client.close();
+});
+
+test("account routing unsubscribed get is not owned by the API", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  const snapshotPromise = client.accountRouting.get();
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  const state = accountRoutingState();
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: request.requestId, state },
+    }),
+  );
+  const snapshotByType: Promise<OmpAccountRoutingRead> = snapshotPromise;
+  await expect(snapshotByType).resolves.toEqual({ state });
+  const sentBeforeDispose = ws.sent.length;
+  await client.dispose();
+  expect(
+    ws.sent
+      .slice(sentBeforeDispose)
+      .map((frame) => parseSentSessionMessage(frame))
+      .filter((message) => message.type === "subscription.release.request"),
+  ).toHaveLength(0);
+  await client.close();
+});
+
+test("account routing get after dispose sends no frame and throws", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  await client.dispose();
+  const sentAfterDispose = ws.sent.length;
+
+  const subscribed = client.accountRouting.get({ subscribe: {} });
+  const snapshot = client.accountRouting.get();
+  expect(ws.sent).toHaveLength(sentAfterDispose);
+  await expect(subscribed).rejects.toThrow("Paseo API is disposed");
+  await expect(snapshot).rejects.toThrow("Paseo API is disposed");
+
+  await client.close();
+});
+
+test("dispose during account routing bootstrap releases the late subscription", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  const pending = client.accountRouting.get({ subscribe: {} });
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  const sentBeforeDispose = ws.sent.length;
+  const disposing = client.dispose();
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(),
+        subscriptionId: "routing-late",
+      },
+    }),
+  );
+
+  await expect(pending).rejects.toThrow("Paseo API is disposed");
+  await disposing;
+  const releaseFrames = ws.sent
+    .slice(sentBeforeDispose)
+    .map((frame) => parseSentSessionMessage(frame))
+    .filter((message) => message.type === "subscription.release.request");
+  expect(releaseFrames).toHaveLength(1);
+  expect(releaseFrames[0]).toMatchObject({ subscriptionId: "routing-late" });
+
+  await client.close();
+});
+
+test("a refused release during disposed account routing bootstrap keeps the disposal error", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  const sendFrame = ws.send.bind(ws);
+  ws.send = (data) => {
+    const message = parseSentSessionMessage(data);
+    if (message.type !== "subscription.release.request") {
+      sendFrame(data);
+      return;
+    }
+    ws.sent.push(data);
+    ws.message(
+      sessionMessage({
+        type: "rpc_error",
+        payload: {
+          requestId: message.requestId,
+          requestType: message.type,
+          error: "release refused",
+          code: "internal",
+        },
+      }),
+    );
+  };
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  const pending = client.accountRouting.get({ subscribe: {} });
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  const disposing = client.dispose();
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(),
+        subscriptionId: "routing-release-refused",
+      },
+    }),
+  );
+
+  await expect(pending).rejects.toThrow("Paseo API is disposed");
+  await disposing;
+  expect(logged).toHaveBeenCalledWith(
+    "Account routing subscription cleanup failed",
+    expect.objectContaining({ message: expect.stringContaining("release refused") }),
+  );
+  logged.mockRestore();
+  // owned.ts keeps a registration whose teardown rejected, so close() still rethrows that error.
+  // Drop this expectation when owned teardown clears a failed registration.
+  await expect(client.close()).rejects.toThrow("release refused");
+});
+
+test("dispose releases a live account routing subscription", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  const subscribed = client.accountRouting.get({ subscribe: {} });
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(),
+        subscriptionId: "routing-live",
+      },
+    }),
+  );
+  await subscribed;
+
+  const sentBeforeDispose = ws.sent.length;
+  await client.dispose();
+  const releaseFrames = ws.sent
+    .slice(sentBeforeDispose)
+    .map((frame) => parseSentSessionMessage(frame))
+    .filter((message) => message.type === "subscription.release.request");
+  expect(releaseFrames).toHaveLength(1);
+  expect(releaseFrames[0]).toMatchObject({ subscriptionId: "routing-live" });
+
+  await client.close();
+});
+
+test("aborting the API scope releases a live account routing subscription", async () => {
+  const scope = new AbortController();
+  const daemonClient = new DaemonClient({
+    url: "ws://daemon.test",
+    clientId: "paseo-sdk-scoped-routing",
+    clientType: "cli",
+    webSocketFactory: (url) => new FakeWebSocket(url),
+    reconnect: { enabled: false },
+  });
+  const api = createPaseoApi(daemonClient, { signal: scope.signal });
+  const ws = await completeHandshake(daemonClient.connect(), {
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    ompAccountRouting: true,
+  });
+  const subscribed = api.accountRouting.get({ subscribe: {} });
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  ws.message(
+    sessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(),
+        subscriptionId: "routing-scope",
+      },
+    }),
+  );
+  await subscribed;
+
+  const sentBeforeAbort = ws.sent.length;
+  scope.abort();
+  await api.dispose();
+  const releaseFrames = ws.sent
+    .slice(sentBeforeAbort)
+    .map((frame) => parseSentSessionMessage(frame))
+    .filter((message) => message.type === "subscription.release.request");
+  expect(releaseFrames).toHaveLength(1);
+  expect(releaseFrames[0]).toMatchObject({ subscriptionId: "routing-scope" });
+
+  await daemonClient.close();
 });
 
 test("agent handles send permission responses for their agent", async () => {
@@ -688,6 +1034,61 @@ test("plugin-shaped PR workspace create and agent create use the existing daemon
   const agent = await agentPromise;
   expect(agent.workspaceId).toBe("workspace_fresh");
   expect(agent.cwd).toBe("/repo/sdk");
+  await client.close();
+});
+
+test("agents.create forwards internal on the request, outside the agent config", async () => {
+  const { client, ws } = await connectClient({
+    providerUsageList: true,
+    providersSnapshotCwd: true,
+    ownedSubscriptions: true,
+    backgroundWorkspaces: true,
+  });
+
+  const createPromise = client.agents.create({
+    config: { provider: "codex/gpt-5.4" },
+    cwd: "/repo/sdk",
+    title: "Summary helper",
+    background: true,
+    autoArchive: true,
+  });
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  expect(request).toMatchObject({
+    type: "create_agent_request",
+    config: { provider: "codex", model: "gpt-5.4", cwd: "/repo/sdk", title: "Summary helper" },
+    background: true,
+    autoArchive: true,
+  });
+  expect(request.config).not.toHaveProperty("internal");
+  ws.message(
+    sessionMessage({
+      type: "status",
+      payload: {
+        status: "agent_created",
+        requestId: request.requestId,
+        agentId: "agent_helper",
+        agent: createAgent({ id: "agent_helper" }),
+      },
+    }),
+  );
+
+  const agent = await createPromise;
+  expect(agent.id).toBe("agent_helper");
+  await client.close();
+});
+
+test("agents.create with internal fails before sending on a host without internal agents", async () => {
+  const { client, ws } = await connectClient();
+  const sentBefore = ws.sent.length;
+
+  await expect(
+    client.agents.create({
+      config: { provider: "codex/gpt-5.4" },
+      cwd: "/repo/sdk",
+      background: true,
+    }),
+  ).rejects.toThrow("Update the host to use background workspaces.");
+  expect(ws.sent).toHaveLength(sentBefore);
   await client.close();
 });
 

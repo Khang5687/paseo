@@ -1916,10 +1916,14 @@ export class HostRuntimeStore {
     host: string;
     sshPort?: number;
     daemonPort?: number;
+    password?: string;
     label?: string;
   }): Promise<{ profile: HostProfile; serverId: string; hostname: string | null }> {
     return this.probeAndUpsertConnection({
       label: input.label,
+      // The daemon hashes and compares the password verbatim (`paseo daemon
+      // set-password` keeps what it reads), so whitespace is significant here.
+      password: input.password ? input.password : undefined,
       connection: createRemoteSshHostConnection(input),
     });
   }
@@ -2426,6 +2430,11 @@ export class HostRuntimeStore {
           }),
           encodeImages,
           submission: createMessageSubmissionWriter(serverId),
+          // The queue drains when the agent goes idle, but the agent can start a turn of its own
+          // in that same moment (a wake-up after background work). Steering folds the message
+          // into that turn instead of interrupting it; with no turn running, the daemon starts
+          // a normal one.
+          activeTurnBehavior: "steer",
         });
       },
     })
@@ -2599,6 +2608,14 @@ export class HostRuntimeStore {
     const source = {};
     directory.setDemand(source, true);
     return () => directory.setDemand(source, false);
+  }
+
+  acquireScriptStatusDemand(serverId: string, workspaceId: string): () => void {
+    const directory = this.directorySyncByServer.get(serverId);
+    if (!directory) return () => undefined;
+    const source = {};
+    directory.setScriptStatusDemand(source, workspaceId);
+    return () => directory.setScriptStatusDemand(source, null);
   }
 
   async prepareAgentRoute(serverId: string, agentId: string): Promise<void> {
@@ -2848,6 +2865,7 @@ export interface HostMutations {
     host: string;
     sshPort?: number;
     daemonPort?: number;
+    password?: string;
     label?: string;
   }) => Promise<{ profile: HostProfile; serverId: string; hostname: string | null }>;
   beginLinkPairing: () => LinkPairing;

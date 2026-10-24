@@ -626,6 +626,8 @@ export function resolveConfigFromPersisted(
     skillSelection: persisted.agents?.skills?.selection,
     pluginsEnabled: persisted.pluginsEnabled ?? false,
     plugins: persisted.plugins,
+    pluginRegistries: persisted.pluginRegistries,
+    pluginRegistryUrl: env.PASEO_PLUGIN_REGISTRY,
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",
     agentStoragePath: path.join(paseoHome, "agents"),
@@ -649,6 +651,7 @@ export function resolveConfigFromPersisted(
     agentProviderSettings: extractAgentProviderSettings(providerOverrides),
     providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
     metadataGeneration: persisted.agents?.metadataGeneration,
+    featureDefaults: persisted.agents?.featureDefaults,
     providerOverrides,
     log: resolveLogConfigFromEnv(env, persisted),
     configReload: {

@@ -3,6 +3,8 @@ import { afterEach, expect, it } from "vitest";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { PluginRegistry } from "./registry";
 
+const audio = { play: async () => 0 };
+
 const client = new DaemonClient({ url: "ws://unused.test", clientId: "plugin-requirements-test" });
 const registries: PluginRegistry[] = [];
 function registry(version: string) {
@@ -13,6 +15,7 @@ function registry(version: string) {
     createRuntime(installation) {
       starts++;
       return {
+        serverId: installation.serverId,
         hosts: createPluginHosts(
           {
             getHosts: () => [],
@@ -31,6 +34,7 @@ function registry(version: string) {
         },
         openScreen() {},
         openSurface() {},
+        async playAudio() {},
         openPanel() {},
         addComposerPill: () => ({ update() {}, remove() {} }),
         addHeaderButton: () => ({ update() {}, remove() {} }),
@@ -57,7 +61,7 @@ it("checks the app version before creating a runtime or evaluating plugin code",
         clientBundle: "throw new Error('executed')",
       },
     ],
-    { client },
+    { client, audio },
   );
   expect(starts()).toBe(0);
   expect(result.getSnapshot()).toEqual([]);
@@ -68,7 +72,7 @@ it("checks the app version before creating a runtime or evaluating plugin code",
 
 it("rejects catalogs without requirements from pre-0.8 daemons", () => {
   const { result, starts } = registry("0.8.0");
-  result.installCatalog("host", [{ id: "example", clientBundle }], { client });
+  result.installCatalog("host", [{ id: "example", clientBundle }], { client, audio });
   expect(starts()).toBe(0);
   expect(result.getEvaluationError("host", "example")).toContain(
     "https://paseo.sh/docs/plugins/migration",
@@ -80,6 +84,7 @@ it("unloads on a requirement-only edit and recovers after correction", () => {
   const install = (paseo: string) =>
     result.installCatalog("host", [{ id: "example", clientBundle, requirements: { paseo } }], {
       client,
+      audio,
     });
   install("^0.8.0");
   expect(result.getSnapshot().map(({ id }) => id)).toEqual(["example"]);

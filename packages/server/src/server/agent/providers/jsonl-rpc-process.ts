@@ -72,6 +72,17 @@ function spawnJsonlRpcProcess(launch: JsonlRpcLaunch): ChildProcessWithoutNullSt
   return child;
 }
 
+/** A request the child answered with `success: false`; `data` carries any typed refusal details. */
+export class JsonlRpcResponseError extends Error {
+  constructor(
+    message: string,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = "JsonlRpcResponseError";
+  }
+}
+
 export class JsonlRpcProcess {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly diagnosticName: string;
@@ -258,33 +269,36 @@ export class JsonlRpcProcess {
     this.frameDecoder.write(chunk);
   }
 
-  /** Route a complete logical frame to its consumer (response or subscriber). */
+  /** Route a complete logical frame to its consumer (pending request or subscriber). */
   private dispatchFrame(message: Record<string, unknown>): void {
-    if (message.type === "response") {
-      this.handleResponse(message as unknown as JsonlRpcResponse);
+    const pending =
+      message.type === "response" && typeof message.id === "string"
+        ? this.pending.get(message.id)
+        : undefined;
+    if (pending) {
+      this.settleRequest(pending, message as unknown as JsonlRpcResponse & { id: string });
       return;
     }
+    // A response nothing is waiting for is published like any other frame, so a provider
+    // can read it as an event, such as OMP 18.3 rejecting a prompt after acknowledging it.
     for (const subscriber of this.messageSubscribers) {
       subscriber(message);
     }
   }
 
-  private handleResponse(response: JsonlRpcResponse): void {
-    if (!response.id) {
-      return;
-    }
-    const pending = this.pending.get(response.id);
-    if (!pending) {
-      return;
-    }
+  private settleRequest(
+    pending: PendingRequest,
+    response: JsonlRpcResponse & { id: string },
+  ): void {
     if (pending.timer) {
       clearTimeout(pending.timer);
     }
     this.pending.delete(response.id);
     if (!response.success) {
       pending.reject(
-        new Error(
+        new JsonlRpcResponseError(
           response.error ?? `${this.diagnosticName} ${response.command ?? "request"} failed`,
+          response.data,
         ),
       );
       return;

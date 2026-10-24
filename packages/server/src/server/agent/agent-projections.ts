@@ -145,6 +145,7 @@ export function toAgentPayload(
     labels: agent.labels,
     queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
     ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.internal ? { internal: true } : {}),
   };
 
   const usage = sanitizeUsage(agent.lastUsage);
@@ -253,10 +254,20 @@ export function buildStoredAgentPayload(
     attentionReason: record.attentionReason ?? null,
     attentionTimestamp: record.attentionTimestamp ?? null,
     archivedAt: record.archivedAt ?? null,
+    ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),
+    ...projectStoredQueue(record),
+    ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
+    ...(providerAvailable ? {} : { providerUnavailable: true }),
+  };
+}
+
+function projectStoredQueue(
+  record: Pick<StoredAgentRecord, "queuedMessages" | "queuePaused">,
+): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused"> {
+  return {
     queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
     ...(record.queuePaused ? { queuePaused: true } : {}),
-    ...(providerAvailable ? {} : { providerUnavailable: true }),
   };
 }
 

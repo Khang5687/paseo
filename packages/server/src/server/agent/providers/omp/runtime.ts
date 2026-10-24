@@ -1,5 +1,10 @@
 import type {
   OmpAgentMessage,
+  OmpGoalAction,
+  OmpGoalModeState,
+  OmpLoginExisting,
+  OmpLoginResult,
+  OmpLogoutAccount,
   OmpModel,
   OmpPromptAck,
   OmpRpcHostToolDefinition,
@@ -13,6 +18,7 @@ import type {
   OmpThinkingLevel,
 } from "./rpc-types.js";
 import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
+import type { OmpHostRouting } from "./account-routing-bridge.js";
 
 export interface OmpRuntimeLaunch {
   cwd: string;
@@ -40,17 +46,37 @@ export interface OmpStartSessionInput {
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
+  /**
+   * Present when the host owns Claude account routing for this launch. Absent means an independent
+   * OMP launch: no marker, no probe, no routing frames.
+   */
+  routing?: OmpHostRouting;
+}
+
+export interface OmpPromptInput {
+  message: string;
+  images?: Array<{ type: "image"; data: string; mimeType: string }>;
+  streamingBehavior?: "steer" | "followUp";
 }
 
 export interface OmpRuntimeSession {
+  readonly environment: Record<string, string>;
   onEvent(callback: (event: OmpRuntimeEvent) => void): () => void;
-  prompt(
-    message: string,
-    images?: Array<{ type: "image"; data: string; mimeType: string }>,
-  ): Promise<OmpPromptAck>;
+  // With streamingBehavior, a busy OMP queues the message instead of rejecting it, and an
+  // idle OMP starts a run with it.
+  prompt(input: OmpPromptInput): Promise<OmpPromptAck>;
   compact(customInstructions?: string): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
+  goal(action: OmpGoalAction): Promise<OmpGoalModeState | null>;
   abort(): Promise<void>;
+  /**
+   * Signs `providerId` into OMP's native store. OMP drives the browser step through
+   * `open_url` / `input` extension UI events; the call settles when the login ends. A guard
+   * refusal (`credential_exists`) resolves as such; any other failure throws.
+   */
+  login(providerId: string, options?: { existing?: OmpLoginExisting }): Promise<OmpLoginResult>;
+  /** Stored accounts for `providerId`, as OMP's `/logout` lists them. Never refreshes a token. */
+  getLogoutAccounts(providerId: string): Promise<OmpLogoutAccount[]>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;
   getMessages(): Promise<OmpAgentMessage[]>;
@@ -59,6 +85,8 @@ export interface OmpRuntimeSession {
   setThinkingLevel(level: OmpThinkingLevel): Promise<void>;
   getSessionStats(): Promise<OmpSessionStats>;
   getCommands(): Promise<OmpRpcSlashCommand[]>;
+  /** Rediscovers OMP skills and file slash commands for the session cwd, then lists commands. */
+  refreshCommands(): Promise<OmpRpcSlashCommand[]>;
   setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void>;
   setHostTools(tools: OmpRpcHostToolDefinition[]): Promise<string[]>;
   sendHostToolResult(result: OmpRpcHostToolResult): void;
@@ -70,10 +98,6 @@ export interface OmpRuntimeSession {
     message: string,
     images?: Array<{ type: "image"; data: string; mimeType: string }>,
   ): Promise<void>;
-  followUp(
-    message: string,
-    images?: Array<{ type: "image"; data: string; mimeType: string }>,
-  ): void;
   handoff(customInstructions?: string): Promise<void>;
   respondToExtensionUiRequest(
     id: string,

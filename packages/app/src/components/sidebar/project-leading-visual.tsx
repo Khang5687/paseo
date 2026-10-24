@@ -1,9 +1,12 @@
+import type { ReactNode } from "react";
 import { ActivityIndicator, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ChevronDown, ChevronRight, CircleAlert } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
+import { ChevronDown, ChevronRight, CircleAlert, PencilLine } from "lucide-react-native";
 import { ProjectIconView } from "@/components/project-icon-view";
-import { STATUS_BUCKET_LABELS } from "@/hooks/sidebar-status-view-model";
-import { ICON_SIZE, type Theme } from "@/styles/theme";
+import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
+import { densityIconBox, densityIconProps } from "@/styles/density";
+import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import {
   getProjectStatusBadgeContent,
@@ -22,24 +25,29 @@ import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 
 // Every surfaced status shares one badge shell, so the badge never changes size or position
 // between states. Only the thing inside it changes.
+// Matches the workspace title's lineHeight (sidebar-workspace-row-content's
+// workspaceBranchText) so the icon centers on the title rather than floating above it.
+const LEADING_SLOT_HEIGHT = 20;
 const STATUS_BADGE_SIZE = 12;
 // How far the badge overhangs the icon's bottom-right corner. Well short of half the badge:
 // centered on the corner it reads as hanging off the icon rather than sitting on it, and the
 // sidebar row has no padding there to absorb the overhang.
 const STATUS_BADGE_OFFSET = -4;
-// Both glyphs must be EVEN. A centered glyph of size N sits at a (12 - N) / 2 offset — fractional
-// for odd N, which the browser snaps to a device-pixel boundary and renders visibly off-center (an
-// odd size measured 1.5 device px right and down at 3x, ~3px of asymmetry between opposite gaps).
-// Even sizes divide the shell into whole pixels and land dead center with no correction.
+// Every glyph in the shell must be EVEN. A centered glyph of size N sits at a (12 - N) / 2
+// offset — fractional for odd N, which the browser snaps to a device-pixel boundary and renders
+// visibly off-center (an odd size measured 1.5 device px right and down at 3x, ~3px of asymmetry
+// between opposite gaps). Even sizes divide the shell into whole pixels and land dead center with
+// no correction.
 //
 // The filled alert occupies the full badge shell so needs-input remains more prominent than
-// the passive status dots.
-// Matches the workspace title's lineHeight (sidebar-workspace-row-content's
-// workspaceBranchText) so the icon centers on the title rather than floating above it.
-const LEADING_SLOT_HEIGHT = 20;
+// the passive status dots. The draft pencil leaves a margin so it reads as a mark, not a fill.
+const DRAFT_GLYPH_SIZE = 8;
+const DensityProjectIconView = withUnistyles(ProjectIconView);
+const projectIconProps = densityIconProps("md", () => ({}));
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
+const ThemedPencilLine = withUnistyles(PencilLine);
 
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
@@ -113,6 +121,7 @@ export function ProjectStatusIndicator({
   statusBucket,
   backdrop,
   loading = false,
+  hasUnsentDraft = false,
   testID,
 }: {
   iconDataUri: string | null;
@@ -122,6 +131,8 @@ export function ProjectStatusIndicator({
   /** The row's current background, so the status badge can knock out of it. */
   backdrop: SidebarSurfaceBackdrop;
   loading?: boolean;
+  /** Marks an idle row whose chat tabs hold a prompt the user has not sent. */
+  hasUnsentDraft?: boolean;
   testID?: string;
 }) {
   const placeholderInitial = projectIconPlaceholderLabelFromDisplayName(displayName)
@@ -132,6 +143,14 @@ export function ProjectStatusIndicator({
   // and they share one badge.
   const badgeBucket = loading ? "running" : statusBucket;
   const badgeContent = getProjectStatusBadgeContent(badgeBucket);
+  let badge: ReactNode = null;
+  if (badgeContent !== null && badgeBucket !== null) {
+    badge = (
+      <ProjectStatusBadge content={badgeContent} statusBucket={badgeBucket} backdrop={backdrop} />
+    );
+  } else if (hasUnsentDraft) {
+    badge = <ProjectDraftBadge backdrop={backdrop} />;
+  }
 
   return (
     <View
@@ -149,13 +168,7 @@ export function ProjectStatusIndicator({
           placeholderInitial={placeholderInitial}
           projectViewKey={projectViewKey}
         />
-        {badgeContent === null || badgeBucket === null ? null : (
-          <ProjectStatusBadge
-            content={badgeContent}
-            statusBucket={badgeBucket}
-            backdrop={backdrop}
-          />
-        )}
+        {badge}
       </View>
     </View>
   );
@@ -170,6 +183,7 @@ function ProjectStatusBadge({
   statusBucket: SidebarStateBucket;
   backdrop: SidebarSurfaceBackdrop;
 }) {
+  const { t } = useTranslation();
   // Running skips the shell. The ring is wider than the 12pt shell and carries its own knockout,
   // so nesting it inside would clip it against the very thing that was meant to separate it from
   // the icon. It anchors to the same corner instead, growing around the centre the dot had.
@@ -177,7 +191,7 @@ function ProjectStatusBadge({
     return (
       <View
         role="status"
-        accessibilityLabel={STATUS_BUCKET_LABELS[statusBucket]}
+        accessibilityLabel={getStatusBucketLabel(statusBucket, t)}
         style={styles.statusRingAnchor}
         testID="project-status-badge"
       >
@@ -188,7 +202,7 @@ function ProjectStatusBadge({
   return (
     <View
       role="status"
-      accessibilityLabel={STATUS_BUCKET_LABELS[statusBucket]}
+      accessibilityLabel={getStatusBucketLabel(statusBucket, t)}
       style={[styles.statusBadge, getStatusBadgeBackdropStyle(backdrop)]}
       testID="project-status-badge"
     >
@@ -197,6 +211,20 @@ function ProjectStatusBadge({
       ) : (
         <ProjectStatusDot bucket={content.bucket} />
       )}
+    </View>
+  );
+}
+
+function ProjectDraftBadge({ backdrop }: { backdrop: SidebarSurfaceBackdrop }) {
+  const { t } = useTranslation();
+  return (
+    <View
+      role="status"
+      accessibilityLabel={t("sidebar.unsentDraft")}
+      style={[styles.statusBadge, getStatusBadgeBackdropStyle(backdrop)]}
+      testID="project-draft-badge"
+    >
+      <ThemedPencilLine size={DRAFT_GLYPH_SIZE} uniProps={foregroundMutedColorMapping} />
     </View>
   );
 }
@@ -228,12 +256,12 @@ function ProjectIcon({
   projectViewKey: string;
 }) {
   return (
-    <ProjectIconView
+    <DensityProjectIconView
       iconDataUri={iconDataUri}
       initial={placeholderInitial}
       projectViewKey={projectViewKey}
-      size={ICON_SIZE.md}
       textStyle={styles.projectIconFallbackText}
+      uniProps={projectIconProps}
     />
   );
 }
@@ -269,11 +297,11 @@ const styles = StyleSheet.create((theme) => {
 
   return {
     // The slot is as tall as the title's line box, not as tall as the icon, and centers the
-    // icon inside it. Rows lay their leading visual out with alignItems:flex-start, so a
-    // 16pt slot next to a 20pt line box puts the icon 2pt above the title and the kebab —
-    // which is why the workspace status indicator is also 20 tall. Keep the two in step.
+    // icon inside it. Rows lay their leading visual out with alignItems:flex-start, so a slot
+    // only as tall as the icon puts it above the title and the kebab — which is why the
+    // workspace status indicator is as tall as `LEADING_SLOT_HEIGHT`.
     projectLeadingVisualSlot: {
-      width: theme.iconSize.md,
+      width: densityIconBox("md"),
       height: LEADING_SLOT_HEIGHT,
       flexShrink: 0,
       alignItems: "center",
@@ -282,8 +310,8 @@ const styles = StyleSheet.create((theme) => {
     // Anchors the corner badge to the icon rather than to the taller slot.
     projectIconBox: {
       position: "relative",
-      width: theme.iconSize.md,
-      height: theme.iconSize.md,
+      width: densityIconBox("md"),
+      height: densityIconBox("md"),
     },
     projectIconFallbackText: {
       fontSize: 9,

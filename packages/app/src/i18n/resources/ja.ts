@@ -31,6 +31,7 @@ export const ja: TranslationResources = {
     back: "戻る",
     loading: "読み込み中...",
     actions: {
+      save: "保存",
       back: "戻る",
       cancel: "キャンセル",
       close: "閉じる",
@@ -124,6 +125,8 @@ export const ja: TranslationResources = {
     input: {
       accessibilityLabel: "エージェントにメッセージ...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "全画面表示",
+      exitFullscreen: "全画面表示を終了",
       focusHint: "{{shortcut}}でフォーカス",
       addAttachment: "添付ファイルを追加",
       interruptAgent: "エージェントを中断",
@@ -380,6 +383,7 @@ export const ja: TranslationResources = {
       details: "詳細",
     },
     dictation: {
+      paused: "マイクが中断されました。再開を待っています…",
       start: "音声入力を開始",
       cancel: "音声入力をキャンセル",
       retry: "音声入力を再試行",
@@ -389,6 +393,7 @@ export const ja: TranslationResources = {
       failedRetry: "音声入力に失敗しました。再試行をタップしてください。",
     },
     question: {
+      responseFailed: "回答を送信できませんでした。もう一度お試しください。",
       submit: "送信",
       next: "次へ",
       answerPlaceholder: "回答を入力...",
@@ -404,6 +409,9 @@ export const ja: TranslationResources = {
         started: "開始",
         completed: "完了",
       },
+    },
+    turnFooter: {
+      workedFor: "作業時間 {{duration}}",
     },
     compaction: {
       loading: "コンテキストを圧縮中...",
@@ -488,6 +496,7 @@ export const ja: TranslationResources = {
       openToSide: "横に開く",
       copyPath: "パスをコピー",
       copyRelativePath: "相対パスをコピー",
+      copyFullPath: "フルパスをコピー",
       revealIn: "{{target}}で表示",
       download: "ダウンロード",
       addToChat: "チャットに追加",
@@ -631,6 +640,9 @@ export const ja: TranslationResources = {
       updateHost: "ネイティブターミナルを使用するにはホストを更新してください。",
       unableToSubscribe: "ターミナルに接続できません",
     },
+    sheet: {
+      openAsTab: "タブで開く",
+    },
     tabs: {
       loading: "読み込み中...",
       modified: "未保存の変更",
@@ -646,7 +658,7 @@ export const ja: TranslationResources = {
       },
       switcher: {
         trigger: "タブを切り替え（{{count}}件開いています）",
-        title: "タブを切り替え",
+        title: "ワークスペースのタブ",
         searchPlaceholder: "タブを検索",
       },
       menu: {
@@ -742,6 +754,7 @@ export const ja: TranslationResources = {
     header: {
       actions: {
         workspaceActions: "ワークスペースアクション",
+        workspaceActionsUnhealthy: "ワークスペースアクション、異常なサービスがあります",
         newAgent: "新しいエージェント",
         newTerminal: "新しいターミナル",
         newBrowser: "新しいブラウザタブ",
@@ -789,6 +802,8 @@ export const ja: TranslationResources = {
         exitCode: "終了コード: {{code}}",
         startFailed: "{{scriptName}}の起動に失敗しました",
         stopFailed: "{{scriptName}}の停止に失敗しました",
+        running: "実行中",
+        runningCount: "{{count}} 件実行中",
       },
     },
     tree: {
@@ -1001,6 +1016,47 @@ export const ja: TranslationResources = {
         actions: {
           viewPullRequest: "表示",
           openOn: "{{brand}}で開く",
+          addToChat: "チャットに追加",
+          addAllToChat: "すべてチャットに追加",
+          addingToChat: "追加中...",
+        },
+        checksOverview: {
+          headline: {
+            actionRequired: "対応が必要なチェックがあります",
+            failure: "失敗したチェックがあります",
+            pending: "完了していないチェックがあります",
+            success: "すべてのチェックに合格しました",
+            none: "チェックなし",
+          },
+          count: {
+            actionRequired: "{{count}} 件要対応",
+            warning: "{{count}} 件警告",
+            failure: "{{count}} 件失敗",
+            pending: "{{count}} 件実行中",
+            manual: "{{count}} 件手動",
+            success: "{{count}} 件成功",
+            ignored: "{{count}} 件スキップ",
+          },
+          detailOne: "チェック: {{parts}}",
+          detailMany: "チェック: {{parts}}",
+          groupOne: {
+            actionRequired: "要対応のチェック {{count}} 件",
+            warning: "警告のチェック {{count}} 件",
+            failure: "失敗したチェック {{count}} 件",
+            pending: "実行中のチェック {{count}} 件",
+            manual: "手動のチェック {{count}} 件",
+            success: "成功したチェック {{count}} 件",
+            ignored: "スキップされたチェック {{count}} 件",
+          },
+          groupMany: {
+            actionRequired: "要対応のチェック {{count}} 件",
+            warning: "警告のチェック {{count}} 件",
+            failure: "失敗したチェック {{count}} 件",
+            pending: "実行中のチェック {{count}} 件",
+            manual: "手動のチェック {{count}} 件",
+            success: "成功したチェック {{count}} 件",
+            ignored: "スキップされたチェック {{count}} 件",
+          },
         },
         checksSummary: {
           passedLabel: "成功",
@@ -1014,17 +1070,21 @@ export const ja: TranslationResources = {
           checks: "チェック",
           pipeline: "パイプライン",
           reviews: "レビュー",
+          activity: "アクティビティ",
         },
         empty: {
           noJobs: "ジョブなし",
           loadingPipeline: "パイプラインを読み込み中...",
           pipelineJobsLoadFailed: "パイプラインのジョブを読み込めませんでした",
           allowedToFail: "失敗を許可",
+          noActivity: "まだアクティビティはありません",
         },
         approvals: "{{given}} / {{required}} 承認",
         accessibility: {
           pullRequest: "プルリクエスト#{{number}}",
           pullRequest_mr: "マージリクエスト !{{number}}",
+          commentActions: "コメントの操作",
+          threadActions: "スレッドの操作",
           checkStatus: {
             passed: "成功",
             failed: "失敗",
@@ -1053,6 +1113,8 @@ export const ja: TranslationResources = {
         },
         thread: {
           discussion: "ディスカッションスレッド",
+          resolved: "解決済み",
+          outdated: "古い",
         },
         errors: {
           statusLoadFailed: "プルリクエストのステータスを読み込めません",
@@ -1119,7 +1181,17 @@ export const ja: TranslationResources = {
     },
   },
   sidebar: {
+    statusGroupAccessibility: "{{label}} グループ",
+    unsentDraft: "未送信の下書き",
+    statusBucket: {
+      needsInput: "入力待ち",
+      failed: "失敗",
+      readyToReview: "レビュー待ち",
+      working: "実行中",
+      done: "完了",
+    },
     display: {
+      showBackground: "バックグラウンドを表示",
       trigger: "表示設定",
       heading: "表示",
       grouping: {
@@ -1167,6 +1239,10 @@ export const ja: TranslationResources = {
     },
     pinned: {
       title: "固定済み",
+    },
+    settled: {
+      title: "完了済み",
+      titleWithCount: "完了済み ({{count}})",
     },
     host: {
       noHost: "ホストなし",
@@ -1258,6 +1334,10 @@ export const ja: TranslationResources = {
         rename: "ワークスペースの名前を変更",
         pin: "上部に固定",
         unpin: "固定解除",
+        settle: "完了にする",
+        unsettle: "完了を取り消す",
+        settleWorkspace: "ワークスペースを完了にする",
+        unsettleWorkspace: "ワークスペースの完了を取り消す",
         archive: "アーカイブ",
         archiveWorkspace: "ワークスペースをアーカイブ",
         hideFromSidebar: "サイドバーから非表示",
@@ -1296,8 +1376,9 @@ export const ja: TranslationResources = {
     },
     fields: {
       project: "プロジェクト",
-      base: "ベース",
+      branch: "ブランチ",
       baseNotApplicable: "該当なし",
+      host: "ホスト",
     },
     titlePlaceholder: "タイトル（任意）",
     errors: {
@@ -1341,6 +1422,9 @@ export const ja: TranslationResources = {
     quitting: {
       title: "Paseoを終了中...",
       detail: "ローカルデーモンを停止中。",
+    },
+    quitConfirm: {
+      hint: "⌘Qを長押しするか2回押して終了",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -1627,13 +1711,18 @@ export const ja: TranslationResources = {
     title: "プロバイダーを追加",
     search: "プロバイダーを検索",
     noProviders: "プロバイダーが見つかりません",
+    clearSearch: "検索をクリア",
     actions: {
       add: "追加",
+      addProvider: "{{provider}} を追加",
       adding: "追加中",
       installed: "インストール済み",
       cancel: "キャンセル",
       installInstructions: "インストール手順",
       installInstructionsFor: "{{provider}}のインストール手順",
+    },
+    types: {
+      acp: "ACP",
     },
     errors: {
       unableToInstall: "プロバイダーをインストールできません",
@@ -1737,6 +1826,12 @@ export const ja: TranslationResources = {
       helper: "リモートホストで動作する Paseo デーモンに接続します。",
       fields: {
         target: "SSH ホスト",
+        password: "デーモンのパスワード",
+        optional: "任意",
+      },
+      passwordVisibility: {
+        show: "パスワードを表示",
+        hide: "パスワードを非表示",
       },
       actions: {
         cancel: "キャンセル",
@@ -1969,6 +2064,8 @@ export const ja: TranslationResources = {
     dismiss: "閉じる",
   },
   contextWindow: {
+    noData: "コンテキストデータがありません",
+    accessibilityNoData: "コンテキストウィンドウ：コンテキストデータがありません",
     title: "コンテキストウィンドウ",
     used: "{{percentage}}%使用",
     tokens: "{{used}} / {{max}}トークン",
@@ -1976,6 +2073,18 @@ export const ja: TranslationResources = {
     accessibility: "コンテキストウィンドウ{{percentage}}%使用",
   },
   review: {
+    feedback: {
+      send: "フィードバックを送信 ({{count}})",
+      sending: "フィードバックを送信中 ({{count}})",
+      chooseAgent: "エージェントを選択",
+      sent: "{{recipient}} にフィードバックを送信しました",
+      "no-agents":
+        "フィードバックを送信するには、このワークスペースでエージェントタブを開いてください。",
+      disconnected: "フィードバックを送信するにはホストに接続してください。",
+      "no-context": "保存したコメントはこの差分と一致しなくなりました。",
+      failed: "フィードバックを送信できませんでした。もう一度お試しください。",
+      prompt: "このコードレビューに対応してください。",
+    },
     comment: {
       add: "レビューコメントを追加",
       edit: "レビューコメントを編集",
@@ -1986,6 +2095,182 @@ export const ja: TranslationResources = {
       cancelAccessibility: "レビューコメントをキャンセル",
       save: "コメント",
       saveAccessibility: "レビューコメントを保存",
+    },
+  },
+  ompAccountRouting: {
+    login: {
+      start: "Claude アカウントを追加",
+      elsewhere: "ホストのコンピュータで Paseo を開いてアカウントを追加してください。",
+      update: "ここでアカウントを追加するには、ホストの Paseo と Oh My Pi を更新してください。",
+      inProgress: "サインイン中",
+      continue: "続ける",
+      cancel: "キャンセル",
+      cancelSignIn: "サインインをキャンセル",
+      done: "完了",
+      details: "詳細",
+      tryAgain: "やり直す",
+      close: "閉じる",
+      justAdded: "追加したばかり",
+      warning: {
+        body: "Paseo は Claude アカウントごとに 1 つのサインインを保存します。追加したいアカウントで claude.ai にサインインしてください。",
+        existing: "追加済み: {{accounts}}",
+        alertTitle: "ブラウザが使うアカウントを確認してください",
+        alertDescription:
+          "claude.ai が追加済みのアカウントでサインインしたままの場合は、先にサインアウトするかアカウントを切り替えてください。プライベートウィンドウは常にサインアウト状態で始まります。",
+        guard: "追加済みのアカウントでサインインすると、Paseo は停止し、何も変更しません。",
+      },
+      preparing: "サインインリンクを準備中...",
+      link: {
+        title: "Claude にサインイン",
+        step: "リンクを開き、追加したいアカウントでサインインしてください",
+        open: "サインインページを開く",
+        copy: "リンクをコピー",
+        copied: "コピーしました",
+        label: "サインインリンク",
+        hint: "プライベートウィンドウや別のデバイスを使うには、リンクをコピーしてください",
+        waiting: "ブラウザを待っています...",
+        pasteInstead: "アドレスを貼り付ける",
+      },
+      paste: {
+        label: "アドレスまたはコード",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "承認後、ブラウザが読み込めないページを表示することがあります。アドレスバーの完全なアドレス、または Claude が表示するコードをコピーして、ここに貼り付けてください。",
+        submit: "送信",
+        checking: "確認中...",
+        error: {
+          invalid_input: "サインインのアドレスでもコードでもありません",
+          wrong_login:
+            "このアドレスは古いサインインリンクのものです。ここに表示されているリンクを使ってください。",
+          not_waiting: "このサインインはすでに完了しています",
+          not_allowed: "これを送れるのはホストのコンピュータ上の Paseo だけです",
+          unreachable: "ホストに接続できませんでした。もう一度お試しください。",
+        },
+      },
+      verifying: "サインインを確認中...",
+      result: {
+        added: {
+          title: "{{account}} を追加しました",
+          titleUnnamed: "アカウントを追加しました",
+          description: "{{organization}}。自動ルーティングで使用できます。",
+          descriptionUnnamed: "自動ルーティングで使用できます。",
+          billingEnabled:
+            "このアカウントでは有料の追加使用量がオンです。Claude の設定でオフにするまで、自動ルーティングはこのアカウントをスキップします。",
+          billingUnknown:
+            "Claude の設定で、このアカウントの有料の追加使用量がオフになっていることを確認してください。オンのアカウントは自動ルーティングがスキップします。",
+        },
+        alreadyListed: {
+          title: "{{account}} は追加済みです",
+          titleUnnamed: "そのアカウントは追加済みです",
+          description:
+            "何も変更されていません。ブラウザは Paseo にすでにあるアカウントでサインインしました。claude.ai からサインアウトするかプライベートウィンドウを使って、もう一度お試しください。",
+        },
+        replaced: {
+          title: "{{account}} のサインインを置き換えました",
+          titleUnnamed: "保存済みのサインインを置き換えました",
+          description: "アカウントは追加されていません。新しいサインインが使われます。",
+        },
+        failed: "サインインに失敗しました",
+        cancelled: "サインインをキャンセルしました",
+      },
+      failure: {
+        timeout: "サインインリンクは 10 分で期限切れになりました。何も変更されていません。",
+        omp_failed:
+          "Oh My Pi はサインインを完了できませんでした。何も変更されていません。もう一度お試しいただくか、ターミナルで omp を実行して /login と入力してください。",
+        spawn_failed: "Paseo はこのコンピュータで Oh My Pi を起動できませんでした。",
+        unreachable:
+          "ホストとの接続が切れました。再接続したら、やり直す前にアカウント一覧を確認してください。",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "このホスト上の Paseo 管理下のすべての OMP エージェントに適用されます。他のホストやスタンドアロンのターミナルには影響しません。",
+      account: "アカウント",
+      automatic: "自動",
+      useForAuto: "自動ルーティングに使う",
+      auto: "自動ルーティング",
+      priority: "フォールバック優先度",
+      priorityHelp:
+        "現在のアカウントを使い切ると、Paseo は残り使用量が最も多い対象アカウントに切り替えます。この順序は同じ場合の決め手になります。",
+      addAccountHint:
+        "アカウントを追加するには、ターミナルで omp を実行して /login と入力し、別の Claude アカウントでサインインします。",
+      current: "選択中",
+      serving: "対応中",
+      lastServed: "最後に対応",
+      excluded: "自動ルーティングから除外",
+      missing: "保存済みアカウントは利用できません",
+      fiveHour: "5 時間",
+      weekly: "週間",
+      tier: "サブスクリプションのプラン",
+      unknownTier: "サブスクリプションのプランは不明",
+      unknownBudget: "絶対的な上限は不明",
+      consumed: "使用済み",
+      remaining: "残り",
+      stale: "古い観測",
+      unknownOrganization: "組織は不明",
+      detailsPending: "Oh My Pi エージェントの実行中に詳細が表示されます",
+      search: "アカウントを検索",
+    },
+    actions: {
+      moveUp: "上へ移動",
+      moveDown: "下へ移動",
+    },
+    status: {
+      loading: "アカウントのルーティングを読み込み中",
+      empty: "Claude アカウントが見つかりません",
+      noRuntime: "Oh My Pi エージェントの実行中にアカウントが表示されます。",
+      unsupported: "このホストは OMP アカウントルーティングの対応を確認していません",
+      offline: "ホストがオフラインです。最後に確認した設定を表示しています",
+      readOnly: "これらの設定は表示のみで、変更できません",
+      pending: "設定を保存中",
+      conflict: "設定が別の場所で変更されました。最新の確認済みの状態を表示しています",
+      paused: "利用可能な対象アカウントを待っています",
+      recovered: "対象アカウントが利用可能です",
+      unknownUsage: "使用量は不明",
+      summaryPaused: "一時停止中: 残り使用量のある対象アカウントがありません。",
+      summaryPausedResumes:
+        "一時停止中: 残り使用量のある対象アカウントがありません。{{time}} に再開",
+      summaryUsing: "{{account}} を使用中",
+      summaryAuto: "自動では残り使用量が最も多いアカウントを選びます",
+    },
+    reason: {
+      no_account: "アカウントが選択されていません",
+      source_changed: "選択したネイティブ認証情報のソースが変わりました",
+      source_inaccessible: "このランタイムは選択したネイティブアカウントにアクセスできません",
+      billing_enabled:
+        "従量課金のクレジットが有効です。プラン内のみのルーティングではこのアカウントを使えません",
+      billing_unknown: "従量課金クレジットの設定が最近確認されていません",
+      quota_blocked: "このリクエストではプラン内の使用量を利用できません",
+      entitlement_unavailable:
+        "このアカウントではモデルへのアクセスが利用できないか、確認されていません",
+      auth_unavailable: "ネイティブアカウントの認証を利用できません",
+      unsupported_transport:
+        "このプロバイダーのトランスポートはプラン内のみのルーティングに対応していません",
+      unsupported_runtime: "この OMP ランタイムは管理対象のルーティングに対応していません",
+      persistence_failed: "ルーティング設定を保存できませんでした",
+      host_unavailable: "ルーティングホストを利用できません",
+      cancelled: "リクエストをキャンセルしました",
+      metadata_pending: "アカウントの利用可否を確認中",
+      all_unavailable: "現在利用できる対象アカウントがありません",
+      auto_disabled:
+        "自動ルーティングはオフです。続けるにはアカウントを選択するか、オンにしてください",
+      provider_failed: "アカウントの利用可否を確認できませんでした",
+    },
+    mutationError: {
+      conflict: "設定が別の場所で変更されました。最新の状態を確認してから再試行してください",
+      invalid_account: "そのネイティブアカウントはカタログにありません",
+      unsupported: "このホストではアカウントルーティングの操作を利用できません",
+      persistence_failed: "設定は保存されませんでした。以前に確認した設定がそのまま残ります",
+    },
+    values: {
+      used: "{{percent}}% 使用",
+      reset: "{{time}} にリセット",
+      observed: "{{time}} に観測",
+      limitReached: "{{window}}の上限に達しました",
+      limitReachedReset: "{{window}}の上限に達しました · {{time}} にリセット",
+      account: "アカウント {{row}}",
+      serving: "{{account}} が {{agent}} に対応中",
+      priority: "優先度 {{position}}",
     },
   },
   settings: {
@@ -2099,6 +2384,7 @@ export const ja: TranslationResources = {
           queue: "キュー",
         },
       },
+      defaultEditor: "デフォルトのエディタ",
       serviceUrls: {
         options: {
           ask: "確認する",
@@ -2231,6 +2517,84 @@ export const ja: TranslationResources = {
         },
         moveUp: "上に移動",
         moveDown: "下に移動",
+      },
+      background: {
+        title: "背景",
+        applyTo: {
+          title: "適用先",
+          options: {
+            both: "両方",
+            light: "ライト",
+            dark: "ダーク",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "背景画像",
+          none: "なし",
+          addImage: "画像を追加…",
+          importDefaultName: "画像",
+        },
+        menu: {
+          actions: "{{name}} の操作",
+          edit: "編集…",
+          delete: "削除",
+          details: "詳細",
+        },
+        undo: {
+          action: "元に戻す",
+          accessibilityLabel: "背景の変更を元に戻す",
+        },
+        catalog: {
+          browse: "参照",
+          hint: "このプラグインから背景を追加",
+        },
+        visibility: {
+          title: "画像の表示量",
+          hint: "Paseo は文字の読みやすさを自動で保つため、明るい画像では表示が控えめになることがあります。",
+        },
+        blur: {
+          title: "ぼかし",
+          options: {
+            off: "オフ",
+            low: "弱",
+            medium: "中",
+            high: "強",
+          },
+        },
+        showBehindSidebar: "サイドバーの背後に表示",
+        showBehindContent: "コンテンツの背後に表示",
+        status: {
+          reducedTransparency: "システム設定で「透明度を下げる」がオンのため非表示です",
+          forcedColors: "ハイコントラストモードがオンの間は非表示です",
+          error: "背景を表示できませんでした",
+        },
+        errors: {
+          select: "背景を適用できませんでした: {{message}}",
+          import: "画像をインポートできませんでした: {{message}}",
+          update: "変更を保存できませんでした: {{message}}",
+          remove: "背景を削除できませんでした: {{message}}",
+        },
+        edit: {
+          title: "背景を編集",
+          name: "名前",
+          focal: "焦点",
+          focalHint: "表示したい部分の画像をタップしてください。",
+          focalAccessibility: "焦点を選択",
+          save: "保存",
+          saving: "保存中…",
+        },
+        delete: {
+          title: "「{{name}}」を削除しますか？",
+          message: "この画像はこのデバイスから削除されます。",
+          confirm: "削除",
+        },
+        details: {
+          title: "詳細",
+          author: "作者",
+          license: "ライセンス",
+          source: "ソース",
+          openSource: "ソースを開く",
+        },
       },
       fonts: {
         title: "フォント",
@@ -2495,6 +2859,10 @@ export const ja: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "デフォルトのスタイル",
+          hint: "プロバイダーごとに上書きできます",
+        },
         unavailable: "エージェントを管理するにはこのホストに接続してください",
       },
       workspaces: {
@@ -2681,6 +3049,9 @@ export const ja: TranslationResources = {
         discovered: "検出済み",
         custom: "カスタムモデル",
         updated: "{{time}}に更新",
+        disabledCount: "{{count}} 件無効",
+        toggleModel: "{{model}} を有効化",
+        failedToToggle: "{{model}} を更新できませんでした",
       },
       diagnostic: {
         title: "診断",
@@ -2696,6 +3067,12 @@ export const ja: TranslationResources = {
         none: "利用可能な診断がありません",
         failedToFetch: "診断の取得に失敗しました",
         unknownError: "不明なエラー",
+      },
+      featureDefaults: {
+        title: "新しいエージェントのデフォルト",
+        providerDefault: "プロバイダーのデフォルト",
+        on: "オン",
+        off: "オフ",
       },
     },
     project: {

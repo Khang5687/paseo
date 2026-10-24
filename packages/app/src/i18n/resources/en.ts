@@ -26,6 +26,7 @@ export const en = {
     back: "Back",
     loading: "Loading...",
     actions: {
+      save: "Save",
       back: "Back",
       cancel: "Cancel",
       close: "Close",
@@ -119,6 +120,8 @@ export const en = {
     input: {
       accessibilityLabel: "Message agent...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "Fullscreen",
+      exitFullscreen: "Exit fullscreen",
       focusHint: "{{shortcut}} to focus",
       addAttachment: "Add attachment",
       interruptAgent: "Interrupt agent",
@@ -372,6 +375,7 @@ export const en = {
       details: "Details",
     },
     dictation: {
+      paused: "Microphone interrupted. Waiting to resume…",
       start: "Start voice dictation",
       cancel: "Cancel dictation",
       retry: "Retry dictation",
@@ -381,6 +385,7 @@ export const en = {
       failedRetry: "Dictation failed. Tap retry.",
     },
     question: {
+      responseFailed: "Could not send your response. Try again.",
       submit: "Submit",
       next: "Next",
       answerPlaceholder: "Type your answer...",
@@ -396,6 +401,9 @@ export const en = {
         started: "Started",
         completed: "Completed",
       },
+    },
+    turnFooter: {
+      workedFor: "Worked for {{duration}}",
     },
     compaction: {
       loading: "Compacting...",
@@ -479,6 +487,7 @@ export const en = {
       openToSide: "Open to the side",
       copyPath: "Copy path",
       copyRelativePath: "Copy relative path",
+      copyFullPath: "Copy full path",
       revealIn: "Reveal in {{target}}",
       download: "Download",
       addToChat: "Add to chat",
@@ -622,6 +631,9 @@ export const en = {
       updateHost: "Update the host to use the native terminal renderer.",
       unableToSubscribe: "Unable to subscribe to terminal",
     },
+    sheet: {
+      openAsTab: "Open as tab",
+    },
     tabs: {
       loading: "Loading...",
       modified: "Unsaved changes",
@@ -637,7 +649,7 @@ export const en = {
       },
       switcher: {
         trigger: "Switch tabs ({{count}} open)",
-        title: "Switch tab",
+        title: "Workspace tabs",
         searchPlaceholder: "Search tabs",
       },
       menu: {
@@ -733,6 +745,7 @@ export const en = {
     header: {
       actions: {
         workspaceActions: "Workspace actions",
+        workspaceActionsUnhealthy: "Workspace actions, a service is unhealthy",
         newAgent: "New agent",
         newTerminal: "New terminal",
         newBrowser: "New browser tab",
@@ -780,6 +793,8 @@ export const en = {
         exitCode: "exit {{code}}",
         startFailed: "Failed to start {{scriptName}}",
         stopFailed: "Failed to stop {{scriptName}}",
+        running: "Running",
+        runningCount: "{{count}} running",
       },
     },
     tree: {
@@ -996,6 +1011,47 @@ export const en = {
         actions: {
           viewPullRequest: "View",
           openOn: "Open on {{brand}}",
+          addToChat: "Add to chat",
+          addAllToChat: "Add all to chat",
+          addingToChat: "Adding...",
+        },
+        checksOverview: {
+          headline: {
+            actionRequired: "Some checks need your attention",
+            failure: "Some checks were not successful",
+            pending: "Some checks haven't completed yet",
+            success: "All checks have passed",
+            none: "No checks",
+          },
+          count: {
+            actionRequired: "{{count}} needs action",
+            warning: "{{count}} warning",
+            failure: "{{count}} failing",
+            pending: "{{count}} in progress",
+            manual: "{{count}} manual",
+            success: "{{count}} successful",
+            ignored: "{{count}} skipped",
+          },
+          detailOne: "{{parts}} check",
+          detailMany: "{{parts}} checks",
+          groupOne: {
+            actionRequired: "{{count}} needs action check",
+            warning: "{{count}} warning check",
+            failure: "{{count}} failing check",
+            pending: "{{count}} in progress check",
+            manual: "{{count}} manual check",
+            success: "{{count}} successful check",
+            ignored: "{{count}} skipped check",
+          },
+          groupMany: {
+            actionRequired: "{{count}} needs action checks",
+            warning: "{{count}} warning checks",
+            failure: "{{count}} failing checks",
+            pending: "{{count}} in progress checks",
+            manual: "{{count}} manual checks",
+            success: "{{count}} successful checks",
+            ignored: "{{count}} skipped checks",
+          },
         },
         checksSummary: {
           passedLabel: "passed",
@@ -1009,17 +1065,21 @@ export const en = {
           checks: "Checks",
           pipeline: "Pipeline",
           reviews: "Reviews",
+          activity: "Activity",
         },
         empty: {
           noJobs: "No jobs",
           loadingPipeline: "Loading pipeline…",
           pipelineJobsLoadFailed: "Could not load pipeline jobs",
           allowedToFail: "allowed to fail",
+          noActivity: "No activity yet",
         },
         approvals: "{{given}} of {{required}} approvals",
         accessibility: {
           pullRequest: "Pull request #{{number}}",
           pullRequest_mr: "Merge request !{{number}}",
+          commentActions: "Comment actions",
+          threadActions: "Thread actions",
           checkStatus: {
             passed: "Passed",
             failed: "Failed",
@@ -1048,6 +1108,8 @@ export const en = {
         },
         thread: {
           discussion: "Discussion thread",
+          resolved: "Resolved",
+          outdated: "Outdated",
         },
         errors: {
           statusLoadFailed: "Unable to load pull request status",
@@ -1114,7 +1176,17 @@ export const en = {
     },
   },
   sidebar: {
+    statusGroupAccessibility: "{{label}} group",
+    unsentDraft: "Unsent draft",
+    statusBucket: {
+      needsInput: "Needs input",
+      failed: "Failed",
+      readyToReview: "Ready to review",
+      working: "Working",
+      done: "Done",
+    },
     display: {
+      showBackground: "Show background",
       trigger: "Display preferences",
       heading: "Display",
       grouping: {
@@ -1161,6 +1233,10 @@ export const en = {
     },
     pinned: {
       title: "Pinned",
+    },
+    settled: {
+      title: "Settled",
+      titleWithCount: "Settled ({{count}})",
     },
     host: {
       noHost: "No host",
@@ -1252,6 +1328,10 @@ export const en = {
         rename: "Rename workspace",
         pin: "Pin to top",
         unpin: "Unpin",
+        settle: "Settle",
+        unsettle: "Unsettle",
+        settleWorkspace: "Settle workspace",
+        unsettleWorkspace: "Unsettle workspace",
         archive: "Archive",
         archiveWorkspace: "Archive workspace",
         hideFromSidebar: "Hide from sidebar",
@@ -1290,8 +1370,9 @@ export const en = {
     },
     fields: {
       project: "Project",
-      base: "Base",
+      branch: "Branch",
       baseNotApplicable: "Not applicable",
+      host: "Host",
     },
     titlePlaceholder: "Title (optional)",
     errors: {
@@ -1335,6 +1416,9 @@ export const en = {
     quitting: {
       title: "Quitting Paseo...",
       detail: "Stopping the local daemon.",
+    },
+    quitConfirm: {
+      hint: "Hold ⌘Q or press twice to quit",
     },
     daemon: {
       title: "Daemon",
@@ -1635,13 +1719,18 @@ export const en = {
     title: "Add provider",
     search: "Search providers",
     noProviders: "No providers found",
+    clearSearch: "Clear search",
     actions: {
       add: "Add",
+      addProvider: "Add {{provider}}",
       adding: "Adding",
       installed: "Installed",
       cancel: "Cancel",
       installInstructions: "Install instructions",
       installInstructionsFor: "{{provider}} install instructions",
+    },
+    types: {
+      acp: "ACP",
     },
     errors: {
       unableToInstall: "Unable to install provider",
@@ -1745,6 +1834,12 @@ export const en = {
       helper: "Connect to a Paseo daemon running on the remote host.",
       fields: {
         target: "SSH host",
+        password: "Daemon password",
+        optional: "Optional",
+      },
+      passwordVisibility: {
+        show: "Show password",
+        hide: "Hide password",
       },
       actions: {
         cancel: "Cancel",
@@ -1974,6 +2069,8 @@ export const en = {
     dismiss: "Dismiss",
   },
   contextWindow: {
+    noData: "No context data",
+    accessibilityNoData: "Context window: No context data",
     title: "Context window",
     used: "{{percentage}}% used",
     tokens: "{{used}} / {{max}} tokens",
@@ -1981,6 +2078,17 @@ export const en = {
     accessibility: "Context window {{percentage}}% used",
   },
   review: {
+    feedback: {
+      send: "Send feedback ({{count}})",
+      sending: "Sending feedback ({{count}})",
+      chooseAgent: "Choose an agent",
+      sent: "Feedback sent to {{recipient}}",
+      "no-agents": "Open an agent tab in this workspace to send feedback.",
+      disconnected: "Connect to the host to send feedback.",
+      "no-context": "Saved comments no longer match this diff.",
+      failed: "Failed to send feedback. Try again.",
+      prompt: "Please address this code review.",
+    },
     comment: {
       add: "Add review comment",
       edit: "Edit review comment",
@@ -1991,6 +2099,178 @@ export const en = {
       cancelAccessibility: "Cancel review comment",
       save: "Comment",
       saveAccessibility: "Save review comment",
+    },
+  },
+  ompAccountRouting: {
+    login: {
+      start: "Add Claude account",
+      elsewhere: "Open Paseo on the host computer to add an account.",
+      update: "Update Paseo and Oh My Pi on the host to add accounts here.",
+      inProgress: "Sign-in in progress",
+      continue: "Continue",
+      cancel: "Cancel",
+      cancelSignIn: "Cancel sign-in",
+      done: "Done",
+      details: "Details",
+      tryAgain: "Try again",
+      close: "Close",
+      justAdded: "Just added",
+      warning: {
+        body: "Paseo saves one sign-in per Claude account. Sign in to claude.ai as the account you want to add.",
+        existing: "Already added: {{accounts}}",
+        alertTitle: "Check which account your browser uses",
+        alertDescription:
+          "If claude.ai is still signed in as an account that is already added, sign out or switch accounts first. A private window always starts signed out.",
+        guard:
+          "If you sign in as an account that is already added, Paseo stops and changes nothing.",
+      },
+      preparing: "Preparing sign-in link...",
+      link: {
+        title: "Sign in to Claude",
+        step: "Open the link and sign in as the account you want to add",
+        open: "Open sign-in page",
+        copy: "Copy link",
+        copied: "Copied",
+        label: "Sign-in link",
+        hint: "To use a private window or another device, copy the link instead",
+        waiting: "Waiting for the browser...",
+        pasteInstead: "Paste address instead",
+      },
+      paste: {
+        label: "Address or code",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "After you approve, the browser may land on a page that does not load. Copy the full address from the address bar, or the code Claude shows, and paste it here.",
+        submit: "Submit",
+        checking: "Checking...",
+        error: {
+          invalid_input: "That is not a sign-in address or code",
+          wrong_login: "That address belongs to an older sign-in link. Use the link shown here.",
+          not_waiting: "This sign-in already finished",
+          not_allowed: "Only Paseo on the host computer can send this",
+          unreachable: "Could not reach the host. Try again.",
+        },
+      },
+      verifying: "Checking the sign-in...",
+      result: {
+        added: {
+          title: "Added {{account}}",
+          titleUnnamed: "Account added",
+          description: "{{organization}}. Auto-routing can use it now.",
+          descriptionUnnamed: "Auto-routing can use it now.",
+          billingEnabled:
+            "Paid extra usage is on for this account. Auto-routing skips it until you turn that off in Claude settings.",
+          billingUnknown:
+            "Make sure paid extra usage is off for this account in Claude settings. Auto-routing skips accounts that have it on.",
+        },
+        alreadyListed: {
+          title: "{{account}} is already added",
+          titleUnnamed: "That account is already added",
+          description:
+            "Nothing changed. Your browser signed in as an account Paseo already has. Sign out of claude.ai or use a private window, then try again.",
+        },
+        replaced: {
+          title: "Replaced the sign-in for {{account}}",
+          titleUnnamed: "Replaced a saved sign-in",
+          description: "No account was added. The new sign-in is in use.",
+        },
+        failed: "Sign-in failed",
+        cancelled: "Sign-in cancelled",
+      },
+      failure: {
+        timeout: "The sign-in link expired after 10 minutes. Nothing changed.",
+        omp_failed:
+          "Oh My Pi could not finish signing in. Nothing changed. Try again, or run omp in a terminal and type /login.",
+        spawn_failed: "Paseo could not start Oh My Pi on this computer.",
+        unreachable:
+          "Lost contact with the host. When it reconnects, check the account list before you try again.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Applies to all Paseo-managed OMP agents on this host. Other hosts and standalone terminals are unchanged.",
+      account: "Account",
+      automatic: "Automatic",
+      useForAuto: "Use for auto-routing",
+      auto: "Auto-routing",
+      priority: "Fallback priority",
+      priorityHelp:
+        "When the current account runs out, Paseo switches to the included account with the most usage left. This order breaks ties.",
+      addAccountHint:
+        "To add an account, run omp in a terminal and type /login, then sign in with a different Claude account.",
+      current: "Selected",
+      serving: "Serving",
+      lastServed: "Last served",
+      excluded: "Excluded from auto-routing",
+      missing: "Saved account unavailable",
+      fiveHour: "5-hour",
+      weekly: "Weekly",
+      tier: "Subscription tier",
+      unknownTier: "Subscription tier unknown",
+      unknownBudget: "Absolute allowance unknown",
+      consumed: "Consumed",
+      remaining: "Remaining",
+      stale: "Stale observation",
+      unknownOrganization: "Organization unknown",
+      detailsPending: "Details appear when an Oh My Pi agent is running",
+      search: "Search accounts",
+    },
+    actions: {
+      moveUp: "Move up",
+      moveDown: "Move down",
+    },
+    status: {
+      loading: "Loading account routing",
+      empty: "No Claude accounts observed",
+      noRuntime: "Accounts appear when an Oh My Pi agent is running.",
+      unsupported: "This host has not verified OMP account-routing support",
+      offline: "Host offline; showing last confirmed settings",
+      readOnly: "You can view these settings but cannot change them",
+      pending: "Saving settings",
+      conflict: "Settings changed elsewhere; showing the latest confirmed state",
+      paused: "Waiting for an available included account",
+      recovered: "Included account available",
+      unknownUsage: "Usage unknown",
+      summaryPaused: "Paused: no included account has usage left.",
+      summaryPausedResumes: "Paused: no included account has usage left. Resumes {{time}}",
+      summaryUsing: "Using {{account}}",
+      summaryAuto: "Auto picks the account with the most usage left",
+    },
+    reason: {
+      no_account: "No account is selected",
+      source_changed: "The selected native credential source changed",
+      source_inaccessible: "This runtime cannot access the selected native account",
+      billing_enabled:
+        "Paid usage credits are enabled; included-only routing cannot use this account",
+      billing_unknown: "Paid usage-credit settings are not freshly verified",
+      quota_blocked: "Included usage is unavailable for this request",
+      entitlement_unavailable: "Model access is unavailable or not verified for this account",
+      auth_unavailable: "Native account authentication is unavailable",
+      unsupported_transport: "This provider transport does not support included-only routing",
+      unsupported_runtime: "This OMP runtime does not support managed routing",
+      persistence_failed: "Routing settings could not be saved",
+      host_unavailable: "Routing host unavailable",
+      cancelled: "Request cancelled",
+      metadata_pending: "Verifying account availability",
+      all_unavailable: "No included account is currently available",
+      auto_disabled: "Auto-routing is off; select an account or enable it to continue",
+      provider_failed: "Account availability could not be verified",
+    },
+    mutationError: {
+      conflict: "Settings changed elsewhere; review the latest state before trying again",
+      invalid_account: "That native account is no longer in the catalog",
+      unsupported: "Account-routing controls are unavailable on this host",
+      persistence_failed: "Settings were not saved; the previous confirmed settings remain",
+    },
+    values: {
+      used: "{{percent}}% used",
+      reset: "resets {{time}}",
+      observed: "observed {{time}}",
+      limitReached: "{{window}} limit reached",
+      limitReachedReset: "{{window}} limit reached · resets {{time}}",
+      account: "Account {{row}}",
+      serving: "{{account}} is serving {{agent}}",
+      priority: "Priority {{position}}",
     },
   },
   settings: {
@@ -2114,7 +2394,7 @@ export const en = {
       globalTitle: "Enable plugins",
       globalHint: "Global switch for every configured plugin",
       sourceLabel: "Plugin source",
-      sourcePlaceholder: "Directory, Git URL, or npm package",
+      sourcePlaceholder: "owner/slug, directory, Git URL, or npm package",
       docs: "Docs",
       install: "Install plugin",
       installing: "Installing…",
@@ -2204,6 +2484,7 @@ export const en = {
           queue: "Queue",
         },
       },
+      defaultEditor: "Default editor",
       serviceUrls: {
         options: {
           ask: "Ask",
@@ -2336,6 +2617,84 @@ export const en = {
         },
         moveUp: "Move up",
         moveDown: "Move down",
+      },
+      background: {
+        title: "Background",
+        applyTo: {
+          title: "Apply to",
+          options: {
+            both: "Both",
+            light: "Light",
+            dark: "Dark",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Background images",
+          none: "None",
+          addImage: "Add image…",
+          importDefaultName: "Image",
+        },
+        menu: {
+          actions: "Actions for {{name}}",
+          edit: "Edit…",
+          delete: "Delete",
+          details: "Details",
+        },
+        undo: {
+          action: "Undo",
+          accessibilityLabel: "Undo background change",
+        },
+        catalog: {
+          browse: "Browse",
+          hint: "Install more skins from this plugin",
+        },
+        visibility: {
+          title: "Art visibility",
+          hint: "Paseo keeps text readable automatically, so bright images may show less art.",
+        },
+        blur: {
+          title: "Blur",
+          options: {
+            off: "Off",
+            low: "Low",
+            medium: "Medium",
+            high: "High",
+          },
+        },
+        showBehindSidebar: "Show behind sidebar",
+        showBehindContent: "Show behind content",
+        status: {
+          reducedTransparency: "Hidden because Reduce transparency is on in your system settings",
+          forcedColors: "Hidden while high contrast mode is on",
+          error: "The background could not be shown",
+        },
+        errors: {
+          select: "Could not apply background: {{message}}",
+          import: "Could not import image: {{message}}",
+          update: "Could not save changes: {{message}}",
+          remove: "Could not delete background: {{message}}",
+        },
+        edit: {
+          title: "Edit background",
+          name: "Name",
+          focal: "Focal point",
+          focalHint: "Tap the part of the image that should stay in view.",
+          focalAccessibility: "Choose focal point",
+          save: "Save",
+          saving: "Saving…",
+        },
+        delete: {
+          title: 'Delete "{{name}}"?',
+          message: "This removes the image from this device.",
+          confirm: "Delete",
+        },
+        details: {
+          title: "Details",
+          author: "Author",
+          license: "License",
+          source: "Source",
+          openSource: "Open source",
+        },
       },
       fonts: {
         title: "Fonts",
@@ -2598,6 +2957,10 @@ export const en = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Default style",
+          hint: "Providers can override it",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {
@@ -2781,6 +3144,9 @@ export const en = {
         discovered: "Discovered",
         custom: "Custom models",
         updated: "Updated {{time}}",
+        disabledCount: "{{count}} disabled",
+        toggleModel: "Enable {{model}}",
+        failedToToggle: "Failed to update {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",
@@ -2796,6 +3162,12 @@ export const en = {
         none: "No diagnostic available",
         failedToFetch: "Failed to fetch diagnostic",
         unknownError: "Unknown error",
+      },
+      featureDefaults: {
+        title: "Defaults for new agents",
+        providerDefault: "Provider default",
+        on: "On",
+        off: "Off",
       },
     },
     project: {

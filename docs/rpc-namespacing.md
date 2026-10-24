@@ -25,7 +25,30 @@ checkout.forge.set_auto_merge.request;
 // -> checkout.forge.set_auto_merge.response
 ```
 
-Most new RPCs should follow this shape. If a request does not have a one-to-one response, call that out in the code near the schema.
+A finite streaming request can emit `.update` messages before its terminal `.response`.
+`usage.list_reports.request` uses this shape: each `.update` carries one settled report, and
+`.response` carries the request-level error or `null`. All three share `requestId`; no updates
+follow the response. An empty successful stream is an empty list. Register updates as replies
+of the originating request so source-owned delivery routes them to the requesting connection.
+
+Most new RPCs should follow these shapes. If a request does not have a one-to-one terminal response, call that out in the code near the schema.
+
+Account routing uses the same request/response pair and adds a retained `.update`:
+
+```ts
+account.routing.get_state.request;
+account.routing.get_state.response;
+account.routing.state.update;
+account.routing.mutate.request;
+account.routing.mutate.response;
+```
+
+The request keeps `requestId` at the top level and may include `subscribe: {}`. The response
+echoes that ID under `payload` with the full typed state and an optional host subscription ID.
+Retained updates carry the subscription ID and full state. The mutate pair carries `requestId`, `expectedPolicyRevision` and a `select`, `set_auto`, `set_inclusion` or `move_priority` command; its response returns the state and a typed `error` or `null`. Client routing and reconnect rules are
+in [protocol-compatibility.md](protocol-compatibility.md#owned-observations).
+
+Adding a Claude account is four plain pairs, `account.routing.login.start`, `.get_status`, `.cancel` and `.submit_code`, each answering with the host's one login status (`idle`, `running`, `succeeded`, `failed`, `cancelled`, plus `phase`, `outcome` and, for the host's own app, `authorizeUrl`). A start without `mode` is add-only: OMP refuses to overwrite a stored account and the status reports `outcome.kind: "already_listed"`; `mode: "replace"` overwrites only `replaceAccount`. The daemon never opens a browser. Only a direct loopback or local IPC connection gets `authorizeUrl` and may call `submit_code`, which answers OMP's paste prompt with the browser's redirect address; relay and remote clients get `not_allowed`. Tokens never appear in any message, and neither the link nor pasted text reaches a log. Clients poll `get_status`; there is no push. A start while one runs answers `error: "already_running"` with the running status. The link flow is gated on `features.ompAccountLoginLink`.
 
 ## Message Shape
 

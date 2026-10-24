@@ -25,6 +25,7 @@ function plugin(input: {
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [
       {
         id: "report",

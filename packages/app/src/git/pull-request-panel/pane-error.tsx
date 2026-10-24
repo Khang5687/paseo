@@ -29,7 +29,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     gap: theme.spacing[3],
     paddingHorizontal: theme.spacing[4],
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   },
   message: {
     fontSize: theme.fontSize.sm,

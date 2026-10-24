@@ -31,6 +31,7 @@ export const es: TranslationResources = {
     back: "Atrás",
     loading: "Cargando...",
     actions: {
+      save: "Guardar",
       back: "Atrás",
       cancel: "Cancelar",
       close: "Cerrar",
@@ -124,6 +125,8 @@ export const es: TranslationResources = {
     input: {
       accessibilityLabel: "Agente de mensajes...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "Pantalla completa",
+      exitFullscreen: "Salir de pantalla completa",
       focusHint: "{{shortcut}}para enfocar",
       addAttachment: "Agregar archivo adjunto",
       interruptAgent: "agente de interrupción",
@@ -380,6 +383,7 @@ export const es: TranslationResources = {
       details: "Detalles",
     },
     dictation: {
+      paused: "Micrófono interrumpido. Esperando para reanudar…",
       start: "Iniciar dictado de voz",
       cancel: "Cancelar dictado",
       retry: "Reintentar el dictado",
@@ -389,6 +393,7 @@ export const es: TranslationResources = {
       failedRetry: "El dictado falló. Toca reintentar.",
     },
     question: {
+      responseFailed: "No se pudo enviar tu respuesta. Inténtalo de nuevo.",
       submit: "Entregar",
       next: "Siguiente",
       answerPlaceholder: "Escribe tu respuesta...",
@@ -404,6 +409,9 @@ export const es: TranslationResources = {
         started: "Iniciada",
         completed: "Completada",
       },
+    },
+    turnFooter: {
+      workedFor: "Trabajó durante {{duration}}",
     },
     compaction: {
       loading: "Compactando...",
@@ -488,6 +496,7 @@ export const es: TranslationResources = {
       openToSide: "Abrir al lado",
       copyPath: "Copiar ruta",
       copyRelativePath: "Copiar ruta relativa",
+      copyFullPath: "Copiar ruta completa",
       revealIn: "Mostrar en {{target}}",
       download: "Descargar",
       addToChat: "Añadir al chat",
@@ -631,6 +640,9 @@ export const es: TranslationResources = {
       updateHost: "Actualiza el host para usar el renderizador de terminal nativo.",
       unableToSubscribe: "No se puede suscribir al terminal",
     },
+    sheet: {
+      openAsTab: "Abrir como pestaña",
+    },
     tabs: {
       loading: "Cargando...",
       modified: "Cambios sin guardar",
@@ -646,7 +658,7 @@ export const es: TranslationResources = {
       },
       switcher: {
         trigger: "Cambiar pestañas ({{count}}abierto)",
-        title: "Cambiar pestaña",
+        title: "Pestañas del workspace",
         searchPlaceholder: "Pestañas de búsqueda",
       },
       menu: {
@@ -745,6 +757,7 @@ export const es: TranslationResources = {
     header: {
       actions: {
         workspaceActions: "AccionesWorkspace",
+        workspaceActionsUnhealthy: "Acciones del workspace, hay un servicio con problemas",
         newAgent: "Nuevo agente",
         newTerminal: "Nueva terminal",
         newBrowser: "Nueva pestaña del navegador",
@@ -793,6 +806,8 @@ export const es: TranslationResources = {
         exitCode: "salir de{{code}}",
         startFailed: "No se pudo iniciar{{scriptName}}",
         stopFailed: "No se pudo detener{{scriptName}}",
+        running: "En ejecución",
+        runningCount: "{{count}} en ejecución",
       },
     },
     tree: {
@@ -1021,6 +1036,47 @@ export const es: TranslationResources = {
         actions: {
           viewPullRequest: "Ver",
           openOn: "Abrir en {{brand}}",
+          addToChat: "Añadir al chat",
+          addAllToChat: "Añadir todo al chat",
+          addingToChat: "Añadiendo...",
+        },
+        checksOverview: {
+          headline: {
+            actionRequired: "Algunas comprobaciones requieren tu atención",
+            failure: "Algunas comprobaciones no se superaron",
+            pending: "Algunas comprobaciones aún no han terminado",
+            success: "Todas las comprobaciones se superaron",
+            none: "Sin comprobaciones",
+          },
+          count: {
+            actionRequired: "{{count}} con acción pendiente",
+            warning: "{{count}} con advertencia",
+            failure: "{{count}} con error",
+            pending: "{{count}} en curso",
+            manual: "{{count}} manual(es)",
+            success: "{{count}} superada(s)",
+            ignored: "{{count}} omitida(s)",
+          },
+          detailOne: "Comprobación: {{parts}}",
+          detailMany: "Comprobaciones: {{parts}}",
+          groupOne: {
+            actionRequired: "{{count}} comprobación con acción pendiente",
+            warning: "{{count}} comprobación con advertencia",
+            failure: "{{count}} comprobación con error",
+            pending: "{{count}} comprobación en curso",
+            manual: "{{count}} comprobación manual",
+            success: "{{count}} comprobación superada",
+            ignored: "{{count}} comprobación omitida",
+          },
+          groupMany: {
+            actionRequired: "{{count}} comprobaciones con acción pendiente",
+            warning: "{{count}} comprobaciones con advertencia",
+            failure: "{{count}} comprobaciones con error",
+            pending: "{{count}} comprobaciones en curso",
+            manual: "{{count}} comprobaciones manuales",
+            success: "{{count}} comprobaciones superadas",
+            ignored: "{{count}} comprobaciones omitidas",
+          },
         },
         checksSummary: {
           passedLabel: "pasó",
@@ -1034,17 +1090,21 @@ export const es: TranslationResources = {
           checks: "cheques",
           pipeline: "Pipeline",
           reviews: "Reseñas",
+          activity: "Actividad",
         },
         empty: {
           noJobs: "Sin trabajos",
           loadingPipeline: "Cargando pipeline...",
           pipelineJobsLoadFailed: "No se pudieron cargar los trabajos del pipeline",
           allowedToFail: "permitido fallar",
+          noActivity: "Aún no hay actividad",
         },
         approvals: "{{given}} de {{required}} aprobaciones",
         accessibility: {
           pullRequest: "Solicitud de extracción n.°{{number}}",
           pullRequest_mr: "Solicitud de fusión !{{number}}",
+          commentActions: "Acciones del comentario",
+          threadActions: "Acciones del hilo",
           checkStatus: {
             passed: "Superado",
             failed: "Fallido",
@@ -1063,16 +1123,18 @@ export const es: TranslationResources = {
           open: "Abierto",
         },
         activity: {
-          commented: "Comentado",
-          approved: "Aprobado",
-          requestedChanges: "Cambios solicitados",
-          reviewed: "Revisado",
+          commented: "Comentó",
+          approved: "Aprobó",
+          requestedChanges: "Solicitó cambios",
+          reviewed: "Revisó",
         },
         time: {
           justNow: "En este momento",
         },
         thread: {
           discussion: "Hilo de discusión",
+          resolved: "Resuelto",
+          outdated: "Desactualizado",
         },
         errors: {
           statusLoadFailed: "No se puede cargar el estado de la solicitud de extracción",
@@ -1142,7 +1204,17 @@ export const es: TranslationResources = {
     },
   },
   sidebar: {
+    statusGroupAccessibility: "Grupo {{label}}",
+    unsentDraft: "Borrador sin enviar",
+    statusBucket: {
+      needsInput: "Necesita datos",
+      failed: "Con error",
+      readyToReview: "Para revisar",
+      working: "En ejecución",
+      done: "Terminado",
+    },
     display: {
+      showBackground: "Mostrar espacios en segundo plano",
       trigger: "Preferencias de visualización",
       heading: "Visualización",
       grouping: {
@@ -1189,6 +1261,10 @@ export const es: TranslationResources = {
     },
     pinned: {
       title: "Anclados",
+    },
+    settled: {
+      title: "Resueltos",
+      titleWithCount: "Resueltos ({{count}})",
     },
     host: {
       noHost: "Sin anfitrión",
@@ -1280,6 +1356,10 @@ export const es: TranslationResources = {
         rename: "Cambiar nombre del espacio de trabajo",
         pin: "Anclar arriba",
         unpin: "Desanclar",
+        settle: "Resolver",
+        unsettle: "Reabrir",
+        settleWorkspace: "Marcar espacio de trabajo como resuelto",
+        unsettleWorkspace: "Reabrir espacio de trabajo",
         archive: "Archivo",
         archiveWorkspace: "Archivar espacio de trabajo",
         hideFromSidebar: "Ocultar de la barra lateral",
@@ -1318,8 +1398,9 @@ export const es: TranslationResources = {
     },
     fields: {
       project: "Proyecto",
-      base: "Base",
+      branch: "Rama",
       baseNotApplicable: "No aplicable",
+      host: "Host",
     },
     titlePlaceholder: "Título (opcional)",
     errors: {
@@ -1363,6 +1444,9 @@ export const es: TranslationResources = {
     quitting: {
       title: "Saliendo dePaseo...",
       detail: "Deteniendo el demonio local.",
+    },
+    quitConfirm: {
+      hint: "Mantén ⌘Q o pulsa dos veces para salir",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -1656,13 +1740,18 @@ export const es: TranslationResources = {
     title: "Agregar proveedor",
     search: "Proveedores de búsqueda",
     noProviders: "No se encontraron proveedores",
+    clearSearch: "Borrar búsqueda",
     actions: {
       add: "Agregar",
+      addProvider: "Añadir {{provider}}",
       adding: "Añadiendo",
       installed: "Instalado",
       cancel: "Cancelar",
       installInstructions: "Instrucciones de instalación",
       installInstructionsFor: "Instrucciones de instalación de{{provider}}",
+    },
+    types: {
+      acp: "ACP",
     },
     errors: {
       unableToInstall: "No se puede instalar el proveedor",
@@ -1767,6 +1856,12 @@ export const es: TranslationResources = {
       helper: "Conéctate a un daemon de Paseo en el host remoto.",
       fields: {
         target: "Host SSH",
+        password: "Contraseña del daemon",
+        optional: "Opcional",
+      },
+      passwordVisibility: {
+        show: "Mostrar contraseña",
+        hide: "Ocultar contraseña",
       },
       actions: {
         cancel: "Cancelar",
@@ -1997,6 +2092,8 @@ export const es: TranslationResources = {
     dismiss: "Despedir",
   },
   contextWindow: {
+    noData: "No hay datos de contexto",
+    accessibilityNoData: "Ventana de contexto: No hay datos de contexto",
     title: "ventana contextual",
     used: "{{percentage}}% utilizado",
     tokens: "Fichas{{used}}/{{max}}",
@@ -2004,6 +2101,17 @@ export const es: TranslationResources = {
     accessibility: "Ventana de contexto{{percentage}}% utilizada",
   },
   review: {
+    feedback: {
+      send: "Enviar comentarios ({{count}})",
+      sending: "Enviando comentarios ({{count}})",
+      chooseAgent: "Elegir un agente",
+      sent: "Comentarios enviados a {{recipient}}",
+      "no-agents": "Abre una pestaña de agente en este espacio de trabajo para enviar comentarios.",
+      disconnected: "Conéctate al host para enviar comentarios.",
+      "no-context": "Los comentarios guardados ya no coinciden con este diff.",
+      failed: "No se pudieron enviar los comentarios. Inténtalo de nuevo.",
+      prompt: "Por favor, atiende esta revisión de código.",
+    },
     comment: {
       add: "Agregar comentario de revisión",
       edit: "Editar comentario de revisión",
@@ -2014,6 +2122,186 @@ export const es: TranslationResources = {
       cancelAccessibility: "Cancelar comentario de revisión",
       save: "Comentario",
       saveAccessibility: "Guardar comentario de revisión",
+    },
+  },
+  ompAccountRouting: {
+    login: {
+      start: "Añadir cuenta de Claude",
+      elsewhere: "Abre Paseo en el ordenador anfitrión para añadir una cuenta.",
+      update: "Actualiza Paseo y Oh My Pi en el anfitrión para añadir cuentas aquí.",
+      inProgress: "Inicio de sesión en curso",
+      continue: "Continuar",
+      cancel: "Cancelar",
+      cancelSignIn: "Cancelar inicio de sesión",
+      done: "Listo",
+      details: "Detalles",
+      tryAgain: "Reintentar",
+      close: "Cerrar",
+      justAdded: "Recién añadida",
+      warning: {
+        body: "Paseo guarda un inicio de sesión por cada cuenta de Claude. Inicia sesión en claude.ai con la cuenta que quieres añadir.",
+        existing: "Ya añadidas: {{accounts}}",
+        alertTitle: "Comprueba qué cuenta usa tu navegador",
+        alertDescription:
+          "Si claude.ai sigue con la sesión de una cuenta ya añadida, cierra sesión o cambia de cuenta antes. Una ventana privada siempre empieza sin sesión.",
+        guard: "Si inicias sesión con una cuenta ya añadida, Paseo se detiene y no cambia nada.",
+      },
+      preparing: "Preparando el enlace de inicio de sesión...",
+      link: {
+        title: "Iniciar sesión en Claude",
+        step: "Abre el enlace e inicia sesión con la cuenta que quieres añadir",
+        open: "Abrir página de inicio de sesión",
+        copy: "Copiar enlace",
+        copied: "Copiado",
+        label: "Enlace de inicio de sesión",
+        hint: "Para usar una ventana privada u otro dispositivo, copia el enlace",
+        waiting: "Esperando al navegador...",
+        pasteInstead: "Pegar la dirección",
+      },
+      paste: {
+        label: "Dirección o código",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Tras aprobar, el navegador puede mostrar una página que no carga. Copia la dirección completa de la barra de direcciones, o el código que muestra Claude, y pégala aquí.",
+        submit: "Enviar",
+        checking: "Comprobando...",
+        error: {
+          invalid_input: "Eso no es una dirección ni un código de inicio de sesión",
+          wrong_login:
+            "Esa dirección pertenece a un enlace anterior. Usa el enlace que se muestra aquí.",
+          not_waiting: "Este inicio de sesión ya terminó",
+          not_allowed: "Solo Paseo en el ordenador anfitrión puede enviar esto",
+          unreachable: "No se pudo contactar con el anfitrión. Inténtalo de nuevo.",
+        },
+      },
+      verifying: "Comprobando el inicio de sesión...",
+      result: {
+        added: {
+          title: "Añadida {{account}}",
+          titleUnnamed: "Cuenta añadida",
+          description: "{{organization}}. El enrutamiento automático ya puede usarla.",
+          descriptionUnnamed: "El enrutamiento automático ya puede usarla.",
+          billingEnabled:
+            "El uso extra de pago está activado en esta cuenta. El enrutamiento automático la omite hasta que lo desactives en los ajustes de Claude.",
+          billingUnknown:
+            "Asegúrate de que el uso extra de pago esté desactivado para esta cuenta en los ajustes de Claude. El enrutamiento automático omite las cuentas que lo tienen activado.",
+        },
+        alreadyListed: {
+          title: "{{account}} ya está añadida",
+          titleUnnamed: "Esa cuenta ya está añadida",
+          description:
+            "No cambió nada. Tu navegador inició sesión con una cuenta que Paseo ya tiene. Cierra sesión en claude.ai o usa una ventana privada y vuelve a intentarlo.",
+        },
+        replaced: {
+          title: "Inicio de sesión reemplazado para {{account}}",
+          titleUnnamed: "Inicio de sesión guardado reemplazado",
+          description: "No se añadió ninguna cuenta. Se usa el nuevo inicio de sesión.",
+        },
+        failed: "Falló el inicio de sesión",
+        cancelled: "Inicio de sesión cancelado",
+      },
+      failure: {
+        timeout: "El enlace de inicio de sesión caducó tras 10 minutos. No cambió nada.",
+        omp_failed:
+          "Oh My Pi no pudo terminar el inicio de sesión. No cambió nada. Inténtalo de nuevo, o ejecuta omp en una terminal y escribe /login.",
+        spawn_failed: "Paseo no pudo iniciar Oh My Pi en este ordenador.",
+        unreachable:
+          "Se perdió el contacto con el anfitrión. Cuando se reconecte, revisa la lista de cuentas antes de reintentar.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Se aplica a todos los agentes OMP gestionados por Paseo en este host. Otros hosts y terminales independientes no cambian.",
+      account: "Cuenta",
+      automatic: "Automática",
+      useForAuto: "Usar en el enrutamiento automático",
+      auto: "Enrutamiento automático",
+      priority: "Prioridad de reserva",
+      priorityHelp:
+        "Cuando la cuenta actual se agota, Paseo cambia a la cuenta incluida con más uso disponible. Este orden desempata.",
+      addAccountHint:
+        "Para añadir una cuenta, ejecuta omp en una terminal, escribe /login e inicia sesión con otra cuenta de Claude.",
+      current: "Seleccionada",
+      serving: "En uso",
+      lastServed: "Último uso",
+      excluded: "Excluida del enrutamiento automático",
+      missing: "Cuenta guardada no disponible",
+      fiveHour: "5 horas",
+      weekly: "Semanal",
+      tier: "Nivel de suscripción",
+      unknownTier: "Nivel de suscripción desconocido",
+      unknownBudget: "Límite absoluto desconocido",
+      consumed: "Consumido",
+      remaining: "Restante",
+      stale: "Observación desactualizada",
+      unknownOrganization: "Organización desconocida",
+      detailsPending: "Los detalles aparecen cuando un agente de Oh My Pi está en ejecución",
+      search: "Buscar cuentas",
+    },
+    actions: {
+      moveUp: "Subir",
+      moveDown: "Bajar",
+    },
+    status: {
+      loading: "Cargando el enrutamiento de cuentas",
+      empty: "No se han observado cuentas de Claude",
+      noRuntime: "Las cuentas aparecen cuando hay un agente de Oh My Pi en ejecución.",
+      unsupported:
+        "Este host no ha verificado la compatibilidad con el enrutamiento de cuentas de OMP",
+      offline: "Host sin conexión; se muestran los últimos ajustes confirmados",
+      readOnly: "Puedes ver estos ajustes, pero no cambiarlos",
+      pending: "Guardando ajustes",
+      conflict: "Los ajustes cambiaron en otro lugar; se muestra el último estado confirmado",
+      paused: "Esperando una cuenta incluida disponible",
+      recovered: "Cuenta incluida disponible",
+      unknownUsage: "Uso desconocido",
+      summaryPaused: "En pausa: ninguna cuenta incluida tiene uso disponible.",
+      summaryPausedResumes:
+        "En pausa: ninguna cuenta incluida tiene uso disponible. Se reanuda {{time}}",
+      summaryUsing: "Usando {{account}}",
+      summaryAuto: "El modo automático elige la cuenta con más uso disponible",
+    },
+    reason: {
+      no_account: "No hay ninguna cuenta seleccionada",
+      source_changed: "Cambió el origen de credenciales nativo seleccionado",
+      source_inaccessible:
+        "Este entorno de ejecución no puede acceder a la cuenta nativa seleccionada",
+      billing_enabled:
+        "Los créditos de uso de pago están activados; el enrutamiento solo con uso incluido no puede usar esta cuenta",
+      billing_unknown: "Los ajustes de créditos de uso de pago no se han verificado recientemente",
+      quota_blocked: "El uso incluido no está disponible para esta solicitud",
+      entitlement_unavailable:
+        "El acceso al modelo no está disponible o no se ha verificado para esta cuenta",
+      auth_unavailable: "La autenticación de la cuenta nativa no está disponible",
+      unsupported_transport:
+        "Este transporte del proveedor no admite el enrutamiento solo con uso incluido",
+      unsupported_runtime: "Este entorno de ejecución de OMP no admite el enrutamiento gestionado",
+      persistence_failed: "No se pudieron guardar los ajustes de enrutamiento",
+      host_unavailable: "Host de enrutamiento no disponible",
+      cancelled: "Solicitud cancelada",
+      metadata_pending: "Verificando la disponibilidad de la cuenta",
+      all_unavailable: "Ninguna cuenta incluida está disponible ahora",
+      auto_disabled:
+        "El enrutamiento automático está desactivado; selecciona una cuenta o actívalo para continuar",
+      provider_failed: "No se pudo verificar la disponibilidad de la cuenta",
+    },
+    mutationError: {
+      conflict:
+        "Los ajustes cambiaron en otro lugar; revisa el último estado antes de volver a intentarlo",
+      invalid_account: "Esa cuenta nativa ya no está en el catálogo",
+      unsupported: "Los controles de enrutamiento de cuentas no están disponibles en este host",
+      persistence_failed:
+        "No se guardaron los ajustes; se mantienen los últimos ajustes confirmados",
+    },
+    values: {
+      used: "{{percent}}% usado",
+      reset: "se restablece {{time}}",
+      observed: "observado {{time}}",
+      limitReached: "Límite {{window}} alcanzado",
+      limitReachedReset: "Límite {{window}} alcanzado · se restablece {{time}}",
+      account: "Cuenta {{row}}",
+      serving: "{{account}} está atendiendo a {{agent}}",
+      priority: "Prioridad {{position}}",
     },
   },
   settings: {
@@ -2131,6 +2419,7 @@ export const es: TranslationResources = {
           queue: "Cola",
         },
       },
+      defaultEditor: "Editor predeterminado",
       serviceUrls: {
         options: {
           ask: "Preguntar",
@@ -2265,6 +2554,85 @@ export const es: TranslationResources = {
         },
         moveUp: "Mover hacia arriba",
         moveDown: "Mover hacia abajo",
+      },
+      background: {
+        title: "Fondo",
+        applyTo: {
+          title: "Aplicar a",
+          options: {
+            both: "Ambos",
+            light: "Claro",
+            dark: "Oscuro",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Imágenes de fondo",
+          none: "Ninguno",
+          addImage: "Añadir imagen…",
+          importDefaultName: "Imagen",
+        },
+        menu: {
+          actions: "Acciones para {{name}}",
+          edit: "Editar…",
+          delete: "Eliminar",
+          details: "Detalles",
+        },
+        undo: {
+          action: "Deshacer",
+          accessibilityLabel: "Deshacer cambio de fondo",
+        },
+        catalog: {
+          browse: "Explorar",
+          hint: "Instala más fondos desde este complemento",
+        },
+        visibility: {
+          title: "Visibilidad de la imagen",
+          hint: "Paseo mantiene el texto legible automáticamente, por lo que las imágenes claras pueden mostrar menos imagen.",
+        },
+        blur: {
+          title: "Desenfoque",
+          options: {
+            off: "Desactivado",
+            low: "Bajo",
+            medium: "Medio",
+            high: "Alto",
+          },
+        },
+        showBehindSidebar: "Mostrar detrás de la barra lateral",
+        showBehindContent: "Mostrar detrás del contenido",
+        status: {
+          reducedTransparency:
+            "Oculto porque Reducir transparencia está activado en los ajustes del sistema",
+          forcedColors: "Oculto mientras el modo de alto contraste está activado",
+          error: "No se pudo mostrar el fondo",
+        },
+        errors: {
+          select: "No se pudo aplicar el fondo: {{message}}",
+          import: "No se pudo importar la imagen: {{message}}",
+          update: "No se pudieron guardar los cambios: {{message}}",
+          remove: "No se pudo eliminar el fondo: {{message}}",
+        },
+        edit: {
+          title: "Editar fondo",
+          name: "Nombre",
+          focal: "Punto focal",
+          focalHint: "Toca la parte de la imagen que debe mantenerse visible.",
+          focalAccessibility: "Elegir punto focal",
+          save: "Guardar",
+          saving: "Guardando…",
+        },
+        delete: {
+          title: '¿Eliminar "{{name}}"?',
+          message: "Esto elimina la imagen de este dispositivo.",
+          confirm: "Eliminar",
+        },
+        details: {
+          title: "Detalles",
+          author: "Autor",
+          license: "Licencia",
+          source: "Origen",
+          openSource: "Abrir origen",
+        },
       },
       fonts: {
         title: "Fuentes",
@@ -2527,6 +2895,10 @@ export const es: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Estilo predeterminado",
+          hint: "Los proveedores pueden cambiarlo",
+        },
         unavailable: "Connect to this host to manage agents",
       },
       workspaces: {
@@ -2712,6 +3084,9 @@ export const es: TranslationResources = {
         discovered: "descubierto",
         custom: "Modelos personalizados",
         updated: "{{time}}actualizado",
+        disabledCount: "{{count}} desactivados",
+        toggleModel: "Activar {{model}}",
+        failedToToggle: "No se pudo actualizar {{model}}",
       },
       diagnostic: {
         title: "Diagnóstico",
@@ -2727,6 +3102,12 @@ export const es: TranslationResources = {
         none: "No hay diagnóstico disponible",
         failedToFetch: "No se pudo recuperar el diagnóstico",
         unknownError: "Error desconocido",
+      },
+      featureDefaults: {
+        title: "Valores predeterminados para nuevos agentes",
+        providerDefault: "Predeterminado del proveedor",
+        on: "Activado",
+        off: "Desactivado",
       },
     },
     project: {
