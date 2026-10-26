@@ -8,6 +8,7 @@ import {
   parseColor,
   relativeLuminance,
 } from "./contrast";
+import { THEME_OPTIONS } from "@/styles/theme";
 
 const DARK_MUTED = parseColor("#A1A5A4");
 const DARK_BASE = parseColor("#181B1A");
@@ -207,5 +208,25 @@ describe("computeArtLimit", () => {
     expect(measuredLight).toBeGreaterThan(
       computeArtLimit({ ...LIGHT, luminance: null, moreContrast: false }),
     );
+  });
+});
+
+describe("built-in themes", () => {
+  // The backdrop dims art to this limit over each theme's real tokens. Before the light-theme fix
+  // the light theme showed ~3% art, which reads as no skin at all.
+  const themes = THEME_OPTIONS.flatMap((option) =>
+    "theme" in option ? [{ name: option.name, theme: option.theme }] : [],
+  );
+
+  it.each(themes)("$name leaves unmeasured skin art clearly visible", ({ theme }) => {
+    const limit = computeArtLimit({
+      surface: theme.colors.surface0,
+      foreground: theme.colors.foreground,
+      foregroundMuted: theme.colors.foregroundMuted,
+      colorScheme: theme.colorScheme,
+      luminance: null,
+      moreContrast: false,
+    });
+    expect(limit).toBeGreaterThan(0.15);
   });
 });

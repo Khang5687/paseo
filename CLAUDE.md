@@ -162,6 +162,7 @@ Everything else is a short-lived work branch.
 ### Finishing a change
 
 1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body. For any change under `packages/app`, also fill in the platform table from [docs/qa.md](docs/qa.md#every-platform-it-affects). The owner's Mac has no iOS simulator or Android emulator, so the mobile check is the web app at phone width (390×844): `useIsCompactFormFactor()` is breakpoint-based, so that renders the compact layout phones get. Reach the change by tapping, not hovering or right-clicking, and attach the screenshot. The iOS and Android rows then read `Not run (no device); phone-width web checked`, plus anything native-only you could not check: `.native` files, the soft keyboard, safe areas.
+   Then register the change in `scripts/fork-features.json` under its PR number (see "Fork features and fork-check") and run `node scripts/fork-check.mjs --pr <N>`.
 2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
 3. Mark the PR ready for review, set your handoff entry to `ready`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
 4. The integrator merges on "build it" (see Build it), with a merge commit, never squash or rebase:
@@ -206,12 +207,13 @@ When the owner says "build it", one agent integrates. That agent is the only one
    git merge --no-ff <branch> -m "Merge #N: <PR title>"
    ```
    If a merge conflicts, abort it (`git merge --abort`), set that entry to `blocked: conflicts with main after #M`, and continue with the rest. Conflicts are fixed on the branch, never on `main`.
-3. Sync upstream into `main` as in "Syncing with upstream" (`git fetch upstream && git merge --no-ff --no-edit upstream/main`), resolving any conflict on `main`.
-4. Run `npm ci`, `npm run build:server`, `npm run typecheck`, and `npm run lint`. If a check fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
-5. `git push origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
-6. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
-7. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays.
-8. Report to the owner what merged, what was skipped and why, and the install commands.
+3. Install and build: `npm ci && npm run build:server && npm run build:plugin`.
+4. Run `node scripts/fork-check.mjs`: typecheck, lint, and every fork feature's tests. If it fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
+5. `git push origin main`, then sync upstream with `node scripts/fork-sync.mjs --apply` (see "Syncing with upstream"). It moves `main` only when every fork check passes on the merged result.
+6. `git pull --ff-only origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
+7. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
+8. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays. `../paseo-sync` is not a PR worktree; it stays.
+9. Report to the owner what merged, what was skipped and why, the fork-sync result, and the install commands.
 
 ### Upstream PRs
 
@@ -237,25 +239,36 @@ Scope: only this. Note anything else you find in the PR body under "Seen but not
 Mobile: check the change in the web app at phone width (390×844), reached by tapping, and fill in the docs/qa.md platform table in the PR body.
 Done: draft PR against Khang5687/paseo main, body upstream-ready, marked ready for review. Do not merge.
 Handoff: add your entry to ~/git/paseo-HANDOFF.md when the draft PR opens; set it to ready when done.
+Fork check: add your entry to scripts/fork-features.json with the tests that prove the change.
 Read CLAUDE.md "Fork workflow" first.
 ```
 
 When launching from Paseo, use a worktree workspace (`create_workspace` with `isolation: worktree`, `baseBranch: upstream/main`, `branchName: <type>/<area>-<what>`) so the branch and worktree exist before the agent starts; the brief then only names them. Five agents with five such briefs produce five independent PRs and five handoff entries. The integrator merges the ready ones on "build it", and the owner opens upstream PRs from the same branches later.
 
+### Fork features and fork-check
+
+`scripts/fork-features.json` lists every fork PR merged on `main` with the test files and Playwright specs that prove it works (`tests`, `e2e`). `node scripts/fork-check.mjs` runs typecheck, lint, and those tests, and reports pass or fail per PR. Add `--e2e` for the specs (it starts its own Metro and daemon), `--pr <N>` to check one feature, `--no-static` to skip typecheck and lint. Build the workspace packages first.
+
+- Name tests that fail when the feature breaks. A file you only touched in passing does not prove anything.
+- A PR with nothing to test (docs, build scripts) gets an `"untested": "<reason>"` instead.
+- When upstream ships its own version of a fork feature and you delete ours, keep the entry and add `"retired": "<reason>"`. The check skips it.
+- fork-check fails when a merged fork PR has no entry or a listed test no longer exists. A missing test usually means upstream moved or deleted it, so find where the coverage went before you edit the list.
+
 ### Syncing with upstream
 
-Only the owner or an agent the owner asked does this. `scripts/fork-update.sh` does it as its first step (see below); by hand:
+Never merge upstream straight into `main`. `node scripts/fork-sync.mjs` practice-merges `upstream/main` into fork `main` in a separate worktree, `../paseo-sync`, and writes a report to `~/.paseo-fork-sync/last-report.md`:
 
-```bash
-git fetch upstream
-git checkout main && git merge upstream/main && git push origin main
-```
+- upstream commits that change lines within 3 lines of code a fork PR wrote, grouped by PR. `git blame` on fork `main` names the PR, so this needs no upkeep. This is where upstream replaces or breaks fork work, so read it first. It cannot see a change in a file the fork never edited; the tests catch those.
+- merge conflicts, each with the fork PR that wrote our side.
+- the fork-check result on the merged tree, e2e included.
 
-Resolve conflicts on `main`. Open work branches do not need rebasing; they are still based on an older `upstream/main`, which is fine until their PR conflicts.
+Without `--apply` it only rehearses. A Paseo schedule runs that every night and reports, so you see breakage while upstream is a few commits ahead instead of a hundred. `--apply` pushes the merge to `main` when every check passes; on conflicts it leaves the merge in `../paseo-sync`. Resolve conflicts and fix anything upstream broke there, as commits on top of the merge, then run `node scripts/fork-sync.mjs --apply --resume`. Exit codes: 0 up to date or green, 1 checks failed, 2 conflicts.
+
+Only the owner or an agent the owner asked syncs. `../paseo-sync` is long-lived: it keeps its `node_modules` between runs and reinstalls only when `package-lock.json` changes. Open work branches do not need rebasing; they are still based on an older `upstream/main`, which is fine until their PR conflicts.
 
 ### Running the fork
 
-The owner runs a desktop app built from fork `main` in place of the published Paseo.app. After merging PRs, run `scripts/fork-update.sh` on `main`: it syncs upstream, builds the macOS app, and installs it to `/Applications/Paseo.app`. While any Paseo process runs (the daemon can outlive the window) it stops after the build; quit Paseo, run `paseo daemon stop`, then `scripts/fork-update.sh --install`. Stopping the daemon stops every running agent, so the owner picks the moment; agents never run `--install`.
+The owner runs a desktop app built from fork `main` in place of the published Paseo.app. After merging PRs, run `scripts/fork-update.sh` on `main`: it syncs upstream through `fork-sync --apply` (stopping if a check fails or a merge conflicts), builds the macOS app, and installs it to `/Applications/Paseo.app`. While any Paseo process runs (the daemon can outlive the window) it stops after the build; quit Paseo, run `paseo daemon stop`, then `scripts/fork-update.sh --install`. Stopping the daemon stops every running agent, so the owner picks the moment; agents never run `--install`.
 
 Fork builds have no update feed (`--dir` builds write no `app-update.yml`), so the app never auto-updates back to stock Paseo. The `[auto-updater] … app-update.yml` ENOENT lines in its log are expected. Builds are ad-hoc signed and not notarized.
 
