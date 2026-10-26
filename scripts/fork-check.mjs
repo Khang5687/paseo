@@ -114,6 +114,9 @@ for (const [index, testRun] of planTestRuns(testFiles).entries()) {
         "run",
         ...(testRun.project ? ["--project", testRun.project] : []),
         "--maxWorkers=2",
+        // fork-check looks for behavior regressions, not speed. Some upstream tests sit near
+        // Vitest's 5s default on macOS and fail whenever the machine is busy.
+        "--testTimeout=30000",
         "--reporter=json",
         `--outputFile=${jsonPath}`,
         ...files.map((file) => path.relative(testRun.cwd, file)),
