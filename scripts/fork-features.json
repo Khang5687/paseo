@@ -2,13 +2,11 @@
   {
     "pr": 1,
     "title": "fix(omp): settle /compact when OMP replies without compaction events",
-    "merge": "18b7d9d88",
     "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 2,
     "title": "feat(omp): add /goal slash command backed by OMP goal RPC",
-    "merge": "9e1b4114b",
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/commands.test.ts"
@@ -17,7 +15,6 @@
   {
     "pr": 3,
     "title": "feat(queue): daemon-owned agent message queue",
-    "merge": "d912c2e12",
     "tests": [
       "packages/app/src/composer/daemon-queue.test.ts",
       "packages/app/src/runtime/host-runtime.test.ts",
@@ -37,32 +34,31 @@
       "packages/server/src/server/snapshot-mutation-ownership.test.ts",
       "packages/server/src/server/wire-compat.test.ts"
     ],
-    "e2e": ["packages/app/e2e/browser/agent-message-submission.spec.ts"]
+    "e2e": [
+      "packages/app/e2e/browser/agent-message-submission.spec.ts",
+      "packages/app/e2e/browser/queue-controls.spec.ts"
+    ]
   },
   {
     "pr": 4,
     "title": "chore(fork): build and install the desktop app from fork main",
-    "merge": "c20f1d37c",
     "untested": "fork-update.sh desktop build; exercised by every Build it",
     "tests": []
   },
   {
     "pr": 5,
     "title": "fix(fork): fork-update builds an app that opens",
-    "merge": "9c33de2e5",
     "untested": "fork-update.sh signing; the packaged smoke launch in every build checks it",
     "tests": []
   },
   {
     "pr": 6,
     "title": "fix(omp): report context usage when a session is resumed",
-    "merge": "d1fd9b0be",
     "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 7,
     "title": "feat(sidebar): settle workspaces into a collapsible Settled section",
-    "merge": "72c4fcc86",
     "tests": [
       "packages/app/src/components/sidebar/sidebar-projection.test.ts",
       "packages/app/src/stores/sidebar-collapsed-sections-store/state.test.ts",
@@ -74,14 +70,12 @@
   {
     "pr": 8,
     "title": "docs(fork): shared handoff file and Build it integration for parallel agents",
-    "merge": "e6c60b3b8",
     "untested": "docs only",
     "tests": []
   },
   {
     "pr": 9,
     "title": "fix(omp): show newly installed skills in a running OMP session's / menu",
-    "merge": "eb0400785",
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
@@ -90,25 +84,25 @@
   {
     "pr": 10,
     "title": "fix(app): show newly installed skills in the / menu without restarting",
-    "merge": "5d29f1396",
     "tests": ["packages/server/src/server/agent/agent-manager.test.ts"]
   },
   {
     "pr": 11,
     "title": "feat(desktop): confirm Cmd+Q with a hold-or-press-twice toast",
-    "merge": "5c6935186",
-    "tests": ["packages/desktop/src/features/quit-confirm/policy.test.ts"]
+    "tests": [
+      "packages/desktop/src/features/menu.test.ts",
+      "packages/desktop/src/features/quit-confirm/policy.test.ts"
+    ]
   },
   {
     "pr": 12,
     "title": "feat(sidebar): mark workspaces holding an unsent prompt",
-    "merge": "0899b2303",
-    "tests": ["packages/app/src/stores/workspace-unsent-draft.test.ts"]
+    "tests": ["packages/app/src/stores/workspace-unsent-draft.test.ts"],
+    "e2e": ["packages/app/e2e/browser/sidebar-unsent-prompt.spec.ts"]
   },
   {
     "pr": 13,
     "title": "feat(app): background skins",
-    "merge": "ba9d78bfb",
     "tests": [
       "packages/app/src/plugins/buttons/model.test.ts",
       "packages/app/src/plugins/command-center/contributions.test.ts",
@@ -124,36 +118,38 @@
       "packages/app/src/screens/settings/appearance/background/selection.test.ts",
       "packages/app/src/skins/contrast.test.ts",
       "packages/app/src/skins/image-limits.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 14,
     "title": "feat(app): pick the default editor in Settings",
-    "merge": "adec63628",
-    "tests": ["packages/app/src/hooks/use-preferred-editor.test.ts"]
+    "tests": [
+      "packages/app/src/hooks/use-preferred-editor.test.ts",
+      "packages/app/src/screens/settings/open-location/default-editor.test.tsx",
+      "packages/app/src/workspace/open-in-editor/preferred.test.tsx"
+    ]
   },
   {
     "pr": 15,
     "title": "feat(app): right-click menu for file paths in agent replies",
-    "merge": "a1becdee5",
-    "tests": ["packages/app/src/assistant-file-links/use-file-link.test.tsx"]
+    "tests": ["packages/app/src/assistant-file-links/use-file-link.test.tsx"],
+    "e2e": ["packages/app/e2e/browser/assistant-file-link-menu.spec.ts"]
   },
   {
     "pr": 16,
     "title": "fix(omp): keep /goal running across turns like OMP's own /goal",
-    "merge": "45de53125",
     "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 17,
     "title": "fix(app): keep skin art visible in light themes",
-    "merge": "87bcb4a9b",
-    "tests": ["packages/app/src/skins/contrast.test.ts"]
+    "tests": ["packages/app/src/skins/contrast.test.ts"],
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 18,
     "title": "fix: keep commas inside question answers for every provider",
-    "merge": "cc08422f7",
     "tests": [
       "packages/app/src/components/question-form-card-core.test.ts",
       "packages/app/src/components/question-form-card.browser.test.tsx",
@@ -164,22 +160,22 @@
       "packages/server/src/server/agent/providers/opencode/v2/permissions.test.ts",
       "packages/server/src/server/agent/providers/pi/extensions/rpiv-ask-user-question/index.test.ts",
       "plugins/muse-provider/test/provider.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/question-card.spec.ts"]
   },
   {
     "pr": 20,
     "title": "feat(app): nest subagent workspaces under their parent in the sidebar",
-    "merge": "db4621cbf",
     "tests": [
       "packages/app/src/components/sidebar/sidebar-projection.test.ts",
       "packages/app/src/components/sidebar/workspace-nesting.test.ts",
       "packages/app/src/subagents/workspace-parents.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/subagent-workspace-nesting.spec.ts"]
   },
   {
     "pr": 21,
     "title": "feat: disable models per provider in Provider settings",
-    "merge": "4dc3f545c",
     "tests": [
       "packages/app/src/components/provider-diagnostic-models.test.ts",
       "packages/protocol/src/provider-snapshot-codec.test.ts",
@@ -193,14 +189,12 @@
   {
     "pr": 22,
     "title": "docs(fork): account for mobile in every app change",
-    "merge": "547f5c1a3",
     "untested": "docs only",
     "tests": []
   },
   {
     "pr": 23,
     "title": "fix(app): keep a separate New workspace draft per project",
-    "merge": "928d24ef3",
     "tests": [
       "packages/app/src/stores/draft-keys.test.ts",
       "packages/app/src/stores/draft-store/migration.test.ts"
@@ -210,24 +204,22 @@
   {
     "pr": 28,
     "title": "Output style picker for Claude and OMP, with per-provider feature defaults",
-    "merge": "60ae74118",
     "tests": [
       "packages/server/src/server/agent/agent-manager.test.ts",
       "packages/server/src/server/agent/output-styles.test.ts",
       "packages/server/src/server/agent/providers/claude/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/agent.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/output-style.spec.ts"]
   },
   {
     "pr": 30,
     "title": "feat(cli): look up timeline rows by seq in paseo logs",
-    "merge": "2f39bb160",
     "tests": ["packages/cli/src/commands/agent/logs-seq.test.ts"]
   },
   {
     "pr": 32,
     "title": "feat(client): OMP account-routing snapshot contract",
-    "merge": "7e961524c",
     "tests": [
       "packages/client/src/daemon-client.test.ts",
       "packages/client/src/index.test.ts",
@@ -239,19 +231,16 @@
   {
     "pr": 33,
     "title": "feat(app): add ompAccountRouting copy in all locales",
-    "merge": "eccf14365",
     "tests": ["packages/app/src/i18n/resources.test.ts"]
   },
   {
     "pr": 34,
     "title": "feat(client): OMP account-routing mutations and owned observations",
-    "merge": "02a2ccae9",
     "tests": ["packages/client/src/daemon-client.test.ts", "packages/client/src/index.test.ts"]
   },
   {
     "pr": 35,
     "title": "feat(server): OMP account-routing host policy store and authority",
-    "merge": "20cd380db",
     "tests": [
       "packages/server/src/server/account-routing/authority.test.ts",
       "packages/server/src/server/account-routing/store.test.ts"
@@ -260,7 +249,6 @@
   {
     "pr": 36,
     "title": "feat(protocol): optional OMP routing metadata on usage reports",
-    "merge": "1f8eca5b0",
     "tests": [
       "packages/plugin/src/server/usage.test.ts",
       "packages/protocol/src/messages.test.ts",
@@ -270,19 +258,17 @@
   {
     "pr": 37,
     "title": "fix(app): keep model toggles aligned in the provider sheet",
-    "merge": "0f666fd99",
-    "tests": []
+    "tests": [],
+    "e2e": ["packages/app/e2e/browser/provider-model-toggles.spec.ts"]
   },
   {
     "pr": 38,
     "title": "feat(plugin): emit Claude routing metadata on usage reports",
-    "merge": "f0489c5f3",
     "tests": ["plugins/claude-usage-source/server/usage.test.ts"]
   },
   {
     "pr": 39,
     "title": "feat(server): bridge OMP account.routing JSONL frames to the host authority",
-    "merge": "b80b18403",
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts",
@@ -292,7 +278,6 @@
   {
     "pr": 40,
     "title": "feat(server): attribute OMP usage to the account actually serving",
-    "merge": "27a57e9c8",
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/plugins/usage-sources/index.test.ts"
@@ -301,7 +286,6 @@
   {
     "pr": 41,
     "title": "feat(server): dispatch OMP account routing RPCs and advertise ompAccountRouting",
-    "merge": "8edc5f66d",
     "tests": [
       "packages/server/src/server/account-routing/routing.integration.test.ts",
       "packages/server/src/server/authorization/index.test.ts",
@@ -311,13 +295,11 @@
   {
     "pr": 42,
     "title": "test(server): synthetic end-to-end acceptance for OMP global account routing",
-    "merge": "d1835776c",
     "tests": ["packages/server/src/server/account-routing/routing.acceptance.test.ts"]
   },
   {
     "pr": 43,
     "title": "feat(app): host-global OMP Claude account controls in Settings > Providers",
-    "merge": "1ed9fdd1c",
     "tests": [
       "packages/app/src/omp-account-routing/presentation.test.ts",
       "packages/app/src/omp-account-routing/queries.test.ts",
@@ -328,20 +310,17 @@
   {
     "pr": 44,
     "title": "fix(omp): accept OMP's native billing shape in routing catalogs",
-    "merge": "d366d4864",
     "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   },
   {
     "pr": 45,
     "title": "feat(app): make the OMP Claude account routing section readable",
-    "merge": "4729dc5fa",
     "tests": ["packages/app/src/omp-account-routing/presentation.test.ts"],
     "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 46,
     "title": "feat: add Claude account from OMP account routing settings",
-    "merge": "b16ea1d89",
     "tests": [
       "packages/app/src/omp-account-routing/presentation.test.ts",
       "packages/app/src/omp-account-routing/queries.test.ts",
@@ -358,7 +337,6 @@
   {
     "pr": 47,
     "title": "fix: show OMP account routing section before any OMP agent runs",
-    "merge": "4bc05f325",
     "tests": [
       "packages/app/src/omp-account-routing/presentation.test.ts",
       "packages/server/src/server/account-routing/authority.test.ts",
@@ -371,7 +349,6 @@
   {
     "pr": 48,
     "title": "feat(server): OMP account sign-in link, paste fallback and add-only guard",
-    "merge": "219368e7b",
     "tests": [
       "packages/client/src/daemon-client.test.ts",
       "packages/protocol/src/messages.test.ts",
@@ -389,7 +366,6 @@
   {
     "pr": 49,
     "title": "feat(server): list OMP accounts without a running agent",
-    "merge": "c2df6ade0",
     "tests": [
       "packages/app/src/omp-account-routing/presentation.test.ts",
       "packages/server/src/server/account-routing/authority.test.ts",
@@ -402,7 +378,6 @@
   {
     "pr": 50,
     "title": "feat(app): Add Claude account sheet with sign-in link and paste fallback",
-    "merge": "fb141c7e3",
     "tests": [
       "packages/app/src/i18n/resources.test.ts",
       "packages/app/src/omp-account-routing/add-account-flow.test.ts",
@@ -414,37 +389,34 @@
   {
     "pr": 51,
     "title": "Show question cards with formatted text and one-tap answers",
-    "merge": "30e55eb22",
     "tests": [
       "packages/app/src/components/question-form-card-core.test.ts",
       "packages/app/src/components/question-form-card.browser.test.tsx"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/question-card.spec.ts"]
   },
   {
     "pr": 52,
     "title": "Default output style setting, and Claude Code's built-in styles for OMP",
-    "merge": "5b3f4ca66",
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/daemon-config-store.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/output-style.spec.ts"]
   },
   {
     "pr": 53,
     "title": "fix(omp): show newly installed skills in a running session on released OMP",
-    "merge": "1e5d7f2fc",
     "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   },
   {
     "pr": 54,
     "title": "fix(omp): resolve the rewind entry ID when OMP's prompt echo has none",
-    "merge": "1044ef639",
     "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 55,
     "title": "feat(queue): reorder, delete, pause, clear, and collapse queued messages",
-    "merge": "6b1b47fef",
     "tests": [
       "packages/app/src/composer/daemon-queue.test.ts",
       "packages/app/src/utils/agent-snapshots.test.ts",
@@ -457,24 +429,29 @@
       "packages/server/src/server/session.workspaces.test.ts",
       "packages/server/src/server/session/agent-updates/agent-updates-service.test.ts",
       "packages/server/src/server/wire-compat.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/queue-controls.spec.ts"]
   },
   {
     "pr": 56,
     "title": "fix(app): keep skins visible after the Expo Router upgrade",
-    "merge": "3c9dc382e",
-    "tests": []
+    "tests": [],
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 57,
     "title": "fix(server): let relay clients read why their hello was refused",
-    "merge": "d768d5ea4",
     "tests": ["packages/server/src/server/websocket-server.relay-reconnect.test.ts"]
   },
   {
     "pr": 58,
     "title": "fix(queue): keep images on queued messages",
-    "merge": "51f2a8d97",
-    "tests": ["packages/app/src/composer/daemon-queue.test.ts"]
+    "tests": ["packages/app/src/composer/daemon-queue.test.ts"],
+    "e2e": ["packages/app/e2e/browser/queue-controls.spec.ts"]
+  },
+  {
+    "pr": 59,
+    "title": "chore(fork): check every fork feature before and after upstream syncs",
+    "tests": ["scripts/fork-lib.test.mjs"]
   }
 ]

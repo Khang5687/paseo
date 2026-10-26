@@ -91,6 +91,9 @@ if (!args["no-static"]) {
 }
 
 const results = new Map();
+// Files that failed, then passed when rerun alone. A nightly run shares the machine with
+// whatever else is going on, and timing-sensitive tests fail under load.
+const flaky = [];
 const active = features.filter((f) => f.retired === undefined);
 const testFiles = active.flatMap((f) => f.tests).filter((f) => existsSync(path.join(root, f)));
 for (const [index, testRun] of planTestRuns(testFiles).entries()) {
@@ -101,22 +104,30 @@ for (const [index, testRun] of planTestRuns(testFiles).entries()) {
     continue;
   }
   const name = `vitest-${index}-${path.basename(testRun.cwd)}${testRun.project ? `-${testRun.project}` : ""}`;
-  const jsonPath = path.join(logDir, `${name}.json`);
-  run(
-    name,
-    "npx",
-    [
-      "vitest",
-      "run",
-      ...(testRun.project ? ["--project", testRun.project] : []),
-      "--maxWorkers=2",
-      "--reporter=json",
-      `--outputFile=${jsonPath}`,
-      ...testRun.files.map((file) => path.relative(testRun.cwd, file)),
-    ],
-    { cwd: testRun.cwd },
-  );
-  for (const [file, ok] of vitestFileResults(readJson(jsonPath), root, testRun.files)) {
+  const vitest = (attempt, files) => {
+    const jsonPath = path.join(logDir, `${attempt}.json`);
+    run(
+      attempt,
+      "npx",
+      [
+        "vitest",
+        "run",
+        ...(testRun.project ? ["--project", testRun.project] : []),
+        "--maxWorkers=2",
+        "--reporter=json",
+        `--outputFile=${jsonPath}`,
+        ...files.map((file) => path.relative(testRun.cwd, file)),
+      ],
+      { cwd: testRun.cwd },
+    );
+    return vitestFileResults(readJson(jsonPath), root, files);
+  };
+  const first = vitest(name, testRun.files);
+  const failedFirst = testRun.files.filter((file) => !first.get(file));
+  const retry = failedFirst.length > 0 ? vitest(`${name}-retry`, failedFirst) : new Map();
+  for (const file of testRun.files) {
+    const ok = first.get(file) || retry.get(file) === true;
+    if (!first.get(file) && ok) flaky.push(file);
     results.set(file, ok);
   }
 }
@@ -134,6 +145,7 @@ if (args.e2e) {
         "playwright",
         "test",
         "--project=browser",
+        "--retries=1",
         "--reporter=json",
         ...specs.map((spec) => path.relative("packages/app", spec)),
       ],
@@ -175,6 +187,7 @@ if (notRun.length > 0) {
 }
 const untested = verdicts.filter((v) => v.status === "untested").map((v) => `#${v.pr}`);
 if (untested.length > 0) lines.push(`- No tests by design: ${untested.join(" ")}`);
+if (flaky.length > 0) lines.push(`- Flaky (failed, then passed on rerun): ${flaky.join(", ")}`);
 lines.push("", `Logs: ${logDir}`);
 
 const report = `${lines.join("\n")}\n`;

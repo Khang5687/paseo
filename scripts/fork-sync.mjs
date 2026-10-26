@@ -53,7 +53,8 @@ function git(gitArgs, { cwd, allowFail = false } = {}) {
 
 function step(name, command, commandArgs, cwd) {
   progress(`${name}: ${command} ${commandArgs.join(" ")}`);
-  const result = spawnSync(command, commandArgs, { cwd, stdio: ["ignore", "inherit", "inherit"] });
+  // Build output goes to stderr so stdout carries only the report.
+  const result = spawnSync(command, commandArgs, { cwd, stdio: ["ignore", 2, 2] });
   if (result.status !== 0) throw new Error(`${name} failed (exit ${result.status}).`);
 }
 
