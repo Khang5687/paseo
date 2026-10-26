@@ -247,7 +247,7 @@ When launching from Paseo, use a worktree workspace (`create_workspace` with `is
 
 ### Fork features and fork-check
 
-`scripts/fork-features.json` lists every fork PR merged on `main`: the test files and Playwright specs that prove it works (`tests`, `e2e`) and the source files it changed (`files`). `node scripts/fork-check.mjs` runs typecheck, lint, and those tests, and reports pass or fail per PR. Add `--e2e` for the specs (it starts its own Metro and daemon), `--pr <N>` to check one feature, `--no-static` to skip typecheck and lint. Build the workspace packages first.
+`scripts/fork-features.json` lists every fork PR merged on `main` with the test files and Playwright specs that prove it works (`tests`, `e2e`). `node scripts/fork-check.mjs` runs typecheck, lint, and those tests, and reports pass or fail per PR. Add `--e2e` for the specs (it starts its own Metro and daemon), `--pr <N>` to check one feature, `--no-static` to skip typecheck and lint. Build the workspace packages first.
 
 - Name tests that fail when the feature breaks. A file you only touched in passing does not prove anything.
 - A PR with nothing to test (docs, build scripts) gets an `"untested": "<reason>"` instead.
@@ -258,8 +258,8 @@ When launching from Paseo, use a worktree workspace (`create_workspace` with `is
 
 Never merge upstream straight into `main`. `node scripts/fork-sync.mjs` practice-merges `upstream/main` into fork `main` in a separate worktree, `../paseo-sync`, and writes a report to `~/.paseo-fork-sync/last-report.md`:
 
-- which fork features the incoming upstream commits touch, commit by commit. This is where upstream replaces or breaks fork work, so read it first.
-- merge conflicts, each file with the fork PRs that own it.
+- upstream commits that change lines within 3 lines of code a fork PR wrote, grouped by PR. `git blame` on fork `main` names the PR, so this needs no upkeep. This is where upstream replaces or breaks fork work, so read it first. It cannot see a change in a file the fork never edited; the tests catch those.
+- merge conflicts, each with the fork PR that wrote our side.
 - the fork-check result on the merged tree, e2e included.
 
 Without `--apply` it only rehearses. A Paseo schedule runs that every night and reports, so you see breakage while upstream is a few commits ahead instead of a hundred. `--apply` pushes the merge to `main` when every check passes; on conflicts it leaves the merge in `../paseo-sync`. Resolve conflicts and fix anything upstream broke there, as commits on top of the merge, then run `node scripts/fork-sync.mjs --apply --resume`. Exit codes: 0 up to date or green, 1 checks failed, 2 conflicts.

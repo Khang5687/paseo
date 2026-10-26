@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  conflictOwners,
+  conflictBlocks,
   featureVerdicts,
+  forkOwnersAt,
+  parseBlameOwners,
+  parseHunks,
   parseNameStatusLog,
   planTestRuns,
   playwrightFileResults,
@@ -16,30 +19,24 @@ const queue = {
   title: "keep images on queued messages",
   tests: ["packages/app/src/composer/daemon-queue.test.ts"],
   e2e: ["packages/app/e2e/browser/queue-controls.spec.ts"],
-  files: ["packages/app/src/composer/daemon-queue.ts"],
 };
 const relay = {
   pr: 57,
   title: "relay hello rejection",
   tests: ["packages/server/src/server/websocket-server.relay-reconnect.test.ts"],
-  files: ["packages/server/src/server/websocket-server.ts"],
 };
-const docs = { pr: 8, title: "handoff docs", untested: "docs only", tests: [], files: [] };
+const docs = { pr: 8, title: "handoff docs", untested: "docs only", tests: [] };
 
-test("a test upstream deleted fails validation, a moved owned file only warns", () => {
-  const exists = (file) => file !== queue.tests[0] && file !== relay.files[0];
-  const { errors, warnings } = validateFeatures([queue, relay, docs], { exists, mergedPrs: [] });
-  assert.deepEqual(errors, [
+test("a test upstream deleted fails validation", () => {
+  const exists = (file) => file !== queue.tests[0];
+  assert.deepEqual(validateFeatures([queue, relay, docs], { exists, mergedPrs: [] }), [
     "#58: test packages/app/src/composer/daemon-queue.test.ts no longer exists (moved or deleted upstream?).",
-  ]);
-  assert.deepEqual(warnings, [
-    "#57: owned file packages/server/src/server/websocket-server.ts no longer exists.",
   ]);
 });
 
 test("a merged fork PR without an entry, or an entry with nothing guarding it, fails", () => {
-  const bare = { pr: 60, title: "new feature", tests: [], files: [] };
-  const { errors } = validateFeatures([queue, bare], {
+  const bare = { pr: 60, title: "new feature", tests: [] };
+  const errors = validateFeatures([queue, bare], {
     exists: () => true,
     mergedPrs: [58, 59, 60],
   });
@@ -51,10 +48,7 @@ test("a merged fork PR without an entry, or an entry with nothing guarding it, f
 
 test("retired features are neither validated nor run", () => {
   const retired = { ...queue, retired: "upstream shipped its own" };
-  assert.deepEqual(
-    validateFeatures([retired], { exists: () => false, mergedPrs: [58] }).errors,
-    [],
-  );
+  assert.deepEqual(validateFeatures([retired], { exists: () => false, mergedPrs: [58] }), []);
   assert.deepEqual(featureVerdicts([retired], new Map()), []);
 });
 
@@ -130,7 +124,100 @@ test("a feature fails when any guard fails and is not-run when none ran", () => 
   );
 });
 
-test("the risk report names fork features an upstream commit touches, most-touched first", () => {
+const FORK = "a".repeat(40);
+const UPSTREAM = "b".repeat(40);
+
+/** A blame of `lines`, where each entry is [owner, text] and owner "fork" means PR #57. */
+function blameOf(lines) {
+  const porcelain = lines
+    .map(([owner, text], index) =>
+      [
+        `${owner === "fork" ? FORK : UPSTREAM} ${index + 1} ${index + 1} 1`,
+        "author x",
+        `\t${text}`,
+      ].join("\n"),
+    )
+    .join("\n");
+  return parseBlameOwners(porcelain, (sha) => (sha === FORK ? 57 : null));
+}
+
+const serverFile = blameOf([
+  ["up", "const WS_CLOSE_SERVER_SHUTDOWN = 1001;"],
+  ["up", "const WS_PROTOCOL_VERSION = 1;"],
+  ["fork", "// Let relay clients read the rejection before the close."],
+  ["fork", "export const RELAY_HELLO_REJECTION_CLOSE_DELAY_MS = 1_000;"],
+  ["up", "const WS_RUNTIME_METRICS_FLUSH_MS = 30_000;"],
+  ["up", "const OWNER_SESSION_ADMISSION = {"],
+  ["up", "};"],
+  ["up", ""],
+  ["up", "function a() {"],
+  ["up", "  return 1;"],
+  ["up", "}"],
+  ["up", ""],
+  ["up", "function b() {"],
+  ["up", "  return 2;"],
+  ["up", "}"],
+]);
+
+test("blame lines written by a fork PR are owned by it, upstream lines by nobody", () => {
+  assert.deepEqual(serverFile.owners.slice(0, 5), [null, null, 57, 57, null]);
+  assert.equal(serverFile.lines[3], "export const RELAY_HELLO_REJECTION_CLOSE_DELAY_MS = 1_000;");
+});
+
+test("an upstream hunk next to fork lines names the fork PR; one far away names nobody", () => {
+  const near = parseHunks(
+    ["@@ -6,3 +6,3 @@", " const OWNER_SESSION_ADMISSION = {", "-};", "+} as const;", " "].join(
+      "\n",
+    ),
+  );
+  const far = parseHunks(
+    ["@@ -13,3 +13,3 @@", " function b() {", "-  return 2;", "+  return 3;", " }"].join("\n"),
+  );
+  assert.deepEqual([...forkOwnersAt(serverFile, near, 3)], [57]);
+  assert.deepEqual([...forkOwnersAt(serverFile, far, 3)], []);
+});
+
+test("an upstream hunk spanning lines the fork inserted between is found through its unique lines", () => {
+  // Upstream's old side has the two constants adjacent; on fork main the fork's lines sit between.
+  const hunks = parseHunks(
+    [
+      "@@ -2,2 +2,3 @@",
+      " const WS_PROTOCOL_VERSION = 1;",
+      "-const WS_RUNTIME_METRICS_FLUSH_MS = 30_000;",
+      "+// Flush once a minute.",
+      "+const WS_RUNTIME_METRICS_FLUSH_MS = 60_000;",
+    ].join("\n"),
+  );
+  assert.deepEqual([...forkOwnersAt(serverFile, hunks, 0)], [57]);
+});
+
+test("a block that is not in the file and has no unique line names every fork PR in the file", () => {
+  // "}" appears twice and never twice in a row, so the block cannot be placed.
+  assert.deepEqual([...forkOwnersAt(serverFile, [["}", "}"]], 0)], [57]);
+  assert.deepEqual([...forkOwnersAt(serverFile, [[]], 0)], [57]);
+});
+
+test("conflict blocks are the ours side, in both merge and diff3 marker styles", () => {
+  const text = [
+    "a",
+    "<<<<<<< HEAD",
+    "ours 1",
+    "=======",
+    "theirs 1",
+    ">>>>>>> upstream/main",
+    "b",
+    "<<<<<<< HEAD",
+    "ours 2",
+    "||||||| base",
+    "base 2",
+    "=======",
+    "theirs 2",
+    ">>>>>>> upstream/main",
+  ].join("\n");
+  assert.deepEqual(conflictBlocks(text), [["ours 1"], ["ours 2"]]);
+});
+
+test("name-status logs keep each change's status, both paths of a rename", () => {
   const commits = parseNameStatusLog(
     [
       "\0abc1234\tfix(queue): rework queue track",
@@ -139,54 +226,42 @@ test("the risk report names fork features an upstream commit touches, most-touch
       "",
       "\0def5678\trefactor: move relay code",
       "R100\tpackages/server/src/server/websocket-server.ts\tpackages/server/src/server/ws/server.ts",
-      "",
-      "\0fed9876\tfix(queue): another queue change",
-      "M\tpackages/app/src/composer/daemon-queue.ts",
-      "",
-      "\0aaa0000\tdocs: unrelated",
-      "M\tdocs/product.md",
     ].join("\n"),
   );
-  assert.deepEqual(riskReport([relay, queue], commits), [
+  assert.deepEqual(commits, [
     {
-      pr: 58,
-      title: queue.title,
-      commits: [
-        {
-          sha: "abc1234",
-          subject: "fix(queue): rework queue track",
-          files: [
-            "packages/app/src/composer/daemon-queue.ts",
-            "packages/app/src/composer/daemon-queue.test.ts (deleted)",
-          ],
-        },
-        {
-          sha: "fed9876",
-          subject: "fix(queue): another queue change",
-          files: ["packages/app/src/composer/daemon-queue.ts"],
-        },
+      sha: "abc1234",
+      subject: "fix(queue): rework queue track",
+      changes: [
+        { status: "M", file: "packages/app/src/composer/daemon-queue.ts" },
+        { status: "D", file: "packages/app/src/composer/daemon-queue.test.ts" },
       ],
     },
     {
-      pr: 57,
-      title: relay.title,
-      commits: [
-        {
-          sha: "def5678",
-          subject: "refactor: move relay code",
-          files: ["packages/server/src/server/websocket-server.ts"],
-        },
+      sha: "def5678",
+      subject: "refactor: move relay code",
+      changes: [
+        { status: "R", file: "packages/server/src/server/websocket-server.ts" },
+        { status: "R", file: "packages/server/src/server/ws/server.ts" },
       ],
     },
   ]);
 });
 
-test("conflicted files are attributed to the fork PRs that own them", () => {
-  assert.deepEqual(
-    conflictOwners([queue, relay], ["packages/app/src/composer/daemon-queue.ts", "README.md"]),
-    [
-      { file: "packages/app/src/composer/daemon-queue.ts", prs: [58] },
-      { file: "README.md", prs: [] },
-    ],
-  );
+test("the risk report groups touches by fork owner, most-touched first", () => {
+  const report = riskReport([
+    { sha: "abc", subject: "one", file: "a.ts", owners: new Set([58]) },
+    { sha: "abc", subject: "one", file: "b.ts", owners: new Set([58, 57]) },
+    { sha: "def", subject: "two", file: "a.ts", owners: new Set([58]) },
+  ]);
+  assert.deepEqual(report, [
+    {
+      owner: 58,
+      commits: [
+        { sha: "abc", subject: "one", files: ["a.ts", "b.ts"] },
+        { sha: "def", subject: "two", files: ["a.ts"] },
+      ],
+    },
+    { owner: 57, commits: [{ sha: "abc", subject: "one", files: ["b.ts"] }] },
+  ]);
 });

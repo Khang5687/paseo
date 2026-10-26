@@ -15,14 +15,11 @@ function activeFeatures(features) {
 }
 
 /**
- * Errors make fork-check fail: a guarding test that no longer exists (usually upstream moved
- * or deleted it), a feature with nothing guarding it, or a merged fork PR with no entry.
- * Missing owned files are only warnings: the list goes stale when upstream moves code, and
- * the risk report is the only thing that reads it.
+ * Problems that make fork-check fail: a guarding test that no longer exists (usually upstream
+ * moved or deleted it), a feature with nothing guarding it, or a merged fork PR with no entry.
  */
 export function validateFeatures(features, { exists, mergedPrs }) {
   const errors = [];
-  const warnings = [];
   const listed = new Set(features.map((feature) => feature.pr));
   for (const pr of mergedPrs) {
     if (!listed.has(pr)) {
@@ -39,11 +36,8 @@ export function validateFeatures(features, { exists, mergedPrs }) {
         errors.push(`#${feature.pr}: test ${file} no longer exists (moved or deleted upstream?).`);
       }
     }
-    for (const file of feature.files) {
-      if (!exists(file)) warnings.push(`#${feature.pr}: owned file ${file} no longer exists.`);
-    }
   }
-  return { errors, warnings };
+  return errors;
 }
 
 /**
@@ -107,46 +101,134 @@ export function featureVerdicts(features, results) {
 }
 
 /**
- * Which upstream commits touch files a fork feature owns or tests. These are where upstream
- * replaces or breaks fork work, so they are what a human reads first after a sync.
- * `commits` is [{ sha, subject, changes: [{ status, file }] }].
+ * Per-line owners of a file from `git blame --porcelain`: the fork PR whose commits wrote the
+ * line, "sync" for a line written while resolving an earlier upstream merge, null for upstream.
+ * `ownerOf(sha)` returns that owner for a commit.
  */
-export function riskReport(features, commits) {
-  const owners = new Map();
-  for (const feature of activeFeatures(features)) {
-    for (const file of [...feature.files, ...feature.tests, ...(feature.e2e ?? [])]) {
-      if (!owners.has(file)) owners.set(file, []);
-      owners.get(file).push(feature);
+export function parseBlameOwners(porcelain, ownerOf) {
+  const lines = [];
+  const owners = [];
+  let sha = null;
+  for (const line of porcelain.split("\n")) {
+    const header = /^([0-9a-f]{40}) \d+ \d+/.exec(line);
+    if (header) sha = header[1];
+    else if (line.startsWith("\t")) {
+      lines.push(line.slice(1));
+      owners.push(ownerOf(sha));
     }
   }
-  const byPr = new Map();
-  for (const commit of commits) {
-    for (const { status, file } of commit.changes) {
-      for (const feature of owners.get(file) ?? []) {
-        if (!byPr.has(feature.pr)) byPr.set(feature.pr, { feature, commits: new Map() });
-        const entry = byPr.get(feature.pr).commits;
-        if (!entry.has(commit.sha)) entry.set(commit.sha, { ...commit, files: [] });
-        entry.get(commit.sha).files.push(status === "D" ? `${file} (deleted)` : file);
-      }
-    }
-  }
-  return [...byPr.values()]
-    .map(({ feature, commits: touching }) => ({
-      pr: feature.pr,
-      title: feature.title,
-      commits: [...touching.values()].map(({ sha, subject, files }) => ({ sha, subject, files })),
-    }))
-    .sort((a, b) => b.commits.length - a.commits.length || a.pr - b.pr);
+  return { lines, owners };
 }
 
-/** Fork features owning each conflicted file, for a conflict report. */
-export function conflictOwners(features, conflictedFiles) {
-  return conflictedFiles.map((file) => ({
-    file,
-    prs: activeFeatures(features)
-      .filter((feature) => feature.files.includes(file) || feature.tests.includes(file))
-      .map((feature) => feature.pr),
-  }));
+/** Old-side lines (context and removed) of each hunk in a unified diff of one file. */
+export function parseHunks(diff) {
+  const hunks = [];
+  let current = null;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("@@")) {
+      current = [];
+      hunks.push(current);
+    } else if (current && (line.startsWith(" ") || line.startsWith("-"))) {
+      current.push(line.slice(1));
+    }
+  }
+  return hunks;
+}
+
+/** Ours-side lines of each conflict block in a file with conflict markers. */
+export function conflictBlocks(text) {
+  const blocks = [];
+  let current = null;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("<<<<<<<")) current = [];
+    else if (current && (line.startsWith("|||||||") || line.startsWith("======="))) {
+      blocks.push(current);
+      current = null;
+    } else if (current) current.push(line);
+  }
+  return blocks;
+}
+
+function locateBlock(lines, block) {
+  if (block.length === 0) return -1;
+  outer: for (let start = 0; start + block.length <= lines.length; start += 1) {
+    for (let offset = 0; offset < block.length; offset += 1) {
+      if (lines[start + offset] !== block[offset]) continue outer;
+    }
+    return start;
+  }
+  return -1;
+}
+
+const lineCounts = new WeakMap();
+
+function uniqueLineIndexes(blame, block) {
+  if (!lineCounts.has(blame)) {
+    const counts = new Map();
+    blame.lines.forEach((line, index) => {
+      const seen = counts.get(line);
+      counts.set(line, seen === undefined ? index : -1);
+    });
+    lineCounts.set(blame, counts);
+  }
+  const counts = lineCounts.get(blame);
+  return block.map((line) => counts.get(line) ?? -1).filter((index) => index >= 0);
+}
+
+/**
+ * Fork owners of the lines in `blame` that each block sits on, plus `margin` lines either side
+ * (code next to a fork change usually matters to it). When the fork has edited inside the
+ * block, it is found through the block's lines that occur once in the file, spanning the fork
+ * lines between them. A block with no such line yields every fork owner in the file.
+ */
+export function forkOwnersAt(blame, blocks, margin) {
+  const found = new Set();
+  const addRange = (from, to) => {
+    for (const owner of blame.owners.slice(Math.max(0, from), to)) {
+      if (owner !== null) found.add(owner);
+    }
+  };
+  for (const block of blocks) {
+    const start = locateBlock(blame.lines, block);
+    if (start !== -1) {
+      addRange(start - margin, start + block.length + margin);
+      continue;
+    }
+    const anchors = uniqueLineIndexes(blame, block);
+    if (anchors.length === 0) {
+      addRange(0, blame.owners.length);
+      continue;
+    }
+    const first = Math.min(...anchors);
+    const last = Math.max(...anchors);
+    if (last - first <= block.length + 40) addRange(first - margin, last + margin + 1);
+    else for (const anchor of anchors) addRange(anchor - margin, anchor + margin + 1);
+  }
+  return found;
+}
+
+/**
+ * Groups `touches` ([{ sha, subject, file, owners }]) by fork owner, most-touched first. This
+ * is where upstream replaces or breaks fork work, so it is what a human reads first.
+ */
+export function riskReport(touches) {
+  const byOwner = new Map();
+  for (const touch of touches) {
+    for (const owner of touch.owners) {
+      if (!byOwner.has(owner)) byOwner.set(owner, new Map());
+      const commits = byOwner.get(owner);
+      if (!commits.has(touch.sha)) {
+        commits.set(touch.sha, { sha: touch.sha, subject: touch.subject, files: [] });
+      }
+      commits.get(touch.sha).files.push(touch.file);
+    }
+  }
+  return [...byOwner.entries()]
+    .map(([owner, commits]) => ({ owner, commits: [...commits.values()] }))
+    .sort(
+      (a, b) =>
+        b.commits.length - a.commits.length || String(a.owner).localeCompare(String(b.owner)),
+    );
 }
 
 /** Parses `git log --name-status --format=%x00%h%x09%s` output. */

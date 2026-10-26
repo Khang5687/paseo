@@ -79,7 +79,7 @@ const mergedPrs = (() => {
   }
   return selected ? [] : mergedForkPrs(log.stdout);
 })();
-const validation = validateFeatures(features, {
+const listErrors = validateFeatures(features, {
   exists: (file) => existsSync(path.join(root, file)),
   mergedPrs,
 });
@@ -150,7 +150,7 @@ const verdicts = featureVerdicts(features, results);
 const failing = verdicts.filter((v) => v.status === "fail");
 const notRun = verdicts.filter((v) => v.status === "not-run");
 const staticFailures = staticResults.filter((r) => !r.ok);
-const ok = validation.errors.length === 0 && staticFailures.length === 0 && failing.length === 0;
+const ok = listErrors.length === 0 && staticFailures.length === 0 && failing.length === 0;
 const passing = verdicts.filter((v) => v.status === "pass").length;
 const head = spawnSync("git", ["log", "-1", "--format=%h %s"], { cwd: root, encoding: "utf8" });
 
@@ -166,7 +166,7 @@ if (staticResults.length > 0) {
     `- ${staticResults.map((r) => `${r.name} ${r.ok ? "passed" : `FAILED (${r.logPath})`}`).join(", ")}`,
   );
 }
-for (const error of validation.errors) lines.push(`- Feature list: ${error}`);
+for (const error of listErrors) lines.push(`- Feature list: ${error}`);
 for (const verdict of failing) {
   lines.push(`- FAIL #${verdict.pr} ${verdict.title}: ${verdict.failed.join(", ")}`);
 }
@@ -175,7 +175,6 @@ if (notRun.length > 0) {
 }
 const untested = verdicts.filter((v) => v.status === "untested").map((v) => `#${v.pr}`);
 if (untested.length > 0) lines.push(`- No tests by design: ${untested.join(" ")}`);
-for (const warning of validation.warnings) lines.push(`- Warning: ${warning}`);
 lines.push("", `Logs: ${logDir}`);
 
 const report = `${lines.join("\n")}\n`;

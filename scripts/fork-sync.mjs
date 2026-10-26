@@ -21,7 +21,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { conflictOwners, FEATURES_PATH, parseNameStatusLog, riskReport } from "./fork-lib.mjs";
+import {
+  conflictBlocks,
+  forkOwnersAt,
+  parseBlameOwners,
+  parseHunks,
+  parseNameStatusLog,
+  riskReport,
+} from "./fork-lib.mjs";
 
 const { values: args } = parseArgs({
   options: {
@@ -29,6 +36,7 @@ const { values: args } = parseArgs({
     resume: { type: "boolean", default: false },
     upstream: { type: "string", default: "upstream/main" },
     base: { type: "string", default: "origin/main" },
+    "no-e2e": { type: "boolean", default: false },
     worktree: { type: "string" },
   },
 });
@@ -111,7 +119,49 @@ const baseSha = git(["rev-parse", "--short", base], { cwd: worktree }).out;
 const header = `Fork main ${baseSha}, ${args.upstream} ${upstreamSha}: ${incoming} upstream commit(s) not on fork main.`;
 if (incoming === 0 && !args.resume) finish(0, [header, "Up to date. Nothing to check."]);
 
-const features = JSON.parse(git(["show", `${base}:${FEATURES_PATH}`], { cwd: worktree }).out);
+// Which fork PR wrote each commit on fork main, so blame can name the fork lines an upstream
+// change lands next to. Merges that are not "Merge #N" are earlier upstream syncs; lines
+// written while resolving them belong to the fork too.
+const ownerBySha = new Map();
+const titles = new Map([["sync", "lines written while resolving an earlier upstream merge"]]);
+const forkMerges = git(
+  ["log", "--first-parent", "--merges", "--format=%H %P%x09%s", base, "--not", args.upstream],
+  { cwd: worktree },
+).out;
+for (const line of forkMerges.split("\n").filter(Boolean)) {
+  const [shas, subject] = line.split("\t");
+  const [merge, first, second] = shas.split(" ");
+  const pr = /^Merge #(\d+): (.*)/.exec(subject);
+  if (!pr) {
+    ownerBySha.set(merge, "sync");
+    continue;
+  }
+  titles.set(Number(pr[1]), pr[2]);
+  ownerBySha.set(merge, Number(pr[1]));
+  const branch = git(["rev-list", `${first}..${second}`, "--not", args.upstream], {
+    cwd: worktree,
+  });
+  for (const sha of branch.out.split("\n").filter(Boolean)) ownerBySha.set(sha, Number(pr[1]));
+}
+const blames = new Map();
+function blameOf(file) {
+  if (!blames.has(file)) {
+    const blame = git(["blame", "--porcelain", base, "--", file], {
+      cwd: worktree,
+      allowFail: true,
+    });
+    const parsed = blame.ok
+      ? parseBlameOwners(blame.out, (sha) => ownerBySha.get(sha) ?? null)
+      : null;
+    blames.set(file, parsed?.owners.some((owner) => owner !== null) ? parsed : null);
+  }
+  return blames.get(file);
+}
+const ownerLabel = (owner) =>
+  owner === "sync" ? titles.get(owner) : `#${owner} ${titles.get(owner)}`;
+
+progress(`attributing ${incoming} upstream commit(s) to fork lines`);
+const touches = [];
 const commits = parseNameStatusLog(
   git(
     ["log", "--no-merges", "--name-status", "--format=%x00%h%x09%s", `${base}..${args.upstream}`],
@@ -120,11 +170,34 @@ const commits = parseNameStatusLog(
     },
   ).out,
 );
-const risks = riskReport(features, commits);
-const riskLines = [`## Upstream changes touching fork features (${risks.length} features)`, ""];
+for (const commit of commits) {
+  for (const { status, file } of commit.changes) {
+    const blame = status === "A" ? null : blameOf(file);
+    if (!blame) continue;
+    // A deleted or renamed file takes every fork line in it along; [[]] matches nowhere.
+    const blocks =
+      status === "M"
+        ? parseHunks(
+            git(["show", "--format=", "-U3", commit.sha, "--", file], { cwd: worktree }).out,
+          )
+        : [[]];
+    const owners = forkOwnersAt(blame, blocks, 3);
+    if (owners.size === 0) continue;
+    const suffix = { D: " (deleted)", R: " (renamed)" }[status] ?? "";
+    const label = `${file}${suffix}`;
+    touches.push({ sha: commit.sha, subject: commit.subject, file: label, owners });
+  }
+}
+const risks = riskReport(touches);
+const riskLines = [
+  `## Upstream changes next to fork code (${risks.length} fork PRs)`,
+  "",
+  "Upstream commits that change lines within 3 lines of code a fork PR wrote.",
+  "",
+];
 if (risks.length === 0) riskLines.push("None.");
 for (const risk of risks) {
-  riskLines.push(`- #${risk.pr} ${risk.title}`);
+  riskLines.push(`- ${ownerLabel(risk.owner)}`);
   for (const c of risk.commits) riskLines.push(`  - ${c.sha} ${c.subject} (${c.files.join(", ")})`);
 }
 const riskSection = riskLines.join("\n");
@@ -137,13 +210,20 @@ if (!args.resume) {
   });
   if (!merge.ok) {
     const conflicted = git(["diff", "--name-only", "--diff-filter=U"], { cwd: worktree }).out;
-    const owners = conflictOwners(features, conflicted.split("\n").filter(Boolean));
+    const conflictLines = [];
+    for (const file of conflicted.split("\n").filter(Boolean)) {
+      const blame = blameOf(file);
+      const text = readFileSync(path.join(worktree, file), "utf8");
+      const owners = blame ? [...forkOwnersAt(blame, conflictBlocks(text), 0)] : [];
+      conflictLines.push(
+        `- ${file}`,
+        ...owners.map((owner) => `  - fork side: ${ownerLabel(owner)}`),
+      );
+    }
     const conflictSection = [
-      `## Merge conflicts (${owners.length} files)`,
+      `## Merge conflicts (${conflicted.split("\n").filter(Boolean).length} files)`,
       "",
-      ...owners.map(
-        (o) => `- ${o.file}${o.prs.length ? ` (fork ${o.prs.map((n) => `#${n}`).join(" ")})` : ""}`,
-      ),
+      ...conflictLines,
       "",
       args.apply
         ? `The merge is left in progress in ${worktree}. Resolve there, commit, then run` +

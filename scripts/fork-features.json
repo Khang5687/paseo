@@ -3,12 +3,7 @@
     "pr": 1,
     "title": "fix(omp): settle /compact when OMP replies without compaction events",
     "merge": "18b7d9d88",
-    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/omp-harness.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 2,
@@ -17,15 +12,6 @@
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/commands.test.ts"
-    ],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/cli-runtime.ts",
-      "packages/server/src/server/agent/providers/omp/commands.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-types.ts",
-      "packages/server/src/server/agent/providers/omp/runtime.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/omp-harness.ts"
     ]
   },
   {
@@ -51,52 +37,27 @@
       "packages/server/src/server/snapshot-mutation-ownership.test.ts",
       "packages/server/src/server/wire-compat.test.ts"
     ],
-    "e2e": ["packages/app/e2e/browser/agent-message-submission.spec.ts"],
-    "files": [
-      "packages/app/src/composer/daemon-queue.ts",
-      "packages/app/src/composer/index.tsx",
-      "packages/app/src/runtime/host-runtime.ts",
-      "packages/app/src/stores/session-store.ts",
-      "packages/app/src/utils/agent-snapshots.ts",
-      "packages/client/src/daemon-client.ts",
-      "packages/protocol/src/messages.ts",
-      "packages/server/src/server/agent/agent-loading.ts",
-      "packages/server/src/server/agent/agent-manager.ts",
-      "packages/server/src/server/agent/agent-message-queue.ts",
-      "packages/server/src/server/agent/agent-projections.ts",
-      "packages/server/src/server/agent/agent-storage.ts",
-      "packages/server/src/server/authorization/operation-permissions.ts",
-      "packages/server/src/server/session.ts",
-      "packages/server/src/server/test-utils/session-stubs.ts",
-      "packages/server/src/server/websocket-server.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/agent-message-submission.spec.ts"]
   },
   {
     "pr": 4,
     "title": "chore(fork): build and install the desktop app from fork main",
     "merge": "c20f1d37c",
     "untested": "fork-update.sh desktop build; exercised by every Build it",
-    "tests": [],
-    "files": ["scripts/fork-update.sh"]
+    "tests": []
   },
   {
     "pr": 5,
     "title": "fix(fork): fork-update builds an app that opens",
     "merge": "9c33de2e5",
     "untested": "fork-update.sh signing; the packaged smoke launch in every build checks it",
-    "tests": [],
-    "files": ["scripts/fork-update.sh"]
+    "tests": []
   },
   {
     "pr": 6,
     "title": "fix(omp): report context usage when a session is resumed",
     "merge": "d1fd9b0be",
-    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/omp-harness.ts",
-      "packages/server/src/server/agent/providers/omp/usage-poller.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 7,
@@ -108,34 +69,6 @@
       "packages/server/src/server/session.workspaces.test.ts",
       "packages/server/src/server/workspace-reconciliation-service.test.ts",
       "packages/server/src/server/workspace-settle.test.ts"
-    ],
-    "files": [
-      "packages/app/src/components/left-sidebar.tsx",
-      "packages/app/src/components/sidebar-workspace-list.tsx",
-      "packages/app/src/components/sidebar/settled-section-header.tsx",
-      "packages/app/src/components/sidebar/sidebar-model.tsx",
-      "packages/app/src/components/sidebar/sidebar-projection.ts",
-      "packages/app/src/components/sidebar/sidebar-status-list.tsx",
-      "packages/app/src/components/sidebar/sidebar-workspace-menu.tsx",
-      "packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx",
-      "packages/app/src/components/sidebar/sidebar-workspace-settle-button.tsx",
-      "packages/app/src/components/ui/trailing-action-scrim.tsx",
-      "packages/app/src/hooks/sidebar-workspaces-view-model.ts",
-      "packages/app/src/hooks/use-sidebar-pins.ts",
-      "packages/app/src/hooks/use-sidebar-settled.ts",
-      "packages/app/src/hooks/use-sidebar-workspace-settle.ts",
-      "packages/app/src/runtime/replica-cache/index.ts",
-      "packages/app/src/stores/session-store.ts",
-      "packages/app/src/stores/sidebar-collapsed-sections-store/index.ts",
-      "packages/app/src/stores/sidebar-collapsed-sections-store/state.ts",
-      "packages/client/src/daemon-client.ts",
-      "packages/protocol/src/messages.ts",
-      "packages/server/src/server/authorization/operation-permissions.ts",
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/session.ts",
-      "packages/server/src/server/websocket-server.ts",
-      "packages/server/src/server/workspace-registry.ts",
-      "packages/server/src/server/workspace-settle.ts"
     ]
   },
   {
@@ -143,8 +76,7 @@
     "title": "docs(fork): shared handoff file and Build it integration for parallel agents",
     "merge": "e6c60b3b8",
     "untested": "docs only",
-    "tests": [],
-    "files": []
+    "tests": []
   },
   {
     "pr": 9,
@@ -153,55 +85,25 @@
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
-    ],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/cli-runtime.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-types.ts",
-      "packages/server/src/server/agent/providers/omp/runtime.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts"
     ]
   },
   {
     "pr": 10,
     "title": "fix(app): show newly installed skills in the / menu without restarting",
     "merge": "5d29f1396",
-    "tests": ["packages/server/src/server/agent/agent-manager.test.ts"],
-    "files": [
-      "packages/app/src/hooks/use-agent-autocomplete.ts",
-      "packages/app/src/hooks/use-agent-commands-query.ts",
-      "packages/server/src/server/agent/agent-manager.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/agent-manager.test.ts"]
   },
   {
     "pr": 11,
     "title": "feat(desktop): confirm Cmd+Q with a hold-or-press-twice toast",
     "merge": "5c6935186",
-    "tests": ["packages/desktop/src/features/quit-confirm/policy.test.ts"],
-    "files": [
-      "packages/app/src/app/_layout.tsx",
-      "packages/app/src/components/quit-confirm-toast.tsx",
-      "packages/desktop/src/features/menu.ts",
-      "packages/desktop/src/features/quit-confirm/index.ts",
-      "packages/desktop/src/features/quit-confirm/policy.ts",
-      "packages/desktop/src/main.ts"
-    ]
+    "tests": ["packages/desktop/src/features/quit-confirm/policy.test.ts"]
   },
   {
     "pr": 12,
     "title": "feat(sidebar): mark workspaces holding an unsent prompt",
     "merge": "0899b2303",
-    "tests": ["packages/app/src/stores/workspace-unsent-draft.test.ts"],
-    "files": [
-      "packages/app/src/components/sidebar/project-leading-visual.tsx",
-      "packages/app/src/components/sidebar/sidebar-workspace-menu.tsx",
-      "packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx",
-      "packages/app/src/components/sidebar/sidebar-workspace-title.ts",
-      "packages/app/src/composer/focused-chat-target.ts",
-      "packages/app/src/hooks/use-workspace-has-unsent-draft.ts",
-      "packages/app/src/stores/draft-keys.ts",
-      "packages/app/src/stores/workspace-unsent-draft.ts"
-    ]
+    "tests": ["packages/app/src/stores/workspace-unsent-draft.test.ts"]
   },
   {
     "pr": 13,
@@ -222,135 +124,31 @@
       "packages/app/src/screens/settings/appearance/background/selection.test.ts",
       "packages/app/src/skins/contrast.test.ts",
       "packages/app/src/skins/image-limits.test.ts"
-    ],
-    "files": [
-      "packages/app/src/agent-stream/view.tsx",
-      "packages/app/src/app/_layout.tsx",
-      "packages/app/src/app/pair-scan.tsx",
-      "packages/app/src/appearance/provider.tsx",
-      "packages/app/src/components/file-explorer-pane.tsx",
-      "packages/app/src/components/headers/screen-header.tsx",
-      "packages/app/src/components/left-sidebar.tsx",
-      "packages/app/src/components/page-layout/index.tsx",
-      "packages/app/src/components/split-container.tsx",
-      "packages/app/src/components/ui/pane-content-toolbar.tsx",
-      "packages/app/src/components/welcome-screen.tsx",
-      "packages/app/src/composer/draft/workspace-tab.tsx",
-      "packages/app/src/file-pane/pane.tsx",
-      "packages/app/src/git/diff-pane.tsx",
-      "packages/app/src/git/pull-request-panel/pane-error.tsx",
-      "packages/app/src/git/pull-request-panel/pane-skeleton.tsx",
-      "packages/app/src/git/pull-request-panel/pane.tsx",
-      "packages/app/src/navigation/themed-stack.tsx",
-      "packages/app/src/panels/agent-panel.tsx",
-      "packages/app/src/panels/setup-panel.tsx",
-      "packages/app/src/plugins/client-runtime.ts",
-      "packages/app/src/plugins/evaluate.ts",
-      "packages/app/src/plugins/registry.ts",
-      "packages/app/src/plugins/skins.ts",
-      "packages/app/src/plugins/surface-screen.tsx",
-      "packages/app/src/plugins/types.ts",
-      "packages/app/src/screens/new-workspace-screen.tsx",
-      "packages/app/src/screens/open-project-screen.tsx",
-      "packages/app/src/screens/schedules-screen.tsx",
-      "packages/app/src/screens/sessions-screen.tsx",
-      "packages/app/src/screens/settings-screen.tsx",
-      "packages/app/src/screens/settings/appearance/appearance-section.tsx",
-      "packages/app/src/screens/settings/appearance/background/background-controls.tsx",
-      "packages/app/src/screens/settings/appearance/background/background-section.tsx",
-      "packages/app/src/screens/settings/appearance/background/selection.ts",
-      "packages/app/src/screens/settings/appearance/background/skin-card.tsx",
-      "packages/app/src/screens/settings/appearance/background/skin-catalog-links.tsx",
-      "packages/app/src/screens/settings/appearance/background/skin-details-sheet.tsx",
-      "packages/app/src/screens/settings/appearance/background/skin-edit-sheet.tsx",
-      "packages/app/src/screens/settings/appearance/background/use-background-gallery.ts",
-      "packages/app/src/screens/settings/appearance/background/use-escape-key.ts",
-      "packages/app/src/screens/settings/appearance/background/use-escape-key.web.ts",
-      "packages/app/src/screens/workspace/explorer-sidebar.tsx",
-      "packages/app/src/screens/workspace/workspace-desktop-tabs-row.tsx",
-      "packages/app/src/screens/workspace/workspace-screen.tsx",
-      "packages/app/src/skins/accessibility.d.ts",
-      "packages/app/src/skins/accessibility.native.ts",
-      "packages/app/src/skins/accessibility.web.ts",
-      "packages/app/src/skins/active.ts",
-      "packages/app/src/skins/apply-surfaces.ts",
-      "packages/app/src/skins/backdrop.tsx",
-      "packages/app/src/skins/cache-core.ts",
-      "packages/app/src/skins/cache.d.ts",
-      "packages/app/src/skins/cache.native.ts",
-      "packages/app/src/skins/cache.web.ts",
-      "packages/app/src/skins/catalog.ts",
-      "packages/app/src/skins/contrast.ts",
-      "packages/app/src/skins/image-limits.ts",
-      "packages/app/src/skins/index.ts",
-      "packages/app/src/skins/luminance.ts",
-      "packages/app/src/skins/plugin-cache.ts",
-      "packages/app/src/skins/preferences-schema.ts",
-      "packages/app/src/skins/preferences-store.ts",
-      "packages/app/src/skins/route.ts",
-      "packages/app/src/skins/scheme.ts",
-      "packages/app/src/skins/select.ts",
-      "packages/app/src/skins/thumbnails.ts",
-      "packages/app/src/skins/types.ts",
-      "packages/app/src/styles/theme.ts",
-      "packages/plugin/src/client/contracts.ts",
-      "packages/plugin/src/client/index.ts",
-      "plugin-examples/skins/index.client.ts",
-      "plugin-examples/skins/index.server.ts",
-      "plugin-examples/skins/paseo-plugin.json",
-      "plugin-examples/skins/server/aurora.ts",
-      "plugin-examples/skins/server/png.ts",
-      "plugin-examples/skins/shared/skin.ts"
     ]
   },
   {
     "pr": 14,
     "title": "feat(app): pick the default editor in Settings",
     "merge": "adec63628",
-    "tests": ["packages/app/src/hooks/use-preferred-editor.test.ts"],
-    "files": [
-      "packages/app/src/screens/settings/open-location/default-editor.tsx",
-      "packages/app/src/screens/settings/open-location/open-location-section.tsx"
-    ]
+    "tests": ["packages/app/src/hooks/use-preferred-editor.test.ts"]
   },
   {
     "pr": 15,
     "title": "feat(app): right-click menu for file paths in agent replies",
     "merge": "a1becdee5",
-    "tests": ["packages/app/src/assistant-file-links/use-file-link.test.tsx"],
-    "files": [
-      "packages/app/src/assistant-file-links/context-menu.tsx",
-      "packages/app/src/assistant-file-links/use-file-link.ts",
-      "packages/app/src/components/file-explorer-pane.tsx",
-      "packages/app/src/workspace/open-in-editor/preferred.ts"
-    ]
+    "tests": ["packages/app/src/assistant-file-links/use-file-link.test.tsx"]
   },
   {
     "pr": 16,
     "title": "fix(omp): keep /goal running across turns like OMP's own /goal",
     "merge": "45de53125",
-    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/cli-runtime.ts",
-      "packages/server/src/server/agent/providers/omp/config-overlay.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-types.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/omp-harness.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 17,
     "title": "fix(app): keep skin art visible in light themes",
     "merge": "87bcb4a9b",
-    "tests": ["packages/app/src/skins/contrast.test.ts"],
-    "files": [
-      "packages/app/src/skins/active.ts",
-      "packages/app/src/skins/apply-surfaces.ts",
-      "packages/app/src/skins/backdrop.tsx",
-      "packages/app/src/skins/contrast.ts",
-      "packages/app/src/styles/theme.ts"
-    ]
+    "tests": ["packages/app/src/skins/contrast.test.ts"]
   },
   {
     "pr": 18,
@@ -366,19 +164,6 @@
       "packages/server/src/server/agent/providers/opencode/v2/permissions.test.ts",
       "packages/server/src/server/agent/providers/pi/extensions/rpiv-ask-user-question/index.test.ts",
       "plugins/muse-provider/test/provider.test.ts"
-    ],
-    "files": [
-      "packages/app/src/components/question-form-card-core.ts",
-      "packages/app/src/components/question-form-card.tsx",
-      "packages/server/src/server/agent/providers/claude/agent.ts",
-      "packages/server/src/server/agent/providers/codex-app-server-agent.ts",
-      "packages/server/src/server/agent/providers/omp/question-ui.ts",
-      "packages/server/src/server/agent/providers/opencode-agent.ts",
-      "packages/server/src/server/agent/providers/opencode/v2/permissions.ts",
-      "packages/server/src/server/agent/providers/pi/extensions/rpiv-ask-user-question/index.ts",
-      "packages/server/src/server/agent/question-answers.ts",
-      "plugins/muse-provider/server/questions.ts",
-      "plugins/muse-provider/server/wire.ts"
     ]
   },
   {
@@ -389,19 +174,6 @@
       "packages/app/src/components/sidebar/sidebar-projection.test.ts",
       "packages/app/src/components/sidebar/workspace-nesting.test.ts",
       "packages/app/src/subagents/workspace-parents.test.ts"
-    ],
-    "files": [
-      "packages/app/src/components/left-sidebar.tsx",
-      "packages/app/src/components/sidebar-workspace-list.tsx",
-      "packages/app/src/components/sidebar/sidebar-model.tsx",
-      "packages/app/src/components/sidebar/sidebar-projection.ts",
-      "packages/app/src/components/sidebar/sidebar-status-list.tsx",
-      "packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx",
-      "packages/app/src/components/sidebar/workspace-nesting.ts",
-      "packages/app/src/hooks/use-sidebar-workspace-parents.ts",
-      "packages/app/src/stores/session-store.ts",
-      "packages/app/src/subagents/policies.ts",
-      "packages/app/src/subagents/workspace-parents.ts"
     ]
   },
   {
@@ -416,21 +188,6 @@
       "packages/server/src/server/agent/provider-snapshot-manager.test.ts",
       "packages/server/src/server/daemon-config-store.test.ts",
       "packages/server/src/server/persisted-config.test.ts"
-    ],
-    "files": [
-      "packages/app/src/components/provider-diagnostic-models.ts",
-      "packages/app/src/components/provider-diagnostic-sheet.tsx",
-      "packages/protocol/src/agent-types.ts",
-      "packages/protocol/src/messages.ts",
-      "packages/protocol/src/provider-config.ts",
-      "packages/protocol/src/provider-snapshot-codec.ts",
-      "packages/server/src/server/agent/agent-configuration-validator.ts",
-      "packages/server/src/server/agent/agent-manager.ts",
-      "packages/server/src/server/agent/agent-sdk-types.ts",
-      "packages/server/src/server/agent/provider-disabled-models.ts",
-      "packages/server/src/server/agent/provider-snapshot-manager.ts",
-      "packages/server/src/server/websocket-server.ts",
-      "packages/website/public/schemas/paseo.config.v1.json"
     ]
   },
   {
@@ -438,8 +195,7 @@
     "title": "docs(fork): account for mobile in every app change",
     "merge": "547f5c1a3",
     "untested": "docs only",
-    "tests": [],
-    "files": []
+    "tests": []
   },
   {
     "pr": 23,
@@ -449,11 +205,7 @@
       "packages/app/src/stores/draft-keys.test.ts",
       "packages/app/src/stores/draft-store/migration.test.ts"
     ],
-    "e2e": ["packages/app/e2e/browser/new-workspace-composer-draft.spec.ts"],
-    "files": [
-      "packages/app/src/screens/new-workspace-screen.tsx",
-      "packages/app/src/stores/draft-keys.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/new-workspace-composer-draft.spec.ts"]
   },
   {
     "pr": 28,
@@ -464,31 +216,13 @@
       "packages/server/src/server/agent/output-styles.test.ts",
       "packages/server/src/server/agent/providers/claude/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/agent.test.ts"
-    ],
-    "files": [
-      "packages/app/src/agent-controls/icons.ts",
-      "packages/app/src/components/provider-diagnostic-sheet.tsx",
-      "packages/protocol/src/messages.ts",
-      "packages/protocol/src/provider-config.ts",
-      "packages/server/src/server/agent/agent-manager.ts",
-      "packages/server/src/server/agent/output-styles.ts",
-      "packages/server/src/server/agent/providers/claude/agent.ts",
-      "packages/server/src/server/agent/providers/claude/feature-definitions.ts",
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/omp-harness.ts",
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/websocket-server.ts"
     ]
   },
   {
     "pr": 30,
     "title": "feat(cli): look up timeline rows by seq in paseo logs",
     "merge": "2f39bb160",
-    "tests": ["packages/cli/src/commands/agent/logs-seq.test.ts"],
-    "files": [
-      "packages/cli/src/commands/agent/logs-seq.ts",
-      "packages/cli/src/commands/agent/logs.ts"
-    ]
+    "tests": ["packages/cli/src/commands/agent/logs-seq.test.ts"]
   },
   {
     "pr": 32,
@@ -500,27 +234,19 @@
       "packages/protocol/src/messages.test.ts",
       "packages/protocol/src/messages.wire-compat.test.ts",
       "packages/server/src/server/authorization/index.test.ts"
-    ],
-    "files": [
-      "packages/client/src/daemon-client.ts",
-      "packages/client/src/index.ts",
-      "packages/protocol/src/messages.ts",
-      "packages/server/src/server/authorization/operation-permissions.ts"
     ]
   },
   {
     "pr": 33,
     "title": "feat(app): add ompAccountRouting copy in all locales",
     "merge": "eccf14365",
-    "tests": ["packages/app/src/i18n/resources.test.ts"],
-    "files": []
+    "tests": ["packages/app/src/i18n/resources.test.ts"]
   },
   {
     "pr": 34,
     "title": "feat(client): OMP account-routing mutations and owned observations",
     "merge": "02a2ccae9",
-    "tests": ["packages/client/src/daemon-client.test.ts", "packages/client/src/index.test.ts"],
-    "files": ["packages/client/src/daemon-client.ts", "packages/client/src/index.ts"]
+    "tests": ["packages/client/src/daemon-client.test.ts", "packages/client/src/index.test.ts"]
   },
   {
     "pr": 35,
@@ -529,11 +255,6 @@
     "tests": [
       "packages/server/src/server/account-routing/authority.test.ts",
       "packages/server/src/server/account-routing/store.test.ts"
-    ],
-    "files": [
-      "packages/server/src/server/account-routing/authority.ts",
-      "packages/server/src/server/account-routing/store.ts",
-      "packages/server/src/server/account-routing/types.ts"
     ]
   },
   {
@@ -544,22 +265,19 @@
       "packages/plugin/src/server/usage.test.ts",
       "packages/protocol/src/messages.test.ts",
       "packages/protocol/src/messages.wire-compat.test.ts"
-    ],
-    "files": ["packages/plugin/src/server/usage.ts", "packages/protocol/src/messages.ts"]
+    ]
   },
   {
     "pr": 37,
     "title": "fix(app): keep model toggles aligned in the provider sheet",
     "merge": "0f666fd99",
-    "tests": [],
-    "files": ["packages/app/src/components/provider-diagnostic-sheet.tsx"]
+    "tests": []
   },
   {
     "pr": 38,
     "title": "feat(plugin): emit Claude routing metadata on usage reports",
     "merge": "f0489c5f3",
-    "tests": ["plugins/claude-usage-source/server/usage.test.ts"],
-    "files": ["plugins/claude-usage-source/server/usage.ts"]
+    "tests": ["plugins/claude-usage-source/server/usage.test.ts"]
   },
   {
     "pr": 39,
@@ -569,17 +287,6 @@
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts",
       "packages/server/src/server/agent/providers/omp/runtime.test.ts"
-    ],
-    "files": [
-      "packages/server/src/server/agent/provider-registry.ts",
-      "packages/server/src/server/agent/providers/omp/account-routing-bridge.ts",
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/cli-runtime.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-types.ts",
-      "packages/server/src/server/agent/providers/omp/runtime.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/omp-harness.ts",
-      "packages/server/src/server/bootstrap.ts"
     ]
   },
   {
@@ -589,12 +296,6 @@
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/plugins/usage-sources/index.test.ts"
-    ],
-    "files": [
-      "packages/server/src/server/account-routing/usage-projection.ts",
-      "packages/server/src/server/agent/agent-sdk-types.ts",
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/plugins/usage-sources/index.ts"
     ]
   },
   {
@@ -605,24 +306,13 @@
       "packages/server/src/server/account-routing/routing.integration.test.ts",
       "packages/server/src/server/authorization/index.test.ts",
       "packages/server/src/server/session/account-routing-session.test.ts"
-    ],
-    "files": [
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/session.ts",
-      "packages/server/src/server/session/account-routing-session.ts",
-      "packages/server/src/server/test-utils/paseo-daemon.ts",
-      "packages/server/src/server/websocket-server.ts"
     ]
   },
   {
     "pr": 42,
     "title": "test(server): synthetic end-to-end acceptance for OMP global account routing",
     "merge": "d1835776c",
-    "tests": ["packages/server/src/server/account-routing/routing.acceptance.test.ts"],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts",
-      "packages/server/src/server/test-utils/paseo-daemon.ts"
-    ]
+    "tests": ["packages/server/src/server/account-routing/routing.acceptance.test.ts"]
   },
   {
     "pr": 43,
@@ -633,34 +323,20 @@
       "packages/app/src/omp-account-routing/queries.test.ts",
       "packages/app/src/screens/settings/providers-section.test.tsx"
     ],
-    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"],
-    "files": [
-      "packages/app/src/omp-account-routing/account-section.tsx",
-      "packages/app/src/omp-account-routing/presentation.ts",
-      "packages/app/src/omp-account-routing/queries.ts",
-      "packages/app/src/screens/settings/providers-section.tsx"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 44,
     "title": "fix(omp): accept OMP's native billing shape in routing catalogs",
     "merge": "d366d4864",
-    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/account-routing-bridge.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-types.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   },
   {
     "pr": 45,
     "title": "feat(app): make the OMP Claude account routing section readable",
     "merge": "4729dc5fa",
     "tests": ["packages/app/src/omp-account-routing/presentation.test.ts"],
-    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"],
-    "files": [
-      "packages/app/src/omp-account-routing/account-section.tsx",
-      "packages/app/src/omp-account-routing/presentation.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 46,
@@ -677,26 +353,7 @@
       "packages/server/src/server/authorization/index.test.ts",
       "packages/server/src/server/session/account-routing-session.test.ts"
     ],
-    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"],
-    "files": [
-      "packages/app/src/omp-account-routing/account-section.tsx",
-      "packages/app/src/omp-account-routing/presentation.ts",
-      "packages/app/src/omp-account-routing/queries.ts",
-      "packages/client/src/daemon-client.ts",
-      "packages/client/src/index.ts",
-      "packages/protocol/src/messages.ts",
-      "packages/server/src/server/account-routing/login.ts",
-      "packages/server/src/server/agent/providers/omp/cli-runtime.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-types.ts",
-      "packages/server/src/server/agent/providers/omp/runtime.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts",
-      "packages/server/src/server/authorization/operation-permissions.ts",
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/session.ts",
-      "packages/server/src/server/session/account-routing-session.ts",
-      "packages/server/src/server/test-utils/paseo-daemon.ts",
-      "packages/server/src/server/websocket-server.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 47,
@@ -709,18 +366,7 @@
       "packages/server/src/server/account-routing/routing.integration.test.ts",
       "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
     ],
-    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"],
-    "files": [
-      "packages/app/src/omp-account-routing/account-section.tsx",
-      "packages/app/src/omp-account-routing/presentation.ts",
-      "packages/server/src/server/account-routing/authority.ts",
-      "packages/server/src/server/account-routing/probe.ts",
-      "packages/server/src/server/agent/provider-registry.ts",
-      "packages/server/src/server/agent/providers/omp/account-routing-bridge.ts",
-      "packages/server/src/server/agent/providers/omp/cli-runtime.ts",
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/test-utils/paseo-daemon.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 48,
@@ -738,24 +384,6 @@
       "packages/server/src/server/authorization/index.test.ts",
       "packages/server/src/server/session/account-routing-session.test.ts",
       "packages/server/src/server/websocket-server.relay-reconnect.test.ts"
-    ],
-    "files": [
-      "packages/client/src/daemon-client.ts",
-      "packages/protocol/src/messages.ts",
-      "packages/server/src/server/account-routing/authority.ts",
-      "packages/server/src/server/account-routing/login.ts",
-      "packages/server/src/server/account-routing/probe.ts",
-      "packages/server/src/server/agent/providers/jsonl-rpc-process.ts",
-      "packages/server/src/server/agent/providers/omp/account-routing-bridge.ts",
-      "packages/server/src/server/agent/providers/omp/cli-runtime.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-types.ts",
-      "packages/server/src/server/agent/providers/omp/runtime.ts",
-      "packages/server/src/server/agent/providers/omp/test-utils/fake-omp.ts",
-      "packages/server/src/server/authorization/operation-permissions.ts",
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/session.ts",
-      "packages/server/src/server/session/account-routing-session.ts",
-      "packages/server/src/server/websocket-server.ts"
     ]
   },
   {
@@ -769,16 +397,6 @@
       "packages/server/src/server/account-routing/login.test.ts",
       "packages/server/src/server/account-routing/probe.test.ts",
       "packages/server/src/server/account-routing/routing.integration.test.ts"
-    ],
-    "files": [
-      "packages/app/src/omp-account-routing/account-section.tsx",
-      "packages/app/src/omp-account-routing/presentation.ts",
-      "packages/server/src/server/account-routing/authority.ts",
-      "packages/server/src/server/account-routing/listing.ts",
-      "packages/server/src/server/account-routing/login.ts",
-      "packages/server/src/server/account-routing/probe.ts",
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/test-utils/paseo-daemon.ts"
     ]
   },
   {
@@ -791,14 +409,7 @@
       "packages/app/src/omp-account-routing/presentation.test.ts",
       "packages/app/src/omp-account-routing/queries.test.ts"
     ],
-    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"],
-    "files": [
-      "packages/app/src/omp-account-routing/account-section.tsx",
-      "packages/app/src/omp-account-routing/add-account-flow.ts",
-      "packages/app/src/omp-account-routing/add-account-sheet.tsx",
-      "packages/app/src/omp-account-routing/presentation.ts",
-      "packages/app/src/omp-account-routing/queries.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 51,
@@ -807,12 +418,6 @@
     "tests": [
       "packages/app/src/components/question-form-card-core.test.ts",
       "packages/app/src/components/question-form-card.browser.test.tsx"
-    ],
-    "files": [
-      "packages/app/src/components/question-form-card-core.ts",
-      "packages/app/src/components/question-form-card.tsx",
-      "packages/app/test-stubs/lucide-react-native.ts",
-      "packages/app/vitest.config.ts"
     ]
   },
   {
@@ -822,41 +427,19 @@
     "tests": [
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/daemon-config-store.test.ts"
-    ],
-    "files": [
-      "packages/app/src/components/feature-default-row.tsx",
-      "packages/app/src/components/provider-diagnostic-sheet.tsx",
-      "packages/app/src/screens/settings/default-output-style-card.tsx",
-      "packages/app/src/screens/settings/host-page.tsx",
-      "packages/protocol/src/messages.ts",
-      "packages/protocol/src/provider-config.ts",
-      "packages/server/src/server/agent/output-styles.ts",
-      "packages/server/src/server/agent/providers/claude/agent.ts",
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/bootstrap.ts",
-      "packages/server/src/server/config.ts",
-      "packages/server/src/server/daemon-config-store.ts",
-      "packages/server/src/server/persisted-config.ts",
-      "packages/server/src/server/websocket-server.ts",
-      "packages/website/public/schemas/paseo.config.v1.json"
     ]
   },
   {
     "pr": 53,
     "title": "fix(omp): show newly installed skills in a running session on released OMP",
     "merge": "1e5d7f2fc",
-    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"],
-    "files": ["packages/server/src/server/agent/providers/omp/cli-runtime.ts"]
+    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   },
   {
     "pr": 54,
     "title": "fix(omp): resolve the rewind entry ID when OMP's prompt echo has none",
     "merge": "1044ef639",
-    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"],
-    "files": [
-      "packages/server/src/server/agent/providers/omp/agent.ts",
-      "packages/server/src/server/agent/providers/omp/message-history.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 55,
@@ -874,49 +457,24 @@
       "packages/server/src/server/session.workspaces.test.ts",
       "packages/server/src/server/session/agent-updates/agent-updates-service.test.ts",
       "packages/server/src/server/wire-compat.test.ts"
-    ],
-    "files": [
-      "packages/app/src/composer/daemon-queue.ts",
-      "packages/app/src/composer/index.tsx",
-      "packages/app/src/composer/queue-track.tsx",
-      "packages/app/src/stores/session-store.ts",
-      "packages/app/src/utils/agent-snapshots.ts",
-      "packages/client/src/daemon-client.ts",
-      "packages/protocol/src/messages.ts",
-      "packages/server/src/server/agent/agent-loading.ts",
-      "packages/server/src/server/agent/agent-manager.ts",
-      "packages/server/src/server/agent/agent-message-queue.ts",
-      "packages/server/src/server/agent/agent-projections.ts",
-      "packages/server/src/server/agent/agent-storage.ts",
-      "packages/server/src/server/authorization/operation-permissions.ts",
-      "packages/server/src/server/session.ts",
-      "packages/server/src/server/websocket-server.ts"
     ]
   },
   {
     "pr": 56,
     "title": "fix(app): keep skins visible after the Expo Router upgrade",
     "merge": "3c9dc382e",
-    "tests": [],
-    "files": ["packages/app/src/navigation/themed-stack.tsx"]
+    "tests": []
   },
   {
     "pr": 57,
     "title": "fix(server): let relay clients read why their hello was refused",
     "merge": "d768d5ea4",
-    "tests": ["packages/server/src/server/websocket-server.relay-reconnect.test.ts"],
-    "files": ["packages/server/src/server/websocket-server.ts"]
+    "tests": ["packages/server/src/server/websocket-server.relay-reconnect.test.ts"]
   },
   {
     "pr": 58,
     "title": "fix(queue): keep images on queued messages",
     "merge": "51f2a8d97",
-    "tests": ["packages/app/src/composer/daemon-queue.test.ts"],
-    "files": [
-      "packages/app/src/composer/actions.ts",
-      "packages/app/src/composer/daemon-queue.ts",
-      "packages/app/src/composer/index.tsx",
-      "packages/app/src/stores/draft-store/index.ts"
-    ]
+    "tests": ["packages/app/src/composer/daemon-queue.test.ts"]
   }
 ]
