@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ComposerAttachment } from "@/attachments/types";
+import { collectRetainedAttachmentIds } from "@/attachments/gc-retention";
 import type { AgentQueuedMessagePayload } from "@getpaseo/protocol/messages";
-import type { UserMessageItem } from "@/types/stream";
+import { createUserMessage, type UserMessageItem } from "@/types/stream";
 import type { MessageSubmissionWriter, QueuedComposerMessage, QueueWriter } from "./actions";
 import {
   applyOptimisticQueueOrder,
@@ -10,7 +11,8 @@ import {
   deleteQueuedMessageOnDaemon,
   findQueueMove,
   moveQueueEntry,
-  pruneLocalMirror,
+  DISPATCH_ECHO_WAIT_MS,
+  reconcileLocalMirror,
   queueMessageOnDaemon,
   restoreQueuedMessageFromDaemon,
   sendQueuedMessageNowOnDaemon,
@@ -108,6 +110,15 @@ const imageAttachment: ComposerAttachment = {
     createdAt: 1,
   },
 };
+
+function echoOf(clientMessageId: string, text: string): UserMessageItem {
+  return createUserMessage({
+    clientMessageId,
+    messageId: `msg-${clientMessageId}`,
+    text,
+    timestamp: new Date(0),
+  });
+}
 
 describe("daemon-owned queue", () => {
   it("queues the encoded wire form and mirrors the composer form locally", async () => {
@@ -260,16 +271,164 @@ describe("daemon-owned queue", () => {
     expect(submission.accepted).toEqual([second.id]);
     expect(submission.rejected).toEqual([]);
 
-    // The daemon dispatched `first` on idle; the next snapshot lists nothing.
+    // The daemon dispatched `first` on idle and its timeline row arrived.
     const before = mirror.state;
-    pruneLocalMirror(mirror, "agent-1", []);
+    reconcileLocalMirror({
+      localMirror: mirror,
+      agentId: "agent-1",
+      daemonQueue: [],
+      readTimeline: () => [echoOf(first.id, "first")],
+      handoff: () => undefined,
+      nowMs: 0,
+    });
     expect(mirror.state.has("agent-1")).toBe(false);
 
-    // No-op prunes keep the same map instance so store subscribers do not rerender.
+    // No-op reconciles keep the same map instance so store subscribers do not rerender.
     const unchanged = mirror.state;
-    pruneLocalMirror(mirror, "agent-1", []);
+    reconcileLocalMirror({
+      localMirror: mirror,
+      agentId: "agent-1",
+      daemonQueue: [],
+      readTimeline: () => [],
+      handoff: () => undefined,
+      nowMs: 0,
+    });
     expect(mirror.state).toBe(unchanged);
     expect(before).not.toBe(unchanged);
+  });
+
+  it("keeps queued images out of attachment cleanup until the mirror holds them", async () => {
+    const mirror = createMirror();
+    const client = createClient();
+    let releaseAdd!: () => void;
+    const addGate = new Promise<void>((resolve) => {
+      releaseAdd = resolve;
+    });
+    const gatedClient: DaemonQueueClient = {
+      ...client,
+      addQueuedAgentMessage: async (input) => {
+        await addGate;
+        return client.addQueuedAgentMessage(input);
+      },
+    };
+    const queued = queueMessageOnDaemon({
+      client: gatedClient,
+      agentId: "agent-1",
+      text: "look",
+      attachments: [imageAttachment],
+      encodeImages: async (images) =>
+        images.map((image) => ({ data: "AAAA", mimeType: image.mimeType })),
+      localMirror: mirror,
+    });
+    // The composer clears right after queueing, so the image has no draft
+    // reference while the host has not answered yet.
+    expect(collectRetainedAttachmentIds().has("img-1")).toBe(true);
+    releaseAdd();
+    await queued;
+    expect(mirror.read("agent-1")[0]?.attachments).toEqual([imageAttachment]);
+    expect(collectRetainedAttachmentIds().has("img-1")).toBe(false);
+  });
+
+  it("hands a dispatched entry's images to its timeline row once the daemon records it", async () => {
+    const client = createClient();
+    const mirror = createMirror();
+    const queued = await queueMessageOnDaemon({
+      client,
+      agentId: "agent-1",
+      text: "look",
+      attachments: [imageAttachment],
+      encodeImages: async (images) =>
+        images.map((image) => ({ data: "AAAA", mimeType: image.mimeType })),
+      localMirror: mirror,
+    });
+    const handedOff: UserMessageItem[] = [];
+
+    // The queue snapshot drops the entry before its user_message arrives.
+    reconcileLocalMirror({
+      localMirror: mirror,
+      agentId: "agent-1",
+      daemonQueue: [],
+      readTimeline: () => [],
+      handoff: (message) => handedOff.push(message),
+      nowMs: 1_000,
+    });
+    expect(handedOff).toEqual([]);
+    expect(mirror.read("agent-1").map((item) => item.id)).toEqual([queued.id]);
+
+    const echo = echoOf(queued.id, "look");
+    reconcileLocalMirror({
+      localMirror: mirror,
+      agentId: "agent-1",
+      daemonQueue: [],
+      readTimeline: () => [echo],
+      handoff: (message) => handedOff.push(message),
+      nowMs: 2_000,
+    });
+    expect(handedOff).toEqual([{ ...echo, images: [imageAttachment.metadata] }]);
+    expect(mirror.state.has("agent-1")).toBe(false);
+  });
+
+  it("hands off once when the handoff synchronously triggers another reconcile", async () => {
+    const client = createClient();
+    const mirror = createMirror();
+    const queued = await queueMessageOnDaemon({
+      client,
+      agentId: "agent-1",
+      text: "look",
+      attachments: [imageAttachment],
+      encodeImages: async (images) =>
+        images.map((image) => ({ data: "AAAA", mimeType: image.mimeType })),
+      localMirror: mirror,
+    });
+    let handoffs = 0;
+    // The composer reconciles from a store subscription, and the handoff writes that store.
+    const reconcile = (): void =>
+      reconcileLocalMirror({
+        localMirror: mirror,
+        agentId: "agent-1",
+        daemonQueue: [],
+        readTimeline: () => [echoOf(queued.id, "look")],
+        handoff: () => {
+          handoffs += 1;
+          if (handoffs > 5) throw new Error("handoff re-entered without settling");
+          reconcile();
+        },
+        nowMs: 0,
+      });
+    reconcile();
+    expect(handoffs).toBe(1);
+    expect(mirror.state.has("agent-1")).toBe(false);
+  });
+
+  it("drops an entry removed elsewhere once its timeline row stays missing", async () => {
+    const client = createClient();
+    const mirror = createMirror();
+    await queueMessageOnDaemon({
+      client,
+      agentId: "agent-1",
+      text: "removed on another device",
+      attachments: [imageAttachment],
+      encodeImages: async (images) =>
+        images.map((image) => ({ data: "AAAA", mimeType: image.mimeType })),
+      localMirror: mirror,
+    });
+    const handedOff: UserMessageItem[] = [];
+    const reconcileAt = (nowMs: number) =>
+      reconcileLocalMirror({
+        localMirror: mirror,
+        agentId: "agent-1",
+        daemonQueue: [],
+        readTimeline: () => [],
+        handoff: (message) => handedOff.push(message),
+        nowMs,
+      });
+
+    reconcileAt(0);
+    reconcileAt(DISPATCH_ECHO_WAIT_MS - 1);
+    expect(mirror.read("agent-1")).toHaveLength(1);
+    reconcileAt(DISPATCH_ECHO_WAIT_MS);
+    expect(mirror.state.has("agent-1")).toBe(false);
+    expect(handedOff).toEqual([]);
   });
 
   it("send-now renders a cross-client entry from the summary and drops the row if the host rejects", async () => {

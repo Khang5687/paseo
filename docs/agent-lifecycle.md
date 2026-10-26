@@ -72,8 +72,16 @@ clamps the target index to the end of the list.
 The app keeps a per-client mirror of the entries it queued itself, keyed by the daemon's id
 (`packages/app/src/composer/daemon-queue.ts`). The daemon holds the wire form, which cannot be turned
 back into forge, workspace-file, or plugin composer attachments; a same-client edit restores from the
-mirror instead. The mirror is pruned against each snapshot, so a dispatched or cross-client-removed
-entry never lingers. Cross-client edits restore text, images, and uploaded files and drop the rest.
+mirror instead. Cross-client edits restore text, images, and uploaded files and drop the rest.
+
+The mirror is also the only thing that keeps queued images on this client. Attachment cleanup
+deletes image bytes no draft, mirror entry, or timeline row references, and the composer clears its
+draft before the `add` RPC answers, so `queueMessageOnDaemon` retains the images until its mirror
+entry exists. The daemon never echoes images on user messages, so a dispatched entry's row shows
+images only if this client hands its copy over. The queue snapshot drops the entry before that row
+arrives: the mirror keeps it until a timeline row with the entry id appears, then hands its images to
+that row. An entry with no row after `DISPATCH_ECHO_WAIT_MS` was removed on another client and is
+dropped.
 
 The composer shows a reorder before the daemon confirms it. The optimistic order holds only while the
 daemon still lists the order it was applied over, not until the RPC resolves: the `move` response and
