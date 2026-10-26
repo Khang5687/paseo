@@ -262,7 +262,7 @@ Never merge upstream straight into `main`. `node scripts/fork-sync.mjs` practice
 - merge conflicts, each with the fork PR that wrote our side.
 - the fork-check result on the merged tree, e2e included.
 
-Without `--apply` it only rehearses. A Paseo schedule runs that every night and reports, so you see breakage while upstream is a few commits ahead instead of a hundred. `--apply` pushes the merge to `main` when every check passes; on conflicts it leaves the merge in `../paseo-sync`. Resolve conflicts and fix anything upstream broke there, as commits on top of the merge, then run `node scripts/fork-sync.mjs --apply --resume`. Exit codes: 0 up to date or green, 1 checks failed, 2 conflicts.
+Without `--apply` it only rehearses. A Paseo schedule runs that every night and reports, so you see breakage while upstream is a few commits ahead instead of a hundred. `--apply` pushes the merge to `main` when every check passes; on conflicts it leaves the merge in `../paseo-sync`. Resolve conflicts and fix anything upstream broke there, as commits on top of the merge, then run `node scripts/fork-sync.mjs --apply --resume`. Exit codes: 0 up to date or green, 1 checks failed, 2 conflicts, 3 another fork-sync is already running (they share `../paseo-sync`; wait for it).
 
 Only the owner or an agent the owner asked syncs. `../paseo-sync` is long-lived: it keeps its `node_modules` between runs and reinstalls only when `package-lock.json` changes. Open work branches do not need rebasing; they are still based on an older `upstream/main`, which is fine until their PR conflicts.
 
