@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fork-only (Khang5687/paseo); never upstreamed.
-# Syncs fork main with upstream, builds the macOS desktop app from it, and installs it
-# to /Applications/Paseo.app. See "Running the fork" in CLAUDE.md.
+# Syncs fork main with upstream (through scripts/fork-sync.mjs, which only moves main when
+# every fork check passes), builds the macOS desktop app from it, and installs it to
+# /Applications/Paseo.app. See "Running the fork" in CLAUDE.md.
 #
 #   scripts/fork-update.sh            sync + build + install
 #   scripts/fork-update.sh --no-sync  build + install the current checkout
@@ -30,10 +31,9 @@ if [[ $sync == 1 ]]; then
     echo "Working tree has uncommitted changes; commit or stash them first." >&2
     exit 1
   fi
-  git pull --no-rebase origin main
-  git fetch upstream
-  git merge --no-ff --no-edit upstream/main
-  git push origin main
+  # Merges in the ../paseo-sync worktree, runs fork-check, and pushes only if it passes.
+  node scripts/fork-sync.mjs --apply
+  git pull --ff-only origin main
 fi
 
 arch="$(uname -m)"
