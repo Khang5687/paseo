@@ -182,6 +182,9 @@ export const OmpSessionStateSchema = z
     thinkingLevel: OmpThinkingLevelSchema.optional(),
     isStreaming: z.boolean(),
     isCompacting: z.boolean(),
+    hasPendingAsyncWork: z.boolean().optional(),
+    // OMP 18.4.11+: `isSettled` is false while a goal continuation is scheduled or admitted.
+    isSettled: z.boolean().optional(),
     autoCompactionEnabled: z.boolean().optional(),
     fastModeEnabled: z.boolean().optional(),
     fastModeActive: z.boolean().optional(),
@@ -192,9 +195,6 @@ export const OmpSessionStateSchema = z
     queuedMessageCount: z.number().int().nonnegative(),
     contextUsage: OmpContextUsageSchema.optional(),
     todoPhases: z.unknown().optional(),
-    // OMP 18.4.11+: `isSettled` is false while a goal continuation is scheduled or admitted.
-    isSettled: z.boolean().optional(),
-    hasPendingAsyncWork: z.boolean().optional(),
     goal: OmpGoalModeStateSchema.nullable().optional(),
   })
   .passthrough();

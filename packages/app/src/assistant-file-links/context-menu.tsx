@@ -118,9 +118,12 @@ function FileLinkContextMenuContent({
   const { t } = useTranslation();
   const toast = useToast();
   const hasWorkspace = workspaceRoot.length > 0;
+  // The resolver context carries no workspace id, so this menu opens in the default editor
+  // rather than the project-specific one the Explorer remembers.
   const preferredEditor = useOpenInPreferredEditor({
     serverId,
     workspaceDirectory: workspaceRoot,
+    projectId: null,
   });
   const isLocalDaemon = useIsLocalDaemon(serverId);
   const { targets } = useDesktopOpenTargets({ isLocalExecution: isLocalDaemon });
