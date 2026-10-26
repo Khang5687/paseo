@@ -12,12 +12,14 @@
 //   --upstream <ref>   merge this instead of upstream/main (proving the tool on a crafted ref)
 //   --base <ref>       start from this instead of origin/main (rehearsal only; testing changes
 //                      to the fork tooling itself before they reach main)
+//   --no-e2e           skip the Playwright specs
 //   --worktree <path>  sync worktree (default: ../paseo-sync next to the main checkout)
 //
-// Exit codes: 0 up to date or all checks pass, 1 checks fail, 2 merge conflicts.
+// Exit codes: 0 up to date or all checks pass, 1 checks fail, 2 merge conflicts,
+// 3 another fork-sync is running.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -64,6 +66,28 @@ const worktree = path.resolve(args.worktree ?? path.join(path.dirname(mainChecko
 const reportDir = path.join(os.homedir(), ".paseo-fork-sync");
 const reportPath = path.join(reportDir, "last-report.md");
 mkdirSync(reportDir, { recursive: true });
+
+// The nightly rehearsal and an integrator's --apply share one worktree; a second run would
+// reset it under the first.
+const lockPath = path.join(reportDir, "lock");
+try {
+  writeFileSync(lockPath, String(process.pid), { flag: "wx" });
+} catch {
+  const holder = Number(readFileSync(lockPath, "utf8"));
+  let alive = false;
+  try {
+    process.kill(holder, 0);
+    alive = true;
+  } catch {
+    // The holder exited without releasing the lock; take it over.
+  }
+  if (alive) {
+    process.stderr.write(`[fork-sync] another fork-sync is running (pid ${holder}); exiting.\n`);
+    process.exit(3);
+  }
+  writeFileSync(lockPath, String(process.pid));
+}
+process.on("exit", () => unlinkSync(lockPath));
 
 function finish(code, sections) {
   const stamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
