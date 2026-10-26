@@ -229,7 +229,9 @@ const riskSection = riskLines.join("\n");
 
 if (!args.resume) {
   progress(`merging ${args.upstream} into fork-sync`);
-  const merge = git(["merge", "--no-ff", "--no-edit", args.upstream], {
+  // The commit lands on fork main, so it should not name the worktree's branch.
+  const message = `Merge ${args.upstream} ${upstreamSha} into fork main`;
+  const merge = git(["merge", "--no-ff", "-m", message, args.upstream], {
     cwd: worktree,
     allowFail: true,
   });
