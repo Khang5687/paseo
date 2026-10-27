@@ -2052,6 +2052,11 @@ export async function createPaseoDaemon(
             providerSnapshotManager.settlePluginProviders();
             await finishSubscriptions.start();
             wsServer.beginAcceptingConnections();
+            // Queues stored with work in them drain without waiting for a client
+            // to open their agent. Runs in the background so startup does not wait.
+            void wsServer.drainStoredAgentQueues().catch((error: unknown) => {
+              logger.error({ err: error }, "Failed to drain stored agent queues");
+            });
             const relaySecurityLogger = logger.child({ module: "relay-security" });
             relayRuntime = createRelayRuntime({
               config: {

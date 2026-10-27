@@ -12493,3 +12493,27 @@ test("an out-of-band command racing idle cleanup waits for the resumed runtime",
   expect(h.commands).toEqual(["/maintenance"]);
   expect(h.prompts).toEqual([]);
 });
+
+test("idle cleanup keeps an agent whose queue will drain, and collects it once the queue is paused", async () => {
+  const h = idleCleanupHarness();
+  const agent = await h.create();
+  h.probes[0] = async () => true;
+  await h.manager.addQueuedMessage(agent.id, { text: "waiting to drain" });
+
+  expect((await h.sweep({ now: h.later(61) })).collected).toEqual([]);
+  expect(h.closes).toBe(0);
+  expect(h.manager.getAgent(agent.id)?.queuedMessages.map((item) => item.text)).toEqual([
+    "waiting to drain",
+  ]);
+
+  // A paused queue waits for a person, not the runtime, so it does not pin the
+  // agent. Its idle period starts at the first sweep that sees it unprotected.
+  await h.manager.setQueuePaused(agent.id, true);
+  expect((await h.sweep({ now: h.later(62) })).collected).toEqual([]);
+  expect((await h.sweep({ now: h.later(123) })).collected).toHaveLength(1);
+  expect(h.closes).toBe(1);
+  await h.storage.flush();
+  expect((await h.storage.get(agent.id))?.queuedMessages?.map((item) => item.text)).toEqual([
+    "waiting to drain",
+  ]);
+});
