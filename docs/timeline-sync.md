@@ -220,7 +220,7 @@ Every path that sends a message to an agent — composer send, dictation accept-
 send-now, and the host runtime's automatic queue drain — goes through
 `dispatchComposerAgentMessage` with a submission writer. There is no second transport for the same
 product action: calling `client.sendAgentMessage` directly skips the submitted row and the pending
-footer, and permanently drops attachments because the daemon does not echo them back.
+footer, and permanently drops structured attachments because the daemon does not echo them back.
 
 A submitted prompt is one `UserMessageItem` row. That row is the authoritative local presentation:
 its stable identity, text, timestamp, images, and attachments do not change when the provider
@@ -229,6 +229,17 @@ The transaction registry records two independent settlement facts: canonical ack
 settlement. Canonical acknowledgement retires optimistic activity immediately. When both facts are
 known, whichever arrives second deletes the record. A canonical acknowledgement that arrives first
 prevents a later transport error from rolling back a prompt already observed.
+
+Images are the exception to "not echoed". The daemon stores every image of a submitted human prompt
+under `$PASEO_HOME/user-message-images/{agentId}/`, named by the SHA-256 of its bytes, and records
+`images: [{ id, mimeType, size }]` on the canonical `user_message`. Timeline pages carry only these
+references; a client renders them by fetching bytes with `agent.timeline.get_image`, gated on
+`server_info.features.userMessageImages`, and persisting them to its attachment store while shown.
+The app keeps one image set per row: `images` holds the sender's local copies, `imageRefs` the
+daemon's references, and a row that has local copies drops the references when the echo merges.
+The files live as long as the agent and are removed with it. The timeline itself is in memory and
+rebuilt from provider history after a daemon restart or a reload from disk; provider history is
+text-only, so rebuilt user rows carry no image references.
 
 The daemon's accepted response waits for the correlated run start and guarantees that the canonical
 submitted row has been recorded. It publishes the accepted turn's liveness before that row, so the

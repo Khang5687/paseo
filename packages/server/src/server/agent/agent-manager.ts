@@ -100,6 +100,8 @@ import {
 } from "./provider-subagents/store.js";
 import { withTimeout } from "../../utils/promise-timeout.js";
 import { extractAttention } from "../persistence-hooks.js";
+import type { UserMessageImageStore } from "./user-message-image-store.js";
+import type { UserMessageImageRef } from "@getpaseo/protocol/agent-types";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -336,6 +338,7 @@ export interface AgentManagerOptions {
   onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   timelineStore?: InMemoryAgentTimelineStore;
   durableTimelineStore?: AgentTimelineStore;
+  userMessageImages?: UserMessageImageStore;
   terminalManager?: TerminalManager | null;
   mcpBaseUrl?: string;
   mcpAuthToken?: string;
@@ -764,6 +767,7 @@ export class AgentManager {
   private readonly idFactory: () => string;
   private readonly registry?: AgentStorage;
   private readonly durableTimelineStore?: AgentTimelineStore;
+  private readonly userMessageImages?: UserMessageImageStore;
   private readonly previousStatuses = new Map<string, AgentLifecycleStatus>();
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
@@ -801,6 +805,7 @@ export class AgentManager {
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.registry = options?.registry;
     this.durableTimelineStore = options?.durableTimelineStore;
+    this.userMessageImages = options.userMessageImages;
     this.onAgentAttention = options?.onAgentAttention;
     this.onWorkspaceStateMayHaveChanged = options?.onWorkspaceStateMayHaveChanged;
     this.mcpBaseUrl = options?.mcpBaseUrl ?? null;
@@ -3503,6 +3508,13 @@ export class AgentManager {
   async deleteAgentState(agentId: string): Promise<void> {
     this.discardRetainedAgentState(agentId);
     await this.deleteCommittedTimeline(agentId);
+    await this.userMessageImages?.deleteAgent(agentId);
+  }
+
+  /** Base64 bytes of an image recorded on one of the agent's user messages, or null. */
+  async readUserMessageImage(agentId: string, imageId: string): Promise<string | null> {
+    const bytes = await this.userMessageImages?.read(agentId, imageId);
+    return bytes ? bytes.toString("base64") : null;
   }
 
   async deleteCommittedTimeline(agentId: string): Promise<void> {
@@ -5008,11 +5020,28 @@ export class AgentManager {
       clientMessageId,
       ...(options?.messageId ? { messageId: options.messageId } : {}),
     });
+    let images: UserMessageImageRef[] | undefined;
     for (const item of items) {
       // Human attempts stay in history on rejection; delivery notifications require acceptance.
       if (outcome === "rejected" && item.type !== "user_message") continue;
-      this.recordSubmittedPromptItem(agent, item, options);
+      if (item.type !== "user_message") {
+        this.recordSubmittedPromptItem(agent, item, options);
+        continue;
+      }
+      images ??= this.recordSubmittedImages(agent.id, prompt);
+      this.recordSubmittedPromptItem(
+        agent,
+        images.length > 0 ? { ...item, images } : item,
+        options,
+      );
     }
+  }
+
+  // Providers receive the image bytes; the timeline keeps references every client can fetch.
+  private recordSubmittedImages(agentId: string, prompt: AgentPromptInput): UserMessageImageRef[] {
+    if (!this.userMessageImages || typeof prompt === "string") return [];
+    const images = prompt.flatMap((block) => (block.type === "image" ? [block] : []));
+    return images.length > 0 ? this.userMessageImages.record(agentId, images) : [];
   }
 
   private recordSubmittedPromptItem(

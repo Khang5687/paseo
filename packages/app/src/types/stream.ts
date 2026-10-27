@@ -4,6 +4,7 @@ import type {
   AgentTimelineItem,
   JsonValue,
   ToolCallDetail,
+  UserMessageImageRef,
 } from "@getpaseo/protocol/agent-types";
 import { timelineItemIdentity } from "@getpaseo/protocol/timeline-identity";
 import type { AgentAttachment, AgentStreamEventPayload } from "@getpaseo/protocol/messages";
@@ -101,7 +102,10 @@ export interface UserMessageItem {
   timelineCursor?: TimelinePosition;
   text: string;
   timestamp: Date;
+  /** Local copies of the images, held by the client that sent the message. */
   images?: UserMessageImageAttachment[];
+  /** Daemon-stored images, fetched on demand. Absent when `images` holds the same set. */
+  imageRefs?: UserMessageImageRef[];
   attachments?: AgentAttachment[];
 }
 
@@ -114,6 +118,7 @@ export interface UserMessageInput {
   text: string;
   timestamp: Date;
   images?: UserMessageImageAttachment[];
+  imageRefs?: UserMessageImageRef[];
   attachments?: AgentAttachment[];
 }
 
@@ -132,6 +137,7 @@ export function createUserMessage(input: UserMessageInput): UserMessageItem {
     text: input.text,
     timestamp: input.timestamp,
     ...(input.images && input.images.length > 0 ? { images: input.images } : {}),
+    ...(input.imageRefs && input.imageRefs.length > 0 ? { imageRefs: input.imageRefs } : {}),
     ...(input.attachments && input.attachments.length > 0
       ? { attachments: input.attachments }
       : {}),
@@ -231,6 +237,25 @@ interface UserMessageProductionResult {
   matched: boolean;
 }
 
+// The sender's local copies and the daemon's references are one set of images: a row
+// that shows local copies never also carries references.
+function mergeUserMessageImageRefs(
+  presentation: UserMessageItem,
+  incoming: UserMessageItem,
+  existing: UserMessageItem,
+): UserMessageImageRef[] | undefined {
+  if (presentation.images) return undefined;
+  return incoming.imageRefs ?? existing.imageRefs;
+}
+
+// An image-only message has no text but is still a message.
+function hasUserMessageContent(
+  hasText: boolean,
+  imageRefs: readonly UserMessageImageRef[] | undefined,
+): boolean {
+  return hasText || (imageRefs?.length ?? 0) > 0;
+}
+
 function produceUserMessage(
   items: StreamItem[],
   incoming: UserMessageItem,
@@ -263,6 +288,7 @@ function produceUserMessage(
     clientMessageId: incoming.clientMessageId ?? existing.clientMessageId,
     messageId: incoming.messageId ?? existing.messageId,
     timelineCursor: incoming.timelineCursor ?? existing.timelineCursor,
+    imageRefs: mergeUserMessageImageRefs(presentation, incoming, existing),
   });
   if (
     existing.id === merged.id &&
@@ -272,6 +298,7 @@ function produceUserMessage(
     existing.text === merged.text &&
     existing.timestamp === merged.timestamp &&
     existing.images === merged.images &&
+    existing.imageRefs === merged.imageRefs &&
     existing.attachments === merged.attachments
   ) {
     return { items, index, message: existing, matched: true };
@@ -900,9 +927,10 @@ function appendUserMessage(
   clientMessageId?: string,
   timelineCursor?: TimelinePosition,
   turnId?: string,
+  imageRefs?: UserMessageImageRef[],
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
-  if (!hasContent) {
+  if (!hasUserMessageContent(hasContent, imageRefs)) {
     return state;
   }
 
@@ -915,6 +943,7 @@ function appendUserMessage(
     turnId,
     text: chunk,
     timestamp,
+    imageRefs,
   });
   return upsertUserMessage(state, nextItem);
 }
@@ -1523,6 +1552,7 @@ function reduceTimelineEvent(
         item.clientMessageId,
         timelineCursor,
         event.turnId,
+        item.images,
       );
     case "assistant_message":
       return appendAssistantMessage(
@@ -1875,6 +1905,7 @@ function applyCanonicalUserMessageEvent(params: {
   const { tail, head, event, timestamp, timelineCursor, unmatchedInsert = "tail" } = params;
   if (event.type !== "timeline" || event.item.type !== "user_message") return null;
   const normalized = normalizeChunk(event.item.text);
+  const hasContent = hasUserMessageContent(normalized.hasContent, event.item.images);
 
   const flushedTail = head.length > 0 ? flushHeadToTail(tail, head) : tail;
   const flushedHead = head.length > 0 ? [] : head;
@@ -1888,13 +1919,14 @@ function applyCanonicalUserMessageEvent(params: {
     timelineCursor,
     text: normalized.chunk,
     timestamp,
+    imageRefs: event.item.images,
   });
   if (unmatchedInsert === "head") {
     const reconciled = upsertUserMessageAcrossStream({
       tail,
       head,
       message: canonical,
-      insert: normalized.hasContent ? "head" : "none",
+      insert: hasContent ? "head" : "none",
       presentation: "existing",
     });
     const reconciledTail = canonical.clientMessageId
@@ -1922,7 +1954,7 @@ function applyCanonicalUserMessageEvent(params: {
           : [],
     };
   }
-  const reconciled = placeCanonicalUserMessageAtTail(flushedTail, canonical, normalized.hasContent);
+  const reconciled = placeCanonicalUserMessageAtTail(flushedTail, canonical, hasContent);
   const reconciledTail = canonical.clientMessageId
     ? reconcileCanonicalUserTurnMembership(
         reconciled.items,

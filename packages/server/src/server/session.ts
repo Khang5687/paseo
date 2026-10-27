@@ -2780,6 +2780,8 @@ export class Session {
         return this.handleAgentTimelineSearchRequest(msg, source);
       case "agent.timeline.list_prompts.request":
         return this.handleAgentTimelineListPromptsRequest(msg, source);
+      case "agent.timeline.get_image.request":
+        return this.handleAgentTimelineGetImageRequest(msg, source);
       case "agent.provider_subagents.list.request":
         return this.handleProviderSubagentListRequest(msg);
       case "agent.provider_subagents.timeline.get.request":
@@ -8020,6 +8022,31 @@ export class Session {
         source,
       );
     }
+  }
+
+  private async handleAgentTimelineGetImageRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.timeline.get_image.request" }>,
+    source?: object,
+  ): Promise<void> {
+    const { requestId, agentId, imageId } = msg;
+    let data: string | null = null;
+    let error: string | null = null;
+    try {
+      data = await this.agentManager.readUserMessageImage(agentId, imageId);
+    } catch (readError) {
+      this.sessionLogger.error(
+        { err: readError, agentId, imageId },
+        "Failed to handle agent.timeline.get_image.request",
+      );
+      error = readError instanceof Error ? readError.message : String(readError);
+    }
+    this.emitForSource(
+      {
+        type: "agent.timeline.get_image.response",
+        payload: { requestId, agentId, imageId, data, error },
+      },
+      source,
+    );
   }
 
   private async handleProviderSubagentListRequest(

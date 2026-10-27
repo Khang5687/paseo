@@ -1,8 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { createHash } from "crypto";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { createDaemonTestContext, type DaemonTestContext } from "../test-utils/index.js";
+import {
+  createDaemonTestContext,
+  DaemonClient,
+  type DaemonTestContext,
+} from "../test-utils/index.js";
 import { createMessageCollector, type MessageCollector } from "../test-utils/message-collector.js";
 
 function tmpCwd(): string {
@@ -141,4 +146,74 @@ describe("sendImages", () => {
     await ctx.client.deleteAgent(agent.id);
     rmSync(cwd, { recursive: true, force: true });
   }, 180000); // 3 minute timeout for Claude API call
+});
+
+describe("user message images", () => {
+  const INITIAL_IMAGE = Buffer.from("initial prompt image bytes").toString("base64");
+  const FOLLOW_UP_IMAGE = Buffer.from("follow-up image bytes").toString("base64");
+
+  function refOf(base64: string, mimeType: string) {
+    const bytes = Buffer.from(base64, "base64");
+    return {
+      id: createHash("sha256").update(bytes).digest("hex"),
+      mimeType,
+      size: bytes.byteLength,
+    };
+  }
+
+  test("another client sees the images of messages one client sent", async () => {
+    const cwd = tmpCwd();
+    const agent = await ctx.client.createAgent({
+      provider: "claude",
+      cwd,
+      title: "Shared Image Agent",
+      initialPrompt: "Look at this",
+      clientMessageId: "initial-message",
+      images: [{ data: INITIAL_IMAGE, mimeType: "image/png" }],
+    });
+    await ctx.client.waitForFinish(agent.id, 30000);
+    await ctx.client.sendMessage(agent.id, "And this one", {
+      messageId: "follow-up-message",
+      images: [{ data: FOLLOW_UP_IMAGE, mimeType: "image/jpeg" }],
+    });
+    await ctx.client.waitForFinish(agent.id, 30000);
+
+    const other = new DaemonClient({ url: `ws://127.0.0.1:${ctx.daemon.port}/ws` });
+    try {
+      await other.connect();
+      const timeline = await other.fetchAgentTimeline(agent.id, { direction: "tail", limit: 50 });
+      const userMessages = timeline.entries.flatMap((entry) =>
+        entry.item.type === "user_message" ? [entry.item] : [],
+      );
+      expect(userMessages).toEqual([
+        expect.objectContaining({
+          text: "Look at this",
+          clientMessageId: "initial-message",
+          images: [refOf(INITIAL_IMAGE, "image/png")],
+        }),
+        expect.objectContaining({
+          text: "And this one",
+          clientMessageId: "follow-up-message",
+          images: [refOf(FOLLOW_UP_IMAGE, "image/jpeg")],
+        }),
+      ]);
+      expect(other.getLastServerInfoMessage()?.features?.userMessageImages).toBe(true);
+
+      const [initialRef] = userMessages[0]?.images ?? [];
+      const [followUpRef] = userMessages[1]?.images ?? [];
+      await expect(other.getAgentTimelineImage(agent.id, initialRef!.id)).resolves.toBe(
+        INITIAL_IMAGE,
+      );
+      await expect(other.getAgentTimelineImage(agent.id, followUpRef!.id)).resolves.toBe(
+        FOLLOW_UP_IMAGE,
+      );
+
+      // The images belong to the agent: deleting it deletes them.
+      await ctx.client.deleteAgent(agent.id);
+      await expect(other.getAgentTimelineImage(agent.id, initialRef!.id)).resolves.toBeNull();
+    } finally {
+      await other.close();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60000);
 });

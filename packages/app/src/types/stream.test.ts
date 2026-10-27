@@ -2406,3 +2406,99 @@ it("retains agent-message provenance through live delivery and repeated history"
   expect(replay).toHaveLength(1);
   expect(replay[0]).toMatchObject({ payload: { data: { agentMessage } } });
 });
+
+describe("daemon user message images", () => {
+  const ref = { id: "a".repeat(64), mimeType: "image/png", size: 68 };
+
+  it("maps image refs onto a message another client sent", () => {
+    const applied = applyStreamEvent({
+      tail: [],
+      head: [],
+      event: {
+        type: "timeline",
+        provider: "claude",
+        item: {
+          type: "user_message",
+          text: "Look at this",
+          messageId: "msg-other-client",
+          clientMessageId: "msg-other-client",
+          images: [ref],
+        },
+      },
+      timestamp: new Date("2025-01-01T15:05:00Z"),
+      source: "canonical",
+      timelineCursor: { epoch: "epoch-1", seq: 7 },
+    });
+
+    const userMessages = applied.tail.filter((item) => item.kind === "user_message");
+    expect(userMessages).toEqual([
+      expect.objectContaining({ text: "Look at this", imageRefs: [ref] }),
+    ]);
+    expect(userMessages[0]).not.toHaveProperty("images");
+  });
+
+  it("keeps an image-only message another client sent", () => {
+    const event: AgentStreamEventPayload = {
+      type: "timeline",
+      provider: "claude",
+      item: { type: "user_message", text: "", clientMessageId: "msg-image-only", images: [ref] },
+    };
+    const timestamp = new Date("2025-01-01T15:05:01Z");
+
+    const applied = applyStreamEvent({
+      tail: [],
+      head: [],
+      event,
+      timestamp,
+      source: "canonical",
+      timelineCursor: { epoch: "epoch-1", seq: 8 },
+    });
+    const reduced = reduceStreamUpdate([], event, timestamp, { source: "canonical" });
+
+    for (const items of [applied.tail, reduced]) {
+      expect(items).toEqual([
+        expect.objectContaining({ kind: "user_message", text: "", imageRefs: [ref] }),
+      ]);
+    }
+  });
+
+  it("shows the sender one set of images when its message comes back with refs", () => {
+    const localImage = {
+      id: "local-image",
+      mimeType: "image/png",
+      storageType: "web-indexeddb" as const,
+      storageKey: "local-image",
+      createdAt: 1,
+    };
+    const submitted = createUserMessage({
+      clientMessageId: "msg-sender",
+      text: "Look at this",
+      timestamp: new Date("2025-01-01T15:05:02Z"),
+      images: [localImage],
+    });
+
+    const applied = applyStreamEvent({
+      tail: [submitted],
+      head: [],
+      event: {
+        type: "timeline",
+        provider: "claude",
+        item: {
+          type: "user_message",
+          text: "Look at this",
+          messageId: "msg-sender",
+          clientMessageId: "msg-sender",
+          images: [ref],
+        },
+      },
+      timestamp: new Date("2025-01-01T15:05:03Z"),
+      source: "canonical",
+      timelineCursor: { epoch: "epoch-1", seq: 9 },
+    });
+
+    const userMessages = applied.tail.filter((item) => item.kind === "user_message");
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]).toMatchObject({ messageId: "msg-sender", images: [localImage] });
+    expect(userMessages[0]).not.toHaveProperty("imageRefs");
+  });
+});
