@@ -393,7 +393,6 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
 }
 
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
-const NO_IMAGE_REFS: UserMessageImageRef[] = [];
 
 export const UserMessage = memo(function UserMessage({
   sender,
@@ -401,8 +400,8 @@ export const UserMessage = memo(function UserMessage({
   agentId,
   messageId,
   message,
-  images: localImages = [],
-  imageRefs = NO_IMAGE_REFS,
+  images: localImages,
+  imageRefs,
   attachments = [],
   timestamp,
   capabilities,
@@ -413,9 +412,7 @@ export const UserMessage = memo(function UserMessage({
   disableOuterSpacing,
 }: UserMessageProps) {
   const isCompact = useIsCompactFormFactor();
-  const daemonImages = useUserMessageImages({ client, serverId, agentId, imageRefs });
-  // The stream keeps either the sender's local copies or the daemon's references, never both.
-  const images = daemonImages.length > 0 ? [...localImages, ...daemonImages] : localImages;
+  const images = useUserMessageImages({ client, serverId, agentId, localImages, imageRefs });
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
   const [lightboxMetadata, setLightboxMetadata] = useState<UserMessageImageAttachment | null>(null);

@@ -15,14 +15,21 @@ const acquisitions = createAssistantImageAcquisitionCache<AttachmentMetadata>({
   onRetain: (attachment) => retainAttachmentForGarbageCollection(attachment.id),
 });
 
-/** Resolves daemon-stored user message images to local attachments, in ref order, as they arrive. */
+const NO_ATTACHMENTS: AttachmentMetadata[] = [];
+
+/**
+ * The images a user message shows. Local copies and daemon references are the same images, so
+ * the sender shows its own copies; other clients resolve the references, in order, as they arrive.
+ */
 export function useUserMessageImages(input: {
   client?: Pick<DaemonClient, "getAgentTimelineImage"> | null;
   serverId?: string;
   agentId?: string;
-  imageRefs: readonly UserMessageImageRef[];
+  localImages?: AttachmentMetadata[];
+  imageRefs?: readonly UserMessageImageRef[];
 }): AttachmentMetadata[] {
-  const { client, serverId, agentId, imageRefs } = input;
+  const { client, serverId, agentId, localImages = NO_ATTACHMENTS } = input;
+  const imageRefs = localImages.length > 0 ? [] : (input.imageRefs ?? []);
   const supported = useSessionStore((state) =>
     serverId ? state.sessions[serverId]?.serverInfo?.features?.userMessageImages === true : false,
   );
@@ -62,5 +69,6 @@ export function useUserMessageImages(input: {
     // Retention follows which attachments resolved, not array identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retainedKey]);
+  if (localImages.length > 0) return localImages;
   return attachments.flatMap((attachment) => (attachment ? [attachment] : []));
 }
