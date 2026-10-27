@@ -200,7 +200,7 @@ The file has three sections: `## Open`, `## Merged`, `## Builds`. When you open 
 
 When the owner says "build it", one agent integrates. That agent is the only one that merges, and only then. "Build it except #N" leaves #N out.
 
-1. Read `~/git/paseo-HANDOFF.md`. Take every `## Open` entry with `status: ready`. Check each with `gh pr view <N> --json isDraft,state,mergeable`; skip drafts, closed PRs, and `CONFLICTING`.
+1. Check disk first: `df -h /` needs at least 8 GB free (the reinstall, the desktop build and the Android build each need room, and the Android build alone writes ~3 GB). Below that, stop and ask the owner to free space; agents do not delete the owner's files to make room. Then read `~/git/paseo-HANDOFF.md`. Take every `## Open` entry with `status: ready`. Check each with `gh pr view <N> --json isDraft,state,mergeable`; skip drafts, closed PRs, and `CONFLICTING`. Read each entry's `note:` line: it carries integration instructions (merge order, tests to register in `scripts/fork-features.json`, checks to run after the build).
 2. In the main checkout, merge in stack order, otherwise by PR number:
    ```bash
    git checkout main && git pull --no-rebase origin main
@@ -210,10 +210,20 @@ When the owner says "build it", one agent integrates. That agent is the only one
 3. Install and build: `npm ci && npm run build:server && npm run build:plugin`.
 4. Run `node scripts/fork-check.mjs`: typecheck, lint, and every fork feature's tests. If it fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
 5. `git push origin main`, then sync upstream with `node scripts/fork-sync.mjs --apply` (see "Syncing with upstream"). It moves `main` only when every fork check passes on the merged result.
-6. `git pull --ff-only origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
-7. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
+6. `git pull --ff-only origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork). Then:
+   - **Remote daemons.** For each host in `~/.paseo-fork-remotes`, `scripts/fork-remote-daemon.sh <host> build` (if `fork-update.sh` did not already), then `scripts/fork-remote-daemon.sh <host> restart`. It refuses with exit 3 while agents on that host are working; never pass `--force`. Report which agents blocked it and leave the host on its old build; the owner reruns `restart` when they are done.
+   - **Android APK.** Build the fork app ("Paseo Debug", `sh.paseo.debug`) from `main`. `npm run build:apk` builds the production variant (`sh.paseo`), which is the wrong app here. Check that `packages/app/.secrets/google-services.debug.json` and `packages/app/.secrets/eas.json` exist first; without them the APK installs but never receives a push (see Running the fork).
+     ```bash
+     export JAVA_HOME=/opt/homebrew/opt/openjdk@21 ANDROID_HOME=$HOME/Library/Android/sdk APP_VARIANT=development NODE_ENV=production
+     npm run build:app-deps
+     (cd packages/app && npx expo prebuild --platform android --no-install --clean)
+     (cd packages/app/android && ./gradlew assembleRelease --no-daemon --max-workers=2 -Dorg.gradle.parallel=false -PreactNativeArchitectures=arm64-v8a)
+     cp packages/app/android/app/build/outputs/apk/release/app-release.apk ~/Downloads/paseo-fork-main.apk
+     ```
+     Confirm with `aapt2 dump badging` (from the newest `$ANDROID_HOME/build-tools/*`) that the package is `sh.paseo.debug` and the version matches `main`. The build leaves ~1.6 GB in `packages/app/android/app/build`; agents may not delete it, so put its size in the report for the owner.
+7. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result, each remote host's result, APK path.
 8. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays. `../paseo-sync` is not a PR worktree; it stays.
-9. Report to the owner what merged, what was skipped and why, the fork-sync result, and the install commands.
+9. Report to the owner what merged, what was skipped and why, the fork-sync result, which remote hosts switched or why not, and the install steps: the Mac app (quit Paseo, `/Applications/Paseo.app/Contents/Resources/bin/paseo daemon stop`, `scripts/fork-update.sh --install`) and the phone (send `~/Downloads/paseo-fork-main.apk` to the phone and tap it; it updates Paseo Debug in place).
 
 ### Upstream PRs
 
@@ -280,6 +290,8 @@ The owner's Paseo.app is their only way to reach their agents. These rules come 
 - **Never install while any Paseo process runs.** The daemon runs as `Paseo Helper` and outlives the window; checking only for the window misses it. Replacing the bundle under a running daemon leaves it running deleted code.
 - **Agents never install.** An agent may build (`--no-sync`) and report; only the owner runs `--install` or the full script, after quitting Paseo and `paseo daemon stop`.
 - **Keep the rollback.** Install moves the old app to `/Applications/Paseo.previous.app`. If the new app does not open: `rm -rf /Applications/Paseo.app && mv /Applications/Paseo.previous.app /Applications/Paseo.app`. To diagnose, run `/Applications/Paseo.app/Contents/MacOS/Paseo` from a terminal; launch errors print there, not in a dialog.
+
+Remote daemons the owner reaches over SSH (Omen) run fork `main` too, or their agents lose fork daemon features such as the daemon-owned queue: against a stock daemon the app falls back to a queue held in the app, which stops when that device sleeps. `scripts/fork-remote-daemon.sh <ssh-host> build|restart|rollback|npm` builds fork `main` in its own directory on the host and points the host's `paseo.service` at it through a systemd drop-in, leaving the owner's unit file alone; `npm` removes the drop-in and returns to the npm-installed daemon. `fork-update.sh` builds every host listed in `~/.paseo-fork-remotes` (one SSH alias per line) and switches them on install. A restart stops that host's running agents, so it refuses while any are working; the owner picks the moment, as for the Mac. Pair the phone with each remote host directly (`paseo daemon pair --relay` on the host), not through the Mac: a route through the Mac goes away when the Mac sleeps.
 
 Daemon-only changes work with the store mobile app. App changes (composer, timeline UI) show only in fork-built clients.
 
