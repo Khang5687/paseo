@@ -281,6 +281,8 @@ The owner's Paseo.app is their only way to reach their agents. These rules come 
 - **Agents never install.** An agent may build (`--no-sync`) and report; only the owner runs `--install` or the full script, after quitting Paseo and `paseo daemon stop`.
 - **Keep the rollback.** Install moves the old app to `/Applications/Paseo.previous.app`. If the new app does not open: `rm -rf /Applications/Paseo.app && mv /Applications/Paseo.previous.app /Applications/Paseo.app`. To diagnose, run `/Applications/Paseo.app/Contents/MacOS/Paseo` from a terminal; launch errors print there, not in a dialog.
 
+Remote daemons the owner reaches over SSH (Omen) run fork `main` too, or their agents lose fork daemon features such as the daemon-owned queue: against a stock daemon the app falls back to a queue held in the app, which stops when that device sleeps. `scripts/fork-remote-daemon.sh <ssh-host> build|restart|rollback|npm` builds fork `main` in its own directory on the host and points the host's `paseo.service` at it through a systemd drop-in, leaving the owner's unit file alone; `npm` removes the drop-in and returns to the npm-installed daemon. `fork-update.sh` builds every host listed in `~/.paseo-fork-remotes` (one SSH alias per line) and switches them on install. A restart stops that host's running agents, so it refuses while any are working; the owner picks the moment, as for the Mac. Pair the phone with each remote host directly (`paseo daemon pair --relay` on the host), not through the Mac: a route through the Mac goes away when the Mac sleeps.
+
 Daemon-only changes work with the store mobile app. App changes (composer, timeline UI) show only in fork-built clients.
 
 ## Release branches
