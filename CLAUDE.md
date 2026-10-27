@@ -282,6 +282,8 @@ The owner runs a desktop app built from fork `main` in place of the published Pa
 
 Fork builds have no update feed (`--dir` builds write no `app-update.yml`), so the app never auto-updates back to stock Paseo. The `[auto-updater] … app-update.yml` ENOENT lines in its log are expected. Builds are ad-hoc signed and not notarized.
 
+The fork Android app ("Paseo Debug") gets push notifications through the owner's own Firebase project (`paseo-fork-98618`) and Expo project (`khangworks-team/voice-mobile`), since upstream's credentials cannot deliver to a fork build. Two gitignored files in the main checkout turn it on: `packages/app/.secrets/google-services.debug.json` and `packages/app/.secrets/eas.json` (`projectId`, `owner`, read by `app.config.js`). Without them an APK builds fine but never receives a push. The FCM private key is uploaded to the Expo project's credentials; a private copy lives in `~/.paseo-fork-secrets/`.
+
 The owner's Paseo.app is their only way to reach their agents. These rules come from a fork build that was installed under a running daemon and then could not open:
 
 - **Build and install the desktop app only through `scripts/fork-update.sh`.** Do not run `electron-builder`, `npm run build:desktop`, `codesign`, or `ditto` against `/Applications/Paseo.app` by hand. Change the script instead, in its own PR.
