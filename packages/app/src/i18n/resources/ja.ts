@@ -168,6 +168,7 @@ export const ja: TranslationResources = {
       sendQueuedMessageNow: "キューに入れたメッセージを今すぐ送信",
       queueHeader: "キュー · {{count}}",
       queuePausedHeader: "キュー一時停止中 · {{count}}",
+      queuePauseReason: "送信できませんでした: {{reason}}",
       pauseQueue: "キューを一時停止",
       resumeQueue: "キューを再開",
       clearQueue: "キューをクリア",

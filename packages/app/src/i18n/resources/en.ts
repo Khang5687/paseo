@@ -163,6 +163,7 @@ export const en = {
       sendQueuedMessageNow: "Send queued message now",
       queueHeader: "Queue · {{count}}",
       queuePausedHeader: "Queue paused · {{count}}",
+      queuePauseReason: "Couldn't send: {{reason}}",
       pauseQueue: "Pause queue",
       resumeQueue: "Resume queue",
       clearQueue: "Clear queue",

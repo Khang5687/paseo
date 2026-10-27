@@ -87,6 +87,7 @@ export function projectAgentSnapshot(agent: Agent): AgentSnapshotPayload {
     archivedAt: agent.archivedAt?.toISOString() ?? null,
     ...(agent.queuedMessages ? { queuedMessages: agent.queuedMessages } : {}),
     ...(agent.queuePaused ? { queuePaused: agent.queuePaused } : {}),
+    ...(agent.queuePauseReason ? { queuePauseReason: agent.queuePauseReason } : {}),
   };
 }
 
@@ -140,5 +141,7 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     queuedMessages: snapshot.queuedMessages ?? [],
     // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
     queuePaused: snapshot.queuePaused ?? false,
+    // COMPAT(queuePauseReason): added in v0.13.x, remove gate after 2027-10-27.
+    queuePauseReason: snapshot.queuePauseReason ?? null,
   };
 }

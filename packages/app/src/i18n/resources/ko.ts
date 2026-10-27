@@ -167,6 +167,7 @@ export const ko: TranslationResources = {
       sendQueuedMessageNow: "대기 중인 메시지 지금 보내기",
       queueHeader: "대기열 · {{count}}",
       queuePausedHeader: "대기열 일시 중지됨 · {{count}}",
+      queuePauseReason: "보내지 못했습니다: {{reason}}",
       pauseQueue: "대기열 일시 중지",
       resumeQueue: "대기열 재개",
       clearQueue: "대기열 비우기",

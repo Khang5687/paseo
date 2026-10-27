@@ -168,6 +168,7 @@ export const ru: TranslationResources = {
       sendQueuedMessageNow: "Отправить сообщение из очереди сейчас",
       queueHeader: "Очередь · {{count}}",
       queuePausedHeader: "Очередь приостановлена · {{count}}",
+      queuePauseReason: "Не удалось отправить: {{reason}}",
       pauseQueue: "Приостановить очередь",
       resumeQueue: "Возобновить очередь",
       clearQueue: "Очистить очередь",

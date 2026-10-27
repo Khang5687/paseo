@@ -169,6 +169,7 @@ export const fr: TranslationResources = {
       sendQueuedMessageNow: "Envoyer maintenant le message en file d’attente",
       queueHeader: "File d’attente · {{count}}",
       queuePausedHeader: "File d’attente en pause · {{count}}",
+      queuePauseReason: "Envoi impossible : {{reason}}",
       pauseQueue: "Mettre la file d’attente en pause",
       resumeQueue: "Reprendre la file d’attente",
       clearQueue: "Vider la file d’attente",

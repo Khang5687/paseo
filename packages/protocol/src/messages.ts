@@ -913,6 +913,9 @@ export const AgentSnapshotPayloadSchema = z.object({
   queuedMessages: z.array(AgentQueuedMessageSummaryPayloadSchema).optional(),
   // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24. Absent = not paused.
   queuePaused: z.boolean().optional(),
+  // COMPAT(queuePauseReason): added in v0.13.x, remove gate after 2027-10-27. Set only while
+  // queuePaused, when the daemon paused the queue because it could not send the head entry.
+  queuePauseReason: z.string().optional(),
   // Private helper marker, retained for exact-ID snapshots and older wire messages.
   internal: z.boolean().optional(),
 });

@@ -106,6 +106,8 @@ export interface Agent {
   queuedMessages?: AgentQueuedMessageSummaryPayload[];
   /** Whether the host holds the queue instead of draining it. Absent on older hosts. */
   queuePaused?: boolean;
+  /** Why the host paused the queue itself (a send it could not complete); null otherwise. */
+  queuePauseReason?: string | null;
 }
 
 export interface WorkspaceDescriptor {

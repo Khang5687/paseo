@@ -122,6 +122,7 @@ export async function ensureAgentLoaded(
           attention: extractAttention(record),
           queuedMessages: record.queuedMessages ?? [],
           queuePaused: record.queuePaused ?? false,
+          queuePauseReason: record.queuePauseReason,
         },
         record.archivedAt ? { purpose: "history" } : undefined,
       );

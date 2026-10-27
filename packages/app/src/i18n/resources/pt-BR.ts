@@ -168,6 +168,7 @@ export const ptBR: TranslationResources = {
       sendQueuedMessageNow: "Enviar mensagem da fila agora",
       queueHeader: "Fila · {{count}}",
       queuePausedHeader: "Fila pausada · {{count}}",
+      queuePauseReason: "Não foi possível enviar: {{reason}}",
       pauseQueue: "Pausar fila",
       resumeQueue: "Retomar fila",
       clearQueue: "Limpar fila",
