@@ -153,3 +153,62 @@ test("queue controls by one client are reflected in another client's snapshots",
     rmSync(cwd, { recursive: true, force: true });
   }
 }, 60_000);
+
+/**
+ * A message still queued when the daemon stops is sent by the next daemon on
+ * its own: no client connects to the restarted daemon until it has drained.
+ */
+test("a stored queue drains after a daemon restart without any client", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-restart-"));
+  const paseoHomeRoot = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-restart-home-"));
+  const promptsAfterRestart: string[] = [];
+  let daemon: TestPaseoDaemon | null = null;
+  let client: DaemonClient | null = null;
+  try {
+    daemon = await createTestPaseoDaemon({
+      agentClients: createTestAgentClients(),
+      paseoHomeRoot,
+      cleanup: false,
+    });
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    const agent = await client.createAgent({ provider: "codex", cwd });
+    // Park the turn on a permission prompt so the queued entry is still there at shutdown.
+    await client.sendMessage(agent.id, "run echo hello");
+    const parked = await client.waitForFinish(agent.id, 30_000);
+    expect(parked.final?.pendingPermissions?.[0]?.id).toBeTruthy();
+    const queued = await client.addQueuedAgentMessage({
+      agentId: agent.id,
+      text: "carry on after the restart",
+    });
+    await client.close();
+    client = null;
+    await daemon.close();
+    daemon = null;
+
+    daemon = await createTestPaseoDaemon({
+      agentClients: createTestAgentClients({
+        onStartTurn: (prompt) => {
+          promptsAfterRestart.push(promptText(prompt));
+        },
+      }),
+      paseoHomeRoot,
+      cleanup: false,
+    });
+    await vi.waitFor(() => expect(promptsAfterRestart).toEqual([queued.text]), {
+      timeout: 20_000,
+    });
+
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    await vi.waitFor(async () => {
+      expect((await client!.fetchAgent(agent.id))?.agent.queuedMessages).toEqual([]);
+    });
+    expect(promptsAfterRestart).toEqual([queued.text]);
+  } finally {
+    await client?.close().catch(() => undefined);
+    await daemon?.close().catch(() => undefined);
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(paseoHomeRoot, { recursive: true, force: true });
+  }
+}, 90_000);

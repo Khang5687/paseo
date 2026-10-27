@@ -1249,6 +1249,9 @@ function ComposerContentImpl({
   const isQueuePaused = useSessionStore(
     (state) => state.sessions[serverId]?.agents.get(agentId)?.queuePaused === true,
   );
+  const queuePauseReason = useSessionStore(
+    (state) => state.sessions[serverId]?.agents.get(agentId)?.queuePauseReason ?? null,
+  );
   const daemonQueuedMessages = useSessionStore(
     (state) => state.sessions[serverId]?.agents.get(agentId)?.queuedMessages,
   );
@@ -2156,6 +2159,7 @@ function ComposerContentImpl({
     if (!hostOwnsQueue || !hostHasQueueControls) return null;
     return {
       paused: isQueuePaused,
+      pauseReason: isQueuePaused ? queuePauseReason : null,
       onMove: handleMoveQueuedMessage,
       onDelete: handleDeleteQueuedMessage,
       onSetPaused: handleSetQueuePaused,
@@ -2169,6 +2173,7 @@ function ComposerContentImpl({
     hostHasQueueControls,
     hostOwnsQueue,
     isQueuePaused,
+    queuePauseReason,
   ]);
 
   const handleQueue = useCallback(

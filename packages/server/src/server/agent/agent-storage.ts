@@ -82,6 +82,8 @@ const STORED_AGENT_SCHEMA = z.object({
   queuedMessages: z.array(AgentQueuedMessagePayloadSchema).optional(),
   // Stops the automatic drain; absent = not paused.
   queuePaused: z.boolean().optional(),
+  // Why the daemon paused the queue after a failed send; absent = no reason.
+  queuePauseReason: z.string().optional(),
   archivedAt: z.string().nullable().optional(),
   owner: AgentOwnerSchema.optional(),
 });
