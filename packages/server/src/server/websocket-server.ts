@@ -2026,6 +2026,8 @@ export class VoiceAssistantWebSocketServer {
         agentTimelinePromptIndex: true,
         // COMPAT(agentHistorySearch): added in v0.3.0, remove gate after 2027-02-07.
         agentHistorySearch: true,
+        // COMPAT(userMessageImages): added in v0.14.0, remove gate after 2027-04-27.
+        userMessageImages: true,
         // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.
         checkoutRefresh: true,
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
@@ -2115,8 +2117,6 @@ export class VoiceAssistantWebSocketServer {
         agentProfiles: true,
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: true,
-        // COMPAT(userMessageImages): added in v0.14.0, remove gate after 2027-04-27.
-        userMessageImages: true,
       },
     };
   }

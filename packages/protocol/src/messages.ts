@@ -3752,6 +3752,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentTimelinePromptIndex: z.boolean().optional(),
         // COMPAT(agentHistorySearch): added in v0.3.0, remove gate after 2027-02-07.
         agentHistorySearch: z.boolean().optional(),
+        // COMPAT(userMessageImages): added in v0.14.0, remove gate after 2027-04-27.
+        userMessageImages: z.boolean().optional(),
         // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.
         checkoutRefresh: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
@@ -3855,8 +3857,6 @@ export const ServerInfoStatusPayloadSchema = z
         agentProfiles: z.boolean().optional(),
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: z.boolean().optional(),
-        // COMPAT(userMessageImages): added in v0.14.0, remove gate after 2027-04-27.
-        userMessageImages: z.boolean().optional(),
       })
       .optional(),
   })
