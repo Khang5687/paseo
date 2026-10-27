@@ -110,6 +110,9 @@ export function toStoredAgentRecord(
     owner: agent.owner,
     queuedMessages: agent.queuedMessages,
     ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.queuePaused && agent.queuePauseReason
+      ? { queuePauseReason: agent.queuePauseReason }
+      : {}),
   } satisfies StoredAgentRecord;
 }
 
@@ -154,6 +157,9 @@ export function toAgentPayload(
     archivedAt: options?.archivedAt ?? null,
     queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
     ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.queuePaused && agent.queuePauseReason
+      ? { queuePauseReason: agent.queuePauseReason }
+      : {}),
     ...(agent.internal ? { internal: true } : {}),
   };
 
@@ -272,11 +278,14 @@ export function buildStoredAgentPayload(
 }
 
 function projectStoredQueue(
-  record: Pick<StoredAgentRecord, "queuedMessages" | "queuePaused">,
-): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused"> {
+  record: Pick<StoredAgentRecord, "queuedMessages" | "queuePaused" | "queuePauseReason">,
+): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused" | "queuePauseReason"> {
   return {
     queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
     ...(record.queuePaused ? { queuePaused: true } : {}),
+    ...(record.queuePaused && record.queuePauseReason
+      ? { queuePauseReason: record.queuePauseReason }
+      : {}),
   };
 }
 

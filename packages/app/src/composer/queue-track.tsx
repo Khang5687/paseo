@@ -43,6 +43,8 @@ const NATIVE_DRAG_LONG_PRESS_MS = 200;
 
 export interface QueueControls {
   paused: boolean;
+  /** Why the host paused the queue (a send it could not complete); null when it gave none. */
+  pauseReason: string | null;
   onMove: (move: QueueMove) => void;
   onDelete: (id: string) => void;
   onSetPaused: (paused: boolean) => void;
@@ -195,7 +197,7 @@ function ControlledQueueTrack({
   const { t } = useTranslation();
   const gestureHostPresented = useRetainedPanelActive();
   const [expanded, setExpanded] = useState(false);
-  const { paused, onMove, onDelete, onSetPaused, onClear } = controls;
+  const { paused, pauseReason, onMove, onDelete, onSetPaused, onClear } = controls;
   const count = queuedMessages.length;
   const isCollapsible = count > COLLAPSE_THRESHOLD;
   const isCollapsed = isCollapsible && !expanded;
@@ -281,9 +283,20 @@ function ControlledQueueTrack({
   return (
     <View style={styles.queueTrack}>
       <View style={styles.queueHeader}>
-        <Text style={styles.queueHeaderLabel} numberOfLines={1}>
-          {headerLabel}
-        </Text>
+        <View style={styles.queueHeaderText}>
+          <Text style={styles.queueHeaderLabel} numberOfLines={1}>
+            {headerLabel}
+          </Text>
+          {pauseReason ? (
+            <Text
+              style={styles.queuePauseReason}
+              numberOfLines={3}
+              testID="composer-queue-pause-reason"
+            >
+              {t("composer.attachments.queuePauseReason", { reason: pauseReason })}
+            </Text>
+          ) : null}
+        </View>
         <View style={styles.queueHeaderActions}>
           <ToolbarButton
             onPress={handleTogglePaused}
@@ -522,11 +535,18 @@ const styles = StyleSheet.create((theme: Theme) => ({
     gap: theme.spacing[2],
     paddingHorizontal: theme.spacing[3],
   },
-  queueHeaderLabel: {
+  queueHeaderText: {
     flexShrink: 1,
+    gap: theme.spacing[1],
+  },
+  queueHeaderLabel: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
+  },
+  queuePauseReason: {
+    color: theme.colors.destructive,
+    fontSize: theme.fontSize.sm,
   },
   queueHeaderActions: {
     flexDirection: "row",

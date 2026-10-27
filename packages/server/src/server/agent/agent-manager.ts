@@ -475,6 +475,12 @@ interface ManagedAgentBase {
    * with the record so a pause survives a daemon restart.
    */
   queuePaused: boolean;
+  /**
+   * Why the daemon paused the queue itself: a queued message it could not
+   * send. Absent when the queue runs or the user paused it; cleared whenever
+   * the user pauses or resumes.
+   */
+  queuePauseReason?: string;
 }
 
 type ManagedAgentWithSession = ManagedAgentBase & {
@@ -1418,6 +1424,7 @@ export class AgentManager {
       attention?: AttentionState;
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
+      queuePauseReason?: string;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1452,6 +1459,7 @@ export class AgentManager {
       attention?: AttentionState;
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
+      queuePauseReason?: string;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1704,6 +1712,7 @@ export class AgentManager {
         attention: preservedAttention,
         queuedMessages: existing.queuedMessages,
         queuePaused: existing.queuePaused,
+        queuePauseReason: existing.queuePauseReason,
         restoring: true,
       });
     } catch (error) {
@@ -1869,6 +1878,9 @@ export class AgentManager {
       !agent.pendingReplacement &&
       agent.pendingPermissions.size === 0 &&
       agent.inFlightPermissionResponses.size === 0 &&
+      // A queue that will drain is pending work: unloading would strand it until
+      // something loads the agent again. A paused queue waits for a person.
+      (agent.queuePaused || agent.queuedMessages.length === 0) &&
       (this.collectingRuntimes.has(agent.id) || !this.lifecycleMutationTails.has(agent.id)) &&
       !this.foregroundMutationTails.has(agent.id) &&
       !this.sessionEventTails.has(agent.id) &&
@@ -2149,6 +2161,7 @@ export class AgentManager {
         internal: record.internal,
         queuedMessages: record.queuedMessages ?? [],
         queuePaused: record.queuePaused ?? false,
+        queuePauseReason: record.queuePauseReason,
         labels: record.labels,
       },
     });
@@ -2360,16 +2373,92 @@ export class AgentManager {
   }
 
   /**
-   * Pauses or resumes the automatic drain. The caller drains the head after a
-   * resume (see `AgentMessageQueueDispatcher.drainIfIdle`).
+   * Pauses or resumes the automatic drain. Either way the user has acted on the
+   * queue, so a daemon-set pause reason is cleared. The caller drains the head
+   * after a resume (see `AgentMessageQueueDispatcher.drainIfIdle`).
    */
   async setQueuePaused(agentId: string, paused: boolean): Promise<boolean> {
     return await this.runLifecycleMutation(agentId, async () => {
       const agent = this.requireAgent(agentId);
       agent.queuePaused = paused;
+      agent.queuePauseReason = undefined;
       await this.persistSnapshot(agent);
       this.emitState(agent, { persist: false });
       return paused;
+    });
+  }
+
+  /**
+   * Puts an entry taken by `takeQueuedMessage` back at the head, in one
+   * persisted write, after a dispatch the provider never admitted. With
+   * `pauseReason` the drain also pauses (so a persistent failure cannot loop
+   * on every idle), the failure lands in the timeline, and the agent is flagged
+   * for attention, since nobody may be watching when an automatic drain fails.
+   * Works on a stored-only agent too: the runtime can be gone by the time the
+   * send fails.
+   */
+  async requeueQueuedMessage(
+    agentId: string,
+    message: AgentQueuedMessagePayload,
+    options?: { pauseReason?: string },
+  ): Promise<void> {
+    await this.runLifecycleMutation(agentId, async () => {
+      const pauseReason = options?.pauseReason;
+      const agent = this.agents.get(agentId);
+      if (!agent) {
+        const registry = this.requireRegistry();
+        const record = await registry.get(agentId);
+        if (!record) throw new Error(`Agent not found: ${agentId}`);
+        const updatedAt = this.nextStoredUpdatedAt(record);
+        const flag =
+          pauseReason !== undefined && !record.internal && record.attentionReason !== "error";
+        const nextRecord: StoredAgentRecord = {
+          ...record,
+          updatedAt,
+          queuedMessages: [
+            message,
+            ...(record.queuedMessages ?? []).filter((item) => item.id !== message.id),
+          ],
+          ...(pauseReason !== undefined
+            ? { queuePaused: true, queuePauseReason: pauseReason }
+            : {}),
+          ...(flag
+            ? {
+                requiresAttention: true,
+                attentionReason: "error" as const,
+                attentionTimestamp: updatedAt,
+              }
+            : {}),
+        };
+        await registry.upsert(nextRecord);
+        this.dispatchStoredAgentState(nextRecord);
+        return;
+      }
+      if (pauseReason !== undefined) {
+        agent.queuePaused = true;
+        agent.queuePauseReason = pauseReason;
+        await this.appendSystemErrorTimelineMessage(
+          agent,
+          agent.provider,
+          `Couldn't send a queued message, so the queue is paused: ${pauseReason}`,
+        );
+        // An unread "finished" from the turn that just ended is outranked: the
+        // agent now needs someone to look at the queue.
+        const alreadyFlagged =
+          agent.attention.requiresAttention && agent.attention.attentionReason === "error";
+        if (!agent.internal && !alreadyFlagged) {
+          agent.attention = {
+            requiresAttention: true,
+            attentionReason: "error",
+            attentionTimestamp: new Date(),
+          };
+          this.broadcastAgentAttention(agent, "error");
+        }
+      }
+      await this.writeQueuedMessages(agent, [
+        message,
+        ...agent.queuedMessages.filter((item) => item.id !== message.id),
+      ]);
     });
   }
 
@@ -3872,6 +3961,7 @@ export class AgentManager {
       attention?: AttentionState;
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
+      queuePauseReason?: string;
       /**
        * Bringing a known agent back, rather than starting a new one. Its timestamps and
        * attention come from what was already recorded, and installing the session is not
@@ -4062,6 +4152,7 @@ export class AgentManager {
           owner?: AgentOwner;
           queuedMessages?: AgentQueuedMessagePayload[];
           queuePaused?: boolean;
+          queuePauseReason?: string;
         }
       | undefined;
   }): ActiveManagedAgent {
@@ -4105,6 +4196,7 @@ export class AgentManager {
       labels: options.labels ?? {},
       queuedMessages: options.queuedMessages ?? [],
       queuePaused: options.queuePaused ?? false,
+      queuePauseReason: options.queuePauseReason,
     } as ActiveManagedAgent;
   }
 

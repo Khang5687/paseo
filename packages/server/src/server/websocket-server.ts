@@ -1194,6 +1194,11 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
+  /** See `AgentMessageQueueDispatcher.drainStoredQueues`. Daemon start only. */
+  public drainStoredAgentQueues(): Promise<void> {
+    return this.agentMessageQueue.drainStoredQueues();
+  }
+
   public async close(): Promise<void> {
     this.prepareForShutdown();
     this.agentMessageQueue.detach();

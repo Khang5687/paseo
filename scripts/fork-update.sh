@@ -2,14 +2,22 @@
 # Fork-only (Khang5687/paseo); never upstreamed.
 # Syncs fork main with upstream (through scripts/fork-sync.mjs, which only moves main when
 # every fork check passes), builds the macOS desktop app from it, and installs it to
-# /Applications/Paseo.app. See "Running the fork" in CLAUDE.md.
+# /Applications/Paseo.app. Remote daemon hosts (one SSH alias per line in ~/.paseo-fork-remotes)
+# get the same main built, and switched over on install (scripts/fork-remote-daemon.sh).
+# See "Running the fork" in CLAUDE.md.
 #
 #   scripts/fork-update.sh            sync + build + install
-#   scripts/fork-update.sh --no-sync  build + install the current checkout
+#   scripts/fork-update.sh --no-sync  build the current checkout (installs when Paseo is not running)
 #   scripts/fork-update.sh --install  install the last build only
 set -euo pipefail
 
 INSTALL_PATH="/Applications/Paseo.app"
+REMOTES_FILE="$HOME/.paseo-fork-remotes"
+
+remote_hosts() {
+  [[ -f $REMOTES_FILE ]] || return 0
+  grep -vE '^\s*(#|$)' "$REMOTES_FILE"
+}
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -54,6 +62,21 @@ if [[ $build == 1 ]]; then
     -c.mac.identity=- \
     -c.mac.hardenedRuntime=false \
     -c.mac.notarize=false
+fi
+
+if [[ $build == 1 ]]; then
+  # Remote daemons build origin/main, which matches this checkout after the sync above.
+  for host in $(remote_hosts); do
+    scripts/fork-remote-daemon.sh "$host" build || echo "Remote daemon build on $host failed; the Mac build continues." >&2
+  done
+fi
+
+# Switching a remote daemon is part of installing: the owner picks the moment. It refuses while
+# agents on that host are working and skips hosts already running this build.
+if [[ $sync == 1 || $build == 0 ]]; then
+  for host in $(remote_hosts); do
+    scripts/fork-remote-daemon.sh "$host" restart || echo "Remote daemon on $host not switched (see above)." >&2
+  done
 fi
 
 if [[ ! -d $built_app ]]; then

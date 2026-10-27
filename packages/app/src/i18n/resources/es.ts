@@ -168,6 +168,7 @@ export const es: TranslationResources = {
       sendQueuedMessageNow: "Enviar mensaje en cola ahora",
       queueHeader: "Cola · {{count}}",
       queuePausedHeader: "Cola en pausa · {{count}}",
+      queuePauseReason: "No se pudo enviar: {{reason}}",
       pauseQueue: "Pausar cola",
       resumeQueue: "Reanudar cola",
       clearQueue: "Vaciar cola",

@@ -2052,6 +2052,11 @@ export async function createPaseoDaemon(
             providerSnapshotManager.settlePluginProviders();
             await finishSubscriptions.start();
             wsServer.beginAcceptingConnections();
+            // Queues stored with work in them drain without waiting for a client
+            // to open their agent. Runs in the background so startup does not wait.
+            void wsServer.drainStoredAgentQueues().catch((error: unknown) => {
+              logger.error({ err: error }, "Failed to drain stored agent queues");
+            });
             const relaySecurityLogger = logger.child({ module: "relay-security" });
             relayRuntime = createRelayRuntime({
               config: {
@@ -2199,13 +2204,37 @@ export async function createPaseoDaemon(
   };
 }
 
+export const INTERRUPTED_TURN_CONTINUE_MESSAGE =
+  "The Paseo daemon restarted while you were working, so your last turn was cut off. Check where things stand, then continue the task.";
+
 async function closeStaleAgentRecords(agentStorage: AgentStorage): Promise<void> {
   // No provider runtimes are loaded at startup. Repair interrupted
   // shutdowns before any status consumer sees the persisted active states.
+  // A stored running/initializing status means the daemon died mid-turn (a
+  // graceful stop persists the closed state), so an agent with a session to
+  // resume also gets a continue message at the head of its queue. It is an
+  // ordinary entry: visible, deletable, and sent by the startup queue drain.
   for (const record of await agentStorage.list()) {
-    if (record.lastStatus === "running" || record.lastStatus === "initializing") {
-      await agentStorage.upsert({ ...record, lastStatus: "closed" });
-    }
+    if (record.lastStatus !== "running" && record.lastStatus !== "initializing") continue;
+    const resumable = !record.archivedAt && !record.internal && Boolean(record.persistence);
+    await agentStorage.upsert({
+      ...record,
+      lastStatus: "closed",
+      ...(resumable
+        ? {
+            queuedMessages: [
+              {
+                id: randomUUID(),
+                text: INTERRUPTED_TURN_CONTINUE_MESSAGE,
+                images: [],
+                attachments: [],
+                createdAt: new Date().toISOString(),
+              },
+              ...(record.queuedMessages ?? []),
+            ],
+          }
+        : {}),
+    });
   }
 }
 

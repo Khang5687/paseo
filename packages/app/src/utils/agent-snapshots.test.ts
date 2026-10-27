@@ -34,6 +34,7 @@ function createSnapshot(
     labels: (input.labels ?? {}) as AgentSnapshotPayload["labels"],
     ...(input.queuedMessages ? { queuedMessages: input.queuedMessages } : {}),
     ...(input.queuePaused !== undefined ? { queuePaused: input.queuePaused } : {}),
+    ...(input.queuePauseReason !== undefined ? { queuePauseReason: input.queuePauseReason } : {}),
   };
 }
 
@@ -77,6 +78,20 @@ describe("normalizeAgentSnapshot", () => {
     // COMPAT(messageQueueControls): snapshots from hosts without queue controls omit the field.
     const legacy = normalizeAgentSnapshot(createSnapshot(), "server-1");
     expect(legacy.queuePaused).toBe(false);
+  });
+
+  it("carries why the host paused the queue, and nothing when it gave no reason", () => {
+    const failed = normalizeAgentSnapshot(
+      createSnapshot({ queuePaused: true, queuePauseReason: "provider unavailable" }),
+      "server-1",
+    );
+    expect(failed.queuePauseReason).toBe("provider unavailable");
+    expect(projectAgentSnapshot(failed).queuePauseReason).toBe("provider unavailable");
+
+    // COMPAT(queuePauseReason): hosts without the field, and user pauses, omit it.
+    const userPaused = normalizeAgentSnapshot(createSnapshot({ queuePaused: true }), "server-1");
+    expect(userPaused.queuePauseReason).toBeNull();
+    expect(projectAgentSnapshot(userPaused)).not.toHaveProperty("queuePauseReason");
   });
 
   it("normalizes identified and legacy active turns at the snapshot boundary", () => {

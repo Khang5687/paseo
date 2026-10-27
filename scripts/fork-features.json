@@ -459,5 +459,35 @@
     "title": "chore(fork): send Android pushes through the owner's Expo project",
     "untested": "app.config.js reads gitignored .secrets/eas.json; checked with @expo/config getConfig and by a push to the phone",
     "tests": []
+  },
+  {
+    "pr": 61,
+    "title": "fix(queue): never drop or strand queued messages",
+    "tests": [
+      "packages/server/src/server/agent/agent-message-queue.test.ts",
+      "packages/server/src/server/agent/agent-manager.test.ts",
+      "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
+      "packages/app/src/utils/agent-snapshots.test.ts"
+    ]
+  },
+  {
+    "pr": 64,
+    "title": "feat(server): resume turns interrupted by a daemon restart",
+    "tests": [
+      "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
+      "packages/server/src/server/daemon-e2e/daemon-restart-resume.e2e.test.ts"
+    ]
+  },
+  {
+    "pr": 60,
+    "title": "chore(fork): run the fork daemon on remote hosts",
+    "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; exercised by every Build it with ~/.paseo-fork-remotes",
+    "tests": []
+  },
+  {
+    "pr": 66,
+    "title": "docs(fork): Build it covers disk, remote daemons and the Android APK",
+    "untested": "docs only",
+    "tests": []
   }
 ]

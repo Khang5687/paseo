@@ -106,10 +106,34 @@ it and the queue survives a restart. `AgentMessageQueueDispatcher`
 the agent is already idle dispatches immediately. `send_now` pops a specific entry and sends it into
 the active turn with the caller's steer/interrupt behavior.
 
-`queuePaused` on the record stops the automatic drain and survives a restart; `send_now` still
-works while paused, and resuming drains the head if the agent is idle.
+An entry is never dropped. The pop is persisted before the send, so a send that throws before the
+provider admitted the prompt (load failure, refused steer, provider error) puts the same entry, id
+and bytes included, back at the head in one write. After an automatic drain the daemon also pauses
+the queue with the error as `queuePauseReason`, writes a `[System Error]` row to the timeline, and
+flags the agent with `error` attention: nobody may be watching, and retrying on every idle would
+loop. A failed `send_now` only restores the entry; its caller already gets the error. Once
+`sendPromptToAgent` returns, the prompt belongs to the provider: a run-start wait that times out or
+fails is treated as sent, because requeueing would deliver it twice (a rejected start already shows
+as a rejected message in the timeline).
 
-Snapshots carry summaries only (`id`, `text`, counts, `createdAt`) plus `queuePaused` when set; the
+A queue must drain without a client. After start, the daemon loads every non-archived stored agent
+whose queue is non-empty and not paused, one at a time and in the background, and drains it. Idle
+runtime cleanup does not unload an agent whose queue would drain, since unloading strands it until
+something loads the agent again; a paused queue does not pin the runtime.
+
+The same path resumes turns a crash cut off. A stored `lastStatus` of `running` or `initializing` at
+startup means the daemon died mid-turn; a graceful stop closes every agent and persists `closed`.
+Before rewriting those records to `closed`, `closeStaleAgentRecords` (`bootstrap.ts`) puts a continue
+message at the head of the queue of each non-archived one with a provider session to resume. It is an
+ordinary entry: it shows in the queue, can be deleted, and waits if the queue is paused. A turn that a
+graceful stop interrupts is not resumed, because its close already wrote `closed`.
+
+`queuePaused` on the record stops the automatic drain and survives a restart; `send_now` still
+works while paused, and resuming drains the head if the agent is idle. Pausing or resuming clears
+`queuePauseReason`; the reason only exists for a pause the daemon made.
+
+Snapshots carry summaries only (`id`, `text`, counts, `createdAt`) plus `queuePaused` and
+`queuePauseReason` when set; the
 bytes stay on the record. Every client renders the same list from its agent subscription and edits
 it through the `agent.queue.*` RPCs: `add`, `update`, `remove`, `move`, `clear`, `set_paused`,
 `send_now`. `remove` returns the full entry so the caller can put it back in a composer. `move`
@@ -139,6 +163,8 @@ good. A failed `move` reverts and toasts. On phones the row menu is the reorder 
 Hosts without `features.messageQueue` fall back to the client-local queue the app shipped before
 (`// COMPAT(messageQueue)` marks both branches). Hosts without `features.messageQueueControls` lack
 `move`, `clear`, and `set_paused`; the app hides those controls (`// COMPAT(messageQueueControls)`).
+Older hosts never send `queuePauseReason`, so the queue header shows a reason only when one arrives
+and needs no feature gate (`// COMPAT(queuePauseReason)`).
 
 ## Relationships
 

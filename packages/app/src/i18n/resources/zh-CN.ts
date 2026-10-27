@@ -167,6 +167,7 @@ export const zhCN: TranslationResources = {
       sendQueuedMessageNow: "立即发送排队消息",
       queueHeader: "队列 · {{count}}",
       queuePausedHeader: "队列已暂停 · {{count}}",
+      queuePauseReason: "发送失败：{{reason}}",
       pauseQueue: "暂停队列",
       resumeQueue: "恢复队列",
       clearQueue: "清空队列",

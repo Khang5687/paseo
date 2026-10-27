@@ -167,6 +167,7 @@ export const ar: TranslationResources = {
       sendQueuedMessageNow: "إرسال رسالة في قائمة الانتظار الآن",
       queueHeader: "قائمة الانتظار · {{count}}",
       queuePausedHeader: "قائمة الانتظار متوقفة مؤقتًا · {{count}}",
+      queuePauseReason: "تعذّر الإرسال: {{reason}}",
       pauseQueue: "إيقاف قائمة الانتظار مؤقتًا",
       resumeQueue: "استئناف قائمة الانتظار",
       clearQueue: "مسح قائمة الانتظار",
