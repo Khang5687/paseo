@@ -121,6 +121,13 @@ whose queue is non-empty and not paused, one at a time and in the background, an
 runtime cleanup does not unload an agent whose queue would drain, since unloading strands it until
 something loads the agent again; a paused queue does not pin the runtime.
 
+The same path resumes turns a crash cut off. A stored `lastStatus` of `running` or `initializing` at
+startup means the daemon died mid-turn; a graceful stop closes every agent and persists `closed`.
+Before rewriting those records to `closed`, `closeStaleAgentRecords` (`bootstrap.ts`) puts a continue
+message at the head of the queue of each non-archived one with a provider session to resume. It is an
+ordinary entry: it shows in the queue, can be deleted, and waits if the queue is paused. A turn that a
+graceful stop interrupts is not resumed, because its close already wrote `closed`.
+
 `queuePaused` on the record stops the automatic drain and survives a restart; `send_now` still
 works while paused, and resuming drains the head if the agent is idle. Pausing or resuming clears
 `queuePauseReason`; the reason only exists for a pause the daemon made.
