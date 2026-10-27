@@ -459,5 +459,11 @@
     "title": "chore(fork): run the fork daemon on remote hosts",
     "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; exercised by every Build it with ~/.paseo-fork-remotes",
     "tests": []
+  },
+  {
+    "pr": 66,
+    "title": "docs(fork): Build it covers disk, remote daemons and the Android APK",
+    "untested": "docs only",
+    "tests": []
   }
 ]
