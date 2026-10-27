@@ -453,5 +453,18 @@
     "pr": 59,
     "title": "chore(fork): check every fork feature before and after upstream syncs",
     "tests": ["scripts/fork-lib.test.mjs"]
+  },
+  {
+    "pr": 65,
+    "title": "feat(app): file menu for every file path the agent mentions",
+    "tests": [
+      "packages/app/src/file-path-menu/paths.test.ts",
+      "packages/app/src/terminal/local-links/terminal-local-link-provider.test.ts"
+    ],
+    "e2e": [
+      "packages/app/e2e/browser/assistant-file-link-menu.spec.ts",
+      "packages/app/e2e/browser/tool-call-file-path-menu.spec.ts",
+      "packages/app/e2e/browser/terminal-file-link-menu.spec.ts"
+    ]
   }
 ]
