@@ -465,6 +465,14 @@
     ]
   },
   {
+    "pr": 64,
+    "title": "feat(server): resume turns interrupted by a daemon restart",
+    "tests": [
+      "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
+      "packages/server/src/server/daemon-e2e/daemon-restart-resume.e2e.test.ts"
+    ]
+  },
+  {
     "pr": 60,
     "title": "chore(fork): run the fork daemon on remote hosts",
     "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; exercised by every Build it with ~/.paseo-fork-remotes",

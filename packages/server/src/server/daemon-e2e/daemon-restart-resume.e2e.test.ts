@@ -1,4 +1,5 @@
 import { AgentStorage } from "../agent/agent-storage.js";
+import { INTERRUPTED_TURN_CONTINUE_MESSAGE } from "../bootstrap.js";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -196,7 +197,28 @@ test.each([false, true])(
       client = new DaemonClient({ url: `ws://127.0.0.1:${second.port}/ws`, appVersion: "0.13.0" });
       await client.connect();
       await client.fetchAgents({ subscribe: {} });
-      expect((await client.fetchAgent(childId))?.agent.status).toBe("closed");
+      if (abrupt) {
+        // Killed mid-turn: the restarted daemon queues a continue message and resumes the child.
+        await expect
+          .poll(
+            async () =>
+              (
+                await client!.fetchAgentTimeline(childId, {
+                  direction: "tail",
+                  limit: 0,
+                  projection: "canonical",
+                })
+              ).entries.filter(
+                ({ item }) =>
+                  item.type === "user_message" && item.text === INTERRUPTED_TURN_CONTINUE_MESSAGE,
+              ).length,
+            { timeout: 15000 },
+          )
+          .toBe(1);
+      } else {
+        // A graceful stop closed the child and persisted it; nothing is resumed.
+        expect((await client.fetchAgent(childId))?.agent.status).toBe("closed");
+      }
       await client.close();
       client = undefined;
       await stopFixture(second.child, false);
