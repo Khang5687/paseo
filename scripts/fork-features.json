@@ -463,5 +463,13 @@
       "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
       "packages/app/src/utils/agent-snapshots.test.ts"
     ]
+  },
+  {
+    "pr": 64,
+    "title": "feat(server): resume turns interrupted by a daemon restart",
+    "tests": [
+      "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
+      "packages/server/src/server/daemon-e2e/daemon-restart-resume.e2e.test.ts"
+    ]
   }
 ]
