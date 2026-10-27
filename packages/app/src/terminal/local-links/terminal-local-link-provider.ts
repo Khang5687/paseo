@@ -30,6 +30,8 @@ export interface TerminalLocalFileLinkProviderOptions {
     disposition: "main" | "side",
     event: MouseEvent,
   ) => void;
+  /** The last link the pointer entered, with the buffer cells it covers. */
+  hoverLink?: (link: { target: TerminalLocalFileLinkTarget; range: IBufferRange }) => void;
 }
 
 const MAX_LINE_LENGTH = 2_000;
@@ -127,11 +129,29 @@ function createLocalFileLink(input: {
       underline: true,
     },
     activate: (event) => {
+      // xterm activates a link on mouseup of any button; a right click opens the file menu.
+      if (event.button !== 0) {
+        return;
+      }
       event.preventDefault();
       const disposition = event.metaKey || event.ctrlKey ? "side" : "main";
       input.options.openLink(input.target, disposition, event);
     },
+    hover: () => {
+      input.options.hoverLink?.({ target: input.target, range: input.range });
+    },
   };
+}
+
+/**
+ * Whether a 1-based buffer cell lies in a link range. xterm reports a link's `leave` before a
+ * right click's `contextmenu` arrives, so a menu checks the last hovered range itself.
+ */
+export function isBufferCellInRange(cell: { x: number; y: number }, range: IBufferRange): boolean {
+  const afterStart =
+    cell.y > range.start.y || (cell.y === range.start.y && cell.x >= range.start.x);
+  const beforeEnd = cell.y < range.end.y || (cell.y === range.end.y && cell.x <= range.end.x);
+  return afterStart && beforeEnd;
 }
 
 function toLinkSource(

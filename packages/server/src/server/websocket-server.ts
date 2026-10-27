@@ -12,6 +12,7 @@ import { HOST_ROUTE_OPCODE } from "@getpaseo/protocol/binary-frames/index";
 import { DaemonLinkEndpoint, VirtualHostSocket } from "./connected-hosts/index.js";
 import { ConnectedHosts } from "./connected-hosts/index.js";
 import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import { CreationService } from "./creation/index.js";
 import { MessageReceipts } from "./message-receipts/index.js";
@@ -2021,6 +2022,7 @@ export class VoiceAssistantWebSocketServer {
       protocolVersion: WS_PROTOCOL_VERSION,
       serverId: this.serverId,
       hostname: getHostName(),
+      homeDirectory: homedir(),
       version: this.daemonVersion,
       sourceId: session.getHostSourceId(),
       permissions: session.getPermissions(),
