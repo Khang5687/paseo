@@ -486,6 +486,7 @@
   {
     "pr": 64,
     "title": "feat(server): resume turns interrupted by a daemon restart",
+    "retired": "upstream #8127 (83ed52669) ships restart recovery with a host setting and prompt; fork closeStaleAgentRecords continue message removed in the upstream sync",
     "tests": [
       "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
       "packages/server/src/server/daemon-e2e/daemon-restart-resume.e2e.test.ts"

@@ -8,9 +8,6 @@ import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import type { AgentPromptInput } from "../agent/agent-sdk-types.js";
-import { AgentStorage } from "../agent/agent-storage.js";
-import { INTERRUPTED_TURN_CONTINUE_MESSAGE } from "../bootstrap.js";
-import { createTestLogger } from "../../test-utils/test-logger.js";
 
 function promptText(prompt: AgentPromptInput): string {
   return typeof prompt === "string"
@@ -213,91 +210,5 @@ test("a stored queue drains after a daemon restart without any client", async ()
     await daemon?.close().catch(() => undefined);
     rmSync(cwd, { recursive: true, force: true });
     rmSync(paseoHomeRoot, { recursive: true, force: true });
-  }
-}, 90_000);
-
-/**
- * Runs one finished turn on a first daemon, stops it, optionally rewrites the
- * stored status to what a daemon killed mid-turn leaves behind, and starts a
- * second daemon on the same home with no client attached.
- */
-async function restartAfterTurn(options: { diedMidTurn: boolean }) {
-  const cwd = mkdtempSync(path.join(tmpdir(), "daemon-e2e-interrupted-"));
-  const paseoHomeRoot = mkdtempSync(path.join(tmpdir(), "daemon-e2e-interrupted-home-"));
-  const promptsAfterRestart: string[] = [];
-  const first = await createTestPaseoDaemon({
-    agentClients: createTestAgentClients(),
-    paseoHomeRoot,
-    cleanup: false,
-  });
-  const firstClient = new DaemonClient({ url: `ws://127.0.0.1:${first.port}/ws` });
-  await firstClient.connect();
-  const agent = await firstClient.createAgent({ provider: "codex", cwd, modeId: "full-access" });
-  await firstClient.sendMessage(agent.id, "say hello");
-  const finished = await firstClient.waitForFinish(agent.id, 30_000);
-  expect(finished.status).toBe("idle");
-  await firstClient.close();
-  await first.close();
-
-  const storage = new AgentStorage(path.join(first.paseoHome, "agents"), createTestLogger());
-  await storage.initialize();
-  const record = await storage.get(agent.id);
-  expect(record?.persistence).toBeTruthy();
-  expect(record?.lastStatus).not.toBe("running");
-  if (options.diedMidTurn) {
-    await storage.upsert({ ...record!, lastStatus: "running" });
-    await storage.flush();
-  }
-
-  const second = await createTestPaseoDaemon({
-    agentClients: createTestAgentClients({
-      onStartTurn: (prompt) => {
-        promptsAfterRestart.push(promptText(prompt));
-      },
-    }),
-    paseoHomeRoot,
-    cleanup: false,
-  });
-  const cleanup = async () => {
-    await second.close().catch(() => undefined);
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(paseoHomeRoot, { recursive: true, force: true });
-  };
-  return { agentId: agent.id, second, promptsAfterRestart, cleanup };
-}
-
-test("an agent the daemon died under mid-turn is told to continue, exactly once", async () => {
-  const run = await restartAfterTurn({ diedMidTurn: true });
-  let client: DaemonClient | null = null;
-  try {
-    await vi.waitFor(
-      () => expect(run.promptsAfterRestart).toEqual([INTERRUPTED_TURN_CONTINUE_MESSAGE]),
-      { timeout: 20_000 },
-    );
-    client = new DaemonClient({ url: `ws://127.0.0.1:${run.second.port}/ws` });
-    await client.connect();
-    const settled = await client.waitForFinish(run.agentId, 30_000);
-    expect(settled.status).toBe("idle");
-    expect((await client.fetchAgent(run.agentId))?.agent.queuedMessages).toEqual([]);
-    expect(run.promptsAfterRestart).toEqual([INTERRUPTED_TURN_CONTINUE_MESSAGE]);
-  } finally {
-    await client?.close().catch(() => undefined);
-    await run.cleanup();
-  }
-}, 90_000);
-
-test("an agent that was idle when the daemon stopped gets no continue message", async () => {
-  const run = await restartAfterTurn({ diedMidTurn: false });
-  let client: DaemonClient | null = null;
-  try {
-    // Startup repair runs before the daemon accepts connections, so the record
-    // already shows whatever it was going to queue.
-    client = new DaemonClient({ url: `ws://127.0.0.1:${run.second.port}/ws` });
-    await client.connect();
-    expect((await client.fetchAgent(run.agentId))?.agent.queuedMessages).toEqual([]);
-    expect(run.promptsAfterRestart).toEqual([]);
-  } finally {
-    await client?.close().catch(() => undefined);
-    await run.cleanup();
   }
 }, 90_000);

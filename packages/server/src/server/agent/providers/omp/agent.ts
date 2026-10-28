@@ -343,9 +343,9 @@ function ompModelSupportsImageInput(model: OmpModel | null | undefined): boolean
   return model?.input?.includes("image") === true;
 }
 
-function renderTextOnlyImageHint(image: { data: string; mimeType: string }): string {
+async function renderTextOnlyImageHint(image: { data: string; mimeType: string }): Promise<string> {
   try {
-    const materialized = materializeProviderImage({
+    const materialized = await materializeProviderImage({
       data: image.data,
       mimeType: image.mimeType,
     });
@@ -355,10 +355,10 @@ function renderTextOnlyImageHint(image: { data: string; mimeType: string }): str
   }
 }
 
-function convertPromptInput(
+async function convertPromptInput(
   prompt: AgentPromptInput,
   options: { model: OmpModel | null | undefined },
-): OmpPromptPayload {
+): Promise<OmpPromptPayload> {
   if (typeof prompt === "string") {
     return { text: prompt };
   }
@@ -381,7 +381,7 @@ function convertPromptInput(
           mimeType: block.mimeType,
         });
       } else {
-        textParts.push(renderTextOnlyImageHint(block));
+        textParts.push(await renderTextOnlyImageHint(block));
       }
       continue;
     }
@@ -969,11 +969,9 @@ export class OmpAgentSession implements AgentSession {
       throw new Error("An OMP turn is already active");
     }
 
-    const payload = convertPromptInput(prompt, { model: this.state.model });
     const turnId = randomUUID();
     this.live = true;
     this.activeTurnId = turnId;
-    this.rememberClientMessage(options?.clientMessageId ?? null, payload.text);
     this.activeAssistantMessageId = null;
     this.activeTurnTerminalAssistantMessage = null;
     this.activeTurnStarted = false;
@@ -981,6 +979,10 @@ export class OmpAgentSession implements AgentSession {
     this.activeTurnHasUserMessage = false;
     this.activePromptRequestId = null;
     this.clearNoTurnBuffers();
+    const payload = await convertPromptInput(prompt, { model: this.state.model });
+    if (this.closed) throw new Error("OMP session is closed");
+    if (this.activeTurnId !== turnId) return { turnId };
+    this.rememberClientMessage(options?.clientMessageId ?? null, payload.text);
     this.activeNoTurnPromptText = payload.text;
     this.usagePoller.startTurn();
     if (announceTurn) {
@@ -1052,7 +1054,9 @@ export class OmpAgentSession implements AgentSession {
   ): Promise<SteerResult> {
     if (this.closed || this.activeTurnId !== options.expectedTurnId)
       return { status: "unavailable" };
-    const payload = convertPromptInput(prompt, { model: this.state.model });
+    const payload = await convertPromptInput(prompt, { model: this.state.model });
+    if (this.closed || this.activeTurnId !== options.expectedTurnId)
+      return { status: "unavailable" };
     if (this.parseSlashCommandInput(payload.text)) return { status: "unavailable" };
     const submission = this.rememberClientMessage(options.clientMessageId ?? null, payload.text);
     try {

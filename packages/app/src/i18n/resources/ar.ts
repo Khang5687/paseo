@@ -67,6 +67,7 @@ export const ar: TranslationResources = {
       daemonClientUnavailable: "عميل Daemon غير متوفر",
       daemonClientDisconnected: "تم قطع اتصال عميل Daemon",
       noFileFound: "لم يتم العثور على ملف لـ{{token}}",
+      folderOutsideWorkspace: "{{path}} خارج مساحة العمل هذه",
       unexpectedDictationError: "حدث خطأ غير متوقع أثناء معالجة الإملاء.",
     },
     connectionStatus: {
@@ -1947,7 +1948,6 @@ export const ar: TranslationResources = {
     parent: {
       backToParent: "العودة إلى الوكيل الأصلي",
       backTo: "العودة إلى {{label}}",
-      parent: "الأصل",
       parentAgent: "الوكيل الأصلي",
       openParent: "فتح الوكيل الأصلي",
     },
@@ -2052,12 +2052,13 @@ export const ar: TranslationResources = {
     output: "الإخراج",
   },
   turnSummary: {
-    messages: {
-      one: "كتب {{count}} رسالة",
-      other: "كتب {{count}} رسائل",
-    },
+    details: "عرض تفاصيل الجولة",
+    sentBy: "أرسلها {{name}}",
+    showMore: "عرض المزيد",
+    showLess: "عرض أقل",
   },
   toolCallGroup: {
+    thought: "فكّر",
     editedFiles: {
       one: "حرّر {{count}} ملفًا",
       other: "حرّر {{count}} ملفات",
@@ -2573,6 +2574,12 @@ export const ar: TranslationResources = {
             "عند تشغيل الوكيل، يوجّه Enter الجولة النشطة. يضيف Command/Ctrl+Enter إلى قائمة الانتظار.",
           queue: "عند تشغيل الوكيل، يضيف Enter إلى قائمة الانتظار. Command/Ctrl+Enter يرسل.",
         },
+        commandEnterDescriptions: {
+          interrupt: "عند تشغيل الوكيل، يوقف {{modifier}}+Enter التشغيل. يُدرج Enter سطرًا جديدًا.",
+          steer: "عند تشغيل الوكيل، يوجّه {{modifier}}+Enter الجولة النشطة. يُدرج Enter سطرًا جديدًا.",
+          queue:
+            "عند تشغيل الوكيل، يضيف {{modifier}}+Enter إلى قائمة الانتظار. يُدرج Enter سطرًا جديدًا.",
+        },
         options: {
           interrupt: "مقاطعة",
           steer: "توجيه",
@@ -2580,6 +2587,13 @@ export const ar: TranslationResources = {
         },
       },
       defaultEditor: "المحرر الافتراضي",
+      sendShortcut: {
+        label: "اختصار الإرسال",
+        options: {
+          enter: "Enter",
+          "mod-enter": "{{modifier}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "بسأل",
@@ -3051,6 +3065,14 @@ export const ar: TranslationResources = {
           hint: "يمكن للمزوّدين تجاوزه",
         },
         unavailable: "Connect to this host to manage agents",
+        resumeOnStartup: {
+          title: "استئناف الوكلاء بعد إعادة التشغيل",
+          info: "إعادة فتح الوكلاء الذين كانوا يعملون عند توقف المضيف وإرسال طلب الاستئناف. ينطبق ذلك بعد إعادة التشغيل العادية والتعطّل.",
+          hint: "متابعة العمل المنقطع تلقائيًا.",
+          prompt: "طلب الاستئناف",
+          edit: "تحرير",
+          editAccessibilityLabel: "تعديل الطلب",
+        },
         idleRuntimeCleanup: {
           title: "تحرير الوكلاء الخاملين",
           hint: "تحرير الذاكرة بعد ساعة من الخمول.",
@@ -3146,6 +3168,10 @@ export const ar: TranslationResources = {
           requestFailedTitle: "خطأ",
           requestFailedMessage:
             "فشل في إرسال طلب إعادة التشغيل.  يقوم Paseo بإعادة الاتصال تلقائيًا - حاول مرة أخرى بمجرد ظهور المضيف على أنه متصل بالإنترنت.",
+          closeTerminals: "إعادة التشغيل وإغلاق الطرفيات",
+          closeTerminalsHint: "يعيد التشغيل ويغلق أيضًا كل الطرفيات المفتوحة على هذا المضيف.",
+          closeTerminalsConfirmMessage:
+            "سيُعاد تشغيل الخدمة وتُغلق كل طرفياتها، مما ينهي البرامج التي تعمل فيها. سيعيد التطبيق الاتصال تلقائيًا.",
           dialogFailedMessage: "غير قادر على فتح مربع حوار تأكيد إعادة التشغيل.",
         },
         update: {

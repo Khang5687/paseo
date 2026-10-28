@@ -362,7 +362,7 @@ function createNoopWorkspaceRegistry(): WorkspaceRegistry {
     get: async () => null,
     update: async () => null,
     upsert: async () => {},
-    archive: async () => {},
+    archive: async () => false,
     remove: async () => {},
   };
 }
@@ -2109,6 +2109,7 @@ export class VoiceAssistantWebSocketServer {
         skillManagement: true,
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
         idleRuntimeCleanupSetting: true,
+        resumeOnStartupSetting: true,
         // COMPAT(terminalRestoreModes): added in v0.1.81, remove gate after 2026-11-23.
         "terminal-restore-modes": true,
         // COMPAT(terminalInputModeReplay): added in v0.2.6, remove gate after 2027-02-02.
@@ -2150,6 +2151,8 @@ export class VoiceAssistantWebSocketServer {
         daemonDiagnostics: true,
         // COMPAT(daemonSelfUpdate): added in v0.1.93, remove gate after 2026-12-13.
         daemonSelfUpdate: this.daemonRuntimeConfig?.desktopManaged !== true,
+        // COMPAT(terminalsSurviveRestart): added in v0.12.0, remove gate after 2027-04-21.
+        terminalsSurviveRestart: true,
         // COMPAT(agentForkContext): added in v0.1.102, remove gate after 2026-12-28.
         agentForkContext: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
@@ -2158,6 +2161,7 @@ export class VoiceAssistantWebSocketServer {
         providerSubagents: true,
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain advertisement.
         projectedSubagentTimeline: true,
+        wholeTurnTimeline: true,
         // COMPAT(providerSubagentNesting): added in v0.7, remove gate after 2027-03-04.
         providerSubagentNesting: true,
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.

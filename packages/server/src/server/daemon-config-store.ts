@@ -1,6 +1,7 @@
 import {
   loadPersistedConfig,
-  savePersistedConfig,
+  savePersistedConfigAsync,
+  loadPersistedConfigAsync,
   type PersistedConfig,
 } from "./persisted-config.js";
 import { ProviderOverrideSchema } from "./agent/provider-launch-config.js";
@@ -29,6 +30,8 @@ interface SupportedMutableConfigPatch {
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   idleRuntimeCleanup?: boolean;
+  resumeOnStartup?: boolean;
+  resumePrompt?: string;
   appendSystemPrompt?: string;
   terminalProfiles?: MutableDaemonConfig["terminalProfiles"];
   agentProfiles?: MutableDaemonConfig["agentProfiles"];
@@ -209,6 +212,8 @@ const RELOADABLE_PATHS = [
   "daemon.agentProfiles",
   "app.baseUrl",
   "agents.idleRuntimeCleanup",
+  "agents.resumeOnStartup",
+  "agents.resumePrompt",
   "agents.providers",
   "agents.catalogRefreshTimeoutMs",
   "agents.metadataGeneration",
@@ -235,6 +240,8 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.agentProfiles", "agentProfiles"],
   ["app.baseUrl", "app.baseUrl"],
   ["agents.idleRuntimeCleanup", "idleRuntimeCleanup"],
+  ["agents.resumeOnStartup", "resumeOnStartup"],
+  ["agents.resumePrompt", "resumePrompt"],
   ["agents.providers", "providers"],
   ["agents.catalogRefreshTimeoutMs", "catalogRefreshTimeoutMs"],
   ["agents.metadataGeneration", "metadataGeneration"],
@@ -290,9 +297,26 @@ function pickRelayPatch(
   return Object.keys(picked).length > 0 ? { relay: picked } : {};
 }
 
+function pickAgentRuntimePatch(
+  patch: MutableDaemonConfigPatch,
+): Pick<
+  SupportedMutableConfigPatch,
+  "featureDefaults" | "resumeOnStartup" | "resumePrompt" | "idleRuntimeCleanup"
+> {
+  return {
+    ...(patch.featureDefaults !== undefined ? { featureDefaults: patch.featureDefaults } : {}),
+    ...(patch.resumeOnStartup !== undefined ? { resumeOnStartup: patch.resumeOnStartup } : {}),
+    ...(patch.resumePrompt !== undefined ? { resumePrompt: patch.resumePrompt } : {}),
+    ...(patch.idleRuntimeCleanup !== undefined
+      ? { idleRuntimeCleanup: patch.idleRuntimeCleanup }
+      : {}),
+  };
+}
+
 function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMutableConfigPatch {
   return {
     ...pickRelayPatch(patch.relay),
+    ...pickAgentRuntimePatch(patch),
     ...(patch.mcp?.injectIntoAgents !== undefined
       ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
       : {}),
@@ -304,15 +328,11 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.metadataGeneration?.providers !== undefined
       ? { metadataGeneration: { providers: patch.metadataGeneration.providers } }
       : {}),
-    ...(patch.featureDefaults !== undefined ? { featureDefaults: patch.featureDefaults } : {}),
     ...(patch.autoArchiveAfterMerge !== undefined
       ? { autoArchiveAfterMerge: patch.autoArchiveAfterMerge }
       : {}),
     ...(patch.enableTerminalAgentHooks !== undefined
       ? { enableTerminalAgentHooks: patch.enableTerminalAgentHooks }
-      : {}),
-    ...(patch.idleRuntimeCleanup !== undefined
-      ? { idleRuntimeCleanup: patch.idleRuntimeCleanup }
       : {}),
     ...(patch.appendSystemPrompt !== undefined
       ? { appendSystemPrompt: patch.appendSystemPrompt }
@@ -365,6 +385,7 @@ export function resolveFeatureDefaults(
 }
 
 export class DaemonConfigStore {
+  private mutations: Promise<unknown> = Promise.resolve();
   private current: MutableDaemonConfig;
   private readonly paseoHome: string;
   private readonly logger: LoggerLike | undefined;
@@ -406,16 +427,29 @@ export class DaemonConfigStore {
     return this.current;
   }
 
-  public patch(partial: MutableDaemonConfigPatch): MutableDaemonConfig {
-    const parsedPatch = pickSupportedPatchFields(MutableDaemonConfigPatchSchema.parse(partial));
-    return this.applySupportedPatch(parsedPatch);
+  public patch(
+    partial:
+      | MutableDaemonConfigPatch
+      | ((current: MutableDaemonConfig) => MutableDaemonConfigPatch),
+  ): Promise<MutableDaemonConfig> {
+    return this.enqueue(() =>
+      this.applySupportedPatch(
+        pickSupportedPatchFields(
+          MutableDaemonConfigPatchSchema.parse(
+            typeof partial === "function" ? partial(this.current) : partial,
+          ),
+        ),
+      ),
+    );
   }
 
-  public setAgentSkillSelection(selection: AgentSkillSelection): MutableDaemonConfig {
-    return this.applySupportedPatch({ skills: { selection } });
+  public setAgentSkillSelection(selection: AgentSkillSelection): Promise<MutableDaemonConfig> {
+    return this.enqueue(() => this.applySupportedPatch({ skills: { selection } }));
   }
 
-  private applySupportedPatch(parsedPatch: SupportedMutableConfigPatch): MutableDaemonConfig {
+  private async applySupportedPatch(
+    parsedPatch: SupportedMutableConfigPatch,
+  ): Promise<MutableDaemonConfig> {
     if (parsedPatch.relay?.enabled !== undefined && !this.relayEnabledMutable) {
       throw new Error(
         "Relay is controlled by a daemon launch override. Remove PASEO_RELAY_ENABLED or the relay CLI flag before changing it here.",
@@ -445,7 +479,7 @@ export class DaemonConfigStore {
       return this.current;
     }
 
-    const { previous: persistedBeforePatch, knownNext } = this.persistConfig(
+    const { previous: persistedBeforePatch, knownNext } = await this.persistConfig(
       patch,
       removedProviders,
     );
@@ -454,7 +488,7 @@ export class DaemonConfigStore {
       try {
         this.applyReplacement(next, { removedProviders });
       } catch (error) {
-        savePersistedConfig(this.paseoHome, persistedBeforePatch, this.logger);
+        await savePersistedConfigAsync(this.paseoHome, persistedBeforePatch, this.logger);
         throw error;
       }
     }
@@ -485,12 +519,16 @@ export class DaemonConfigStore {
     );
   }
 
-  public reload(): DaemonConfigReloadResult {
+  public reload(): Promise<DaemonConfigReloadResult> {
+    return this.enqueue(() => this.reloadPersisted());
+  }
+
+  private async reloadPersisted(): Promise<DaemonConfigReloadResult> {
     if (!this.reloadSource) {
       throw new Error("Daemon config reload is unavailable for this daemon instance");
     }
 
-    const persisted = loadPersistedConfig(this.paseoHome, this.logger);
+    const persisted = await loadPersistedConfigAsync(this.paseoHome, this.logger);
     const resolved = this.reloadSource.resolve(persisted);
     // Plugin source changes require the plugin lifecycle operation or a daemon
     // restart. The global switch is independently reloadable.
@@ -652,11 +690,24 @@ export class DaemonConfigStore {
     };
   }
 
-  private persistConfig(
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutations.then(operation);
+    this.mutations = result.catch(() => {});
+    return result;
+  }
+
+  public readServicePorts(): Promise<NonNullable<PersistedConfig["worktrees"]>["servicePorts"]> {
+    return this.enqueue(
+      async () =>
+        (await loadPersistedConfigAsync(this.paseoHome, this.logger)).worktrees?.servicePorts,
+    );
+  }
+
+  private async persistConfig(
     patch: Omit<SupportedMutableConfigPatch, "removeProviders">,
     removeProviders: readonly string[],
-  ): { previous: PersistedConfig; knownNext: PersistedConfig } {
-    const persisted = loadPersistedConfig(this.paseoHome, this.logger);
+  ): Promise<{ previous: PersistedConfig; knownNext: PersistedConfig }> {
+    const persisted = await loadPersistedConfigAsync(this.paseoHome, this.logger);
     const merge = (source: PersistedConfig) =>
       mergeMutablePatchIntoPersistedConfig({
         persisted: source,
@@ -666,7 +717,7 @@ export class DaemonConfigStore {
       });
     const nextPersisted = merge(persisted);
     const knownNext = merge(this.lastKnownPersisted);
-    savePersistedConfig(this.paseoHome, nextPersisted, this.logger);
+    await savePersistedConfigAsync(this.paseoHome, nextPersisted, this.logger);
     return { previous: persisted, knownNext };
   }
 }
@@ -702,6 +753,7 @@ function mergeMutableAgentPatch(
     patch.metadataGeneration === undefined &&
     patch.featureDefaults === undefined &&
     patch.skills === undefined &&
+    !hasRestartRecoveryPatch(patch) &&
     patch.idleRuntimeCleanup === undefined &&
     removeProviders.length === 0
   ) {
@@ -737,6 +789,7 @@ function mergeMutableAgentPatch(
     next["skills"] = { selection: patch.skills.selection };
   }
 
+  Object.assign(next, restartRecoveryPatch(patch));
   if (patch.idleRuntimeCleanup !== undefined) {
     next["idleRuntimeCleanup"] = patch.idleRuntimeCleanup;
   }
@@ -785,4 +838,14 @@ function mergeMutableDaemonPatch(
   if (patch.terminalProfiles !== undefined) next.terminalProfiles = patch.terminalProfiles;
   if (patch.agentProfiles !== undefined) next.agentProfiles = patch.agentProfiles;
   return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function hasRestartRecoveryPatch(patch: SupportedMutableConfigPatch) {
+  return patch.resumeOnStartup !== undefined || patch.resumePrompt !== undefined;
+}
+function restartRecoveryPatch(patch: SupportedMutableConfigPatch) {
+  return {
+    ...(patch.resumeOnStartup !== undefined ? { resumeOnStartup: patch.resumeOnStartup } : {}),
+    ...(patch.resumePrompt !== undefined ? { resumePrompt: patch.resumePrompt } : {}),
+  };
 }

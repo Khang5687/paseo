@@ -68,6 +68,7 @@ export const es: TranslationResources = {
       daemonClientUnavailable: "ClienteDaemonno disponible",
       daemonClientDisconnected: "El clienteDaemonestá desconectado",
       noFileFound: "No se encontró ningún archivo para{{token}}",
+      folderOutsideWorkspace: "{{path}} está fuera de este espacio de trabajo",
       unexpectedDictationError: "Se produjo un error inesperado al manejar el dictado.",
     },
     connectionStatus: {
@@ -1995,7 +1996,6 @@ export const es: TranslationResources = {
     parent: {
       backToParent: "Volver al padre",
       backTo: "Volver a {{label}}",
-      parent: "Padre",
       parentAgent: "Agente padre",
       openParent: "Abrir padre",
     },
@@ -2100,12 +2100,13 @@ export const es: TranslationResources = {
     output: "Producción",
   },
   turnSummary: {
-    messages: {
-      one: "escribió {{count}} mensaje",
-      other: "escribió {{count}} mensajes",
-    },
+    details: "Ver detalles del turno",
+    sentBy: "Enviado por {{name}}",
+    showMore: "Mostrar más",
+    showLess: "Mostrar menos",
   },
   toolCallGroup: {
+    thought: "Razonó",
     editedFiles: {
       one: "editó {{count}} archivo",
       other: "editó {{count}} archivos",
@@ -2598,6 +2599,14 @@ export const es: TranslationResources = {
           queue:
             "Cuando el agente se está ejecutando, Enter pone en cola. Command/Ctrl+Enter envía.",
         },
+        commandEnterDescriptions: {
+          interrupt:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter interrumpe. Enter inserta una línea nueva.",
+          steer:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter dirige el turno activo. Enter inserta una línea nueva.",
+          queue:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter pone en cola. Enter inserta una línea nueva.",
+        },
         options: {
           interrupt: "Interrumpir",
           steer: "Dirigir",
@@ -2605,6 +2614,13 @@ export const es: TranslationResources = {
         },
       },
       defaultEditor: "Editor predeterminado",
+      sendShortcut: {
+        label: "Atajo de envío",
+        options: {
+          enter: "Enter",
+          "mod-enter": "{{modifier}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Preguntar",
@@ -3082,6 +3098,14 @@ export const es: TranslationResources = {
           hint: "Los proveedores pueden cambiarlo",
         },
         unavailable: "Connect to this host to manage agents",
+        resumeOnStartup: {
+          title: "Reanudar agentes tras reiniciar",
+          info: "Vuelve a abrir los agentes que estaban trabajando cuando se detuvo el host y envía el mensaje de reanudación. Se aplica tras reinicios normales y fallos.",
+          hint: "Continuar automáticamente el trabajo interrumpido.",
+          prompt: "Mensaje de reanudación",
+          edit: "Editar",
+          editAccessibilityLabel: "Editar mensaje",
+        },
         idleRuntimeCleanup: {
           title: "Liberar agentes inactivos",
           hint: "Libera memoria tras una hora de inactividad.",
@@ -3179,6 +3203,11 @@ export const es: TranslationResources = {
           requestFailedTitle: "Error",
           requestFailedMessage:
             "No se pudo enviar la solicitud de reinicio.Paseose vuelve a conectar automáticamente; inténtelo nuevamente una vez que el host se muestre en línea.",
+          closeTerminals: "Reiniciar y cerrar terminales",
+          closeTerminalsHint:
+            "Reinicia y además cierra todas las terminales abiertas en este host.",
+          closeTerminalsConfirmMessage:
+            "Esto reiniciará el daemon y cerrará todas sus terminales, terminando los programas que se ejecutan en ellas. La app se reconectará automáticamente.",
           dialogFailedMessage:
             "No se puede abrir el cuadro de diálogo de confirmación de reinicio.",
         },

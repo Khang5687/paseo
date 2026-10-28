@@ -68,6 +68,7 @@ export const ptBR: TranslationResources = {
       daemonClientUnavailable: "Cliente do daemon indisponível",
       daemonClientDisconnected: "O cliente do daemon está desconectado",
       noFileFound: "Nenhum arquivo encontrado para {{token}}",
+      folderOutsideWorkspace: "{{path}} está fora deste workspace",
       unexpectedDictationError: "Ocorreu um erro inesperado ao processar o ditado.",
     },
     connectionStatus: {
@@ -1980,7 +1981,6 @@ export const ptBR: TranslationResources = {
     parent: {
       backToParent: "Voltar ao pai",
       backTo: "Voltar para {{label}}",
-      parent: "Pai",
       parentAgent: "Agente pai",
       openParent: "Abrir pai",
     },
@@ -2085,12 +2085,13 @@ export const ptBR: TranslationResources = {
     output: "Saída",
   },
   turnSummary: {
-    messages: {
-      one: "escreveu {{count}} mensagem",
-      other: "escreveu {{count}} mensagens",
-    },
+    details: "Ver detalhes do turno",
+    sentBy: "Enviado por {{name}}",
+    showMore: "Mostrar mais",
+    showLess: "Mostrar menos",
   },
   toolCallGroup: {
+    thought: "Pensou",
     editedFiles: {
       one: "editou {{count}} arquivo",
       other: "editou {{count}} arquivos",
@@ -2579,6 +2580,14 @@ export const ptBR: TranslationResources = {
             "Quando o agente está em execução, Enter orienta o turno ativo. Command/Ctrl+Enter enfileira.",
           queue: "Quando o agente está em execução, Enter enfileira. Command/Ctrl+Enter envia.",
         },
+        commandEnterDescriptions: {
+          interrupt:
+            "Quando o agente está em execução, {{modifier}}+Enter interrompe. Enter insere uma nova linha.",
+          steer:
+            "Quando o agente está em execução, {{modifier}}+Enter orienta o turno ativo. Enter insere uma nova linha.",
+          queue:
+            "Quando o agente está em execução, {{modifier}}+Enter enfileira. Enter insere uma nova linha.",
+        },
         options: {
           interrupt: "Interromper",
           steer: "Orientar",
@@ -2586,6 +2595,13 @@ export const ptBR: TranslationResources = {
         },
       },
       defaultEditor: "Editor padrão",
+      sendShortcut: {
+        label: "Atalho de envio",
+        options: {
+          enter: "Enter",
+          "mod-enter": "{{modifier}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Perguntar",
@@ -3062,6 +3078,14 @@ export const ptBR: TranslationResources = {
           hint: "Provedores podem substituí-lo",
         },
         unavailable: "Conecte-se a este host para gerenciar agentes",
+        resumeOnStartup: {
+          title: "Retomar agentes após reiniciar",
+          info: "Reabre os agentes que estavam trabalhando quando o host parou e envia a mensagem de retomada. Aplica-se após reinicializações normais e falhas.",
+          hint: "Continuar automaticamente o trabalho interrompido.",
+          prompt: "Mensagem de retomada",
+          edit: "Editar",
+          editAccessibilityLabel: "Editar mensagem",
+        },
         idleRuntimeCleanup: {
           title: "Liberar agentes ociosos",
           hint: "Libera memória após uma hora de inatividade.",
@@ -3160,6 +3184,10 @@ export const ptBR: TranslationResources = {
           requestFailedTitle: "Erro",
           requestFailedMessage:
             "Falha ao enviar a solicitação de reinício. O Paseo reconecta automaticamente. Tente novamente quando o host aparecer como online.",
+          closeTerminals: "Reiniciar e fechar terminais",
+          closeTerminalsHint: "Reinicia e também fecha todos os terminais abertos neste host.",
+          closeTerminalsConfirmMessage:
+            "Isso reiniciará o daemon e fechará todos os terminais dele, encerrando os programas que rodam neles. O app vai se reconectar automaticamente.",
           dialogFailedMessage: "Não foi possível abrir o diálogo de confirmação de reinício.",
         },
         update: {
