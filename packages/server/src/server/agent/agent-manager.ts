@@ -53,6 +53,7 @@ import {
   type AgentRunResult,
   type AgentSession,
   type AgentSessionConfig,
+  type McpServerConfig,
   type SteerResult,
   type AgentStreamEvent,
   type AgentTimelineItem,
@@ -321,6 +322,7 @@ interface ProviderEnabledFlag {
     toolPolicy: ToolPolicy | undefined,
   ) => AgentSessionConfig;
   disabledModels?: readonly string[];
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 interface RequireEnabledModelInput {
@@ -5943,6 +5945,9 @@ export class AgentManager {
     launchConfig: AgentSessionConfig,
     launchContext: AgentLaunchContext,
   ): AgentSessionConfig {
+    // Provider config servers are launch-only: never written to the stored agent config, so a
+    // config edit reaches the next launch. Saved agent servers override them by name.
+    const providerServers = this.providerDefinitions.get(launchConfig.provider)?.mcpServers ?? {};
     const savedServerNames = new Set(
       Object.keys(stripInternalPaseoMcpServer(launchConfig).mcpServers ?? {}),
     );
@@ -5954,14 +5959,19 @@ export class AgentManager {
           : "Paseo internal MCP server";
         throw new Error(`MCP server '${name}' from plugin ${owner} collides with ${existingOwner}`);
       }
+      if (Object.hasOwn(providerServers, name)) {
+        throw new Error(
+          `MCP server '${name}' from plugin ${owner} collides with provider configuration`,
+        );
+      }
     }
+    const mcpServers = {
+      ...providerServers,
+      ...launchConfig.mcpServers,
+      ...launchContext.mcpServers,
+    };
     const merged =
-      Object.keys(launchContext.mcpServers ?? {}).length > 0
-        ? {
-            ...launchConfig,
-            mcpServers: { ...launchConfig.mcpServers, ...launchContext.mcpServers },
-          }
-        : launchConfig;
+      Object.keys(mcpServers).length > 0 ? { ...launchConfig, mcpServers } : launchConfig;
     return launchContext.paseoTools ? stripInternalPaseoMcpServer(merged) : merged;
   }
 

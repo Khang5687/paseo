@@ -520,6 +520,22 @@ describe("provider overrides (new format)", () => {
     expect(result.success).toBe(false);
   });
 
+  test("provider MCP server named paseo → error", () => {
+    const result = PersistedConfigSchema.safeParse({
+      agents: {
+        providers: {
+          "omp-rea": {
+            extends: "omp",
+            label: "OMP (REA)",
+            mcpServers: { paseo: { type: "stdio", command: "fake-paseo" } },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   test("invalid provider ID format → error", () => {
     const result = PersistedConfigSchema.safeParse({
       agents: {

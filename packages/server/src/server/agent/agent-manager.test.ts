@@ -3257,6 +3257,101 @@ test("createAgent injects paseo MCP server only into provider launch config", as
   });
 });
 
+test("createAgent launches with provider MCP servers but stores only the agent's own", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+
+  class CaptureClient extends TestAgentClient {
+    lastConfig: AgentSessionConfig | null = null;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.lastConfig = config;
+      return new McpCapableTestAgentSession(config);
+    }
+  }
+
+  const client = new CaptureClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    providerDefinitions: {
+      codex: {
+        enabled: true,
+        mcpServers: {
+          rea: { type: "stdio", command: "rea-mcp" },
+          custom: { type: "stdio", command: "provider-custom" },
+        },
+      },
+    },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000110",
+  });
+
+  try {
+    const snapshot = await manager.createAgent(
+      {
+        provider: "codex",
+        cwd: workdir,
+        mcpServers: { custom: { type: "stdio", command: "agent-custom" } },
+      },
+      undefined,
+      { workspaceId: undefined },
+    );
+
+    expect(client.lastConfig?.mcpServers).toEqual({
+      rea: { type: "stdio", command: "rea-mcp" },
+      custom: { type: "stdio", command: "agent-custom" },
+    });
+    const stored = await storage.get(snapshot.id);
+    expect(stored?.config?.mcpServers).toEqual({
+      custom: { type: "stdio", command: "agent-custom" },
+    });
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("createAgent rejects a session that cannot honor its provider's MCP servers", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  let sessionClosed = false;
+
+  class NoMcpSession extends TestAgentSession {
+    override async close(): Promise<void> {
+      sessionClosed = true;
+    }
+  }
+
+  class NoMcpClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new NoMcpSession(config);
+    }
+  }
+
+  const agentId = "00000000-0000-4000-8000-000000000111";
+  const manager = new AgentManager({
+    clients: { codex: new NoMcpClient() },
+    providerDefinitions: {
+      codex: { enabled: true, mcpServers: { rea: { type: "stdio", command: "rea-mcp" } } },
+    },
+    registry: storage,
+    logger,
+    idFactory: () => agentId,
+  });
+
+  try {
+    await expect(
+      manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      }),
+    ).rejects.toThrow("Provider 'codex' does not support MCP servers");
+    expect(sessionClosed).toBe(true);
+    expect(await storage.get(agentId)).toBeNull();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("createAgent closes and rejects a provider session that cannot honor MCP servers", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

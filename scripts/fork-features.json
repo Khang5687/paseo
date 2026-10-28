@@ -503,5 +503,14 @@
     "title": "docs(fork): Build it covers disk, remote daemons and the Android APK",
     "untested": "docs only",
     "tests": []
+  },
+  {
+    "pr": 67,
+    "title": "feat(server): attach MCP servers to a provider alias",
+    "tests": [
+      "packages/server/src/server/agent/agent-manager.test.ts",
+      "packages/server/src/server/agent/provider-snapshot-manager.test.ts",
+      "packages/server/src/server/persisted-config.test.ts"
+    ]
   }
 ]

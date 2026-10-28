@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { AgentProvider } from "./agent-types.js";
+import { McpServerConfigSchema } from "./mcp-server-config.js";
 import { AgentProviderSchema } from "./provider-manifest.js";
+
+// Agent-level MCP servers use this name for Paseo's own server.
+const RESERVED_MCP_SERVER_NAME = "paseo";
 
 const ProviderCommandDefaultSchema = z.object({
   mode: z.literal("default"),
@@ -73,6 +77,9 @@ export const ProviderOverrideSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
   paseoTools: ProviderPaseoToolsPolicySchema.optional(),
   featureDefaults: ProviderFeatureDefaultsSchema.optional(),
+  // MCP servers every agent launched with this provider gets. An alias inherits its base's
+  // servers; its own entry wins on a name clash, and an agent's own server wins over both.
+  mcpServers: z.record(z.string(), McpServerConfigSchema).optional(),
   enabled: z.boolean().optional(),
   order: z.number().optional(),
 });
@@ -120,6 +127,14 @@ export const ProviderOverridesSchema = z
           code: z.ZodIssueCode.custom,
           path: [providerId, "command"],
           message: `Provider "${providerId}" extending "acp" must declare command.`,
+        });
+      }
+
+      if (provider.mcpServers?.[RESERVED_MCP_SERVER_NAME]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [providerId, "mcpServers", RESERVED_MCP_SERVER_NAME],
+          message: `MCP server name "${RESERVED_MCP_SERVER_NAME}" is reserved for Paseo.`,
         });
       }
     }

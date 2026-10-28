@@ -184,7 +184,7 @@ export interface ProviderDiagnosticResult {
 
 export interface AgentManagerProviderDefinition extends Pick<
   ProviderDefinition,
-  "enabled" | "derivedFromProviderId" | "applyToolPolicy"
+  "enabled" | "derivedFromProviderId" | "applyToolPolicy" | "mcpServers"
 > {
   disabledModels?: readonly string[];
 }
@@ -385,6 +385,7 @@ export class ProviderSnapshotManager {
         derivedFromProviderId: definition.derivedFromProviderId,
         applyToolPolicy: definition.applyToolPolicy,
         disabledModels: overrides?.[provider]?.disabledModels,
+        mcpServers: definition.mcpServers,
       };
       if (definition.enabled) {
         clients[provider] = this.ensureClient(provider, definition, providerClients);
