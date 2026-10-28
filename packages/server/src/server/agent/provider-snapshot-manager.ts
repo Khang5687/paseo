@@ -185,7 +185,10 @@ export interface AgentManagerProviderState {
   providerDefinitions: Partial<
     Record<
       AgentProvider,
-      Pick<ProviderDefinition, "enabled" | "derivedFromProviderId" | "applyToolPolicy">
+      Pick<
+        ProviderDefinition,
+        "enabled" | "derivedFromProviderId" | "applyToolPolicy" | "mcpServers"
+      >
     >
   >;
   clients: Partial<Record<AgentProvider, AgentClient>>;
@@ -371,6 +374,7 @@ export class ProviderSnapshotManager {
         enabled: definition.enabled,
         derivedFromProviderId: definition.derivedFromProviderId,
         applyToolPolicy: definition.applyToolPolicy,
+        mcpServers: definition.mcpServers,
       };
       if (definition.enabled) {
         clients[provider] = this.ensureClient(provider, definition, providerClients);

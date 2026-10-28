@@ -340,6 +340,30 @@ You can also combine profiles with model overrides to pin specific models per pr
 }
 ```
 
+### MCP servers for one profile
+
+`mcpServers` gives every agent launched with a profile its own MCP servers. Use it for a large or specialized tool set that you want only when you pick that profile, so agents on the base provider never load those tool descriptions into context:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "omp-rea": {
+        "extends": "omp",
+        "label": "OMP (REA)",
+        "mcpServers": {
+          "rea": { "type": "stdio", "command": "npx", "args": ["-y", "rea-agents@latest", "mcp"] }
+        }
+      }
+    }
+  }
+}
+```
+
+- A profile inherits its base provider's `mcpServers`. On a name clash the profile's server wins, and a server the agent itself was launched with wins over both. `paseo` is reserved.
+- The servers are added at launch and never saved into the agent's stored config. An edit applies to new and resumed agents after `paseo daemon reload`; running agents keep the servers they started with.
+- The provider must support MCP servers. Launching on one that does not fails instead of silently dropping them.
+
 ---
 
 ## Custom binary for a provider
@@ -706,19 +730,20 @@ When an `additionalModels` entry has the same `id` as a discovered model, it upd
 
 Every entry under `agents.providers` accepts these fields:
 
-| Field              | Type                      | Required          | Description                                                        |
-| ------------------ | ------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `extends`          | `string`                  | Yes (custom only) | Built-in provider ID to inherit from, or `"acp"`                   |
-| `label`            | `string`                  | Yes (custom only) | Display name in the UI                                             |
-| `description`      | `string`                  | No                | Short description shown in the UI                                  |
-| `command`          | `string[]`                | Yes (ACP only)    | Command to spawn the agent process                                 |
-| `env`              | `Record<string, string>`  | No                | Environment variables to set for the agent process                 |
-| `options`          | `Record<string, unknown>` | No                | Provider-specific options such as `supportsMcpServers: false`      |
-| `models`           | `ProviderProfileModel[]`  | No                | Static model list (overrides runtime discovery)                    |
-| `additionalModels` | `ProviderProfileModel[]`  | No                | Static model additions (merged with runtime discovery or `models`) |
-| `disallowedTools`  | `string[]`                | No                | Tool names to disable for this provider (e.g. `["WebSearch"]`)     |
-| `enabled`          | `boolean`                 | No                | Set to `false` to hide the provider (default: `true`)              |
-| `order`            | `number`                  | No                | Sort order in the provider list                                    |
+| Field              | Type                              | Required          | Description                                                                                      |
+| ------------------ | --------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
+| `extends`          | `string`                          | Yes (custom only) | Built-in provider ID to inherit from, or `"acp"`                                                 |
+| `label`            | `string`                          | Yes (custom only) | Display name in the UI                                                                           |
+| `description`      | `string`                          | No                | Short description shown in the UI                                                                |
+| `command`          | `string[]`                        | Yes (ACP only)    | Command to spawn the agent process                                                               |
+| `env`              | `Record<string, string>`          | No                | Environment variables to set for the agent process                                               |
+| `options`          | `Record<string, unknown>`         | No                | Provider-specific options such as `supportsMcpServers: false`                                    |
+| `mcpServers`       | `Record<string, McpServerConfig>` | No                | MCP servers every agent of this provider launches with ([details](#mcp-servers-for-one-profile)) |
+| `models`           | `ProviderProfileModel[]`          | No                | Static model list (overrides runtime discovery)                                                  |
+| `additionalModels` | `ProviderProfileModel[]`          | No                | Static model additions (merged with runtime discovery or `models`)                               |
+| `disallowedTools`  | `string[]`                        | No                | Tool names to disable for this provider (e.g. `["WebSearch"]`)                                   |
+| `enabled`          | `boolean`                         | No                | Set to `false` to hide the provider (default: `true`)                                            |
+| `order`            | `number`                          | No                | Sort order in the provider list                                                                  |
 
 ### Model definition
 

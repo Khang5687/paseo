@@ -1280,6 +1280,54 @@ describe("ProviderSnapshotManager public surface", () => {
     }
   });
 
+  test("an alias inherits its base provider's MCP servers and a config edit replaces them", () => {
+    const rea = { type: "stdio" as const, command: "npx", args: ["-y", "rea-agents", "mcp"] };
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        codex: {
+          mcpServers: {
+            notes: { type: "stdio", command: "notes-mcp" },
+            shared: { type: "stdio", command: "base-shared" },
+          },
+        },
+        "codex-rea": {
+          extends: "codex",
+          label: "Codex (REA)",
+          mcpServers: { shared: { type: "stdio", command: "alias-shared" }, rea },
+        },
+      },
+    });
+    try {
+      const state = manager.getAgentManagerProviderState();
+      expect(state.providerDefinitions.codex?.mcpServers).toEqual({
+        notes: { type: "stdio", command: "notes-mcp" },
+        shared: { type: "stdio", command: "base-shared" },
+      });
+      expect(state.providerDefinitions["codex-rea"]?.mcpServers).toEqual({
+        notes: { type: "stdio", command: "notes-mcp" },
+        shared: { type: "stdio", command: "alias-shared" },
+        rea,
+      });
+
+      const edited = manager.applyMutableProviderConfig(
+        {
+          "codex-rea": {
+            extends: "codex",
+            label: "Codex (REA)",
+            enabled: true,
+            mcpServers: { rea },
+          },
+        },
+        { replace: true },
+      );
+      expect(edited.providerDefinitions.codex?.mcpServers).toBeUndefined();
+      expect(edited.providerDefinitions["codex-rea"]?.mcpServers).toEqual({ rea });
+    } finally {
+      manager.destroy();
+    }
+  });
+
   test("resolveCreateConfig reduces a managed parent to provider mode and unattended data", async () => {
     const resolverInputs: ResolveAgentCreateConfigInput[] = [];
     const childModes: AgentMode[] = [
