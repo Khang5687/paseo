@@ -829,6 +829,7 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     minHeight: 0,
   },
+
   group: {
     flex: 1,
     minWidth: 0,
@@ -850,7 +851,7 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     minHeight: 0,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     overflow: "hidden",
   },
   paneTabs: {

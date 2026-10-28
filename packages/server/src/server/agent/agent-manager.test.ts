@@ -2138,6 +2138,55 @@ test("listDraftCommands uses explicit model config without default model fetchin
   ]);
 });
 
+test("listDraftCommands shares one provider session across identical concurrent requests", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-commands-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const draftCommand: AgentSlashCommand = {
+    name: "review",
+    description: "Review changes",
+    argumentHint: "",
+    kind: "skill",
+  };
+  let failNextListing = true;
+  class DraftCommandSession extends TestAgentSession {
+    override async listCommands(): Promise<AgentSlashCommand[]> {
+      if (failNextListing) {
+        failNextListing = false;
+        throw new Error("provider exited");
+      }
+      return [draftCommand];
+    }
+  }
+  class DraftCommandClient extends TestAgentClient {
+    createSessionCalls = 0;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.createSessionCalls += 1;
+      return new DraftCommandSession(config);
+    }
+  }
+  const client = new DraftCommandClient();
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const config: AgentSessionConfig = { provider: "codex", cwd: workdir, model: "gpt-5.4" };
+
+  const failed = await Promise.allSettled([
+    manager.listDraftCommands(config),
+    manager.listDraftCommands({ ...config }),
+  ]);
+  expect(failed.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+  expect(client.createSessionCalls).toBe(1);
+
+  // A failed listing is not reused: the next request starts a new session and succeeds.
+  await expect(manager.listDraftCommands(config)).resolves.toEqual([draftCommand]);
+  expect(client.createSessionCalls).toBe(2);
+
+  // A different config is a different listing.
+  await expect(manager.listDraftCommands({ ...config, model: "gpt-5.5" })).resolves.toEqual([
+    draftCommand,
+  ]);
+  expect(client.createSessionCalls).toBe(3);
+});
+
 test("listDraftFeatures does not start a fallback session without a model", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-features-"));
   const storagePath = join(workdir, "agents");
@@ -2283,6 +2332,58 @@ test("listDraftFeatures uses explicit model config without default model fetchin
       model: "gpt-5.4",
     },
   ]);
+});
+
+test("provider feature defaults fill feature values a request leaves out", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-feature-defaults-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  class DraftFeatureClient extends TestAgentClient {
+    readonly featureConfigs: AgentSessionConfig[] = [];
+
+    async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
+      this.featureConfigs.push(config);
+      return [];
+    }
+  }
+  const client = new DraftFeatureClient();
+  let featureDefaults: Record<string, boolean | string> | undefined = {
+    output_style: "ELI5",
+    fast_mode: true,
+  };
+  let nextId = 0;
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    resolveFeatureDefaults: (provider) => (provider === "codex" ? featureDefaults : undefined),
+    idFactory: () => `00000000-0000-4000-8000-00000000020${nextId++}`,
+  });
+
+  await manager.listDraftFeatures({ provider: "codex", cwd: workdir });
+  expect(client.featureConfigs[0]?.featureValues).toEqual({
+    output_style: "ELI5",
+    fast_mode: true,
+  });
+
+  const created = await manager.createAgent(
+    { provider: "codex", cwd: workdir, featureValues: { output_style: "Learning" } },
+    undefined,
+    { workspaceId: undefined },
+  );
+  expect(client.createdConfigs[0]?.featureValues).toEqual({
+    output_style: "Learning",
+    fast_mode: true,
+  });
+  expect((await storage.get(created.id))?.config?.featureValues).toEqual({
+    output_style: "Learning",
+    fast_mode: true,
+  });
+
+  featureDefaults = undefined;
+  await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  expect(client.createdConfigs[1]?.featureValues).toBeUndefined();
 });
 
 test("createAgent injects daemon append system prompt at runtime only", async () => {
@@ -4021,6 +4122,100 @@ test("updateProviderRegistry disables a previously enabled provider", async () =
       workspaceId: undefined,
     }),
   ).rejects.toThrow("Provider 'codex' is disabled");
+});
+
+describe("models disabled in Provider settings", () => {
+  function createManager(disabledModels: string[]) {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-disabled-models-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const client = new TestAgentClient();
+    const manager = new AgentManager({
+      clients: { codex: client },
+      providerDefinitions: { codex: { enabled: true, disabledModels } },
+      registry: storage,
+      logger,
+    });
+    async function cleanup() {
+      for (const agent of manager.listAgents()) await manager.closeAgent(agent.id);
+      await manager.flush();
+      rmSync(workdir, { recursive: true, force: true });
+    }
+    return { workdir, storage, client, manager, cleanup };
+  }
+
+  test("createAgent rejects an explicitly chosen disabled model without creating a session", async () => {
+    const { workdir, storage, client, manager, cleanup } = createManager(["gpt-5.4-mini"]);
+    try {
+      await expect(
+        manager.createAgent({ provider: "codex", cwd: workdir, model: "gpt-5.4-mini" }, undefined, {
+          workspaceId: undefined,
+        }),
+      ).rejects.toThrow(
+        "Model 'gpt-5.4-mini' is disabled for provider 'codex' in Provider settings",
+      );
+      expect(client.createdConfigs).toHaveLength(0);
+      expect(await storage.list()).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("createAgent without a model uses the first enabled model when the default is disabled", async () => {
+    const { workdir, client, manager, cleanup } = createManager(["gpt-5.4"]);
+    try {
+      const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      });
+      expect(agent.config.model).toBe("gpt-5.4-mini");
+      expect(client.createdConfigs.map((config) => config.model)).toEqual(["gpt-5.4-mini"]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("createAgent without a model fails when every model is disabled", async () => {
+    const { workdir, client, manager, cleanup } = createManager([
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.2-codex",
+    ]);
+    try {
+      await expect(
+        manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+          workspaceId: undefined,
+        }),
+      ).rejects.toThrow("Every model for provider 'codex' is disabled in Provider settings");
+      expect(client.createdConfigs).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("a running agent keeps its newly disabled model while new selections are refused", async () => {
+    const { workdir, client, manager, cleanup } = createManager([]);
+    try {
+      const agent = await manager.createAgent(
+        { provider: "codex", cwd: workdir, model: "gpt-5.4" },
+        undefined,
+        { workspaceId: undefined },
+      );
+      manager.updateProviderRegistry({
+        providerDefinitions: {
+          codex: { enabled: true, disabledModels: ["gpt-5.4", "gpt-5.2-codex"] },
+        },
+        clients: { codex: client },
+      });
+
+      await expect(manager.setAgentModel(agent.id, "gpt-5.2-codex")).rejects.toThrow(
+        "Model 'gpt-5.2-codex' is disabled for provider 'codex' in Provider settings",
+      );
+      await manager.setAgentModel(agent.id, "gpt-5.4");
+      expect(manager.getAgent(agent.id)?.config.model).toBe("gpt-5.4");
+      expect(manager.getAgent(agent.id)?.lifecycle).not.toBe("closed");
+    } finally {
+      await cleanup();
+    }
+  });
 });
 
 test("updateProviderRegistry registers a previously unknown provider", async () => {
@@ -12544,4 +12739,28 @@ test("an out-of-band command racing idle cleanup waits for the resumed runtime",
   expect(await command).toEqual({ disposition: "out_of_band" });
   expect(h.commands).toEqual(["/maintenance"]);
   expect(h.prompts).toEqual([]);
+});
+
+test("idle cleanup keeps an agent whose queue will drain, and collects it once the queue is paused", async () => {
+  const h = idleCleanupHarness();
+  const agent = await h.create();
+  h.probes[0] = async () => true;
+  await h.manager.addQueuedMessage(agent.id, { text: "waiting to drain" });
+
+  expect((await h.sweep({ now: h.later(61) })).collected).toEqual([]);
+  expect(h.closes).toBe(0);
+  expect(h.manager.getAgent(agent.id)?.queuedMessages.map((item) => item.text)).toEqual([
+    "waiting to drain",
+  ]);
+
+  // A paused queue waits for a person, not the runtime, so it does not pin the
+  // agent. Its idle period starts at the first sweep that sees it unprotected.
+  await h.manager.setQueuePaused(agent.id, true);
+  expect((await h.sweep({ now: h.later(62) })).collected).toEqual([]);
+  expect((await h.sweep({ now: h.later(123) })).collected).toHaveLength(1);
+  expect(h.closes).toBe(1);
+  await h.storage.flush();
+  expect((await h.storage.get(agent.id))?.queuedMessages?.map((item) => item.text)).toEqual([
+    "waiting to drain",
+  ]);
 });

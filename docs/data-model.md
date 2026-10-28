@@ -64,6 +64,7 @@ $PASEO_HOME/
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
+├── account-routing.json                 # OMP account-routing policy (account refs only; mode 0600)
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
@@ -528,7 +529,20 @@ Simple set of Expo push notification tokens. Loaded with permissive parsing (fil
 
 ---
 
-## 7. Daemon meta files
+## 7. Account Routing Policy
+
+**Path:** `$PASEO_HOME/account-routing.json` (mode `0600`, written by `AccountRoutingStore` in `packages/server/src/server/account-routing/store.ts`)
+
+The one durable record for host-wide OMP Claude account routing: `OmpAccountRoutingPolicy` from `@getpaseo/protocol`. It holds `policyRevision`, `selectionGeneration`, `current`, `autoEnabled`, `priorityOrder` and `inclusion`, all keyed by `{ storeNamespace, nativeRowId }` account refs minted by the native credential store. It never holds a token, auth-store path, quota or billing cache, admission or served-request record; those are transient in `AccountRoutingAuthority`.
+
+- **Only the store writes it.** `commit(expectedRevision, draft)` is compare-and-set: a stale revision returns a conflict with the current policy and writes nothing, an unchanged draft is a no-op, and the live copy changes only after the atomic rename succeeds. The generic daemon config store must not gain a routing field, because it has no revision check.
+- **Fails closed.** An absent file means defaults (`current: null`, `autoEnabled: true`, empty lists). An unreadable or invalid file throws on open; policy is never silently reset.
+- **Revisions.** `policyRevision` bumps once per committed change, including automatic selection and reconciliation that adds default entries for newly seen accounts. Selecting an account (even the current one) also bumps `selectionGeneration`, as does an automatic switch. Usage and freshness changes bump neither.
+- **Tombstones.** Settings for an account the catalog no longer lists stay in the file. The same native identity returning restores its inclusion and order; a new row is a new account.
+
+---
+
+## 8. Daemon meta files
 
 These small files are not validated as full Zod schemas but are persisted under `$PASEO_HOME` for daemon identity and runtime coordination.
 

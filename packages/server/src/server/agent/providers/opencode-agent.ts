@@ -102,6 +102,7 @@ import { runProviderTurn } from "./provider-runner.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { normalizeProviderReplayTimestamp } from "../provider-history-timestamps.js";
+import { readQuestionAnswerList } from "../question-answers.js";
 import { revertOpenCodeConversationAndFiles } from "./opencode/rewind.js";
 import {
   claimOpenCodeSubagentFallbackTitle,
@@ -5007,10 +5008,24 @@ class OpenCodeAgentSession implements AgentSession {
         const answersRecord = readOpenCodeRecord(response.updatedInput?.answers);
         const questions = Array.isArray(pending.input?.questions) ? pending.input.questions : [];
         const answers = questions.map((item) => {
-          const header = readNonEmptyString(readOpenCodeRecord(item)?.header);
-          const rawAnswer = header ? readNonEmptyString(answersRecord?.[header]) : null;
+          const question = readOpenCodeRecord(item);
+          const header = readNonEmptyString(question?.header);
+          if (!header) {
+            return [];
+          }
+          const answerList = readQuestionAnswerList(response.updatedInput, header);
+          if (answerList) {
+            return answerList;
+          }
+          // COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps
+          // before v0.11.0 send only the comma-joined `answers` string. Only a multi-select
+          // answer can hold several values, so a single-select answer is never split.
+          const rawAnswer = readNonEmptyString(answersRecord?.[header]);
           if (!rawAnswer) {
             return [];
+          }
+          if (question?.multiSelect !== true) {
+            return [rawAnswer];
           }
           return rawAnswer
             .split(",")

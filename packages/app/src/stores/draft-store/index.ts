@@ -196,6 +196,8 @@ function collectQueuedMessageAttachmentIds(
       for (const attachment of queuedMessage.attachments) {
         if (attachment.kind === "image") {
           referencedIds.add(attachment.metadata.id);
+        } else if (attachment.kind === "browser_element" && attachment.attachment.screenshot) {
+          referencedIds.add(attachment.attachment.screenshot.id);
         }
       }
     }

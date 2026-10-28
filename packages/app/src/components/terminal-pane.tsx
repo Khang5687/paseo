@@ -84,7 +84,7 @@ import {
   type TerminalResizeRequest,
 } from "./terminal-resize-debouncer";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { isNative } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
 import {
   applyTerminalRendererReadyChange,
   resolveTerminalStreamTarget,
@@ -98,6 +98,10 @@ import type {
   TerminalLocalFileLinkSource,
   TerminalLocalFileLinkTarget,
 } from "@/terminal/local-links/terminal-local-link-provider";
+import {
+  TerminalFileLinkMenu,
+  type TerminalFileLinkMenuRequest,
+} from "@/terminal/local-links/terminal-file-link-menu";
 import {
   normalizeWorkspaceFileLocation,
   type OpenFileDisposition,
@@ -1079,6 +1083,15 @@ export function TerminalPane({
     },
     [onOpenWorkspaceFile],
   );
+  const [fileLinkMenuRequest, setFileLinkMenuRequest] =
+    useState<TerminalFileLinkMenuRequest | null>(null);
+  // Right click only: on a phone a long press in the terminal selects text.
+  const handleLocalFileLinkContextMenu = useCallback(
+    (target: TerminalLocalFileLinkTarget, point: { x: number; y: number }) => {
+      setFileLinkMenuRequest((current) => ({ id: (current?.id ?? 0) + 1, target, point }));
+    },
+    [],
+  );
 
   const toggleModifier = useCallback(
     (modifier: keyof ModifierState) => {
@@ -1231,12 +1244,21 @@ export function TerminalPane({
             onSelectionChange={handleSelectionChange}
             onResolveLocalFileLink={handleResolveLocalFileLink}
             onOpenLocalFileLink={handleOpenLocalFileLink}
+            onLocalFileLinkContextMenu={isWeb ? handleLocalFileLinkContextMenu : undefined}
             onPendingModifiersConsumed={handlePendingModifiersConsumed}
             pendingModifiers={modifiers}
             focusRequestToken={focusRequestToken}
             resizeRequestToken={resizeRequestToken}
           />
         </View>
+        {fileLinkMenuRequest ? (
+          <TerminalFileLinkMenu
+            key={fileLinkMenuRequest.id}
+            serverId={serverId}
+            cwd={cwd}
+            request={fileLinkMenuRequest}
+          />
+        ) : null}
 
         <TerminalFind
           key={terminalStreamKey}

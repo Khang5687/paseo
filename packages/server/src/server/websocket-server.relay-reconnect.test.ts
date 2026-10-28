@@ -129,7 +129,10 @@ vi.mock("./push/index.js", () => ({
 }));
 
 import { z } from "zod";
-import { VoiceAssistantWebSocketServer } from "./websocket-server";
+import {
+  RELAY_HELLO_REJECTION_CLOSE_DELAY_MS,
+  VoiceAssistantWebSocketServer,
+} from "./websocket-server";
 import { DAEMON_PERMISSIONS, parseServerInfoStatusPayload } from "./messages.js";
 import type { SpeechReadinessSnapshot } from "./speech/speech-runtime.js";
 
@@ -229,6 +232,30 @@ class MockSocket {
       event,
       handlers.filter((handler) => handler !== listener),
     );
+  }
+}
+
+/**
+ * Models the hosted relay: a daemon frame reaches the client a moment after the
+ * daemon sends it, and a daemon close drops every frame still in flight.
+ */
+class InFlightDroppingRelaySocket extends MockSocket {
+  delivered: unknown[] = [];
+  private inFlight = new Set<NodeJS.Timeout>();
+
+  override send(data: unknown): void {
+    super.send(data);
+    const timer = setTimeout(() => {
+      this.inFlight.delete(timer);
+      this.delivered.push(data);
+    }, 20);
+    this.inFlight.add(timer);
+  }
+
+  override close(code?: number, reason?: string): void {
+    for (const timer of this.inFlight) clearTimeout(timer);
+    this.inFlight.clear();
+    super.close(code, reason);
   }
 }
 
@@ -496,6 +523,21 @@ function holdSessionCleanup(session: (typeof sessionMock.instances)[number]): {
 }
 
 describe("relay external socket reconnect behavior", () => {
+  test("only a direct loopback socket counts as the host's own app for account sign-in", async () => {
+    const server = createServer();
+    const direct = new MockSocket();
+    const relay = new MockSocket();
+    await attachDirectAndHello({ server, socket: direct, clientId: "host-app" });
+    await attachRelayAndHello({ server, socket: relay, clientId: "phone" });
+    const [hostSession, phoneSession] = sessionMock.instances.slice(-2);
+    const hostLocal = (session: typeof hostSession, source: object | undefined) =>
+      (session.args.isHostLocalSource as (source: object | undefined) => boolean)(source);
+    expect(hostLocal(hostSession, direct)).toBe(true);
+    expect(hostLocal(phoneSession, relay)).toBe(false);
+    expect(hostLocal(hostSession, undefined)).toBe(false);
+    expect(hostLocal(hostSession, {})).toBe(false);
+  });
+
   test("closes only a hello socket when post-admission setup throws", async () => {
     const server = createServer();
     class ThrowOnceSocket extends MockSocket {
@@ -575,14 +617,46 @@ describe("relay external socket reconnect behavior", () => {
           auth: { kind: "password", password: "wrong" },
         }),
       );
-      await vi.waitFor(() => expect(wrongSocket.readyState).toBe(3));
-      expect(wrongSocket.sent).toContain(
-        JSON.stringify({
-          type: "hello.rejected",
-          reason: "incorrect_password",
-          accepts: ["password"],
-        }),
+      const incorrectPasswordRejection = JSON.stringify({
+        type: "hello.rejected",
+        reason: "incorrect_password",
+        accepts: ["password"],
+      });
+      await vi.waitFor(() => expect(wrongSocket.sent).toContain(incorrectPasswordRejection));
+      await vi.advanceTimersByTimeAsync(RELAY_HELLO_REJECTION_CLOSE_DELAY_MS);
+      expect(wrongSocket.readyState).toBe(3);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("delivers a relay hello rejection to the client before closing", async () => {
+    const server = createServer({
+      auth: {
+        password: "$2b$12$OLxyuuP9uLK30Uzc4wQX0O6liuU/Q1t5P2b0Ebf36mULvpVK3DRZW",
+        localCredential: () => "local-token",
+      },
+    });
+    try {
+      const socket = new InFlightDroppingRelaySocket();
+      await server.attachExternalSocket(socket, { transport: "relay" });
+      socket.emit(
+        "message",
+        JSON.stringify(
+          createHelloMessage("relay-no-password", {
+            capabilities: { [CLIENT_CAPS.helloRejection]: true },
+          }),
+        ),
       );
+      const passwordRequired = JSON.stringify({
+        type: "hello.rejected",
+        reason: "password_required",
+        accepts: ["password"],
+      });
+      await vi.waitFor(() => expect(socket.sent).toContain(passwordRequired));
+      await vi.advanceTimersByTimeAsync(RELAY_HELLO_REJECTION_CLOSE_DELAY_MS);
+      expect(socket.readyState).toBe(3);
+      expect(socket.delivered).toContain(passwordRequired);
     } finally {
       await server.close();
     }

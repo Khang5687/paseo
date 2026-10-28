@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { DaemonConfigStore, applyMutableProviderConfigToOverrides } from "./daemon-config-store.js";
+import {
+  DaemonConfigStore,
+  applyMutableProviderConfigToOverrides,
+  resolveFeatureDefaults,
+} from "./daemon-config-store.js";
 import { loadConfig } from "./config.js";
 import { loadPersistedConfig } from "./persisted-config.js";
 import { readSpeechSettings } from "./speech/speech-settings.js";
@@ -776,6 +780,77 @@ describe("DaemonConfigStore", () => {
           label: "claude-custom",
         },
       ],
+    });
+  });
+
+  test("patch replaces provider disabled models in config.json", async () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+
+    const store = new DaemonConfigStore(
+      paseoHome,
+      {
+        mcp: { injectIntoAgents: false },
+        browserTools: { enabled: false },
+        providers: {},
+        metadataGeneration: { providers: [] },
+        autoArchiveAfterMerge: false,
+        enableTerminalAgentHooks: false,
+        appendSystemPrompt: "",
+      },
+      undefined,
+    );
+
+    await store.patch({
+      providers: { omp: { disabledModels: ["openai/gpt-5.4", "zai/glm-4.6"] } },
+    });
+    await store.patch({ providers: { omp: { disabledModels: ["zai/glm-4.6"] } } });
+
+    expect(store.get().providers.omp?.disabledModels).toEqual(["zai/glm-4.6"]);
+    expect(loadPersistedConfig(paseoHome).agents?.providers?.omp).toEqual({
+      disabledModels: ["zai/glm-4.6"],
+    });
+  });
+
+  test("feature defaults layer provider over daemon-wide, and clearing a key applies at once", async () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+
+    const store = new DaemonConfigStore(
+      paseoHome,
+      {
+        mcp: { injectIntoAgents: false },
+        browserTools: { enabled: false },
+        providers: {},
+        metadataGeneration: { providers: [] },
+        autoArchiveAfterMerge: false,
+        enableTerminalAgentHooks: false,
+        appendSystemPrompt: "",
+      },
+      undefined,
+    );
+
+    await store.patch({ featureDefaults: { output_style: "Concise" } });
+    await store.patch({
+      providers: { omp: { featureDefaults: { output_style: "ELI5", fast_mode: true } } },
+    });
+    expect(resolveFeatureDefaults(store.get(), "claude")).toEqual({ output_style: "Concise" });
+    expect(resolveFeatureDefaults(store.get(), "omp")).toEqual({
+      output_style: "ELI5",
+      fast_mode: true,
+    });
+
+    // The app sends the whole map; a key it leaves out falls back to the daemon-wide value.
+    await store.patch({ providers: { omp: { featureDefaults: { fast_mode: true } } } });
+    expect(resolveFeatureDefaults(store.get(), "omp")).toEqual({
+      output_style: "Concise",
+      fast_mode: true,
+    });
+
+    await store.patch({ featureDefaults: {} });
+    expect(resolveFeatureDefaults(store.get(), "claude")).toEqual({});
+    expect(loadPersistedConfig(paseoHome).agents).toEqual({
+      providers: { omp: { featureDefaults: { fast_mode: true } } },
     });
   });
 
