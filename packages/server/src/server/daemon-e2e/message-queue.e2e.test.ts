@@ -186,6 +186,7 @@ test("a stored queue drains after a daemon restart without any client", async ()
     await daemon.close();
     daemon = null;
 
+    // Restart recovery would also resume the parked turn; this test covers the queue alone.
     daemon = await createTestPaseoDaemon({
       agentClients: createTestAgentClients({
         onStartTurn: (prompt) => {
@@ -194,6 +195,7 @@ test("a stored queue drains after a daemon restart without any client", async ()
       }),
       paseoHomeRoot,
       cleanup: false,
+      resumeOnStartup: false,
     });
     await vi.waitFor(() => expect(promptsAfterRestart).toEqual([queued.text]), {
       timeout: 20_000,
