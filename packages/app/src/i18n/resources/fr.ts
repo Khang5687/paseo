@@ -169,6 +169,25 @@ export const fr: TranslationResources = {
       dropFilesHere: "Déposez des fichiers ici",
       editQueuedMessage: "Modifier le message en file d’attente",
       sendQueuedMessageNow: "Envoyer maintenant le message en file d’attente",
+      queueHeader: "File d’attente · {{count}}",
+      queuePausedHeader: "File d’attente en pause · {{count}}",
+      queuePauseReason: "Envoi impossible : {{reason}}",
+      pauseQueue: "Mettre la file d’attente en pause",
+      resumeQueue: "Reprendre la file d’attente",
+      clearQueue: "Vider la file d’attente",
+      clearQueueTitle: "Vider la file d’attente",
+      clearQueueMessage: "Tous les messages en file d’attente de cet agent seront supprimés.",
+      clearQueueConfirm: "Vider",
+      queuedMessageActions: "Actions du message en file d’attente",
+      editQueuedMessageAction: "Modifier",
+      moveQueuedMessageToTop: "Placer en premier",
+      moveQueuedMessageUp: "Monter",
+      moveQueuedMessageDown: "Descendre",
+      deleteQueuedMessage: "Supprimer",
+      reorderQueuedMessage: "Faire glisser pour réorganiser",
+      showMoreQueuedMessages: "Afficher {{count}} de plus",
+      showFewerQueuedMessages: "Afficher moins",
+      queueUpdateFailed: "Impossible de mettre à jour la file d’attente",
       openImage: "Ouvrir l’image jointe",
       removeImage: "Retirer l’image jointe",
       removeFile: "Retirer le fichier joint",
@@ -481,6 +500,8 @@ export const fr: TranslationResources = {
       openToSide: "Ouvrir sur le côté",
       copyPath: "Copier le chemin",
       copyRelativePath: "Copier le chemin relatif",
+      copyFullPath: "Copier le chemin complet",
+      copyFileName: "Copier le nom du fichier",
       revealIn: "Afficher dans {{target}}",
       download: "Télécharger",
       addToChat: "Ajouter à la conversation",
@@ -702,6 +723,7 @@ export const fr: TranslationResources = {
         terminalIdCopiedLabel: "ID du terminal",
         resumeCommandCopiedLabel: "Commande de reprise",
         filePathCopiedLabel: "Chemin du fichier",
+        fileNameCopiedLabel: "Nom du fichier",
         resumeIdUnavailable: "ID de reprise indisponible",
         resumeCommandUnavailable: "Commande de reprise indisponible",
         reloadingAgent: "Rechargement de l’agent…",
@@ -1188,6 +1210,7 @@ export const fr: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Groupe {{label}}",
+    unsentDraft: "Brouillon non envoyé",
     statusBucket: {
       needsInput: "Attend une réponse",
       failed: "Échec",
@@ -1251,6 +1274,10 @@ export const fr: TranslationResources = {
     },
     pinned: {
       title: "Épinglés",
+    },
+    settled: {
+      title: "Réglés",
+      titleWithCount: "Réglés ({{count}})",
     },
     host: {
       noHost: "Aucun hôte",
@@ -1342,6 +1369,10 @@ export const fr: TranslationResources = {
         rename: "Renommer l’espace de travail",
         pin: "Épingler en haut",
         unpin: "Désépingler",
+        settle: "Régler",
+        unsettle: "Rouvrir",
+        settleWorkspace: "Marquer l’espace de travail comme réglé",
+        unsettleWorkspace: "Rouvrir l’espace de travail",
         archive: "Archiver",
         archiveWorkspace: "Archiver l’espace de travail",
         hideFromSidebar: "Masquer de la barre latérale",
@@ -1426,6 +1457,9 @@ export const fr: TranslationResources = {
     quitting: {
       title: "Fermeture de Paseo…",
       detail: "Arrêt du daemon local.",
+    },
+    quitConfirm: {
+      hint: "Maintenez ⌘Q ou appuyez deux fois pour quitter",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2140,6 +2174,186 @@ export const fr: TranslationResources = {
       saveAccessibility: "Enregistrer le commentaire de revue",
     },
   },
+  ompAccountRouting: {
+    login: {
+      start: "Ajouter un compte Claude",
+      elsewhere: "Ouvrez Paseo sur l'ordinateur hôte pour ajouter un compte.",
+      update: "Mettez à jour Paseo et Oh My Pi sur l'hôte pour ajouter des comptes ici.",
+      inProgress: "Connexion en cours",
+      continue: "Continuer",
+      cancel: "Annuler",
+      cancelSignIn: "Annuler la connexion",
+      done: "Terminé",
+      details: "Détails",
+      tryAgain: "Réessayer",
+      close: "Fermer",
+      justAdded: "Vient d'être ajouté",
+      warning: {
+        body: "Paseo enregistre une connexion par compte Claude. Connectez-vous à claude.ai avec le compte que vous voulez ajouter.",
+        existing: "Déjà ajoutés : {{accounts}}",
+        alertTitle: "Vérifiez quel compte votre navigateur utilise",
+        alertDescription:
+          "Si claude.ai est encore connecté avec un compte déjà ajouté, déconnectez-vous ou changez de compte d'abord. Une fenêtre privée démarre toujours déconnectée.",
+        guard:
+          "Si vous vous connectez avec un compte déjà ajouté, Paseo s'arrête et ne change rien.",
+      },
+      preparing: "Préparation du lien de connexion...",
+      link: {
+        title: "Se connecter à Claude",
+        step: "Ouvrez le lien et connectez-vous avec le compte que vous voulez ajouter",
+        open: "Ouvrir la page de connexion",
+        copy: "Copier le lien",
+        copied: "Copié",
+        label: "Lien de connexion",
+        hint: "Pour utiliser une fenêtre privée ou un autre appareil, copiez le lien",
+        waiting: "En attente du navigateur...",
+        pasteInstead: "Coller l'adresse à la place",
+      },
+      paste: {
+        label: "Adresse ou code",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Après votre accord, le navigateur peut afficher une page qui ne se charge pas. Copiez l'adresse complète de la barre d'adresse, ou le code affiché par Claude, et collez-la ici.",
+        submit: "Envoyer",
+        checking: "Vérification...",
+        error: {
+          invalid_input: "Ce n'est ni une adresse ni un code de connexion",
+          wrong_login:
+            "Cette adresse correspond à un ancien lien de connexion. Utilisez le lien affiché ici.",
+          not_waiting: "Cette connexion est déjà terminée",
+          not_allowed: "Seul Paseo sur l'ordinateur hôte peut envoyer ceci",
+          unreachable: "Impossible de joindre l'hôte. Réessayez.",
+        },
+      },
+      verifying: "Vérification de la connexion...",
+      result: {
+        added: {
+          title: "{{account}} ajouté",
+          titleUnnamed: "Compte ajouté",
+          description: "{{organization}}. Le routage automatique peut l'utiliser maintenant.",
+          descriptionUnnamed: "Le routage automatique peut l'utiliser maintenant.",
+          billingEnabled:
+            "L'usage supplémentaire payant est activé pour ce compte. Le routage automatique l'ignore tant que vous ne le désactivez pas dans les réglages de Claude.",
+          billingUnknown:
+            "Vérifiez que l'usage supplémentaire payant est désactivé pour ce compte dans les réglages de Claude. Le routage automatique ignore les comptes pour lesquels il est activé.",
+        },
+        alreadyListed: {
+          title: "{{account}} est déjà ajouté",
+          titleUnnamed: "Ce compte est déjà ajouté",
+          description:
+            "Rien n'a changé. Votre navigateur s'est connecté avec un compte que Paseo a déjà. Déconnectez-vous de claude.ai ou utilisez une fenêtre privée, puis réessayez.",
+        },
+        replaced: {
+          title: "Connexion remplacée pour {{account}}",
+          titleUnnamed: "Connexion enregistrée remplacée",
+          description: "Aucun compte n'a été ajouté. La nouvelle connexion est utilisée.",
+        },
+        failed: "Échec de la connexion",
+        cancelled: "Connexion annulée",
+      },
+      failure: {
+        timeout: "Le lien de connexion a expiré après 10 minutes. Rien n'a changé.",
+        omp_failed:
+          "Oh My Pi n'a pas pu terminer la connexion. Rien n'a changé. Réessayez, ou lancez omp dans un terminal et tapez /login.",
+        spawn_failed: "Paseo n'a pas pu démarrer Oh My Pi sur cet ordinateur.",
+        unreachable:
+          "Contact perdu avec l'hôte. À sa reconnexion, vérifiez la liste des comptes avant de réessayer.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "S'applique à tous les agents OMP gérés par Paseo sur cet hôte. Les autres hôtes et les terminaux autonomes ne changent pas.",
+      account: "Compte",
+      automatic: "Automatique",
+      useForAuto: "Utiliser pour le routage automatique",
+      auto: "Routage automatique",
+      priority: "Priorité de repli",
+      priorityHelp:
+        "Quand le compte actuel est épuisé, Paseo bascule vers le compte inclus qui a le plus d'utilisation restante. Cet ordre départage les égalités.",
+      addAccountHint:
+        "Pour ajouter un compte, exécutez omp dans un terminal, tapez /login, puis connectez-vous avec un autre compte Claude.",
+      current: "Sélectionné",
+      serving: "En service",
+      lastServed: "Dernière utilisation",
+      excluded: "Exclu du routage automatique",
+      missing: "Compte enregistré indisponible",
+      fiveHour: "5 heures",
+      weekly: "Hebdomadaire",
+      tier: "Niveau d'abonnement",
+      unknownTier: "Niveau d'abonnement inconnu",
+      unknownBudget: "Quota absolu inconnu",
+      consumed: "Consommé",
+      remaining: "Restant",
+      stale: "Observation périmée",
+      unknownOrganization: "Organisation inconnue",
+      detailsPending: "Les détails apparaissent lorsqu’un agent Oh My Pi est en cours d’exécution",
+      search: "Rechercher des comptes",
+    },
+    actions: {
+      moveUp: "Monter",
+      moveDown: "Descendre",
+    },
+    status: {
+      loading: "Chargement du routage des comptes",
+      empty: "Aucun compte Claude observé",
+      noRuntime: "Les comptes apparaissent quand un agent Oh My Pi est en cours d'exécution.",
+      unsupported: "Cet hôte n'a pas vérifié la prise en charge du routage de comptes OMP",
+      offline: "Hôte hors ligne ; derniers réglages confirmés affichés",
+      readOnly: "Vous pouvez consulter ces réglages, mais pas les modifier",
+      pending: "Enregistrement des réglages",
+      conflict: "Les réglages ont changé ailleurs ; dernier état confirmé affiché",
+      paused: "En attente d'un compte inclus disponible",
+      recovered: "Compte inclus disponible",
+      unknownUsage: "Utilisation inconnue",
+      summaryPaused: "En pause : aucun compte inclus n'a d'utilisation restante.",
+      summaryPausedResumes:
+        "En pause : aucun compte inclus n'a d'utilisation restante. Reprise {{time}}",
+      summaryUsing: "Compte utilisé : {{account}}",
+      summaryAuto: "Le mode automatique choisit le compte avec le plus d'utilisation restante",
+    },
+    reason: {
+      no_account: "Aucun compte n'est sélectionné",
+      source_changed: "La source d'identifiants native sélectionnée a changé",
+      source_inaccessible:
+        "Cet environnement d'exécution ne peut pas accéder au compte natif sélectionné",
+      billing_enabled:
+        "Les crédits d'utilisation payants sont activés ; le routage limité à l'usage inclus ne peut pas utiliser ce compte",
+      billing_unknown:
+        "Les réglages des crédits d'utilisation payants n'ont pas été vérifiés récemment",
+      quota_blocked: "L'usage inclus n'est pas disponible pour cette requête",
+      entitlement_unavailable: "L'accès au modèle est indisponible ou non vérifié pour ce compte",
+      auth_unavailable: "L'authentification du compte natif est indisponible",
+      unsupported_transport:
+        "Ce transport du fournisseur ne prend pas en charge le routage limité à l'usage inclus",
+      unsupported_runtime:
+        "Cet environnement d'exécution OMP ne prend pas en charge le routage géré",
+      persistence_failed: "Les réglages de routage n'ont pas pu être enregistrés",
+      host_unavailable: "Hôte de routage indisponible",
+      cancelled: "Requête annulée",
+      metadata_pending: "Vérification de la disponibilité du compte",
+      all_unavailable: "Aucun compte inclus n'est disponible actuellement",
+      auto_disabled:
+        "Le routage automatique est désactivé ; sélectionnez un compte ou activez-le pour continuer",
+      provider_failed: "La disponibilité du compte n'a pas pu être vérifiée",
+    },
+    mutationError: {
+      conflict: "Les réglages ont changé ailleurs ; consultez le dernier état avant de réessayer",
+      invalid_account: "Ce compte natif n'est plus dans le catalogue",
+      unsupported: "Les commandes de routage de comptes sont indisponibles sur cet hôte",
+      persistence_failed:
+        "Les réglages n'ont pas été enregistrés ; les derniers réglages confirmés restent en place",
+    },
+    values: {
+      used: "{{percent}} % utilisé",
+      reset: "réinitialisation {{time}}",
+      observed: "observé {{time}}",
+      limitReached: "Limite {{window}} atteinte",
+      limitReachedReset: "Limite {{window}} atteinte · réinitialisation {{time}}",
+      account: "Compte {{row}}",
+      serving: "{{account}} sert {{agent}}",
+      priority: "Priorité {{position}}",
+    },
+  },
   providerUsage: {
     options: "Paramètres",
     refreshFailed: "Impossible d’actualiser l’utilisation",
@@ -2421,6 +2635,7 @@ export const fr: TranslationResources = {
             "Quand l’agent est en cours d’exécution, un appui long sur Envoyer met en file d’attente.",
         },
       },
+      defaultEditor: "Éditeur par défaut",
       sendShortcut: {
         label: "Raccourci d’envoi",
         options: {
@@ -2559,6 +2774,85 @@ export const fr: TranslationResources = {
         },
         moveUp: "Monter",
         moveDown: "Descendre",
+      },
+      background: {
+        title: "Arrière-plan",
+        applyTo: {
+          title: "Appliquer à",
+          options: {
+            both: "Les deux",
+            light: "Clair",
+            dark: "Sombre",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Images d’arrière-plan",
+          none: "Aucun",
+          addImage: "Ajouter une image…",
+          importDefaultName: "Image",
+        },
+        menu: {
+          actions: "Actions pour {{name}}",
+          edit: "Modifier…",
+          delete: "Supprimer",
+          details: "Détails",
+        },
+        undo: {
+          action: "Annuler",
+          accessibilityLabel: "Annuler le changement d’arrière-plan",
+        },
+        catalog: {
+          browse: "Parcourir",
+          hint: "Installez d’autres arrière-plans depuis ce plugin",
+        },
+        visibility: {
+          title: "Visibilité de l’image",
+          hint: "Paseo garde automatiquement le texte lisible, donc les images claires peuvent s’afficher moins.",
+        },
+        blur: {
+          title: "Flou",
+          options: {
+            off: "Désactivé",
+            low: "Faible",
+            medium: "Moyen",
+            high: "Élevé",
+          },
+        },
+        showBehindSidebar: "Afficher derrière la barre latérale",
+        showBehindContent: "Afficher derrière le contenu",
+        status: {
+          reducedTransparency:
+            "Masqué car Réduire la transparence est activé dans les réglages du système",
+          forcedColors: "Masqué tant que le mode contraste élevé est activé",
+          error: "L’arrière-plan n’a pas pu être affiché",
+        },
+        errors: {
+          select: "Impossible d’appliquer l’arrière-plan : {{message}}",
+          import: "Impossible d’importer l’image : {{message}}",
+          update: "Impossible d’enregistrer les modifications : {{message}}",
+          remove: "Impossible de supprimer l’arrière-plan : {{message}}",
+        },
+        edit: {
+          title: "Modifier l’arrière-plan",
+          name: "Nom",
+          focal: "Point focal",
+          focalHint: "Touchez la partie de l’image qui doit rester visible.",
+          focalAccessibility: "Choisir le point focal",
+          save: "Enregistrer",
+          saving: "Enregistrement…",
+        },
+        delete: {
+          title: "Supprimer « {{name}} » ?",
+          message: "Cela supprime l’image de cet appareil.",
+          confirm: "Supprimer",
+        },
+        details: {
+          title: "Détails",
+          author: "Auteur",
+          license: "Licence",
+          source: "Source",
+          openSource: "Ouvrir la source",
+        },
       },
       fonts: {
         title: "Polices",
@@ -2825,6 +3119,10 @@ export const fr: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Style par défaut",
+          hint: "Modifiable par fournisseur",
+        },
         unavailable: "Connectez-vous à cet hôte pour gérer les agents",
         resumeOnStartup: {
           title: "Reprendre les agents après un redémarrage",
@@ -3032,6 +3330,9 @@ export const fr: TranslationResources = {
         discovered: "Détectés",
         custom: "Modèles personnalisés",
         updated: "Mis à jour {{time}}",
+        disabledCount: "{{count}} désactivés",
+        toggleModel: "Activer {{model}}",
+        failedToToggle: "Impossible de mettre à jour {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",
@@ -3047,6 +3348,12 @@ export const fr: TranslationResources = {
         none: "Aucun diagnostic disponible",
         failedToFetch: "Impossible de récupérer le diagnostic",
         unknownError: "Erreur inconnue",
+      },
+      featureDefaults: {
+        title: "Valeurs par défaut des nouveaux agents",
+        providerDefault: "Valeur par défaut du fournisseur",
+        on: "Activé",
+        off: "Désactivé",
       },
     },
     project: {

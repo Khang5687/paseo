@@ -72,6 +72,17 @@ function spawnJsonlRpcProcess(launch: JsonlRpcLaunch): ChildProcessWithoutNullSt
   return child;
 }
 
+/** A request the child answered with `success: false`; `data` carries any typed refusal details. */
+export class JsonlRpcResponseError extends Error {
+  constructor(
+    message: string,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = "JsonlRpcResponseError";
+  }
+}
+
 export class JsonlRpcProcess {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly diagnosticName: string;
@@ -296,8 +307,9 @@ export class JsonlRpcProcess {
     this.pending.delete(response.id);
     if (!response.success) {
       pending.reject(
-        new Error(
+        new JsonlRpcResponseError(
           response.error ?? `${this.diagnosticName} ${response.command ?? "request"} failed`,
+          response.data,
         ),
       );
       return;

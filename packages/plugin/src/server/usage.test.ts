@@ -5,6 +5,7 @@ import {
   usedPctOf,
   windowFromUsedPct,
   windowFromReportedDuration,
+  type UsageReport,
 } from "./usage.js";
 
 test("shared usage tones preserve the app threshold contract", () => {
@@ -105,3 +106,19 @@ test.each([
     ).toMatchObject({ id, label, shortLabel, usedPct: 11 });
   },
 );
+
+test("available reports accept legacy and extended identity/subscription metadata", () => {
+  const legacy: UsageReport = { status: "available", windows: [] };
+  const extended: UsageReport = {
+    ...legacy,
+    quotaIdentity: { accountUuid: "a", organizationUuid: "o" },
+    subscription: {
+      subscriptionType: null,
+      rateLimitTier: "max_5x",
+      observedAt: 1,
+      source: "claude-supported-login",
+    },
+  };
+  expect(legacy).not.toHaveProperty("quotaIdentity");
+  expect(extended.status === "available" && extended.subscription?.subscriptionType).toBeNull();
+});

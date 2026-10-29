@@ -16,6 +16,7 @@ function registry(version: string) {
     createRuntime(installation) {
       starts++;
       return {
+        serverId: installation.serverId,
         hosts: createPluginHosts(
           {
             getHosts: () => [],

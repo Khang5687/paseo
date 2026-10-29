@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import {
-  DaemonClient,
   DaemonConnectionError,
+  DaemonClient,
+  OmpAccountRoutingUnsupportedError,
   supportsUsageReports,
   type DaemonClientTrace,
   type CreateAgentRequestOptions,
@@ -12,6 +13,7 @@ import {
   type PluginClientBundle,
   type PluginClientBundleStore,
 } from "./daemon-client";
+import type { OmpAccountRoutingState } from "@getpaseo/protocol/messages";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
 import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import {
@@ -75,9 +77,25 @@ function createMockTransport() {
       if (typeof data !== "string") {
         return;
       }
-      const frame = JSON.parse(data) as { type?: string };
+      const frame = JSON.parse(data) as {
+        type?: string;
+        message?: { type?: string; requestId?: string; subscriptionId?: string };
+      };
       if (frame.type === "ping") {
         onMessage(JSON.stringify({ type: "pong" }));
+      } else if (
+        frame.type === "session" &&
+        frame.message?.type === "subscription.release.request"
+      ) {
+        onMessage(
+          wrapSessionMessage({
+            type: "subscription.release.response",
+            payload: {
+              requestId: frame.message.requestId,
+              subscriptionId: frame.message.subscriptionId,
+            },
+          }),
+        );
       }
     },
     close: () => {},
@@ -102,7 +120,11 @@ function createMockTransport() {
   return {
     transport,
     sent,
-    triggerOpen: (options?: { preserveSent?: boolean; features?: Record<string, boolean> }) => {
+    triggerOpen: (options?: {
+      preserveSent?: boolean;
+      features?: Record<string, boolean>;
+      capabilities?: Record<string, unknown>;
+    }) => {
       onOpen();
       if (!options?.preserveSent) {
         // Ignore HELLO handshake payloads in assertions.
@@ -119,6 +141,7 @@ function createMockTransport() {
               hostname: null,
               version: null,
               features: options?.features ?? { ownedSubscriptions: true },
+              ...(options?.capabilities ? { capabilities: options.capabilities } : {}),
             },
           },
         }),
@@ -157,6 +180,27 @@ function parseSentFrame(
       message: z.record(z.string(), z.unknown()),
     })
     .parse(JSON.parse(assertStr(data))).message;
+}
+
+function accountRoutingState(stateSequence = 1, hostEpoch = "epoch-1"): OmpAccountRoutingState {
+  return {
+    hostEpoch,
+    stateSequence,
+    policy: {
+      policyRevision: 1,
+      selectionGeneration: 1,
+      current: null,
+      autoEnabled: true,
+      priorityOrder: [],
+      inclusion: [],
+    },
+    capability: { status: "supported" as const, reason: null },
+    catalog: { status: "empty" as const, authoritativeObservedAt: null },
+    accounts: [],
+    activeRequests: [],
+    lastServed: [],
+    pausedRequests: [],
+  };
 }
 
 function respondToScheduleRequest(
@@ -8001,6 +8045,1309 @@ test.each([false, true])(
     await send;
   },
 );
+
+test("OMP account-routing reads fail before any unsupported request is sent", async () => {
+  const preHandshake = createMockTransport();
+  const preHandshakeClient = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-pre-handshake",
+    reconnect: { enabled: false },
+    transportFactory: () => preHandshake.transport,
+  });
+  clients.push(preHandshakeClient);
+  await expect(preHandshakeClient.getOmpAccountRoutingState()).rejects.toMatchObject({
+    name: "OmpAccountRoutingUnsupportedError",
+    code: "unsupported",
+  });
+  expect(preHandshake.sent).toHaveLength(0);
+
+  const unsupportedCases = [
+    { clientId: "routing-feature-off", features: { ownedSubscriptions: true } },
+    {
+      clientId: "routing-owned-off",
+      features: { ownedSubscriptions: false, ompAccountRouting: true },
+      serverCapabilities: { owned_subscriptions: true },
+    },
+    {
+      clientId: "routing-capability-off",
+      features: { ownedSubscriptions: true, ompAccountRouting: true },
+      capabilities: { [CLIENT_CAPS.ownedSubscriptions]: false },
+    },
+  ];
+  for (const unsupportedCase of unsupportedCases) {
+    const mock = createMockTransport();
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: unsupportedCase.clientId,
+      reconnect: { enabled: false },
+      transportFactory: () => mock.transport,
+      capabilities: unsupportedCase.capabilities,
+    });
+    clients.push(client);
+    const connected = client.connect();
+    mock.triggerOpen({
+      features: unsupportedCase.features,
+      ...(unsupportedCase.serverCapabilities
+        ? { capabilities: unsupportedCase.serverCapabilities }
+        : {}),
+    });
+    await connected;
+    const sentBefore = mock.sent.length;
+    await expect(client.getOmpAccountRoutingState()).rejects.toBeInstanceOf(
+      OmpAccountRoutingUnsupportedError,
+    );
+    expect(mock.sent).toHaveLength(sentBefore);
+  }
+});
+
+test("supported OMP account-routing reads correlate exact IDs and reject malformed responses", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-snapshot",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({
+    preserveSent: true,
+    features: { ownedSubscriptions: true, ompAccountRouting: true },
+  });
+  await connected;
+  expect(JSON.parse(assertStr(mock.sent[0])).capabilities).toMatchObject({
+    [CLIENT_CAPS.ownedSubscriptions]: true,
+  });
+
+  const first = client.getOmpAccountRoutingState();
+  const firstRequest = parseSentFrame(mock.sent.at(-1));
+  const second = client.getOmpAccountRoutingState();
+  const secondRequest = parseSentFrame(mock.sent.at(-1));
+  const firstState = accountRoutingState(1);
+  const secondState = accountRoutingState(2);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: secondRequest.requestId, state: secondState },
+    }),
+  );
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: firstRequest.requestId, state: firstState },
+    }),
+  );
+  await expect(first).resolves.toEqual({ state: firstState });
+  await expect(second).resolves.toEqual({ state: secondState });
+
+  const next = client.getOmpAccountRoutingState();
+  const nextRequest = parseSentFrame(mock.sent.at(-1));
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: firstRequest.requestId, state: accountRoutingState(99) },
+    }),
+  );
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { state: accountRoutingState(100) },
+    }),
+  );
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: nextRequest.requestId, state: accountRoutingState(3) },
+    }),
+  );
+  await expect(next).resolves.toEqual({ state: accountRoutingState(3) });
+
+  const malformed = client.getOmpAccountRoutingState();
+  const malformedRequest = parseSentFrame(mock.sent.at(-1));
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: malformedRequest.requestId },
+    }),
+  );
+  await expect(malformed).rejects.toMatchObject({ code: "invalid_response" });
+});
+
+test("OMP account login start, status, and cancel need the ompAccountLogin feature", async () => {
+  const off = createMockTransport();
+  const offClient = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-off",
+    reconnect: { enabled: false },
+    transportFactory: () => off.transport,
+  });
+  clients.push(offClient);
+  const offConnected = offClient.connect();
+  off.triggerOpen({ features: { ompAccountRouting: true } });
+  await offConnected;
+  await expect(offClient.startOmpAccountLogin()).rejects.toMatchObject({
+    name: "OmpAccountLoginUnsupportedError",
+  });
+
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-on",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ preserveSent: true, features: { ompAccountLogin: true } });
+  await connected;
+
+  const start = client.startOmpAccountLogin();
+  const startRequest = parseSentFrame(mock.sent.at(-1));
+  expect(startRequest).toMatchObject({ type: "account.routing.login.start.request" });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.start.response",
+      payload: {
+        requestId: startRequest.requestId,
+        status: { state: "running", startedAt: 1 },
+        error: null,
+      },
+    }),
+  );
+  await expect(start).resolves.toMatchObject({ status: { state: "running" }, error: null });
+
+  const status = client.getOmpAccountLoginStatus();
+  const statusRequest = parseSentFrame(mock.sent.at(-1));
+  expect(statusRequest).toMatchObject({ type: "account.routing.login.get_status.request" });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.get_status.response",
+      payload: { requestId: statusRequest.requestId, status: { state: "succeeded" } },
+    }),
+  );
+  await expect(status).resolves.toMatchObject({ status: { state: "succeeded" } });
+
+  const cancel = client.cancelOmpAccountLogin();
+  const cancelRequest = parseSentFrame(mock.sent.at(-1));
+  expect(cancelRequest).toMatchObject({ type: "account.routing.login.cancel.request" });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.cancel.response",
+      payload: { requestId: cancelRequest.requestId, status: { state: "cancelled" } },
+    }),
+  );
+  await expect(cancel).resolves.toMatchObject({ status: { state: "cancelled" } });
+});
+
+test("OMP login link calls need the ompAccountLoginLink feature and send the new fields", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-link",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ preserveSent: true, features: { ompAccountLogin: true } });
+  await connected;
+  const account = { storeNamespace: "ns", nativeRowId: 7 };
+  await expect(client.submitOmpAccountLoginCode("abc")).rejects.toMatchObject({
+    name: "OmpAccountLoginUnsupportedError",
+  });
+  await expect(client.startOmpAccountLogin({ mode: "replace", account })).rejects.toMatchObject({
+    name: "OmpAccountLoginUnsupportedError",
+  });
+
+  const link = createMockTransport();
+  const linkClient = new DaemonClient({
+    url: "ws://test",
+    clientId: "login-link-on",
+    reconnect: { enabled: false },
+    transportFactory: () => link.transport,
+  });
+  clients.push(linkClient);
+  const linkConnected = linkClient.connect();
+  link.triggerOpen({
+    preserveSent: true,
+    features: { ompAccountLogin: true, ompAccountLoginLink: true },
+  });
+  await linkConnected;
+
+  const start = linkClient.startOmpAccountLogin({ mode: "replace", account });
+  const startRequest = parseSentFrame(link.sent.at(-1));
+  expect(startRequest).toMatchObject({
+    type: "account.routing.login.start.request",
+    mode: "replace",
+    replaceAccount: account,
+  });
+  link.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.start.response",
+      payload: { requestId: startRequest.requestId, status: { state: "running" }, error: null },
+    }),
+  );
+  await expect(start).resolves.toMatchObject({ status: { state: "running" } });
+
+  const submit = linkClient.submitOmpAccountLoginCode("abc#s");
+  const submitRequest = parseSentFrame(link.sent.at(-1));
+  expect(submitRequest).toMatchObject({
+    type: "account.routing.login.submit_code.request",
+    input: "abc#s",
+  });
+  link.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.login.submit_code.response",
+      payload: {
+        requestId: submitRequest.requestId,
+        status: { state: "running", phase: "verifying" },
+        error: "wrong_login",
+      },
+    }),
+  );
+  await expect(submit).resolves.toMatchObject({ error: "wrong_login" });
+});
+
+test("subscribed OMP snapshots filter stale updates and replace on a new epoch", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-subscription",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+  const request = parseSentFrame(mock.sent.at(-1));
+  const state = accountRoutingState(1);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state,
+        subscriptionId: "routing-subscription",
+      },
+    }),
+  );
+  const result = await reading;
+  expect(result.state).toEqual(state);
+  expect(result.state).not.toHaveProperty("subscriptionId");
+  expect(result.subscription?.subscriptionId).toBe("routing-subscription");
+
+  const updates: number[] = [];
+  const unsubscribe = result.subscription!.subscribe({
+    snapshot: () => {},
+    update: (message) => {
+      if (message.type === "account.routing.state.update")
+        updates.push(message.payload.state.stateSequence);
+    },
+  });
+  const sendUpdate = (nextState: OmpAccountRoutingState, subscriptionId = "routing-subscription") =>
+    mock.triggerMessage(
+      wrapSessionMessage({
+        type: "account.routing.state.update",
+        payload: { subscriptionId, state: nextState },
+      }),
+    );
+  sendUpdate(accountRoutingState(1));
+  sendUpdate(accountRoutingState(2));
+  sendUpdate(accountRoutingState(0));
+  sendUpdate(accountRoutingState(0, "epoch-2"));
+  expect(updates).toEqual([2, 0]);
+  unsubscribe();
+  await result.subscription!.release();
+  await result.subscription!.release();
+});
+test("OMP account-routing pre-aborted reads win before unsupported preflight", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-pre-aborted",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const reason = new Error("caller cancelled");
+  const signal = new AbortController();
+  signal.abort(reason);
+
+  await expect(client.getOmpAccountRoutingState({ signal: signal.signal })).rejects.toBe(reason);
+  expect(mock.sent).toHaveLength(0);
+});
+
+test("aborting a subscribed OMP bootstrap rejects with the signal reason without a reset", async () => {
+  const { client, first, second } = createReconnectingRoutingClient("routing-abort-bootstrap");
+  const closes = recordTransportCloses(first);
+  const connected = client.connect();
+  first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+
+  const reason = new Error("stop waiting");
+  const signal = new AbortController();
+  const reading = client.getOmpAccountRoutingState({
+    subscribe: {},
+    signal: signal.signal,
+  });
+  const request = parseSentFrame(first.sent.at(-1));
+  signal.abort(reason);
+
+  await expect(reading).rejects.toBe(reason);
+  expect(closes).toEqual([]);
+  first.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(1),
+        subscriptionId: "late-routing-subscription",
+      },
+    }),
+  );
+
+  // The late reply has no waiter and no owned handle, so it is ignored. The aborted handle was
+  // released, so a supported reconnect must not re-request the bootstrap.
+  expect(closes).toEqual([]);
+  first.triggerClose({ code: 1006, reason: "network lost" });
+  const reconnecting = client.connect();
+  second.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await reconnecting;
+  expect(second.sent).toHaveLength(0);
+});
+
+test("aborting a ready subscribed OMP handle releases its host subscription once without a reset", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-abort-ready",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const closes = recordTransportCloses(mock);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+
+  const signal = new AbortController();
+  const reading = client.getOmpAccountRoutingState({ subscribe: {}, signal: signal.signal });
+  const request = parseSentFrame(mock.sent.at(-1));
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(1),
+        subscriptionId: "routing-ready-abort",
+      },
+    }),
+  );
+  const { subscription } = await reading;
+  const updates: number[] = [];
+  subscription!.subscribe({
+    snapshot: () => {},
+    update: (message) => {
+      if (message.type === "account.routing.state.update")
+        updates.push(message.payload.state.stateSequence);
+    },
+  });
+  const sentBeforeAbort = mock.sent.length;
+
+  signal.abort(new Error("stop watching"));
+
+  await vi.waitFor(() =>
+    expect(parseSentFrame(mock.sent.at(-1))).toMatchObject({
+      type: "subscription.release.request",
+      subscriptionId: "routing-ready-abort",
+    }),
+  );
+  expect(mock.sent).toHaveLength(sentBeforeAbort + 1);
+  mock.triggerMessage(routingUpdate(accountRoutingState(2), "routing-ready-abort"));
+  expect(updates).toEqual([]);
+  await subscription!.release();
+  expect(mock.sent).toHaveLength(sentBeforeAbort + 1);
+  expect(closes).toEqual([]);
+});
+
+test("a disconnected unsubscribed OMP read is not replayed and cannot use a stale gate", async () => {
+  const first = createMockTransport();
+  const second = createMockTransport();
+  let transportIndex = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-no-replay",
+    reconnect: { enabled: true, baseDelayMs: 60_000, maxDelayMs: 60_000 },
+    transportFactory: () => {
+      const transport = [first, second][transportIndex];
+      transportIndex += 1;
+      if (!transport) throw new Error("unexpected reconnect");
+      return transport.transport;
+    },
+  });
+  clients.push(client);
+
+  const connected = client.connect();
+  first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+  const reading = client.getOmpAccountRoutingState();
+  const request = parseSentFrame(first.sent.at(-1));
+
+  first.triggerClose({ code: 1006, reason: "network lost" });
+  await expect(reading).rejects.toBeInstanceOf(DaemonConnectionError);
+
+  const beforeHandshake = client.getOmpAccountRoutingState();
+  await expect(beforeHandshake).rejects.toBeInstanceOf(OmpAccountRoutingUnsupportedError);
+  expect(first.sent).toHaveLength(1);
+
+  const reconnecting = client.connect();
+  second.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await reconnecting;
+  expect(second.sent).toHaveLength(0);
+  mockLateResponse(first, request.requestId);
+});
+
+test("a supported OMP reconnect requests a fresh subscribed bootstrap", async () => {
+  const first = createMockTransport();
+  const second = createMockTransport();
+  let transportIndex = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-supported-reconnect",
+    reconnect: { enabled: true, baseDelayMs: 60_000, maxDelayMs: 60_000 },
+    transportFactory: () => {
+      const transport = [first, second][transportIndex];
+      transportIndex += 1;
+      if (!transport) throw new Error("unexpected reconnect");
+      return transport.transport;
+    },
+  });
+  clients.push(client);
+
+  const connected = client.connect();
+  first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+  const initialRequest = parseSentFrame(first.sent.at(-1));
+  first.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: initialRequest.requestId,
+        state: accountRoutingState(1, "epoch-1"),
+        subscriptionId: "routing-subscription-1",
+      },
+    }),
+  );
+  const initial = await reading;
+  const snapshots: OmpAccountRoutingState[] = [];
+  const unsubscribe = initial.subscription!.subscribe({
+    snapshot: (snapshot) => snapshots.push(snapshot),
+    update: () => {},
+  });
+
+  first.triggerClose({ code: 1006, reason: "network lost" });
+  const reconnecting = client.connect();
+  second.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await reconnecting;
+  const reconnectRequest = parseSentFrame(second.sent.at(-1));
+  expect(reconnectRequest).toMatchObject({
+    type: "account.routing.get_state.request",
+    subscribe: {},
+  });
+  expect(reconnectRequest.requestId).not.toBe(initialRequest.requestId);
+
+  const freshState = accountRoutingState(1, "epoch-2");
+  second.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: reconnectRequest.requestId,
+        state: freshState,
+        subscriptionId: "routing-subscription-2",
+      },
+    }),
+  );
+  await vi.waitFor(() =>
+    expect(snapshots.at(-1)).toMatchObject({
+      hostEpoch: "epoch-2",
+      stateSequence: 1,
+      subscriptionId: "routing-subscription-2",
+    }),
+  );
+  unsubscribe();
+  await initial.subscription!.release();
+});
+
+interface MockTransportHarness {
+  triggerMessage(data: unknown): void;
+}
+
+function mockLateResponse(mock: MockTransportHarness, requestId: string): void {
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId, state: accountRoutingState(99) },
+    }),
+  );
+}
+test("disabling reconnect releases a pending subscribed OMP bootstrap", async () => {
+  const first = createMockTransport();
+  const second = createMockTransport();
+  let transportIndex = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-disabled-reconnect",
+    reconnect: { enabled: true, baseDelayMs: 60_000, maxDelayMs: 60_000 },
+    transportFactory: () => {
+      const transport = [first, second][transportIndex];
+      transportIndex += 1;
+      if (!transport) throw new Error("unexpected reconnect");
+      return transport.transport;
+    },
+  });
+  clients.push(client);
+
+  const connected = client.connect();
+  first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+  first.triggerClose({ code: 1006, reason: "network lost" });
+  client.setReconnectEnabled(false);
+
+  await expect(reading).rejects.toBeInstanceOf(DaemonConnectionError);
+  expect(transportIndex).toBe(1);
+});
+
+test("closing the client releases a pending subscribed OMP bootstrap", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-close-bootstrap",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connected = client.connect();
+  mock.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+
+  await client.close();
+  await expect(reading).rejects.toThrow("Daemon client closed");
+});
+
+test("an unsupported OMP reconnect rejects a pending subscribed bootstrap", async () => {
+  const first = createMockTransport();
+  const second = createMockTransport();
+  let transportIndex = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-unsupported-reconnect",
+    reconnect: { enabled: true, baseDelayMs: 60_000, maxDelayMs: 60_000 },
+    transportFactory: () => {
+      const transport = [first, second][transportIndex];
+      transportIndex += 1;
+      if (!transport) throw new Error("unexpected reconnect");
+      return transport.transport;
+    },
+  });
+  clients.push(client);
+
+  const connected = client.connect();
+  first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+  first.triggerClose({ code: 1006, reason: "network lost" });
+
+  const reconnecting = client.connect();
+  second.triggerOpen({ features: { ownedSubscriptions: true } });
+  await reconnecting;
+  await expect(reading).rejects.toBeInstanceOf(OmpAccountRoutingUnsupportedError);
+});
+
+function createReconnectingRoutingClient(clientId: string) {
+  const first = createMockTransport();
+  const second = createMockTransport();
+  let transportIndex = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId,
+    reconnect: { enabled: true, baseDelayMs: 60_000, maxDelayMs: 60_000 },
+    transportFactory: () => {
+      const transport = [first, second][transportIndex];
+      transportIndex += 1;
+      if (!transport) throw new Error("unexpected reconnect");
+      return transport.transport;
+    },
+  });
+  clients.push(client);
+  return { client, first, second };
+}
+
+function recordTransportCloses(mock: ReturnType<typeof createMockTransport>) {
+  const closes: Array<{ code?: number; reason?: string }> = [];
+  mock.transport.close = (code?: number, reason?: string) => {
+    closes.push({ code, reason });
+  };
+  return closes;
+}
+
+function routingUpdate(state: OmpAccountRoutingState, subscriptionId: string): string {
+  return wrapSessionMessage({
+    type: "account.routing.state.update",
+    payload: { subscriptionId, state },
+  });
+}
+
+test("an unsupported reconnect downgrades a ready OMP subscription to one diagnostic and releases it", async () => {
+  const { client, first, second } = createReconnectingRoutingClient("routing-unsupported-ready");
+  const connected = client.connect();
+  first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+  const request = parseSentFrame(first.sent.at(-1));
+  first.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(4),
+        subscriptionId: "routing-subscription-1",
+      },
+    }),
+  );
+  const { subscription } = await reading;
+  const snapshots: Array<OmpAccountRoutingState & { subscriptionId: string }> = [];
+  const updates: number[] = [];
+  subscription!.subscribe({
+    snapshot: (snapshot) => snapshots.push(snapshot),
+    update: (message) => {
+      if (message.type === "account.routing.state.update")
+        updates.push(message.payload.state.stateSequence);
+    },
+  });
+
+  first.triggerClose({ code: 1006, reason: "network lost" });
+  const reconnecting = client.connect();
+  second.triggerOpen({ features: { ownedSubscriptions: true } });
+  await reconnecting;
+
+  // No legacy observation and no replayed subscribe frame after the downgrade.
+  expect(second.sent).toHaveLength(0);
+  expect(snapshots).toHaveLength(2);
+  expect(snapshots[1]).toMatchObject({
+    hostEpoch: "epoch-1",
+    stateSequence: 4,
+    subscriptionId: "routing-subscription-1",
+    capability: { status: "unsupported", reason: "host_unavailable" },
+  });
+  // A late update for the released ID is not delivered, and releasing again sends nothing.
+  second.triggerMessage(routingUpdate(accountRoutingState(5), "routing-subscription-1"));
+  expect(updates).toEqual([]);
+  expect(snapshots).toHaveLength(2);
+  await subscription!.release();
+  expect(second.sent).toHaveLength(0);
+});
+
+test.each([
+  {
+    case: "a missing subscription ID",
+    reply: (requestId: unknown) => ({
+      type: "account.routing.get_state.response",
+      payload: { requestId, state: accountRoutingState(1) },
+    }),
+    code: "invalid_response",
+    message: "Response validation failed for account.routing.get_state.response",
+  },
+  {
+    case: "an rpc_error",
+    reply: (requestId: unknown) => ({
+      type: "rpc_error",
+      payload: {
+        requestId,
+        requestType: "account.routing.get_state.request",
+        error: "routing store unavailable",
+        code: "internal",
+      },
+    }),
+    code: "internal",
+    message: "routing store unavailable",
+  },
+])(
+  "a subscribed OMP bootstrap with $case rejects and releases",
+  async ({ reply, code, message }) => {
+    const { client, first, second } = createReconnectingRoutingClient("routing-bad-bootstrap");
+    const closes = recordTransportCloses(first);
+    const connected = client.connect();
+    first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+    await connected;
+    const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+    const request = parseSentFrame(first.sent.at(-1));
+    first.triggerMessage(wrapSessionMessage(reply(request.requestId)));
+
+    await expect(reading).rejects.toMatchObject({ code });
+    await expect(reading).rejects.toThrow(message);
+    // A failed bootstrap rejects only its own waiter and never closes the transport.
+    expect(closes).toEqual([]);
+
+    first.triggerClose({ code: 1006, reason: "network lost" });
+    const reconnecting = client.connect();
+    second.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+    await reconnecting;
+    expect(second.sent).toHaveLength(0);
+  },
+);
+
+test("OMP state updates for another subscription ID are ignored", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-mismatched-update",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+  const request = parseSentFrame(mock.sent.at(-1));
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(1),
+        subscriptionId: "routing-subscription",
+      },
+    }),
+  );
+  const { subscription } = await reading;
+  const updates: number[] = [];
+  subscription!.subscribe({
+    snapshot: () => {},
+    update: (message) => {
+      if (message.type === "account.routing.state.update")
+        updates.push(message.payload.state.stateSequence);
+    },
+  });
+
+  // If the foreign sequence 5 advanced the snapshot, the matching sequence 2 would be filtered as stale.
+  mock.triggerMessage(routingUpdate(accountRoutingState(5), "other-routing-subscription"));
+  expect(updates).toEqual([]);
+  mock.triggerMessage(routingUpdate(accountRoutingState(2), "routing-subscription"));
+  expect(updates).toEqual([2]);
+  await subscription!.release();
+});
+
+test("aborting an unsubscribed OMP read rejects promptly and sends nothing further", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-abort-read",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+
+  const reason = new Error("stop reading");
+  const signal = new AbortController();
+  const reading = client.getOmpAccountRoutingState({ signal: signal.signal });
+  const request = parseSentFrame(mock.sent.at(-1));
+  const sentBeforeAbort = mock.sent.length;
+
+  signal.abort(reason);
+  await expect(reading).rejects.toBe(reason);
+  expect(mock.sent).toHaveLength(sentBeforeAbort);
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: request.requestId, state: accountRoutingState(7) },
+    }),
+  );
+  expect(mock.sent).toHaveLength(sentBeforeAbort);
+
+  const next = client.getOmpAccountRoutingState();
+  const nextRequest = parseSentFrame(mock.sent.at(-1));
+  expect(nextRequest.requestId).not.toBe(request.requestId);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: { requestId: nextRequest.requestId, state: accountRoutingState(8) },
+    }),
+  );
+  await expect(next).resolves.toEqual({ state: accountRoutingState(8) });
+});
+
+test("independent OMP subscriptions receive only their own updates and release separately", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-two-subscriptions",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+
+  const subscribe = async (subscriptionId: string) => {
+    const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+    const request = parseSentFrame(mock.sent.at(-1));
+    mock.triggerMessage(
+      wrapSessionMessage({
+        type: "account.routing.get_state.response",
+        payload: { requestId: request.requestId, state: accountRoutingState(1), subscriptionId },
+      }),
+    );
+    const { subscription } = await reading;
+    const updates: number[] = [];
+    subscription!.subscribe({
+      snapshot: () => {},
+      update: (message) => {
+        if (message.type === "account.routing.state.update")
+          updates.push(message.payload.state.stateSequence);
+      },
+    });
+    return { subscription: subscription!, updates };
+  };
+  const a = await subscribe("routing-a");
+  const b = await subscribe("routing-b");
+
+  mock.triggerMessage(routingUpdate(accountRoutingState(2), "routing-a"));
+  mock.triggerMessage(routingUpdate(accountRoutingState(3), "routing-b"));
+  expect(a.updates).toEqual([2]);
+  expect(b.updates).toEqual([3]);
+
+  await a.subscription.release();
+  expect(parseSentFrame(mock.sent.at(-1))).toMatchObject({
+    type: "subscription.release.request",
+    subscriptionId: "routing-a",
+  });
+  mock.triggerMessage(routingUpdate(accountRoutingState(4), "routing-a"));
+  mock.triggerMessage(routingUpdate(accountRoutingState(5), "routing-b"));
+  expect(a.updates).toEqual([2]);
+  expect(b.updates).toEqual([3, 5]);
+
+  const sentAfterFirstRelease = mock.sent.length;
+  await a.subscription.release();
+  expect(mock.sent).toHaveLength(sentAfterFirstRelease);
+
+  await b.subscription.release();
+  expect(parseSentFrame(mock.sent.at(-1))).toMatchObject({
+    type: "subscription.release.request",
+    subscriptionId: "routing-b",
+  });
+});
+
+async function connectMutationClient(
+  clientId: string,
+  options?: { reconnect?: boolean; features?: Record<string, boolean> },
+) {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId,
+    reconnect: { enabled: options?.reconnect ?? false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({
+    features: options?.features ?? { ownedSubscriptions: true, ompAccountRouting: true },
+  });
+  await connected;
+  return { mock, client };
+}
+
+function mutationResponse(
+  requestId: unknown,
+  state: OmpAccountRoutingState,
+  error: unknown = null,
+) {
+  return wrapSessionMessage({
+    type: "account.routing.mutate.response",
+    payload: { requestId, state, error },
+  });
+}
+
+test("OMP account-routing mutations send the revision-checked frame and return success or typed errors", async () => {
+  const { mock, client } = await connectMutationClient("routing-mutate");
+
+  const success = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 4,
+    command: { kind: "set_auto", enabled: false },
+  });
+  const request = parseSentFrame(mock.sent.at(-1));
+  expect(request).toMatchObject({
+    type: "account.routing.mutate.request",
+    expectedPolicyRevision: 4,
+    command: { kind: "set_auto", enabled: false },
+  });
+  mock.triggerMessage(mutationResponse(request.requestId, accountRoutingState(5)));
+  await expect(success).resolves.toEqual({
+    requestId: request.requestId,
+    state: accountRoutingState(5),
+    error: null,
+  });
+
+  const account = { storeNamespace: "ns", nativeRowId: 3 };
+  for (const code of ["conflict", "invalid_account", "unsupported", "persistence_failed"]) {
+    const rejected = client.mutateOmpAccountRouting({
+      expectedPolicyRevision: 1,
+      command: { kind: "select", account },
+    });
+    const frame = parseSentFrame(mock.sent.at(-1));
+    const error = { code, message: `host said ${code}` };
+    mock.triggerMessage(mutationResponse(frame.requestId, accountRoutingState(6), error));
+    await expect(rejected).resolves.toMatchObject({ error, state: accountRoutingState(6) });
+  }
+});
+
+test("OMP account-routing mutations reject invalid commands and unsupported hosts before sending", async () => {
+  const { mock, client } = await connectMutationClient("routing-mutate-invalid");
+  const sentBefore = mock.sent.length;
+  await expect(
+    client.mutateOmpAccountRouting({
+      expectedPolicyRevision: 1,
+      command: { kind: "select", account: { storeNamespace: "ns", nativeRowId: 0 } },
+    }),
+  ).rejects.toThrow();
+  expect(mock.sent).toHaveLength(sentBefore);
+
+  const off = await connectMutationClient("routing-mutate-off", {
+    features: { ownedSubscriptions: true },
+  });
+  const offSent = off.mock.sent.length;
+  await expect(
+    off.client.mutateOmpAccountRouting({
+      expectedPolicyRevision: 1,
+      command: { kind: "set_auto", enabled: true },
+    }),
+  ).rejects.toBeInstanceOf(OmpAccountRoutingUnsupportedError);
+  expect(off.mock.sent).toHaveLength(offSent);
+});
+
+test("OMP account-routing mutation correlation failures affect only the matching request", async () => {
+  const { mock, client } = await connectMutationClient("routing-mutate-correlation");
+  const send = (enabled: boolean) => {
+    const pending = client.mutateOmpAccountRouting({
+      expectedPolicyRevision: 1,
+      command: { kind: "set_auto", enabled },
+    });
+    return { pending, frame: parseSentFrame(mock.sent.at(-1)) };
+  };
+  const first = send(true);
+  const second = send(false);
+
+  // Missing and unknown IDs match nothing; neither request settles.
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.mutate.response",
+      payload: { state: accountRoutingState(90), error: null },
+    }),
+  );
+  mock.triggerMessage(mutationResponse("unknown-id", accountRoutingState(91)));
+  // Out of order: the second response arrives first and settles only the second request.
+  mock.triggerMessage(mutationResponse(second.frame.requestId, accountRoutingState(2)));
+  await expect(second.pending).resolves.toMatchObject({ state: accountRoutingState(2) });
+  // Duplicate for a settled request is ignored.
+  mock.triggerMessage(mutationResponse(second.frame.requestId, accountRoutingState(92)));
+  mock.triggerMessage(mutationResponse(first.frame.requestId, accountRoutingState(1)));
+  await expect(first.pending).resolves.toMatchObject({ state: accountRoutingState(1) });
+
+  // A malformed response that carries the ID rejects only that request.
+  const bad = send(true);
+  const other = send(false);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.mutate.response",
+      payload: { requestId: bad.frame.requestId },
+    }),
+  );
+  await expect(bad.pending).rejects.toMatchObject({ code: "invalid_response" });
+  mock.triggerMessage(mutationResponse(other.frame.requestId, accountRoutingState(3)));
+  await expect(other.pending).resolves.toMatchObject({ state: accountRoutingState(3) });
+});
+
+test("OMP account-routing mutations never mutate a retained snapshot", async () => {
+  const { mock, client } = await connectMutationClient("routing-mutate-isolated");
+  const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+  const readRequest = parseSentFrame(mock.sent.at(-1));
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: readRequest.requestId,
+        state: accountRoutingState(1),
+        subscriptionId: "routing-sub",
+      },
+    }),
+  );
+  const { subscription } = await reading;
+  const seen: number[] = [];
+  subscription!.subscribe({
+    snapshot: (s) => seen.push(s.stateSequence),
+    update: (m) => {
+      if (m.type === "account.routing.state.update") seen.push(m.payload.state.stateSequence);
+    },
+  });
+  const seenAfterSubscribe = [...seen];
+
+  const pending = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 1,
+    command: { kind: "set_auto", enabled: false },
+  });
+  const frame = parseSentFrame(mock.sent.at(-1));
+  mock.triggerMessage(mutationResponse(frame.requestId, accountRoutingState(50)));
+  await pending;
+  expect(seen).toEqual(seenAfterSubscribe);
+  await subscription!.release();
+});
+
+test("OMP account-routing aborted mutations reject with the reason and send nothing further", async () => {
+  const { mock, client } = await connectMutationClient("routing-mutate-abort");
+  const preAborted = new AbortController();
+  preAborted.abort(new Error("early"));
+  const sentBefore = mock.sent.length;
+  await expect(
+    client.mutateOmpAccountRouting({
+      expectedPolicyRevision: 1,
+      command: { kind: "set_auto", enabled: true },
+      signal: preAborted.signal,
+    }),
+  ).rejects.toThrow("early");
+  expect(mock.sent).toHaveLength(sentBefore);
+
+  const live = new AbortController();
+  const pending = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 1,
+    command: { kind: "set_auto", enabled: true },
+    signal: live.signal,
+  });
+  const frame = parseSentFrame(mock.sent.at(-1));
+  const sentAfterRequest = mock.sent.length;
+  live.abort(new Error("late"));
+  await expect(pending).rejects.toThrow("late");
+  mock.triggerMessage(mutationResponse(frame.requestId, accountRoutingState(2)));
+  expect(mock.sent).toHaveLength(sentAfterRequest);
+});
+
+test("a disconnect rejects a pending OMP mutation and never replays it on the next connection", async () => {
+  const first = createMockTransport();
+  const second = createMockTransport();
+  const transports = [first, second];
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-mutate-reconnect",
+    reconnect: { enabled: true, baseDelayMs: 1, maxDelayMs: 1 },
+    transportFactory: () => transports.shift()!.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  first.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await connected;
+
+  const pending = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 1,
+    command: { kind: "set_auto", enabled: false },
+  });
+  const frame = parseSentFrame(first.sent.at(-1));
+  const settled = pending.then(
+    () => "resolved",
+    (error: unknown) => error,
+  );
+  first.triggerClose();
+  await expect(settled).resolves.toBeInstanceOf(DaemonConnectionError);
+
+  await vi.waitFor(() => expect(transports).toHaveLength(0));
+  second.triggerOpen({ features: { ownedSubscriptions: true, ompAccountRouting: true } });
+  await vi.waitFor(() => expect(client.getConnectionState().status).toBe("connected"));
+  // A late response for the old request id on the new connection changes nothing.
+  second.triggerMessage(mutationResponse(frame.requestId, accountRoutingState(9)));
+  const replayed = second.sent.filter(
+    (data) =>
+      typeof data === "string" &&
+      (JSON.parse(data) as { message?: { type?: string } }).message?.type ===
+        "account.routing.mutate.request",
+  );
+  expect(replayed).toHaveLength(0);
+});
+
+test("OMP observeOmpAccountRoutingState delivers a snapshot, unsupported preflight throws, release is idempotent", async () => {
+  const off = await connectMutationClient("routing-observe-off", {
+    features: { ownedSubscriptions: true },
+  });
+  const sentBefore = off.mock.sent.length;
+  expect(() => off.client.observeOmpAccountRoutingState()).toThrow(
+    OmpAccountRoutingUnsupportedError,
+  );
+  expect(off.mock.sent).toHaveLength(sentBefore);
+
+  const { mock, client } = await connectMutationClient("routing-observe");
+  const observation = client.observeOmpAccountRoutingState();
+  const request = parseSentFrame(mock.sent.at(-1));
+  expect(request).toMatchObject({ type: "account.routing.get_state.request", subscribe: {} });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: request.requestId,
+        state: accountRoutingState(1),
+        subscriptionId: "observed",
+      },
+    }),
+  );
+  await expect(observation.ready).resolves.toMatchObject({ stateSequence: 1 });
+  const updates: number[] = [];
+  observation.subscribe({
+    snapshot: () => {},
+    update: (m) => {
+      if (m.type === "account.routing.state.update") updates.push(m.payload.state.stateSequence);
+    },
+  });
+  mock.triggerMessage(routingUpdate(accountRoutingState(2), "observed"));
+  await observation.release();
+  const sentAfterRelease = mock.sent.length;
+  await observation.release();
+  mock.triggerMessage(routingUpdate(accountRoutingState(3), "observed"));
+  expect(updates).toEqual([2]);
+  expect(mock.sent).toHaveLength(sentAfterRelease);
+});
+
+test("OMP account-routing smoke: snapshot, mutation, release, supported then unsupported reconnect", async () => {
+  const transports = [createMockTransport(), createMockTransport(), createMockTransport()];
+  let index = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "routing-smoke",
+    reconnect: { enabled: true, baseDelayMs: 1, maxDelayMs: 1 },
+    transportFactory: () => transports[index++]!.transport,
+  });
+  clients.push(client);
+  const supported = { ownedSubscriptions: true, ompAccountRouting: true };
+  const [t1, t2, t3] = transports as [
+    ReturnType<typeof createMockTransport>,
+    ReturnType<typeof createMockTransport>,
+    ReturnType<typeof createMockTransport>,
+  ];
+  const connected = client.connect();
+  t1.triggerOpen({ features: supported });
+  await connected;
+
+  const subscribe = async (id: string) => {
+    const reading = client.getOmpAccountRoutingState({ subscribe: {} });
+    const request = parseSentFrame(t1.sent.at(-1));
+    t1.triggerMessage(
+      wrapSessionMessage({
+        type: "account.routing.get_state.response",
+        payload: {
+          requestId: request.requestId,
+          state: accountRoutingState(1),
+          subscriptionId: id,
+        },
+      }),
+    );
+    const { subscription } = await reading;
+    const seen: number[] = [];
+    subscription!.subscribe({
+      snapshot: (s) => seen.push(s.stateSequence),
+      update: (m) => {
+        if (m.type === "account.routing.state.update") seen.push(m.payload.state.stateSequence);
+      },
+    });
+    return { subscription: subscription!, seen };
+  };
+  const a = await subscribe("smoke-a");
+  const b = await subscribe("smoke-b");
+
+  // Committed updates reach only their own observer; a stale one is dropped.
+  t1.triggerMessage(routingUpdate(accountRoutingState(2), "smoke-a"));
+  t1.triggerMessage(routingUpdate(accountRoutingState(2), "smoke-a"));
+  t1.triggerMessage(routingUpdate(accountRoutingState(3), "smoke-b"));
+  expect(a.seen).toEqual([1, 2]);
+  expect(b.seen).toEqual([1, 3]);
+
+  // A host conflict is a returned value, not a throw.
+  const conflict = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 1,
+    command: { kind: "set_auto", enabled: false },
+  });
+  const mutation = parseSentFrame(t1.sent.at(-1));
+  const error = { code: "conflict", message: "stale revision" };
+  t1.triggerMessage(mutationResponse(mutation.requestId, accountRoutingState(4), error));
+  await expect(conflict).resolves.toMatchObject({ error });
+
+  // Release one observer twice; only the other keeps receiving.
+  await a.subscription.release();
+  await a.subscription.release();
+  t1.triggerMessage(routingUpdate(accountRoutingState(4), "smoke-a"));
+  t1.triggerMessage(routingUpdate(accountRoutingState(4), "smoke-b"));
+  expect(a.seen).toEqual([1, 2]);
+  expect(b.seen).toEqual([1, 3, 4]);
+
+  // Disconnect with a mutation in flight, then reconnect to a supported host.
+  const inFlight = client.mutateOmpAccountRouting({
+    expectedPolicyRevision: 4,
+    command: { kind: "set_auto", enabled: true },
+  });
+  const inFlightSettled = inFlight.then(
+    () => "resolved",
+    (e: unknown) => e,
+  );
+  t1.triggerClose({ code: 1006, reason: "network lost" });
+  await expect(inFlightSettled).resolves.toBeInstanceOf(DaemonConnectionError);
+  await vi.waitFor(() => expect(index).toBe(2));
+  t2.triggerOpen({ features: supported });
+  await vi.waitFor(() => expect(b.seen.length).toBe(3));
+  const rebootstrap = parseSentFrame(t2.sent.at(-1));
+  expect(rebootstrap).toMatchObject({ type: "account.routing.get_state.request", subscribe: {} });
+  t2.triggerMessage(
+    wrapSessionMessage({
+      type: "account.routing.get_state.response",
+      payload: {
+        requestId: rebootstrap.requestId,
+        state: accountRoutingState(1, "epoch-2"),
+        subscriptionId: "smoke-b2",
+      },
+    }),
+  );
+  await vi.waitFor(() => expect(b.seen.at(-1)).toBe(1));
+  const mutationFrames = (mock: ReturnType<typeof createMockTransport>) =>
+    mock.sent.filter(
+      (d) =>
+        typeof d === "string" &&
+        (JSON.parse(d) as { message?: { type?: string } }).message?.type ===
+          "account.routing.mutate.request",
+    );
+  expect(mutationFrames(t2)).toHaveLength(0);
+
+  // Reconnect to a host that dropped the feature: one diagnostic snapshot, then released.
+  t2.triggerClose({ code: 1006, reason: "network lost" });
+  await vi.waitFor(() => expect(index).toBe(3));
+  t3.triggerOpen({ features: { ownedSubscriptions: true } });
+  await vi.waitFor(() => expect(b.seen.length).toBe(5));
+  expect(mutationFrames(t3)).toHaveLength(0);
+  expect(t3.sent.some((d) => typeof d === "string" && d.includes("account.routing."))).toBe(false);
+  await expect(
+    client.mutateOmpAccountRouting({
+      expectedPolicyRevision: 1,
+      command: { kind: "set_auto", enabled: true },
+    }),
+  ).rejects.toBeInstanceOf(OmpAccountRoutingUnsupportedError);
+});
 
 test("measures an outbound message in UTF-8 bytes against the daemon's message limit", async () => {
   const mock = createMockTransport();

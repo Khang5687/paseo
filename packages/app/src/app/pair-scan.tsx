@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   body: {
     flex: 1,

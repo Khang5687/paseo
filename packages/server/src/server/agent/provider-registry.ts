@@ -18,6 +18,7 @@ import type {
   ResolveAgentCreateConfigResult,
   ResolveAgentDefaultModeInput,
   AgentSessionConfig,
+  McpServerConfig,
 } from "./agent-sdk-types.js";
 import {
   isDefaultAgentCreateConfigUnattended,
@@ -43,6 +44,7 @@ import { KiroACPAgentClient } from "./providers/kiro-acp-agent.js";
 import { OpenCodeRuntimeClient } from "./providers/opencode/runtime-client.js";
 import type { OpenCodeBridge } from "./providers/opencode/bridge.js";
 import { OmpAgentClient } from "./providers/omp/agent.js";
+import type { OmpRoutingAuthority } from "./providers/omp/account-routing-bridge.js";
 import type { OmpRuntime } from "./providers/omp/runtime.js";
 import { PiRpcAgentClient } from "./providers/pi/agent.js";
 import { TraeACPAgentClient } from "./providers/trae-acp-agent.js";
@@ -76,6 +78,8 @@ export interface ProviderDefinition extends AgentProviderDefinition {
    * generic ACP providers (which only extend the literal "acp" sentinel).
    */
   derivedFromProviderId: string | null;
+  /** MCP servers every agent of this provider launches with; an alias inherits its base's. */
+  mcpServers?: Record<string, McpServerConfig>;
   supportsExactMcpPreapproval: boolean;
   applyToolPolicy: (
     config: AgentSessionConfig,
@@ -141,6 +145,7 @@ interface ResolvedProvider {
   enabled: boolean;
   derivedFromProviderId: string | null;
   providerOptions?: ProviderOptions;
+  mcpServers?: Record<string, McpServerConfig>;
   createBaseClient: (logger: Logger) => AgentClient;
   contract: ProviderContract;
 }
@@ -186,6 +191,18 @@ const HUB_E2E_PROVIDER_CONTRACT: ProviderContract = {
   },
 };
 
+// ponytail: module binding, not an option. The snapshot manager rebuilds this registry on its own and
+// threading the authority through it would touch files outside this slice; one daemon, one authority.
+let boundOmpAccountRouting: OmpRoutingAuthority | undefined;
+
+/** Bootstrap binds the one host routing authority before any provider client is built. */
+export function bindOmpAccountRouting(authority: OmpRoutingAuthority): () => void {
+  boundOmpAccountRouting = authority;
+  return () => {
+    if (boundOmpAccountRouting === authority) boundOmpAccountRouting = undefined;
+  };
+}
+
 const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
   claude: (logger, runtimeSettings) =>
     new ClaudeAgentClient({
@@ -223,6 +240,7 @@ const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
       logger,
       runtimeSettings,
       runtime: options?.ompRuntime,
+      accountRouting: boundOmpAccountRouting,
     }),
   mock: (logger) => new MockLoadTestAgentClient(logger),
   "mock-slow": () => new MockSlowProviderClient(),
@@ -249,7 +267,9 @@ function getProviderClientFactory(provider: string): ProviderClientFactory {
   return factory;
 }
 
-function toRuntimeSettings(override?: ProviderOverride): ProviderRuntimeSettings | undefined {
+export function toRuntimeSettings(
+  override?: ProviderOverride,
+): ProviderRuntimeSettings | undefined {
   if (!override?.command && !override?.env && !override?.disallowedTools) {
     return undefined;
   }
@@ -266,7 +286,7 @@ function toRuntimeSettings(override?: ProviderOverride): ProviderRuntimeSettings
   };
 }
 
-function mergeRuntimeSettings(
+export function mergeRuntimeSettings(
   base: ProviderRuntimeSettings | undefined,
   override: ProviderRuntimeSettings | undefined,
 ): ProviderRuntimeSettings | undefined {
@@ -649,6 +669,7 @@ function createRegistryEntry(
     configuration,
     enabled: resolved.enabled,
     derivedFromProviderId: resolved.derivedFromProviderId,
+    mcpServers: resolved.mcpServers,
     supportsExactMcpPreapproval: resolved.contract.supportsExactMcpPreapproval,
     applyToolPolicy: (config, toolPolicy) => {
       if (toolPolicy && !resolved.contract.supportsExactMcpPreapproval) {
@@ -750,6 +771,7 @@ function resolveRegisteredProvider(input: RegisteredProvider): ResolvedProvider 
     enabled: override?.enabled ?? definition.enabledByDefault ?? true,
     derivedFromProviderId: null,
     providerOptions: configuredProviderOptions(override),
+    mcpServers: override?.mcpServers,
     createBaseClient: (logger) => input.createClient(logger, runtimeSettings),
     contract,
   };
@@ -835,6 +857,7 @@ function addDerivedProviders(
         enabled: override.enabled !== false,
         derivedFromProviderId: null,
         providerOptions: configuredProviderOptions(override),
+        mcpServers: override.mcpServers,
         createBaseClient: (logger) => {
           const acpOptions = {
             logger,
@@ -880,6 +903,10 @@ function addDerivedProviders(
     const baseDefinition = baseProvider.definition;
     const baseFactory = getProviderClientFactory(baseProviderId);
     const providerOptions = configuredProviderOptions(override) ?? baseProvider.providerOptions;
+    const mcpServers =
+      baseProvider.mcpServers || override.mcpServers
+        ? { ...baseProvider.mcpServers, ...override.mcpServers }
+        : undefined;
 
     resolvedProviders.set(providerId, {
       definition: createDerivedDefinition(providerId, baseDefinition, override),
@@ -890,6 +917,7 @@ function addDerivedProviders(
       enabled: override.enabled !== false,
       derivedFromProviderId: baseProviderId,
       providerOptions,
+      mcpServers,
       createBaseClient: (logger) =>
         baseFactory(logger, mergedRuntimeSettings, {
           managedProcesses: options.managedProcesses,

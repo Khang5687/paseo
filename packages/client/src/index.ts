@@ -16,6 +16,9 @@ import type {
   FetchWorkspacesResponseMessage,
   GetProvidersSnapshotResponseMessage,
   ListAvailableProvidersResponse,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
+  OmpAccountRoutingState,
   ListCommandsResponse,
   ListProviderFeaturesRequestMessage,
   ListProviderFeaturesResponseMessage,
@@ -34,7 +37,25 @@ import type {
   WorkspaceDescriptorPayload,
   WorkspaceCreateRequest,
 } from "@getpaseo/protocol/messages";
-import { DaemonClient, type CreateAgentRequestOptions } from "./daemon-client.js";
+import {
+  DaemonClient,
+  type CreateAgentRequestOptions,
+  type OmpAccountRoutingRead,
+  type OmpAccountRoutingSubscribedRead,
+} from "./daemon-client.js";
+export {
+  OmpAccountLoginUnsupportedError,
+  OmpAccountRoutingUnsupportedError,
+} from "./daemon-client.js";
+export type { OmpAccountRoutingRead, OmpAccountRoutingSubscribedRead } from "./daemon-client.js";
+export type {
+  OmpRoutingAccountRef,
+  OmpRoutingAccount,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
+  OmpAccountRoutingPolicy,
+  OmpAccountRoutingState,
+} from "@getpaseo/protocol/messages";
 import {
   createTerminalActions,
   type PaseoTerminalActions,
@@ -495,6 +516,22 @@ export interface PaseoConfigActions {
   ): Promise<{ requestId: string; config: MutableDaemonConfig }>;
 }
 
+export interface PaseoAccountRoutingActions {
+  get(options: {
+    subscribe: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingSubscribedRead>;
+  get(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  /** Owned observation without a separate read; `ready` resolves with the first snapshot. */
+  observe(options?: { signal?: AbortSignal }): OwnedSubscription<OmpAccountRoutingState>;
+  /** Revision-checked mutation. Host conflicts return in `error`; transport failures throw. */
+  mutate(options: {
+    expectedPolicyRevision: number;
+    command: OmpAccountRoutingMutation;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingMutationResult>;
+}
+
 export interface PaseoApi {
   readonly hosts: PaseoHostActions;
   dispose(): Promise<void>;
@@ -505,6 +542,7 @@ export interface PaseoApi {
   readonly agents: PaseoAgentActions;
   readonly providers: PaseoProviderActions;
   readonly config: PaseoConfigActions;
+  readonly accountRouting: PaseoAccountRoutingActions;
 }
 
 export interface PaseoClient extends PaseoApi {
@@ -719,6 +757,32 @@ export function createPaseoApi(
     return { ...(await subscription.ready), subscription };
   }
 
+  function getAccountRouting(options: {
+    subscribe: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingSubscribedRead>;
+  function getAccountRouting(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  async function getAccountRouting(options?: {
+    subscribe?: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingRead> {
+    if (lifetime.signal.aborted) throw new Error("Paseo API is disposed");
+    const result = await daemonClient.getOmpAccountRoutingState(options);
+    if (!options?.subscribe) return { state: result.state };
+    const subscription = result.subscription;
+    if (!subscription) throw new Error("The daemon did not return an account-routing subscription");
+    try {
+      return { state: result.state, subscription: own(() => subscription) };
+    } catch (error) {
+      // The API was disposed while the subscription bootstrapped; nothing owns it yet. A failed
+      // release is logged so it cannot replace the disposal error the caller is waiting on.
+      await subscription.release().catch((releaseError) => {
+        console.error("Account routing subscription cleanup failed", releaseError);
+      });
+      throw error;
+    }
+  }
+
   return {
     dispose,
     hosts: createHostActions(daemonClient, { own, signal: lifetime.signal, api: createPaseoApi }),
@@ -792,6 +856,11 @@ export function createPaseoApi(
           if (message.type === "providers_snapshot_update") handler(message.payload);
         });
       },
+    },
+    accountRouting: {
+      get: getAccountRouting,
+      observe: (options) => own(() => daemonClient.observeOmpAccountRoutingState(options)),
+      mutate: (options) => daemonClient.mutateOmpAccountRouting(options),
     },
     config: {
       get: (requestId) => daemonClient.getDaemonConfig(requestId),

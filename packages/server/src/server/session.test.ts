@@ -4,6 +4,7 @@ import {
 } from "./workspace-runtime-store/index.js";
 import { createAgentMessageDeliveryStub } from "./test-utils/session-stubs.js";
 import {
+  createAgentMessageQueueStub,
   createMessageReceiptsStub,
   createTestCreationService,
 } from "./test-utils/session-stubs.js";
@@ -388,6 +389,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   const sessionOptions: SessionOptions = {
     workspaceRuntimeStore: options.workspaceRuntimeStore ?? createWorkspaceRuntimeStore(),
     messageReceipts: createMessageReceiptsStub(),
+    agentMessageQueue: createAgentMessageQueueStub(),
     agentMessages: createAgentMessageDeliveryStub(),
     creationService: createTestCreationService(),
     clientId: options.clientId ?? "test-client",

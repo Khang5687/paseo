@@ -136,6 +136,10 @@ interface TerminalEmulatorProps {
     target: TerminalLocalFileLinkTarget,
     disposition: "main" | "side",
   ) => Promise<void> | void;
+  onLocalFileLinkContextMenu?: (
+    target: TerminalLocalFileLinkTarget,
+    point: { x: number; y: number },
+  ) => Promise<void> | void;
   onRendererReadyChange?: (change: TerminalRendererReadyChange) => void;
   onFilePaste?: (file: Promise<TerminalFile | null>) => void;
   pendingModifiers?: PendingTerminalModifiers;
@@ -183,6 +187,7 @@ export default function TerminalEmulator({
   onInputModeChange,
   onResolveLocalFileLink,
   onOpenLocalFileLink,
+  onLocalFileLinkContextMenu,
   onRendererReadyChange,
   onFilePaste,
   pendingModifiers = { ctrl: false, shift: false, alt: false },
@@ -214,6 +219,7 @@ export default function TerminalEmulator({
     onInputModeChange,
     onResolveLocalFileLink,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onFilePaste,
   });
   mountCallbacksRef.current = {
@@ -226,6 +232,7 @@ export default function TerminalEmulator({
     onInputModeChange,
     onResolveLocalFileLink,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onFilePaste,
   };
   const initialSnapshotRef = useRef(initialSnapshot);
@@ -500,6 +507,7 @@ export default function TerminalEmulator({
         onInputModeChange,
         onResolveLocalFileLink,
         onOpenLocalFileLink,
+        onLocalFileLinkContextMenu,
         onFilePaste,
         onOpenExternalUrl: openExternalUrl,
       },
@@ -511,6 +519,7 @@ export default function TerminalEmulator({
     onInput,
     onInputModeChange,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onPendingModifiersConsumed,
     onResolveLocalFileLink,
     onResize,

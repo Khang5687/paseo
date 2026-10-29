@@ -40,6 +40,8 @@ The app checks for the capability and either runs the feature or tells the user 
 
 Existing functionality keeps working across versions. Never gate an established request on a new enhancement: negotiate the optional enhancement at the client boundary and preserve the existing request for older hosts. Whole-turn pagination can require a capability; reading conversation history cannot.
 
+OMP account routing is gated by `isOmpAccountRoutingSupported` in `packages/client/src/daemon-client.ts`; unsupported hosts get no request, subscription, or fallback. Adding an account is gated by `features.ompAccountLogin`, which the host advertises only with routing and only on macOS; the app shows the button only for the desktop app on that host's own computer.
+
 ## Client capability ownership
 
 The client package advertises the protocol behavior it implements. Add each new capability to
@@ -64,6 +66,25 @@ server filters. Timeline and event membership retain their existing shared behav
 detaches its listener and uses the old unsubscribe operation where one exists. Broadcast-only hosts keep
 broadcasting; readiness there means local attachment, not a daemon acknowledgement. No extra sockets
 or multiplexing emulation are introduced.
+
+Account-routing subscriptions use the owned registry only. `account.routing.get_state.request`
+with `subscribe: {}` creates a host-owned stream; reconnect obtains a fresh bootstrap instead of
+replaying a request or falling back to a broadcast subscription. State updates are accepted only
+for the active subscription and in strictly increasing `stateSequence` within one `hostEpoch`.
+
+`PaseoApi.accountRouting` has three calls: `get` (optionally `subscribe: {}`), `observe` (the owned
+handle alone), and `mutate`. Handles from `get({ subscribe })` and `observe` are owned by the API
+and released on dispose; releasing twice sends one release. A host that drops the feature across a
+reconnect gets one diagnostic snapshot (`capability.status: "unsupported"`) on each live handle,
+then the handle releases. Nothing replays.
+
+`mutate` sends `account.routing.mutate.request` with the `expectedPolicyRevision` the caller read.
+The host's `conflict`, `invalid_account`, `unsupported` and `persistence_failed` results return as
+`error` on the resolved value; only transport and correlation failures throw. Responses match on
+`requestId` alone, so a missing, unknown or duplicate ID leaves every other call untouched. A
+disconnect rejects the pending call with `DaemonConnectionError` and the client never resends it:
+the caller re-reads state and decides. A mutation response never edits a retained snapshot; state
+reaches observers only through `account.routing.state.update`.
 
 Preserve established workflows when changing delivery internals. Independent filters and quiet
 connections require a capable daemon; opening the app, reading history and using terminals do not.
