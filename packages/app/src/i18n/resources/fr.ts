@@ -137,7 +137,8 @@ export const fr: TranslationResources = {
       sendAndSteer: "Envoyer et réorienter",
       sendMessage: "Envoyer le message",
       longPressToQueue: "Appui long pour mettre en file d’attente",
-      longPressToSendNow: "Appui long pour envoyer maintenant",
+      longPressToInterrupt: "Appui long pour interrompre",
+      longPressToSteer: "Appui long pour réorienter",
       queue: "Mettre en file d’attente",
       send: "Envoyer",
     },
@@ -2377,12 +2378,15 @@ export const fr: TranslationResources = {
       defaultSend: {
         label: "Envoi par défaut",
         descriptions: {
-          interrupt:
-            "Quand l’agent est en cours d’exécution, Entrée l’interrompt. Cmd/Ctrl+Entrée met en file d’attente.",
+          interrupt: "Quand l’agent est en cours d’exécution, Entrée l’interrompt.",
+          steer: "Quand l’agent est en cours d’exécution, Entrée réoriente le tour en cours.",
+          queue: "Quand l’agent est en cours d’exécution, Entrée met en file d’attente.",
+        },
+        touchDescriptions: {
+          interrupt: "Quand l’agent est en cours d’exécution, toucher Envoyer l’interrompt.",
           steer:
-            "Quand l’agent est en cours d’exécution, Entrée réoriente le tour en cours. Cmd/Ctrl+Entrée met en file d’attente.",
-          queue:
-            "Quand l’agent est en cours d’exécution, Entrée met en file d’attente. Cmd/Ctrl+Entrée envoie.",
+            "Quand l’agent est en cours d’exécution, toucher Envoyer réoriente le tour en cours.",
+          queue: "Quand l’agent est en cours d’exécution, toucher Envoyer met en file d’attente.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2396,6 +2400,25 @@ export const fr: TranslationResources = {
           interrupt: "Interrompre",
           steer: "Réorienter",
           queue: "File d’attente",
+        },
+      },
+      alternateSend: {
+        label: "Envoi alternatif",
+        descriptions: {
+          interrupt:
+            "Quand l’agent est en cours d’exécution, {{modifier}}+Entrée ou un appui long sur Envoyer l’interrompt.",
+          steer:
+            "Quand l’agent est en cours d’exécution, {{modifier}}+Entrée ou un appui long sur Envoyer réoriente le tour en cours.",
+          queue:
+            "Quand l’agent est en cours d’exécution, {{modifier}}+Entrée ou un appui long sur Envoyer met en file d’attente.",
+        },
+        longPressDescriptions: {
+          interrupt:
+            "Quand l’agent est en cours d’exécution, un appui long sur Envoyer l’interrompt.",
+          steer:
+            "Quand l’agent est en cours d’exécution, un appui long sur Envoyer réoriente le tour en cours.",
+          queue:
+            "Quand l’agent est en cours d’exécution, un appui long sur Envoyer met en file d’attente.",
         },
       },
       sendShortcut: {

@@ -135,7 +135,8 @@ export const zhCN: TranslationResources = {
       sendAndSteer: "发送并引导",
       sendMessage: "发送消息",
       longPressToQueue: "长按加入队列",
-      longPressToSendNow: "长按立即发送",
+      longPressToInterrupt: "长按中断",
+      longPressToSteer: "长按引导",
       queue: "排队",
       send: "发送",
     },
@@ -2305,9 +2306,14 @@ export const zhCN: TranslationResources = {
       defaultSend: {
         label: "默认发送",
         descriptions: {
-          interrupt: "Agent 运行时，Enter 会中断。Command/Ctrl+Enter 会排队。",
-          steer: "Agent 运行时，Enter 会引导当前回合。Command/Ctrl+Enter 会排队。",
-          queue: "Agent 运行时，Enter 会排队。Command/Ctrl+Enter 会提交。",
+          interrupt: "Agent 运行时，Enter 会中断。",
+          steer: "Agent 运行时，Enter 会引导当前回合。",
+          queue: "Agent 运行时，Enter 会排队。",
+        },
+        touchDescriptions: {
+          interrupt: "Agent 运行时，点按发送会中断。",
+          steer: "Agent 运行时，点按发送会引导当前回合。",
+          queue: "Agent 运行时，点按发送会排队。",
         },
         commandEnterDescriptions: {
           interrupt: "Agent 运行时，{{modifier}}+Enter 会中断。Enter 会插入换行。",
@@ -2318,6 +2324,19 @@ export const zhCN: TranslationResources = {
           interrupt: "中断",
           steer: "引导",
           queue: "排队",
+        },
+      },
+      alternateSend: {
+        label: "备用发送",
+        descriptions: {
+          interrupt: "Agent 运行时，{{modifier}}+Enter 或长按发送会中断。",
+          steer: "Agent 运行时，{{modifier}}+Enter 或长按发送会引导当前回合。",
+          queue: "Agent 运行时，{{modifier}}+Enter 或长按发送会排队。",
+        },
+        longPressDescriptions: {
+          interrupt: "Agent 运行时，长按发送会中断。",
+          steer: "Agent 运行时，长按发送会引导当前回合。",
+          queue: "Agent 运行时，长按发送会排队。",
         },
       },
       sendShortcut: {

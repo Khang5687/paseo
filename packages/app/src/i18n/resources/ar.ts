@@ -135,7 +135,8 @@ export const ar: TranslationResources = {
       sendAndSteer: "إرسال وتوجيه",
       sendMessage: "أرسل رسالة",
       longPressToQueue: "اضغط مطولًا لإضافتها إلى الطابور",
-      longPressToSendNow: "اضغط مطولًا للإرسال الآن",
+      longPressToInterrupt: "اضغط مطولًا للمقاطعة",
+      longPressToSteer: "اضغط مطولًا للتوجيه",
       queue: "طابور",
       send: "يرسل",
     },
@@ -2364,11 +2365,14 @@ export const ar: TranslationResources = {
       defaultSend: {
         label: "إرسال افتراضي",
         descriptions: {
-          interrupt:
-            "عند تشغيل الوكيل، يوقف Enter التشغيل. Command/Ctrl+Enter يضيف إلى قائمة الانتظار.",
-          steer:
-            "عند تشغيل الوكيل، يوجّه Enter الجولة النشطة. يضيف Command/Ctrl+Enter إلى قائمة الانتظار.",
-          queue: "عند تشغيل الوكيل، يضيف Enter إلى قائمة الانتظار. Command/Ctrl+Enter يرسل.",
+          interrupt: "عند تشغيل الوكيل، يوقف Enter التشغيل.",
+          steer: "عند تشغيل الوكيل، يوجّه Enter الجولة النشطة.",
+          queue: "عند تشغيل الوكيل، يضيف Enter إلى قائمة الانتظار.",
+        },
+        touchDescriptions: {
+          interrupt: "عند تشغيل الوكيل، يؤدي النقر على إرسال إلى إيقاف التشغيل.",
+          steer: "عند تشغيل الوكيل، يؤدي النقر على إرسال إلى توجيه الجولة النشطة.",
+          queue: "عند تشغيل الوكيل، يؤدي النقر على إرسال إلى الإضافة إلى قائمة الانتظار.",
         },
         commandEnterDescriptions: {
           interrupt: "عند تشغيل الوكيل، يوقف {{modifier}}+Enter التشغيل. يُدرج Enter سطرًا جديدًا.",
@@ -2380,6 +2384,21 @@ export const ar: TranslationResources = {
           interrupt: "مقاطعة",
           steer: "توجيه",
           queue: "طابور",
+        },
+      },
+      alternateSend: {
+        label: "إرسال بديل",
+        descriptions: {
+          interrupt: "عند تشغيل الوكيل، يوقف {{modifier}}+Enter أو الضغط المطوّل على إرسال التشغيل.",
+          steer:
+            "عند تشغيل الوكيل، يوجّه {{modifier}}+Enter أو الضغط المطوّل على إرسال الجولة النشطة.",
+          queue:
+            "عند تشغيل الوكيل، يضيف {{modifier}}+Enter أو الضغط المطوّل على إرسال إلى قائمة الانتظار.",
+        },
+        longPressDescriptions: {
+          interrupt: "عند تشغيل الوكيل، يوقف الضغط المطوّل على إرسال التشغيل.",
+          steer: "عند تشغيل الوكيل، يوجّه الضغط المطوّل على إرسال الجولة النشطة.",
+          queue: "عند تشغيل الوكيل، يضيف الضغط المطوّل على إرسال إلى قائمة الانتظار.",
         },
       },
       sendShortcut: {

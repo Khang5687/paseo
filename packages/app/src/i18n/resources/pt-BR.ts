@@ -136,7 +136,8 @@ export const ptBR: TranslationResources = {
       sendAndSteer: "Enviar e orientar",
       sendMessage: "Enviar mensagem",
       longPressToQueue: "Mantenha pressionado para enfileirar",
-      longPressToSendNow: "Mantenha pressionado para enviar agora",
+      longPressToInterrupt: "Mantenha pressionado para interromper",
+      longPressToSteer: "Mantenha pressionado para orientar",
       queue: "Fila",
       send: "Enviar",
     },
@@ -2362,11 +2363,14 @@ export const ptBR: TranslationResources = {
       defaultSend: {
         label: "Envio padrão",
         descriptions: {
-          interrupt:
-            "Quando o agente está em execução, Enter interrompe. Command/Ctrl+Enter enfileira.",
-          steer:
-            "Quando o agente está em execução, Enter orienta o turno ativo. Command/Ctrl+Enter enfileira.",
-          queue: "Quando o agente está em execução, Enter enfileira. Command/Ctrl+Enter envia.",
+          interrupt: "Quando o agente está em execução, Enter interrompe.",
+          steer: "Quando o agente está em execução, Enter orienta o turno ativo.",
+          queue: "Quando o agente está em execução, Enter enfileira.",
+        },
+        touchDescriptions: {
+          interrupt: "Quando o agente está em execução, tocar em Enviar interrompe.",
+          steer: "Quando o agente está em execução, tocar em Enviar orienta o turno ativo.",
+          queue: "Quando o agente está em execução, tocar em Enviar enfileira.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2380,6 +2384,23 @@ export const ptBR: TranslationResources = {
           interrupt: "Interromper",
           steer: "Orientar",
           queue: "Fila",
+        },
+      },
+      alternateSend: {
+        label: "Envio alternativo",
+        descriptions: {
+          interrupt:
+            "Quando o agente está em execução, {{modifier}}+Enter ou manter Enviar pressionado interrompe.",
+          steer:
+            "Quando o agente está em execução, {{modifier}}+Enter ou manter Enviar pressionado orienta o turno ativo.",
+          queue:
+            "Quando o agente está em execução, {{modifier}}+Enter ou manter Enviar pressionado enfileira.",
+        },
+        longPressDescriptions: {
+          interrupt: "Quando o agente está em execução, manter Enviar pressionado interrompe.",
+          steer:
+            "Quando o agente está em execução, manter Enviar pressionado orienta o turno ativo.",
+          queue: "Quando o agente está em execução, manter Enviar pressionado enfileira.",
         },
       },
       sendShortcut: {

@@ -135,7 +135,8 @@ export const ko: TranslationResources = {
       sendAndSteer: "보내고 지시 추가",
       sendMessage: "메시지 보내기",
       longPressToQueue: "길게 눌러 대기열에 추가",
-      longPressToSendNow: "길게 눌러 지금 보내기",
+      longPressToInterrupt: "길게 눌러 중단",
+      longPressToSteer: "길게 눌러 지시 추가",
       queue: "대기열",
       send: "보내기",
     },
@@ -2338,12 +2339,14 @@ export const ko: TranslationResources = {
       defaultSend: {
         label: "기본 전송",
         descriptions: {
-          interrupt:
-            "에이전트가 실행 중일 때 Enter는 중단합니다. Command/Ctrl+Enter는 대기열에 추가합니다.",
-          steer:
-            "에이전트가 실행 중일 때 Enter는 현재 턴에 지시합니다. Command/Ctrl+Enter는 대기열에 추가합니다.",
-          queue:
-            "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다. Command/Ctrl+Enter는 제출합니다.",
+          interrupt: "에이전트가 실행 중일 때 Enter는 중단합니다.",
+          steer: "에이전트가 실행 중일 때 Enter는 현재 턴에 지시합니다.",
+          queue: "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다.",
+        },
+        touchDescriptions: {
+          interrupt: "에이전트가 실행 중일 때 보내기를 탭하면 중단합니다.",
+          steer: "에이전트가 실행 중일 때 보내기를 탭하면 현재 턴에 지시합니다.",
+          queue: "에이전트가 실행 중일 때 보내기를 탭하면 대기열에 추가합니다.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2357,6 +2360,22 @@ export const ko: TranslationResources = {
           interrupt: "중단",
           steer: "지시",
           queue: "대기열",
+        },
+      },
+      alternateSend: {
+        label: "대체 전송",
+        descriptions: {
+          interrupt:
+            "에이전트가 실행 중일 때 {{modifier}}+Enter 또는 보내기를 길게 누르면 중단합니다.",
+          steer:
+            "에이전트가 실행 중일 때 {{modifier}}+Enter 또는 보내기를 길게 누르면 현재 턴에 지시합니다.",
+          queue:
+            "에이전트가 실행 중일 때 {{modifier}}+Enter 또는 보내기를 길게 누르면 대기열에 추가합니다.",
+        },
+        longPressDescriptions: {
+          interrupt: "에이전트가 실행 중일 때 보내기를 길게 누르면 중단합니다.",
+          steer: "에이전트가 실행 중일 때 보내기를 길게 누르면 현재 턴에 지시합니다.",
+          queue: "에이전트가 실행 중일 때 보내기를 길게 누르면 대기열에 추가합니다.",
         },
       },
       sendShortcut: {

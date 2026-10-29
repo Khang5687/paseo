@@ -136,7 +136,8 @@ export const ja: TranslationResources = {
       sendAndSteer: "送信して指示を追加",
       sendMessage: "メッセージを送信",
       longPressToQueue: "長押しでキューに追加",
-      longPressToSendNow: "長押しで今すぐ送信",
+      longPressToInterrupt: "長押しで中断",
+      longPressToSteer: "長押しで指示を追加",
       queue: "キュー",
       send: "送信",
     },
@@ -2349,10 +2350,14 @@ export const ja: TranslationResources = {
       defaultSend: {
         label: "デフォルトの送信",
         descriptions: {
-          interrupt: "エージェント実行中、Enterで中断します。Command/Ctrl+Enterでキューに追加。",
-          steer:
-            "エージェント実行中、Enterで現在のターンに指示を送ります。Command/Ctrl+Enterでキューに追加。",
-          queue: "エージェント実行中、Enterでキューに追加します。Command/Ctrl+Enterで送信。",
+          interrupt: "エージェント実行中、Enterで中断します。",
+          steer: "エージェント実行中、Enterで現在のターンに指示を送ります。",
+          queue: "エージェント実行中、Enterでキューに追加します。",
+        },
+        touchDescriptions: {
+          interrupt: "エージェント実行中、送信をタップすると中断します。",
+          steer: "エージェント実行中、送信をタップすると現在のターンに指示を送ります。",
+          queue: "エージェント実行中、送信をタップするとキューに追加します。",
         },
         commandEnterDescriptions: {
           interrupt: "エージェント実行中、{{modifier}}+Enterで中断します。Enterで改行します。",
@@ -2364,6 +2369,20 @@ export const ja: TranslationResources = {
           interrupt: "中断",
           steer: "指示",
           queue: "キュー",
+        },
+      },
+      alternateSend: {
+        label: "代替の送信",
+        descriptions: {
+          interrupt: "エージェント実行中、{{modifier}}+Enterまたは送信の長押しで中断します。",
+          steer:
+            "エージェント実行中、{{modifier}}+Enterまたは送信の長押しで現在のターンに指示を送ります。",
+          queue: "エージェント実行中、{{modifier}}+Enterまたは送信の長押しでキューに追加します。",
+        },
+        longPressDescriptions: {
+          interrupt: "エージェント実行中、送信の長押しで中断します。",
+          steer: "エージェント実行中、送信の長押しで現在のターンに指示を送ります。",
+          queue: "エージェント実行中、送信の長押しでキューに追加します。",
         },
       },
       sendShortcut: {
