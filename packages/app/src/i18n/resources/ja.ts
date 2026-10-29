@@ -2371,6 +2371,7 @@ export const ja: TranslationResources = {
       days: "{{value}}日",
       hours: "{{value}}時間",
       minutes: "{{value}}分",
+      pair: "{{first}}{{second}}",
     },
     timing: {
       lastUpdated: "最終更新: {{relativeTime}}",
@@ -2378,6 +2379,8 @@ export const ja: TranslationResources = {
       resetTimePassed: "リセット時刻を過ぎています",
       resettingNow: "まもなくリセット",
       resetsIn: "{{duration}}後にリセット",
+      resetsAtWeekday: "{{weekday}} {{time}}",
+      resetsAtDate: "{{date}} {{time}}",
       runsOutNow: "まもなく上限に到達",
       runsOutIn: "{{duration}}後に上限に到達",
       justNow: "たった今",
