@@ -131,7 +131,8 @@ export const en = {
       sendAndSteer: "Send and steer",
       sendMessage: "Send message",
       longPressToQueue: "Long press to queue",
-      longPressToSendNow: "Long press to send now",
+      longPressToInterrupt: "Long press to interrupt",
+      longPressToSteer: "Long press to steer",
       queue: "Queue",
       send: "Send",
     },
@@ -2659,10 +2660,14 @@ export const en = {
       defaultSend: {
         label: "Default send",
         descriptions: {
-          interrupt: "When the agent is running, Enter interrupts. Command/Ctrl+Enter queues.",
-          steer:
-            "When the agent is running, Enter steers the active turn. Command/Ctrl+Enter queues.",
-          queue: "When the agent is running, Enter queues. Command/Ctrl+Enter submits.",
+          interrupt: "When the agent is running, Enter interrupts.",
+          steer: "When the agent is running, Enter steers the active turn.",
+          queue: "When the agent is running, Enter queues.",
+        },
+        touchDescriptions: {
+          interrupt: "When the agent is running, tapping Send interrupts.",
+          steer: "When the agent is running, tapping Send steers the active turn.",
+          queue: "When the agent is running, tapping Send queues.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2675,6 +2680,21 @@ export const en = {
           interrupt: "Interrupt",
           steer: "Steer",
           queue: "Queue",
+        },
+      },
+      alternateSend: {
+        label: "Alternate send",
+        descriptions: {
+          interrupt:
+            "When the agent is running, {{modifier}}+Enter or a long press on Send interrupts.",
+          steer:
+            "When the agent is running, {{modifier}}+Enter or a long press on Send steers the active turn.",
+          queue: "When the agent is running, {{modifier}}+Enter or a long press on Send queues.",
+        },
+        longPressDescriptions: {
+          interrupt: "When the agent is running, a long press on Send interrupts.",
+          steer: "When the agent is running, a long press on Send steers the active turn.",
+          queue: "When the agent is running, a long press on Send queues.",
         },
       },
       defaultEditor: "Default editor",

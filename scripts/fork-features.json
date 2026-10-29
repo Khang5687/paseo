@@ -512,5 +512,14 @@
       "packages/server/src/server/agent/provider-snapshot-manager.test.ts",
       "packages/server/src/server/persisted-config.test.ts"
     ]
+  },
+  {
+    "pr": 68,
+    "title": "feat(app): configurable alternate send action",
+    "tests": [
+      "packages/app/src/composer/input/state.test.ts",
+      "packages/app/src/composer/input/labels.test.ts",
+      "packages/app/src/hooks/use-settings/storage.test.ts"
+    ]
   }
 ]

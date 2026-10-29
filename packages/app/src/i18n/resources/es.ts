@@ -136,7 +136,8 @@ export const es: TranslationResources = {
       sendAndSteer: "Enviar y orientar",
       sendMessage: "enviar mensaje",
       longPressToQueue: "Mantén pulsado para poner en cola",
-      longPressToSendNow: "Mantén pulsado para enviar ahora",
+      longPressToInterrupt: "Mantén pulsado para interrumpir",
+      longPressToSteer: "Mantén pulsado para dirigir",
       queue: "Cola",
       send: "Enviar",
     },
@@ -2592,12 +2593,14 @@ export const es: TranslationResources = {
       defaultSend: {
         label: "Envío predeterminado",
         descriptions: {
-          interrupt:
-            "Cuando el agente se está ejecutando, Enter interrumpe. Command/Ctrl+Enter pone en cola.",
-          steer:
-            "Cuando el agente se está ejecutando, Enter dirige el turno activo. Command/Ctrl+Enter pone en cola.",
-          queue:
-            "Cuando el agente se está ejecutando, Enter pone en cola. Command/Ctrl+Enter envía.",
+          interrupt: "Cuando el agente se está ejecutando, Enter interrumpe.",
+          steer: "Cuando el agente se está ejecutando, Enter dirige el turno activo.",
+          queue: "Cuando el agente se está ejecutando, Enter pone en cola.",
+        },
+        touchDescriptions: {
+          interrupt: "Cuando el agente se está ejecutando, tocar Enviar interrumpe.",
+          steer: "Cuando el agente se está ejecutando, tocar Enviar dirige el turno activo.",
+          queue: "Cuando el agente se está ejecutando, tocar Enviar pone en cola.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2611,6 +2614,23 @@ export const es: TranslationResources = {
           interrupt: "Interrumpir",
           steer: "Dirigir",
           queue: "Cola",
+        },
+      },
+      alternateSend: {
+        label: "Envío alternativo",
+        descriptions: {
+          interrupt:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter o mantener pulsado Enviar interrumpe.",
+          steer:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter o mantener pulsado Enviar dirige el turno activo.",
+          queue:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter o mantener pulsado Enviar pone en cola.",
+        },
+        longPressDescriptions: {
+          interrupt: "Cuando el agente se está ejecutando, mantener pulsado Enviar interrumpe.",
+          steer:
+            "Cuando el agente se está ejecutando, mantener pulsado Enviar dirige el turno activo.",
+          queue: "Cuando el agente se está ejecutando, mantener pulsado Enviar pone en cola.",
         },
       },
       defaultEditor: "Editor predeterminado",

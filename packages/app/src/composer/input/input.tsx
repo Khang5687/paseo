@@ -1,3 +1,4 @@
+import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type { SendShortcut } from "@/hooks/use-settings";
 import {
   useComposerEditingSession,
@@ -91,10 +92,12 @@ import {
   resolveComposerSurfaceText,
   resolveMessageInputEnterAction,
   resolveRetainedSelection,
+  resolveSendNowBehavior,
   runAlternateSendAction,
   runDefaultSendAction,
   runMessageInputKeyboardAction,
   stopRealtimeVoice,
+  type SendBehavior,
 } from "./state";
 
 const DEFAULT_SEND_KEYS: ShortcutKey[][] = [["Enter"]];
@@ -173,7 +176,10 @@ export interface MessageInputProps {
   /** Controls what the default send action (Enter, send button, dictation) does when the agent is
    *  running. "interrupt" and "steer" send immediately, "queue" queues. Required so the default
    *  lives only in DEFAULT_CLIENT_SETTINGS. */
-  defaultSendBehavior: "interrupt" | "steer" | "queue";
+  defaultSendBehavior: SendBehavior;
+  /** What the alternate send action (Mod+Enter under the Enter shortcut, long-press on Send)
+   *  does when the agent is running. */
+  alternateSendBehavior: SendBehavior;
   sendShortcut: SendShortcut;
   /** Callback for queue button when agent is running */
   onQueue?: (payload: MessagePayload) => void;
@@ -968,6 +974,7 @@ interface SendMessageContext {
   allowEmptySubmit: boolean;
   cwd: string;
   isAgentRunning: boolean;
+  activeTurnBehavior: ActiveTurnBehavior;
   onSubmit: (payload: MessagePayload) => void;
   onMinimizeHeight: () => void;
   preserveHeightOnSubmit: boolean;
@@ -990,6 +997,7 @@ function sendMessageImpl(ctx: SendMessageContext): void {
     attachments: ctx.attachments,
     cwd: ctx.cwd,
     forceSend: ctx.isAgentRunning || undefined,
+    activeTurnBehavior: ctx.activeTurnBehavior,
   });
   // When the host preserves and locks the composer (e.g. new-workspace creation),
   // the text stays put — collapsing the height would clip it. Keep it grown.
@@ -1081,7 +1089,7 @@ interface SendButtonStateInput {
   isSubmitDisabled: boolean;
   isSubmitLoading: boolean;
   onSubmitLoadingPress: (() => void) | undefined;
-  defaultSendBehavior: "interrupt" | "steer" | "queue";
+  defaultSendBehavior: SendBehavior;
   isAgentRunning: boolean;
 }
 
@@ -1131,7 +1139,8 @@ interface ResolvedMessageInputProps {
   voiceServerId: string | undefined;
   voiceAgentId: string | undefined;
   isAgentRunning: boolean;
-  defaultSendBehavior: "interrupt" | "steer" | "queue";
+  defaultSendBehavior: SendBehavior;
+  alternateSendBehavior: SendBehavior;
   sendShortcut: SendShortcut;
   onQueue: ((payload: MessagePayload) => void) | undefined;
   onSubmitLoadingPress: (() => void) | undefined;
@@ -1180,6 +1189,7 @@ function resolveMessageInputProps(props: MessageInputProps): ResolvedMessageInpu
     voiceAgentId: props.voiceAgentId,
     isAgentRunning: props.isAgentRunning ?? false,
     defaultSendBehavior: props.defaultSendBehavior,
+    alternateSendBehavior: props.alternateSendBehavior,
     sendShortcut: props.sendShortcut,
     onQueue: props.onQueue,
     onSubmitLoadingPress: props.onSubmitLoadingPress,
@@ -1258,6 +1268,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       voiceAgentId,
       isAgentRunning,
       defaultSendBehavior,
+      alternateSendBehavior,
       sendShortcut,
       onQueue,
       onSubmitLoadingPress,
@@ -1473,6 +1484,11 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       };
     }, [onFocusChange]);
 
+    const sendNowBehavior = resolveSendNowBehavior({
+      sendBehavior: defaultSendBehavior,
+      alternateSendBehavior,
+    });
+
     const handleDictationTranscript = useCallback(
       (text: string, _meta: { requestId: string }) => {
         const autoSend = sendAfterTranscriptRef.current;
@@ -1480,6 +1496,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         applyDictationTranscript(text, {
           value: valueRef.current,
           defaultSendBehavior,
+          sendNowBehavior,
           isAgentRunning,
           onQueue,
           onSubmit,
@@ -1489,7 +1506,16 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           autoSend,
         });
       },
-      [replaceText, onSubmit, onQueue, attachments, cwd, isAgentRunning, defaultSendBehavior],
+      [
+        replaceText,
+        onSubmit,
+        onQueue,
+        attachments,
+        cwd,
+        isAgentRunning,
+        defaultSendBehavior,
+        sendNowBehavior,
+      ],
     );
 
     const handleDictationError = useCallback(
@@ -1668,35 +1694,39 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       resetComposerHeight?.();
     }, [resetComposerHeight]);
 
-    const handleSendMessage = useCallback(() => {
-      const liveValue = textInputRef.current?.getText() ?? valueRef.current;
-      if (!preserveHeightOnSubmit) {
-        updateLiveTextPresence("");
-      }
-      sendMessageImpl({
-        value: liveValue,
-        attachments,
-        hasExternalContent,
+    const handleSendMessage = useCallback(
+      (activeTurnBehavior: ActiveTurnBehavior) => {
+        const liveValue = textInputRef.current?.getText() ?? valueRef.current;
+        if (!preserveHeightOnSubmit) {
+          updateLiveTextPresence("");
+        }
+        sendMessageImpl({
+          value: liveValue,
+          attachments,
+          hasExternalContent,
+          allowEmptySubmit,
+          cwd,
+          isAgentRunning,
+          activeTurnBehavior,
+          onSubmit,
+          onMinimizeHeight: minimizeInputHeight,
+          preserveHeightOnSubmit,
+          exitFullscreen,
+        });
+      },
+      [
         allowEmptySubmit,
+        attachments,
         cwd,
-        isAgentRunning,
         onSubmit,
-        onMinimizeHeight: minimizeInputHeight,
+        isAgentRunning,
+        hasExternalContent,
+        minimizeInputHeight,
         preserveHeightOnSubmit,
+        updateLiveTextPresence,
         exitFullscreen,
-      });
-    }, [
-      allowEmptySubmit,
-      attachments,
-      cwd,
-      onSubmit,
-      isAgentRunning,
-      hasExternalContent,
-      minimizeInputHeight,
-      preserveHeightOnSubmit,
-      updateLiveTextPresence,
-      exitFullscreen,
-    ]);
+      ],
+    );
 
     const handleQueueMessage = useCallback(
       () =>
@@ -1712,31 +1742,34 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [attachments, cwd, onQueue, replaceText, minimizeInputHeight, exitFullscreen],
     );
 
-    const handleDefaultSendAction = useCallback(() => {
-      runDefaultSendAction({
+    const sendActionContext = useMemo(
+      () => ({
         defaultSendBehavior,
+        alternateSendBehavior,
         isAgentRunning,
         onQueue,
         handleSendMessage,
         handleQueueMessage,
-      });
-    }, [defaultSendBehavior, isAgentRunning, onQueue, handleQueueMessage, handleSendMessage]);
+      }),
+      [
+        defaultSendBehavior,
+        alternateSendBehavior,
+        isAgentRunning,
+        onQueue,
+        handleSendMessage,
+        handleQueueMessage,
+      ],
+    );
+
+    const handleDefaultSendAction = useCallback(() => {
+      runDefaultSendAction(sendActionContext);
+    }, [sendActionContext]);
 
     const handleAlternateSendAction = useCallback(() => {
-      runAlternateSendAction({
-        defaultSendBehavior,
-        isAgentRunning,
-        onQueue,
-        handleSendMessage,
-        handleQueueMessage,
-      });
-    }, [defaultSendBehavior, isAgentRunning, handleSendMessage, handleQueueMessage, onQueue]);
+      runAlternateSendAction(sendActionContext);
+    }, [sendActionContext]);
 
-    const alternateSendAction = resolveAlternateSendAction({
-      defaultSendBehavior,
-      isAgentRunning,
-      onQueue,
-    });
+    const alternateSendAction = resolveAlternateSendAction(sendActionContext);
 
     const handleLongPressSend = useCallback(() => {
       if (alternateSendAction && isNative) {
@@ -1831,6 +1864,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       canPressLoadingButton,
       defaultActionQueues,
       defaultSendBehavior,
+      sendNowBehavior,
       isAgentRunning,
       t,
     });

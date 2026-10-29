@@ -128,7 +128,7 @@ import {
 } from "@/attachments/service";
 import { resolveAgentControlsMode } from "@/composer/agent-controls/mode";
 import { resolveComposerInputMode, type ComposerInputMode } from "@/composer/input-mode";
-import { resolveActiveSendBehavior } from "./input/state";
+import { resolveActiveSendBehavior, resolveSendNowBehavior } from "./input/state";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
@@ -143,7 +143,7 @@ import { useAppSettings } from "@/hooks/use-settings";
 import { RenderProfile } from "@/utils/render-profiler";
 import { AfterPaintPublication } from "@/composer/after-paint-publication";
 import { isWeb, isNative } from "@/constants/platform";
-import type { ForgeSearchItem } from "@getpaseo/protocol/messages";
+import type { ActiveTurnBehavior, ForgeSearchItem } from "@getpaseo/protocol/messages";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -1516,8 +1516,13 @@ function ComposerContentImpl({
     onFocusInput?.(focusInput);
   }, [focusInput, onFocusInput]);
 
+  const sendNowBehavior = resolveSendNowBehavior(appSettings);
   const submitMessage = useCallback(
-    async (text: string, submitAttachments: ComposerAttachment[]) => {
+    async (
+      text: string,
+      submitAttachments: ComposerAttachment[],
+      activeTurnBehavior: ActiveTurnBehavior = sendNowBehavior,
+    ) => {
       onMessageSent?.();
       if (onSubmitMessageRef.current) {
         await onSubmitMessageRef.current({ text, attachments: submitAttachments, cwd });
@@ -1530,10 +1535,10 @@ function ComposerContentImpl({
         agentIdRef.current,
         text,
         submitAttachments,
-        appSettings.sendBehavior === "steer" ? "steer" : "interrupt",
+        activeTurnBehavior,
       );
     },
-    [appSettings.sendBehavior, cwd, onMessageSent, t],
+    [sendNowBehavior, cwd, onMessageSent, t],
   );
 
   useEffect(() => {
@@ -1571,7 +1576,7 @@ function ComposerContentImpl({
       });
       onAttentionPromptSend?.();
     };
-  }, [appSettings.sendBehavior, client, onAttentionPromptSend, serverId, supportsForgeSearch, t]);
+  }, [client, onAttentionPromptSend, serverId, supportsForgeSearch, t]);
 
   useEffect(() => {
     onSubmitMessageRef.current = onSubmitMessage;
@@ -1596,6 +1601,10 @@ function ComposerContentImpl({
   });
   const activeSendBehavior = resolveActiveSendBehavior(
     appSettings.sendBehavior,
+    hasPendingPermission,
+  );
+  const activeAlternateSendBehavior = resolveActiveSendBehavior(
+    appSettings.alternateSendBehavior,
     hasPendingPermission,
   );
   const hasAgent = agentState.status !== null;
@@ -1709,6 +1718,7 @@ function ComposerContentImpl({
       outgoingMessage: string,
       outgoingAttachments: ComposerAttachment[],
       forceSend?: boolean,
+      activeTurnBehavior?: ActiveTurnBehavior,
     ) => {
       const result = await submitAgentInput({
         message: outgoingMessage,
@@ -1728,7 +1738,7 @@ function ComposerContentImpl({
           if (submitBehavior !== "preserve-and-lock") {
             beginSubmit(submitAttachments);
           }
-          await submitMessage(submitText, submitAttachments);
+          await submitMessage(submitText, submitAttachments, activeTurnBehavior);
         },
         clearDraft,
         setUserInput: replaceUserInput,
@@ -1783,7 +1793,12 @@ function ComposerContentImpl({
       if (blurOnSubmit) {
         messageInputRef.current?.blur();
       }
-      void sendMessageWithContent(payload.text, outgoingAttachments, payload.forceSend);
+      void sendMessageWithContent(
+        payload.text,
+        outgoingAttachments,
+        payload.forceSend,
+        payload.activeTurnBehavior,
+      );
     },
     [
       attachments,
@@ -2030,7 +2045,7 @@ function ComposerContentImpl({
           setSendError(t("workspace.terminal.hostDisconnected"));
           return;
         }
-        const activeTurnBehavior = appSettings.sendBehavior === "steer" ? "steer" : "interrupt";
+        const activeTurnBehavior = sendNowBehavior;
         setSendingQueuedMessageIds((prev) => new Set(prev).add(id));
         try {
           await sendQueuedMessageNowOnDaemon({
@@ -2080,7 +2095,7 @@ function ComposerContentImpl({
     },
     [
       agentId,
-      appSettings.sendBehavior,
+      sendNowBehavior,
       client,
       daemonQueuedMessages,
       hostOwnsQueue,
@@ -2706,6 +2721,7 @@ function ComposerContentImpl({
                   voiceAgentId={agentId}
                   isAgentRunning={isAgentRunning}
                   defaultSendBehavior={activeSendBehavior}
+                  alternateSendBehavior={activeAlternateSendBehavior}
                   sendShortcut={appSettings.sendShortcut}
                   onQueue={handleQueue}
                   onSubmitLoadingPress={submitLoadingPressHandler}
