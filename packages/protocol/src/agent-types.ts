@@ -374,8 +374,21 @@ export interface AgentTaskItem {
   activeForm?: string;
 }
 
+/** An image submitted with a user message, stored by the daemon. `id` is the SHA-256 of the bytes. */
+export interface UserMessageImageRef {
+  id: string;
+  mimeType: string;
+  size: number;
+}
+
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      images?: UserMessageImageRef[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

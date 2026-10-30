@@ -302,6 +302,7 @@ import type {
   ToolCallTimelineItem,
   AgentUsage,
   JsonValue,
+  UserMessageImageRef,
 } from "./agent-types.js";
 
 // WebSocket payloads have already crossed JSON serialization. Keeping this as
@@ -691,6 +692,14 @@ const ToolCallTimelineItemPayloadSchema: z.ZodType<ToolCallTimelineItem, unknown
     ToolCallCanceledPayloadSchema,
   ]);
 
+// An image submitted with a user message, stored by the daemon. `id` is the
+// SHA-256 of the bytes; `size` is the decoded byte length.
+export const UserMessageImageRefSchema: z.ZodType<UserMessageImageRef, unknown> = z.object({
+  id: z.string(),
+  mimeType: z.string(),
+  size: z.number().int().nonnegative(),
+});
+
 // zod-aot 0.20.4 miscompiles this as a nested discriminated union by omitting
 // the inner tool_call branch from the generated outer dispatch.
 export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknown> = z.union([
@@ -699,6 +708,8 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     text: z.string(),
     messageId: z.string().optional(),
     clientMessageId: z.string().optional(),
+    // Daemon-stored images; bytes come from agent.timeline.get_image.
+    images: z.array(UserMessageImageRefSchema).optional(),
   }),
   z.object({
     type: z.literal("assistant_message"),
@@ -1968,6 +1979,13 @@ export const AgentTimelineSearchRequestMessageSchema = z.object({
 export const AgentTimelineListPromptsRequestMessageSchema = z.object({
   type: z.literal("agent.timeline.list_prompts.request"),
   agentId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentTimelineGetImageRequestMessageSchema = z.object({
+  type: z.literal("agent.timeline.get_image.request"),
+  agentId: z.string(),
+  imageId: z.string(),
   requestId: z.string(),
 });
 
@@ -3837,6 +3855,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   FetchAgentTimelineRequestMessageSchema,
   AgentTimelineSearchRequestMessageSchema,
   AgentTimelineListPromptsRequestMessageSchema,
+  AgentTimelineGetImageRequestMessageSchema,
   ProviderSubagentListRequestMessageSchema,
   ProviderSubagentTimelineRequestMessageSchema,
   SetAgentTimelineSubscriptionRequestMessageSchema,
@@ -4228,6 +4247,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentTimelinePromptIndex: z.boolean().optional(),
         // COMPAT(agentHistorySearch): added in v0.3.0, remove gate after 2027-02-07.
         agentHistorySearch: z.boolean().optional(),
+        // COMPAT(userMessageImages): added in v0.14.0, remove gate after 2027-04-27.
+        userMessageImages: z.boolean().optional(),
         // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.
         checkoutRefresh: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
@@ -5313,6 +5334,18 @@ export const AgentTimelineListPromptsResponseMessageSchema = z.object({
         preview: z.string(),
       }),
     ),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentTimelineGetImageResponseMessageSchema = z.object({
+  type: z.literal("agent.timeline.get_image.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    imageId: z.string(),
+    // Base64 bytes of a user message image, or null when the daemon no longer has it.
+    data: z.string().nullable(),
     error: z.string().nullable(),
   }),
 });
@@ -7686,6 +7719,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentTimelineReplacementMessageSchema,
   AgentTimelineSearchResponseMessageSchema,
   AgentTimelineListPromptsResponseMessageSchema,
+  AgentTimelineGetImageResponseMessageSchema,
   ProviderSubagentListResponseMessageSchema,
   ProviderSubagentTimelineResponseMessageSchema,
   ProviderSubagentUpdateMessageSchema,

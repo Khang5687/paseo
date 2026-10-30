@@ -4289,6 +4289,18 @@ export class DaemonClient {
     return payload;
   }
 
+  /** Base64 bytes of an image on one of the agent's user messages, or null when the host no longer has it. */
+  async getAgentTimelineImage(agentId: string, imageId: string): Promise<string | null> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "agent.timeline.get_image.request", requestId, agentId, imageId },
+      responseType: "agent.timeline.get_image.response",
+    });
+    if (payload.error) throw new Error(payload.error);
+    return payload.data;
+  }
+
   async listProviderSubagents(
     parentAgentId: string,
     options: { requestId?: string; timeout?: number } = {},

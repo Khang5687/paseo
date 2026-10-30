@@ -32,7 +32,12 @@ import { useToolCallExpanded } from "@/tool-calls/expansion-context";
 import { useTargetAgentTitle } from "@/tool-calls/use-target-agent-title";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
-import type { AgentCapabilityFlags, ToolCallDetail } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentCapabilityFlags,
+  ToolCallDetail,
+  UserMessageImageRef,
+} from "@getpaseo/protocol/agent-types";
+import { useUserMessageImages } from "@/attachments/use-user-message-images";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import MaskedView from "@react-native-masked-view/masked-view";
 import {
@@ -98,6 +103,7 @@ interface UserMessageProps {
   messageId?: string;
   message: string;
   images?: UserMessageImageAttachment[];
+  imageRefs?: UserMessageImageRef[];
   attachments?: AgentAttachment[];
   timestamp: number;
   capabilities?: AgentCapabilityFlags;
@@ -396,7 +402,8 @@ export const UserMessage = memo(function UserMessage({
   agentId,
   messageId,
   message,
-  images = [],
+  images: localImages,
+  imageRefs,
   attachments = [],
   timestamp,
   capabilities,
@@ -407,6 +414,7 @@ export const UserMessage = memo(function UserMessage({
   disableOuterSpacing,
 }: UserMessageProps) {
   const isCompact = useIsCompactFormFactor();
+  const images = useUserMessageImages({ client, serverId, agentId, localImages, imageRefs });
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
   const [lightboxMetadata, setLightboxMetadata] = useState<UserMessageImageAttachment | null>(null);
