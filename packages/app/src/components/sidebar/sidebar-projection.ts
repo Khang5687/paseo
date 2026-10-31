@@ -20,6 +20,7 @@ import {
   type SidebarShortcutSection,
 } from "@/utils/sidebar-shortcuts";
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
+import { createWorkspaceRowNester, inheritParentPins } from "./workspace-nesting";
 
 export interface SidebarProjection {
   pinnedGroups: PinnedSidebarGroups;
@@ -34,6 +35,8 @@ export interface SidebarProjection {
    */
   projectIconTargets: SidebarProjectIconTarget[];
   shortcutModel: SidebarShortcutModel;
+  /** Indent level of each subagent workspace row nested under its parent; top-level rows absent. */
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
 export interface SidebarProjectionInput {
@@ -46,23 +49,53 @@ export interface SidebarProjectionInput {
   pinnedCollapsed: boolean;
   collapsedProjectKeys: ReadonlySet<string>;
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
+  /** Child workspaceKey -> parent workspaceKey for subagent workspaces. */
+  parentKeyByWorkspaceKey: ReadonlyMap<string, string>;
   t: TFunction;
 }
 
 export function buildSidebarProjection(input: SidebarProjectionInput): SidebarProjection {
-  const pinnedGroups = splitPinnedSidebarGroups({
+  const visibleWorkspaceKeys = new Set(
+    input.projects.flatMap((project) =>
+      project.workspaces.map((workspace) => workspace.workspaceKey),
+    ),
+  );
+  const pinnedWorkspaceKeys = inheritParentPins({
+    pinnedWorkspaceKeys: input.pinnedKeys.pinnedWorkspaceKeys,
+    visibleWorkspaceKeys,
+    parentKeyByWorkspaceKey: input.parentKeyByWorkspaceKey,
+  });
+  const split = splitPinnedSidebarGroups({
     projects: input.projects,
-    keys: input.pinnedKeys,
+    keys: { ...input.pinnedKeys, pinnedWorkspaceKeys },
     pinnedWorkspaceOrder: input.pinnedWorkspaceOrder,
   });
-  const pinnedWorkspaceKeys = new Set(input.pinnedKeys.pinnedWorkspaceKeys);
+  // Each mode nests only the lists it renders, so the depth map describes the rows on screen.
+  const nester = createWorkspaceRowNester(input.parentKeyByWorkspaceKey);
+  let unpinnedProjects = split.unpinnedProjects;
+  if (input.groupMode === "project") {
+    unpinnedProjects = unpinnedProjects.map((project) => {
+      const workspaces = nester.nest(project.workspaces);
+      return workspaces === project.workspaces ? project : { ...project, workspaces };
+    });
+  }
+  const pinnedGroups: PinnedSidebarGroups = {
+    pinnedChats: nester.nest(split.pinnedChats),
+    unpinnedProjects,
+  };
+  const pinnedWorkspaceKeySet = new Set(pinnedWorkspaceKeys);
   const unpinnedWorkspaces = Array.from(input.workspaceEntriesByKey.values()).filter(
-    (workspace) => !pinnedWorkspaceKeys.has(workspace.workspaceKey),
+    (workspace) => !pinnedWorkspaceKeySet.has(workspace.workspaceKey),
   );
   // One switch decides both what the list groups by and what the keyboard shortcuts walk, so the
   // two cannot disagree and a new grouping mode is a compile error here rather than a silent
-  // fall-through to the project rows.
+  // fall-through to the project rows. Status groups nest only within themselves: a child that
+  // needs attention stays in its own status group instead of hiding under a finished parent.
   const workspaceGroups = buildWorkspaceGroups(input, unpinnedWorkspaces);
+  // The groups were built just above, so nesting their rows in place shares nothing.
+  for (const group of workspaceGroups) {
+    group.rows = nester.nest(group.rows);
+  }
 
   const sections: SidebarShortcutSection[] = [];
   if (!input.pinnedCollapsed) {
@@ -89,6 +122,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
     workspaceGroups,
     projectIconTargets: resolveSidebarProjectIconTargets(input.projects),
     shortcutModel: buildSidebarShortcutSections({ sections }),
+    nestingDepthByWorkspaceKey: nester.depthByWorkspaceKey,
   };
 }
 
