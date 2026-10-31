@@ -111,6 +111,8 @@ A steering adapter also owes its interrupt: stopping a turn must discard the ste
 
 Rewind accepts the canonical wire `messageId` and resolves it to the provider identity before calling the adapter. A submitted prompt cannot be rewound until its provider echo supplies that identity.
 
+`ask_agent` needs optional `AgentClient.forkNativeSession(handle)`: a full copy of the durable session that a second session resumes while the source keeps running, possibly mid-turn. The fork must never write to the source; rewind's in-place branching does not qualify. Return the provider's read-only mode (reads run without approval, everything else asks, and the caller denies) and a `discard` that deletes the copy. Claude forks through the SDK, Codex through `thread/fork` (persisted, because an ephemeral fork cannot be resumed from another app-server process), OpenCode through `session.fork`, and OMP through `omp --fork`. Pi and ACP providers do not fork yet, so `ask_agent` refuses their agents.
+
 Submitted user-message wire items carry the same Paseo ID in `messageId` and `clientMessageId`. Provider adapters attach `clientMessageId` only to the echo for that foreground submission; provider history and externally initiated user rows do not have a Paseo client ID.
 
 Provider adapters must terminalize every transient timeline row before emitting the turn's terminal event. Codex may omit the completed `contextCompaction` item when a turn ends during compaction, so its adapter closes any pending root compaction before forwarding `turn_completed`, `turn_failed`, or `turn_canceled`. A terminal turn must never leave the client showing an operation as still loading.

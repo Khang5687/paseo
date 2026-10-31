@@ -537,6 +537,72 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
+  test("forks the full native session and discards only the copy, once", async () => {
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const forkClient = new TestOpenCodeClient();
+    const discardClient = new TestOpenCodeClient();
+    const retryClient = new TestOpenCodeClient();
+    runtime.enqueueClient(forkClient);
+    runtime.enqueueClient(discardClient);
+    runtime.enqueueClient(retryClient);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const metadata = { cwd, modeId: "build", model: "opencode/big-pickle" };
+    const source = {
+      provider: "opencode" as const,
+      sessionId: "session-1",
+      nativeHandle: "session-1",
+      metadata,
+    };
+
+    try {
+      const fork = await client.forkNativeSession(source);
+
+      expect(forkClient.calls.sessionFork).toEqual([{ sessionID: "session-1", directory: cwd }]);
+      expect(fork.handle).toEqual({
+        provider: "opencode",
+        sessionId: "session-fork",
+        nativeHandle: "session-fork",
+        metadata,
+      });
+      expect(fork.readOnlyModeId).toBe("plan");
+      expect(source).toEqual({
+        provider: "opencode",
+        sessionId: "session-1",
+        nativeHandle: "session-1",
+        metadata: { cwd, modeId: "build", model: "opencode/big-pickle" },
+      });
+      expect(forkClient.calls.sessionUpdate).toEqual([]);
+      expect(forkClient.calls.sessionDelete).toEqual([]);
+
+      await fork.discard();
+      await fork.discard();
+
+      expect(discardClient.calls.sessionDelete).toEqual([
+        { sessionID: "session-fork", directory: cwd },
+      ]);
+      expect(retryClient.calls.sessionDelete).toEqual([]);
+      expect(runtime.acquisitions.map((acquisition) => acquisition.releaseCount)).toEqual([1, 1]);
+
+      retryClient.sessionForkResponse = { data: { id: "session-fork-2" } };
+      const missing = new TestOpenCodeClient();
+      missing.sessionDeleteResponse = {
+        error: { name: "NotFoundError", data: { message: "gone" } },
+      };
+      runtime.enqueueClient(missing);
+      const secondFork = await client.forkNativeSession(source);
+      await expect(secondFork.discard()).resolves.toBeUndefined();
+      expect(missing.calls.sessionDelete).toEqual([
+        { sessionID: "session-fork-2", directory: cwd },
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("single turn completes with streaming deltas", async () => {
     const cwd = tmpCwd();
     const runtime = new TestOpenCodeHarness();

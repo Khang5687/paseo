@@ -276,6 +276,7 @@ export function toAgentListItemPayload(agent: AgentSnapshotPayload): AgentListIt
     effectiveThinkingOptionId: agent.effectiveThinkingOptionId,
     status: agent.status,
     cwd: agent.cwd,
+    ...(agent.workspaceId ? { workspaceId: agent.workspaceId } : {}),
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
     lastUserMessageAt: agent.lastUserMessageAt,

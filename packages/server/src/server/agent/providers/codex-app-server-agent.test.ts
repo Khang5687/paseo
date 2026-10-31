@@ -2253,6 +2253,133 @@ describe("Codex app-server provider", () => {
     appServer.assertNoErrors();
   });
 
+  function createProviderWithFakeAppServers(
+    handlers: Record<string, (params: unknown) => unknown>,
+  ) {
+    const appServers: FakeCodexAppServer[] = [];
+    const provider = new CodexAppServerAgentClient(createTestLogger());
+    castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
+      provider,
+    ).spawnAppServer = async () => {
+      const appServer = createFakeCodexAppServer(handlers);
+      appServers.push(appServer);
+      return appServer.child;
+    };
+    const threadRequests = () =>
+      appServers.flatMap((appServer) =>
+        appServer
+          .requests()
+          .filter((message) => String(message.method).startsWith("thread/"))
+          .map(({ method, params }) => ({ method, params })),
+      );
+    return { provider, appServers, threadRequests };
+  }
+
+  test("forks a persisted Codex thread into a read-only copy that discard deletes once", async () => {
+    const durableThreads = new Set(["source-thread"]);
+    const { provider, appServers, threadRequests } = createProviderWithFakeAppServers({
+      "thread/fork": () => {
+        durableThreads.add("forked-thread");
+        return {
+          thread: { id: "forked-thread" },
+          model: "gpt-5.4",
+          modelProvider: "openai",
+          serviceTier: null,
+          cwd: "/workspace/project",
+          approvalPolicy: "on-request",
+          approvalsReviewer: "user",
+          sandbox: { type: "readOnly" },
+        };
+      },
+      "thread/delete": (params) => {
+        const { threadId } = params as { threadId: string };
+        if (!durableThreads.delete(threadId)) {
+          return Promise.reject(new Error(`no rollout found for thread id ${threadId}`));
+        }
+        return {};
+      },
+    });
+    const source = {
+      provider: "codex",
+      sessionId: "source-thread",
+      nativeHandle: "source-thread",
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        threadId: "source-thread",
+        modeId: "full-access",
+        model: "gpt-5.4",
+        asyncQuestions: [{ id: "pending-question" }],
+      },
+    };
+
+    const fork = await provider.forkNativeSession(source);
+
+    expect(fork.readOnlyModeId).toBe("read-only");
+    expect(fork.handle).toEqual({
+      provider: "codex",
+      sessionId: "forked-thread",
+      nativeHandle: "forked-thread",
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        threadId: "forked-thread",
+        modeId: "full-access",
+        model: "gpt-5.4",
+      },
+    });
+    expect(source.metadata.threadId).toBe("source-thread");
+    expect(threadRequests()).toEqual([
+      {
+        method: "thread/fork",
+        params: {
+          threadId: "source-thread",
+          cwd: "/workspace/project",
+          model: "gpt-5.4",
+          approvalPolicy: "on-request",
+          sandbox: "read-only",
+          approvalsReviewer: "user",
+          excludeTurns: true,
+          persistExtendedHistory: true,
+        },
+      },
+    ]);
+
+    await Promise.all([fork.discard(), fork.discard()]);
+    await fork.discard();
+
+    expect(durableThreads).toEqual(new Set(["source-thread"]));
+    expect(threadRequests().slice(1)).toEqual([
+      { method: "thread/delete", params: { threadId: "forked-thread" } },
+    ]);
+    for (const appServer of appServers) appServer.assertNoErrors();
+  });
+
+  test("archives the forked copy on Codex without thread/delete", async () => {
+    const { provider, appServers, threadRequests } = createProviderWithFakeAppServers({
+      "thread/delete": () => ({
+        __jsonRpcError: {
+          code: -32600,
+          message: "Invalid request: unknown variant `thread/delete`",
+        },
+      }),
+      "thread/archive": () => ({}),
+    });
+
+    const fork = await provider.forkNativeSession({
+      provider: "codex",
+      sessionId: "source-thread",
+    });
+    await fork.discard();
+
+    expect(threadRequests().map(({ method, params }) => [method, params])).toEqual([
+      ["thread/fork", expect.objectContaining({ threadId: "source-thread" })],
+      ["thread/delete", { threadId: "forked-thread" }],
+      ["thread/archive", { threadId: "forked-thread" }],
+    ]);
+    for (const appServer of appServers) appServer.assertNoErrors();
+  });
+
   test("unarchives a persisted Codex thread using sessionId when nativeHandle is absent", async () => {
     const threadRequests: Array<{ method: string; params: unknown }> = [];
     const appServer = createFakeCodexAppServer({

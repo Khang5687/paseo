@@ -1,6 +1,6 @@
 import { describe, expect, onTestFinished, test } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -50,6 +50,59 @@ test("an idle follow-up is submitted as a prompt so OMP can start a turn", async
   expect(runtime.latestSession().prompts).toEqual([
     { message: "check the build", imageCount: 0, streamingBehavior: "followUp" },
   ]);
+});
+
+test("forks a session into a discardable copy beside it without touching the source", async () => {
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+  const directory = await mkdtemp(path.join(tmpdir(), "paseo-omp-fork-"));
+  const sourceFile = path.join(directory, "source.jsonl");
+  const sourceJournal = `${JSON.stringify({ type: "session", id: "source-id", cwd: directory })}\n`;
+  await writeFile(sourceFile, sourceJournal);
+  await mkdir(path.join(directory, "source"));
+  await writeFile(path.join(directory, "source", "0-Explore.jsonl"), "{}\n");
+  const source = {
+    provider: "omp",
+    sessionId: "source-id",
+    nativeHandle: sourceFile,
+    metadata: { cwd: directory, modeId: "full" },
+  };
+
+  const fork = await client.forkNativeSession(source);
+
+  const forkFile = path.join(directory, "fork_omp-session-1.jsonl");
+  expect(fork.readOnlyModeId).toBe("ask");
+  expect(fork.handle).toEqual({
+    provider: "omp",
+    sessionId: "omp-session-1",
+    nativeHandle: forkFile,
+    metadata: source.metadata,
+  });
+  expect(runtime.recordedLaunches[0]).toMatchObject({
+    cwd: directory,
+    extraArgs: ["--approval-mode", "always-ask", "--fork", sourceFile, "--session-dir", directory],
+  });
+  expect(runtime.latestSession().closed).toBe(true);
+  expect((await readdir(directory)).sort()).toEqual([
+    ".fork_omp-session-1.jsonl.lock.os",
+    "fork_omp-session-1",
+    "fork_omp-session-1.jsonl",
+    "source",
+    "source.jsonl",
+  ]);
+
+  const copy = await client.resumeSession(fork.handle, {
+    internal: true,
+    modeId: fork.readOnlyModeId,
+  });
+  await copy.close();
+  expect(runtime.recordedLaunches[1]).toMatchObject({ session: forkFile, modeId: "ask" });
+
+  await fork.discard();
+  await fork.discard();
+  expect((await readdir(directory)).sort()).toEqual(["source", "source.jsonl"]);
+  expect(await readFile(sourceFile, "utf8")).toBe(sourceJournal);
+  expect(await readdir(path.join(directory, "source"))).toEqual(["0-Explore.jsonl"]);
 });
 
 test("OMP ready timeout defaults to 20 seconds and RPC timeout overrides both", () => {
@@ -1670,7 +1723,6 @@ test.each([false, true])(
     else {
       const imagePath = prompt.message.match(/\[Image available at: (.+)\]/)?.[1];
       expect(imagePath).toBeTruthy();
-      const { readFile, rm } = await import("node:fs/promises");
       expect(await readFile(imagePath!)).toEqual(bytes);
       await rm(imagePath!);
     }

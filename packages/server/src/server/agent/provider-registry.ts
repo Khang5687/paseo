@@ -494,6 +494,7 @@ function wrapClientProvider(
   const listFeatures = inner.listFeatures?.bind(inner);
   const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
   const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  const forkNativeSession = inner.forkNativeSession?.bind(inner);
   const configuredModelIds = [...profileModels, ...additionalModels].map((model) => model.id);
 
   return {
@@ -606,6 +607,12 @@ function wrapClientProvider(
       : undefined,
     unarchiveNativeSession: unarchiveNativeSession
       ? async (handle) => await unarchiveNativeSession({ ...handle, provider: inner.provider })
+      : undefined,
+    forkNativeSession: forkNativeSession
+      ? async (handle) => {
+          const fork = await forkNativeSession({ ...handle, provider: inner.provider });
+          return { ...fork, handle: { ...fork.handle, provider } };
+        }
       : undefined,
     getCatalogCacheKey: inner.getCatalogCacheKey?.bind(inner),
     isAvailable: (signal, options) => inner.isAvailable(signal, options),

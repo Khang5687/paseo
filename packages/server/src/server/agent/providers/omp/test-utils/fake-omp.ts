@@ -1,3 +1,6 @@
+import { cp, copyFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+
 import type {
   OmpRuntime,
   OmpRuntimeLaunch,
@@ -84,7 +87,14 @@ export class FakeOmp implements OmpRuntime {
     const sessionId =
       (launch.session ? this.sessionIdsByFile.get(launch.session) : undefined) ??
       `omp-session-${++this.nextSessionId}`;
-    const session = new FakeOmpSession(launch, sessionId, this.removedModels);
+    const forkSource = readFlagValue(launch.extraArgs, "--fork");
+    const session = new FakeOmpSession(
+      forkSource
+        ? { ...launch, session: await forkSessionFile(launch, forkSource, sessionId) }
+        : launch,
+      sessionId,
+      this.removedModels,
+    );
     if (!launch.noSession) this.sessionIdsByFile.set(session.state.sessionFile, sessionId);
     session.commands = this.queuedCommands.shift() ?? [];
     for (const [level, error] of this.queuedSubagentSubscriptionErrors) {
@@ -128,6 +138,30 @@ export class FakeOmp implements OmpRuntime {
   allSessions(): FakeOmpSession[] {
     return [...this.sessions];
   }
+}
+
+function readFlagValue(args: readonly string[] | undefined, flag: string): string | undefined {
+  const index = args?.indexOf(flag) ?? -1;
+  return index >= 0 ? args?.[index + 1] : undefined;
+}
+
+// Like `omp --fork <source> --session-dir <dir>`: copies the journal and its artifacts directory
+// under a new id, leaving the source alone, and keeps the publish-lock sidecar OMP leaves behind.
+async function forkSessionFile(
+  launch: OmpRuntimeLaunch,
+  source: string,
+  sessionId: string,
+): Promise<string> {
+  const directory = readFlagValue(launch.extraArgs, "--session-dir") ?? launch.cwd;
+  const forkFile = join(directory, `fork_${sessionId}.jsonl`);
+  await copyFile(source, forkFile);
+  await cp(source.slice(0, -".jsonl".length), forkFile.slice(0, -".jsonl".length), {
+    recursive: true,
+  }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  await writeFile(join(directory, `.${basename(forkFile)}.lock.os`), "");
+  return forkFile;
 }
 
 export class FakeOmpSession implements OmpRuntimeSession {

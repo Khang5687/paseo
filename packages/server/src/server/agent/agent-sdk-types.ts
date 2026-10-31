@@ -189,6 +189,19 @@ export interface AgentPersistenceHandle {
   metadata?: AgentMetadata;
 }
 
+/** A provider-side copy of a durable session. The source session is never modified. */
+export interface ForkedNativeSession {
+  /** Resume this handle to continue the copy. */
+  handle: AgentPersistenceHandle;
+  /**
+   * Mode for a copy that answers questions: it may read the workspace but must not change
+   * it or run commands without approval. The source shares its working directory.
+   */
+  readOnlyModeId: string;
+  /** Delete the copy's durable provider state. Idempotent; never touches the source. */
+  discard(): Promise<void>;
+}
+
 export type AgentPromptContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
@@ -813,6 +826,11 @@ export interface AgentClient {
    * Called before Paseo clears its archived flag so provider resume can succeed.
    */
   unarchiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
+   * Copy a durable native session with its full history. The source may be mid-turn and
+   * keeps running unchanged; the copy is resumed through resumeSession(fork.handle).
+   */
+  forkNativeSession?(handle: AgentPersistenceHandle): Promise<ForkedNativeSession>;
   /**
    * Release any provider-owned resources held by this client (background
    * processes, sockets, cached subprocesses, etc.). Called when the daemon

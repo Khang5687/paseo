@@ -156,6 +156,13 @@ export class OpenCodeRuntimeClient implements AgentClient {
     const client = await this.client();
     if (client instanceof OpenCodeAgentClient) await client.unarchiveNativeSession(handle);
   }
+  async forkNativeSession(handle: AgentPersistenceHandle) {
+    const client = await this.client();
+    if (!(client instanceof OpenCodeAgentClient)) {
+      throw new Error("Forking native sessions is not supported by the OpenCode v2 runtime");
+    }
+    return client.forkNativeSession(handle);
+  }
   async shutdown() {
     const selected = await this.selected?.catch(() => null);
     if (this.legacySelected) await this.legacy.shutdown();
