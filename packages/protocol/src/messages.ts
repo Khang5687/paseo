@@ -910,6 +910,8 @@ export const AgentListItemPayloadSchema = z.object({
   effectiveThinkingOptionId: z.string().nullable().optional(),
   status: AgentStatusSchema,
   cwd: z.string(),
+  /** Match against list_workspaces to find an agent by its sidebar workspace name. */
+  workspaceId: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastUserMessageAt: z.string().nullable(),
@@ -1998,6 +2000,19 @@ export const AgentForkContextRequestMessageSchema = z.object({
   agentId: z.string(),
   boundaryCursor: AgentTimelineCursorSchema.optional(),
   boundaryMessageId: z.string().optional(),
+  requestId: z.string(),
+});
+
+export const AGENT_ASK_DEFAULT_TIMEOUT_MS = 10 * 60_000;
+
+/** Ask a forked copy of an agent's conversation; the agent itself is never interrupted. */
+export const AgentAskRequestMessageSchema = z.object({
+  type: z.literal("agent.ask.request"),
+  agentId: z.string(),
+  question: z.string(),
+  /** Title of the asking agent, shown to the copy. */
+  askedBy: z.string().optional(),
+  timeoutMs: z.number().int().positive().optional(),
   requestId: z.string(),
 });
 
@@ -3841,6 +3856,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProviderSubagentTimelineRequestMessageSchema,
   SetAgentTimelineSubscriptionRequestMessageSchema,
   AgentForkContextRequestMessageSchema,
+  AgentAskRequestMessageSchema,
   SetAgentModeRequestMessageSchema,
   SetAgentModelRequestMessageSchema,
   SetAgentThinkingRequestMessageSchema,
@@ -4260,6 +4276,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentForkContext: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: z.boolean().optional(),
+        // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
+        agentAsk: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain wire field.
@@ -5461,6 +5479,16 @@ export const AgentForkContextResponseMessageSchema = z.object({
     itemCount: z.number().int().nonnegative(),
     boundaryMessageId: z.string().nullable(),
     boundaryCursor: AgentTimelineCursorSchema.nullable().optional(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentAskResponseMessageSchema = z.object({
+  type: z.literal("agent.ask.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    answer: z.string().nullable(),
     error: z.string().nullable(),
   }),
 });
@@ -7692,6 +7720,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentTimelineSubscriptionResponseMessageSchema,
   AgentAttentionRequiredMessageSchema,
   AgentForkContextResponseMessageSchema,
+  AgentAskResponseMessageSchema,
   CancelAgentResponseMessageSchema,
   ClearAgentAttentionResponseMessageSchema,
   WorkspaceCreateResponseSchema,
@@ -7924,6 +7953,7 @@ export type AgentTimelineListPromptsResponseMessage = z.infer<
   typeof AgentTimelineListPromptsResponseMessageSchema
 >;
 export type AgentForkContextResponseMessage = z.infer<typeof AgentForkContextResponseMessageSchema>;
+export type AgentAskResponseMessage = z.infer<typeof AgentAskResponseMessageSchema>;
 export type CancelAgentResponseMessage = z.infer<typeof CancelAgentResponseMessageSchema>;
 export type SendAgentMessageResponseMessage = z.infer<typeof SendAgentMessageResponseMessageSchema>;
 export type SetVoiceModeResponseMessage = z.infer<typeof SetVoiceModeResponseMessageSchema>;
@@ -8036,6 +8066,7 @@ export type FetchWorkspacesRequestMessage = z.infer<typeof FetchWorkspacesReques
 export type ProjectListRequestMessage = z.infer<typeof ProjectListRequestMessageSchema>;
 export type FetchAgentRequestMessage = z.infer<typeof FetchAgentRequestMessageSchema>;
 export type AgentForkContextRequestMessage = z.infer<typeof AgentForkContextRequestMessageSchema>;
+export type AgentAskRequestMessage = z.infer<typeof AgentAskRequestMessageSchema>;
 export type SendAgentMessageRequest = z.infer<typeof SendAgentMessageRequestSchema>;
 export type WaitForFinishRequest = z.infer<typeof WaitForFinishRequestSchema>;
 export type DictationStreamStartMessage = z.infer<typeof DictationStreamStartMessageSchema>;

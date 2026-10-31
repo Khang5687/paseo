@@ -43,6 +43,7 @@ export interface HostOperations {
   getStatus: HostOperation;
   getActivity: HostOperation;
   listAgents: HostOperation;
+  askAgent: HostOperation;
 }
 /** Connection authority at the host boundary, independent of child lifecycle. */
 export class HostObservationError extends Error {
@@ -198,6 +199,8 @@ export function createHostResolver(input: {
   hosts: () => ToolHosts;
   callerAgentId?: string;
   lockedCwd?: string;
+  /** Title of the calling agent, shown to an agent it asks. */
+  callerTitle?: () => string | undefined;
 }) {
   return {
     directory: () => input.hosts().directory(),
@@ -311,6 +314,13 @@ export function createHostResolver(input: {
               ),
               currentModeId: agent.currentModeId,
             });
+          },
+          async askAgent(args) {
+            const agentId = args.agentId as string;
+            const answer = await client.askAgent(agentId, args.question as string, {
+              askedBy: input.callerTitle?.(),
+            });
+            return result({ agentId, answer });
           },
           async listAgents(args) {
             const { entries } = await client.fetchAgents({

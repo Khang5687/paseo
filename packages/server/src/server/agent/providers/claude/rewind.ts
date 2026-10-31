@@ -8,9 +8,10 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 export interface ClaudeRewindSdk {
+  /** Omitting upToMessageId copies the whole session. */
   forkSession(
     sessionId: string,
-    options: { upToMessageId: string; transcriptPath: string },
+    options: { upToMessageId?: string; transcriptPath: string },
   ): Promise<{ sessionId: string }>;
 }
 

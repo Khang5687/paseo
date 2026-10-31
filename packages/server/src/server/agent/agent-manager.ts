@@ -45,6 +45,7 @@ import {
   type AgentPermissionResponse,
   type AgentPermissionResult,
   type AgentPersistenceHandle,
+  type ForkedNativeSession,
   type AgentProviderNotice,
   type AgentPromptInput,
   type AgentProvider,
@@ -106,7 +107,7 @@ import {
   type ProviderSubagentStoreEvent,
 } from "./provider-subagents/store.js";
 import { withTimeout } from "../../utils/promise-timeout.js";
-import { extractAttention } from "../persistence-hooks.js";
+import { extractAttention, toAgentPersistenceHandle } from "../persistence-hooks.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -3816,6 +3817,28 @@ export class AgentManager {
     } finally {
       this.runs.settleForegroundRun(agentId, lock.token);
     }
+  }
+
+  /**
+   * Copy an agent's native session, leaving the agent and its running turn untouched.
+   * The caller owns the copy: resume fork.handle, then discard it.
+   */
+  async forkAgentSession(agentId: string): Promise<ForkedNativeSession> {
+    const live = this.agents.get(agentId);
+    const record = live ? null : await this.registry?.get(agentId);
+    if (!live && !record) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+    const persistence =
+      live?.persistence ?? toAgentPersistenceHandle(this.clients.keys(), record?.persistence);
+    if (!persistence) {
+      throw new Error(`Agent ${agentId} has no provider session to fork yet`);
+    }
+    const client = this.requireClient(persistence.provider);
+    if (!client.forkNativeSession) {
+      throw new Error(`Provider '${persistence.provider}' cannot fork an agent's session`);
+    }
+    return await client.forkNativeSession(persistence);
   }
 
   async deleteAgentState(agentId: string): Promise<void> {

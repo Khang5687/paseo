@@ -1,7 +1,9 @@
 import { mapCustomMessageToToolCall } from "../custom-message.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
+import path from "node:path";
 import { setImmediate as waitForImmediate, setTimeout as delay } from "node:timers/promises";
 import type { Logger } from "pino";
 import stripAnsi from "strip-ansi";
@@ -30,6 +32,7 @@ import {
   type AgentStreamEvent,
   type AgentTimelineItem,
   type FetchCatalogOptions,
+  type ForkedNativeSession,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
   type ImportProviderSessionInput,
@@ -129,6 +132,9 @@ import {
 import { DEFAULT_OMP_THINKING_LEVEL, mapOmpModel } from "./map-omp-model.js";
 
 const OMP_PROVIDER = "omp";
+// "Always Ask": every write and exec tool asks for approval, so a copy answering questions reads freely
+// while the approvals it raises are denied.
+const OMP_READ_ONLY_MODE_ID = "ask";
 const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
@@ -659,6 +665,21 @@ function createRuntime(
     readyTimeoutMs: providerOptions.readyTimeoutMs,
     requestTimeoutMs: providerOptions.rpcTimeoutMs,
   });
+}
+
+// Mirrors OMP's own session delete: the journal, its artifacts directory (subagent sessions and
+// spilled tool output), and the publish lock files OMP keeps beside the journal.
+async function removeOmpSessionFiles(sessionFile: string): Promise<void> {
+  const directory = path.dirname(sessionFile);
+  const name = path.basename(sessionFile);
+  await Promise.all([
+    rm(sessionFile, { force: true }),
+    ...(name.endsWith(".jsonl")
+      ? [rm(sessionFile.slice(0, -".jsonl".length), { recursive: true, force: true })]
+      : []),
+    rm(path.join(directory, `.${name}.lock`), { force: true }),
+    rm(path.join(directory, `.${name}.lock.os`), { force: true }),
+  ]);
 }
 
 class OmpHistorySession implements AgentSession {
@@ -2686,6 +2707,54 @@ export class OmpAgentClient implements AgentClient {
       await runtimeSession.close().catch(() => undefined);
       throw error;
     }
+  }
+
+  // OMP's `branch` rewrites the source journal in place, so the copy comes from `--fork`: it only
+  // reads the source and writes a new session beside it with a fresh id, the source's prompt-cache
+  // key, a copy of its artifacts, and results for tool calls a mid-turn source left unresolved.
+  async forkNativeSession(handle: AgentPersistenceHandle): Promise<ForkedNativeSession> {
+    const sourceFile = handle.nativeHandle;
+    if (!sourceFile) {
+      throw new Error("OMP fork requires a native session file handle");
+    }
+    const { cwd, config } = buildResumeConfig(
+      parsePersistenceMetadata(handle.metadata),
+      undefined,
+      this.provider,
+    );
+    const launchMode = this.resolveLaunchMode(OMP_READ_ONLY_MODE_ID, config.providerOptions);
+    const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession({
+      cwd,
+      protocolMode: "rpc-ui",
+      modeId: launchMode.modeId,
+      extraArgs: [
+        ...launchMode.extraArgs,
+        "--fork",
+        sourceFile,
+        "--session-dir",
+        path.dirname(sourceFile),
+      ],
+    });
+    let state: OmpSessionState;
+    try {
+      state = await runtimeSession.getState();
+    } finally {
+      await runtimeSession.close();
+    }
+    const forkFile = state.sessionFile;
+    if (!forkFile || path.resolve(forkFile) === path.resolve(sourceFile)) {
+      throw new Error("OMP did not fork the session into a new file");
+    }
+    return {
+      handle: {
+        provider: this.provider,
+        sessionId: state.sessionId,
+        nativeHandle: forkFile,
+        metadata: handle.metadata,
+      },
+      readOnlyModeId: OMP_READ_ONLY_MODE_ID,
+      discard: () => removeOmpSessionFiles(forkFile),
+    };
   }
 
   // OMP resumes a session on the model it recorded, or on its default when that model

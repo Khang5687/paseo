@@ -132,6 +132,7 @@ import {
 import { assertPluginTimelineDataSize } from "./agent/agent-timeline-content.js";
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import { askAgent } from "./agent/ask-agent.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -2882,6 +2883,8 @@ export class Session {
       }
       case "agent.fork_context.request":
         return this.handleAgentForkContextRequest(msg);
+      case "agent.ask.request":
+        return this.handleAgentAskRequest(msg);
       default:
         return undefined;
     }
@@ -8347,6 +8350,35 @@ export class Session {
           itemCount: 0,
           boundaryCursor: msg.boundaryCursor ?? null,
           boundaryMessageId: msg.boundaryMessageId ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentAskRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.ask.request" }>,
+  ): Promise<void> {
+    try {
+      const { answer } = await askAgent(this.agentManager, this.sessionLogger, {
+        agentId: msg.agentId,
+        question: msg.question,
+        askedBy: msg.askedBy,
+        timeoutMs: msg.timeoutMs,
+        signal: this.delivery.requestSignal,
+      });
+      this.emit({
+        type: "agent.ask.response",
+        payload: { requestId: msg.requestId, agentId: msg.agentId, answer, error: null },
+      });
+    } catch (error) {
+      this.sessionLogger.warn({ err: error, agentId: msg.agentId }, "agent.ask.request failed");
+      this.emit({
+        type: "agent.ask.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          answer: null,
           error: error instanceof Error ? error.message : String(error),
         },
       });

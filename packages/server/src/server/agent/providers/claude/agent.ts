@@ -122,6 +122,7 @@ import {
   type AgentPermissionResponse,
   type AgentPermissionUpdate,
   type AgentPersistenceHandle,
+  type ForkedNativeSession,
   type AgentProviderNotice,
   type AgentPromptInput,
   type AgentRunOptions,
@@ -1708,6 +1709,36 @@ export class ClaudeAgentClient implements AgentClient {
     });
     await session.ensureHistoryReady();
     return session;
+  }
+
+  async forkNativeSession(handle: AgentPersistenceHandle): Promise<ForkedNativeSession> {
+    const cwd = coerceSessionMetadata(handle.metadata).cwd;
+    if (!cwd) {
+      throw new Error("Claude fork requires the original working directory in metadata");
+    }
+    const sourceId = handle.nativeHandle ?? handle.sessionId;
+    const transcriptPath = await claudeTranscriptPath({
+      cwd,
+      sessionId: sourceId,
+      configDir: claudeConfigDir(this.buildProviderEnv()),
+    });
+    const { sessionId } = await this.rewindSdk.forkSession(sourceId, { transcriptPath });
+    // Claude Code keeps a turn's tool results and subagent transcripts in a folder named after the session.
+    const forkPath = path.join(path.dirname(transcriptPath), sessionId);
+    return {
+      handle: {
+        provider: handle.provider,
+        sessionId,
+        nativeHandle: sessionId,
+        metadata: handle.metadata,
+      },
+      // Reads need no approval in "default"; edits and shell commands ask, and the caller denies.
+      readOnlyModeId: "default",
+      discard: async () => {
+        await promises.rm(`${forkPath}.jsonl`, { force: true });
+        await promises.rm(forkPath, { recursive: true, force: true });
+      },
+    };
   }
 
   async getCatalogCacheKey(_options: FetchCatalogOptions): Promise<string> {

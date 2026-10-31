@@ -9,7 +9,7 @@ Paseo is a remote daemon that manages coding agents, terminals. Control it throu
 
 Call `list_hosts` to discover the calling daemon (`self`) and its registered destinations (`hosts`). Use a destination's `serverId` for tool calls; labels are display names.
 
-`create_workspace`, `list_workspaces`, `create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, and `list_agents` accept `serverId`. Omit it for the calling daemon. Other MCP tools operate on the calling daemon.
+`create_workspace`, `list_workspaces`, `create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, `ask_agent`, and `list_agents` accept `serverId`. Omit it for the calling daemon. Other MCP tools operate on the calling daemon.
 
 Keep an agent's `{ serverId, agentId }` together. For example, call `send_agent_prompt` with:
 
@@ -89,6 +89,8 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 **`update_agent`** — `{ agentId, name?, labels?, settings? }`. Use `settings` for runtime changes on an existing agent: `modeId`, `model`, `thinkingOptionId`, and provider-specific `features`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }`.
 
 **`list_agents`** — filter by `cwd`, `statuses`, `sinceHours`, `includeArchived`; set `includeBackground: true` to include agents in background workspaces.
+
+**`ask_agent`** — `{ agentId, question }`. Ask another agent something only it knows (its progress, decisions, or context) without interrupting it. A hidden copy of its whole conversation answers in a read-only mode and is deleted afterward; the agent never sees the question. Prefer it over `send_agent_prompt` when you only need information. To find an agent by the workspace name the user sees, match `list_workspaces` titles to the `workspaceId` in `list_agents`. Works for Claude, Codex, OpenCode, and OMP agents.
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
 

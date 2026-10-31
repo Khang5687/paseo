@@ -35,6 +35,7 @@ import {
   RestartRequestedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
+  AGENT_ASK_DEFAULT_TIMEOUT_MS,
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
   type AccountRoutingLoginSubmitCodeResponse,
@@ -4406,6 +4407,43 @@ export class DaemonClient {
     }
 
     return payload;
+  }
+
+  /** Ask a forked copy of an agent's conversation; the agent itself is never interrupted. */
+  async askAgent(
+    agentId: string,
+    question: string,
+    options: { askedBy?: string; timeoutMs?: number; requestId?: string } = {},
+  ): Promise<string> {
+    // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
+    if (this.getLastServerInfoMessage()?.features?.agentAsk !== true) {
+      throw new Error("Update Paseo on that host to ask its agents.");
+    }
+    const resolvedRequestId = this.createRequestId(options.requestId);
+    const timeoutMs = options.timeoutMs ?? AGENT_ASK_DEFAULT_TIMEOUT_MS;
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.ask.request",
+      agentId,
+      question,
+      requestId: resolvedRequestId,
+      timeoutMs,
+      ...(options.askedBy ? { askedBy: options.askedBy } : {}),
+    });
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      // The daemon enforces timeoutMs; the margin covers forking and cleanup.
+      timeout: timeoutMs + 60_000,
+      options: { skipQueue: true },
+      select: (msg) =>
+        msg.type === "agent.ask.response" && msg.payload.requestId === resolvedRequestId
+          ? msg.payload
+          : null,
+    });
+    if (payload.error !== null || payload.answer === null) {
+      throw new Error(payload.error ?? "The forked copy gave no answer");
+    }
+    return payload.answer;
   }
 
   // ============================================================================
