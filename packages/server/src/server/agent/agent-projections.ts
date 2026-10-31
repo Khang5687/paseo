@@ -1,6 +1,8 @@
 import { isSameOrDescendantPath } from "../path-utils.js";
 import type {
   AgentListItemPayload,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
   AgentSnapshotPayload,
   RecentProviderSessionDescriptorPayload,
 } from "../messages.js";
@@ -107,6 +109,11 @@ export function toStoredAgentRecord(
       : null,
     internal: options?.internal,
     owner: agent.owner,
+    queuedMessages: agent.queuedMessages,
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.queuePaused && agent.queuePauseReason
+      ? { queuePauseReason: agent.queuePauseReason }
+      : {}),
   } satisfies StoredAgentRecord;
 }
 
@@ -149,6 +156,11 @@ export function toAgentPayload(
     title: options?.title ?? null,
     labels: agent.labels,
     archivedAt: options?.archivedAt ?? null,
+    queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.queuePaused && agent.queuePauseReason
+      ? { queuePauseReason: agent.queuePauseReason }
+      : {}),
     ...(agent.internal ? { internal: true } : {}),
   };
 
@@ -260,8 +272,35 @@ export function buildStoredAgentPayload(
     archivedAt: record.archivedAt ?? null,
     ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),
+    ...projectStoredQueue(record),
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
+  };
+}
+
+function projectStoredQueue(
+  record: Pick<StoredAgentRecord, "queuedMessages" | "queuePaused" | "queuePauseReason">,
+): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused" | "queuePauseReason"> {
+  return {
+    queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
+    ...(record.queuePaused ? { queuePaused: true } : {}),
+    ...(record.queuePaused && record.queuePauseReason
+      ? { queuePauseReason: record.queuePauseReason }
+      : {}),
+  };
+}
+
+// Snapshots carry summaries only: image bytes stay in the record and are
+// replayed by the daemon on dispatch.
+export function summarizeQueuedMessage(
+  message: AgentQueuedMessagePayload,
+): AgentQueuedMessageSummaryPayload {
+  return {
+    id: message.id,
+    text: message.text,
+    imageCount: message.images.length,
+    attachmentCount: message.attachments.length,
+    createdAt: message.createdAt,
   };
 }
 

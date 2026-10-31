@@ -983,7 +983,12 @@ export function NewWorkspaceScreen({
   const projectIconDataByProjectViewKey = useProjectIcons({
     projects: projectIconTargets,
   });
-  const draftKey = buildNewWorkspaceDraftKey(draftId);
+  const draftKey = buildNewWorkspaceDraftKey({
+    draftId,
+    serverId,
+    sourceDirectory: sourceDirectoryProp,
+    projectId,
+  });
   const forkDraftSetup = usePendingWorkspaceDraftSetup(draftId);
   const draftContextScopeKey = useDraftWorkspaceAttachmentScopeKey(draftId);
   const visibleDraftContextScopeKeys = useMemo(
@@ -1676,7 +1681,7 @@ function NewWorkspaceLayout({
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     userSelect: "none",
   },
   content: {

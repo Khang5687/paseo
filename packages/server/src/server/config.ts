@@ -594,6 +594,7 @@ export type ResolvedDaemonSettings = Pick<
   | "resumePrompt"
   | "providerCatalogRefreshTimeoutMs"
   | "metadataGeneration"
+  | "featureDefaults"
   | "providerOverrides"
 >;
 
@@ -678,10 +679,8 @@ export function resolveReloadableConfig(
     plugins: persisted.plugins,
     relayEnabled: relay.enabled,
     relayRequireProtectedSecurity: relay.requireProtectedSecurity,
-    idleRuntimeCleanup: persisted.agents?.idleRuntimeCleanup ?? true,
+    ...resolveAgentRuntimeConfig(persisted.agents),
     ...resolveRestartRecoveryConfig(persisted.agents),
-    providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
-    metadataGeneration: persisted.agents?.metadataGeneration,
     providerOverrides: extractProviderOverrides(
       persisted.agents?.providers as Record<string, unknown> | undefined,
     ),
@@ -829,6 +828,15 @@ function resolveSpeechOverrideControlledPaths(
   if (env.PASEO_VOICE_LLM_PROVIDER !== undefined) paths.push("features.voiceMode.llm.provider");
   if (env.PASEO_LOCAL_MODELS_DIR !== undefined) paths.push("providers.local.modelsDir");
   return paths;
+}
+
+function resolveAgentRuntimeConfig(agents: PersistedConfig["agents"]) {
+  return {
+    idleRuntimeCleanup: agents?.idleRuntimeCleanup ?? true,
+    providerCatalogRefreshTimeoutMs: agents?.catalogRefreshTimeoutMs,
+    metadataGeneration: agents?.metadataGeneration,
+    featureDefaults: agents?.featureDefaults,
+  };
 }
 
 function resolveRestartRecoveryConfig(agents: PersistedConfig["agents"]) {

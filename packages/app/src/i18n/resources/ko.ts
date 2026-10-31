@@ -135,7 +135,8 @@ export const ko: TranslationResources = {
       sendAndSteer: "보내고 지시 추가",
       sendMessage: "메시지 보내기",
       longPressToQueue: "길게 눌러 대기열에 추가",
-      longPressToSendNow: "길게 눌러 지금 보내기",
+      longPressToInterrupt: "길게 눌러 중단",
+      longPressToSteer: "길게 눌러 지시 추가",
       queue: "대기열",
       send: "보내기",
     },
@@ -166,6 +167,25 @@ export const ko: TranslationResources = {
       dropFilesHere: "여기에 파일을 끌어다 놓으세요",
       editQueuedMessage: "대기 중인 메시지 편집",
       sendQueuedMessageNow: "대기 중인 메시지 지금 보내기",
+      queueHeader: "대기열 · {{count}}",
+      queuePausedHeader: "대기열 일시 중지됨 · {{count}}",
+      queuePauseReason: "보내지 못했습니다: {{reason}}",
+      pauseQueue: "대기열 일시 중지",
+      resumeQueue: "대기열 재개",
+      clearQueue: "대기열 비우기",
+      clearQueueTitle: "대기열 비우기",
+      clearQueueMessage: "이 에이전트의 대기 중인 메시지가 모두 삭제됩니다.",
+      clearQueueConfirm: "비우기",
+      queuedMessageActions: "대기 중인 메시지 작업",
+      editQueuedMessageAction: "편집",
+      moveQueuedMessageToTop: "맨 위로 이동",
+      moveQueuedMessageUp: "위로 이동",
+      moveQueuedMessageDown: "아래로 이동",
+      deleteQueuedMessage: "삭제",
+      reorderQueuedMessage: "드래그하여 순서 변경",
+      showMoreQueuedMessages: "{{count}}개 더 보기",
+      showFewerQueuedMessages: "간단히 보기",
+      queueUpdateFailed: "대기열을 업데이트할 수 없습니다",
       openImage: "이미지 첨부 열기",
       removeImage: "이미지 첨부 제거",
       removeFile: "파일 첨부 제거",
@@ -476,6 +496,8 @@ export const ko: TranslationResources = {
       openToSide: "옆에 열기",
       copyPath: "경로 복사",
       copyRelativePath: "상대 경로 복사",
+      copyFullPath: "전체 경로 복사",
+      copyFileName: "파일 이름 복사",
       revealIn: "{{target}}에서 보기",
       download: "다운로드",
       addToChat: "채팅에 추가",
@@ -696,6 +718,7 @@ export const ko: TranslationResources = {
         terminalIdCopiedLabel: "터미널 ID",
         resumeCommandCopiedLabel: "재개 명령",
         filePathCopiedLabel: "파일 경로",
+        fileNameCopiedLabel: "파일 이름",
         resumeIdUnavailable: "재개 ID를 사용할 수 없습니다",
         resumeCommandUnavailable: "재개 명령을 사용할 수 없습니다",
         reloadingAgent: "에이전트 다시 로드 중...",
@@ -1165,6 +1188,7 @@ export const ko: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "{{label}} 그룹",
+    unsentDraft: "보내지 않은 초안",
     statusBucket: {
       needsInput: "입력 필요",
       failed: "실패",
@@ -1227,6 +1251,10 @@ export const ko: TranslationResources = {
     },
     pinned: {
       title: "고정됨",
+    },
+    settled: {
+      title: "정리됨",
+      titleWithCount: "정리됨 ({{count}})",
     },
     host: {
       noHost: "호스트 없음",
@@ -1318,6 +1346,10 @@ export const ko: TranslationResources = {
         rename: "워크스페이스 이름 변경",
         pin: "상단에 고정",
         unpin: "고정 해제",
+        settle: "정리",
+        unsettle: "정리 취소",
+        settleWorkspace: "워크스페이스 정리",
+        unsettleWorkspace: "워크스페이스 정리 취소",
         archive: "보관",
         archiveWorkspace: "워크스페이스 보관",
         hideFromSidebar: "사이드바에서 숨기기",
@@ -1402,6 +1434,9 @@ export const ko: TranslationResources = {
     quitting: {
       title: "Paseo 종료 중...",
       detail: "로컬 데몬을 중지하는 중입니다.",
+    },
+    quitConfirm: {
+      hint: "종료하려면 ⌘Q를 길게 누르거나 두 번 누르세요",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -2101,6 +2136,178 @@ export const ko: TranslationResources = {
       saveAccessibility: "리뷰 댓글 저장",
     },
   },
+  ompAccountRouting: {
+    login: {
+      start: "Claude 계정 추가",
+      elsewhere: "호스트 컴퓨터에서 Paseo를 열어 계정을 추가하세요.",
+      update: "여기에서 계정을 추가하려면 호스트의 Paseo와 Oh My Pi를 업데이트하세요.",
+      inProgress: "로그인 진행 중",
+      continue: "계속",
+      cancel: "취소",
+      cancelSignIn: "로그인 취소",
+      done: "완료",
+      details: "자세히",
+      tryAgain: "다시 시도",
+      close: "닫기",
+      justAdded: "방금 추가됨",
+      warning: {
+        body: "Paseo는 Claude 계정마다 로그인 하나를 저장합니다. 추가하려는 계정으로 claude.ai에 로그인하세요.",
+        existing: "이미 추가됨: {{accounts}}",
+        alertTitle: "브라우저가 사용하는 계정을 확인하세요",
+        alertDescription:
+          "claude.ai가 이미 추가된 계정으로 로그인되어 있다면 먼저 로그아웃하거나 계정을 전환하세요. 비공개 창은 항상 로그아웃 상태로 시작합니다.",
+        guard: "이미 추가된 계정으로 로그인하면 Paseo는 중단하고 아무것도 변경하지 않습니다.",
+      },
+      preparing: "로그인 링크 준비 중...",
+      link: {
+        title: "Claude에 로그인",
+        step: "링크를 열고 추가하려는 계정으로 로그인하세요",
+        open: "로그인 페이지 열기",
+        copy: "링크 복사",
+        copied: "복사됨",
+        label: "로그인 링크",
+        hint: "비공개 창이나 다른 기기를 사용하려면 링크를 복사하세요",
+        waiting: "브라우저를 기다리는 중...",
+        pasteInstead: "주소 직접 붙여넣기",
+      },
+      paste: {
+        label: "주소 또는 코드",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "승인한 뒤 브라우저가 로드되지 않는 페이지를 보여줄 수 있습니다. 주소 표시줄의 전체 주소나 Claude가 보여주는 코드를 복사해 여기에 붙여넣으세요.",
+        submit: "제출",
+        checking: "확인 중...",
+        error: {
+          invalid_input: "로그인 주소나 코드가 아닙니다",
+          wrong_login: "이 주소는 이전 로그인 링크의 것입니다. 여기에 표시된 링크를 사용하세요.",
+          not_waiting: "이 로그인은 이미 끝났습니다",
+          not_allowed: "호스트 컴퓨터의 Paseo만 이것을 보낼 수 있습니다",
+          unreachable: "호스트에 연결할 수 없습니다. 다시 시도하세요.",
+        },
+      },
+      verifying: "로그인 확인 중...",
+      result: {
+        added: {
+          title: "{{account}} 추가됨",
+          titleUnnamed: "계정이 추가됨",
+          description: "{{organization}}. 이제 자동 라우팅에서 사용할 수 있습니다.",
+          descriptionUnnamed: "이제 자동 라우팅에서 사용할 수 있습니다.",
+          billingEnabled:
+            "이 계정은 유료 추가 사용량이 켜져 있습니다. Claude 설정에서 끌 때까지 자동 라우팅은 이 계정을 건너뜁니다.",
+          billingUnknown:
+            "Claude 설정에서 이 계정의 유료 추가 사용량이 꺼져 있는지 확인하세요. 자동 라우팅은 켜진 계정을 건너뜁니다.",
+        },
+        alreadyListed: {
+          title: "{{account}}은(는) 이미 추가됨",
+          titleUnnamed: "이 계정은 이미 추가됨",
+          description:
+            "변경된 것이 없습니다. 브라우저가 Paseo에 이미 있는 계정으로 로그인했습니다. claude.ai에서 로그아웃하거나 비공개 창을 사용한 뒤 다시 시도하세요.",
+        },
+        replaced: {
+          title: "{{account}}의 로그인을 교체함",
+          titleUnnamed: "저장된 로그인을 교체함",
+          description: "추가된 계정은 없습니다. 새 로그인이 사용됩니다.",
+        },
+        failed: "로그인 실패",
+        cancelled: "로그인이 취소됨",
+      },
+      failure: {
+        timeout: "로그인 링크가 10분 후 만료되었습니다. 변경된 것이 없습니다.",
+        omp_failed:
+          "Oh My Pi가 로그인을 끝내지 못했습니다. 변경된 것이 없습니다. 다시 시도하거나 터미널에서 omp를 실행해 /login을 입력하세요.",
+        spawn_failed: "Paseo가 이 컴퓨터에서 Oh My Pi를 시작하지 못했습니다.",
+        unreachable:
+          "호스트와의 연결이 끊겼습니다. 다시 연결되면 다시 시도하기 전에 계정 목록을 확인하세요.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "이 호스트에서 Paseo가 관리하는 모든 OMP 에이전트에 적용됩니다. 다른 호스트와 독립 실행 터미널은 바뀌지 않습니다.",
+      account: "계정",
+      automatic: "자동",
+      useForAuto: "자동 라우팅에 사용",
+      auto: "자동 라우팅",
+      priority: "대체 우선순위",
+      priorityHelp:
+        "현재 계정이 소진되면 Paseo는 남은 사용량이 가장 많은 포함 계정으로 전환합니다. 이 순서는 동률일 때 적용됩니다.",
+      addAccountHint:
+        "계정을 추가하려면 터미널에서 omp를 실행하고 /login을 입력한 다음 다른 Claude 계정으로 로그인하세요.",
+      current: "선택됨",
+      serving: "사용 중",
+      lastServed: "마지막 사용",
+      excluded: "자동 라우팅에서 제외됨",
+      missing: "저장된 계정을 사용할 수 없음",
+      fiveHour: "5시간",
+      weekly: "주간",
+      tier: "구독 등급",
+      unknownTier: "구독 등급을 알 수 없음",
+      unknownBudget: "절대 한도를 알 수 없음",
+      consumed: "사용함",
+      remaining: "남음",
+      stale: "오래된 관측",
+      unknownOrganization: "조직을 알 수 없음",
+      detailsPending: "Oh My Pi 에이전트가 실행되면 세부 정보가 표시됩니다",
+      search: "계정 검색",
+    },
+    actions: {
+      moveUp: "위로 이동",
+      moveDown: "아래로 이동",
+    },
+    status: {
+      loading: "계정 라우팅 불러오는 중",
+      empty: "관측된 Claude 계정 없음",
+      noRuntime: "Oh My Pi 에이전트가 실행 중이면 계정이 표시됩니다.",
+      unsupported: "이 호스트는 OMP 계정 라우팅 지원을 확인하지 않았습니다",
+      offline: "호스트가 오프라인입니다. 마지막으로 확인된 설정을 표시합니다",
+      readOnly: "이 설정은 볼 수만 있고 변경할 수 없습니다",
+      pending: "설정 저장 중",
+      conflict: "다른 곳에서 설정이 바뀌었습니다. 최근 확인된 상태를 표시합니다",
+      paused: "사용 가능한 포함 계정을 기다리는 중",
+      recovered: "포함된 계정 사용 가능",
+      unknownUsage: "사용량 알 수 없음",
+      summaryPaused: "일시 중지됨: 사용량이 남은 포함 계정이 없습니다.",
+      summaryPausedResumes: "일시 중지됨: 사용량이 남은 포함 계정이 없습니다. {{time}}에 재개",
+      summaryUsing: "{{account}} 사용 중",
+      summaryAuto: "자동 모드는 남은 사용량이 가장 많은 계정을 선택합니다",
+    },
+    reason: {
+      no_account: "선택된 계정이 없습니다",
+      source_changed: "선택한 네이티브 자격 증명 소스가 변경되었습니다",
+      source_inaccessible: "이 런타임은 선택한 네이티브 계정에 접근할 수 없습니다",
+      billing_enabled:
+        "유료 사용량 크레딧이 켜져 있어, 포함 사용량만 쓰는 라우팅은 이 계정을 사용할 수 없습니다",
+      billing_unknown: "유료 사용량 크레딧 설정이 최근에 확인되지 않았습니다",
+      quota_blocked: "이 요청에는 포함 사용량을 쓸 수 없습니다",
+      entitlement_unavailable: "이 계정의 모델 접근을 사용할 수 없거나 확인되지 않았습니다",
+      auth_unavailable: "네이티브 계정 인증을 사용할 수 없습니다",
+      unsupported_transport: "이 제공자 전송 방식은 포함 사용량만 쓰는 라우팅을 지원하지 않습니다",
+      unsupported_runtime: "이 OMP 런타임은 관리형 라우팅을 지원하지 않습니다",
+      persistence_failed: "라우팅 설정을 저장하지 못했습니다",
+      host_unavailable: "라우팅 호스트를 사용할 수 없습니다",
+      cancelled: "요청이 취소되었습니다",
+      metadata_pending: "계정 사용 가능 여부 확인 중",
+      all_unavailable: "현재 사용 가능한 포함 계정이 없습니다",
+      auto_disabled:
+        "자동 라우팅이 꺼져 있습니다. 계속하려면 계정을 선택하거나 자동 라우팅을 켜세요",
+      provider_failed: "계정 사용 가능 여부를 확인하지 못했습니다",
+    },
+    mutationError: {
+      conflict: "다른 곳에서 설정이 바뀌었습니다. 최신 상태를 확인한 뒤 다시 시도하세요",
+      invalid_account: "해당 네이티브 계정이 더 이상 카탈로그에 없습니다",
+      unsupported: "이 호스트에서는 계정 라우팅 제어를 사용할 수 없습니다",
+      persistence_failed: "설정이 저장되지 않았습니다. 이전에 확인된 설정이 유지됩니다",
+    },
+    values: {
+      used: "{{percent}}% 사용",
+      reset: "{{time}}에 초기화",
+      observed: "{{time}}에 관측",
+      limitReached: "{{window}} 한도 도달",
+      limitReachedReset: "{{window}} 한도 도달 · {{time}}에 초기화",
+      account: "계정 {{row}}",
+      serving: "{{account}}이(가) {{agent}}을(를) 처리 중",
+      priority: "우선순위 {{position}}",
+    },
+  },
   providerUsage: {
     options: "설정",
     refreshFailed: "사용량을 새로 고칠 수 없습니다",
@@ -2341,12 +2548,14 @@ export const ko: TranslationResources = {
       defaultSend: {
         label: "기본 전송",
         descriptions: {
-          interrupt:
-            "에이전트가 실행 중일 때 Enter는 중단합니다. Command/Ctrl+Enter는 대기열에 추가합니다.",
-          steer:
-            "에이전트가 실행 중일 때 Enter는 현재 턴에 지시합니다. Command/Ctrl+Enter는 대기열에 추가합니다.",
-          queue:
-            "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다. Command/Ctrl+Enter는 제출합니다.",
+          interrupt: "에이전트가 실행 중일 때 Enter는 중단합니다.",
+          steer: "에이전트가 실행 중일 때 Enter는 현재 턴에 지시합니다.",
+          queue: "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다.",
+        },
+        touchDescriptions: {
+          interrupt: "에이전트가 실행 중일 때 보내기를 탭하면 중단합니다.",
+          steer: "에이전트가 실행 중일 때 보내기를 탭하면 현재 턴에 지시합니다.",
+          queue: "에이전트가 실행 중일 때 보내기를 탭하면 대기열에 추가합니다.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2362,6 +2571,23 @@ export const ko: TranslationResources = {
           queue: "대기열",
         },
       },
+      alternateSend: {
+        label: "대체 전송",
+        descriptions: {
+          interrupt:
+            "에이전트가 실행 중일 때 {{modifier}}+Enter 또는 보내기를 길게 누르면 중단합니다.",
+          steer:
+            "에이전트가 실행 중일 때 {{modifier}}+Enter 또는 보내기를 길게 누르면 현재 턴에 지시합니다.",
+          queue:
+            "에이전트가 실행 중일 때 {{modifier}}+Enter 또는 보내기를 길게 누르면 대기열에 추가합니다.",
+        },
+        longPressDescriptions: {
+          interrupt: "에이전트가 실행 중일 때 보내기를 길게 누르면 중단합니다.",
+          steer: "에이전트가 실행 중일 때 보내기를 길게 누르면 현재 턴에 지시합니다.",
+          queue: "에이전트가 실행 중일 때 보내기를 길게 누르면 대기열에 추가합니다.",
+        },
+      },
+      defaultEditor: "기본 편집기",
       sendShortcut: {
         label: "전송 단축키",
         options: {
@@ -2497,6 +2723,84 @@ export const ko: TranslationResources = {
         },
         moveUp: "위로 이동",
         moveDown: "아래로 이동",
+      },
+      background: {
+        title: "배경",
+        applyTo: {
+          title: "적용 대상",
+          options: {
+            both: "둘 다",
+            light: "라이트",
+            dark: "다크",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "배경 이미지",
+          none: "없음",
+          addImage: "이미지 추가…",
+          importDefaultName: "이미지",
+        },
+        menu: {
+          actions: "{{name}} 작업",
+          edit: "편집…",
+          delete: "삭제",
+          details: "세부 정보",
+        },
+        undo: {
+          action: "실행 취소",
+          accessibilityLabel: "배경 변경 실행 취소",
+        },
+        catalog: {
+          browse: "둘러보기",
+          hint: "이 플러그인에서 배경 더 설치하기",
+        },
+        visibility: {
+          title: "이미지 표시 정도",
+          hint: "Paseo가 텍스트 가독성을 자동으로 유지하므로 밝은 이미지는 덜 표시될 수 있습니다.",
+        },
+        blur: {
+          title: "흐림",
+          options: {
+            off: "끔",
+            low: "낮음",
+            medium: "보통",
+            high: "높음",
+          },
+        },
+        showBehindSidebar: "사이드바 뒤에 표시",
+        showBehindContent: "콘텐츠 뒤에 표시",
+        status: {
+          reducedTransparency: "시스템 설정에서 투명도 줄이기가 켜져 있어 숨겨짐",
+          forcedColors: "고대비 모드가 켜져 있는 동안 숨겨짐",
+          error: "배경을 표시할 수 없습니다",
+        },
+        errors: {
+          select: "배경을 적용할 수 없습니다: {{message}}",
+          import: "이미지를 가져올 수 없습니다: {{message}}",
+          update: "변경 사항을 저장할 수 없습니다: {{message}}",
+          remove: "배경을 삭제할 수 없습니다: {{message}}",
+        },
+        edit: {
+          title: "배경 편집",
+          name: "이름",
+          focal: "초점",
+          focalHint: "계속 보여야 하는 이미지 부분을 탭하세요.",
+          focalAccessibility: "초점 선택",
+          save: "저장",
+          saving: "저장 중…",
+        },
+        delete: {
+          title: '"{{name}}"을(를) 삭제할까요?',
+          message: "이 기기에서 이미지가 삭제됩니다.",
+          confirm: "삭제",
+        },
+        details: {
+          title: "세부 정보",
+          author: "작성자",
+          license: "라이선스",
+          source: "출처",
+          openSource: "출처 열기",
+        },
       },
       fonts: {
         title: "글꼴",
@@ -2757,6 +3061,10 @@ export const ko: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "기본 스타일",
+          hint: "제공자별로 바꿀 수 있습니다",
+        },
         unavailable: "에이전트를 관리하려면 이 호스트에 연결하세요",
         resumeOnStartup: {
           title: "재시작 후 에이전트 재개",
@@ -2960,6 +3268,9 @@ export const ko: TranslationResources = {
         discovered: "발견됨",
         custom: "사용자 지정 모델",
         updated: "{{time}} 업데이트됨",
+        disabledCount: "{{count}}개 비활성화됨",
+        toggleModel: "{{model}} 사용",
+        failedToToggle: "{{model}}을(를) 업데이트하지 못했습니다",
       },
       diagnostic: {
         title: "진단",
@@ -2975,6 +3286,12 @@ export const ko: TranslationResources = {
         none: "사용 가능한 진단이 없습니다",
         failedToFetch: "진단을 가져오지 못했습니다",
         unknownError: "알 수 없는 오류",
+      },
+      featureDefaults: {
+        title: "새 에이전트 기본값",
+        providerDefault: "제공자 기본값",
+        on: "켜기",
+        off: "끄기",
       },
     },
     project: {

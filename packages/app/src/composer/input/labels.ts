@@ -1,12 +1,13 @@
 import type { TFunction } from "i18next";
+import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type { SendBehavior } from "@/hooks/use-settings/storage";
-import type { AlternateSendAction } from "./state";
 
 export function resolveSubmitAccessibilityLabel(input: {
   submitButtonAccessibilityLabel: string | undefined;
   canPressLoadingButton: boolean;
   defaultActionQueues: boolean;
   defaultSendBehavior: SendBehavior;
+  sendNowBehavior: ActiveTurnBehavior;
   isAgentRunning: boolean;
   t: TFunction;
 }): string {
@@ -14,26 +15,28 @@ export function resolveSubmitAccessibilityLabel(input: {
   if (input.canPressLoadingButton) return input.t("composer.input.interruptAgent");
   if (input.defaultActionQueues) return input.t("composer.input.queueMessage");
   if (input.isAgentRunning) {
+    const behavior =
+      input.defaultSendBehavior === "queue" ? input.sendNowBehavior : input.defaultSendBehavior;
     return input.t(
-      input.defaultSendBehavior === "steer"
-        ? "composer.input.sendAndSteer"
-        : "composer.input.sendAndInterrupt",
+      behavior === "steer" ? "composer.input.sendAndSteer" : "composer.input.sendAndInterrupt",
     );
   }
   return input.t("composer.input.sendMessage");
 }
 
+const LONG_PRESS_HINT_KEYS = {
+  interrupt: "composer.input.longPressToInterrupt",
+  steer: "composer.input.longPressToSteer",
+  queue: "composer.input.longPressToQueue",
+} as const satisfies Record<SendBehavior, string>;
+
 export function resolveSubmitAccessibilityHint(input: {
   canPressLoadingButton: boolean;
-  alternateSendAction: AlternateSendAction | null;
+  alternateSendAction: SendBehavior | null;
   t: TFunction;
 }): string | undefined {
   if (input.canPressLoadingButton || !input.alternateSendAction) return undefined;
-  return input.t(
-    input.alternateSendAction === "queue"
-      ? "composer.input.longPressToQueue"
-      : "composer.input.longPressToSendNow",
-  );
+  return input.t(LONG_PRESS_HINT_KEYS[input.alternateSendAction]);
 }
 
 export function resolveVoiceAccessibilityLabel(input: {

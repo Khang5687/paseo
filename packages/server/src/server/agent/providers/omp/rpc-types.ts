@@ -1,3 +1,11 @@
+import {
+  OmpRoutingAccountRefSchema,
+  OmpRoutingBillingStateSchema,
+  OmpRoutingBlockSchema,
+  OmpRoutingRankSchema,
+  OmpRoutingWindowSchema,
+  RoutingRefusalCodeSchema,
+} from "@getpaseo/protocol/messages";
 import { z } from "zod";
 
 export const OmpThinkingLevelSchema = z.enum([
@@ -146,6 +154,28 @@ const OmpContextUsageSchema = z
   })
   .passthrough();
 
+export const OmpGoalSchema = z
+  .object({
+    id: z.string().optional(),
+    objective: z.string().optional(),
+    status: z.string().optional(),
+    tokenBudget: z.number().optional(),
+    tokensUsed: z.number().optional(),
+    timeUsedSeconds: z.number().optional(),
+    // OMP serializes these as epoch milliseconds; older builds sent ISO strings.
+    createdAt: z.union([z.string(), z.number()]).optional(),
+    updatedAt: z.union([z.string(), z.number()]).optional(),
+  })
+  .passthrough();
+export const OmpGoalModeStateSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    mode: z.string().optional(),
+    reason: z.string().optional(),
+    goal: OmpGoalSchema.optional(),
+  })
+  .passthrough();
+
 export const OmpSessionStateSchema = z
   .object({
     model: OmpModelSchema.nullable().optional(),
@@ -153,6 +183,7 @@ export const OmpSessionStateSchema = z
     isStreaming: z.boolean(),
     isCompacting: z.boolean(),
     hasPendingAsyncWork: z.boolean().optional(),
+    // OMP 18.4.11+: `isSettled` is false while a goal continuation is scheduled or admitted.
     isSettled: z.boolean().optional(),
     autoCompactionEnabled: z.boolean().optional(),
     fastModeEnabled: z.boolean().optional(),
@@ -164,6 +195,7 @@ export const OmpSessionStateSchema = z
     queuedMessageCount: z.number().int().nonnegative(),
     contextUsage: OmpContextUsageSchema.optional(),
     todoPhases: z.unknown().optional(),
+    goal: OmpGoalModeStateSchema.nullable().optional(),
   })
   .passthrough();
 
@@ -380,26 +412,6 @@ export const OmpNoticeEventSchema = z
     source: z.string().optional(),
   })
   .passthrough();
-export const OmpGoalSchema = z
-  .object({
-    id: z.string().optional(),
-    objective: z.string().optional(),
-    status: z.string().optional(),
-    tokenBudget: z.number().optional(),
-    tokensUsed: z.number().optional(),
-    timeUsedSeconds: z.number().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
-  })
-  .passthrough();
-export const OmpGoalModeStateSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    mode: z.string().optional(),
-    reason: z.string().optional(),
-    goal: OmpGoalSchema.optional(),
-  })
-  .passthrough();
 export const OmpGoalUpdatedEventSchema = z
   .object({
     type: z.literal("goal_updated"),
@@ -545,7 +557,26 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
     customInstructions: z.string().optional(),
   }),
   z.object({ ...OmpCommandBase, type: z.literal("set_auto_compaction"), enabled: z.boolean() }),
+  z.object({
+    ...OmpCommandBase,
+    type: z.literal("goal"),
+    op: z.enum(["get", "create", "resume", "pause", "drop"]),
+    objective: z.string().optional(),
+    token_budget: z.number().optional(),
+  }),
   z.object({ ...OmpCommandBase, type: z.literal("abort") }),
+  z.object({
+    ...OmpCommandBase,
+    type: z.literal("login"),
+    providerId: z.string().min(1),
+    existing: z
+      .union([
+        z.enum(["replace", "refuse"]),
+        z.object({ replaceRowId: z.number().int().nonnegative() }),
+      ])
+      .optional(),
+  }),
+  z.object({ ...OmpCommandBase, type: z.literal("get_logout_accounts"), providerId: z.string() }),
   z.object({ ...OmpCommandBase, type: z.literal("get_state") }),
   z.object({
     ...OmpCommandBase,
@@ -569,6 +600,7 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
   }),
   z.object({ ...OmpCommandBase, type: z.literal("get_session_stats") }),
   z.object({ ...OmpCommandBase, type: z.literal("get_available_commands") }),
+  z.object({ ...OmpCommandBase, type: z.literal("refresh_commands") }),
   z.object({
     ...OmpCommandBase,
     type: z.literal("set_subagent_subscription"),
@@ -623,6 +655,17 @@ export type OmpAgentMessage = z.infer<typeof OmpAgentMessageSchema>;
 export type OmpModel = z.infer<typeof OmpModelSchema>;
 export type OmpModelThinking = z.infer<typeof OmpModelThinkingSchema>;
 export type OmpSessionState = z.infer<typeof OmpSessionStateSchema>;
+export const OmpGoalCommandResultSchema = z.object({
+  goal: OmpGoalSchema.nullable(),
+  state: OmpGoalModeStateSchema.nullable(),
+});
+export type OmpGoalModeState = z.infer<typeof OmpGoalModeStateSchema>;
+export type OmpGoalAction =
+  | { op: "create"; objective: string; token_budget?: number }
+  | { op: "pause" }
+  | { op: "resume" }
+  | { op: "drop" }
+  | { op: "get" };
 export type OmpSessionStats = z.infer<typeof OmpSessionStatsSchema>;
 export type OmpRpcSlashCommand = z.infer<typeof OmpRpcSlashCommandSchema>;
 export type OmpAgentToolResult = z.infer<typeof OmpAgentToolResultSchema>;
@@ -711,3 +754,260 @@ export interface OmpSubagentMessagesSelector {
   sessionFile?: string;
   fromByte?: number;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Host-owned account routing JSONL frames. Mirrors oh-my-pi `modes/rpc/account-routing.ts` and
+// `docs/rpc.md` ("Host-Owned Account Routing"). Metadata only: no frame carries a token, refresh
+// token, store path or exception text. Protocol 1 of that contract.
+// ---------------------------------------------------------------------------------------------
+
+/** Environment marker that puts an owned OMP launch into pending-configure (`metadata`: no dispatch). */
+export const OMP_HOST_ACCOUNT_ROUTING_ENV = "OMP_HOST_ACCOUNT_ROUTING";
+
+export const OmpRoutingPurposeSchema = z.enum([
+  "main",
+  "subagent",
+  "advisor",
+  "title",
+  "compaction",
+  "memory",
+  "vision",
+  "repair",
+  "eval",
+  "judgment",
+  "other_auxiliary",
+]);
+
+// OMP's own billing shape: it omits `reason` when there is none and names reasons in its own
+// vocabulary. The bridge maps it to the protocol's OmpRoutingBillingState.
+const OmpRpcRoutingBillingStateSchema = OmpRoutingBillingStateSchema.extend({
+  reason: z
+    .enum([
+      "no_evidence",
+      "malformed",
+      "conflict",
+      "untrusted_source",
+      "identity_mismatch",
+      "invalid_observation",
+      "expired",
+    ])
+    .nullable()
+    .optional(),
+});
+export type OmpRpcRoutingBillingState = z.infer<typeof OmpRpcRoutingBillingStateSchema>;
+
+const OmpRpcRoutingAccountSchema = z.object({
+  ref: OmpRoutingAccountRefSchema,
+  display: z.object({
+    email: z.string().nullable(),
+    accountId: z.string().nullable(),
+    organizationId: z.string().nullable(),
+    organizationName: z.string().nullable(),
+  }),
+  credentialAvailable: z.boolean(),
+  quotaIdentity: z.object({ accountUuid: z.string(), organizationUuid: z.string() }).nullable(),
+  billing: OmpRpcRoutingBillingStateSchema,
+  subscriptionTier: z.object({
+    kind: z.enum(["pro", "max5", "max20", "other", "unknown"]),
+    observedAt: z.number().finite().nullable(),
+    source: z.string().nullable(),
+  }),
+  windows: z.array(OmpRoutingWindowSchema),
+  quotaBlocks: z.array(OmpRoutingBlockSchema),
+  rank: OmpRoutingRankSchema,
+});
+
+export const OmpRpcRoutingCatalogSchema = z.object({
+  provider: z.literal("anthropic"),
+  runtimeInstanceId: z.string(),
+  storeNamespace: z.string(),
+  catalogRevision: z.number().int().nonnegative(),
+  nativeCredentialGeneration: z.number().int().nonnegative(),
+  observedAt: z.number().finite(),
+  authoritativeObservedAt: z.number().finite().nullable(),
+  authoritativeComplete: z.boolean(),
+  accounts: z.array(OmpRpcRoutingAccountSchema),
+});
+
+/** `account.routing.configure` response data. */
+export const OmpRpcRoutingConfigureDataSchema = z.object({
+  version: z.literal(1),
+  configured: z.literal(true),
+  completeCoverage: z.boolean(),
+  modelDispatch: z.enum(["allowed", "forbidden"]),
+  purposes: z.array(OmpRoutingPurposeSchema),
+  accessibleNamespaces: z.array(z.string()),
+  catalogs: z.array(OmpRpcRoutingCatalogSchema),
+});
+
+export const OmpRpcRoutingRefreshDataSchema = z.object({ catalog: OmpRpcRoutingCatalogSchema });
+
+export const OmpRpcRoutingRankDataSchema = z.object({
+  method: z.string(),
+  version: z.number(),
+  catalogRevision: z.number().int().nonnegative(),
+  anchorRef: OmpRoutingAccountRefSchema.nullable(),
+  bestCloseRefs: z.array(OmpRoutingAccountRefSchema),
+});
+
+const OmpRpcRoutingIdentity = {
+  hostEpoch: z.string(),
+  runtimeInstanceId: z.string(),
+};
+
+/** Native to host frames. Responses to host commands are ordinary `type:"response"` frames. */
+export const OmpRpcAccountRoutingFrameSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("account.routing.admit.request"),
+    id: z.string().min(1),
+    ...OmpRpcRoutingIdentity,
+    operationId: z.string().min(1),
+    attemptId: z.string().min(1),
+    sessionId: z.string(),
+    purpose: OmpRoutingPurposeSchema,
+    provider: z.literal("anthropic"),
+    modelId: z.string().min(1),
+    requestGeneration: z.number().int().nonnegative(),
+    previousWaitId: z.string().min(1).optional(),
+    catalog: OmpRpcRoutingCatalogSchema,
+  }),
+  z.object({
+    type: z.literal("account.routing.started"),
+    ...OmpRpcRoutingIdentity,
+    admissionId: z.string().min(1),
+    operationId: z.string(),
+    attemptId: z.string(),
+    sessionId: z.string(),
+    modelId: z.string(),
+    accountRef: OmpRoutingAccountRefSchema,
+    selectionGeneration: z.number().int().nonnegative(),
+    startedAt: z.number().finite(),
+  }),
+  z.object({
+    type: z.literal("account.routing.outcome"),
+    ...OmpRpcRoutingIdentity,
+    admissionId: z.string().min(1),
+    operationId: z.string(),
+    attemptId: z.string(),
+    sessionId: z.string(),
+    modelId: z.string(),
+    accountRef: OmpRoutingAccountRefSchema,
+    selectionGeneration: z.number().int().nonnegative(),
+    startedAt: z.number().finite().nullable(),
+    finishedAt: z.number().finite(),
+    code: z.string(),
+    dispatch: z.enum(["not_dispatched", "dispatched", "replay_unsafe"]),
+    replaySafe: z.boolean(),
+    refusalReason: RoutingRefusalCodeSchema.nullable(),
+    retryAfterMs: z.number().finite().nullable(),
+    quotaBlocks: z.array(OmpRoutingBlockSchema),
+    windows: z.array(OmpRoutingWindowSchema),
+  }),
+  z.object({
+    type: z.literal("account.routing.paused"),
+    ...OmpRpcRoutingIdentity,
+    waitId: z.string().min(1),
+    operationId: z.string(),
+    attemptId: z.string(),
+    sessionId: z.string(),
+    modelId: z.string(),
+    reason: z.string(),
+  }),
+  z.object({
+    type: z.literal("account.routing.resumed"),
+    ...OmpRpcRoutingIdentity,
+    waitId: z.string().min(1),
+    operationId: z.string(),
+    requestGeneration: z.number().int().nonnegative(),
+    sessionId: z.string(),
+    modelId: z.string(),
+  }),
+  z.object({
+    type: z.literal("account.routing.cancel"),
+    id: z.string(),
+    ...OmpRpcRoutingIdentity,
+    waitId: z.string().min(1).optional(),
+    admissionId: z.string().min(1).optional(),
+    operationId: z.string().min(1),
+    attemptId: z.string().min(1),
+    sessionId: z.string(),
+  }),
+]);
+export type OmpRpcAccountRoutingFrame = z.infer<typeof OmpRpcAccountRoutingFrameSchema>;
+export type OmpRpcRoutingCatalog = z.infer<typeof OmpRpcRoutingCatalogSchema>;
+
+/** `omp account-routing-capabilities --mode model` document. Any missing field means unsupported. */
+export const OmpAccountRoutingCapabilityDocumentSchema = z.object({
+  version: z.literal(1),
+  provider: z.literal("anthropic"),
+  managedAccountRouting: z.object({
+    modelDispatch: z.enum(["allowed", "forbidden"]),
+    completeCoverage: z.boolean(),
+    purposes: z.array(z.string()),
+    sourceIdentity: z.literal("v1"),
+    exactUsageRefresh: z.literal("v1"),
+  }),
+  /** `existing: true`: `login` takes `existing` and refuses to overwrite a stored account. */
+  login: z.object({ existing: z.boolean().optional() }).passthrough().optional(),
+});
+
+/**
+ * `login` success data from an OMP with the add-only guard. Older OMP answers `{ providerId }`
+ * only, so every field is optional. A guard refusal fails the request with error
+ * `credential_exists` and the same identity fields as data.
+ */
+export const OmpLoginResultSchema = z
+  .object({
+    outcome: z.enum(["added", "replaced"]).optional(),
+    rowId: z.number().int().nonnegative().optional(),
+    email: z.string().optional(),
+    orgName: z.string().optional(),
+  })
+  .passthrough();
+export const OmpLoginRefusalSchema = z
+  .object({
+    code: z.literal("credential_exists"),
+    rowId: z.number().int().nonnegative().optional(),
+    email: z.string().optional(),
+    orgName: z.string().optional(),
+  })
+  .passthrough();
+export interface OmpLoginIdentity {
+  rowId?: number;
+  email?: string;
+  orgName?: string;
+}
+export type OmpLoginResult =
+  | ({ kind: "stored"; outcome?: "added" | "replaced" } & OmpLoginIdentity)
+  | ({ kind: "credential_exists" } & OmpLoginIdentity);
+export type OmpLoginExisting = "replace" | "refuse" | { replaceRowId: number };
+
+/** `get_logout_accounts` rows: what OMP's own `/logout` lists. Read-only, no token refresh. */
+export const OmpLogoutAccountsResultSchema = z.object({
+  accounts: z.array(
+    z
+      .object({
+        credentialId: z.number().int(),
+        label: z.string(),
+        type: z.string(),
+      })
+      .passthrough(),
+  ),
+});
+export interface OmpLogoutAccount {
+  credentialId: number;
+  label: string;
+  type: string;
+}
+
+/** Host to native decision, as `account.routing.admit.response` carries it. */
+export type OmpRpcAdmitDecision =
+  | {
+      kind: "admit";
+      admissionId: string;
+      accountRef: { storeNamespace: string; nativeRowId: number };
+      selectionGeneration: number;
+      policyRevision: number;
+    }
+  | { kind: "wait"; waitId: string; reason: string; reconsiderAt?: number }
+  | { kind: "refuse"; reason: string };

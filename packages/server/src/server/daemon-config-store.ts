@@ -26,6 +26,7 @@ interface SupportedMutableConfigPatch {
   providers?: MutableDaemonConfig["providers"];
   removeProviders?: string[];
   metadataGeneration?: MutableDaemonConfig["metadataGeneration"];
+  featureDefaults?: MutableDaemonConfig["featureDefaults"];
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   idleRuntimeCleanup?: boolean;
@@ -105,6 +106,22 @@ function deepMerge<T extends Record<string, unknown>>(
   }
 
   return next as T;
+}
+
+/** Feature-default maps are replaced wholesale, so leaving a key out of the patch clears it. */
+function replaceFeatureDefaults(
+  merged: MutableDaemonConfig,
+  patch: SupportedMutableConfigPatch,
+): void {
+  if (patch.featureDefaults !== undefined) {
+    merged.featureDefaults = patch.featureDefaults;
+  }
+  for (const [providerId, providerPatch] of Object.entries(patch.providers ?? {})) {
+    const mergedProvider = merged.providers[providerId];
+    if (providerPatch.featureDefaults !== undefined && mergedProvider) {
+      mergedProvider.featureDefaults = providerPatch.featureDefaults;
+    }
+  }
 }
 
 function omitProvidersFromConfig<T extends { providers?: Record<string, unknown> }>(
@@ -200,6 +217,7 @@ const RELOADABLE_PATHS = [
   "agents.providers",
   "agents.catalogRefreshTimeoutMs",
   "agents.metadataGeneration",
+  "agents.featureDefaults",
   "agents.skills.selection",
   "pluginsEnabled",
 ] as const;
@@ -227,6 +245,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.providers", "providers"],
   ["agents.catalogRefreshTimeoutMs", "catalogRefreshTimeoutMs"],
   ["agents.metadataGeneration", "metadataGeneration"],
+  ["agents.featureDefaults", "featureDefaults"],
   ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
 ]);
@@ -278,9 +297,26 @@ function pickRelayPatch(
   return Object.keys(picked).length > 0 ? { relay: picked } : {};
 }
 
+function pickAgentRuntimePatch(
+  patch: MutableDaemonConfigPatch,
+): Pick<
+  SupportedMutableConfigPatch,
+  "featureDefaults" | "resumeOnStartup" | "resumePrompt" | "idleRuntimeCleanup"
+> {
+  return {
+    ...(patch.featureDefaults !== undefined ? { featureDefaults: patch.featureDefaults } : {}),
+    ...(patch.resumeOnStartup !== undefined ? { resumeOnStartup: patch.resumeOnStartup } : {}),
+    ...(patch.resumePrompt !== undefined ? { resumePrompt: patch.resumePrompt } : {}),
+    ...(patch.idleRuntimeCleanup !== undefined
+      ? { idleRuntimeCleanup: patch.idleRuntimeCleanup }
+      : {}),
+  };
+}
+
 function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMutableConfigPatch {
   return {
     ...pickRelayPatch(patch.relay),
+    ...pickAgentRuntimePatch(patch),
     ...(patch.mcp?.injectIntoAgents !== undefined
       ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
       : {}),
@@ -297,11 +333,6 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
       : {}),
     ...(patch.enableTerminalAgentHooks !== undefined
       ? { enableTerminalAgentHooks: patch.enableTerminalAgentHooks }
-      : {}),
-    ...(patch.resumeOnStartup !== undefined ? { resumeOnStartup: patch.resumeOnStartup } : {}),
-    ...(patch.resumePrompt !== undefined ? { resumePrompt: patch.resumePrompt } : {}),
-    ...(patch.idleRuntimeCleanup !== undefined
-      ? { idleRuntimeCleanup: patch.idleRuntimeCleanup }
       : {}),
     ...(patch.appendSystemPrompt !== undefined
       ? { appendSystemPrompt: patch.appendSystemPrompt }
@@ -341,6 +372,16 @@ export function applyMutableProviderConfigToOverrides(
   }
 
   return nextOverrides;
+}
+
+/** Feature values a new agent of `provider` starts with: daemon-wide defaults under the provider's. */
+export function resolveFeatureDefaults(
+  config: MutableDaemonConfig,
+  provider: string,
+): Record<string, boolean | string> | undefined {
+  const providerDefaults = config.providers[provider]?.featureDefaults;
+  if (!config.featureDefaults) return providerDefaults;
+  return { ...config.featureDefaults, ...providerDefaults };
 }
 
 export class DaemonConfigStore {
@@ -422,6 +463,7 @@ export class DaemonConfigStore {
     if (parsedPatch.skills?.selection !== undefined) {
       merged.skills = { selection: parsedPatch.skills.selection };
     }
+    replaceFeatureDefaults(merged, parsedPatch);
     if (parsedPatch.plugins !== undefined) merged.plugins = parsedPatch.plugins;
     const next = MutableDaemonConfigSchema.parse(
       omitMetadataGenerationProvidersFromConfig(
@@ -709,6 +751,7 @@ function mergeMutableAgentPatch(
   if (
     patch.providers === undefined &&
     patch.metadataGeneration === undefined &&
+    patch.featureDefaults === undefined &&
     patch.skills === undefined &&
     !hasRestartRecoveryPatch(patch) &&
     patch.idleRuntimeCleanup === undefined &&
@@ -740,6 +783,8 @@ function mergeMutableAgentPatch(
     };
   }
 
+  writeFeatureDefaults(next, patch.featureDefaults);
+
   if (patch.skills?.selection !== undefined) {
     next["skills"] = { selection: patch.skills.selection };
   }
@@ -750,6 +795,19 @@ function mergeMutableAgentPatch(
   }
 
   return Object.keys(next).length > 0 ? (next as PersistedConfig["agents"]) : undefined;
+}
+
+/** An empty map removes the persisted key rather than storing `{}`. */
+function writeFeatureDefaults(
+  next: Record<string, unknown>,
+  featureDefaults: SupportedMutableConfigPatch["featureDefaults"],
+): void {
+  if (featureDefaults === undefined) return;
+  if (Object.keys(featureDefaults).length > 0) {
+    next["featureDefaults"] = featureDefaults;
+  } else {
+    delete next["featureDefaults"];
+  }
 }
 
 function mergeMutableDaemonPatch(

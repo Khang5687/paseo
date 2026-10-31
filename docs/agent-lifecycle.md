@@ -116,6 +116,69 @@ older cancellation from settling a newer turn. If interruption is rejected or ti
 keeps its active foreground turn and replacement, reload, rewind, and Stop report the failure.
 Accepting new work after an ambiguous interruption would create a split-brain session.
 
+### Queued messages
+
+The daemon owns the queue. Each agent record carries `queuedMessages` in the encoded wire form (text,
+base64 images, agent attachments), so the daemon can replay an entry without the client that queued
+it and the queue survives a restart. `AgentMessageQueueDispatcher`
+(`packages/server/src/server/agent/agent-message-queue.ts`) pops the head on every transition to
+`idle` and sends it through the same path as `send_agent_message`, one entry per turn. Adding while
+the agent is already idle dispatches immediately. `send_now` pops a specific entry and sends it into
+the active turn with the caller's steer/interrupt behavior.
+
+An entry is never dropped. The pop is persisted before the send, so a send that throws before the
+provider admitted the prompt (load failure, refused steer, provider error) puts the same entry, id
+and bytes included, back at the head in one write. After an automatic drain the daemon also pauses
+the queue with the error as `queuePauseReason`, writes a `[System Error]` row to the timeline, and
+flags the agent with `error` attention: nobody may be watching, and retrying on every idle would
+loop. A failed `send_now` only restores the entry; its caller already gets the error. Once
+`sendPromptToAgent` returns, the prompt belongs to the provider: a run-start wait that times out or
+fails is treated as sent, because requeueing would deliver it twice (a rejected start already shows
+as a rejected message in the timeline).
+
+A queue must drain without a client. After start, the daemon loads every non-archived stored agent
+whose queue is non-empty and not paused, one at a time and in the background, and drains it. Idle
+runtime cleanup does not unload an agent whose queue would drain, since unloading strands it until
+something loads the agent again; a paused queue does not pin the runtime.
+
+`queuePaused` on the record stops the automatic drain and survives a restart; `send_now` still
+works while paused, and resuming drains the head if the agent is idle. Pausing or resuming clears
+`queuePauseReason`; the reason only exists for a pause the daemon made.
+
+Snapshots carry summaries only (`id`, `text`, counts, `createdAt`) plus `queuePaused` and
+`queuePauseReason` when set; the
+bytes stay on the record. Every client renders the same list from its agent subscription and edits
+it through the `agent.queue.*` RPCs: `add`, `update`, `remove`, `move`, `clear`, `set_paused`,
+`send_now`. `remove` returns the full entry so the caller can put it back in a composer. `move`
+clamps the target index to the end of the list.
+
+The app keeps a per-client mirror of the entries it queued itself, keyed by the daemon's id
+(`packages/app/src/composer/daemon-queue.ts`). The daemon holds the wire form, which cannot be turned
+back into forge, workspace-file, or plugin composer attachments; a same-client edit restores from the
+mirror instead. Cross-client edits restore text, images, and uploaded files and drop the rest.
+
+The mirror is also the only thing that keeps queued images on this client. Attachment cleanup
+deletes image bytes no draft, mirror entry, or timeline row references, and the composer clears its
+draft before the `add` RPC answers, so `queueMessageOnDaemon` retains the images until its mirror
+entry exists. The daemon never echoes images on user messages, so a dispatched entry's row shows
+images only if this client hands its copy over. The queue snapshot drops the entry before that row
+arrives: the mirror keeps it until a timeline row with the entry id appears, then hands its images to
+that row. An entry with no row after `DISPATCH_ECHO_WAIT_MS` was removed on another client and is
+dropped.
+
+The composer shows a reorder before the daemon confirms it. The optimistic order holds only while the
+daemon still lists the order it was applied over, not until the RPC resolves: the `move` response and
+the snapshot that carries the new order can arrive in either order, and unrelated agent updates
+resend an unchanged queue. Once the daemon lists any other order, the optimistic one is dropped for
+good. A failed `move` reverts and toasts. On phones the row menu is the reorder path; the drag handle
+(long press on native) is a shortcut.
+
+Hosts without `features.messageQueue` fall back to the client-local queue the app shipped before
+(`// COMPAT(messageQueue)` marks both branches). Hosts without `features.messageQueueControls` lack
+`move`, `clear`, and `set_paused`; the app hides those controls (`// COMPAT(messageQueueControls)`).
+Older hosts never send `queuePauseReason`, so the queue header shows a reason only when one arrives
+and needs no feature gate (`// COMPAT(queuePauseReason)`).
+
 ## Relationships
 
 Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and always stamps `paseo.parent-agent-id`, pointing back at the caller. Omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.
@@ -284,6 +347,10 @@ Agent lifecycle status stays literal: a parent agent is `idle` when its own turn
 Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. Same-workspace descendants contribute `running` to the nearest ancestor in that workspace; their non-running attention, permission, and error states stay in the parent's subagents track. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
 
 Running provider-native subagents contribute `running` to the workspace owned by their parent agent. Their completed, failed, and canceled states stay in the parent's subagents track.
+
+The sidebar uses the same ownership to place workspaces. Workspace W renders as an indented child row under workspace P when every unarchived workspace-root agent in W (an agent whose parent is not in W) is a subagent of an unarchived agent in P. W's own same-workspace helpers do not count. A root agent in W, or subagents of a second workspace, keep W at the top level. Detach and parent archive (which detaches cross-workspace children) return it there without user action. Nesting chains, and a parent cycle still places every row once. The client derives this from its agent list (`packages/app/src/subagents/workspace-parents.ts`); the daemon sends no relationship field.
+
+A child row keeps its own status, actions, and pin. It follows its parent's row: a collapsed project hides both, and pinning the parent brings its children into Pinned beneath it; settling the parent takes them into Settled the same way. A child pinned or settled on its own stays a top-level row in that section when its parent is not. A child in a different project from its parent stays in its own project. Status grouping is the exception: a child nests only inside its parent's status group, so a child that needs attention is never hidden under a finished parent.
 
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion

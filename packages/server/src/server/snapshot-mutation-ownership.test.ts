@@ -1,6 +1,7 @@
 import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import { createAgentMessageDeliveryStub } from "./test-utils/session-stubs.js";
 import {
+  createAgentMessageQueueStub,
   createMessageReceiptsStub,
   createTestCreationService,
 } from "./test-utils/session-stubs.js";
@@ -107,6 +108,7 @@ describe("snapshot mutation ownership boundary", () => {
       new Session({
         workspaceRuntimeStore: createWorkspaceRuntimeStore(),
         messageReceipts: createMessageReceiptsStub(),
+        agentMessageQueue: createAgentMessageQueueStub(),
         agentMessages: createAgentMessageDeliveryStub(),
         creationService: createTestCreationService(),
         clientId: "test-client",

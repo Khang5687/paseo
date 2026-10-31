@@ -10,6 +10,7 @@ import { deriveWorkspaceTabModel } from "@/screens/workspace/workspace-tab-model
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useAppSettings } from "@/hooks/use-settings";
 import { dispatchComposerAgentMessage } from "@/composer/actions";
+import { resolveSendNowBehavior } from "@/composer/input/state";
 import { createMessageSubmissionWriter } from "@/composer/submission/writer";
 import { useSessionStore, selectAgentTurnPresentation } from "@/stores/session-store";
 import { FLOATING_ACTION_BUTTON_CLEARANCE } from "@/components/ui/floating-action-button";
@@ -51,14 +52,14 @@ export function useReviewFeedback(input: {
     client,
     connected,
     attachment: input.attachment,
-    sendBehavior: settings.sendBehavior,
+    activeTurnBehavior: resolveSendNowBehavior(settings),
     toast,
   });
   live.current = {
     client,
     connected,
     attachment: input.attachment,
-    sendBehavior: settings.sendBehavior,
+    activeTurnBehavior: resolveSendNowBehavior(settings),
     toast,
   };
   const model = useMemo(
@@ -71,9 +72,8 @@ export function useReviewFeedback(input: {
           recipients: readRecipients(workspaceKey),
         }),
         send: async (recipient, attachment) => {
-          const { client: targetClient, sendBehavior } = live.current;
+          const { client: targetClient, activeTurnBehavior } = live.current;
           if (!targetClient) throw new Error(i18n.t("workspace.terminal.hostDisconnected"));
-          const activeTurnBehavior = sendBehavior === "steer" ? "steer" : "interrupt";
           await dispatchComposerAgentMessage({
             client: targetClient,
             agentId: recipient.agentId,

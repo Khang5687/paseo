@@ -11,6 +11,7 @@ import type {
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { PaseoToolCatalog } from "./tools/types.js";
+import type { ManagedRoutingSnapshot } from "../account-routing/usage-projection.js";
 
 export type {
   AgentFeature,
@@ -131,6 +132,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;
@@ -678,6 +681,11 @@ export interface AgentUsageSession {
   model?: string;
   env: Record<string, string>;
   sessionKey: string;
+  /**
+   * Present only for OMP launches whose accounts the host routes. Usage then comes from this
+   * authority snapshot, never from `env`. Other providers leave it unset.
+   */
+  managedRouting?: ManagedRoutingSnapshot;
 }
 
 export interface AgentSession {

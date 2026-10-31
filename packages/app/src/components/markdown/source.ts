@@ -1,5 +1,8 @@
 import { classifyAssistantFileLink } from "@/assistant-file-links";
-import { ASSISTANT_FILE_EXTENSIONS } from "@/assistant-file-links/extensions";
+import {
+  ASSISTANT_EXTENSIONLESS_FILE_NAMES,
+  ASSISTANT_FILE_EXTENSIONS,
+} from "@/assistant-file-links/extensions";
 import { normalizeMarkdownHtml } from "./html";
 import { gfmTable } from "micromark-extension-gfm-table";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
@@ -10,9 +13,11 @@ import type { Link, Nodes, Paragraph, PhrasingContent, Root } from "mdast";
 
 // Keep this regex in the syntax shared by JavaScript, ICU and java.util.regex.
 // The Unicode flag makes Metro expand it to escapes rejected by native engines.
-const PATH_CHARACTER = String.raw`[a-zA-Z0-9\u0080-\uFFFF_@.%+-]`;
+// Non-ASCII letters belong to paths; Unicode punctuation (… — “ ” 。 ， ：) ends them.
+const NON_ASCII = String.raw`\u0080-\u1FFF\u2070-\u2FFF\u3040-\uFF00\uFF10-\uFF19\uFF21-\uFFFF`;
+const PATH_CHARACTER = String.raw`[a-zA-Z0-9${NON_ASCII}_@.%+-]`;
 const PATH_LETTER = String.raw`[a-zA-Z]`;
-const PATH_SEGMENT = String.raw`${PATH_CHARACTER}*[a-zA-Z0-9\u0080-\uFFFF_@%+-]`;
+const PATH_SEGMENT = String.raw`${PATH_CHARACTER}*[a-zA-Z0-9${NON_ASCII}_@%+-]`;
 const LINE_SUFFIX = String.raw`(?::\d+(?::\d+)?(?:-\d+(?::\d+)?)?)?`;
 const FILE_EXTENSIONS = [...ASSISTANT_FILE_EXTENSIONS]
   .map((extension) => extension.replace(/[a-z]/g, (letter) => `[${letter}${letter.toUpperCase()}]`))
@@ -21,13 +26,22 @@ const PATH_PREFIX = String.raw`(?:[A-Za-z]:[\\/]|\.{0,2}\/|~\/)`;
 const HAS_PATH_LETTER = String.raw`(?=${PATH_CHARACTER}*(?:[\\/]${PATH_CHARACTER}*)*${PATH_LETTER})`;
 const SEPARATED_PATH = String.raw`${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})+`;
 const FILE_NAME = String.raw`${PATH_SEGMENT}\.(?:${FILE_EXTENSIONS})`;
+const NAMED_FILE = String.raw`(?:${[...ASSISTANT_EXTENSIONLESS_FILE_NAMES].join("|")})`;
+// Bare words like README read as prose; only `*file` names, licenses and CODEOWNERS link alone.
+const BARE_NAMED_FILE = String.raw`(?:${[...ASSISTANT_EXTENSIONLESS_FILE_NAMES]
+  .filter((name) => /^[A-Z]\w*file$|^LICEN|^CODEOWNERS$/.test(name))
+  .join("|")})`;
+const DOTFILE = String.raw`\.(?:env|[a-z][a-z0-9_-]*(?:rc|ignore|config|attributes|profile))(?:\.[a-z0-9_-]+)*`;
+// Under a directory any lowercase extension marks a file: `records/q3/contract.pdf`.
+const DIRECTORY_FILE_NAME = String.raw`(?:${PATH_SEGMENT}\.(?:[a-z][a-z0-9]{0,9}|${FILE_EXTENSIONS})|${NAMED_FILE})`;
 // Bare prose paths need a known extension, a line suffix, or at least two separators.
-const PROSE_PATH = String.raw`(?:${PATH_PREFIX}${HAS_PATH_LETTER}${SEPARATED_PATH}|${HAS_PATH_LETTER}(?:${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})*[\\/]${FILE_NAME}|${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT}){2,}|${SEPARATED_PATH}(?=:)))`;
+const PROSE_PATH = String.raw`(?:${PATH_PREFIX}${HAS_PATH_LETTER}${SEPARATED_PATH}|(?:~|\.{1,2})\/${HAS_PATH_LETTER}${PATH_SEGMENT}|${HAS_PATH_LETTER}(?:${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})*[\\/]${DIRECTORY_FILE_NAME}|${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT}){2,}|${SEPARATED_PATH}(?=:\d)))`;
 
 function createFilePattern(path: string): RegExp {
   // The native adapter mistakes a literal + in lookbehind for a quantifier; use its hex escape.
   return new RegExp(
-    String.raw`(?:${BARE_URL}|(?<![a-zA-Z0-9\u0080-\uFFFF_@.%\x2b~:/\\-])(?:${path}|${FILE_NAME})${LINE_SUFFIX}(?![a-zA-Z0-9\u0080-\uFFFF_@%+:/\\-]|\.${PATH_CHARACTER}))`,
+    // A colon ends a path only before a line number or a space: `src/app.ts:12`, `src/app.ts: …`.
+    String.raw`(?:${BARE_URL}|(?<![a-zA-Z0-9${NON_ASCII}_@.%\x2b~:/\\-])(?:${path}|${FILE_NAME}|${BARE_NAMED_FILE}|${DOTFILE})${LINE_SUFFIX}(?![a-zA-Z0-9${NON_ASCII}_@%+/\\-]|:(?!\s|$)|\.${PATH_CHARACTER}))`,
     "g",
   );
 }
@@ -56,7 +70,7 @@ function linkMetadata(inlineCodePaths: ReadonlySet<string>) {
   };
 }
 
-function collectInlineCodePaths(source: string, workspaceRoot?: string): ReadonlySet<string> {
+function collectInlineCodePaths(source: string, workspaceRoot?: string): Set<string> {
   const paths = new Set<string>();
   const previousEnds = new Map<number, number>();
   // Collect candidates between consecutive runs of equal length. The engine owns
@@ -122,15 +136,17 @@ export function prepareMarkdownSource(
       extensions: [gfmTable()],
       mdastExtensions: [gfmTableFromMarkdown()],
     }));
-  const metadata = linkMetadata(collectInlineCodePaths(source, workspaceRoot));
+  const inlineCodePaths = collectInlineCodePaths(source, workspaceRoot);
   const edits: { start: number; end: number; text: string }[] = [];
   if (
     !source.includes("![") &&
     !source.includes("||") &&
     !source.includes("&") &&
+    !source.includes("```") &&
+    !source.includes("~~~") &&
     !(workspaceRoot && source.includes("]("))
   ) {
-    return { images, ...metadata, render: () => source };
+    return { images, ...linkMetadata(inlineCodePaths), render: () => source };
   }
 
   const definitions = new Map<string, { url: string; title?: string | null }>();
@@ -202,10 +218,59 @@ export function prepareMarkdownSource(
       if (lineEnd < end) split(lineEnd);
     }
   }
+  // A fence that holds nothing but file paths is a list of files, not code. It renders as
+  // inline code, one path per line, so each path gets the link and its menu.
+  function rewritePathFence(start: number, end: number, value: string) {
+    const raw = source.slice(start, end);
+    const marker = /^(`{3,}|~{3,})/.exec(raw)?.[1];
+    // Inside a quote every fence line carries the `>` markers.
+    const lastLine = raw
+      .slice(raw.lastIndexOf("\n") + 1)
+      .replace(/^[\s>]*/, "")
+      .trim();
+    const closed =
+      marker !== undefined &&
+      raw.includes("\n") &&
+      lastLine.length >= marker.length &&
+      [...lastLine].every((character) => character === marker[0]);
+    if (!closed) return;
+    const paths = value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (paths.length === 0 || paths.length > MAX_PATH_FENCE_LINES) return;
+    // Quoted or backticked lines are code that mentions a path, not a path.
+    const allFiles = paths.every((path) => {
+      if (/^[`'"]|[`'"]$/.test(path)) return false;
+      const classification = classifyAssistantFileLink(path, { workspaceRoot });
+      return classification !== null && classification.kind !== "external";
+    });
+    if (!allFiles) return;
+    const lineStart = source.lastIndexOf("\n", start - 1) + 1;
+    const prefix = source.slice(lineStart, start);
+    // Continuation lines keep quote markers and list indentation.
+    const continuation = prefix.replace(/[^>]/g, " ");
+    const blank = continuation.trimEnd();
+    for (const path of paths) inlineCodePaths.add(path);
+    // Blank lines keep the paths out of the paragraphs a fence may sit against.
+    const previousLine = source.slice(source.lastIndexOf("\n", lineStart - 2) + 1, lineStart - 1);
+    if (lineStart > 0 && previousLine.trim())
+      edits.push({ start: lineStart - 1, end: lineStart, text: `\n${blank}\n` });
+    const after = end < source.length ? `\n${blank}` : "";
+    edits.push({
+      start,
+      end,
+      text: paths.map(toInlineCode).join(`\n${continuation}`) + after,
+    });
+  }
   function visit(node: Nodes) {
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
     if (start !== undefined && end !== undefined) {
+      if (node.type === "code") {
+        rewritePathFence(start, end, node.value);
+        return;
+      }
       if (node.type === "paragraph") splitStandaloneImages(node, start, end);
       if (node.type === "link") {
         const title = workspaceHoverTitle(node, source.slice(start, end), workspaceRoot);
@@ -239,7 +304,7 @@ export function prepareMarkdownSource(
   visit(getTree());
   return {
     images,
-    ...metadata,
+    ...linkMetadata(inlineCodePaths),
     render(
       urls: ReadonlyMap<string, string> = new Map(),
       unavailableImages: ReadonlySet<string> = new Set(),
@@ -271,4 +336,14 @@ export function prepareMarkdownSource(
 
 function escapeMarkdownText(text: string): string {
   return text.replace(/[!-/:-@[-`{-~]/g, "\\$&");
+}
+
+// Longer fences are listings, not a handful of files to open.
+const MAX_PATH_FENCE_LINES = 20;
+
+function toInlineCode(text: string): string {
+  const longestRun = Math.max(0, ...[...text.matchAll(/`+/g)].map(([run]) => run.length));
+  const ticks = "`".repeat(longestRun + 1);
+  const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${ticks}${pad}${text}${pad}${ticks}`;
 }

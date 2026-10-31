@@ -1,7 +1,9 @@
 import type { FormInfo, FormValue } from "@opencode/client";
 import type { V2Api } from "./api.js";
+import { readQuestionAnswerList } from "../../../question-answers.js";
 
 import type {
+  AgentMetadata,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentSessionConfig,
@@ -51,9 +53,7 @@ export class SessionPermissions {
         if (!raw || typeof raw !== "object" || Array.isArray(raw))
           throw new Error("OpenCode question response requires answers");
         for (const field of form.fields) {
-          const value: unknown =
-            Reflect.get(raw, field.key) ?? Reflect.get(raw, field.title ?? field.key);
-          const normalized = formAnswer(field, value);
+          const normalized = formAnswer(field, fieldAnswer(field, response.updatedInput, raw));
           if (normalized !== undefined) answer[field.key] = normalized;
         }
         await this.getClient().session.form.reply({
@@ -109,7 +109,13 @@ export class SessionPermissions {
           questions: form.fields.map((field) => ({
             header: field.title ?? field.key,
             question: field.description ?? field.title ?? field.key,
-            options: "options" in field ? field.options : undefined,
+            options:
+              "options" in field && field.options
+                ? field.options.map((option) => ({
+                    label: option.label,
+                    ...(option.description ? { description: option.description } : {}),
+                  }))
+                : [],
             multiSelect: field.type === "multiselect",
             allowOther: "custom" in field && field.custom === true,
           })),
@@ -130,6 +136,19 @@ export class SessionPermissions {
 function permissionReply(response: AgentPermissionResponse): "reject" | "once" | "always" {
   if (response.behavior === "deny") return "reject";
   return response.selectedActionId === "always" ? "always" : "once";
+}
+
+function fieldAnswer(
+  field: FormInfo["fields"][number],
+  updatedInput: AgentMetadata | undefined,
+  answers: object,
+): unknown {
+  const header = field.title ?? field.key;
+  const answerList = readQuestionAnswerList(updatedInput, header);
+  if (answerList) return field.type === "multiselect" ? answerList : answerList.join(", ");
+  // COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before
+  // v0.11.0 send only a comma-joined string; formAnswer splits it against the option labels.
+  return Reflect.get(answers, field.key) ?? Reflect.get(answers, header);
 }
 
 function formAnswer(field: FormInfo["fields"][number], value: unknown): FormValue | undefined {

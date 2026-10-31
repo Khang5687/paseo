@@ -13,6 +13,21 @@ export function resolveActiveSendBehavior(
   return sendBehavior === "queue" && hasPendingPermission ? "interrupt" : sendBehavior;
 }
 
+/**
+ * The turn behavior for a send that cannot queue: a queued message's Send now, review feedback,
+ * and either send action while queueing is unavailable. The alternate comes first because it is
+ * the action people reach for to skip the default; when both queue, steer, which keeps the
+ * running turn alive.
+ */
+export function resolveSendNowBehavior(settings: {
+  sendBehavior: SendBehavior;
+  alternateSendBehavior: SendBehavior;
+}): ActiveTurnBehavior {
+  if (settings.alternateSendBehavior !== "queue") return settings.alternateSendBehavior;
+  if (settings.sendBehavior !== "queue") return settings.sendBehavior;
+  return "steer";
+}
+
 interface ComposerSurfaceState {
   opacity: 0 | 1;
   pointerEvents: "auto" | "none";
@@ -48,16 +63,19 @@ interface StopRealtimeVoiceContext {
 }
 
 interface SendActionContext {
+  /** Already adjusted for a pending permission by `resolveActiveSendBehavior`. */
   defaultSendBehavior: SendBehavior;
+  alternateSendBehavior: SendBehavior;
   isAgentRunning: boolean;
   onQueue: ((payload: MessagePayload) => void) | undefined;
-  handleSendMessage: () => void;
+  handleSendMessage: (activeTurnBehavior: ActiveTurnBehavior) => void;
   handleQueueMessage: () => void;
 }
 
 interface DictationTranscriptContext {
   value: string;
   defaultSendBehavior: SendBehavior;
+  sendNowBehavior: ActiveTurnBehavior;
   isAgentRunning: boolean;
   onQueue: ((payload: MessagePayload) => void) | undefined;
   onSubmit: (payload: MessagePayload) => void;
@@ -90,6 +108,8 @@ export function applyDictationTranscript(text: string, ctx: DictationTranscriptC
     attachments: ctx.attachments,
     cwd: ctx.cwd,
     forceSend: ctx.isAgentRunning || undefined,
+    activeTurnBehavior:
+      ctx.defaultSendBehavior === "queue" ? ctx.sendNowBehavior : ctx.defaultSendBehavior,
   });
 }
 
@@ -118,38 +138,41 @@ export function computeCanStartDictation(input: {
   );
 }
 
-export function runDefaultSendAction(ctx: SendActionContext): void {
-  if (ctx.defaultSendBehavior === "queue" && ctx.isAgentRunning && ctx.onQueue) {
+/** Queue while a turn runs and the composer can queue; otherwise send. */
+function runSendAction(behavior: SendBehavior, ctx: SendActionContext): void {
+  if (behavior !== "queue") {
+    ctx.handleSendMessage(behavior);
+    return;
+  }
+  if (ctx.isAgentRunning && ctx.onQueue) {
     ctx.handleQueueMessage();
     return;
   }
-  ctx.handleSendMessage();
+  ctx.handleSendMessage(
+    resolveSendNowBehavior({
+      sendBehavior: ctx.defaultSendBehavior,
+      alternateSendBehavior: ctx.alternateSendBehavior,
+    }),
+  );
 }
 
-export type AlternateSendAction = "queue" | "send";
+export function runDefaultSendAction(ctx: SendActionContext): void {
+  runSendAction(ctx.defaultSendBehavior, ctx);
+}
 
 /**
  * What Mod+Enter and a long-press on Send do instead of the default send. Null while
  * no turn is running, where both fall back to the default send.
  */
 export function resolveAlternateSendAction(
-  ctx: Pick<SendActionContext, "defaultSendBehavior" | "isAgentRunning" | "onQueue">,
-): AlternateSendAction | null {
+  ctx: Pick<SendActionContext, "alternateSendBehavior" | "isAgentRunning" | "onQueue">,
+): SendBehavior | null {
   if (!ctx.isAgentRunning || !ctx.onQueue) return null;
-  return ctx.defaultSendBehavior === "queue" ? "send" : "queue";
+  return ctx.alternateSendBehavior;
 }
 
 export function runAlternateSendAction(ctx: SendActionContext): void {
-  const action = resolveAlternateSendAction(ctx);
-  if (action === "queue") {
-    ctx.handleQueueMessage();
-    return;
-  }
-  if (action === "send") {
-    ctx.handleSendMessage();
-    return;
-  }
-  runDefaultSendAction(ctx);
+  runSendAction(resolveAlternateSendAction(ctx) ?? ctx.defaultSendBehavior, ctx);
 }
 
 export type MessageInputEnterAction = "alternate-send" | "default-send";

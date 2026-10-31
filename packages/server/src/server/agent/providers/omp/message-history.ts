@@ -47,7 +47,10 @@ function isTextContentBlock(block: unknown): block is OmpTextContent {
   );
 }
 
-export function getUserMessageText(content: string | (OmpTextContent | OmpImageContent)[]): string {
+export function getUserMessageText(
+  content: string | (OmpTextContent | OmpImageContent)[],
+  separator = "\n\n",
+): string {
   if (typeof content === "string") {
     return content;
   }
@@ -58,7 +61,7 @@ export function getUserMessageText(content: string | (OmpTextContent | OmpImageC
       textParts.push(block.text);
     }
   }
-  return textParts.join("\n\n");
+  return textParts.join(separator);
 }
 
 export class OmpHistoryMapper {

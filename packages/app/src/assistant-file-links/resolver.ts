@@ -34,7 +34,7 @@ export type GetDirectorySuggestions = (input: {
   query: string;
   cwd: string;
   includeFiles: true;
-  includeDirectories: false;
+  includeDirectories: boolean;
   matchMode: "suffix";
   limit: number;
 }) => Promise<DirectorySuggestionResult>;
@@ -80,13 +80,17 @@ export async function fetchDaemonResolution({
     throw new UnresolvedFileLinkError(token);
   }
 
+  // An extensionless name may be a folder (`src/components/`, `packages/app/src`); a name
+  // with an extension is only ever looked up as a file.
+  const lastSegment = ambiguousQuery.replace(/\/+$/, "").split("/").at(-1) ?? "";
+  const mayBeDirectory = !/.\.[^.]+$/.test(lastSegment);
   let suggestions: DirectorySuggestionResult;
   try {
     suggestions = await getDirectorySuggestions({
-      query: ambiguousQuery,
+      query: ambiguousQuery.replace(/\/+$/, ""),
       cwd: trimmedRoot,
       includeFiles: true,
-      includeDirectories: false,
+      includeDirectories: mayBeDirectory,
       matchMode: "suffix",
       limit: 1,
     });
@@ -94,7 +98,7 @@ export async function fetchDaemonResolution({
     throw new UnresolvedFileLinkError(token);
   }
 
-  const match = suggestions.entries.find((entry) => entry.kind === "file");
+  const match = suggestions.entries[0];
   if (!match || suggestions.error) {
     throw new UnresolvedFileLinkError(token);
   }

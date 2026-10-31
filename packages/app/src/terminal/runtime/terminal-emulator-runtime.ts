@@ -6,7 +6,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
-import { Terminal, type ITheme, type IMarker } from "@xterm/xterm";
+import { Terminal, type IBufferRange, type ITheme, type IMarker } from "@xterm/xterm";
 import type { TerminalState } from "@getpaseo/protocol/messages";
 import {
   type TerminalInputModeState,
@@ -27,6 +27,7 @@ import {
 import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import {
   createTerminalLocalFileLinkProvider,
+  isBufferCellInRange,
   type TerminalLocalFileLinkSource,
   type TerminalLocalFileLinkTarget,
 } from "../local-links/terminal-local-link-provider";
@@ -83,6 +84,11 @@ export interface TerminalEmulatorRuntimeCallbacks {
     target: TerminalLocalFileLinkTarget,
     disposition: "main" | "side",
   ) => Promise<void> | void;
+  /** A right click on a local file link, at the pointer's viewport position. */
+  onLocalFileLinkContextMenu?: (
+    target: TerminalLocalFileLinkTarget,
+    point: { x: number; y: number },
+  ) => Promise<void> | void;
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
   /** A paste gesture that can carry a file; resolves to null when it carried none. */
   onFilePaste?: (file: Promise<TerminalFile | null>) => void;
@@ -126,6 +132,7 @@ interface TerminalEmulatorRuntimeDisposables {
   removeFontListeners: () => void;
   removeTouchListeners: () => void;
   removeFilePasteListener: () => void;
+  removeFileLinkContextMenuListener: () => void;
   restoreDocumentStyles: () => void;
   restoreViewportStyles: () => void;
   disposeFitAddon: () => void;
@@ -222,6 +229,21 @@ function findFileOnlyPaste(transfer: DataTransfer | null): File | null {
     }
   }
   return null;
+}
+
+/** The 1-based buffer cell under a pointer event, in the coordinates xterm link ranges use. */
+function bufferCellAtPoint(terminal: Terminal, event: MouseEvent): { x: number; y: number } | null {
+  const screen = terminal.element?.querySelector(".xterm-screen");
+  if (!screen || terminal.cols === 0 || terminal.rows === 0) {
+    return null;
+  }
+  const rect = screen.getBoundingClientRect();
+  const column = Math.floor(((event.clientX - rect.left) * terminal.cols) / rect.width);
+  const row = Math.floor(((event.clientY - rect.top) * terminal.rows) / rect.height);
+  if (column < 0 || column >= terminal.cols || row < 0 || row >= terminal.rows) {
+    return null;
+  }
+  return { x: column + 1, y: terminal.buffer.active.viewportY + row + 1 };
 }
 
 export class TerminalEmulatorRuntime {
@@ -537,6 +559,8 @@ export class TerminalEmulatorRuntime {
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(unicode11Addon);
     terminal.loadAddon(new WebLinksAddon(openExternalLink));
+    let hoveredLocalFileLink: { target: TerminalLocalFileLinkTarget; range: IBufferRange } | null =
+      null;
     const localFileLinkProvider = terminal.registerLinkProvider(
       createTerminalLocalFileLinkProvider(terminal, {
         resolveLink: async (source) => {
@@ -545,6 +569,9 @@ export class TerminalEmulatorRuntime {
         },
         openLink: (target, disposition) => {
           void this.callbacks.onOpenLocalFileLink?.(target, disposition);
+        },
+        hoverLink: (link) => {
+          hoveredLocalFileLink = link;
         },
       }),
     );
@@ -722,6 +749,23 @@ export class TerminalEmulatorRuntime {
     };
     input.host.addEventListener("paste", filePasteHandler, true);
 
+    // A right click on a file link opens the file menu instead of the browser's text menu.
+    const fileLinkContextMenuHandler = (event: MouseEvent): void => {
+      const onLocalFileLinkContextMenu = this.callbacks.onLocalFileLinkContextMenu;
+      const link = hoveredLocalFileLink;
+      if (!onLocalFileLinkContextMenu || !link) {
+        return;
+      }
+      const cell = bufferCellAtPoint(terminal, event);
+      if (!cell || !isBufferCellInRange(cell, link.range)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void onLocalFileLinkContextMenu(link.target, { x: event.clientX, y: event.clientY });
+    };
+    input.host.addEventListener("contextmenu", fileLinkContextMenuHandler, true);
+
     const removeTouchListeners = this.setupTouchScrollHandlers({
       root: input.root,
       host: input.host,
@@ -814,6 +858,9 @@ export class TerminalEmulatorRuntime {
       removeFilePasteListener: () => {
         input.host.removeEventListener("paste", filePasteHandler, true);
       },
+      removeFileLinkContextMenuListener: () => {
+        input.host.removeEventListener("contextmenu", fileLinkContextMenuHandler, true);
+      },
       restoreDocumentStyles,
       restoreViewportStyles,
       disposeFitAddon: () => {
@@ -844,6 +891,7 @@ export class TerminalEmulatorRuntime {
       disposables.removeFontListeners();
       disposables.removeTouchListeners();
       disposables.removeFilePasteListener();
+      disposables.removeFileLinkContextMenuListener();
       disposables.disposeFitAddon();
       disposables.disposeWebglAddon();
       disposables.disposeTerminal();

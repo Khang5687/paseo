@@ -59,6 +59,8 @@ const CLOSED_PARENT: ManagedAgent = {
   finalizedForegroundTurnIds: new Set(),
   unsubscribeSession: null,
   labels: {},
+  queuedMessages: [],
+  queuePaused: false,
   lifecycle: "closed",
   session: null,
   activeForegroundTurnId: null,
@@ -1275,6 +1277,54 @@ describe("ProviderSnapshotManager public surface", () => {
       expect(state.clients.claude).toBe(claudeClient);
       expect(state.providerDefinitions.opencode).toMatchObject({ enabled: false });
       expect(state.providerDefinitions.codex).toMatchObject({ enabled: true });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("an alias inherits its base provider's MCP servers and a config edit replaces them", () => {
+    const rea = { type: "stdio" as const, command: "npx", args: ["-y", "rea-agents", "mcp"] };
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        codex: {
+          mcpServers: {
+            notes: { type: "stdio", command: "notes-mcp" },
+            shared: { type: "stdio", command: "base-shared" },
+          },
+        },
+        "codex-rea": {
+          extends: "codex",
+          label: "Codex (REA)",
+          mcpServers: { shared: { type: "stdio", command: "alias-shared" }, rea },
+        },
+      },
+    });
+    try {
+      const state = manager.getAgentManagerProviderState();
+      expect(state.providerDefinitions.codex?.mcpServers).toEqual({
+        notes: { type: "stdio", command: "notes-mcp" },
+        shared: { type: "stdio", command: "base-shared" },
+      });
+      expect(state.providerDefinitions["codex-rea"]?.mcpServers).toEqual({
+        notes: { type: "stdio", command: "notes-mcp" },
+        shared: { type: "stdio", command: "alias-shared" },
+        rea,
+      });
+
+      const edited = manager.applyMutableProviderConfig(
+        {
+          "codex-rea": {
+            extends: "codex",
+            label: "Codex (REA)",
+            enabled: true,
+            mcpServers: { rea },
+          },
+        },
+        { replace: true },
+      );
+      expect(edited.providerDefinitions.codex?.mcpServers).toBeUndefined();
+      expect(edited.providerDefinitions["codex-rea"]?.mcpServers).toEqual({ rea });
     } finally {
       manager.destroy();
     }
@@ -3772,4 +3822,105 @@ test("model overrides preserve negotiated plugin capabilities and connection shu
     await manager.shutdown();
     manager.destroy();
   }
+});
+
+describe("models disabled in Provider settings", () => {
+  const catalogModels: AgentModelDefinition[] = [
+    { provider: "codex", id: "gpt-5.4", label: "GPT 5.4", isDefault: true },
+    { provider: "codex", id: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
+    { provider: "codex", id: "gpt-5.2-codex", label: "GPT 5.2 Codex" },
+  ];
+
+  function createCatalogClient() {
+    const fetchCatalog = vi.fn(async () => ({ models: catalogModels, modes: [] }));
+    return {
+      fetchCatalog,
+      client: createExtraClient("codex", { isAvailable: async () => true, fetchCatalog }),
+    };
+  }
+
+  test("listModels omits disabled models and the snapshot lists them as disabled", async () => {
+    const { client } = createCatalogClient();
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraClients: { codex: client },
+      providerOverrides: { codex: { disabledModels: ["gpt-5.4-mini"] } },
+    });
+    try {
+      const models = await manager.listModels({ provider: "codex", wait: true });
+      expect(models.map((model) => model.id)).toEqual(["gpt-5.4", "gpt-5.2-codex"]);
+
+      const entry = await manager.getProvider({ provider: "codex", wait: true });
+      expect(entry.models?.map((model) => model.id)).toEqual(["gpt-5.4", "gpt-5.2-codex"]);
+      expect(entry.disabledModels).toEqual([
+        { provider: "codex", id: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
+      ]);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("a disabled provider default is not advertised and the first enabled model becomes the default", async () => {
+    const { client } = createCatalogClient();
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraClients: { codex: client },
+      providerOverrides: { codex: { disabledModels: ["gpt-5.4"] } },
+    });
+    try {
+      const models = await manager.listModels({ provider: "codex", wait: true });
+      expect(models.some((model) => model.isDefault)).toBe(false);
+      await expect(manager.resolveDefaultModel({ provider: "codex" })).resolves.toBe(
+        "gpt-5.4-mini",
+      );
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("agent configuration validation names a disabled model as disabled", async () => {
+    const { client } = createCatalogClient();
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraClients: { codex: client },
+      providerOverrides: { codex: { disabledModels: ["gpt-5.4-mini"] } },
+    });
+    try {
+      await expect(
+        manager.validateAgentConfiguration({ provider: "codex", model: "gpt-5.4-mini" }),
+      ).resolves.toEqual([
+        {
+          path: ["model"],
+          message: "Model 'gpt-5.4-mini' is disabled for provider 'codex' in Provider settings",
+        },
+      ]);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("changing disabledModels republishes the snapshot without refetching the catalog", async () => {
+    const { client, fetchCatalog } = createCatalogClient();
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraClients: { codex: client },
+    });
+    try {
+      await manager.listModels({ provider: "codex", wait: true });
+      const published: ProviderSnapshot[] = [];
+      manager.on("change", ({ current }) => published.push(current));
+
+      const state = manager.applyMutableProviderConfig({
+        codex: { disabledModels: ["gpt-5.2-codex"] },
+      });
+
+      expect(state.providerDefinitions.codex?.disabledModels).toEqual(["gpt-5.2-codex"]);
+      const models = await manager.listModels({ provider: "codex", wait: true });
+      expect(models.map((model) => model.id)).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
+      expect(published).toHaveLength(1);
+      expect(fetchCatalog).toHaveBeenCalledTimes(1);
+    } finally {
+      manager.destroy();
+    }
+  });
 });
