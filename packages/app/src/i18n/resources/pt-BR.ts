@@ -1941,6 +1941,40 @@ export const ptBR: TranslationResources = {
     shareFile: "Compartilhar arquivo",
     shareFileNamed: "Compartilhar {{fileName}}",
   },
+  offlineFiles: {
+    title: "Arquivos offline",
+    autoSave: {
+      label: "Salvar arquivos do chat automaticamente",
+      description:
+        "Salva os arquivos citados nos chats que você abre, só no Wi-Fi, para abri-los quando o host estiver offline.",
+    },
+    retentionDays: {
+      label: "Manter por (dias)",
+      description: "Arquivos salvos mais antigos são removidos.",
+    },
+    maxTotalMb: {
+      label: "Limite de armazenamento (MB)",
+      description: "Acima desse tamanho, os arquivos mais antigos são removidos.",
+    },
+    maxFileMb: {
+      label: "Maior arquivo (MB)",
+      description: "Arquivos maiores não são salvos.",
+    },
+    saved: {
+      label: "Salvos: {{count}} arquivos, {{size}}",
+      description: "Os arquivos salvos mais recentes aparecem abaixo.",
+    },
+    clearAll: "Limpar tudo",
+    clearConfirmTitle: "Limpar arquivos offline?",
+    clearConfirmMessage:
+      "As cópias salvas são apagadas deste dispositivo. Os arquivos no host não mudam.",
+    saveOffline: "Salvar offline",
+    savedToast: "Salvo para uso offline",
+    tooLarge: "O arquivo passa do limite de {{size}} MB para arquivos offline.",
+    readOnly: "Esta é uma cópia salva. Conecte-se ao host para editá-la.",
+    savedAgo: "Cópia offline, salva {{time}}",
+    share: "Compartilhar",
+  },
   menu: {
     backdrop: "Fundo do menu",
   },

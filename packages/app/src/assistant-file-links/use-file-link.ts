@@ -20,6 +20,8 @@ import {
 
 export interface UseFileLinkResult {
   target: InlinePathTarget | null;
+  /** Whether the link names a file, possibly one the host still has to find. */
+  isFile: boolean;
   tooltipPath: string | null;
   onHoverIn: () => void;
   onPress: () => void;
@@ -139,10 +141,11 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
     return query.data ?? null;
   }, [query.data, resolution]);
 
+  const isFile = resolution.kind === "needsLookup" || resolution.value.kind === "file";
   const tooltipPath = target ? formatFileLinkTooltipPath({ target, workspaceRoot }) : null;
   return useMemo(
-    () => ({ target, tooltipPath, onHoverIn, onPress, open }),
-    [target, tooltipPath, onHoverIn, onPress, open],
+    () => ({ target, isFile, tooltipPath, onHoverIn, onPress, open }),
+    [target, isFile, tooltipPath, onHoverIn, onPress, open],
   );
 }
 

@@ -1918,6 +1918,39 @@ export const ko: TranslationResources = {
     shareFile: "파일 공유",
     shareFileNamed: "{{fileName}} 공유",
   },
+  offlineFiles: {
+    title: "오프라인 파일",
+    autoSave: {
+      label: "채팅 파일 자동 저장",
+      description:
+        "연 채팅에 언급된 파일을 Wi-Fi에서만 저장해 호스트가 오프라인일 때도 열 수 있게 합니다.",
+    },
+    retentionDays: {
+      label: "보관 기간(일)",
+      description: "이보다 오래된 저장 파일은 삭제됩니다.",
+    },
+    maxTotalMb: {
+      label: "저장 용량 한도(MB)",
+      description: "이 크기를 넘으면 가장 오래된 파일부터 삭제됩니다.",
+    },
+    maxFileMb: {
+      label: "최대 파일 크기(MB)",
+      description: "더 큰 파일은 저장하지 않습니다.",
+    },
+    saved: {
+      label: "저장됨: 파일 {{count}}개, {{size}}",
+      description: "최근 저장한 파일이 아래에 표시됩니다.",
+    },
+    clearAll: "모두 지우기",
+    clearConfirmTitle: "오프라인 파일을 지울까요?",
+    clearConfirmMessage: "이 기기의 저장 사본이 삭제됩니다. 호스트의 파일은 그대로입니다.",
+    saveOffline: "오프라인용으로 저장",
+    savedToast: "오프라인용으로 저장했습니다",
+    tooLarge: "파일이 오프라인 파일 한도 {{size}}MB를 넘습니다.",
+    readOnly: "저장된 사본입니다. 수정하려면 호스트에 연결하세요.",
+    savedAgo: "오프라인 사본, {{time}} 저장",
+    share: "공유",
+  },
   menu: {
     backdrop: "메뉴 배경",
   },

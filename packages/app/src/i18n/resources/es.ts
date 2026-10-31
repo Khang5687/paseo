@@ -1956,6 +1956,40 @@ export const es: TranslationResources = {
     shareFile: "compartir archivo",
     shareFileNamed: "Compartir{{fileName}}",
   },
+  offlineFiles: {
+    title: "Archivos sin conexión",
+    autoSave: {
+      label: "Guardar archivos del chat automáticamente",
+      description:
+        "Guarda los archivos mencionados en los chats que abres, solo con Wi-Fi, para abrirlos cuando el host no está conectado.",
+    },
+    retentionDays: {
+      label: "Conservar (días)",
+      description: "Se eliminan los archivos guardados más antiguos.",
+    },
+    maxTotalMb: {
+      label: "Límite de almacenamiento (MB)",
+      description: "Al superar este tamaño se eliminan los archivos más antiguos.",
+    },
+    maxFileMb: {
+      label: "Archivo más grande (MB)",
+      description: "Los archivos más grandes no se guardan.",
+    },
+    saved: {
+      label: "Guardados: {{count}} archivos, {{size}}",
+      description: "Abajo aparecen los archivos guardados más recientes.",
+    },
+    clearAll: "Borrar todo",
+    clearConfirmTitle: "¿Borrar los archivos sin conexión?",
+    clearConfirmMessage:
+      "Las copias guardadas se eliminan de este dispositivo. Los archivos del host no cambian.",
+    saveOffline: "Guardar sin conexión",
+    savedToast: "Guardado para usar sin conexión",
+    tooLarge: "El archivo supera el límite de {{size}} MB para archivos sin conexión.",
+    readOnly: "Es una copia guardada. Conéctate al host para editarla.",
+    savedAgo: "Copia sin conexión, guardada {{time}}",
+    share: "Compartir",
+  },
   menu: {
     backdrop: "Fondo del menú",
   },

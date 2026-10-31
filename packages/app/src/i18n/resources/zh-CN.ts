@@ -1886,6 +1886,38 @@ export const zhCN: TranslationResources = {
     shareFile: "共享文件",
     shareFileNamed: "共享 {{fileName}}",
   },
+  offlineFiles: {
+    title: "离线文件",
+    autoSave: {
+      label: "自动保存聊天中的文件",
+      description: "仅在 Wi-Fi 下保存你打开的聊天中提到的文件，主机离线时也能打开。",
+    },
+    retentionDays: {
+      label: "保留天数",
+      description: "超过此天数的已保存文件会被删除。",
+    },
+    maxTotalMb: {
+      label: "存储上限 (MB)",
+      description: "超过此大小时，最早保存的文件会被删除。",
+    },
+    maxFileMb: {
+      label: "单个文件上限 (MB)",
+      description: "更大的文件不会保存。",
+    },
+    saved: {
+      label: "已保存：{{count}} 个文件，{{size}}",
+      description: "下方列出最近保存的文件。",
+    },
+    clearAll: "全部清除",
+    clearConfirmTitle: "清除离线文件？",
+    clearConfirmMessage: "将从此设备删除已保存的副本。主机上的文件不受影响。",
+    saveOffline: "离线保存",
+    savedToast: "已保存供离线使用",
+    tooLarge: "文件超过离线文件 {{size}} MB 的上限。",
+    readOnly: "这是已保存的副本。连接主机后才能编辑。",
+    savedAgo: "离线副本，保存于 {{time}}",
+    share: "分享",
+  },
   menu: {
     backdrop: "菜单背景",
   },

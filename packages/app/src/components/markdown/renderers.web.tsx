@@ -1,5 +1,12 @@
-import { Text } from "react-native";
-import { forwardRef, useCallback, useMemo, useState, type ComponentProps } from "react";
+import { Text, type ViewStyle } from "react-native";
+import {
+  forwardRef,
+  useCallback,
+  useMemo,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import type {
   CodeBlockRendererProps,
   LinkRendererProps,
@@ -8,6 +15,14 @@ import type {
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useFileLink } from "@/assistant-file-links";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
+import { useTranslation } from "react-i18next";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import type { Theme } from "@/styles/theme";
 import { MermaidFence } from "./fence/mermaid";
@@ -31,7 +46,11 @@ function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
 const LINK_HOVER_STYLE = { textDecoration: "underline" } as const;
 
 function WebLink({ link, anchorProps, children }: LinkRendererProps) {
-  const { tooltipPath, onHoverIn } = useFileLink(markdownLinkSource(link.url, link.sourceType));
+  const source = useMemo(
+    () => markdownLinkSource(link.url, link.sourceType),
+    [link.url, link.sourceType],
+  );
+  const { tooltipPath, onHoverIn, isFile } = useFileLink(source);
   const [hovered, setHovered] = useState(false);
   const handleMouseEnter = useCallback(() => setHovered(true), []);
   const handleMouseLeave = useCallback(() => setHovered(false), []);
@@ -56,7 +75,9 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
   return (
     <Tooltip delayDuration={400}>
       <TooltipTrigger asChild onHoverIn={onHoverIn}>
-        <InlineLinkTrigger>{anchor}</InlineLinkTrigger>
+        <InlineLinkTrigger>
+          {isFile ? <FileLinkMenu source={source}>{anchor}</FileLinkMenu> : anchor}
+        </InlineLinkTrigger>
       </TooltipTrigger>
       {tooltipPath ? (
         <TooltipContent side="top" align="start" maxWidth={520}>
@@ -68,6 +89,34 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
     </Tooltip>
   );
 }
+// "contents" leaves no box, so a long path still wraps across lines like the bare link does.
+const MENU_TRIGGER_STYLE = { display: "contents" } as unknown as ViewStyle;
+
+/** Right click, or a long press in a phone browser, offers to save a file link for offline use. */
+function FileLinkMenu({
+  source,
+  children,
+}: {
+  source: ReturnType<typeof markdownLinkSource>;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const saveOffline = useSaveFileLinkOffline();
+  const save = useCallback(() => saveOffline(source), [saveOffline, source]);
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger contextOnly style={MENU_TRIGGER_STYLE}>
+        {children}
+      </ContextMenuTrigger>
+      <ContextMenuContent align="start" minWidth={180} testID="file-link-context-menu">
+        <ContextMenuItem onSelect={save} testID="file-link-save-offline">
+          {t("offlineFiles.saveOffline")}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 // TooltipTrigger also supplies native Pressable handlers; forward only DOM events.
 // A View renders a div, which is invalid inside the library's prose paragraphs.
 const InlineLinkTrigger = forwardRef<HTMLSpanElement, ComponentProps<"span">>(
