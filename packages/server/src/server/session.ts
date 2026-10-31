@@ -7647,7 +7647,9 @@ export class Session {
         const clearableAgentIds = agents
           .filter((agent) => !agent.archivedAt)
           .filter((agent) => agent.workspaceId === workspace.workspaceId)
-          .filter((agent) => agent.requiresAttention === true)
+          // Lifecycle `error` alone keeps an agent failed after its attention is cleared, so
+          // "Mark as read" also dismisses errored agents.
+          .filter((agent) => agent.requiresAttention === true || agent.status === "error")
           .filter((agent) => (agent.pendingPermissions?.length ?? 0) === 0)
           .filter((agent) => agent.attentionReason !== "permission")
           .map((agent) => agent.id);
@@ -7655,7 +7657,7 @@ export class Session {
         for (const agentId of clearableAgentIds) {
           const liveAgent = this.agentManager.getAgent(agentId);
           if (liveAgent) {
-            await this.agentManager.clearAgentAttention(agentId);
+            await this.agentManager.markAgentRead(agentId);
             clearedAgentIds.push(agentId);
             continue;
           }
@@ -7665,13 +7667,14 @@ export class Session {
             !record ||
             record.internal ||
             record.archivedAt ||
-            record.requiresAttention !== true
+            (record.requiresAttention !== true && record.lastStatus !== "error")
           ) {
             continue;
           }
           const nextRecord: StoredAgentRecord = {
             ...record,
             updatedAt: new Date().toISOString(),
+            lastStatus: record.lastStatus === "error" ? "idle" : record.lastStatus,
             requiresAttention: false,
             attentionReason: null,
             attentionTimestamp: null,

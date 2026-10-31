@@ -347,6 +347,7 @@ export function SidebarWorkspaceContextMenu({
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
+  draggable,
   ...triggerProps
 }: PropsWithChildren<
   SidebarWorkspaceMenuItemsProps &
@@ -358,6 +359,9 @@ export function SidebarWorkspaceContextMenu({
       hostBadgeLabel?: string | null;
       serviceSummary?: WorkspaceServiceSummary | null;
       highlightStyle: ComponentProps<typeof ContextMenuTrigger>["highlightStyle"];
+      // Long-press on native starts a drag on draggable rows, so only rows that can't be dragged
+      // open this menu on long-press. Draggable rows keep the kebab.
+      draggable: boolean;
     }
 >) {
   const {
@@ -395,7 +399,7 @@ export function SidebarWorkspaceContextMenu({
     <ContextMenu open={contextMenuOpen} onOpenChange={onContextMenuOpenChange}>
       <ContextMenuTrigger
         {...triggerProps}
-        enabledOnMobile={false}
+        enabledOnMobile={!draggable}
         accessibilityLabel={accessibilityLabel ?? rowAccessibilityLabel}
         highlightStyle={highlightStyle}
       >

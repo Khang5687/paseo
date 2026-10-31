@@ -1154,6 +1154,7 @@ function WorkspaceRowInner({
               onTogglePin={onTogglePin}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
+              draggable={Boolean(drag)}
               aria-selected={selected}
               accessibilityRole="button"
               accessibilityState={accessibilityState}

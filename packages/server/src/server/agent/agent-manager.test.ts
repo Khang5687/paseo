@@ -8569,7 +8569,7 @@ test("onAgentAttention is not called for delegated child agents", async () => {
   expect(attentionCalls).toEqual([]);
 });
 
-test("clearAgentAttention on errored agent stays cleared until a new error transition", async () => {
+test("markAgentRead dismisses a failed agent until a new error transition", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-attention-error-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
@@ -8653,16 +8653,21 @@ test("clearAgentAttention on errored agent stays cleared until a new error trans
   expect(persistedAfterFirstFailure?.requiresAttention).toBe(true);
   expect(persistedAfterFirstFailure?.attentionReason).toBe("error");
 
+  // Viewing the chat clears the unread signal but keeps the failed status.
   await manager.clearAgentAttention(agent.id);
+  expect(manager.getAgent(agent.id)?.lifecycle).toBe("error");
+
+  await manager.markAgentRead(agent.id);
   manager.notifyAgentState(agent.id);
   await manager.flush();
 
   const afterClear = manager.getAgent(agent.id);
-  expect(afterClear?.lifecycle).toBe("error");
+  expect(afterClear?.lifecycle).toBe("idle");
+  expect(afterClear?.lastError).toBe("boom-1");
   expect(afterClear?.attention).toEqual({ requiresAttention: false });
 
   const persistedAfterClear = await storage.get(agent.id);
-  expect(persistedAfterClear?.lastStatus).toBe("error");
+  expect(persistedAfterClear?.lastStatus).toBe("idle");
   expect(persistedAfterClear?.requiresAttention).toBe(false);
   expect(persistedAfterClear?.attentionReason).toBeNull();
 

@@ -2395,6 +2395,22 @@ export class AgentManager {
     }
   }
 
+  /**
+   * "Mark as read" from the sidebar. Unlike viewing the chat (clearAgentAttention), this also
+   * dismisses a failed status: lifecycle `error` alone keeps the agent in the failed bucket, so
+   * it moves to `idle` until the next error. The error stays in the timeline and in lastError.
+   */
+  async markAgentRead(agentId: string): Promise<void> {
+    const agent = this.requireAgent(agentId);
+    if (!agent.attention.requiresAttention && agent.lifecycle !== "error") {
+      return;
+    }
+    agent.attention = { requiresAttention: false };
+    agent.lifecycle = agent.lifecycle === "error" ? "idle" : agent.lifecycle;
+    await this.persistSnapshot(agent);
+    this.emitState(agent, { persist: false });
+  }
+
   async markAgentUnread(agentId: string): Promise<void> {
     const liveAgent = this.agents.get(agentId);
     if (liveAgent) {
