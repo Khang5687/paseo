@@ -541,5 +541,10 @@
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/opencode-agent.test.ts"
     ]
+  },
+  {
+    "pr": 71,
+    "title": "fix(claude): a queued task notification's result no longer ends the next prompt's turn",
+    "tests": ["packages/server/src/server/agent/providers/claude/agent.test.ts"]
   }
 ]
