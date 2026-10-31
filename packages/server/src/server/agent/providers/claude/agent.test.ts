@@ -3082,6 +3082,39 @@ describe("ClaudeAgentSession context window usage", () => {
     }
   });
 
+  test("a queued task notification answered before the prompt does not end the prompt's turn", async () => {
+    // A resumed session with a finished background task: Claude runs the notification turn first.
+    const session = await createSessionForTurns([
+      [
+        createInitMessage(),
+        createSuccessResult({
+          num_turns: 0,
+          result: "",
+          usage: { input_tokens: 0, output_tokens: 0 },
+          origin: { kind: "task-notification" },
+          uuid: "result-notification",
+        }),
+        createInitMessage(),
+        {
+          type: "assistant",
+          message: { id: "msg-1", role: "assistant", content: [{ type: "text", text: "PONG" }] },
+          parent_tool_use_id: null,
+          uuid: "assistant-1",
+          session_id: "session-1",
+        },
+        createSuccessResult({ uuid: "result-prompt" }),
+      ],
+    ]);
+
+    try {
+      const result = await session.run("turn");
+
+      expect(result.finalText).toBe("PONG");
+    } finally {
+      await session.close();
+    }
+  });
+
   test("uses parent request usage after a real subagent tool result", async () => {
     const getContextUsage = vi.fn(async () => {
       throw new Error("getContextUsage should not be called during result handling");

@@ -2321,6 +2321,8 @@ class ClaudeAgentSession implements AgentSession {
   private subagentHandbackIds = new Set<string>();
   private pendingPermissions = new Map<string, PendingPermission>();
   private activeForegroundTurnId: string | null = null;
+  /** SDK uuid of the prompt that opened the foreground turn; Claude echoes it on that turn's result. */
+  private activeForegroundPromptUuid: string | null = null;
   private autonomousTurn: AutonomousTurnState | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private readonly timelineAssembler = new TimelineAssembler();
@@ -2534,6 +2536,7 @@ class ClaudeAgentSession implements AgentSession {
     this.transitionTurnState("foreground", "foreground turn started");
     this.clearRecentStderr();
     if (sdkUserMessageId) this.unstartedMessageUuids.add(sdkUserMessageId);
+    this.activeForegroundPromptUuid = sdkUserMessageId;
 
     let cancelIssued = false;
     const requestCancel = () => {
@@ -4247,7 +4250,7 @@ class ClaudeAgentSession implements AgentSession {
       this.logger.debug("Suppressing abort result by content");
       return true;
     }
-    return false;
+    return this.isQueuedNotificationResultDuringForeground(message);
   }
 
   /**
@@ -4302,6 +4305,20 @@ class ClaudeAgentSession implements AgentSession {
 
   private ownsQuery(query: Query): boolean {
     return !this.closed && this.query === query;
+  }
+
+  /**
+   * Claude answers a background-task notification it had queued (for example one left over in a
+   * resumed session) before it reads the prompt. That turn's result is not the prompt's, and
+   * ending the foreground turn on it would drop the prompt's real answer.
+   */
+  private isQueuedNotificationResultDuringForeground(message: SDKMessage): boolean {
+    return (
+      message.type === "result" &&
+      this.activeForegroundTurnId !== null &&
+      message.origin?.kind === "task-notification" &&
+      message.user_message_uuid !== this.activeForegroundPromptUuid
+    );
   }
 
   private async routeSdkMessageFromPump(message: SDKMessage): Promise<void> {
