@@ -116,6 +116,12 @@ export const ko: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "초안 복원",
+      attachmentsOnly: "(첨부 파일만)",
+      attachments_one: "첨부 파일 {{count}}개",
+      attachments_other: "첨부 파일 {{count}}개",
+    },
     placeholders: {
       desktop: "에이전트에게 메시지를 보내거나 @files 태그, /commands, /skills를 사용하세요",
       mobile: "메시지, @files, /commands",
@@ -2770,6 +2776,15 @@ export const ko: TranslationResources = {
           prompt: "재개 메시지",
           edit: "편집",
           editAccessibilityLabel: "메시지 편집",
+        },
+        draftHistory: {
+          title: "초안 기록",
+          hint_one:
+            "삭제되거나 덮어쓴 초안은 {{count}}일 동안 보관되며 입력창에서 복원할 수 있습니다.",
+          hint_other:
+            "삭제되거나 덮어쓴 초안은 {{count}}일 동안 보관되며 입력창에서 복원할 수 있습니다.",
+          days_one: "{{count}}일",
+          days_other: "{{count}}일",
         },
         idleRuntimeCleanup: {
           title: "유휴 에이전트 해제",

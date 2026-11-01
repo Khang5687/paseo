@@ -1,3 +1,5 @@
+import type { AgentDraftService } from "./agent-draft/agent-draft-service.js";
+import { dispatchAgentDraftMessage } from "./agent-draft/agent-draft-session.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory } from "./agent/directory.js";
@@ -472,6 +474,7 @@ export interface SessionOptions {
   workspaceRegistry: WorkspaceRegistry;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  agentDrafts?: AgentDraftService;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -792,6 +795,7 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly agentDrafts: AgentDraftService | null;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -855,6 +859,7 @@ export class Session {
       workspaceRegistry,
       directorySync,
       workspaceLabelService,
+      agentDrafts,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -939,6 +944,7 @@ export class Session {
     this.workspaceRegistry = workspaceRegistry;
     this.directorySync = resolveDirectorySync(directorySync);
     this.workspaceLabelService = resolveWorkspaceLabelService(workspaceLabelService);
+    this.agentDrafts = agentDrafts ?? null;
     this.filesystem = filesystem ?? nodeSessionFileSystem;
     this.github = github ?? createGitHubService();
     this.renameCurrentBranch = renameCurrentBranch ?? renameCurrentBranchDefault;
@@ -2441,6 +2447,12 @@ export class Session {
     const promise =
       this.connectedHostSession?.dispatch(msg) ??
       this.dispatchSubscriptionMessage(msg, source) ??
+      dispatchAgentDraftMessage(msg, {
+        service: this.agentDrafts,
+        delivery: this.delivery,
+        clientId: this.clientId,
+        emit: (message) => this.emit(message),
+      }) ??
       this.dispatchVoiceAndControlMessage(msg) ??
       this.dispatchAgentObservationMessage(msg, source) ??
       this.dispatchHubExecutionMessage(msg) ??

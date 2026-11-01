@@ -116,6 +116,12 @@ export const zhCN: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "恢复草稿",
+      attachmentsOnly: "（仅附件）",
+      attachments_one: "{{count}} 个附件",
+      attachments_other: "{{count}} 个附件",
+    },
     placeholders: {
       desktop: "给 Agent 发消息，标记 @files，或使用 /commands 和 /skills",
       mobile: "发消息，@files，/commands",
@@ -2728,6 +2734,13 @@ export const zhCN: TranslationResources = {
           prompt: "恢复提示",
           edit: "编辑",
           editAccessibilityLabel: "编辑提示",
+        },
+        draftHistory: {
+          title: "草稿历史",
+          hint_one: "删除或覆盖的草稿会保留 {{count}} 天，可在输入框中恢复。",
+          hint_other: "删除或覆盖的草稿会保留 {{count}} 天，可在输入框中恢复。",
+          days_one: "{{count}} 天",
+          days_other: "{{count}} 天",
         },
         idleRuntimeCleanup: {
           title: "释放空闲 Agent",

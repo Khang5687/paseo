@@ -54,6 +54,7 @@ import type {
   FileUploadResponse,
   FileExplorerResponse,
   FileVersion,
+  AgentDraftSetRequest,
   FileWriteResult,
   FetchAgentTimelineResponseMessage,
   AgentForkContextResponseMessage,
@@ -3127,6 +3128,54 @@ export class DaemonClient {
       { type: "workspace.setup.subscribe.request", workspaceId },
       options,
     );
+  }
+
+  /** Requires `server_info.features.agentDraftSync`. Resubscribes with a fresh snapshot after reconnects. */
+  observeAgentDraft(
+    agentId: string,
+    options?: { signal?: AbortSignal },
+  ): OwnedSubscription<CorrelatedResponsePayload<"agent.draft.subscribe.response">> {
+    return this.observe(
+      "agent.draft.subscribe.response",
+      { type: "agent.draft.subscribe.request", agentId },
+      options,
+    );
+  }
+
+  async setAgentDraft(
+    input: Omit<AgentDraftSetRequest, "type" | "requestId">,
+  ): Promise<CorrelatedResponsePayload<"agent.draft.set.response">> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.set.response">({
+      message: { type: "agent.draft.set.request", ...input },
+    });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
+  }
+
+  async restoreAgentDraft(
+    agentId: string,
+    snapshotId: string,
+  ): Promise<CorrelatedResponsePayload<"agent.draft.restore.response">> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.restore.response">({
+        message: { type: "agent.draft.restore.request", agentId, snapshotId },
+      });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
+  }
+
+  /** Fetches a draft attachment's bytes (base64) by upload id. */
+  async getAgentDraftUpload(
+    agentId: string,
+    uploadId: string,
+  ): Promise<{ fileName: string | null; data: string }> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.upload.get.response">({
+        message: { type: "agent.draft.upload.get.request", agentId, uploadId },
+      });
+    if (payload.error || payload.data === null)
+      throw new Error(payload.error ?? "Upload not found.");
+    return { fileName: payload.fileName, data: payload.data };
   }
 
   private requireWorkspaceSetupObservation(): void {

@@ -117,6 +117,12 @@ export const ja: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "下書きを復元",
+      attachmentsOnly: "（添付ファイルのみ）",
+      attachments_one: "添付ファイル {{count}} 件",
+      attachments_other: "添付ファイル {{count}} 件",
+    },
     placeholders: {
       desktop: "エージェントにメッセージ、@ファイル、/コマンドや/スキルを入力",
       mobile: "メッセージ、@ファイル、/コマンド",
@@ -2782,6 +2788,15 @@ export const ja: TranslationResources = {
           prompt: "再開メッセージ",
           edit: "編集",
           editAccessibilityLabel: "メッセージを編集",
+        },
+        draftHistory: {
+          title: "下書き履歴",
+          hint_one:
+            "削除または上書きされた下書きは {{count}} 日間保持され、入力欄から復元できます。",
+          hint_other:
+            "削除または上書きされた下書きは {{count}} 日間保持され、入力欄から復元できます。",
+          days_one: "{{count}}日",
+          days_other: "{{count}}日",
         },
         idleRuntimeCleanup: {
           title: "アイドル状態のエージェントを解放",

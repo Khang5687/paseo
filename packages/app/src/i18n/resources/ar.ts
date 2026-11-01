@@ -116,6 +116,12 @@ export const ar: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "استعادة المسودة",
+      attachmentsOnly: "(مرفقات فقط)",
+      attachments_one: "{{count}} مرفق",
+      attachments_other: "{{count}} مرفقات",
+    },
     placeholders: {
       desktop: "أرسل رسالة إلى الوكيل أو ضع علامة على @files أو استخدم /commands و /skills",
       mobile: "الرسالة، @files ، /commands",
@@ -2793,6 +2799,15 @@ export const ar: TranslationResources = {
           prompt: "طلب الاستئناف",
           edit: "تحرير",
           editAccessibilityLabel: "تعديل الطلب",
+        },
+        draftHistory: {
+          title: "سجل المسودات",
+          hint_one:
+            "تُحفظ المسودات المحذوفة أو المستبدلة لمدة {{count}} يوم لتتمكن من استعادتها من محرر الرسائل.",
+          hint_other:
+            "تُحفظ المسودات المحذوفة أو المستبدلة لمدة {{count}} أيام لتتمكن من استعادتها من محرر الرسائل.",
+          days_one: "{{count}} ي",
+          days_other: "{{count}} ي",
         },
         idleRuntimeCleanup: {
           title: "تحرير الوكلاء الخاملين",

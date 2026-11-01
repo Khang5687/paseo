@@ -112,6 +112,12 @@ export const en = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restore draft",
+      attachmentsOnly: "(attachments only)",
+      attachments_one: "{{count}} attachment",
+      attachments_other: "{{count}} attachments",
+    },
     placeholders: {
       desktop: "Message the agent, tag @files, or use /commands and /skills",
       mobile: "Message, @files, /commands",
@@ -2885,6 +2891,15 @@ export const en = {
           prompt: "Resume prompt",
           edit: "Edit",
           editAccessibilityLabel: "Edit prompt",
+        },
+        draftHistory: {
+          title: "Draft history",
+          hint_one:
+            "Deleted or overwritten drafts are kept for {{count}} day so you can restore them from the composer.",
+          hint_other:
+            "Deleted or overwritten drafts are kept for {{count}} days so you can restore them from the composer.",
+          days_one: "{{count}}d",
+          days_other: "{{count}}d",
         },
         idleRuntimeCleanup: {
           title: "Release idle agents",

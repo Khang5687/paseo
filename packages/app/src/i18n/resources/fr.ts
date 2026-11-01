@@ -118,6 +118,12 @@ export const fr: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restaurer le brouillon",
+      attachmentsOnly: "(pièces jointes uniquement)",
+      attachments_one: "{{count}} pièce jointe",
+      attachments_other: "{{count}} pièces jointes",
+    },
     placeholders: {
       desktop: "Écrivez à l’agent, mentionnez des @fichiers ou utilisez les /commandes et /skills",
       mobile: "Message, @fichiers, /commandes",
@@ -2818,6 +2824,15 @@ export const fr: TranslationResources = {
           prompt: "Message de reprise",
           edit: "Modifier",
           editAccessibilityLabel: "Modifier le message",
+        },
+        draftHistory: {
+          title: "Historique des brouillons",
+          hint_one:
+            "Les brouillons supprimés ou remplacés sont conservés {{count}} jour pour que vous puissiez les restaurer depuis le compositeur.",
+          hint_other:
+            "Les brouillons supprimés ou remplacés sont conservés {{count}} jours pour que vous puissiez les restaurer depuis le compositeur.",
+          days_one: "{{count}} j",
+          days_other: "{{count}} j",
         },
         idleRuntimeCleanup: {
           title: "Libérer les agents inactifs",

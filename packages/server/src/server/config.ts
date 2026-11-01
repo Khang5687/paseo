@@ -596,6 +596,7 @@ export type ResolvedDaemonSettings = Pick<
   | "relayRequireProtectedSecurity"
   | "appBaseUrl"
   | "idleRuntimeCleanup"
+  | "draftHistoryRetentionDays"
   | "resumeOnStartup"
   | "resumePrompt"
   | "providerCatalogRefreshTimeoutMs"
@@ -684,7 +685,7 @@ export function resolveReloadableConfig(
     plugins: persisted.plugins,
     relayEnabled: relay.enabled,
     relayRequireProtectedSecurity: relay.requireProtectedSecurity,
-    idleRuntimeCleanup: persisted.agents?.idleRuntimeCleanup ?? true,
+    ...resolveAgentHousekeepingConfig(persisted.agents),
     ...resolveRestartRecoveryConfig(persisted.agents),
     providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
     metadataGeneration: persisted.agents?.metadataGeneration,
@@ -841,5 +842,12 @@ function resolveRestartRecoveryConfig(agents: PersistedConfig["agents"]) {
   return {
     resumeOnStartup: agents?.resumeOnStartup ?? true,
     resumePrompt: agents?.resumePrompt ?? "Resume working.",
+  };
+}
+
+function resolveAgentHousekeepingConfig(agents: PersistedConfig["agents"]) {
+  return {
+    idleRuntimeCleanup: agents?.idleRuntimeCleanup ?? true,
+    draftHistoryRetentionDays: agents?.draftHistoryRetentionDays,
   };
 }
