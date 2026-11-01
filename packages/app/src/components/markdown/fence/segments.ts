@@ -26,8 +26,8 @@ export function splitNativeFences(
   let cursor = 0;
   function extract(node: Code): ExtractedFence | null {
     if (node.lang?.toLowerCase() === "mermaid") return { kind: "mermaid", source: node.value };
-    if (node.lang && isShellFence?.(node.lang, node.value))
-      return { kind: "shell", source: node.value, language: node.lang };
+    if (isShellFence?.(node.lang ?? "", node.value))
+      return { kind: "shell", source: node.value, language: node.lang ?? "" };
     return null;
   }
   function visit(node: RootContent): void {

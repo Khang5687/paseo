@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRunInput,
+  commandRisk,
+  formatRunDuration,
   formatRunReport,
-  isPasswordPrompt,
   readRunOutput,
+  readRunPrompt,
   shellFenceCommand,
 } from "./command";
 
@@ -17,7 +19,6 @@ describe("shellFenceCommand", () => {
     expect(shellFenceCommand("ts", "ls")).toBeNull();
     expect(shellFenceCommand("powershell", "ls")).toBeNull();
     expect(shellFenceCommand("constructor", "ls")).toBeNull();
-    expect(shellFenceCommand(null, "ls")).toBeNull();
   });
 
   it("keeps a multi-line script intact apart from surrounding blank lines", () => {
@@ -43,9 +44,10 @@ describe("buildRunInput", () => {
     expect(buildRunInput("sudo true\necho ok", NONCE)).toBe(
       [
         `: ${NONCE}; setopt interactive_comments 2>/dev/null`,
-        "{ sudo true",
+        `{ printf '[start %s] %s\\n' "$(date +%s)" ${NONCE}`,
+        "sudo true",
         "echo ok",
-        `}; printf '\\n[exit %s] %s\\n' "$?" ${NONCE}`,
+        `}; printf '\\n[exit %s %s] %s\\n' "$?" "$(date +%s)" ${NONCE}`,
         "",
       ].join("\r"),
     );
@@ -55,26 +57,30 @@ describe("buildRunInput", () => {
 describe("readRunOutput", () => {
   const screen = [
     `me@host app % : ${NONCE}; setopt interactive_comments 2>/dev/null`,
-    "me@host app % { npm test",
-    `cursh> }; printf '\\n[exit %s] %s\\n' "$?" ${NONCE}`,
+    `me@host app % { printf '[start %s] %s\\n' "$(date +%s)" ${NONCE}`,
+    "cursh> npm test",
+    `cursh> }; printf '\\n[exit %s %s] %s\\n' "$?" "$(date +%s)" ${NONCE}`,
+    `[start 1730000000] ${NONCE}`,
     "PASS src/a.test.ts",
     "",
-    `[exit 1] ${NONCE}`,
+    `[exit 1 1730000003] ${NONCE}`,
     "me@host app %",
     "",
   ];
 
-  it("returns the output between the wrapper echo and the status line", () => {
+  it("returns the output between the start and status lines with the host duration", () => {
     expect(readRunOutput({ lines: screen, nonce: NONCE, complete: true })).toEqual({
       lines: ["PASS src/a.test.ts"],
       exitCode: 1,
+      durationSeconds: 3,
     });
   });
 
   it("reports a running command without a status", () => {
-    expect(readRunOutput({ lines: screen.slice(0, 4), nonce: NONCE, complete: true })).toEqual({
+    expect(readRunOutput({ lines: screen.slice(0, 6), nonce: NONCE, complete: true })).toEqual({
       lines: ["PASS src/a.test.ts"],
       exitCode: null,
+      durationSeconds: null,
     });
   });
 
@@ -82,35 +88,71 @@ describe("readRunOutput", () => {
     expect(readRunOutput({ lines: ["me@host app %", ""], nonce: NONCE, complete: true })).toEqual({
       lines: [],
       exitCode: null,
+      durationSeconds: null,
     });
   });
 
   it("treats a window whose echo scrolled away as all output", () => {
     expect(
       readRunOutput({
-        lines: ["line 900", "line 901", `[exit 0] ${NONCE}`],
+        lines: ["line 900", "line 901", `[exit 0 1730000009] ${NONCE}`],
         nonce: NONCE,
         complete: false,
       }),
-    ).toEqual({ lines: ["line 900", "line 901"], exitCode: 0 });
+    ).toEqual({ lines: ["line 900", "line 901"], exitCode: 0, durationSeconds: null });
   });
 
   it("ignores another run's status line", () => {
-    const other = [...screen.slice(0, 4), "[exit 0] paseo-run-other"];
+    const other = [...screen.slice(0, 6), "[exit 0 1730000003] paseo-run-other"];
     expect(readRunOutput({ lines: other, nonce: NONCE, complete: true }).exitCode).toBeNull();
   });
 });
 
-describe("isPasswordPrompt", () => {
-  it("matches the prompts sudo, ssh and login tools print", () => {
-    expect(isPasswordPrompt(["Building", "[sudo] password for khang:"])).toBe(true);
-    expect(isPasswordPrompt(["Password:"])).toBe(true);
-    expect(isPasswordPrompt(["Enter passphrase for key '/Users/me/.ssh/id_ed25519':"])).toBe(true);
+describe("readRunPrompt", () => {
+  it("recognizes the password prompts sudo, ssh and login tools print", () => {
+    expect(readRunPrompt(["Building", "[sudo] password for khang:"])).toEqual({
+      kind: "password",
+      sudo: true,
+    });
+    expect(readRunPrompt(["Password:"])).toEqual({ kind: "password", sudo: false });
+    expect(readRunPrompt(["Enter passphrase for key '/Users/me/.ssh/id_ed25519':"])).toEqual({
+      kind: "password",
+      sudo: false,
+    });
+  });
+
+  it("recognizes yes/no confirmations", () => {
+    for (const line of ["Proceed? [y/N]", "Overwrite (y/n)", "Are you sure (yes/no)?", "Continue?"])
+      expect(readRunPrompt([line])).toEqual({ kind: "confirm" });
   });
 
   it("only looks at the line being waited on", () => {
-    expect(isPasswordPrompt(["Password:", "Done"])).toBe(false);
-    expect(isPasswordPrompt([])).toBe(false);
+    expect(readRunPrompt(["Password:", "Done"])).toBeNull();
+    expect(readRunPrompt([])).toBeNull();
+  });
+});
+
+describe("commandRisk", () => {
+  it("flags elevation anywhere a command starts", () => {
+    expect(commandRisk("sudo bash /tmp/apply.sh")).toBe("admin");
+    expect(commandRisk("cd /etc && sudo vim hosts")).toBe("admin");
+    expect(commandRisk("FOO=1 doas reboot")).toBe("admin");
+    expect(commandRisk("echo pseudo sudoers")).toBeNull();
+  });
+
+  it("flags recursive deletes", () => {
+    expect(commandRisk("rm -rf node_modules")).toBe("deletes");
+    expect(commandRisk("rm -fr build")).toBe("deletes");
+    expect(commandRisk("rm -r -f dist")).toBe("deletes");
+    expect(commandRisk("rm file.txt")).toBeNull();
+  });
+});
+
+describe("formatRunDuration", () => {
+  it("stays short at every scale", () => {
+    expect(formatRunDuration(3)).toBe("3s");
+    expect(formatRunDuration(125)).toBe("2m 05s");
+    expect(formatRunDuration(3720)).toBe("1h 02m");
   });
 });
 

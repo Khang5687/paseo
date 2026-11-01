@@ -1,3 +1,5 @@
+import { trimBlankLines, untaggedShellCommand } from "./detect";
+
 /** Fence languages whose body is a command a reader would paste into a shell. */
 const SHELL_FENCE_LANGUAGES: Record<string, true> = {
   bash: true,
@@ -12,13 +14,17 @@ const CONSOLE_CONTINUATION_PREFIX = /^\s*> ?/;
 const COMMENT_LINE = /^\s*#/;
 const PASSWORD_PROMPT = /\[sudo\] password for|password:|passphrase/i;
 
-/** The command a shell fence runs, or null when the fence is not a runnable shell block. */
+/**
+ * The command a fence runs, or null when the fence is not a runnable shell block. Untagged
+ * fences run only when they read as commands; other languages never run.
+ */
 export function shellFenceCommand(
   language: string | null | undefined,
   code: string,
 ): string | null {
   const fenceLanguage = language?.trim().split(/\s+/)[0]?.toLowerCase();
-  if (!fenceLanguage || !Object.hasOwn(SHELL_FENCE_LANGUAGES, fenceLanguage)) return null;
+  if (!fenceLanguage) return untaggedShellCommand(code);
+  if (!Object.hasOwn(SHELL_FENCE_LANGUAGES, fenceLanguage)) return null;
   const lines = code.replace(/\r\n?/g, "\n").split("\n");
   const commandLines = trimBlankLines(
     fenceLanguage === "console" ? consoleCommandLines(lines) : lines,
@@ -47,31 +53,25 @@ function consoleCommandLines(lines: readonly string[]): string[] {
   return commands;
 }
 
-function trimBlankLines(lines: readonly string[]): string[] {
-  let start = 0;
-  let end = lines.length;
-  while (start < end && lines[start].trim() === "") start += 1;
-  while (end > start && lines[end - 1].trim() === "") end -= 1;
-  return lines.slice(start, end);
-}
-
 /**
- * The keystrokes that run a command in an interactive POSIX shell and leave its exit status
- * in the terminal text.
+ * The keystrokes that run a command in an interactive POSIX shell and leave its timing and
+ * exit status in the terminal text.
  *
  * - The first line turns on comments for zsh, which ignores `#` at its prompt by default.
  *   Other shells reject `setopt` silently.
  * - The `{ }` group makes the shell read every line before running any, so a command that
  *   reads stdin (sudo, a confirmation) cannot swallow the lines after it, and one status
  *   covers the whole block.
- * - The status line is plain text, so a card that reattaches after the command ended reads
- *   it from the captured screen. Both wrapper lines carry the nonce so the card can hide them.
+ * - The start and status lines are plain text stamped with the host's clock, so a card that
+ *   reattaches after the command ended reads both from the captured screen. Every wrapper
+ *   line carries the nonce so the card can hide it.
  */
 export function buildRunInput(command: string, nonce: string): string {
   const lines = [
     `: ${nonce}; setopt interactive_comments 2>/dev/null`,
-    `{ ${command.split("\n").join("\r")}`,
-    `}; printf '\\n[exit %s] %s\\n' "$?" ${nonce}`,
+    `{ printf '[start %s] %s\\n' "$(date +%s)" ${nonce}`,
+    ...command.split("\n"),
+    `}; printf '\\n[exit %s %s] %s\\n' "$?" "$(date +%s)" ${nonce}`,
   ];
   return `${lines.join("\r")}\r`;
 }
@@ -80,6 +80,8 @@ export interface RunOutput {
   /** Lines the command printed, without the shell's echo of the wrapper. */
   lines: string[];
   exitCode: number | null;
+  /** Whole seconds on the host's clock; null until the run ends. */
+  durationSeconds: number | null;
 }
 
 /**
@@ -94,30 +96,67 @@ export function readRunOutput(input: {
   complete: boolean;
 }): RunOutput {
   const { lines, nonce, complete } = input;
-  const statusLine = new RegExp(`^\\[exit (\\d+)\\] ${nonce}$`);
+  const startLine = new RegExp(`^\\[start (\\d+)\\] ${nonce}$`);
+  const statusLine = new RegExp(`^\\[exit (\\d+) (\\d+)\\] ${nonce}$`);
   let echoEnd = -1;
   let statusIndex = -1;
+  let startedAt: number | null = null;
   let exitCode: number | null = null;
+  let durationSeconds: number | null = null;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const status = statusLine.exec(line);
     if (status) {
       statusIndex = index;
       exitCode = Number(status[1]);
+      if (startedAt !== null) durationSeconds = Math.max(0, Number(status[2]) - startedAt);
       break;
     }
+    const start = startLine.exec(line);
+    if (start) startedAt = Number(start[1]);
     if (line.includes(nonce)) echoEnd = index;
   }
-  if (echoEnd === -1 && complete) return { lines: [], exitCode };
+  if (echoEnd === -1 && complete) return { lines: [], exitCode, durationSeconds };
   const end = statusIndex === -1 ? lines.length : statusIndex;
   const output = trimBlankLines(lines.slice(echoEnd + 1, end));
-  return { lines: output, exitCode };
+  return { lines: output, exitCode, durationSeconds };
 }
 
-/** Whether the line the command is waiting on asks for a secret. */
-export function isPasswordPrompt(lines: readonly string[]): boolean {
+/** What the command is waiting for, read from the line it last printed. */
+export type RunPrompt = { kind: "password"; sudo: boolean } | { kind: "confirm" } | null;
+
+const CONFIRM_PROMPT = /\[y\/n\]|\(y\/n\)|\[yes\/no\]|\(yes\/no\)|continue\?/i;
+
+export function readRunPrompt(lines: readonly string[]): RunPrompt {
   const last = lines.at(-1);
-  return last !== undefined && PASSWORD_PROMPT.test(last);
+  if (last === undefined) return null;
+  if (PASSWORD_PROMPT.test(last)) return { kind: "password", sudo: /\[sudo\]/i.test(last) };
+  if (CONFIRM_PROMPT.test(last)) return { kind: "confirm" };
+  return null;
+}
+
+/** Commands worth a second look before the tap: elevated, or deleting recursively. */
+export type CommandRisk = "admin" | "deletes" | null;
+
+const COMMAND_SEPARATOR = /[\n;&|()]/;
+const LEADING_ASSIGNMENTS = /^(?:[A-Za-z_]\w*=\S*\s+)+/;
+const ELEVATED = /^(?:sudo|doas)(?:\s|$)/;
+const RECURSIVE_DELETE = /\brm\s+(?:-[A-Za-z]*r[A-Za-z]*f|-[A-Za-z]*f[A-Za-z]*r|-r\s+-f|-f\s+-r)\b/;
+
+export function commandRisk(command: string): CommandRisk {
+  const segments = command.split(COMMAND_SEPARATOR);
+  if (segments.some((segment) => ELEVATED.test(segment.trim().replace(LEADING_ASSIGNMENTS, ""))))
+    return "admin";
+  if (RECURSIVE_DELETE.test(command)) return "deletes";
+  return null;
+}
+
+/** `3s`, `2m 05s`, `1h 02m`: compact enough for a status line on a phone. */
+export function formatRunDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
 }
 
 const AGENT_OUTPUT_LIMIT = 8000;

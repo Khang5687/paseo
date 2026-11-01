@@ -16,6 +16,8 @@ const CodeRunRecordSchema = z.object({
   nonce: z.string(),
   startedAt: z.number(),
   exitCode: z.number().nullable(),
+  /** Measured on the host's clock, so phone/host clock skew cannot distort it. */
+  durationSeconds: z.number().nullable(),
   stopped: z.boolean(),
 });
 
@@ -62,7 +64,7 @@ export function rememberCodeRun(key: string, record: CodeRunRecord): void {
 
 export function updateCodeRun(
   key: string,
-  patch: Pick<Partial<CodeRunRecord>, "exitCode" | "stopped">,
+  patch: Pick<Partial<CodeRunRecord>, "exitCode" | "durationSeconds" | "stopped">,
 ): void {
   useCodeRunStore.setState((state) => {
     const record = state.records[key];

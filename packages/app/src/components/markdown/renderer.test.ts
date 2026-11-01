@@ -371,6 +371,17 @@ it("extracts runnable shell fences only when the message can run them", async ()
   ]);
 });
 
+it("extracts an untagged fence only when it reads as a command", async () => {
+  const { splitNativeFences } = await import("./fence/segments");
+  const { isRunnableShellFence } = await import("@/code-run/fence");
+  const source = "Run this:\n```\nsudo bash /tmp/apply.sh\n```\n\nOutput:\n```\nDone in 3s.\n```";
+  expect(splitNativeFences(source, isRunnableShellFence)).toEqual([
+    { kind: "markdown", id: "0", source: "Run this:\n" },
+    { kind: "shell", id: "1", source: "sudo bash /tmp/apply.sh", language: "" },
+    { kind: "markdown", id: "2", source: "\n\nOutput:\n```\nDone in 3s.\n```" },
+  ]);
+});
+
 it("keeps reference links available across native Mermaid boundaries", async () => {
   const { splitNativeFences } = await import("./fence/segments");
   const parts = splitNativeFences(

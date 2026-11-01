@@ -52,11 +52,33 @@ export async function startCodeRun(input: {
     nonce,
     startedAt: Date.now(),
     exitCode: null,
+    durationSeconds: null,
     stopped: false,
   });
   await waitForShellOutput(client, terminalId);
   client.sendTerminalInput(terminalId, { type: "input", data: buildRunInput(command, nonce) });
   setCodeRunLive(key, { kind: "output", lines: [] });
+}
+
+/**
+ * Runs the command again in the same terminal, so its history stays in one tab. The new
+ * nonce makes the card read only the new run's output.
+ */
+export function rerunCodeRun(client: CodeRunClient, key: string, record: CodeRunRecord): void {
+  const nonce = createRunNonce();
+  rememberCodeRun(key, {
+    ...record,
+    nonce,
+    startedAt: Date.now(),
+    exitCode: null,
+    durationSeconds: null,
+    stopped: false,
+  });
+  setCodeRunLive(key, { kind: "output", lines: [] });
+  client.sendTerminalInput(record.terminalId, {
+    type: "input",
+    data: buildRunInput(record.command, nonce),
+  });
 }
 
 function terminalName(command: string): string {
@@ -105,8 +127,10 @@ export function observeCodeRun(input: {
   key: string;
   record: Pick<CodeRunRecord, "terminalId" | "nonce">;
   liveRestore: boolean;
+  /** Called once when this observation sees the run end. */
+  onFinish: (exitCode: number) => void;
 }): () => void {
-  const { client, key, record, liveRestore } = input;
+  const { client, key, record, liveRestore, onFinish } = input;
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let capturing = false;
@@ -160,8 +184,13 @@ export function observeCodeRun(input: {
       });
       setCodeRunLive(key, { kind: "output", lines: output.lines });
       if (output.exitCode !== null) {
-        updateCodeRun(key, { exitCode: output.exitCode });
+        const known = useCodeRunStore.getState().records[key]?.exitCode;
+        updateCodeRun(key, {
+          exitCode: output.exitCode,
+          durationSeconds: output.durationSeconds,
+        });
         dispose();
+        if (known === null) onFinish(output.exitCode);
       }
     } finally {
       capturing = false;
@@ -198,4 +227,13 @@ export function interruptCodeRun(client: CodeRunClient, key: string, record: Cod
 /** Sends one line to the command. The text is not kept anywhere on this side. */
 export function answerCodeRun(client: CodeRunClient, record: CodeRunRecord, answer: string): void {
   client.sendTerminalInput(record.terminalId, { type: "input", data: `${answer}\r` });
+}
+
+/** A single key the phone keyboard has no good way to type into the run. */
+export type CodeRunKey = "enter" | "tab";
+
+const KEY_INPUT: Record<CodeRunKey, string> = { enter: "\r", tab: "\t" };
+
+export function pressCodeRunKey(client: CodeRunClient, record: CodeRunRecord, key: CodeRunKey) {
+  client.sendTerminalInput(record.terminalId, { type: "input", data: KEY_INPUT[key] });
 }
