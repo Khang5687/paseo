@@ -38,6 +38,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/menus.md](docs/menus.md)                                       | The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu                               |
 | [docs/expo-router.md](docs/expo-router.md)                           | Expo Router route ownership, startup restore, and native blank-screen gotchas                                                  |
 | [docs/notifications.md](docs/notifications.md)                       | Notification tap ownership, native replay and acknowledgement, startup handoff, and payload QA                                 |
+| [docs/notes.md](docs/notes.md)                                       | Notes on chat/terminal selections: host ownership, waiting-on events, shell integration coverage, the one-alert rule           |
 | [docs/file-icons.md](docs/file-icons.md)                             | Material icon theme integration for the file explorer                                                                          |
 | [docs/providers.md](docs/providers.md)                               | Adding a new agent provider end-to-end                                                                                         |
 | [docs/forge-providers.md](docs/forge-providers.md)                   | Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers                                  |

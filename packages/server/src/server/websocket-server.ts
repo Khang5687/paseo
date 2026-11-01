@@ -124,6 +124,8 @@ import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
+import type { NoteFiredEvent, NotesService } from "./notes/notes-service.js";
+import type { Note } from "@getpaseo/protocol/notes/schemas";
 import type { AccountRoutingAuthority } from "./account-routing/authority.js";
 import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
@@ -591,6 +593,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly notesService: NotesService | null;
   private readonly accountRouting: AccountRoutingAuthority | undefined;
   private readonly accountLogin: OmpAccountLogin | undefined;
   // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
@@ -723,6 +726,7 @@ export class VoiceAssistantWebSocketServer {
     workspaceLabelService?: WorkspaceLabelService,
     accountRouting?: AccountRoutingAuthority,
     accountLogin?: OmpAccountLogin,
+    notesService?: NotesService,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -846,7 +850,9 @@ export class VoiceAssistantWebSocketServer {
     });
     this.pushNotificationSender = pushNotificationSender ?? this.pushNotifications;
 
+    this.notesService = this.wireFiredNotes(notesService);
     this.agentManager.setAgentAttentionCallback((params) => {
+      this.notesService?.handleAgentAttention(params);
       void this.broadcastAgentAttention(params).catch((err) => {
         this.logger.warn({ err, agentId: params.agentId }, "Failed to broadcast agent attention");
       });
@@ -857,6 +863,15 @@ export class VoiceAssistantWebSocketServer {
     this.startApplicationSocketLeaseInterval();
 
     this.logger.info("WebSocket server initialized on /ws");
+  }
+
+  private wireFiredNotes(notesService: NotesService | undefined): NotesService | null {
+    notesService?.setFiredHandler((event) => {
+      void this.broadcastNoteFired(event).catch((err) => {
+        this.logger.warn({ err, noteId: event.note.id }, "Failed to broadcast fired note");
+      });
+    });
+    return notesService ?? null;
   }
 
   private assignOptionalServices(params: {
@@ -1735,6 +1750,7 @@ export class VoiceAssistantWebSocketServer {
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      notesService: this.notesService ?? undefined,
       accountRouting: this.accountRouting,
       accountLogin: this.accountLogin,
       isHostLocalSource: (source) => {
@@ -2107,6 +2123,8 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
+        ...(this.notesService ? { notes: true } : {}),
         ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
         // The host can open a browser and sign a Claude account in; only advertised with routing.
         ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
@@ -3060,6 +3078,55 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
+  private async broadcastNoteFired(event: NoteFiredEvent): Promise<void> {
+    const entries: Array<{ ws: WebSocketLike; session: Session; state: ClientPresenceState }> = [];
+    for (const [ws, connection] of this.sessions) {
+      // Older apps cannot parse notes.fired; only sources that subscribed to it receive it.
+      if (!connection.session.delivery.isModern(ws)) continue;
+      if (!connection.session.wantsSourceEvent(ws, "notes.fired")) continue;
+      if (!connection.session.wantsSourceNotification(ws, "notes.fired")) continue;
+      entries.push({
+        ws,
+        session: connection.session,
+        state: this.getClientActivityState(connection.session, ws),
+      });
+    }
+    const plan = computeNotificationPlan({
+      allStates: entries.map((entry) => entry.state),
+      focusTarget: null,
+      pushEligible: event.push,
+      nowMs: Date.now(),
+    });
+    const { note } = event;
+    if (plan.shouldPush) {
+      void this.pushNotificationSender
+        .send({
+          title: event.title,
+          body: event.body,
+          data: {
+            serverId: this.serverId,
+            noteId: note.id,
+            ...noteNotificationTarget(note),
+          },
+        })
+        .catch((err) => {
+          this.logger.warn({ err, noteId: note.id }, "Failed to send push notification");
+        });
+    }
+    for (const [index, entry] of entries.entries()) {
+      entry.session.publishToSource(entry.ws, {
+        type: "notes.fired",
+        payload: {
+          serverId: this.serverId,
+          note,
+          title: event.title,
+          body: event.body,
+          shouldNotify: plan.inAppRecipientIndex === index,
+        },
+      });
+    }
+  }
+
   private async broadcastTerminalAttention(params: {
     terminalId: string;
     cwd: string;
@@ -3151,6 +3218,22 @@ export class VoiceAssistantWebSocketServer {
       else this.sendToClient(ws, message);
     }
   }
+}
+
+// Where a note notification tap should open: the agent or terminal the note was made on.
+function noteNotificationTarget(note: Note): Record<string, string> {
+  const { anchor } = note;
+  if (anchor.kind === "agent") {
+    return {
+      agentId: anchor.agentId,
+      ...(anchor.workspaceId ? { workspaceId: anchor.workspaceId } : {}),
+    };
+  }
+  return {
+    terminalId: anchor.terminalId,
+    ...(anchor.workspaceId ? { workspaceId: anchor.workspaceId } : {}),
+    ...(anchor.cwd ? { cwd: anchor.cwd } : {}),
+  };
 }
 
 interface SocketRequestMetadata {

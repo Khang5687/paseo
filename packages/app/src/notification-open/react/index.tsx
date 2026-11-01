@@ -6,6 +6,8 @@ import {
   useIsLastWorkspaceSelectionHydrated,
 } from "@/stores/navigation-active-workspace-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { findNote } from "@/notes/find-note";
+import { openNote } from "@/notes/open-note";
 import { createNotificationOpenRouter } from "../model";
 import { createNotificationOpenSource } from "../source";
 
@@ -21,6 +23,8 @@ const notificationRouter = createNotificationOpenRouter({
       target: { kind: "terminal", terminalId },
     }),
   openRoute: (route) => router.navigate(route as Href),
+  resolveNote: ({ serverId, noteId }) => findNote(serverId, noteId),
+  openNote,
   whenReadyToNavigate: () =>
     ready
       ? Promise.resolve()

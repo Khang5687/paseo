@@ -174,6 +174,7 @@ import {
 } from "./workspace-registry.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
+import { NotesService } from "./notes/notes-service.js";
 import {
   DaemonConfigStore,
   resolveFeatureDefaults,
@@ -1650,6 +1651,11 @@ export async function createPaseoDaemon(
     archiveWorkspace: archiveScheduleWorkspaceExternal,
   });
   await scheduleService.start();
+  const notesService = new NotesService({ paseoHome: config.paseoHome, logger });
+  await notesService.start();
+  const unsubscribeNoteCommandFinished = terminalManager.subscribeTerminalCommandFinished((event) =>
+    notesService.handleCommandFinished(event),
+  );
 
   agentManager.setAgentArchivedCallback(async (agentId) => {
     try {
@@ -2083,6 +2089,7 @@ export async function createPaseoDaemon(
               workspaceLabelService,
               accountRouting,
               accountLogin,
+              notesService,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
@@ -2221,6 +2228,8 @@ export async function createPaseoDaemon(
     }
     await speechService.stop();
     await scheduleService.stop().catch(() => undefined);
+    unsubscribeNoteCommandFinished();
+    await notesService.stop().catch(() => undefined);
     await relayRuntime?.stop().catch(() => undefined);
     if (wsServer) {
       await wsServer.close();

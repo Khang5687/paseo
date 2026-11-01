@@ -3,6 +3,8 @@ import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
+import { AddNoteButton } from "@/chat-notes/add-note-button";
+import { useAddMessageNote } from "@/chat-notes/context";
 import {
   AttachmentFrame,
   AttachmentLabel,
@@ -429,6 +431,8 @@ export const UserMessage = memo(function UserMessage({
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
   const getMessageContent = useCallback(() => message, [message]);
+  // Native text has no custom selection menu; the message offers "Add note" instead.
+  const addNote = useAddMessageNote(getMessageContent);
   const handleRewind = useCallback(
     (input: { mode: RewindMode; rewoundText: string }) => {
       return rewindMutation.rewindAgent(input);
@@ -535,6 +539,13 @@ export const UserMessage = memo(function UserMessage({
                 onRewind={handleRewind}
               />
             ) : null}
+            {isNative && addNote ? (
+              <AddNoteButton
+                onPress={addNote.onPress}
+                marked={addNote.marked}
+                accessibilityLabel={t("notes.addNote")}
+              />
+            ) : null}
             <TurnCopyButton
               getContent={getMessageContent}
               containerStyle={userMessageStylesheet.copyButton}
@@ -586,6 +597,8 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
 }));
 
 const TIMESTAMP_REVEAL_MS = 3000;
+/** A turn without assistant text quotes nothing; a stable identity keeps the footer memoized. */
+const EMPTY_TURN_CONTENT = () => "";
 
 /**
  * Footer rendered next to the copy button at the end of an assistant turn.
@@ -599,6 +612,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
   onFork,
 }: AssistantTurnFooterProps) {
   const { t } = useTranslation();
+  const addNote = useAddMessageNote(getContent ?? EMPTY_TURN_CONTENT);
   const [hovered, setHovered] = useState(false);
   const [pressedReveal, setPressedReveal] = useState(false);
   const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -656,6 +670,13 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
         />
       ) : null}
       {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
+      {isNative && getContent && addNote ? (
+        <AddNoteButton
+          onPress={addNote.onPress}
+          marked={addNote.marked}
+          accessibilityLabel={t("notes.addNote")}
+        />
+      ) : null}
       {primaryLabel ? (
         <Pressable
           onPress={handlePress}

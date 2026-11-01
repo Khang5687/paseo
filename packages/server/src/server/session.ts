@@ -103,6 +103,7 @@ import {
   WorkspaceLabelStorageUncertainError,
   type WorkspaceLabelService,
 } from "./workspace-labels/index.js";
+import type { NotesService } from "./notes/notes-service.js";
 
 import { AgentManager, AgentRunCancellationError } from "./agent/agent-manager.js";
 import { buildTimelinePromptIndex } from "./agent/timeline-prompt-index.js";
@@ -482,6 +483,7 @@ export interface SessionOptions {
   workspaceRegistry: WorkspaceRegistry;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  notesService?: NotesService;
   accountRouting?: AccountRoutingAuthority;
   accountLogin?: OmpAccountLogin;
   /** The source is a direct loopback or local IPC socket: the host's own app. */
@@ -806,6 +808,7 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly notesService: NotesService | null;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -871,6 +874,7 @@ export class Session {
       workspaceRegistry,
       directorySync,
       workspaceLabelService,
+      notesService,
       accountRouting,
       accountLogin,
       isHostLocalSource,
@@ -959,6 +963,7 @@ export class Session {
     this.workspaceRegistry = workspaceRegistry;
     this.directorySync = resolveDirectorySync(directorySync);
     this.workspaceLabelService = resolveWorkspaceLabelService(workspaceLabelService);
+    this.notesService = notesService ?? null;
     this.filesystem = filesystem ?? nodeSessionFileSystem;
     this.github = github ?? createGitHubService();
     this.renameCurrentBranch = renameCurrentBranch ?? renameCurrentBranchDefault;
@@ -2502,6 +2507,7 @@ export class Session {
     return (
       this.dispatchTerminalMessage(msg) ??
       this.dispatchScheduleMessage(msg) ??
+      this.dispatchNotesMessage(msg) ??
       this.speechModelsSession.dispatch(msg)
     );
   }
@@ -3300,6 +3306,114 @@ export class Session {
         return this.scheduleSession.handleScheduleUpdateRequest(msg);
       default:
         return undefined;
+    }
+  }
+
+  private dispatchNotesMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "notes.list.request":
+        return this.handleNotesList(msg);
+      case "notes.create.request":
+      case "notes.edit.request":
+      case "notes.delete.request":
+        return this.handleNotesMutation(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private requireNotes(): NotesService {
+    if (!this.notesService) {
+      throw new SessionRequestError("notes_unavailable", "Notes unavailable");
+    }
+    return this.notesService;
+  }
+
+  private async handleNotesList(
+    request: Extract<SessionInboundMessage, { type: "notes.list.request" }>,
+  ): Promise<void> {
+    if (!this.notesService) {
+      this.emit({
+        type: "notes.list.response",
+        payload: { requestId: request.requestId, notes: [], error: "Notes unavailable" },
+      });
+      return;
+    }
+    const service = this.notesService;
+    if (!request.subscribe) {
+      this.emit({
+        type: "notes.list.response",
+        payload: { requestId: request.requestId, notes: service.list(), error: null },
+      });
+      return;
+    }
+    let unsubscribe: (() => void) | undefined;
+    const owner = this.delivery.begin("notes", request.subscribe.subscriptionId, () => {
+      unsubscribe?.();
+    });
+    unsubscribe = service.subscribe((change) => {
+      if (owner.signal.aborted) return;
+      owner.emit({ type: "notes.changed", payload: change });
+    });
+    this.emit({
+      type: "notes.list.response",
+      payload: {
+        requestId: request.requestId,
+        subscriptionId: owner.responseId,
+        notes: service.list(),
+        error: null,
+      },
+    });
+  }
+
+  private async handleNotesMutation(
+    request: Extract<
+      SessionInboundMessage,
+      { type: "notes.create.request" | "notes.edit.request" | "notes.delete.request" }
+    >,
+  ): Promise<void> {
+    try {
+      const service = this.requireNotes();
+      switch (request.type) {
+        case "notes.create.request": {
+          const note = await service.create(request);
+          this.emit({
+            type: "notes.create.response",
+            payload: { requestId: request.requestId, note, error: null },
+          });
+          return;
+        }
+        case "notes.edit.request": {
+          const note = await service.edit(request);
+          this.emit({
+            type: "notes.edit.response",
+            payload: { requestId: request.requestId, note, error: null },
+          });
+          return;
+        }
+        case "notes.delete.request":
+          await service.delete(request.noteId);
+          this.emit({
+            type: "notes.delete.response",
+            payload: { requestId: request.requestId, noteId: request.noteId, error: null },
+          });
+          return;
+      }
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.sessionLogger.warn({ err: error, requestType: request.type }, "Note request failed");
+      if (request.type === "notes.delete.request") {
+        this.emit({
+          type: "notes.delete.response",
+          payload: { requestId: request.requestId, noteId: request.noteId, error: message },
+        });
+        return;
+      }
+      this.emit({
+        type:
+          request.type === "notes.create.request" ? "notes.create.response" : "notes.edit.response",
+        payload: { requestId: request.requestId, note: null, error: message },
+      });
     }
   }
 
@@ -9295,6 +9409,7 @@ function sessionEventCategory(message: SessionOutboundMessage): SessionEventSubs
     case "activity_log":
     case "hub.execution.agent.update":
     case "hub.execution.agent.stream":
+    case "notes.fired":
       return message.type;
     case "status":
       switch (message.payload.status) {

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { reloadActiveBrowserOrWindow, setupApplicationMenu } from "./menu.js";
+import {
+  buildTerminalContextMenuTemplate,
+  reloadActiveBrowserOrWindow,
+  setupApplicationMenu,
+} from "./menu.js";
 
 const electron = vi.hoisted(() => ({
   quit: vi.fn(),
@@ -85,6 +89,41 @@ describe("reloadActiveBrowserOrWindow", () => {
     expect(browserReloads.firstBrowser.reloads).toEqual([]);
     expect(browserReloads.secondBrowser.reloads).toEqual(["force-reload"]);
     expect(browserReloads.secondWindow.webContents.reloads).toEqual([]);
+  });
+});
+
+describe("buildTerminalContextMenuTemplate", () => {
+  it("keeps the Copy / Paste / Select All menu when the renderer sends no Add note label", () => {
+    const template = buildTerminalContextMenuTemplate(
+      { kind: "terminal", hasSelection: true },
+      () => {},
+    );
+
+    expect(template.map((item) => item.label ?? item.type)).toEqual([
+      "Copy",
+      "Paste",
+      "separator",
+      "Select All",
+    ]);
+  });
+
+  it("adds the renderer's Add note item and reports it when clicked", () => {
+    const actions: string[] = [];
+    const template = buildTerminalContextMenuTemplate(
+      { kind: "terminal", hasSelection: true, addNoteLabel: "Add note" },
+      (action) => actions.push(action),
+    );
+
+    expect(template.map((item) => item.label ?? item.type)).toEqual([
+      "Copy",
+      "Add note",
+      "Paste",
+      "separator",
+      "Select All",
+    ]);
+    const addNote = template.find((item) => item.label === "Add note");
+    (addNote?.click as (() => void) | undefined)?.();
+    expect(actions).toEqual(["add-note"]);
   });
 });
 

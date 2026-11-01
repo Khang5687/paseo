@@ -35,6 +35,18 @@ import { isFindShortcut, type FindShortcutPlatform } from "@/pane-find/find-shor
 import { isMacUserAgent } from "@/utils/mac-user-agent";
 import { resolveTerminalFontFamily, resolveTerminalFontSize } from "./terminal-font";
 import { imageExtension, readTerminalFile, type TerminalFile } from "../file-paste";
+import {
+  XtermNoteHighlights,
+  revealXtermNote,
+  xtermSelectionAnchor,
+  xtermSelectionNoteContext,
+} from "../notes/xterm-notes";
+import type {
+  TerminalNoteHighlight,
+  TerminalNoteReveal,
+  TerminalSelectionAnchor,
+  TerminalSelectionNoteContext,
+} from "../notes/terminal-note-types";
 
 export type TerminalOutputData = Uint8Array;
 
@@ -91,6 +103,13 @@ export interface TerminalEmulatorRuntimeCallbacks {
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
   /** A paste gesture that can carry a file; resolves to null when it carried none. */
   onFilePaste?: (file: Promise<TerminalFile | null>) => void;
+  /** The selection changed, or the viewport scrolled under it. */
+  onSelectionChange?: (selection: TerminalSelectionState) => void;
+}
+
+export interface TerminalSelectionState {
+  hasSelection: boolean;
+  anchor: TerminalSelectionAnchor | null;
 }
 
 export interface TerminalResizeEvent {
@@ -340,6 +359,8 @@ export class TerminalEmulatorRuntime {
   private readonly inputModeTracker = new TerminalInputModeTracker();
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
+  private noteHighlights: XtermNoteHighlights | null = null;
+  private noteHighlightList: readonly TerminalNoteHighlight[] = [];
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -620,6 +641,14 @@ export class TerminalEmulatorRuntime {
       }),
     );
     this.loadSearchAddon(terminal);
+    const noteHighlights = new XtermNoteHighlights(terminal, input.theme.background);
+    const emitSelection = (): void => {
+      const hasSelection = terminal.hasSelection();
+      this.callbacks.onSelectionChange?.({
+        hasSelection,
+        anchor: hasSelection ? xtermSelectionAnchor(terminal, input.root) : null,
+      });
+    };
     terminal.onWriteParsed(() => {
       // Even a bottom viewport is an inspected location while searching. A
       // marker follows buffer trimming; output writes remain batched normally.
@@ -628,10 +657,14 @@ export class TerminalEmulatorRuntime {
       // A parser turn may yield with submitted writes still queued. Commit
       // callbacks identify completion; plain writes still submit back-to-back.
       if (this.pendingWriteCommits.size === 0) this.releaseFindOutputAnchor();
+      noteHighlights.schedule();
     });
     terminal.onScroll(() => {
       if (this.findQuery) this.emitFindResult();
+      noteHighlights.schedule();
+      if (terminal.hasSelection()) emitSelection();
     });
+    terminal.onSelectionChange(emitSelection);
     terminal.loadAddon(new ClipboardAddon());
     try {
       terminal.loadAddon(new LigaturesAddon());
@@ -640,6 +673,8 @@ export class TerminalEmulatorRuntime {
     }
     terminal.open(input.host);
     this.themeBackgroundElements = this.collectThemeBackgroundElements(input);
+    this.noteHighlights = noteHighlights;
+    noteHighlights.set(this.noteHighlightList);
     this.applyThemeBackground(input.theme);
 
     const disposeImageAddon = (): void => {
@@ -911,6 +946,7 @@ export class TerminalEmulatorRuntime {
         disposeImageAddon();
       },
       disposeTerminal: () => {
+        noteHighlights.dispose();
         localFileLinkProvider.dispose();
         terminal.dispose();
       },
@@ -1039,6 +1075,7 @@ export class TerminalEmulatorRuntime {
     }
 
     this.applyThemeBackground(input.theme);
+    this.noteHighlights?.setBackground(input.theme.background);
     this.refreshVisibleRows();
   }
 
@@ -1089,6 +1126,21 @@ export class TerminalEmulatorRuntime {
 
   blur(): void {
     this.terminal?.blur();
+  }
+
+  getSelectionNoteContext(): TerminalSelectionNoteContext | null {
+    return this.terminal ? xtermSelectionNoteContext(this.terminal) : null;
+  }
+
+  /** Notes to draw over their quotes; kept across remounts of the same runtime. */
+  setNoteHighlights(highlights: readonly TerminalNoteHighlight[]): void {
+    this.noteHighlightList = highlights;
+    this.noteHighlights?.set(highlights);
+  }
+
+  /** Scroll to a note's quote and select it; false when the buffer no longer holds it. */
+  revealNote(input: TerminalNoteReveal): boolean {
+    return this.terminal ? revealXtermNote(this.terminal, input) : false;
   }
 
   private refreshVisibleRows(): void {
@@ -1148,6 +1200,7 @@ export class TerminalEmulatorRuntime {
       window.__paseoTerminal = undefined;
     }
     this.terminal = null;
+    this.noteHighlights = null;
     this.searchAddon = null;
     this.findQuery = "";
     this.findResult = { resultIndex: -1, resultCount: 0 };

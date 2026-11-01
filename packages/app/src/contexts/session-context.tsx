@@ -37,6 +37,7 @@ import {
   type SessionState,
 } from "@/stores/session-store";
 import { sendOsNotification } from "@/utils/os-notifications";
+import { noteNotificationData } from "@/notes/notification";
 import { getIsAppActivelyVisible, getIsAppVisible } from "@/utils/app-visibility";
 import {
   getInitKey,
@@ -476,6 +477,31 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   useEffect(() => {
     viewedTimelineSyncRef.current?.setConnected(isConnected);
   }, [isConnected]);
+
+  // Fired notes ride their own feed: hosts that predate notes reject the unknown event name,
+  // which would break the main feed below.
+  const supportsNotes = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.notes === true,
+  );
+  useEffect(() => {
+    if (!supportsNotes) return;
+    const feed = client.observeEvents(["notes.fired"], { notifications: true });
+    const unsubscribe = feed.subscribe({
+      snapshot: () => {},
+      update: (message) => {
+        if (message.type !== "notes.fired") return;
+        const { note, title, body, shouldNotify } = message.payload;
+        if (!shouldNotify) return;
+        void sendOsNotification({ title, body, data: noteNotificationData(serverId, note) });
+      },
+    });
+    return () => {
+      unsubscribe();
+      void feed
+        .release()
+        .catch((error) => console.warn("[Session] Failed to release notes feed", error));
+    };
+  }, [client, serverId, supportsNotes]);
 
   // Daemon message handlers - directly update Zustand store
   useEffect(() => {
