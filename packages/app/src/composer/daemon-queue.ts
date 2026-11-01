@@ -10,6 +10,7 @@ import {
   splitComposerAttachmentsForSubmit,
   type ComposerAttachmentSubmitFormat,
 } from "@/composer/attachments/submit";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import { createUserMessage, type StreamItem, type UserMessageItem } from "@/types/stream";
 import type {
   AttachmentPersister,
@@ -29,6 +30,7 @@ export interface DaemonQueueClient {
     text: string;
     images?: Array<{ data: string; mimeType: string }>;
     attachments?: AgentQueuedMessagePayload["attachments"];
+    attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
   }) => Promise<AgentQueuedMessageSummaryPayload>;
   removeQueuedAgentMessage: (input: {
     agentId: string;
@@ -79,6 +81,11 @@ export async function queueMessageOnDaemon(
       text: input.text,
       images: imagesData ?? [],
       attachments: wirePayload.attachments,
+      attachmentRefs: matchEncodedImageRefs(
+        wirePayload.attachmentRefs,
+        imagesData,
+        wirePayload.images,
+      ),
     });
     input.localMirror.write((prev) => {
       const next = new Map(prev);
@@ -108,7 +115,9 @@ export interface RestoreQueuedMessageFromDaemonInput {
  * A same-client entry restores exactly. A cross-client entry rebuilds images
  * and uploaded files from the wire payload; attachment kinds that only exist
  * as a composer reference (forge items, workspace files, plugin resources)
- * cannot be rebuilt from their agent form and are dropped.
+ * cannot be rebuilt from their agent form and are dropped. The composer numbers
+ * `[Image #N]`/`[File #N]` by attachment order, so labeled entries come back in
+ * label order and the placeholders in the text still name them.
  */
 export async function restoreQueuedMessageFromDaemon(
   input: RestoreQueuedMessageFromDaemonInput,
@@ -121,21 +130,31 @@ export async function restoreQueuedMessageFromDaemon(
   if (mirrored) {
     return { id: removed.id, text: removed.text, attachments: mirrored.attachments };
   }
-  const attachments: ComposerAttachment[] = [];
+  const images: ComposerAttachment[] = [];
   for (const image of removed.images) {
     const metadata = await input.persister.persistFromDataUrl({
       dataUrl: `data:${image.mimeType};base64,${image.data}`,
       mimeType: image.mimeType,
       fileName: null,
     });
-    attachments.push({ kind: "image", metadata });
+    images.push({ kind: "image", metadata });
   }
-  for (const attachment of removed.attachments) {
+  const files = new Map<number, ComposerAttachment>();
+  removed.attachments.forEach((attachment, index) => {
     if (attachment.type === "uploaded_file") {
-      attachments.push({ kind: "file", attachment });
+      files.set(index, { kind: "file", attachment });
     }
+  });
+  const labeled: ComposerAttachment[] = [];
+  for (const ref of removed.attachmentRefs ?? []) {
+    const attachment =
+      ref.imageIndex === undefined ? files.get(ref.attachmentIndex ?? -1) : images[ref.imageIndex];
+    if (attachment && !labeled.includes(attachment)) labeled.push(attachment);
   }
-  return { id: removed.id, text: removed.text, attachments };
+  const unlabeled = [...images, ...files.values()].filter(
+    (attachment) => !labeled.includes(attachment),
+  );
+  return { id: removed.id, text: removed.text, attachments: [...labeled, ...unlabeled] };
 }
 
 export interface SendQueuedMessageNowOnDaemonInput {

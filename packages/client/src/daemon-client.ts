@@ -2718,6 +2718,7 @@ export class DaemonClient {
       text: string;
       images?: AgentQueuedMessagePayload["images"];
       attachments?: AgentAttachment[];
+      attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
     },
     requestId?: string,
   ): Promise<AgentQueuedMessageSummaryPayload> {
@@ -2729,6 +2730,7 @@ export class DaemonClient {
         text: input.text,
         images: input.images,
         attachments: input.attachments,
+        attachmentRefs: input.attachmentRefs,
       },
     });
     if (!response.success || !response.message) {
