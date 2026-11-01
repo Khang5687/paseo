@@ -14,7 +14,8 @@ const translations: Record<string, string> = {
   "composer.input.sendAndSteer": "Send and steer",
   "composer.input.sendMessage": "Send message",
   "composer.input.longPressToQueue": "Long press to queue",
-  "composer.input.longPressToSendNow": "Long press to send now",
+  "composer.input.longPressToInterrupt": "Long press to interrupt",
+  "composer.input.longPressToSteer": "Long press to steer",
   "composer.input.queue": "Queue",
   "composer.input.send": "Send",
   "composer.voice.unmuteVoiceMode": "Unmute Voice mode",
@@ -29,21 +30,16 @@ const translations: Record<string, string> = {
 const t = ((key: string) => translations[key] ?? key) as never;
 
 describe("composer input labels", () => {
-  it("names the long-press action in the submit hint only when one exists", () => {
-    expect(
-      resolveSubmitAccessibilityHint({
-        canPressLoadingButton: false,
-        alternateSendAction: "queue",
-        t,
-      }),
-    ).toBe("Long press to queue");
-    expect(
-      resolveSubmitAccessibilityHint({
-        canPressLoadingButton: false,
-        alternateSendAction: "send",
-        t,
-      }),
-    ).toBe("Long press to send now");
+  it("names the configured long-press action in the submit hint only when one exists", () => {
+    for (const [alternateSendAction, hint] of [
+      ["queue", "Long press to queue"],
+      ["steer", "Long press to steer"],
+      ["interrupt", "Long press to interrupt"],
+    ] as const) {
+      expect(
+        resolveSubmitAccessibilityHint({ canPressLoadingButton: false, alternateSendAction, t }),
+      ).toBe(hint);
+    }
     expect(
       resolveSubmitAccessibilityHint({
         canPressLoadingButton: false,
@@ -67,6 +63,7 @@ describe("composer input labels", () => {
         canPressLoadingButton: true,
         defaultActionQueues: false,
         defaultSendBehavior: "interrupt",
+        sendNowBehavior: "interrupt",
         isAgentRunning: true,
         t,
       }),
@@ -77,6 +74,7 @@ describe("composer input labels", () => {
         canPressLoadingButton: false,
         defaultActionQueues: true,
         defaultSendBehavior: "queue",
+        sendNowBehavior: "steer",
         isAgentRunning: true,
         t,
       }),
@@ -87,6 +85,7 @@ describe("composer input labels", () => {
         canPressLoadingButton: false,
         defaultActionQueues: false,
         defaultSendBehavior: "interrupt",
+        sendNowBehavior: "interrupt",
         isAgentRunning: true,
         t,
       }),
@@ -97,6 +96,7 @@ describe("composer input labels", () => {
         canPressLoadingButton: false,
         defaultActionQueues: false,
         defaultSendBehavior: "steer",
+        sendNowBehavior: "steer",
         isAgentRunning: true,
         t,
       }),
@@ -107,10 +107,22 @@ describe("composer input labels", () => {
         canPressLoadingButton: false,
         defaultActionQueues: false,
         defaultSendBehavior: "interrupt",
+        sendNowBehavior: "interrupt",
         isAgentRunning: false,
         t,
       }),
     ).toBe("Send message");
+    expect(
+      resolveSubmitAccessibilityLabel({
+        submitButtonAccessibilityLabel: undefined,
+        canPressLoadingButton: false,
+        defaultActionQueues: false,
+        defaultSendBehavior: "queue",
+        sendNowBehavior: "steer",
+        isAgentRunning: true,
+        t,
+      }),
+    ).toBe("Send and steer");
   });
 
   it("keeps explicit submit labels untouched", () => {
@@ -120,6 +132,7 @@ describe("composer input labels", () => {
         canPressLoadingButton: false,
         defaultActionQueues: false,
         defaultSendBehavior: "interrupt",
+        sendNowBehavior: "interrupt",
         isAgentRunning: false,
         t,
       }),

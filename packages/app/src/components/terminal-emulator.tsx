@@ -34,6 +34,7 @@ import {
 } from "../terminal/runtime/terminal-emulator-runtime";
 import { encodeTerminalPaste } from "../terminal/runtime/terminal-paste";
 import type { TerminalFile } from "../terminal/file-paste";
+import type { TerminalCharacterWidths } from "../terminal/character-widths";
 import type {
   TerminalLocalFileLinkSource,
   TerminalLocalFileLinkTarget,
@@ -107,6 +108,7 @@ interface TerminalEmulatorProps {
   ref: Ref<TerminalEmulatorHandle>;
   streamKey: string;
   supportsTerminalInputModeReplay: boolean;
+  characterWidths: TerminalCharacterWidths;
   testId?: string;
   xtermTheme?: ITheme;
   scrollbackLines: number;
@@ -151,6 +153,10 @@ interface TerminalEmulatorProps {
     target: TerminalLocalFileLinkTarget,
     disposition: "main" | "side",
   ) => Promise<void> | void;
+  onLocalFileLinkContextMenu?: (
+    target: TerminalLocalFileLinkTarget,
+    point: { x: number; y: number },
+  ) => Promise<void> | void;
   onRendererReadyChange?: (change: TerminalRendererReadyChange) => void;
   onFilePaste?: (file: Promise<TerminalFile | null>) => void;
   pendingModifiers?: PendingTerminalModifiers;
@@ -172,6 +178,7 @@ export default function TerminalEmulator({
     cursor: "#e6e6e6",
   },
   scrollbackLines,
+  characterWidths,
   fontFamily,
   fontSize,
   swipeGesturesEnabled = false,
@@ -192,6 +199,7 @@ export default function TerminalEmulator({
   onContextMenuAddNote,
   onResolveLocalFileLink,
   onOpenLocalFileLink,
+  onLocalFileLinkContextMenu,
   onRendererReadyChange,
   onFilePaste,
   pendingModifiers = { ctrl: false, shift: false, alt: false },
@@ -206,6 +214,8 @@ export default function TerminalEmulator({
   const fontSizeRef = useRef(fontSize);
   const scrollbackLinesRef = useRef(scrollbackLines);
   scrollbackLinesRef.current = scrollbackLines;
+  const characterWidthsRef = useRef(characterWidths);
+  characterWidthsRef.current = characterWidths;
   fontFamilyRef.current = fontFamily;
   fontSizeRef.current = fontSize;
   const themeKey = useMemo(() => buildXtermThemeKey(xtermTheme), [xtermTheme]);
@@ -223,6 +233,7 @@ export default function TerminalEmulator({
     onInputModeChange,
     onResolveLocalFileLink,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onFilePaste,
   });
   mountCallbacksRef.current = {
@@ -235,6 +246,7 @@ export default function TerminalEmulator({
     onInputModeChange,
     onResolveLocalFileLink,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onFilePaste,
   };
   const pendingModifiersRef = useRef(pendingModifiers);
@@ -350,6 +362,10 @@ export default function TerminalEmulator({
   useEffect(() => {
     runtimeRef.current?.setScrollback({ lines: scrollbackLines });
   }, [scrollbackLines]);
+
+  useEffect(() => {
+    runtimeRef.current?.setCharacterWidths({ widths: characterWidths });
+  }, [characterWidths]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -485,6 +501,7 @@ export default function TerminalEmulator({
     });
     runtime.setPendingModifiers({ pendingModifiers: pendingModifiersRef.current });
     runtime.setNoteHighlights(noteHighlightsRef.current);
+    runtime.setCharacterWidths({ widths: characterWidthsRef.current });
     runtime.mount({
       root,
       host,
@@ -517,6 +534,7 @@ export default function TerminalEmulator({
         onInputModeChange,
         onResolveLocalFileLink,
         onOpenLocalFileLink,
+        onLocalFileLinkContextMenu,
         onFilePaste,
         onOpenExternalUrl: openExternalUrl,
         onSelectionChange: handleRuntimeSelection,
@@ -530,6 +548,7 @@ export default function TerminalEmulator({
     onInput,
     onInputModeChange,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onPendingModifiersConsumed,
     onResolveLocalFileLink,
     onResize,

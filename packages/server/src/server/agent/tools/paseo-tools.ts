@@ -32,6 +32,7 @@ import {
   toAgentPayload,
 } from "../agent-projections.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
+import { askAgent } from "../ask-agent.js";
 import type { AgentStorage } from "../agent-storage.js";
 import { AgentNotFoundError, ensureAgentLoaded } from "../agent-loading.js";
 import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
@@ -714,10 +715,14 @@ function createToolCatalog(
     ["get_agent_status", "getStatus"],
     ["get_agent_activity", "getActivity"],
     ["list_agents", "listAgents"],
+    ["ask_agent", "askAgent"],
   ] as const satisfies ReadonlyArray<readonly [string, keyof HostOperations]>);
+  const callerTitle = () =>
+    (callerAgentId ? agentManager.getAgent(callerAgentId)?.config.title : undefined) ?? undefined;
   const hostResolver = createHostResolver({
     serverId: options.serverId ?? "self",
     callerAgentId,
+    callerTitle,
     lockedCwd: callerContext?.lockedCwd,
     hosts: () => {
       if (!options.hosts) throw new Error("Connected hosts are not configured");
@@ -732,6 +737,7 @@ function createToolCatalog(
       getStatus: (args, context) => localHostOperations.get("get_agent_status")!(args, context),
       getActivity: (args, context) => localHostOperations.get("get_agent_activity")!(args, context),
       listAgents: (args, context) => localHostOperations.get("list_agents")!(args, context),
+      askAgent: (args, context) => localHostOperations.get("ask_agent")!(args, context),
     },
   });
   const registerTool = (
@@ -3183,6 +3189,43 @@ function createToolCatalog(
           ...summarizeAgentActivity(timeline, limit),
           currentModeId: snapshot?.currentModeId ?? null,
         }),
+      };
+    },
+  );
+
+  registerTool(
+    "ask_agent",
+    {
+      title: "Ask agent",
+      description:
+        "Ask another agent a question without interrupting it. A hidden copy of its whole conversation answers, then is deleted; the agent keeps working and never sees the question. The copy can read files but cannot change anything. Use it for context, progress, or decisions another agent holds, instead of asking the user to relay them. To find an agent by the workspace name the user sees, match list_workspaces titles to the workspaceId in list_agents.",
+      inputSchema: {
+        agentId: z.string(),
+        question: z
+          .string()
+          .min(1)
+          .describe("The copy remembers its whole conversation, so you can refer to it directly."),
+      },
+      outputSchema: {
+        agentId: z.string(),
+        answer: z.string(),
+      },
+    },
+    async ({ agentId, question }, context) => {
+      if (agentId === callerAgentId) {
+        throw new PaseoToolInputError(
+          "ask_agent asks another agent; you already have your own context",
+        );
+      }
+      const { answer } = await askAgent(agentManager, childLogger, {
+        agentId,
+        question,
+        askedBy: callerTitle(),
+        signal: context.signal,
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ agentId, answer }),
       };
     },
   );

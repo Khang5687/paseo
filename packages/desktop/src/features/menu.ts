@@ -50,6 +50,8 @@ export function buildTerminalContextMenuTemplate(
 
 interface ApplicationMenuOptions {
   onNewWindow: () => void;
+  /** Called when the Cmd+Q accelerator fires; null quits immediately. */
+  onQuitShortcut: (() => void) | null;
 }
 
 function withBrowserWindow(
@@ -127,7 +129,24 @@ function buildApplicationMenuTemplate(
               { role: "hideOthers" as const },
               { role: "unhide" as const },
               { type: "separator" as const },
-              { role: "quit" as const },
+              {
+                label: `Quit ${app.name}`,
+                accelerator: "Command+Q",
+                // Focused webContents intercept Cmd+Q before the menu does (see
+                // features/quit-confirm). This path covers the shortcut when no
+                // webContents has focus; a mouse click on the item quits directly.
+                click: (
+                  _item: Electron.MenuItem,
+                  _win: Electron.BaseWindow | undefined,
+                  event: Electron.KeyboardEvent,
+                ) => {
+                  if (event.triggeredByAccelerator && options.onQuitShortcut) {
+                    options.onQuitShortcut();
+                  } else {
+                    app.quit();
+                  }
+                },
+              },
             ],
           },
         ]

@@ -179,7 +179,7 @@ function HomeTile({ icon: Icon, title, description, onPress, testID, accent }: H
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     userSelect: "none",
   },
   scroll: {
