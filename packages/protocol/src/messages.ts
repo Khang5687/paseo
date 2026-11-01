@@ -2914,6 +2914,9 @@ export const AgentQueuedMessagePayloadSchema = z.object({
   createdAt: z.string(),
   images: z.array(ImageAttachmentSchema),
   attachments: z.array(AgentAttachmentSchema),
+  // Inline `[Image #N]`/`[File #N]` labels, replayed on dispatch like `send_agent_message`'s.
+  // Absent on entries queued by clients or daemons predating queued refs.
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export type AgentQueuedMessagePayload = z.infer<typeof AgentQueuedMessagePayloadSchema>;
@@ -2925,6 +2928,7 @@ export const AgentQueueAddRequestSchema = z.object({
   text: z.string(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: z.array(AgentAttachmentSchema).optional(),
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export const AgentQueueRemoveRequestSchema = z.object({
