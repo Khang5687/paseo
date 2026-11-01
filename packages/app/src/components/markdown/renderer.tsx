@@ -18,7 +18,11 @@ import { PENDING_MARKDOWN_IMAGE } from "./source";
 import { splitStreamingMarkdown } from "./streaming";
 import { useMarkdownSource, type MarkdownImageContext } from "./images";
 
-import { MermaidFence, MermaidStreamingContext, splitMermaidFences } from "./fence/mermaid";
+import { CodeFence, isRunnableShellFence } from "@/code-run/fence";
+import { useCodeRunScope } from "@/code-run/scope";
+import { MermaidFence } from "./fence/mermaid";
+import { splitNativeFences, type FenceSegment } from "./fence/segments";
+import { MarkdownStreamingContext } from "./streaming-context";
 
 const ThemedMarkdown = withUnistyles(EnrichedMarkdownText);
 const MD4C_FLAGS = { latexMath: false, hardSoftBreaks: true, admonitions: true };
@@ -119,20 +123,26 @@ const MarkdownPart = memo(function MarkdownPart({
     if (url !== PENDING_MARKDOWN_IMAGE) setImage({ type: "uri", uri: url });
   });
   const closeImage = useStableEvent(() => setImage(null));
-  const segments = useMemo(
+  // Shell fences leave the library only where a Run control can work.
+  const canRun = useCodeRunScope() !== null;
+  const segments = useMemo<FenceSegment[]>(
     () =>
-      isWeb ? [{ kind: "markdown", id: "0", source: markdown }] : splitMermaidFences(markdown),
-    [markdown],
+      isWeb
+        ? [{ kind: "markdown", id: "0", source: markdown }]
+        : splitNativeFences(markdown, canRun ? isRunnableShellFence : null),
+    [markdown, canRun],
   );
   return (
-    <MermaidStreamingContext.Provider value={streaming}>
+    <MarkdownStreamingContext.Provider value={streaming}>
       <MarkdownBlockStack imageSources={imageSources}>
-        {segments.map((segment) =>
-          segment.kind === "mermaid" ? (
-            <MermaidFence key={`${segment.kind}:${segment.id}`} code={segment.source} />
-          ) : (
+        {segments.map((segment) => {
+          const key = `${segment.kind}:${segment.id}`;
+          if (segment.kind === "mermaid") return <MermaidFence key={key} code={segment.source} />;
+          if (segment.kind === "shell")
+            return <CodeFence key={key} code={segment.source} language={segment.language} />;
+          return (
             <ThemedMarkdown
-              key={`${segment.kind}:${segment.id}`}
+              key={key}
               markdown={segment.source}
               uniProps={pickMarkdownStyle(compact, muted)}
               flavor="github"
@@ -148,10 +158,10 @@ const MarkdownPart = memo(function MarkdownPart({
               onImagePress={pressImage}
               renderers={isWeb ? WEB_RENDERERS : undefined}
             />
-          ),
-        )}
+          );
+        })}
       </MarkdownBlockStack>
       {image ? <AttachmentLightbox source={image} onClose={closeImage} /> : null}
-    </MermaidStreamingContext.Provider>
+    </MarkdownStreamingContext.Provider>
   );
 });
