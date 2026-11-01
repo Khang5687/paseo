@@ -115,7 +115,8 @@ export class FakeOmp implements OmpRuntime {
       sessionId,
       this.removedModels,
     );
-    if (!launch.noSession) this.sessionIdsByFile.set(session.state.sessionFile, sessionId);
+    const sessionFile = session.state.sessionFile;
+    if (!launch.noSession && sessionFile) this.sessionIdsByFile.set(sessionFile, sessionId);
     session.commands = this.queuedCommands.shift() ?? [];
     for (const [level, error] of this.queuedSubagentSubscriptionErrors) {
       session.subagentSubscriptionErrors.set(level, error);
@@ -913,12 +914,14 @@ export class FakeOmpChild {
     if (typeof command.id !== "string") return;
     const type = String(command.type);
     if (type === "account.routing.configure") return this.answerConfigure(command);
-    if (type === "account.routing.refresh")
-      return this.answerScripted(command, this.options.refresh);
+    if (type === "account.routing.refresh") {
+      void this.answerScripted(command, this.options.refresh);
+      return;
+    }
     if (type === "account.routing.rank") {
       // Default mirrors a native rank of equally good candidates.
       const refs = (command.candidateRefs as OmpAccountRef[]) ?? [];
-      return this.answerScripted(
+      void this.answerScripted(
         command,
         this.options.rank ??
           (() => ({
@@ -929,6 +932,7 @@ export class FakeOmpChild {
             bestCloseRefs: refs,
           })),
       );
+      return;
     }
     if (type === "get_state") {
       return this.respond(command, {
