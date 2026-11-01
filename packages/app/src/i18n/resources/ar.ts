@@ -1288,6 +1288,13 @@ export const ar: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} وكيل فرعي يعمل",
+      workingSubagents_zero: "{{count}} وكيل فرعي يعمل",
+      workingSubagents_one: "{{count}} وكيل فرعي يعمل",
+      workingSubagents_two: "وكيلان فرعيان يعملان",
+      workingSubagents_few: "{{count}} وكلاء فرعيين يعملون",
+      workingSubagents_many: "{{count}} وكيلًا فرعيًا يعملون",
+      workingSubagents_other: "{{count}} وكيل فرعي يعمل",
       status: {
         serviceRunning: "الخدمة {{name}} قيد التشغيل",
         serviceUnhealthy: "الخدمة {{name}} غير سليمة",

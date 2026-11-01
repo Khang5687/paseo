@@ -1296,6 +1296,9 @@ export const en = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} sub-agents working",
+      workingSubagents_one: "{{count}} sub-agent working",
+      workingSubagents_other: "{{count}} sub-agents working",
       status: {
         serviceRunning: "Service {{name}} running",
         serviceUnhealthy: "Service {{name}} unhealthy",
@@ -3194,6 +3197,7 @@ type TranslationResourcesBase = WidenStringLeaves<typeof en>;
 type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
 type DurationPluralKey = `${"days" | "hours" | "minutes"}_${PluralCategory}`;
 type AgoPluralKey = `${"daysAgo" | "hoursAgo" | "minutesAgo"}_${PluralCategory}`;
+type WorkingSubagentsPluralKey = `workingSubagents_${PluralCategory}`;
 
 // i18next plural categories differ by locale, so locale catalogs may add the
 // explicit v4 suffixes they need while retaining the canonical fallback keys.
@@ -3203,5 +3207,9 @@ export type TranslationResources = TranslationResourcesBase & {
       Partial<Record<DurationPluralKey, string>>;
     timing: TranslationResourcesBase["providerUsage"]["timing"] &
       Partial<Record<AgoPluralKey, string>>;
+  };
+  sidebar: TranslationResourcesBase["sidebar"] & {
+    workspace: TranslationResourcesBase["sidebar"]["workspace"] &
+      Partial<Record<WorkingSubagentsPluralKey, string>>;
   };
 };

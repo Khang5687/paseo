@@ -4181,6 +4181,10 @@ export const WorkspaceDescriptorPayloadSchema = z
       .string()
       .nullish()
       .transform((value) => value ?? null),
+    // Running subagents under the workspace's root agents. Omitted when none run,
+    // and by daemons that predate it; those let subagents mask a waiting root as
+    // running.
+    runningSubagentCount: z.number().int().nonnegative().optional(),
     activityAt: z.string().nullable(),
     createdAt: z.string().optional(),
     lastUserMessageAt: z.string().nullable().optional(),

@@ -409,6 +409,41 @@ describe("WorkspaceDirectory", () => {
     await expect(workspace.workspaceStatus()).resolves.toBe("running");
   });
 
+  test("finished root agent keeps attention while subagents work, and counts them", async () => {
+    const workspace = new WorkspaceStatus();
+
+    workspace.hasRootAgent({
+      id: "parent-agent",
+      status: "idle",
+      requiresAttention: true,
+      attentionReason: "finished",
+    });
+    workspace.hasDelegatedAgent({ id: "child-agent", status: "running" });
+    workspace.hasDelegatedAgent({ id: "idle-child", status: "idle" });
+    workspace.hasProviderSubagent({
+      parentAgentId: "parent-agent",
+      status: "running",
+      updatedAt: "2026-03-01T12:01:00.000Z",
+    });
+
+    await expect(workspace.workspaceDescriptor()).resolves.toMatchObject({
+      status: "attention",
+      runningSubagentCount: 2,
+    });
+  });
+
+  test("running root agent stays running while subagents work", async () => {
+    const workspace = new WorkspaceStatus();
+
+    workspace.hasRootAgent({ id: "parent-agent", status: "running" });
+    workspace.hasDelegatedAgent({ id: "child-agent", status: "running" });
+
+    await expect(workspace.workspaceDescriptor()).resolves.toMatchObject({
+      status: "running",
+      runningSubagentCount: 1,
+    });
+  });
+
   test("provider subagent follows its cross-workspace parent", async () => {
     const workspace = new WorkspaceStatus();
 

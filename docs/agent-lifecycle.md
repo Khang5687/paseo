@@ -281,9 +281,9 @@ The asymmetry is intentional: a subagent's persistent relationship lives in the 
 
 Agent lifecycle status stays literal: a parent agent is `idle` when its own turn is idle, even if a child is running.
 
-Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. Same-workspace descendants contribute `running` to the nearest ancestor in that workspace; their non-running attention, permission, and error states stay in the parent's subagents track. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
+Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
 
-Running provider-native subagents contribute `running` to the workspace owned by their parent agent. Their completed, failed, and canceled states stay in the parent's subagents track.
+Running same-workspace descendants and running provider-native subagents count toward the workspace that owns their nearest workspace root. The descriptor carries that count as `runningSubagentCount`. A working subagent raises a `done` workspace to `running`. When the root agent waits on the user (`attention`, `needs_input`, `failed`), the workspace keeps that status so a spinner does not hide that the user is needed. The sidebar row then shows "N sub-agents working" under the title. The subagents' other states (attention, permission, error, completed, canceled) stay in the parent's subagents track.
 
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion
