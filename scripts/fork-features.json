@@ -546,5 +546,96 @@
     "pr": 71,
     "title": "fix(claude): a queued task notification's result no longer ends the next prompt's turn",
     "tests": ["packages/server/src/server/agent/providers/claude/agent.test.ts"]
+  },
+  {
+    "pr": 72,
+    "title": "feat(app): notes on chat and terminal selections with waiting-on reminders",
+    "tests": [
+      "packages/server/src/server/notes/notes-service.test.ts",
+      "packages/server/src/server/daemon-e2e/notes.e2e.test.ts",
+      "packages/server/src/terminal/terminal.test.ts",
+      "packages/app/src/notes/model.test.ts",
+      "packages/app/src/notes/composer/parse-reminder-time.test.ts",
+      "packages/app/src/notification-open/model.test.ts",
+      "packages/app/src/terminal/notes/quote-location.test.ts",
+      "packages/desktop/src/features/menu.test.ts"
+    ]
+  },
+  {
+    "pr": 73,
+    "title": "feat: sync agent chat drafts across devices",
+    "tests": [
+      "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts",
+      "packages/server/src/server/agent-draft/agent-draft-service.test.ts",
+      "packages/app/src/composer/draft/agent-draft-sync.test.ts"
+    ]
+  },
+  {
+    "pr": 74,
+    "title": "feat(app): run shell code blocks from chat in a host terminal",
+    "tests": [
+      "packages/app/src/code-run/detect.test.ts",
+      "packages/app/src/code-run/command.test.ts",
+      "packages/app/src/components/markdown/renderer.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+  },
+  {
+    "pr": 75,
+    "title": "feat(app): open chat files while the host is offline",
+    "tests": [
+      "packages/app/src/offline-files/store.test.ts",
+      "packages/app/src/components/markdown/renderer.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/assistant-file-link-menu.spec.ts"]
+  },
+  {
+    "pr": 76,
+    "title": "feat(app): fold every subagent of a thread under its sidebar row",
+    "tests": [
+      "packages/app/src/subagents/thread-children.test.ts",
+      "packages/app/src/components/sidebar/workspace-nesting.test.ts",
+      "packages/app/src/components/sidebar/sidebar-projection.test.ts",
+      "packages/app/src/stores/sidebar-collapsed-sections-store/state.test.ts"
+    ],
+    "e2e": [
+      "packages/app/e2e/browser/sidebar-thread-children.spec.ts",
+      "packages/app/e2e/browser/subagent-workspace-nesting.spec.ts"
+    ]
+  },
+  {
+    "pr": 77,
+    "title": "fix(app): cut battery drain on phones",
+    "tests": [
+      "packages/app/src/timeline/viewed-timeline-sync.test.ts",
+      "packages/app/src/utils/terminal-renderer-readiness.test.ts",
+      "packages/app/src/runtime/host-runtime.test.ts",
+      "packages/client/src/daemon-client.test.ts"
+    ]
+  },
+  {
+    "pr": 78,
+    "title": "fix: let Mark as read dismiss a failed workspace",
+    "tests": [
+      "packages/server/src/server/agent/agent-manager.test.ts",
+      "packages/server/src/server/session.workspaces.test.ts"
+    ]
+  },
+  {
+    "pr": 79,
+    "title": "fix(app): keep a waiting main agent visible while sub-agents work",
+    "tests": [
+      "packages/server/src/server/workspace-directory.test.ts",
+      "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
+      "packages/app/src/components/sidebar/workspace-meta-row/meta-items.test.ts"
+    ]
+  },
+  {
+    "pr": 80,
+    "title": "feat(app): inline attachment references in the composer",
+    "tests": [
+      "packages/app/src/composer/attachments/inline-refs.test.ts",
+      "packages/server/src/server/agent/prompt-attachments.test.ts"
+    ]
   }
 ]
