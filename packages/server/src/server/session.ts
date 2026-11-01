@@ -811,7 +811,7 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
-  private readonly agentDrafts: AgentDraftService | null;
+  private readonly agentDrafts: AgentDraftService | undefined;
   private readonly notesService: NotesService | null;
   private readonly eventSubscriptions = new Map<
     string,
@@ -968,7 +968,7 @@ export class Session {
     this.workspaceRegistry = workspaceRegistry;
     this.directorySync = resolveDirectorySync(directorySync);
     this.workspaceLabelService = resolveWorkspaceLabelService(workspaceLabelService);
-    this.agentDrafts = agentDrafts ?? null;
+    this.agentDrafts = agentDrafts;
     this.notesService = notesService ?? null;
     this.filesystem = filesystem ?? nodeSessionFileSystem;
     this.github = github ?? createGitHubService();

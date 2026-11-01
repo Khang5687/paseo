@@ -4,7 +4,7 @@ import type { SessionDelivery } from "../session/owned-subscriptions/index.js";
 import type { AgentDraftChange, AgentDraftService } from "./agent-draft-service.js";
 
 interface AgentDraftSessionDeps {
-  service: AgentDraftService | null;
+  service: AgentDraftService | undefined;
   delivery: SessionDelivery;
   clientId: string;
   emit: (message: SessionOutboundMessage) => void;
