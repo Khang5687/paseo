@@ -258,6 +258,8 @@ export const MutableDaemonConfigSchema = z
     // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, keep optional while old daemons are supported.
     // Persisted host-wide value, applied live by the daemon.
     idleRuntimeCleanup: z.boolean().optional(),
+    // COMPAT(agentDraftSync): added in v0.14.0, keep optional while old daemons are supported.
+    draftHistoryRetentionDays: z.number().int().positive().optional(),
     // COMPAT(restartRecovery): added in v0.14.0, keep optional for older hosts.
     resumeOnStartup: z.boolean().optional(),
     resumePrompt: z.string().optional(),
@@ -288,6 +290,7 @@ export const MutableDaemonConfigPatchSchema = z
     autoArchiveAfterMerge: z.boolean().optional(),
     enableTerminalAgentHooks: z.boolean().optional(),
     idleRuntimeCleanup: z.boolean().optional(),
+    draftHistoryRetentionDays: z.number().int().positive().optional(),
     resumeOnStartup: z.boolean().optional(),
     resumePrompt: z.string().optional(),
     appendSystemPrompt: z.string().optional(),
@@ -2683,6 +2686,69 @@ export const WorkspaceSetupSubscribeRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Agent chat drafts. The daemon owns one unsent draft per agent so every client
+// shows the same composer text. Attachments are client-shaped: the daemon reads
+// only `kind` and `uploadId` (for cleanup and fetch) and stores `value` as-is.
+export const AgentDraftAttachmentSchema = z.object({
+  kind: z.string(),
+  uploadId: z.string().optional(),
+  value: z.unknown(),
+});
+
+export const AgentDraftSchema = z.object({
+  text: z.string(),
+  attachments: z.array(AgentDraftAttachmentSchema),
+  revision: z.number().int().nonnegative(),
+  // Epoch ms from the writing client's clock; last write wins on it.
+  updatedAt: z.number(),
+  updatedBy: z.string(),
+});
+
+export const AgentDraftSnapshotSummarySchema = z.object({
+  id: z.string(),
+  createdAt: z.number(),
+  preview: z.string(),
+  attachmentCount: z.number().int().nonnegative(),
+});
+
+export const AgentDraftStateSchema = z.object({
+  draft: AgentDraftSchema.nullable(),
+  history: z.array(AgentDraftSnapshotSummarySchema),
+});
+
+export const AgentDraftSubscribeRequestSchema = z.object({
+  type: z.literal("agent.draft.subscribe.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentDraftSetRequestSchema = z.object({
+  type: z.literal("agent.draft.set.request"),
+  agentId: z.string(),
+  text: z.string(),
+  attachments: z.array(AgentDraftAttachmentSchema),
+  updatedAt: z.number(),
+  // The revision this client last saw; null when it has seen none.
+  baseRevision: z.number().int().nonnegative().nullable(),
+  // "sent" marks the clear that follows a send.
+  reason: z.enum(["edit", "sent"]).optional(),
+  requestId: z.string(),
+});
+
+export const AgentDraftRestoreRequestSchema = z.object({
+  type: z.literal("agent.draft.restore.request"),
+  agentId: z.string(),
+  snapshotId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentDraftUploadGetRequestSchema = z.object({
+  type: z.literal("agent.draft.upload.get.request"),
+  agentId: z.string(),
+  uploadId: z.string(),
+  requestId: z.string(),
+});
+
 export const WorkspaceSetupRunRequestSchema = z.object({
   type: z.literal("workspace.setup.run.request"),
   workspaceId: z.string(),
@@ -3921,6 +3987,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceSetupStatusRequestSchema,
   WorkspaceSetupSubscribeRequestSchema,
   WorkspaceSetupRunRequestSchema,
+  AgentDraftSubscribeRequestSchema,
+  AgentDraftSetRequestSchema,
+  AgentDraftRestoreRequestSchema,
+  AgentDraftUploadGetRequestSchema,
   LegacyListAvailableEditorsRequestSchema,
   LegacyOpenInEditorRequestSchema,
   OpenProjectRequestSchema,
@@ -4365,6 +4435,9 @@ export const ServerInfoStatusPayloadSchema = z
         ompAccountLoginLink: z.boolean().optional(),
         binaryChunkingV1: z.boolean().optional(),
         workspaceSetupObservation: z.boolean().optional(),
+        // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
+        // Daemon owns agent chat drafts (agent.draft.* RPCs). Without it drafts stay on the device.
+        agentDraftSync: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
@@ -5087,6 +5160,62 @@ export const WorkspaceSetupSubscribeResponseSchema = z.object({
     subscriptionId: z.string().optional(),
     workspaceId: z.string(),
     snapshot: WorkspaceSetupSnapshotSchema.nullable(),
+  }),
+});
+
+export const AgentDraftSubscribeResponseSchema = z.object({
+  type: z.literal("agent.draft.subscribe.response"),
+  payload: z.object({
+    requestId: z.string(),
+    subscriptionId: z.string().optional(),
+    agentId: z.string(),
+    state: AgentDraftStateSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentDraftUpdateMessageSchema = z.object({
+  type: z.literal("agent.draft.update"),
+  payload: z.object({
+    subscriptionId: z.string().optional(),
+    agentId: z.string(),
+    draft: AgentDraftSchema.nullable(),
+    // Present only when the history changed.
+    history: z.array(AgentDraftSnapshotSummarySchema).optional(),
+  }),
+});
+
+export const AgentDraftSetResponseSchema = z.object({
+  type: z.literal("agent.draft.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    // False when a newer draft already won; `state` then holds the winner.
+    accepted: z.boolean(),
+    state: AgentDraftStateSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentDraftRestoreResponseSchema = z.object({
+  type: z.literal("agent.draft.restore.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    state: AgentDraftStateSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentDraftUploadGetResponseSchema = z.object({
+  type: z.literal("agent.draft.upload.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    uploadId: z.string(),
+    fileName: z.string().nullable(),
+    // Base64 file bytes.
+    data: z.string().nullable(),
+    error: z.string().nullable(),
   }),
 });
 
@@ -7721,6 +7850,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceSetupStatusResponseMessageSchema,
   WorkspaceSetupSubscribeResponseSchema,
   WorkspaceSetupRunResponseMessageSchema,
+  AgentDraftSubscribeResponseSchema,
+  AgentDraftUpdateMessageSchema,
+  AgentDraftSetResponseSchema,
+  AgentDraftRestoreResponseSchema,
+  AgentDraftUploadGetResponseSchema,
   AgentStreamMessageSchema,
   AgentStatusMessageSchema,
   FetchAgentsResponseMessageSchema,
@@ -8334,6 +8468,12 @@ export type FileDownloadTokenRequest = z.infer<typeof FileDownloadTokenRequestSc
 export type FileDownloadTokenResponse = z.infer<typeof FileDownloadTokenResponseSchema>;
 export type FileUploadRequest = z.infer<typeof FileUploadRequestSchema>;
 export type FileUploadResponse = z.infer<typeof FileUploadResponseSchema>;
+export type AgentDraftAttachment = z.infer<typeof AgentDraftAttachmentSchema>;
+export type AgentDraft = z.infer<typeof AgentDraftSchema>;
+export type AgentDraftSnapshotSummary = z.infer<typeof AgentDraftSnapshotSummarySchema>;
+export type AgentDraftState = z.infer<typeof AgentDraftStateSchema>;
+export type AgentDraftSetRequest = z.infer<typeof AgentDraftSetRequestSchema>;
+export type AgentDraftUpdateMessage = z.infer<typeof AgentDraftUpdateMessageSchema>;
 export type RestartServerRequestMessage = z.infer<typeof RestartServerRequestMessageSchema>;
 export type ShutdownServerRequestMessage = z.infer<typeof ShutdownServerRequestMessageSchema>;
 export type ClearAgentAttentionMessage = z.infer<typeof ClearAgentAttentionMessageSchema>;

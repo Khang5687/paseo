@@ -143,6 +143,7 @@ import { createSpeechService } from "./speech/speech-runtime.js";
 import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { AgentDraftService } from "./agent-draft/agent-draft-service.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { attachWorkspaceAutoUnsettle } from "./workspace-settle.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
@@ -530,6 +531,7 @@ export interface PaseoDaemonConfig {
   downloadTokenTtlMs?: number;
   agentProviderSettings?: AgentProviderRuntimeSettingsMap;
   idleRuntimeCleanup?: boolean;
+  draftHistoryRetentionDays?: number;
   resumeOnStartup?: boolean;
   resumePrompt?: string;
   providerCatalogRefreshTimeoutMs?: number;
@@ -757,6 +759,7 @@ function createInitialMutableDaemonConfig(config: ResolvedDaemonSettings): Mutab
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
     idleRuntimeCleanup: config.idleRuntimeCleanup !== false,
+    draftHistoryRetentionDays: config.draftHistoryRetentionDays,
     resumeOnStartup: config.resumeOnStartup !== false,
     resumePrompt: config.resumePrompt ?? "Resume working.",
     appendSystemPrompt: config.appendSystemPrompt ?? "",
@@ -1236,6 +1239,12 @@ export async function createPaseoDaemon(
     logger,
   });
   await agentStorage.initialize();
+  const agentDrafts = new AgentDraftService({
+    storage: agentStorage,
+    paseoHome: config.paseoHome,
+    logger,
+    retentionDays: () => daemonConfigStore.get().draftHistoryRetentionDays,
+  });
   const restartRecovery = createRestartRecovery({
     storage: agentStorage,
     settings: () => ({
@@ -1662,6 +1671,11 @@ export async function createPaseoDaemon(
       await scheduleService.completeForAgent(agentId);
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to complete schedules for archived agent");
+    }
+    try {
+      await agentDrafts.clearForArchive(agentId);
+    } catch (error) {
+      logger.warn({ err: error, agentId }, "Failed to clear the archived agent's draft");
     }
   });
   logger.info({ elapsed: elapsed() }, "Schedule service initialized");
@@ -2090,6 +2104,7 @@ export async function createPaseoDaemon(
               accountRouting,
               accountLogin,
               notesService,
+              agentDrafts,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();

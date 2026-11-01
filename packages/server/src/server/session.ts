@@ -1,3 +1,5 @@
+import type { AgentDraftService } from "./agent-draft/agent-draft-service.js";
+import { dispatchAgentDraftMessage } from "./agent-draft/agent-draft-session.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory } from "./agent/directory.js";
@@ -483,6 +485,7 @@ export interface SessionOptions {
   workspaceRegistry: WorkspaceRegistry;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  agentDrafts?: AgentDraftService;
   notesService?: NotesService;
   accountRouting?: AccountRoutingAuthority;
   accountLogin?: OmpAccountLogin;
@@ -808,6 +811,7 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly agentDrafts: AgentDraftService | undefined;
   private readonly notesService: NotesService | null;
   private readonly eventSubscriptions = new Map<
     string,
@@ -874,6 +878,7 @@ export class Session {
       workspaceRegistry,
       directorySync,
       workspaceLabelService,
+      agentDrafts,
       notesService,
       accountRouting,
       accountLogin,
@@ -963,6 +968,7 @@ export class Session {
     this.workspaceRegistry = workspaceRegistry;
     this.directorySync = resolveDirectorySync(directorySync);
     this.workspaceLabelService = resolveWorkspaceLabelService(workspaceLabelService);
+    this.agentDrafts = agentDrafts;
     this.notesService = notesService ?? null;
     this.filesystem = filesystem ?? nodeSessionFileSystem;
     this.github = github ?? createGitHubService();
@@ -2474,6 +2480,12 @@ export class Session {
     const promise =
       this.connectedHostSession?.dispatch(msg) ??
       this.dispatchSubscriptionMessage(msg, source) ??
+      dispatchAgentDraftMessage(msg, {
+        service: this.agentDrafts,
+        delivery: this.delivery,
+        clientId: this.clientId,
+        emit: (message) => this.emit(message),
+      }) ??
       this.dispatchVoiceAndControlMessage(msg) ??
       this.dispatchAgentObservationMessage(msg, source) ??
       this.dispatchHubExecutionMessage(msg) ??

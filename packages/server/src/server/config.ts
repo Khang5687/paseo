@@ -596,6 +596,7 @@ export type ResolvedDaemonSettings = Pick<
   | "relayRequireProtectedSecurity"
   | "appBaseUrl"
   | "idleRuntimeCleanup"
+  | "draftHistoryRetentionDays"
   | "resumeOnStartup"
   | "resumePrompt"
   | "providerCatalogRefreshTimeoutMs"
@@ -842,6 +843,7 @@ function resolveAgentRuntimeConfig(agents: PersistedConfig["agents"]) {
     providerCatalogRefreshTimeoutMs: agents?.catalogRefreshTimeoutMs,
     metadataGeneration: agents?.metadataGeneration,
     featureDefaults: agents?.featureDefaults,
+    draftHistoryRetentionDays: agents?.draftHistoryRetentionDays,
   };
 }
 

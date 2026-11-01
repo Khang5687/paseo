@@ -117,6 +117,12 @@ export const ru: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Восстановить черновик",
+      attachmentsOnly: "(только вложения)",
+      attachments_one: "{{count}} вложение",
+      attachments_other: "{{count}} вложений",
+    },
     placeholders: {
       desktop: "Напишите агенту сообщение, отметьте @files или используйте /commands и /skills.",
       mobile: "Сообщение,@files,/commands",
@@ -3272,6 +3278,15 @@ export const ru: TranslationResources = {
           prompt: "Сообщение для продолжения",
           edit: "Редактировать",
           editAccessibilityLabel: "Изменить сообщение",
+        },
+        draftHistory: {
+          title: "История черновиков",
+          hint_one:
+            "Удалённые или перезаписанные черновики хранятся {{count}} день, чтобы их можно было восстановить из поля ввода.",
+          hint_other:
+            "Удалённые или перезаписанные черновики хранятся {{count}} дн., чтобы их можно было восстановить из поля ввода.",
+          days_one: "{{count}} дн.",
+          days_other: "{{count}} дн.",
         },
         idleRuntimeCleanup: {
           title: "Освобождать неактивных агентов",

@@ -1474,12 +1474,15 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       updateComposerHeightForText?.(valueRef.current, textReplacement.text);
       valueRef.current = textReplacement.text;
       updateLiveTextPresence(textReplacement.text);
+      // Hydration restores the editor's retained caret; remote text keeps the live one.
       const retainedSelection =
-        textReplacement.kind === "hydrated" ? retainedSelectionRef.current : null;
+        textReplacement.kind === "remote" ? selectionRef.current : retainedSelectionRef.current;
+      const keepsSelection =
+        textReplacement.kind === "hydrated" || textReplacement.kind === "remote";
       retainedSelectionRef.current = null;
       if (textReplacement.text === "") {
         textInputRef.current?.reset();
-      } else if (retainedSelection) {
+      } else if (keepsSelection && retainedSelection) {
         const selection = resolveRetainedSelection(retainedSelection, textReplacement.text.length);
         selectionRef.current = selection;
         textInputRef.current?.replaceText(textReplacement.text, selection);

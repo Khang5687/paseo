@@ -117,6 +117,12 @@ export const es: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restaurar borrador",
+      attachmentsOnly: "(solo adjuntos)",
+      attachments_one: "{{count}} adjunto",
+      attachments_other: "{{count}} adjuntos",
+    },
     placeholders: {
       desktop: "Envíe un mensaje al agente, etiquete@fileso use/commandsy/skills",
       mobile: "Mensaje,@files,/commands",
@@ -3283,6 +3289,15 @@ export const es: TranslationResources = {
           prompt: "Mensaje de reanudación",
           edit: "Editar",
           editAccessibilityLabel: "Editar mensaje",
+        },
+        draftHistory: {
+          title: "Historial de borradores",
+          hint_one:
+            "Los borradores eliminados o sobrescritos se guardan {{count}} día para que puedas restaurarlos desde el editor.",
+          hint_other:
+            "Los borradores eliminados o sobrescritos se guardan {{count}} días para que puedas restaurarlos desde el editor.",
+          days_one: "{{count}} d",
+          days_other: "{{count}} d",
         },
         idleRuntimeCleanup: {
           title: "Liberar agentes inactivos",

@@ -117,6 +117,12 @@ export const ptBR: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restaurar rascunho",
+      attachmentsOnly: "(somente anexos)",
+      attachments_one: "{{count}} anexo",
+      attachments_other: "{{count}} anexos",
+    },
     placeholders: {
       desktop: "Envie uma mensagem ao agente, marque @files ou use /commands e /skills",
       mobile: "Mensagem, @files, /commands",
@@ -3264,6 +3270,15 @@ export const ptBR: TranslationResources = {
           prompt: "Mensagem de retomada",
           edit: "Editar",
           editAccessibilityLabel: "Editar mensagem",
+        },
+        draftHistory: {
+          title: "Histórico de rascunhos",
+          hint_one:
+            "Rascunhos excluídos ou sobrescritos ficam guardados por {{count}} dia para você restaurá-los no editor.",
+          hint_other:
+            "Rascunhos excluídos ou sobrescritos ficam guardados por {{count}} dias para você restaurá-los no editor.",
+          days_one: "{{count}} d",
+          days_other: "{{count}} d",
         },
         idleRuntimeCleanup: {
           title: "Liberar agentes ociosos",

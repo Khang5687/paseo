@@ -924,6 +924,8 @@ interface ComposerProps {
    * `inputMode`.
    */
   editingSession?: ComposerEditingSession;
+  /** Quiet controls drawn just above the input, inside the composer's width (hidden in fullscreen). */
+  topAccessory?: React.ReactNode;
 }
 
 const EMPTY_ARRAY: readonly QueuedMessage[] = [];
@@ -1214,6 +1216,7 @@ function ComposerContentImpl({
   readOnly = false,
   submitLabel,
   placeholder,
+  topAccessory,
 }: ComposerContentProps) {
   const mode = resolveComposerInputMode(inputMode);
   const { t } = useTranslation();
@@ -2664,6 +2667,7 @@ function ComposerContentImpl({
         {/* Input area */}
         <View style={inputAreaContainerStyle}>
           <View style={inputAreaContentStyle}>
+            {isFullscreen ? null : topAccessory}
             {isFullscreen ? null : queueList}
             {!isFullscreen && sendErrorNode}
 
