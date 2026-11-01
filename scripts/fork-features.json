@@ -635,5 +635,10 @@
     "title": "feat(app): inline attachment references in the composer",
     "tests": [],
     "retired": "reverted in a38079a85: replacing the composer text drops attached images (agent-message-submission and queue-controls e2e failed); PR back to blocked"
+  },
+  {
+    "pr": 82,
+    "title": "perf(fork): faster build it: one check, skip unchanged installs, incremental APK, parallel builds",
+    "tests": ["scripts/fork-build-lib.test.mjs"]
   }
 ]
