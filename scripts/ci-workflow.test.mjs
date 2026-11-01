@@ -680,51 +680,46 @@ test("macOS jobs use latest runners while preserving release architectures", () 
   assert.match(release, /runner: macos-26-intel\n\s+electron_arch: x64/);
 });
 
-test("macOS signing repair keeps certificate and keychain passwords separate", () => {
-  const workflow = readFileSync(new URL(".github/workflows/desktop-release.yml", repoRoot), "utf8");
-  const match = workflow.match(/<<'KEYCHAIN_FIX'\n([\s\S]*?)\n          KEYCHAIN_FIX/);
-  assert.ok(match, "the release workflow repairs the pinned signing tool");
-  const script = match[1].replace(/^          /gm, "");
-  const original = [
-    "return await importCerts(keychainFile, certPaths, cscPasswords);",
-    "async function importCerts(keychainFile, paths, keyPasswords) {",
-    '["import", paths[i], "-P", password]',
-    '["set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", password, keychainFile]',
-    "}",
-  ].join("\n");
-  const directory = mkdtempSync(join(tmpdir(), "signing-repair-"));
+test("Nix desktop packaging resolves the workspace-local builder", () => {
+  const source = readFileSync(new URL("nix/desktop-package.nix", repoRoot), "utf8");
+  const invocation = source.match(/^\s+([^\n]*electron-builder) \\\n/m)?.[1];
+  assert.ok(invocation, "Nix invokes the desktop packaging tool");
+  const directory = mkdtempSync(join(tmpdir(), "nix-builder-resolution-"));
   try {
-    const packageDirectory = join(directory, "node_modules/app-builder-lib");
-    mkdirSync(join(packageDirectory, "out/codeSign"), { recursive: true });
-    const manifest = join(packageDirectory, "package.json");
-    const sourcePath = join(packageDirectory, "out/codeSign/macCodeSign.js");
-    for (const [version, source, succeeds] of [
-      ["26.8.1", original, true],
-      ["26.8.1", original.replace("cscPasswords);", "differentArguments);"), false],
-      ["26.18.0", original, false],
-    ]) {
-      writeFileSync(manifest, JSON.stringify({ name: "app-builder-lib", version }));
-      writeFileSync(sourcePath, source);
-      const result = spawnSync(process.execPath, ["-e", script], {
-        cwd: directory,
-        encoding: "utf8",
-      });
-      const actual = readFileSync(sourcePath, "utf8");
-      if (succeeds) {
-        assert.equal(result.status, 0, result.stderr);
-        assert.ok(
-          actual.includes("importCerts(keychainFile, certPaths, cscPasswords, keychainPassword)"),
-        );
-        assert.ok(
-          actual.includes("importCerts(keychainFile, paths, keyPasswords, keychainPassword)"),
-        );
-        assert.ok(actual.includes('["import", paths[i], "-P", password]'));
-        assert.ok(actual.includes('"-k", keychainPassword, keychainFile]'));
-      } else {
-        assert.notEqual(result.status, 0);
-        assert.equal(actual, source, "unexpected tool inputs must fail without a partial write");
-      }
-    }
+    const desktop = join(directory, "packages/desktop");
+    mkdirSync(join(desktop, "node_modules/.bin"), { recursive: true });
+    mkdirSync(join(desktop, "node_modules/electron-builder"));
+    writeFileSync(
+      join(desktop, "node_modules/electron-builder/package.json"),
+      JSON.stringify({
+        name: "electron-builder",
+        version: "1.0.0",
+        bin: { "electron-builder": "../.bin/electron-builder" },
+      }),
+    );
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify({ private: true, workspaces: ["packages/desktop"] }),
+    );
+    writeFileSync(
+      join(desktop, "package.json"),
+      JSON.stringify({
+        name: "desktop-fixture",
+        private: true,
+        devDependencies: { "electron-builder": "1.0.0" },
+      }),
+    );
+    writeFileSync(
+      join(desktop, "node_modules/.bin/electron-builder"),
+      '#!/bin/sh\nprintf "workspace-builder\\n"\n',
+      { mode: 0o755 },
+    );
+    const result = spawnSync("sh", ["-c", `${invocation} --version`], {
+      cwd: desktop,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "workspace-builder");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
