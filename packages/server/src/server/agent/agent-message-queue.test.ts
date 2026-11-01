@@ -323,25 +323,6 @@ test("update and remove edit the shared list; remove returns the full entry", as
   expect(session.turns).toHaveLength(2);
 });
 
-test("a queued message keeps its inline attachment labels when it dispatches", async () => {
-  const { agentId, session } = await createRunningAgent();
-  const image = { data: "aGVsbG8=", mimeType: "image/png" };
-  await manager.addQueuedMessage(agentId, {
-    text: "what is in [Image #1]",
-    images: [image],
-    attachmentRefs: [{ label: "Image #1", imageIndex: 0 }],
-  });
-
-  const nextTurn = session.waitForNextTurn();
-  session.completeTurn(session.turns[0].turnId);
-  const started = await nextTurn;
-  expect(started.prompt).toEqual([
-    { type: "text", text: "what is in [Image #1]", placeholders: ["[Image #1]"] },
-    { type: "text", mimeType: "text/plain", text: "[Image #1]:" },
-    { type: "image", ...image },
-  ]);
-});
-
 test("send_now pops a specific entry and sends it into the active turn", async () => {
   const { agentId, session } = await createRunningAgent();
   const first = await manager.addQueuedMessage(agentId, { text: "first queued" });

@@ -641,8 +641,7 @@
     "title": "feat(app): inline attachment references in the composer (re-land #80)",
     "tests": [
       "packages/app/src/composer/attachments/inline-refs.test.ts",
-      "packages/server/src/server/agent/prompt-attachments.test.ts",
-      "packages/server/src/server/agent/agent-message-queue.test.ts"
+      "packages/server/src/server/agent/prompt-attachments.test.ts"
     ],
     "e2e": [
       "packages/app/e2e/browser/agent-message-submission.spec.ts",

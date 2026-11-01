@@ -170,12 +170,7 @@ export class AgentMessageQueueDispatcher {
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         agentId,
-        prompt: buildAgentPrompt(
-          message.text,
-          message.images,
-          message.attachments,
-          message.attachmentRefs,
-        ),
+        prompt: buildAgentPrompt(message.text, message.images, message.attachments),
         messageId: message.id,
         activeTurnBehavior: options.activeTurnBehavior ?? "steer",
         clearPendingPermissions: true,

@@ -2397,7 +2397,6 @@ export class AgentManager {
       text: string;
       images?: AgentQueuedMessagePayload["images"];
       attachments?: AgentQueuedMessagePayload["attachments"];
-      attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
     },
   ): Promise<AgentQueuedMessagePayload> {
     return await this.runLifecycleMutation(agentId, async () => {
@@ -2407,7 +2406,6 @@ export class AgentManager {
         text: input.text,
         images: input.images ?? [],
         attachments: input.attachments ?? [],
-        ...(input.attachmentRefs?.length ? { attachmentRefs: input.attachmentRefs } : {}),
         createdAt: new Date().toISOString(),
       };
       await this.writeQueuedMessages(agent, [...agent.queuedMessages, message]);

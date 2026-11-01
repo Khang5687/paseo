@@ -8576,7 +8576,6 @@ export class Session {
         text: msg.text,
         images: msg.images,
         attachments: msg.attachments,
-        attachmentRefs: msg.attachmentRefs,
       });
       this.emit({
         type: "agent.queue.add.response",
