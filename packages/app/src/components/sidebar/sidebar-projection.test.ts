@@ -87,6 +87,7 @@ function projectionInput(options?: {
     collapsedProjectKeys: new Set<string>(),
     collapsedWorkspaceGroupKeys: new Set<string>(),
     parentKeyByWorkspaceKey: new Map<string, string>(),
+    expandedThreadKeys: new Set<string>(),
     t: i18n.t,
   };
 }
@@ -118,6 +119,8 @@ function nestedInput(options: {
   groupMode: "project" | "status";
   pinnedIds?: string[];
   childStatus?: SidebarWorkspaceEntry["statusBucket"];
+  /** Whether the user unfolded the parent thread. Defaults to unfolded. */
+  expanded?: boolean;
 }) {
   const parent = makeWorkspace("parent", "running");
   const sibling = makeWorkspace("sibling", "running");
@@ -139,6 +142,7 @@ function nestedInput(options: {
       [sibling.entry.workspaceKey, sibling.entry],
     ]),
     parentKeyByWorkspaceKey: new Map([["srv:child", "srv:parent"]]),
+    expandedThreadKeys: new Set(options.expanded === false ? [] : ["srv:parent"]),
   };
 }
 
@@ -256,18 +260,33 @@ describe("buildSidebarProjection", () => {
     expect(projection.nestingDepthByWorkspaceKey.size).toBe(0);
   });
 
-  it("nests within a status group and leaves a child in another group at its top level", () => {
+  it("keeps a subagent workspace under its parent in status mode, whatever its own status", () => {
     const sameGroup = buildSidebarProjection(nestedInput({ groupMode: "status" }));
     expect(statusGroupRows(sameGroup)).toEqual([["running", ["parent", "child", "sibling"]]]);
     expect([...sameGroup.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
 
-    const otherGroup = buildSidebarProjection(
+    const otherStatus = buildSidebarProjection(
       nestedInput({ groupMode: "status", childStatus: "needs_input" }),
     );
-    expect(statusGroupRows(otherGroup)).toEqual([
-      ["needs_input", ["child"]],
-      ["running", ["parent", "sibling"]],
-    ]);
-    expect(otherGroup.nestingDepthByWorkspaceKey.size).toBe(0);
+    expect(statusGroupRows(otherStatus)).toEqual([["running", ["parent", "child", "sibling"]]]);
+    expect([...otherStatus.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
   });
+
+  for (const groupMode of ["project", "status"] as const) {
+    it(`folds a thread's subagent workspaces until it is unfolded in ${groupMode} mode`, () => {
+      const projection = buildSidebarProjection(nestedInput({ groupMode, expanded: false }));
+      const rows =
+        groupMode === "project"
+          ? projection.pinnedGroups.unpinnedProjects[0]?.workspaces
+          : projection.workspaceGroups.flatMap((group) => group.rows);
+
+      expect(rows?.map((entry) => entry.workspaceId)).toEqual(["parent", "sibling"]);
+      expect([...projection.childWorkspaceCountByWorkspaceKey]).toEqual([["srv:parent", 1]]);
+      expect(projection.nestingDepthByWorkspaceKey.size).toBe(0);
+      expect(projection.shortcutModel.shortcutTargets.map((target) => target.workspaceId)).toEqual([
+        "parent",
+        "sibling",
+      ]);
+    });
+  }
 });
