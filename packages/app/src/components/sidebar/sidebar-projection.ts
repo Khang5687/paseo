@@ -22,7 +22,7 @@ import {
   type SidebarShortcutSection,
 } from "@/utils/sidebar-shortcuts";
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
-import { createWorkspaceRowNester, inheritParentPins } from "./workspace-nesting";
+import { createWorkspaceRowNester, inheritParentPins, splitThreadHeads } from "./workspace-nesting";
 
 export interface SidebarProjection {
   /** `unpinnedProjects` here also has the settled rows removed: it is exactly what the list shows. */
@@ -42,6 +42,8 @@ export interface SidebarProjection {
   shortcutModel: SidebarShortcutModel;
   /** Indent level of each subagent workspace row nested under its parent; top-level rows absent. */
   nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
+  /** Subagent workspace rows under each thread row, shown or folded; childless rows absent. */
+  childWorkspaceCountByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
 export interface SidebarProjectionInput {
@@ -57,6 +59,8 @@ export interface SidebarProjectionInput {
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
   /** Child workspaceKey -> parent workspaceKey for subagent workspaces. */
   parentKeyByWorkspaceKey: ReadonlyMap<string, string>;
+  /** Threads whose child rows the user unfolded; every other thread shows them folded. */
+  expandedThreadKeys: ReadonlySet<string>;
   t: TFunction;
 }
 
@@ -88,7 +92,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
     keys: { ...input.settledKeys, settledWorkspaceKeys },
   });
   // Each mode nests only the lists it renders, so the depth map describes the rows on screen.
-  const nester = createWorkspaceRowNester(input.parentKeyByWorkspaceKey);
+  const nester = createWorkspaceRowNester(input.parentKeyByWorkspaceKey, input.expandedThreadKeys);
   let unpinnedProjects = settled.unsettledProjects;
   if (input.groupMode === "project") {
     unpinnedProjects = unpinnedProjects.map((project) => {
@@ -110,12 +114,13 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   );
   // One switch decides both what the list groups by and what the keyboard shortcuts walk, so the
   // two cannot disagree and a new grouping mode is a compile error here rather than a silent
-  // fall-through to the project rows. Status groups nest only within themselves: a child that
-  // needs attention stays in its own status group instead of hiding under a finished parent.
-  const workspaceGroups = buildWorkspaceGroups(input, listedWorkspaces);
+  // fall-through to the project rows. Status groups sort only thread heads; a child row follows
+  // its parent into the parent's group, the same place it has in project mode.
+  const threads = splitThreadHeads(listedWorkspaces, input.parentKeyByWorkspaceKey);
+  const workspaceGroups = buildWorkspaceGroups(input, threads.heads);
   // The groups were built just above, so nesting their rows in place shares nothing.
   for (const group of workspaceGroups) {
-    group.rows = nester.nest(group.rows);
+    group.rows = nester.nest([...group.rows, ...threads.childrenOf(group.rows)]);
   }
 
   // Settled rows are put away, so no section here numbers them.
@@ -146,6 +151,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
     projectIconTargets: resolveSidebarProjectIconTargets(input.projects),
     shortcutModel: buildSidebarShortcutSections({ sections }),
     nestingDepthByWorkspaceKey: nester.depthByWorkspaceKey,
+    childWorkspaceCountByWorkspaceKey: nester.childCountByWorkspaceKey,
   };
 }
 

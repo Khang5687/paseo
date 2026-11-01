@@ -54,7 +54,8 @@ import {
   buildWorkspaceAgentActivityIndex,
   type WorkspaceAgentActivity,
 } from "@/utils/workspace-agent-activity";
-import { buildWorkspaceParentIndex } from "@/subagents/policies";
+import { buildThreadAgentIndex, buildWorkspaceParentIndex } from "@/subagents/policies";
+import type { ThreadAgents } from "@/subagents/thread-children";
 import {
   resolveTurnPresentation,
   TURN_LIVENESS_IDLE,
@@ -444,6 +445,8 @@ export interface SessionState {
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
   // Subagent workspace id -> the workspace id it nests under in the sidebar.
   workspaceParents: Map<string, string>;
+  // Workspace id -> its agents, and the same-workspace subagents that show as its child rows.
+  threadAgents: Map<string, ThreadAgents>;
   agentDetails: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   // All active project descriptors, keyed by host-local projectId.
@@ -689,6 +692,7 @@ function createInitialSessionState(
     agents: new Map(),
     workspaceAgentActivity: new Map(),
     workspaceParents: new Map(),
+    threadAgents: new Map(),
     agentDetails: new Map(),
     workspaces: new Map(),
     projects: new Map(),
@@ -1537,6 +1541,7 @@ export const useSessionStore = create<SessionStore>()(
                   session.workspaceAgentActivity,
                 ),
                 workspaceParents: buildWorkspaceParentIndex(nextAgents, session.workspaceParents),
+                threadAgents: buildThreadAgentIndex(nextAgents, session.threadAgents),
               },
             },
           };

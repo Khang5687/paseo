@@ -55,7 +55,7 @@ interface SelectSubagentsParams {
 const EMPTY_SUBAGENT_ROWS: SubagentRow[] = [];
 const EMPTY_PROVIDER_SUBAGENT_ROWS: ProviderSubagentRow[] = [];
 
-function toSubagentRow(agent: Agent): SubagentRow {
+export function toSubagentRow(agent: Agent): SubagentRow {
   return {
     kind: "paseo",
     address: { serverId: agent.serverId, agentId: agent.id },
@@ -166,6 +166,39 @@ export function selectProviderSubagentsForParent(
   }
   rows.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
   return rows;
+}
+
+/**
+ * The provider subagents of every agent in one sidebar thread, read from descriptors the client
+ * already holds. The provider store changes on every subagent timeline item, which leaves the
+ * descriptors untouched, so rows are recomputed only when the descriptors or the hidden set change.
+ */
+export function createThreadProviderRowsSelector(input: {
+  serverId: string;
+  agentIds: readonly string[];
+  supported: boolean;
+  nestingSupported: boolean;
+}): (state: ProviderSubagentStoreSnapshot) => ProviderSubagentRow[] {
+  let previousDescriptors: ProviderSubagentStoreSnapshot["descriptors"] | null = null;
+  let previousHidden: ProviderSubagentStoreSnapshot["hiddenFromTrack"] | null = null;
+  let previousRows = EMPTY_PROVIDER_SUBAGENT_ROWS;
+  return (state) => {
+    if (state.descriptors === previousDescriptors && state.hiddenFromTrack === previousHidden) {
+      return previousRows;
+    }
+    previousDescriptors = state.descriptors;
+    previousHidden = state.hiddenFromTrack;
+    const rows = input.agentIds.flatMap((parentAgentId) =>
+      selectProviderSubagentsForParent(
+        state,
+        { serverId: input.serverId, parentAgentId },
+        input.supported,
+        input.nestingSupported,
+      ),
+    );
+    previousRows = rows.length === 0 ? EMPTY_PROVIDER_SUBAGENT_ROWS : rows;
+    return previousRows;
+  };
 }
 
 export function useSubagentsForParent(params: SelectSubagentsParams): SubagentRow[] {

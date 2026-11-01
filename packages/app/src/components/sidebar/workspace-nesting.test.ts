@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createWorkspaceRowNester, inheritParentPins } from "./workspace-nesting";
+import { createWorkspaceRowNester, inheritParentPins, splitThreadHeads } from "./workspace-nesting";
 
 function rows(...keys: string[]) {
   return keys.map((workspaceKey) => ({ workspaceKey }));
 }
 
-function nest(input: { keys: string[]; parents: Record<string, string> }) {
-  const nester = createWorkspaceRowNester(new Map(Object.entries(input.parents)));
+/** Every thread is unfolded unless `expanded` names the ones that are. */
+function nest(input: { keys: string[]; parents: Record<string, string>; expanded?: string[] }) {
+  const nester = createWorkspaceRowNester(
+    new Map(Object.entries(input.parents)),
+    new Set(input.expanded ?? input.keys),
+  );
   const nested = nester.nest(rows(...input.keys));
   return nested.map((row) => [
     row.workspaceKey,
@@ -51,6 +55,72 @@ describe("createWorkspaceRowNester", () => {
       ["one", 0],
       ["two", 1],
     ]);
+  });
+
+  it("folds a thread's child rows until the thread is unfolded, and counts them either way", () => {
+    const parents = { child: "parent", grandchild: "child" };
+    const keys = ["parent", "child", "grandchild", "other"];
+    const nester = createWorkspaceRowNester(new Map(Object.entries(parents)));
+
+    expect(nester.nest(rows(...keys)).map((row) => row.workspaceKey)).toEqual(["parent", "other"]);
+    expect([...nester.childCountByWorkspaceKey]).toEqual([
+      ["parent", 1],
+      ["child", 1],
+    ]);
+    expect(nester.depthByWorkspaceKey.size).toBe(0);
+  });
+
+  it("keeps a grandchild folded under a folded parent even when its own thread is unfolded", () => {
+    expect(
+      nest({
+        keys: ["parent", "child", "grandchild"],
+        parents: { child: "parent", grandchild: "child" },
+        expanded: ["child"],
+      }),
+    ).toEqual([["parent", 0]]);
+    expect(
+      nest({
+        keys: ["parent", "child", "grandchild"],
+        parents: { child: "parent", grandchild: "child" },
+        expanded: ["parent"],
+      }),
+    ).toEqual([
+      ["parent", 0],
+      ["child", 1],
+    ]);
+  });
+});
+
+describe("splitThreadHeads", () => {
+  it("groups only thread heads and hands every descendant to its head's group", () => {
+    const split = splitThreadHeads(
+      rows("grandchild", "other", "child", "parent", "orphan"),
+      new Map([
+        ["child", "parent"],
+        ["grandchild", "child"],
+        ["orphan", "missing"],
+      ]),
+    );
+
+    expect(split.heads.map((row) => row.workspaceKey)).toEqual(["other", "parent", "orphan"]);
+    expect(split.childrenOf(rows("parent")).map((row) => row.workspaceKey)).toEqual([
+      "grandchild",
+      "child",
+    ]);
+    expect(split.childrenOf(rows("other", "orphan"))).toEqual([]);
+  });
+
+  it("keeps every row of a parent cycle as a head so each row is grouped once", () => {
+    const split = splitThreadHeads(
+      rows("one", "two"),
+      new Map([
+        ["one", "two"],
+        ["two", "one"],
+      ]),
+    );
+
+    expect(split.heads.map((row) => row.workspaceKey)).toEqual(["one", "two"]);
+    expect(split.childrenOf(split.heads)).toEqual([]);
   });
 });
 

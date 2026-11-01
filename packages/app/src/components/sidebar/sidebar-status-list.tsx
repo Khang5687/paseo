@@ -59,6 +59,7 @@ import {
   SidebarWorkspaceTrailingActionSlot,
   sidebarWorkspaceRowStyles,
 } from "@/components/sidebar/sidebar-workspace-row-content";
+import { SidebarThreadChildren } from "@/components/sidebar/sidebar-thread-children";
 import { useOpenKebabMenuVisibility } from "@/components/sidebar/use-open-kebab-menu-visibility";
 import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop";
 import { getStatusDotColor } from "@/utils/status-dot-color";
@@ -681,26 +682,34 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
   }, [workspace.serverId, workspace.workspaceId]);
 
   return (
-    <StatusWorkspaceRowWithMenu
-      workspace={workspace}
-      hostBadge={hostBadge}
-      projectName={projectName}
-      projectIconDataUri={projectIconDataUri}
-      selected={selected}
-      shortcutNumber={shortcutNumber}
-      showShortcutBadge={showShortcutBadge}
-      canPin={canPin}
-      canSettle={canSettle}
-      onToggleWorkspacePin={onToggleWorkspacePin}
-      onToggleWorkspaceSettle={onToggleWorkspaceSettle}
-      reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
-      inStatusGroup={inStatusGroup}
-      nestingDepth={nestingDepth}
-      onPress={handlePress}
-      drag={drag}
-      isDragging={isDragging}
-      dragHandleProps={dragHandleProps}
-    />
+    <>
+      <StatusWorkspaceRowWithMenu
+        workspace={workspace}
+        hostBadge={hostBadge}
+        projectName={projectName}
+        projectIconDataUri={projectIconDataUri}
+        selected={selected}
+        shortcutNumber={shortcutNumber}
+        showShortcutBadge={showShortcutBadge}
+        canPin={canPin}
+        canSettle={canSettle}
+        onToggleWorkspacePin={onToggleWorkspacePin}
+        onToggleWorkspaceSettle={onToggleWorkspaceSettle}
+        reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+        inStatusGroup={inStatusGroup}
+        nestingDepth={nestingDepth}
+        onPress={handlePress}
+        drag={drag}
+        isDragging={isDragging}
+        dragHandleProps={dragHandleProps}
+      />
+      <SidebarThreadChildren
+        serverId={workspace.serverId}
+        workspaceId={workspace.workspaceId}
+        workspaceKey={workspace.workspaceKey}
+        indentLevel={(inStatusGroup ? 1 : 0) + nestingDepth + 1}
+      />
+    </>
   );
 });
 

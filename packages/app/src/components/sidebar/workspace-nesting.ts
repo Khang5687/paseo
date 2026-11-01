@@ -11,12 +11,20 @@ export interface WorkspaceRowNester {
   nest<T extends NestableWorkspaceRow>(rows: T[]): T[];
   /** Indent level of every nested row placed so far; top-level rows are absent. */
   depthByWorkspaceKey: ReadonlyMap<string, number>;
+  /** How many direct child rows each placed parent has, shown or folded; childless rows absent. */
+  childCountByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
+/**
+ * `expandedWorkspaceKeys` are the threads the user unfolded. A parent that is not in it keeps its
+ * child rows folded away, so every thread starts collapsed.
+ */
 export function createWorkspaceRowNester(
   parentKeyByWorkspaceKey: ReadonlyMap<string, string>,
+  expandedWorkspaceKeys: ReadonlySet<string> = new Set(),
 ): WorkspaceRowNester {
   const depthByWorkspaceKey = new Map<string, number>();
+  const childCountByWorkspaceKey = new Map<string, number>();
 
   function nest<T extends NestableWorkspaceRow>(rows: T[]): T[] {
     if (parentKeyByWorkspaceKey.size === 0) {
@@ -44,17 +52,24 @@ export function createWorkspaceRowNester(
 
     const nested: T[] = [];
     const placedKeys = new Set<string>();
-    function place(row: T, depth: number): void {
+    function place(row: T, depth: number, folded = false): void {
       if (placedKeys.has(row.workspaceKey)) {
         return;
       }
       placedKeys.add(row.workspaceKey);
-      nested.push(row);
-      if (depth > 0) {
-        depthByWorkspaceKey.set(row.workspaceKey, depth);
+      if (!folded) {
+        nested.push(row);
+        if (depth > 0) {
+          depthByWorkspaceKey.set(row.workspaceKey, depth);
+        }
       }
-      for (const child of childrenByParentKey.get(row.workspaceKey) ?? []) {
-        place(child, depth + 1);
+      const children = childrenByParentKey.get(row.workspaceKey) ?? [];
+      if (children.length > 0) {
+        childCountByWorkspaceKey.set(row.workspaceKey, children.length);
+      }
+      const foldChildren = folded || !expandedWorkspaceKeys.has(row.workspaceKey);
+      for (const child of children) {
+        place(child, depth + 1, foldChildren);
       }
     }
     for (const root of roots) {
@@ -68,7 +83,7 @@ export function createWorkspaceRowNester(
     return nested;
   }
 
-  return { nest, depthByWorkspaceKey };
+  return { nest, depthByWorkspaceKey, childCountByWorkspaceKey };
 }
 
 /**
@@ -110,4 +125,44 @@ export function inheritParentPins(input: {
   return inherited.length === 0
     ? input.pinnedWorkspaceKeys
     : [...input.pinnedWorkspaceKeys, ...inherited];
+}
+
+/**
+ * Splits rows into the ones that head a thread and the ones that belong under another row in the
+ * same list. A status grouping groups only the heads; the rest follow their parent into its group
+ * instead of being sorted by their own status. Rows on a parent cycle have no head above them, so
+ * they stay heads and every row is still grouped once.
+ */
+export function splitThreadHeads<T extends NestableWorkspaceRow>(
+  rows: T[],
+  parentKeyByWorkspaceKey: ReadonlyMap<string, string>,
+): { heads: T[]; childrenOf: (heads: T[]) => T[] } {
+  if (parentKeyByWorkspaceKey.size === 0) {
+    return { heads: rows, childrenOf: () => [] };
+  }
+  const rowKeys = new Set(rows.map((row) => row.workspaceKey));
+  const headKeyByRowKey = new Map<string, string>();
+  for (const row of rows) {
+    const visitedKeys = new Set([row.workspaceKey]);
+    let headKey = row.workspaceKey;
+    let parentKey = parentKeyByWorkspaceKey.get(headKey);
+    while (parentKey !== undefined && rowKeys.has(parentKey) && !visitedKeys.has(parentKey)) {
+      visitedKeys.add(parentKey);
+      headKey = parentKey;
+      parentKey = parentKeyByWorkspaceKey.get(headKey);
+    }
+    const onCycle = parentKey !== undefined && visitedKeys.has(parentKey);
+    headKeyByRowKey.set(row.workspaceKey, onCycle ? row.workspaceKey : headKey);
+  }
+  const heads = rows.filter((row) => headKeyByRowKey.get(row.workspaceKey) === row.workspaceKey);
+  return {
+    heads,
+    childrenOf: (groupHeads) => {
+      const groupHeadKeys = new Set(groupHeads.map((row) => row.workspaceKey));
+      return rows.filter((row) => {
+        const headKey = headKeyByRowKey.get(row.workspaceKey);
+        return headKey !== row.workspaceKey && headKey !== undefined && groupHeadKeys.has(headKey);
+      });
+    },
+  };
 }

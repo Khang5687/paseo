@@ -239,12 +239,6 @@ Permission requests are notification checkpoints, not the end of that subscripti
 The permission notification includes the normalized request plus the child and request IDs, so the caller can inspect it and respond without fetching agent status.
 A watched child that closes before its finish event also notifies the caller so delegated work cannot disappear silently during archive or workspace teardown.
 
-## Provider-managed child agents
-
-Some providers can create their own child sessions inside one provider runtime. OMP's task tool reports these with `child_session` events; `AgentManager` imports the live provider handle, stamps `paseo.parent-agent-id`, and surfaces the result as a normal subagent in the parent's subagents track.
-
-The provider still owns the underlying runtime. Paseo keeps an agent record so the child can be opened, tracked, archived, and cascaded with the parent, but prompts and history hydration route through the provider adapter for that native child handle.
-
 ## Background workspaces
 
 `workspace.background` controls discovery only. Background workspaces contain ordinary durable
@@ -350,7 +344,17 @@ Running provider-native subagents contribute `running` to the workspace owned by
 
 The sidebar uses the same ownership to place workspaces. Workspace W renders as an indented child row under workspace P when every unarchived workspace-root agent in W (an agent whose parent is not in W) is a subagent of an unarchived agent in P. W's own same-workspace helpers do not count. A root agent in W, or subagents of a second workspace, keep W at the top level. Detach and parent archive (which detaches cross-workspace children) return it there without user action. Nesting chains, and a parent cycle still places every row once. The client derives this from its agent list (`packages/app/src/subagents/workspace-parents.ts`); the daemon sends no relationship field.
 
-A child row keeps its own status, actions, and pin. It follows its parent's row: a collapsed project hides both, and pinning the parent brings its children into Pinned beneath it; settling the parent takes them into Settled the same way. A child pinned or settled on its own stays a top-level row in that section when its parent is not. A child in a different project from its parent stays in its own project. Status grouping is the exception: a child nests only inside its parent's status group, so a child that needs attention is never hidden under a finished parent.
+A child row keeps its own status, actions, and pin. It follows its parent's row: a collapsed project hides both, and pinning the parent brings its children into Pinned beneath it; settling the parent takes them into Settled the same way. A child pinned or settled on its own stays a top-level row in that section when its parent is not. A child in a different project from its parent stays in its own project. Status grouping sorts only thread heads: a child row follows its parent into the parent's status group, whatever its own status, so a thread reads the same in both groupings. A subagent workspace's status does not roll up into its parent's row, so a folded child that needs input shows only once its thread is unfolded.
+
+### Sidebar thread children
+
+Every thread row in the sidebar carries its subagents behind one fold row ("3 subagents"), folded by default. Unfolding is remembered per thread in the sidebar's persisted collapse state (`expandedThreadKeys`); there is no global toggle. The count covers three kinds of children, all derived from state the client already holds:
+
+- Same-workspace Paseo subagents (and their descendants), using the root rule from [Workspace activity](#workspace-activity): an agent whose parent shares its workspace has no row of its own, so it shows here (`packages/app/src/subagents/thread-children.ts`). Tapping opens it as an agent tab.
+- Provider subagents of any agent in the workspace. They are read-only rows; tapping opens their transcript tab in the thread's workspace. The sidebar issues no list request of its own: a provider subagent shows once its parent has been listed (the subagents track lists the agent you open, and reconnects re-list it) or once the daemon announced it live. A thread whose parent you have not opened since the app started shows only the provider subagents that started meanwhile.
+- Subagent workspace rows nested under this one. They fold with the thread instead of rendering as indented rows.
+
+Detached children have no parent label, so they are top-level rows like any other agent.
 
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion
@@ -375,7 +379,7 @@ The rows combine two kinds of children:
 parentAgentId === thisAgent.id  AND  !archivedAt
 ```
 
-- **Provider subagents** are child executions owned by Claude, Codex, or OpenCode. They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track. A descriptor's optional `parentSubagentId` identifies its direct provider-subagent parent; an absent value identifies a direct child of the managed agent.
+- **Provider subagents** are child executions owned by Claude, Codex, OpenCode, or OMP (its `task` tool, `packages/server/src/server/agent/providers/omp/subagent-index.ts`). They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track and the [sidebar thread](#sidebar-thread-children). A descriptor's optional `parentSubagentId` identifies its direct provider-subagent parent; an absent value identifies a direct child of the managed agent.
 
 Clicking either kind opens a workspace tab. On compact layouts it opens in a [sheet](explorer-sidebar.md#sheets) instead, replacing the subagents list in place (Back returns to the list); the sheet hides the composer and shows the agent's model and thinking as one line in its place (`PaneSubtitle`, the row provider subagents already use), and a Paseo subagent's sheet offers **Open as tab** (the full-screen glyph in the header) to get the composer back. A Paseo subagent tab is a normal interactive agent pane. A provider subagent tab is a read-only timeline pane with no composer, archive, detach, rewind, or fork actions. It shows its own direct children in a subagents track. Every subagent pane links back to its parent (`packages/app/src/subagents/parent/`): a pill above the composer when there is one, a parent box in the composer's place when there is not. Both panes use `AgentStreamView`, so message, reasoning, tool-call, and layout rendering stay identical.
 
