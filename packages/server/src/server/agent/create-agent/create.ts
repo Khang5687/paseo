@@ -10,7 +10,7 @@ import type {
   CreatePaseoWorktreeWorkflowFn,
   CreatePaseoWorktreeWorkflowResult,
 } from "../../worktree-session.js";
-import type { AgentAttachment, FirstAgentContext } from "../../messages.js";
+import type { AgentAttachment, FirstAgentContext, InlineAttachmentRef } from "../../messages.js";
 import type { AgentManager, CreateAgentOptions, ManagedAgent } from "../agent-manager.js";
 import type { AgentPromptInput, AgentRunOptions, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentStorage } from "../agent-storage.js";
@@ -55,6 +55,7 @@ export interface CreateAgentFromSessionInput {
   outputSchema?: Record<string, unknown>;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: AgentAttachment[];
+  attachmentRefs?: InlineAttachmentRef[];
   labels: Record<string, string>;
   env?: Record<string, string>;
   provisionalTitle: string | null;
@@ -232,7 +233,12 @@ async function resolveSessionCreateAgent(
     modeId: resolvedCreateConfig.modeId,
     featureValues: resolvedCreateConfig.featureValues,
   };
-  const prompt = buildAgentPrompt(trimmedPrompt ?? "", input.images, input.attachments);
+  const prompt = buildAgentPrompt(
+    trimmedPrompt ?? "",
+    input.images,
+    input.attachments,
+    input.attachmentRefs,
+  );
   const hasPromptContent = Array.isArray(prompt) ? prompt.length > 0 : prompt.length > 0;
   const clientMessageId = normalizeClientMessageId(input.clientMessageId);
   const runOptions: AgentRunOptions | undefined =

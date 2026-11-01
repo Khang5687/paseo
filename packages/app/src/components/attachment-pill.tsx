@@ -131,14 +131,30 @@ export function AttachmentLabel({ icon, title, subtitle }: AttachmentLabelProps)
   );
 }
 
-/** Square image preview pill body. */
-export function AttachmentThumbnail({ metadata }: { metadata: AttachmentMetadata }) {
+/** Square image preview pill body. `badge` (e.g. "#1") names the image's inline token. */
+export function AttachmentThumbnail({
+  metadata,
+  badge,
+}: {
+  metadata: AttachmentMetadata;
+  badge?: string;
+}) {
   const uri = useAttachmentPreviewUrl(metadata);
   const source = useMemo(() => ({ uri: uri ?? "" }), [uri]);
-  if (!uri) {
-    return <View style={styles.thumbnailPlaceholder} />;
-  }
-  return <Image source={source} style={styles.thumbnail} />;
+  const preview = uri ? (
+    <Image source={source} style={styles.thumbnail} />
+  ) : (
+    <View style={styles.thumbnailPlaceholder} />
+  );
+  if (!badge) return preview;
+  return (
+    <View>
+      {preview}
+      <View style={styles.thumbnailBadge} pointerEvents="none">
+        <Text style={styles.thumbnailBadgeText}>{badge}</Text>
+      </View>
+    </View>
+  );
 }
 
 const ThemedX = withUnistyles(X);
@@ -188,6 +204,18 @@ const styles = StyleSheet.create((theme) => ({
     width: ATTACHMENT_CONTENT_HEIGHT,
     height: ATTACHMENT_CONTENT_HEIGHT,
     backgroundColor: theme.colors.surface1,
+  },
+  thumbnailBadge: {
+    position: "absolute",
+    right: 2,
+    bottom: 2,
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.surface2,
+  },
+  thumbnailBadgeText: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
   },
   closeButton: {
     position: "absolute",

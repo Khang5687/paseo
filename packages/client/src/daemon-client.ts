@@ -672,6 +672,7 @@ export interface SendMessageOptions {
   activeTurnBehavior?: ActiveTurnBehavior;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
+  attachmentRefs?: SendAgentMessageRequest["attachmentRefs"];
 }
 
 export interface AgentAttentionRequiredNotification {
@@ -699,6 +700,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
   outputSchema?: Record<string, unknown>;
   images?: CreateAgentRequestMessage["images"];
   attachments?: CreateAgentRequestMessage["attachments"];
+  attachmentRefs?: CreateAgentRequestMessage["attachmentRefs"];
   /** @deprecated Use createWorkspace({ source, agent, idempotencyKey }); rejected by createAgent. */
   git?: GitSetupOptions;
   worktree?: CreateAgentRequestMessage["worktree"];
@@ -3998,6 +4000,7 @@ export class DaemonClient {
       ...(options.attachments && options.attachments.length > 0
         ? { attachments: options.attachments }
         : {}),
+      attachmentRefs: options.attachmentRefs,
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktree ? { worktree: options.worktree } : {}),
       ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
@@ -4653,6 +4656,7 @@ export class DaemonClient {
       activeTurnBehavior: options.activeTurnBehavior,
       images: options.images,
       attachments: options.attachments,
+      attachmentRefs: options.attachmentRefs,
     });
     const payload = await this.sendRequest({
       requestId,
@@ -8362,6 +8366,7 @@ function resolveAgentConfig(options: CreateAgentRequestOptions): AgentSessionCon
     callerAgentId: _callerAgentId,
     outputSchema: _outputSchema,
     attachments: _attachments,
+    attachmentRefs: _attachmentRefs,
     worktree: _worktree,
     autoArchive: _autoArchive,
     background: _background,

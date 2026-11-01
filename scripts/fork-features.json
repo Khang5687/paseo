@@ -634,11 +634,23 @@
     "pr": 80,
     "title": "feat(app): inline attachment references in the composer",
     "tests": [],
-    "retired": "reverted in a38079a85: replacing the composer text drops attached images (agent-message-submission and queue-controls e2e failed); PR back to blocked"
+    "retired": "reverted in a38079a85 (replacing the composer text dropped attached images); re-landed with the fix as #83"
   },
   {
     "pr": 82,
     "title": "perf(fork): faster build it: one check, skip unchanged installs, incremental APK, parallel builds",
     "tests": ["scripts/fork-build-lib.test.mjs"]
+  },
+  {
+    "pr": 83,
+    "title": "feat(app): inline attachment references in the composer (re-land #80)",
+    "tests": [
+      "packages/app/src/composer/attachments/inline-refs.test.ts",
+      "packages/server/src/server/agent/prompt-attachments.test.ts"
+    ],
+    "e2e": [
+      "packages/app/e2e/browser/agent-message-submission.spec.ts",
+      "packages/app/e2e/browser/queue-controls.spec.ts"
+    ]
   }
 ]
