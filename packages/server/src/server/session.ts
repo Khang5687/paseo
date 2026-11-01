@@ -4662,7 +4662,6 @@ export class Session {
       autoArchive,
       images,
       attachments,
-      attachmentRefs,
       env,
     } = msg;
     this.sessionLogger.info(
@@ -4736,7 +4735,6 @@ export class Session {
           outputSchema,
           images,
           attachments,
-          attachmentRefs,
           labels: resolvedIntent.intent.labels,
           env,
           provisionalTitle,
@@ -8890,7 +8888,7 @@ export class Session {
     try {
       const agentId = resolved.agentId;
 
-      const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments, msg.attachmentRefs);
+      const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments);
       this.sessionLogger.trace(
         {
           agentId,

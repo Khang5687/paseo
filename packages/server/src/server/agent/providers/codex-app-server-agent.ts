@@ -3321,7 +3321,7 @@ export async function codexAppServerTurnInputFromPrompt(
   let previousTextBlock = false;
   for (const block of prompt) {
     if (block.type === "text") {
-      output.push(toCodexTextInput(block.text, "placeholders" in block ? block.placeholders : []));
+      output.push(toCodexTextInput(block.text));
       previousTextBlock = block.text.length > 0;
       continue;
     }
@@ -3356,37 +3356,12 @@ export async function codexAppServerTurnInputFromPrompt(
   return output;
 }
 
-function toCodexTextInput(
-  text: string,
-  placeholders: readonly string[] = [],
-): Extract<CodexAppServerUserInput, { type: "text" }> {
+function toCodexTextInput(text: string): Extract<CodexAppServerUserInput, { type: "text" }> {
   return {
     type: "text",
     text,
-    text_elements: codexPlaceholderElements(text, placeholders),
+    text_elements: [],
   };
-}
-
-// Codex marks attachment placeholders such as `[Image #1]` by UTF-8 byte range.
-function codexPlaceholderElements(
-  text: string,
-  placeholders: readonly string[],
-): CodexTextElement[] {
-  const elements: CodexTextElement[] = [];
-  for (const placeholder of new Set(placeholders)) {
-    for (
-      let at = text.indexOf(placeholder);
-      at !== -1;
-      at = text.indexOf(placeholder, at + placeholder.length)
-    ) {
-      const start = Buffer.byteLength(text.slice(0, at));
-      elements.push({
-        byteRange: { start, end: start + Buffer.byteLength(placeholder) },
-        placeholder,
-      });
-    }
-  }
-  return elements.sort((a, b) => a.byteRange.start - b.byteRange.start);
 }
 
 export function buildCodexAppServerEnv(

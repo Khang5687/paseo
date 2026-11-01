@@ -1,5 +1,5 @@
 import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
-import type { AgentAttachment, InlineAttachmentRef } from "@getpaseo/protocol/messages";
+import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { AgentPromptContentBlock, AgentPromptInput } from "./agent-sdk-types.js";
 
 const REVIEW_LINE_MARKERS = { add: "+", remove: "-", context: " " } as const;
@@ -8,7 +8,6 @@ export function buildAgentPrompt(
   text: string,
   images?: Array<{ data: string; mimeType: string }>,
   attachments?: AgentAttachment[],
-  attachmentRefs?: InlineAttachmentRef[],
 ): AgentPromptInput {
   const normalized = text.trim();
   const hasImages = (images?.length ?? 0) > 0;
@@ -17,74 +16,25 @@ export function buildAgentPrompt(
     return normalized;
   }
 
-  const imageLabels = new Map<number, string>();
-  const attachmentLabels = new Map<number, string>();
-  for (const ref of attachmentRefs ?? []) {
-    if (ref.imageIndex !== undefined && images?.[ref.imageIndex]) {
-      imageLabels.set(ref.imageIndex, ref.label);
-    } else if (ref.attachmentIndex !== undefined && attachments?.[ref.attachmentIndex]) {
-      attachmentLabels.set(ref.attachmentIndex, ref.label);
-    }
-  }
-
   const chatHistoryAttachments: AgentAttachment[] = [];
-  const otherAttachments: AgentPromptContentBlock[] = [];
-  (attachments ?? []).forEach((attachment, index) => {
+  const otherAttachments: AgentAttachment[] = [];
+  for (const attachment of attachments ?? []) {
     if (attachment.type === "text" && attachment.contextKind === "chat_history") {
       chatHistoryAttachments.push(attachment);
-      return;
-    }
-    const label = attachmentLabels.get(index);
-    if (label === undefined) {
-      otherAttachments.push(attachment);
-    } else if (attachment.type === "uploaded_file") {
-      otherAttachments.push(inlineRefNote(`[${label}]: ${attachment.path}`));
     } else {
-      otherAttachments.push(inlineRefNote(`[${label}]:`), attachment);
+      otherAttachments.push(attachment);
     }
-  });
+  }
 
   const blocks: AgentPromptContentBlock[] = [...chatHistoryAttachments];
   if (normalized.length > 0) {
-    const placeholders = [...imageLabels.values(), ...attachmentLabels.values()]
-      .map((label) => `[${label}]`)
-      .filter((placeholder) => normalized.includes(placeholder));
-    blocks.push(
-      placeholders.length > 0
-        ? { type: "text", text: normalized, placeholders }
-        : { type: "text", text: normalized },
-    );
+    blocks.push({ type: "text", text: normalized });
   }
-  (images ?? []).forEach((image, index) => {
-    const label = imageLabels.get(index);
-    if (label !== undefined) blocks.push(inlineRefNote(`[${label}]:`));
+  for (const image of images ?? []) {
     blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
-  });
+  }
   blocks.push(...otherAttachments);
   return blocks;
-}
-
-// Labels ride as text attachments: every adapter already renders them in prompt order, and the
-// mimeType keeps them out of the submitted user message text (see submittedPromptText).
-function inlineRefNote(text: string): AgentAttachment {
-  return { type: "text", mimeType: "text/plain", text };
-}
-
-// The notes buildAgentPrompt adds: `[Image #1]:` alone, `[File #2]: <absolute path>`.
-const INLINE_REF_NOTE_LINE = /^\[(?:Image #\d+\]:|File #\d+\]: (?:\/|[A-Za-z]:[\\/]).*)$/;
-
-/**
- * Provider history replays a user turn as all of its text, including the label notes the user
- * never typed. Drop those lines so the replayed message matches what was sent.
- */
-export function stripInlineRefNotes(text: string): string {
-  const lines = text.split("\n");
-  const kept = lines.filter((line) => !INLINE_REF_NOTE_LINE.test(line.trim()));
-  if (kept.length === lines.length) return text;
-  return kept
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 export function renderPromptAttachmentAsText(attachment: AgentAttachment): string {

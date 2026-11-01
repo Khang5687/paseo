@@ -3400,24 +3400,6 @@ describe("Codex app-server provider", () => {
     }
   });
 
-  test("marks inline attachment placeholders as Codex text elements", async () => {
-    const input = await codexAppServerTurnInputFromPrompt(
-      [{ type: "text", text: "é [Image #1] then [Image #1]", placeholders: ["[Image #1]"] }],
-      logger,
-    );
-
-    expect(input).toEqual([
-      {
-        type: "text",
-        text: "é [Image #1] then [Image #1]",
-        text_elements: [
-          { byteRange: { start: 3, end: 13 }, placeholder: "[Image #1]" },
-          { byteRange: { start: 19, end: 29 }, placeholder: "[Image #1]" },
-        ],
-      },
-    ]);
-  });
-
   test("maps github_pr prompt attachments to Codex text input", async () => {
     const input = await codexAppServerTurnInputFromPrompt(
       [
