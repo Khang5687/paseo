@@ -11,7 +11,6 @@ import {
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
-import { useRetainedPanelActive } from "@/components/retained-panel";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
 import { TaskListRow } from "@/components/task-list-row";
@@ -36,7 +35,6 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { AgentCapabilityFlags, ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
-import MaskedView from "@react-native-masked-view/masked-view";
 import {
   Check,
   CheckSquare,
@@ -74,15 +72,6 @@ import {
   type LayoutChangeEvent,
   type TextStyle,
 } from "react-native";
-import Animated, {
-  Easing,
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
-import Svg, { Defs, Rect, Stop, LinearGradient as SvgLinearGradient } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { capAssistantMessageForRender, getUtf8ByteLength } from "./assistant-message-render-limit";
 import { getTurnDurationLabel } from "./assistant-turn-footer-label";
@@ -1019,149 +1008,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     alignItems: "center",
     overflow: "hidden",
   },
-  shimmerMaskRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: "100%",
-    height: "100%",
-  },
-  nativeShimmerTrack: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    overflow: "hidden",
-  },
-  nativeShimmerPeak: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-  },
 }));
-
-interface NativeExpandableBadgeShimmerProps {
-  label: string;
-  secondaryLabel?: string;
-  rowWidth: number;
-  rowHeight: number;
-  peakWidth: number;
-  durationSeconds: number;
-  gradientId: string;
-}
-
-const NativeExpandableBadgeShimmer = memo(function NativeExpandableBadgeShimmer({
-  label,
-  secondaryLabel,
-  rowWidth,
-  rowHeight,
-  peakWidth,
-  durationSeconds,
-  gradientId,
-}: NativeExpandableBadgeShimmerProps) {
-  const isPanelActive = useRetainedPanelActive();
-  const shimmerTranslateX = useSharedValue(0);
-
-  useEffect(() => {
-    if (!isPanelActive) {
-      cancelAnimation(shimmerTranslateX);
-      return;
-    }
-    const startPosition = -peakWidth;
-    const endPosition = rowWidth + peakWidth;
-    shimmerTranslateX.value = startPosition;
-    shimmerTranslateX.value = withRepeat(
-      withTiming(endPosition, {
-        duration: durationSeconds * 1000,
-        easing: Easing.linear,
-      }),
-      -1,
-      false,
-    );
-    return () => {
-      cancelAnimation(shimmerTranslateX);
-    };
-  }, [durationSeconds, isPanelActive, peakWidth, rowWidth, shimmerTranslateX]);
-
-  const nativeShimmerPeakStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimmerTranslateX.value }],
-  }));
-
-  const nativeShimmerTrackStyle = useMemo(
-    () => [expandableBadgeStylesheet.nativeShimmerTrack, { width: rowWidth, height: rowHeight }],
-    [rowHeight, rowWidth],
-  );
-
-  const nativeShimmerMaskStyle = useMemo(
-    () => [expandableBadgeStylesheet.shimmerMaskRow, { width: rowWidth, height: rowHeight }],
-    [rowHeight, rowWidth],
-  );
-
-  const nativeLabelMaskStyle = useMemo(
-    () => [expandableBadgeStylesheet.label, { color: "#000000", opacity: 1 }],
-    [],
-  );
-
-  const nativeSecondaryMaskStyle = useMemo(
-    () => [expandableBadgeStylesheet.secondaryLabel, { color: "#000000", opacity: 1 }],
-    [],
-  );
-
-  const nativeShimmerPeakCombinedStyle = useMemo(
-    () => [
-      expandableBadgeStylesheet.nativeShimmerPeak,
-      nativeShimmerPeakStyle,
-      { width: peakWidth, height: rowHeight },
-    ],
-    [nativeShimmerPeakStyle, peakWidth, rowHeight],
-  );
-
-  const maskElement = useMemo(
-    () => (
-      <View pointerEvents="none" style={nativeShimmerMaskStyle}>
-        <Text style={nativeLabelMaskStyle} numberOfLines={1}>
-          {label}
-        </Text>
-        {secondaryLabel ? (
-          <Text style={nativeSecondaryMaskStyle} numberOfLines={1}>
-            {secondaryLabel}
-          </Text>
-        ) : (
-          <View style={expandableBadgeStylesheet.spacer} />
-        )}
-      </View>
-    ),
-    [nativeShimmerMaskStyle, nativeLabelMaskStyle, nativeSecondaryMaskStyle, label, secondaryLabel],
-  );
-
-  return (
-    <View style={expandableBadgeStylesheet.shimmerOverlay} pointerEvents="none">
-      <MaskedView pointerEvents="none" style={nativeShimmerTrackStyle} maskElement={maskElement}>
-        <View pointerEvents="none" style={nativeShimmerTrackStyle}>
-          <Animated.View pointerEvents="none" style={nativeShimmerPeakCombinedStyle}>
-            <NativeShimmerPeakSvg gradientId={gradientId} />
-          </Animated.View>
-        </View>
-      </MaskedView>
-    </View>
-  );
-});
-
-function NativeShimmerPeakSvg({ gradientId }: { gradientId: string }) {
-  return (
-    <Svg width="100%" height="100%" preserveAspectRatio="none">
-      <Defs>
-        <SvgLinearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <Stop offset="0%" stopColor="#ffffff" stopOpacity={0} />
-          <Stop offset="50%" stopColor="#ffffff" stopOpacity={1} />
-          <Stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
-        </SvgLinearGradient>
-      </Defs>
-      <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradientId})`} />
-    </Svg>
-  );
-}
 
 export const AssistantMessage = memo(function AssistantMessage({
   renderFullContent = false,
@@ -1626,17 +1473,9 @@ interface ExpandableBadgeLabelRowProps {
   secondaryLabel?: string;
   secondaryLabelStyle: StyleProp<TextStyle>;
   shouldMeasureWebShimmer: boolean;
-  shouldMeasureNativeShimmer: boolean;
   isWebShimmer: boolean;
-  isNativeShimmer: boolean;
   shimmerLabelTextStyle: StyleProp<TextStyle>;
   shimmerSecondaryTextStyle: StyleProp<TextStyle>;
-  labelRowWidth: number;
-  labelRowHeight: number;
-  nativeShimmerPeakWidth: number;
-  shimmerDuration: number;
-  nativeGradientId: string;
-  onLabelRowLayout: (event: LayoutChangeEvent) => void;
   onLabelLayout: (event: LayoutChangeEvent) => void;
   onSecondaryLayout: (event: LayoutChangeEvent) => void;
   showOpenFileButton: boolean;
@@ -1652,17 +1491,9 @@ function ExpandableBadgeLabelRow({
   secondaryLabel,
   secondaryLabelStyle,
   shouldMeasureWebShimmer,
-  shouldMeasureNativeShimmer,
   isWebShimmer,
-  isNativeShimmer,
   shimmerLabelTextStyle,
   shimmerSecondaryTextStyle,
-  labelRowWidth,
-  labelRowHeight,
-  nativeShimmerPeakWidth,
-  shimmerDuration,
-  nativeGradientId,
-  onLabelRowLayout,
   onLabelLayout,
   onSecondaryLayout,
   showOpenFileButton,
@@ -1673,10 +1504,7 @@ function ExpandableBadgeLabelRow({
 }: ExpandableBadgeLabelRowProps) {
   const { t } = useTranslation();
   return (
-    <View
-      style={expandableBadgeStylesheet.labelRow}
-      onLayout={shouldMeasureNativeShimmer ? onLabelRowLayout : undefined}
-    >
+    <View style={expandableBadgeStylesheet.labelRow}>
       <Text
         style={labelStyle}
         numberOfLines={1}
@@ -1714,17 +1542,6 @@ function ExpandableBadgeLabelRow({
           shimmerLabelTextStyle={shimmerLabelTextStyle}
           shimmerSecondaryTextStyle={shimmerSecondaryTextStyle}
           showOpenFileButton={showOpenFileButton}
-        />
-      ) : null}
-      {isNativeShimmer ? (
-        <NativeExpandableBadgeShimmer
-          label={label}
-          secondaryLabel={secondaryLabel}
-          rowWidth={labelRowWidth}
-          rowHeight={labelRowHeight}
-          peakWidth={nativeShimmerPeakWidth}
-          durationSeconds={shimmerDuration}
-          gradientId={nativeGradientId}
         />
       ) : null}
     </View>
@@ -1799,12 +1616,12 @@ function renderExpandableBadgeIconSlot({
   return iconNode;
 }
 
+// Tool-call shimmer is web-only. On native it ran a looping masked gradient for every running
+// tool call; the dimmed loading label and the turn's working indicator carry that state instead.
 function computeShimmerMetrics(input: {
   label: string;
   secondaryLabel: string | undefined;
   isLoading: boolean;
-  labelRowWidth: number;
-  labelRowHeight: number;
   labelOffsetX: number;
   labelWidth: number;
   secondaryOffsetX: number;
@@ -1816,17 +1633,10 @@ function computeShimmerMetrics(input: {
     1,
     Math.min(2.3, 1.25 + totalShimmerChars * 0.008 - shortTextDurationAdjustment),
   );
-  const nativeShimmerPeakWidth = Math.max(
-    32,
-    Math.min(120, input.labelRowWidth > 0 ? input.labelRowWidth * 0.28 : 0),
-  );
   const isWebShimmer = input.isLoading && isWeb;
   // React Native Web only observes a node when onLayout exists at mount. Keep
   // measuring while idle so a retained badge has dimensions when it starts loading.
   const shouldMeasureWebShimmer = isWeb;
-  const shouldMeasureNativeShimmer = input.isLoading && isNative;
-  const isNativeShimmer =
-    shouldMeasureNativeShimmer && input.labelRowWidth > 0 && input.labelRowHeight > 0;
   const webShimmerSpanStartX = input.labelOffsetX;
   const webShimmerSpanEndX = input.secondaryLabel
     ? input.secondaryOffsetX + input.secondaryWidth
@@ -1837,11 +1647,8 @@ function computeShimmerMetrics(input: {
   const webShimmerTrackEnd = webShimmerSpanEndX;
   return {
     shimmerDuration,
-    nativeShimmerPeakWidth,
     isWebShimmer,
     shouldMeasureWebShimmer,
-    shouldMeasureNativeShimmer,
-    isNativeShimmer,
     webShimmerPeakWidth,
     webShimmerTrackStart,
     webShimmerTrackEnd,
@@ -1969,11 +1776,6 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     [onFileContextMenu],
   );
 
-  const nativeGradientIdRef = useRef(
-    `shimmer-gradient-${Math.random().toString(36).substring(2, 9)}`,
-  );
-  const [labelRowWidth, setLabelRowWidth] = useState(0);
-  const [labelRowHeight, setLabelRowHeight] = useState(0);
   const [labelOffsetX, setLabelOffsetX] = useState(0);
   const [labelWidth, setLabelWidth] = useState(0);
   const [secondaryOffsetX, setSecondaryOffsetX] = useState(0);
@@ -1981,11 +1783,8 @@ export const ExpandableBadge = memo(function ExpandableBadge({
 
   const {
     shimmerDuration,
-    nativeShimmerPeakWidth,
     isWebShimmer,
     shouldMeasureWebShimmer,
-    shouldMeasureNativeShimmer,
-    isNativeShimmer,
     webShimmerPeakWidth,
     webShimmerTrackStart,
     webShimmerTrackEnd,
@@ -1993,25 +1792,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     label,
     secondaryLabel,
     isLoading,
-    labelRowWidth,
-    labelRowHeight,
     labelOffsetX,
     labelWidth,
     secondaryOffsetX,
     secondaryWidth,
   });
-
-  const handleLabelRowLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      if (!shouldMeasureNativeShimmer) {
-        return;
-      }
-      const { width, height } = event.nativeEvent.layout;
-      setLabelRowWidth((previous) => (Math.abs(previous - width) > 0.5 ? width : previous));
-      setLabelRowHeight((previous) => (Math.abs(previous - height) > 0.5 ? height : previous));
-    },
-    [shouldMeasureNativeShimmer],
-  );
 
   const handleLabelLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -2219,17 +2004,9 @@ export const ExpandableBadge = memo(function ExpandableBadge({
             secondaryLabel={secondaryLabel}
             secondaryLabelStyle={secondaryLabelStyle}
             shouldMeasureWebShimmer={shouldMeasureWebShimmer}
-            shouldMeasureNativeShimmer={shouldMeasureNativeShimmer}
             isWebShimmer={isWebShimmer}
-            isNativeShimmer={isNativeShimmer}
             shimmerLabelTextStyle={shimmerLabelTextStyle}
             shimmerSecondaryTextStyle={shimmerSecondaryTextStyle}
-            labelRowWidth={labelRowWidth}
-            labelRowHeight={labelRowHeight}
-            nativeShimmerPeakWidth={nativeShimmerPeakWidth}
-            shimmerDuration={shimmerDuration}
-            nativeGradientId={nativeGradientIdRef.current}
-            onLabelRowLayout={handleLabelRowLayout}
             onLabelLayout={handleLabelLayout}
             onSecondaryLayout={handleSecondaryLayout}
             showOpenFileButton={Boolean(onOpenFile && isHovered)}

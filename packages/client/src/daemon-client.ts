@@ -2000,6 +2000,29 @@ export class DaemonClient {
     );
   }
 
+  /**
+   * Closes the socket and stops reconnecting until the next `ensureConnected()`. Unlike `close()`,
+   * the client stays usable: owned subscriptions are restored when it connects again. Apps call
+   * this when they are backgrounded so an idle socket, its liveness pings and its reconnect
+   * backoff stop costing battery.
+   */
+  suspend(): void {
+    if (this.connectionState.status === "disposed" || !this.shouldReconnect) {
+      return;
+    }
+    this.shouldReconnect = false;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.disposeTransport(1000, "Client suspended");
+    this.scheduleReconnect({
+      reason: "Client suspended",
+      event: "SUSPEND",
+      reasonCode: "suspended",
+    });
+  }
+
   private verifyConnection(): void {
     const transport = this.transport;
     if (!transport || this.connectionVerification === transport) return;

@@ -23,7 +23,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useKeyboardShiftStyle } from "@/keyboard/shift";
-import { useAppActivelyVisible } from "@/hooks/use-app-visible";
+import { useAppActivelyVisible, useAppVisible } from "@/hooks/use-app-visible";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import {
   hasPendingTerminalModifiers,
@@ -282,6 +282,7 @@ export function TerminalPane({
   const { t } = useTranslation();
   const retainedPanelActive = useRetainedPanelActive();
   const isAppActivelyVisible = useAppActivelyVisible();
+  const isAppVisible = useAppVisible();
   const { theme } = useUnistyles();
   const { settings } = useAppSettings();
   const xtermTheme = useMemo(() => toXtermTheme(theme.colors.terminal), [theme]);
@@ -674,25 +675,21 @@ export function TerminalPane({
     isConnected,
   ]);
 
-  useEffect(() => {
-    pendingTerminalInputRef.current = [];
-    const nextTerminalId = resolveTerminalStreamTarget({
-      terminalId,
-      terminalStreamKey,
-      rendererReadyStreamKey,
-      isWorkspaceFocused,
-    });
-    streamControllerRef.current?.setTerminal({
-      terminalId: nextTerminalId,
-    });
-  }, [
-    client,
-    isConnected,
-    isWorkspaceFocused,
-    rendererReadyStreamKey,
+  const streamTargetTerminalId = resolveTerminalStreamTarget({
     terminalId,
     terminalStreamKey,
-  ]);
+    rendererReadyStreamKey,
+    isWorkspaceFocused,
+    isPanelActive: retainedPanelActive,
+    isAppVisible,
+    streamHiddenTabs: !isNative,
+  });
+  useEffect(() => {
+    pendingTerminalInputRef.current = [];
+    streamControllerRef.current?.setTerminal({
+      terminalId: streamTargetTerminalId,
+    });
+  }, [client, isConnected, streamTargetTerminalId]);
 
   const enqueuePendingTerminalInput = useCallback((entry: PendingTerminalInput) => {
     const queue = pendingTerminalInputRef.current;
