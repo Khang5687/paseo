@@ -1,5 +1,5 @@
 import * as pty from "node-pty";
-import xterm, { type Terminal as TerminalType } from "@xterm/headless";
+import type { Terminal as TerminalType } from "@xterm/headless";
 import { randomUUID } from "crypto";
 import {
   accessSync,
@@ -25,6 +25,7 @@ import {
   findExecutable,
   findExecutableWithoutProbing,
 } from "../executable-resolution/executable-resolution.js";
+import { createHeadlessTerminal } from "./headless-terminal.js";
 import { createTerminalSerializer } from "./terminal-serializer.js";
 import {
   captureTerminalLines,
@@ -36,7 +37,6 @@ import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode
 import { TerminalActivityTracker } from "./activity/terminal-activity-tracker.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 
-const { Terminal } = xterm;
 const require = createRequire(import.meta.url);
 let nodePtySpawnHelperChecked = false;
 const TERMINAL_TITLE_DEBOUNCE_MS = 150;
@@ -420,21 +420,26 @@ export function resolveZshShellIntegrationDir(): string {
   return fileURLToPath(new URL("./shell-integration/zsh", import.meta.url));
 }
 
-function resolveZshShellIntegrationRuntimeDir(): string {
+export function resolveBashShellIntegrationDir(): string {
+  return fileURLToPath(new URL("./shell-integration/bash", import.meta.url));
+}
+
+function prepareShellIntegrationRuntimeDir(shell: "zsh" | "bash"): string {
   let username = "unknown";
   try {
     username = userInfo().username || username;
   } catch {
     // keep fallback
   }
-  return join(tmpdir(), `${username}-paseo-zsh-${process.pid}`);
+  const runtimeDir = join(tmpdir(), `${username}-paseo-${shell}-${process.pid}`);
+  mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
+  chmodSync(runtimeDir, 0o700);
+  return runtimeDir;
 }
 
 function prepareZshShellIntegrationRuntimeDir(sourceDir = resolveZshShellIntegrationDir()): string {
   const readableSourceDir = resolveExternalProcessPath(sourceDir);
-  const runtimeDir = resolveZshShellIntegrationRuntimeDir();
-  mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
-  chmodSync(runtimeDir, 0o700);
+  const runtimeDir = prepareShellIntegrationRuntimeDir("zsh");
   writePrivateFileAtomicSync(
     join(runtimeDir, ".zshenv"),
     readFileSync(join(readableSourceDir, ".zshenv")),
@@ -444,6 +449,23 @@ function prepareZshShellIntegrationRuntimeDir(sourceDir = resolveZshShellIntegra
     readFileSync(join(readableSourceDir, "paseo-integration.zsh")),
   );
   return runtimeDir;
+}
+
+/**
+ * Arguments that start the default shell with Paseo's shell integration. bash has no ZDOTDIR
+ * equivalent, so it gets `--rcfile` pointing at a wrapper that loads the user's ~/.bashrc first.
+ */
+export function resolveShellIntegrationArgs(
+  shell: string,
+  bashShellIntegrationDir = resolveBashShellIntegrationDir(),
+): string[] {
+  if (basename(shell) !== "bash") return [];
+  const rcfile = join(prepareShellIntegrationRuntimeDir("bash"), "paseo-bashrc");
+  writePrivateFileAtomicSync(
+    rcfile,
+    readFileSync(join(resolveExternalProcessPath(bashShellIntegrationDir), "paseo-bashrc")),
+  );
+  return ["--rcfile", rcfile];
 }
 
 export function buildTerminalEnvironment(
@@ -796,13 +818,7 @@ export async function createTerminal(
   const activityChangeListeners = new Set<(transition: TerminalActivityTransition) => void>();
   let titleChangeSubscription: { dispose(): void } | null = null;
 
-  // Create xterm.js headless terminal
-  const terminal = new Terminal({
-    rows,
-    cols,
-    scrollback: 10000,
-    allowProposedApi: true,
-  });
+  const terminal = createHeadlessTerminal({ rows, cols, scrollback: 10000 });
 
   const serialize = createTerminalSerializer(terminal);
 
@@ -811,7 +827,7 @@ export async function createTerminal(
   // Create PTY
   const { command: spawnCommand, args: spawnArgs } = command
     ? await resolveTerminalSpawnCommand(command, args)
-    : { command: resolvedShell, args: [] as string[] };
+    : { command: resolvedShell, args: resolveShellIntegrationArgs(resolvedShell) };
   const terminalEnv = buildTerminalEnvironment({
     shell: spawnCommand,
     env: {

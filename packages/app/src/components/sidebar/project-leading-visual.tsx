@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import { ActivityIndicator, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, CircleAlert } from "lucide-react-native";
+import { ChevronDown, ChevronRight, CircleAlert, PencilLine } from "lucide-react-native";
 import { ProjectIconView } from "@/components/project-icon-view";
 import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
 import { densityIconBox, densityIconProps } from "@/styles/density";
@@ -32,18 +33,21 @@ const STATUS_BADGE_SIZE = 12;
 // centered on the corner it reads as hanging off the icon rather than sitting on it, and the
 // sidebar row has no padding there to absorb the overhang.
 const STATUS_BADGE_OFFSET = -4;
-// Both glyphs must be EVEN. A centered glyph of size N sits at a (12 - N) / 2 offset — fractional
-// for odd N, which the browser snaps to a device-pixel boundary and renders visibly off-center (an
-// odd size measured 1.5 device px right and down at 3x, ~3px of asymmetry between opposite gaps).
-// Even sizes divide the shell into whole pixels and land dead center with no correction.
+// Every glyph in the shell must be EVEN. A centered glyph of size N sits at a (12 - N) / 2
+// offset — fractional for odd N, which the browser snaps to a device-pixel boundary and renders
+// visibly off-center (an odd size measured 1.5 device px right and down at 3x, ~3px of asymmetry
+// between opposite gaps). Even sizes divide the shell into whole pixels and land dead center with
+// no correction.
 //
 // The filled alert occupies the full badge shell so needs-input remains more prominent than
-// the passive status dots.
+// the passive status dots. The draft pencil leaves a margin so it reads as a mark, not a fill.
+const DRAFT_GLYPH_SIZE = 8;
 const DensityProjectIconView = withUnistyles(ProjectIconView);
 const projectIconProps = densityIconProps("md", () => ({}));
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
+const ThemedPencilLine = withUnistyles(PencilLine);
 
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
@@ -117,6 +121,7 @@ export function ProjectStatusIndicator({
   statusBucket,
   backdrop,
   loading = false,
+  hasUnsentDraft = false,
   testID,
 }: {
   iconDataUri: string | null;
@@ -126,6 +131,8 @@ export function ProjectStatusIndicator({
   /** The row's current background, so the status badge can knock out of it. */
   backdrop: SidebarSurfaceBackdrop;
   loading?: boolean;
+  /** Marks an idle row whose chat tabs hold a prompt the user has not sent. */
+  hasUnsentDraft?: boolean;
   testID?: string;
 }) {
   const placeholderInitial = projectIconPlaceholderLabelFromDisplayName(displayName)
@@ -136,6 +143,14 @@ export function ProjectStatusIndicator({
   // and they share one badge.
   const badgeBucket = loading ? "running" : statusBucket;
   const badgeContent = getProjectStatusBadgeContent(badgeBucket);
+  let badge: ReactNode = null;
+  if (badgeContent !== null && badgeBucket !== null) {
+    badge = (
+      <ProjectStatusBadge content={badgeContent} statusBucket={badgeBucket} backdrop={backdrop} />
+    );
+  } else if (hasUnsentDraft) {
+    badge = <ProjectDraftBadge backdrop={backdrop} />;
+  }
 
   return (
     <View
@@ -153,13 +168,7 @@ export function ProjectStatusIndicator({
           placeholderInitial={placeholderInitial}
           projectViewKey={projectViewKey}
         />
-        {badgeContent === null || badgeBucket === null ? null : (
-          <ProjectStatusBadge
-            content={badgeContent}
-            statusBucket={badgeBucket}
-            backdrop={backdrop}
-          />
-        )}
+        {badge}
       </View>
     </View>
   );
@@ -202,6 +211,20 @@ function ProjectStatusBadge({
       ) : (
         <ProjectStatusDot bucket={content.bucket} />
       )}
+    </View>
+  );
+}
+
+function ProjectDraftBadge({ backdrop }: { backdrop: SidebarSurfaceBackdrop }) {
+  const { t } = useTranslation();
+  return (
+    <View
+      role="status"
+      accessibilityLabel={t("sidebar.unsentDraft")}
+      style={[styles.statusBadge, getStatusBadgeBackdropStyle(backdrop)]}
+      testID="project-draft-badge"
+    >
+      <ThemedPencilLine size={DRAFT_GLYPH_SIZE} uniProps={foregroundMutedColorMapping} />
     </View>
   );
 }

@@ -3,8 +3,15 @@
 import type {
   TerminalFindHandle,
   TerminalFindResult,
+  TerminalSelectionState,
 } from "../terminal/runtime/terminal-emulator-runtime";
-
+import type {
+  TerminalNoteHighlight,
+  TerminalNoteReveal,
+  TerminalSelectionAnchor,
+  TerminalSelectionNoteContext,
+} from "../terminal/notes/terminal-note-types";
+import type { DesktopTerminalContextMenuActionEvent } from "../desktop/host";
 import {
   useCallback,
   useEffect,
@@ -27,6 +34,7 @@ import {
 } from "../terminal/runtime/terminal-emulator-runtime";
 import { encodeTerminalPaste } from "../terminal/runtime/terminal-paste";
 import type { TerminalFile } from "../terminal/file-paste";
+import type { TerminalCharacterWidths } from "../terminal/character-widths";
 import type {
   TerminalLocalFileLinkSource,
   TerminalLocalFileLinkTarget,
@@ -46,7 +54,11 @@ export interface TerminalEmulatorHandle {
   claimSize: () => void;
   showKeyboard: () => void;
   blur: () => void;
+  getSelectionNoteContext: () => TerminalSelectionNoteContext | null;
+  revealNote: (input: TerminalNoteReveal) => boolean;
 }
+
+let nextContextMenuRequestId = 1;
 
 const HOST_DIV_STYLE: CSSProperties = {
   flex: 1,
@@ -96,6 +108,7 @@ interface TerminalEmulatorProps {
   ref: Ref<TerminalEmulatorHandle>;
   streamKey: string;
   supportsTerminalInputModeReplay: boolean;
+  characterWidths: TerminalCharacterWidths;
   testId?: string;
   xtermTheme?: ITheme;
   scrollbackLines: number;
@@ -126,12 +139,23 @@ interface TerminalEmulatorProps {
   onPendingModifiersConsumed?: () => Promise<void> | void;
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
   onSelectionChange?: (hasSelection: boolean) => void;
+  /** Web only: where the selection sits, for a floating action next to it. */
+  onSelectionAnchorChange?: (anchor: TerminalSelectionAnchor | null) => void;
+  /** Web only: notes drawn over their quotes. */
+  noteHighlights?: readonly TerminalNoteHighlight[];
+  /** Electron only: label of the context menu's "Add note" item; omitted hides the item. */
+  contextMenuAddNoteLabel?: string;
+  onContextMenuAddNote?: () => void;
   onResolveLocalFileLink?: (
     source: TerminalLocalFileLinkSource,
   ) => Promise<TerminalLocalFileLinkTarget | null> | TerminalLocalFileLinkTarget | null;
   onOpenLocalFileLink?: (
     target: TerminalLocalFileLinkTarget,
     disposition: "main" | "side",
+  ) => Promise<void> | void;
+  onLocalFileLinkContextMenu?: (
+    target: TerminalLocalFileLinkTarget,
+    point: { x: number; y: number },
   ) => Promise<void> | void;
   onRendererReadyChange?: (change: TerminalRendererReadyChange) => void;
   onFilePaste?: (file: Promise<TerminalFile | null>) => void;
@@ -154,6 +178,7 @@ export default function TerminalEmulator({
     cursor: "#e6e6e6",
   },
   scrollbackLines,
+  characterWidths,
   fontFamily,
   fontSize,
   swipeGesturesEnabled = false,
@@ -167,8 +192,14 @@ export default function TerminalEmulator({
   onTerminalKey,
   onPendingModifiersConsumed,
   onInputModeChange,
+  onSelectionChange,
+  onSelectionAnchorChange,
+  noteHighlights,
+  contextMenuAddNoteLabel,
+  onContextMenuAddNote,
   onResolveLocalFileLink,
   onOpenLocalFileLink,
+  onLocalFileLinkContextMenu,
   onRendererReadyChange,
   onFilePaste,
   pendingModifiers = { ctrl: false, shift: false, alt: false },
@@ -183,6 +214,8 @@ export default function TerminalEmulator({
   const fontSizeRef = useRef(fontSize);
   const scrollbackLinesRef = useRef(scrollbackLines);
   scrollbackLinesRef.current = scrollbackLines;
+  const characterWidthsRef = useRef(characterWidths);
+  characterWidthsRef.current = characterWidths;
   fontFamilyRef.current = fontFamily;
   fontSizeRef.current = fontSize;
   const themeKey = useMemo(() => buildXtermThemeKey(xtermTheme), [xtermTheme]);
@@ -200,6 +233,7 @@ export default function TerminalEmulator({
     onInputModeChange,
     onResolveLocalFileLink,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onFilePaste,
   });
   mountCallbacksRef.current = {
@@ -212,10 +246,22 @@ export default function TerminalEmulator({
     onInputModeChange,
     onResolveLocalFileLink,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onFilePaste,
   };
   const pendingModifiersRef = useRef(pendingModifiers);
   pendingModifiersRef.current = pendingModifiers;
+  const selectionCallbacksRef = useRef({ onSelectionChange, onSelectionAnchorChange });
+  selectionCallbacksRef.current = { onSelectionChange, onSelectionAnchorChange };
+  const handleRuntimeSelection = useCallback((selection: TerminalSelectionState) => {
+    selectionCallbacksRef.current.onSelectionChange?.(selection.hasSelection);
+    selectionCallbacksRef.current.onSelectionAnchorChange?.(selection.anchor);
+  }, []);
+  const noteHighlightsRef = useRef<readonly TerminalNoteHighlight[]>(noteHighlights ?? []);
+  noteHighlightsRef.current = noteHighlights ?? [];
+  const contextMenuAddNoteRef = useRef({ contextMenuAddNoteLabel, onContextMenuAddNote });
+  contextMenuAddNoteRef.current = { contextMenuAddNoteLabel, onContextMenuAddNote };
+  const contextMenuRequestIdRef = useRef<string | null>(null);
 
   const domBridgeRef = useRef<DOMImperativeFactory | null>(null);
   const pasteText = useCallback((text: string) => {
@@ -301,6 +347,8 @@ export default function TerminalEmulator({
       blur: () => {
         runtimeRef.current?.blur();
       },
+      getSelectionNoteContext: () => runtimeRef.current?.getSelectionNoteContext() ?? null,
+      revealNote: (input) => runtimeRef.current?.revealNote(input) ?? false,
     }),
     [pasteText],
   );
@@ -314,6 +362,10 @@ export default function TerminalEmulator({
   useEffect(() => {
     runtimeRef.current?.setScrollback({ lines: scrollbackLines });
   }, [scrollbackLines]);
+
+  useEffect(() => {
+    runtimeRef.current?.setCharacterWidths({ widths: characterWidths });
+  }, [characterWidths]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -444,9 +496,12 @@ export default function TerminalEmulator({
       callbacks: {
         ...mountCallbacksRef.current,
         onOpenExternalUrl: openExternalUrl,
+        onSelectionChange: handleRuntimeSelection,
       },
     });
     runtime.setPendingModifiers({ pendingModifiers: pendingModifiersRef.current });
+    runtime.setNoteHighlights(noteHighlightsRef.current);
+    runtime.setCharacterWidths({ widths: characterWidthsRef.current });
     runtime.mount({
       root,
       host,
@@ -459,12 +514,13 @@ export default function TerminalEmulator({
 
     return () => {
       runtime.unmount();
+      handleRuntimeSelection({ hasSelection: false, anchor: null });
       onRendererReadyChangeRef.current?.({ streamKey, isReady: false });
       if (runtimeRef.current === runtime) {
         runtimeRef.current = null;
       }
     };
-  }, [streamKey]);
+  }, [handleRuntimeSelection, streamKey]);
 
   useEffect(() => {
     runtimeRef.current?.setCallbacks({
@@ -478,22 +534,61 @@ export default function TerminalEmulator({
         onInputModeChange,
         onResolveLocalFileLink,
         onOpenLocalFileLink,
+        onLocalFileLinkContextMenu,
         onFilePaste,
         onOpenExternalUrl: openExternalUrl,
+        onSelectionChange: handleRuntimeSelection,
       },
     });
   }, [
+    handleRuntimeSelection,
     onFindRequest,
     onFilePaste,
     onFindResult,
     onInput,
     onInputModeChange,
     onOpenLocalFileLink,
+    onLocalFileLinkContextMenu,
     onPendingModifiersConsumed,
     onResolveLocalFileLink,
     onResize,
     onTerminalKey,
   ]);
+
+  useEffect(() => {
+    runtimeRef.current?.setNoteHighlights(noteHighlights ?? []);
+  }, [noteHighlights]);
+
+  const hasContextMenuAddNote = Boolean(onContextMenuAddNote);
+  useEffect(() => {
+    const listen = window.paseoDesktop?.events?.on;
+    if (!hasContextMenuAddNote || typeof listen !== "function") {
+      return () => {};
+    }
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    const handleAction = (payload: unknown) => {
+      if (typeof payload !== "object" || payload === null) return;
+      const event = payload as Partial<DesktopTerminalContextMenuActionEvent>;
+      const requestId = contextMenuRequestIdRef.current;
+      if (event.action !== "add-note" || !requestId || event.requestId !== requestId) return;
+      contextMenuRequestIdRef.current = null;
+      contextMenuAddNoteRef.current.onContextMenuAddNote?.();
+    };
+    const subscribe = async () => {
+      const stop = await listen("terminal-context-menu-action", handleAction);
+      if (disposed) {
+        stop();
+        return;
+      }
+      unlisten = stop;
+    };
+    void subscribe();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [hasContextMenuAddNote]);
 
   useEffect(() => {
     runtimeRef.current?.setPendingModifiers({ pendingModifiers });
@@ -537,11 +632,18 @@ export default function TerminalEmulator({
     }
 
     const hasSelection = Boolean(window.getSelection()?.toString());
+    const { contextMenuAddNoteLabel: addNoteLabel, onContextMenuAddNote: addNote } =
+      contextMenuAddNoteRef.current;
+    const canAddNote =
+      Boolean(addNoteLabel && addNote) && runtimeRef.current?.getSelectionNoteContext() != null;
+    const requestId = canAddNote ? `${streamKey}:${nextContextMenuRequestId++}` : null;
+    contextMenuRequestIdRef.current = requestId;
     void showContextMenu({
       kind: "terminal",
       hasSelection,
+      ...(requestId ? { addNoteLabel, requestId } : {}),
     });
-  }, []);
+  }, [streamKey]);
 
   const handleRootPointerDown = useCallback(() => {
     onFocus?.();

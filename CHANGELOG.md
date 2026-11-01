@@ -6,6 +6,7 @@ Added:
 
 - Copy gitignored files selected by `.worktreeinclude` into new worktrees before setup and agents, using the built-in `worktree-include` plugin ([#8100](https://github.com/getpaseo/paseo/pull/8100))
 - Let plugins choose worktree paths and creation options through `worktree.create.before`, with listing, archive, deletion, and recovery at custom locations; includes a sibling-directory placement example ([#8117](https://github.com/getpaseo/paseo/pull/8117))
+- Agents can ask another agent a question with `ask_agent` without interrupting it: a hidden read-only copy of its conversation answers and is then deleted, on the same host or a connected one. Works for Claude, Codex, OpenCode, and OMP agents; `list_agents` now includes each agent's `workspaceId`
 
 Improved:
 
