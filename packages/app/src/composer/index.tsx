@@ -94,6 +94,7 @@ import {
 import {
   inlineRefLabels,
   insertInlineRefTokens,
+  inlineRefId,
   isInlineRefAttachment,
   reconcileInlineRefEdit,
   removeInlineRefs,
@@ -1560,21 +1561,22 @@ function ComposerContentImpl({
         attachments: latestAttachmentsRef.current,
       });
       if (!reconciled) return null;
-      const removed = latestAttachmentsRef.current.filter(
-        (attachment) => !reconciled.attachments.includes(attachment),
-      );
+      const kept = new Set(reconciled.attachments);
+      const removed = latestAttachmentsRef.current.filter((attachment) => !kept.has(attachment));
       if (removed.length > 0) {
         void deleteAttachments(
           removed.flatMap((attachment) =>
             attachment.kind === "image" ? [attachment.metadata] : [],
           ),
         );
-        latestAttachmentsRef.current = latestAttachmentsRef.current.filter(
-          (attachment) => !removed.includes(attachment),
-        );
-        setSelectedAttachments((prev) =>
-          prev.filter((attachment) => !removed.includes(attachment)),
-        );
+        // The attachment store may hand back copies, so match on ids rather than identity.
+        const removedIds = new Set(removed.flatMap((attachment) => inlineRefId(attachment) ?? []));
+        const keep = (attachment: ComposerAttachment) => {
+          const id = inlineRefId(attachment);
+          return id === null || !removedIds.has(id);
+        };
+        latestAttachmentsRef.current = latestAttachmentsRef.current.filter(keep);
+        setSelectedAttachments((prev) => prev.filter(keep));
       }
       return { text: reconciled.text, selection: reconciled.selection };
     },

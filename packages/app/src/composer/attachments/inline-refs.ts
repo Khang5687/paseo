@@ -15,11 +15,19 @@ export interface TextSelection {
 }
 
 const TOKEN_PATTERN = /\[(Image|File) #(\d+)\]/g;
+const TOKEN_WITH_SPACE_PATTERN = /\[(Image|File) #(\d+)\]( ?)/g;
 
 export function isInlineRefAttachment(
   attachment: ComposerAttachment,
 ): attachment is InlineRefAttachment {
   return attachment.kind === "image" || attachment.kind === "file";
+}
+
+/** Stable id of an image or file attachment; null for other kinds. */
+export function inlineRefId(attachment: ComposerAttachment): string | null {
+  if (attachment.kind === "image") return attachment.metadata.id;
+  if (attachment.kind === "file") return attachment.attachment.id;
+  return null;
 }
 
 function labelFor(attachment: InlineRefAttachment, position: number): string {
@@ -88,13 +96,19 @@ export function removeInlineRefs(input: {
     if (oldLabel) rename.set(oldLabel, after.get(kept) ?? null);
     kept += 1;
   });
+  // A removed token takes the space after it when nothing but whitespace precedes it, so
+  // removing a chip leaves no double space.
   const rewrite = (segment: string) =>
-    segment.replace(TOKEN_PATTERN, (token, kind: string, number: string) => {
-      const label = `${kind} #${number}`;
-      if (!rename.has(label)) return token;
-      const next = rename.get(label);
-      return next ? `[${next}]` : "";
-    });
+    segment.replace(
+      TOKEN_WITH_SPACE_PATTERN,
+      (token, kind: string, number: string, space: string, offset: number) => {
+        const label = `${kind} #${number}`;
+        if (!rename.has(label)) return token;
+        const next = rename.get(label);
+        if (next) return `[${next}]${space}`;
+        return offset === 0 || /\s/.test(segment[offset - 1]!) ? "" : space;
+      },
+    );
   const caret = input.caret ?? text.length;
   const head = rewrite(text.slice(0, caret));
   return {

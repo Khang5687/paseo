@@ -87,16 +87,16 @@ describe("inline attachment refs", () => {
     ).toBeNull();
   });
 
-  it("renumbers tokens when the tray removes an attachment", () => {
-    const attachments = [image("a"), image("b")];
+  it("renumbers tokens when the tray removes an attachment, leaving no double space", () => {
+    const attachments = [image("a"), file("b")];
     expect(
       removeInlineRefs({
-        text: "[Image #1] vs [Image #2]",
+        text: "Compare this [Image #1] with [File #2] ",
         attachments,
         removed: new Set([0]),
-        caret: 14,
+        caret: 39,
       }),
-    ).toEqual({ text: " vs [Image #1]", attachments: [attachments[1]], caret: 4 });
+    ).toEqual({ text: "Compare this with [File #1] ", attachments: [attachments[1]], caret: 28 });
   });
 
   it("maps each label to its wire image or attachment index", () => {
