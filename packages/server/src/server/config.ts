@@ -601,6 +601,7 @@ export type ResolvedDaemonSettings = Pick<
   | "resumePrompt"
   | "providerCatalogRefreshTimeoutMs"
   | "metadataGeneration"
+  | "featureDefaults"
   | "providerOverrides"
 >;
 
@@ -685,10 +686,8 @@ export function resolveReloadableConfig(
     plugins: persisted.plugins,
     relayEnabled: relay.enabled,
     relayRequireProtectedSecurity: relay.requireProtectedSecurity,
-    ...resolveAgentHousekeepingConfig(persisted.agents),
+    ...resolveAgentRuntimeConfig(persisted.agents),
     ...resolveRestartRecoveryConfig(persisted.agents),
-    providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
-    metadataGeneration: persisted.agents?.metadataGeneration,
     providerOverrides: extractProviderOverrides(
       persisted.agents?.providers as Record<string, unknown> | undefined,
     ),
@@ -838,16 +837,19 @@ function resolveSpeechOverrideControlledPaths(
   return paths;
 }
 
+function resolveAgentRuntimeConfig(agents: PersistedConfig["agents"]) {
+  return {
+    idleRuntimeCleanup: agents?.idleRuntimeCleanup ?? true,
+    providerCatalogRefreshTimeoutMs: agents?.catalogRefreshTimeoutMs,
+    metadataGeneration: agents?.metadataGeneration,
+    featureDefaults: agents?.featureDefaults,
+    draftHistoryRetentionDays: agents?.draftHistoryRetentionDays,
+  };
+}
+
 function resolveRestartRecoveryConfig(agents: PersistedConfig["agents"]) {
   return {
     resumeOnStartup: agents?.resumeOnStartup ?? true,
     resumePrompt: agents?.resumePrompt ?? "Resume working.",
-  };
-}
-
-function resolveAgentHousekeepingConfig(agents: PersistedConfig["agents"]) {
-  return {
-    idleRuntimeCleanup: agents?.idleRuntimeCleanup ?? true,
-    draftHistoryRetentionDays: agents?.draftHistoryRetentionDays,
   };
 }

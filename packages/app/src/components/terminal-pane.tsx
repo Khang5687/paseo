@@ -1,5 +1,6 @@
 import { TerminalFind, type TerminalPaneFindHandle } from "@/terminal/find";
 import type { TerminalFindResult } from "@/terminal/runtime/terminal-emulator-runtime";
+import type { TerminalCharacterWidths } from "@/terminal/character-widths";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -76,13 +77,17 @@ import { useBlockMobilePanelOpenGestures } from "@/mobile-panels/provider";
 import { useSessionStore } from "@/stores/session-store";
 import { toXtermTheme } from "@/utils/to-xterm-theme";
 import TerminalEmulator, { type TerminalEmulatorHandle } from "./terminal-emulator";
-import { TerminalFloatingCopyAction, TerminalPasteAction } from "./terminal-copy-paste-actions";
+import {
+  TerminalFloatingAddNoteAction,
+  TerminalFloatingCopyAction,
+  TerminalPasteAction,
+} from "./terminal-copy-paste-actions";
 import {
   createTerminalResizeDebouncer,
   type TerminalResizeRequest,
 } from "./terminal-resize-debouncer";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { isNative } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
 import {
   applyTerminalRendererReadyChange,
   resolveTerminalStreamTarget,
@@ -96,15 +101,24 @@ import type {
   TerminalLocalFileLinkTarget,
 } from "@/terminal/local-links/terminal-local-link-provider";
 import {
+  TerminalFileLinkMenu,
+  type TerminalFileLinkMenuRequest,
+} from "@/terminal/local-links/terminal-file-link-menu";
+import {
   normalizeWorkspaceFileLocation,
   type OpenFileDisposition,
   type WorkspaceFileOpenRequest,
 } from "@/workspace/file-open";
+import {
+  TerminalSelectionNoteAction,
+  useTerminalPaneNotes,
+} from "@/terminal/notes/terminal-pane-notes";
 
 interface TerminalPaneProps {
   serverId: string;
   cwd: string;
   terminalId: string;
+  workspaceId: string;
   isWorkspaceFocused: boolean;
   isPaneFocused: boolean;
   onOpenFileExplorer: () => void;
@@ -259,6 +273,7 @@ export function TerminalPane({
   serverId,
   cwd,
   terminalId,
+  workspaceId,
   isWorkspaceFocused,
   isPaneFocused,
   onOpenFileExplorer,
@@ -303,6 +318,11 @@ export function TerminalPane({
   );
   const supportsTerminalSizeOwnership = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.["terminal-size-ownership"] === true,
+  );
+  const characterWidths: TerminalCharacterWidths = useSessionStore((state) =>
+    state.sessions[serverId]?.serverInfo?.features?.["terminal-grapheme-widths"] === true
+      ? "graphemes"
+      : "legacy",
   );
   const setFocusedTerminalId = useSessionStore((state) => state.setFocusedTerminalId);
 
@@ -416,6 +436,17 @@ export function TerminalPane({
   const handleSelectionChange = useCallback((nextHasSelection: boolean) => {
     setHasSelection(nextHasSelection);
   }, []);
+
+  const notes = useTerminalPaneNotes({
+    serverId,
+    cwd,
+    terminalId,
+    workspaceId,
+    emulatorRef,
+    isTerminalPresented,
+    isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+    isAttaching,
+  });
 
   const requestTerminalFocus = useCallback(() => {
     setFocusRequestToken((current) => current + 1);
@@ -1042,6 +1073,15 @@ export function TerminalPane({
     },
     [onOpenWorkspaceFile],
   );
+  const [fileLinkMenuRequest, setFileLinkMenuRequest] =
+    useState<TerminalFileLinkMenuRequest | null>(null);
+  // Right click only: on a phone a long press in the terminal selects text.
+  const handleLocalFileLinkContextMenu = useCallback(
+    (target: TerminalLocalFileLinkTarget, point: { x: number; y: number }) => {
+      setFileLinkMenuRequest((current) => ({ id: (current?.id ?? 0) + 1, target, point }));
+    },
+    [],
+  );
 
   const toggleModifier = useCallback(
     (modifier: keyof ModifierState) => {
@@ -1171,6 +1211,7 @@ export function TerminalPane({
             dom={TERMINAL_EMULATOR_DOM_PROPS}
             streamKey={terminalStreamKey}
             supportsTerminalInputModeReplay={supportsTerminalInputModeReplay}
+            characterWidths={characterWidths}
             testId="terminal-surface"
             xtermTheme={xtermTheme}
             scrollbackLines={settings.terminalScrollbackLines}
@@ -1191,14 +1232,24 @@ export function TerminalPane({
             onFilePaste={handleFilePaste}
             onInputModeChange={handleInputModeChange}
             onSelectionChange={handleSelectionChange}
+            {...notes.emulatorProps}
             onResolveLocalFileLink={handleResolveLocalFileLink}
             onOpenLocalFileLink={handleOpenLocalFileLink}
+            onLocalFileLinkContextMenu={isWeb ? handleLocalFileLinkContextMenu : undefined}
             onPendingModifiersConsumed={handlePendingModifiersConsumed}
             pendingModifiers={modifiers}
             focusRequestToken={focusRequestToken}
             resizeRequestToken={resizeRequestToken}
           />
         </View>
+        {fileLinkMenuRequest ? (
+          <TerminalFileLinkMenu
+            key={fileLinkMenuRequest.id}
+            serverId={serverId}
+            cwd={cwd}
+            request={fileLinkMenuRequest}
+          />
+        ) : null}
 
         <TerminalFind
           key={terminalStreamKey}
@@ -1218,9 +1269,16 @@ export function TerminalPane({
 
         {showFloatingCopyAction ? (
           <View pointerEvents="box-none" style={styles.floatingCopyContainer}>
+            <TerminalFloatingAddNoteAction
+              enabled={notes.supportsNotes}
+              hasSelection={hasSelection}
+              onAddNote={notes.addNote}
+            />
             <TerminalFloatingCopyAction hasSelection={hasSelection} onCopy={handleTerminalCopy} />
           </View>
         ) : null}
+
+        <TerminalSelectionNoteAction action={notes.selectionAction} onAddNote={notes.addNote} />
       </FileDropZone>
 
       {streamError ? (
@@ -1280,6 +1338,8 @@ const styles = StyleSheet.create((theme) => ({
     right: theme.spacing[3],
     bottom: theme.spacing[12],
     zIndex: 2,
+    flexDirection: "row",
+    gap: theme.spacing[2],
   },
   errorRow: {
     paddingHorizontal: theme.spacing[3],

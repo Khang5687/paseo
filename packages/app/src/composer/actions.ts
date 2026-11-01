@@ -24,6 +24,11 @@ export interface QueuedComposerMessage {
   id: string;
   text: string;
   attachments: ComposerAttachment[];
+  /**
+   * Daemon-owned queue only: when the daemon stopped listing this entry. The mirror keeps it
+   * until the dispatched user message reaches the timeline, so its images can join that row.
+   */
+  leftDaemonQueueAt?: number;
 }
 
 export interface AttachmentPersister {

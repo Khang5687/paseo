@@ -1,3 +1,4 @@
+import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type { AttachmentMetadata, ComposerAttachment } from "@/attachments/types";
 
 export type ImageAttachment = AttachmentMetadata;
@@ -7,6 +8,8 @@ export interface MessagePayload {
   attachments: ComposerAttachment[];
   cwd: string;
   forceSend?: boolean;
+  /** How a send lands on a running turn; the send action that produced it decides. */
+  activeTurnBehavior?: ActiveTurnBehavior;
 }
 
 /**
