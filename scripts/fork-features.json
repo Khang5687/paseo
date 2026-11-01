@@ -637,6 +637,11 @@
     "retired": "reverted in a38079a85 (replacing the composer text dropped attached images); re-landed with the fix as #83"
   },
   {
+    "pr": 82,
+    "title": "perf(fork): faster build it: one check, skip unchanged installs, incremental APK, parallel builds",
+    "tests": ["scripts/fork-build-lib.test.mjs"]
+  },
+  {
     "pr": 83,
     "title": "feat(app): inline attachment references in the composer (re-land #80)",
     "tests": [

@@ -7,22 +7,28 @@
 //
 //   node scripts/fork-sync.mjs                    rehearse: merge, report, check; never pushes
 //   node scripts/fork-sync.mjs --apply            same, then push the merge to origin main
+//   node scripts/fork-sync.mjs --apply-if-green   same as --apply, but on conflicts abort the
+//                                                 merge like a rehearsal (the nightly schedule)
 //   node scripts/fork-sync.mjs --apply --resume   after resolving conflicts in the sync
 //                                                 worktree and committing: check, then push
+//   node scripts/fork-sync.mjs --no-check         merge and report only: no install, no check,
+//                                                 never pushes. The merge stays on the fork-sync
+//                                                 branch for scripts/fork-build.mjs, which checks
+//                                                 it together with the PRs it merges.
 //   --upstream <ref>   merge this instead of upstream/main (proving the tool on a crafted ref)
 //   --base <ref>       start from this instead of origin/main (rehearsal only; testing changes
 //                      to the fork tooling itself before they reach main)
 //   --no-e2e           skip the Playwright specs
 //   --worktree <path>  sync worktree (default: ../paseo-sync next to the main checkout)
 //
-// Exit codes: 0 up to date or all checks pass, 1 checks fail, 2 merge conflicts,
-// 3 another fork-sync is running.
+// Exit codes: 0 up to date, all checks pass, or (--no-check) merged cleanly; 1 checks fail;
+// 2 merge conflicts; 3 another fork-sync is running.
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { createTimer } from "./fork-build-lib.mjs";
 import {
   conflictBlocks,
   forkOwnersAt,
@@ -35,15 +41,27 @@ import {
 const { values: args } = parseArgs({
   options: {
     apply: { type: "boolean", default: false },
+    "apply-if-green": { type: "boolean", default: false },
     resume: { type: "boolean", default: false },
+    "no-check": { type: "boolean", default: false },
     upstream: { type: "string", default: "upstream/main" },
     base: { type: "string", default: "origin/main" },
     "no-e2e": { type: "boolean", default: false },
     worktree: { type: "string" },
   },
 });
+const apply = args.apply || args["apply-if-green"];
+if (args["apply-if-green"] && (args.apply || args.resume)) {
+  throw new Error(
+    "--apply-if-green stands alone; use --apply --resume to finish a resolved merge.",
+  );
+}
+if (args["no-check"] && (apply || args.resume)) {
+  throw new Error("--no-check never pushes; drop --apply/--resume.");
+}
 
 const progress = (message) => process.stderr.write(`[fork-sync] ${message}\n`);
+const timer = createTimer(progress);
 
 function git(gitArgs, { cwd, allowFail = false } = {}) {
   const result = spawnSync("git", gitArgs, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -56,7 +74,9 @@ function git(gitArgs, { cwd, allowFail = false } = {}) {
 function step(name, command, commandArgs, cwd) {
   progress(`${name}: ${command} ${commandArgs.join(" ")}`);
   // Build output goes to stderr so stdout carries only the report.
-  const result = spawnSync(command, commandArgs, { cwd, stdio: ["ignore", 2, 2] });
+  const result = timer.run(name, () =>
+    spawnSync(command, commandArgs, { cwd, stdio: ["ignore", 2, 2] }),
+  );
   if (result.status !== 0) throw new Error(`${name} failed (exit ${result.status}).`);
 }
 
@@ -91,19 +111,22 @@ process.on("exit", () => unlinkSync(lockPath));
 
 function finish(code, sections) {
   const stamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-  const report = `# Fork sync ${stamp}\n\n${sections.join("\n\n")}\n`;
+  const timing = `## Timing\n\n${timer.table()}`;
+  const report = `# Fork sync ${stamp}\n\n${[...sections, timing].join("\n\n")}\n`;
   writeFileSync(reportPath, report);
   writeFileSync(path.join(reportDir, `report-${stamp.replaceAll(":", "")}.md`), report);
   process.stdout.write(`${report}\nReport saved to ${reportPath}\n`);
   process.exit(code);
 }
 
-progress("fetching origin and upstream");
-git(["fetch", "--quiet", "origin"], { cwd: mainCheckout });
-git(["fetch", "--quiet", "upstream"], { cwd: mainCheckout });
+timer.run("fetch", () => {
+  progress("fetching origin and upstream");
+  git(["fetch", "--quiet", "origin"], { cwd: mainCheckout });
+  git(["fetch", "--quiet", "upstream"], { cwd: mainCheckout });
+});
 const upstreamSha = git(["rev-parse", "--short", args.upstream], { cwd: mainCheckout }).out;
 const base = args.base;
-if (args.apply && base !== "origin/main") {
+if (apply && base !== "origin/main") {
   throw new Error("--apply moves fork main, so it always starts from origin/main; drop --base.");
 }
 
@@ -185,6 +208,7 @@ function blameOf(file) {
 const ownerLabel = (owner) =>
   owner === "sync" ? titles.get(owner) : `#${owner} ${titles.get(owner)}`;
 
+const attributionStarted = Date.now();
 progress(`attributing ${incoming} upstream commit(s) to fork lines`);
 const touches = [];
 const commits = parseNameStatusLog(
@@ -255,34 +279,38 @@ if (!args.resume) {
       args.apply
         ? `The merge is left in progress in ${worktree}. Resolve there, commit, then run` +
           " `node scripts/fork-sync.mjs --apply --resume`."
-        : "Rehearsal only, so the merge was aborted. Resolve them with `--apply`.",
+        : `${args["apply-if-green"] ? "Not applied" : "Rehearsal only"}, so the merge was` +
+          " aborted. Resolve them with `--apply`.",
     ].join("\n");
     if (!args.apply) git(["merge", "--abort"], { cwd: worktree });
     finish(2, [header, conflictSection, riskSection]);
   }
 }
+timer.record("attribute + merge", (Date.now() - attributionStarted) / 1000);
+
+if (args["no-check"]) {
+  finish(0, [
+    header,
+    riskSection,
+    `Merged cleanly on the fork-sync branch in ${worktree}; not installed or checked` +
+      " (--no-check). Fork main was not changed.",
+  ]);
+}
 
 try {
-  const lockHash = createHash("sha256")
-    .update(readFileSync(path.join(worktree, "package-lock.json")))
-    .digest("hex");
-  const stampPath = path.join(worktree, "node_modules", ".fork-sync-lock-hash");
-  const installed = existsSync(stampPath) ? readFileSync(stampPath, "utf8") : "";
-  if (installed !== lockHash) {
-    step("npm ci", "npm", ["ci", "--no-audit", "--no-fund"], worktree);
-    writeFileSync(stampPath, lockHash);
-  }
-  step("build:server", "npm", ["run", "build:server"], worktree);
-  step("build:plugin", "npm", ["run", "build:plugin"], worktree);
+  // The script beside this one, run in the sync worktree: --base can name a ref without it.
+  step("prepare", "node", [path.join(import.meta.dirname, "fork-prepare.mjs")], worktree);
 } catch (error) {
   finish(1, [header, `## Build failed\n\n${error.message}`, riskSection]);
 }
 
 const checkReport = path.join(reportDir, "fork-check.md");
-const check = spawnSync(
-  "node",
-  ["scripts/fork-check.mjs", ...(args["no-e2e"] ? [] : ["--e2e"]), "--report", checkReport],
-  { cwd: worktree, stdio: ["ignore", "ignore", "inherit"] },
+const check = timer.run("fork-check", () =>
+  spawnSync(
+    "node",
+    ["scripts/fork-check.mjs", ...(args["no-e2e"] ? [] : ["--e2e"]), "--report", checkReport],
+    { cwd: worktree, stdio: ["ignore", "ignore", "inherit"] },
+  ),
 );
 const checkSection = existsSync(checkReport)
   ? readFileSync(checkReport, "utf8").trim()
@@ -296,7 +324,7 @@ if (check.status !== 0) {
     `Fork main was not changed. The merge is in ${worktree}.`,
   ]);
 }
-if (!args.apply) {
+if (!apply) {
   finish(0, [header, checkSection, riskSection, "Rehearsal only; fork main was not changed."]);
 }
 // A plain push is fast-forward only, so it refuses if fork main moved during the run.
