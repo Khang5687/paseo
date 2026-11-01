@@ -629,5 +629,11 @@
       "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
       "packages/app/src/components/sidebar/workspace-meta-row/meta-items.test.ts"
     ]
+  },
+  {
+    "pr": 80,
+    "title": "feat(app): inline attachment references in the composer",
+    "tests": [],
+    "retired": "reverted in a38079a85: replacing the composer text drops attached images (agent-message-submission and queue-controls e2e failed); PR back to blocked"
   }
 ]
