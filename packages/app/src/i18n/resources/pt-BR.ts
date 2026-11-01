@@ -1400,6 +1400,9 @@ export const ptBR: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} subagentes trabalhando",
+      workingSubagents_one: "{{count}} subagente trabalhando",
+      workingSubagents_other: "{{count}} subagentes trabalhando",
       status: {
         serviceRunning: "Serviço {{name}} em execução",
         serviceUnhealthy: "Serviço {{name}} com falha",

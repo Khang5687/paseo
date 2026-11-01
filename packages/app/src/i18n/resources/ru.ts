@@ -1392,6 +1392,11 @@ export const ru: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} субагента работают",
+      workingSubagents_one: "{{count}} субагент работает",
+      workingSubagents_few: "{{count}} субагента работают",
+      workingSubagents_many: "{{count}} субагентов работают",
+      workingSubagents_other: "{{count}} субагента работают",
       status: {
         serviceRunning: "Сервис {{name}} запущен",
         serviceUnhealthy: "Сервис {{name}} работает некорректно",

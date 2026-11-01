@@ -71,6 +71,32 @@ describe("createSidebarWorkspaceEntry forge threading", () => {
   });
 });
 
+describe("createSidebarWorkspaceEntry working subagents", () => {
+  function entryFor(status: WorkspaceDescriptor["status"], runningSubagentCount?: number) {
+    const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");
+    return createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: { ...descriptor, status, runningSubagentCount },
+    });
+  }
+
+  it("counts working subagents while the root agent waits on the user", () => {
+    expect(entryFor("attention", 3)).toMatchObject({
+      statusBucket: "attention",
+      workingSubagentCount: 3,
+    });
+    expect(entryFor("needs_input", 1).workingSubagentCount).toBe(1);
+  });
+
+  it("shows no count when the row already reports running", () => {
+    expect(entryFor("running", 2).workingSubagentCount).toBe(0);
+  });
+
+  it("shows no count when an old daemon omits it", () => {
+    expect(entryFor("attention").workingSubagentCount).toBe(0);
+  });
+});
+
 describe("createSidebarWorkspaceEntry workspace directory label", () => {
   it("uses the daemon-provided slug for a Paseo-owned worktree", () => {
     const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");

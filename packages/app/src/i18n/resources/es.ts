@@ -1410,6 +1410,9 @@ export const es: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} subagentes trabajando",
+      workingSubagents_one: "{{count}} subagente trabajando",
+      workingSubagents_other: "{{count}} subagentes trabajando",
       status: {
         serviceRunning: "Servicio {{name}} en ejecución",
         serviceUnhealthy: "Servicio {{name}} con fallos",

@@ -1381,6 +1381,9 @@ export const ko: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "하위 에이전트 {{count}}개 작업 중",
+      workingSubagents_one: "하위 에이전트 {{count}}개 작업 중",
+      workingSubagents_other: "하위 에이전트 {{count}}개 작업 중",
       status: {
         serviceRunning: "서비스 {{name}} 실행 중",
         serviceUnhealthy: "서비스 {{name}} 비정상",
