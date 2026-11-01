@@ -1,5 +1,6 @@
 import { TerminalFind, type TerminalPaneFindHandle } from "@/terminal/find";
 import type { TerminalFindResult } from "@/terminal/runtime/terminal-emulator-runtime";
+import type { TerminalCharacterWidths } from "@/terminal/character-widths";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -82,7 +83,7 @@ import {
   type TerminalResizeRequest,
 } from "./terminal-resize-debouncer";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { isNative } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
 import {
   applyTerminalRendererReadyChange,
   resolveTerminalStreamTarget,
@@ -95,6 +96,10 @@ import type {
   TerminalLocalFileLinkSource,
   TerminalLocalFileLinkTarget,
 } from "@/terminal/local-links/terminal-local-link-provider";
+import {
+  TerminalFileLinkMenu,
+  type TerminalFileLinkMenuRequest,
+} from "@/terminal/local-links/terminal-file-link-menu";
 import {
   normalizeWorkspaceFileLocation,
   type OpenFileDisposition,
@@ -303,6 +308,11 @@ export function TerminalPane({
   );
   const supportsTerminalSizeOwnership = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.["terminal-size-ownership"] === true,
+  );
+  const characterWidths: TerminalCharacterWidths = useSessionStore((state) =>
+    state.sessions[serverId]?.serverInfo?.features?.["terminal-grapheme-widths"] === true
+      ? "graphemes"
+      : "legacy",
   );
   const setFocusedTerminalId = useSessionStore((state) => state.setFocusedTerminalId);
 
@@ -1042,6 +1052,15 @@ export function TerminalPane({
     },
     [onOpenWorkspaceFile],
   );
+  const [fileLinkMenuRequest, setFileLinkMenuRequest] =
+    useState<TerminalFileLinkMenuRequest | null>(null);
+  // Right click only: on a phone a long press in the terminal selects text.
+  const handleLocalFileLinkContextMenu = useCallback(
+    (target: TerminalLocalFileLinkTarget, point: { x: number; y: number }) => {
+      setFileLinkMenuRequest((current) => ({ id: (current?.id ?? 0) + 1, target, point }));
+    },
+    [],
+  );
 
   const toggleModifier = useCallback(
     (modifier: keyof ModifierState) => {
@@ -1171,6 +1190,7 @@ export function TerminalPane({
             dom={TERMINAL_EMULATOR_DOM_PROPS}
             streamKey={terminalStreamKey}
             supportsTerminalInputModeReplay={supportsTerminalInputModeReplay}
+            characterWidths={characterWidths}
             testId="terminal-surface"
             xtermTheme={xtermTheme}
             scrollbackLines={settings.terminalScrollbackLines}
@@ -1193,12 +1213,21 @@ export function TerminalPane({
             onSelectionChange={handleSelectionChange}
             onResolveLocalFileLink={handleResolveLocalFileLink}
             onOpenLocalFileLink={handleOpenLocalFileLink}
+            onLocalFileLinkContextMenu={isWeb ? handleLocalFileLinkContextMenu : undefined}
             onPendingModifiersConsumed={handlePendingModifiersConsumed}
             pendingModifiers={modifiers}
             focusRequestToken={focusRequestToken}
             resizeRequestToken={resizeRequestToken}
           />
         </View>
+        {fileLinkMenuRequest ? (
+          <TerminalFileLinkMenu
+            key={fileLinkMenuRequest.id}
+            serverId={serverId}
+            cwd={cwd}
+            request={fileLinkMenuRequest}
+          />
+        ) : null}
 
         <TerminalFind
           key={terminalStreamKey}

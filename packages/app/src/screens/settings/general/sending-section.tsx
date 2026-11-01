@@ -7,6 +7,31 @@ import { getShortcutOs } from "@/utils/shortcut-platform";
 
 const SEND_BEHAVIORS: readonly SendBehavior[] = ["interrupt", "steer", "queue"];
 
+function defaultSendHintKey(
+  shortcutsAvailable: boolean,
+  sendShortcut: SendShortcut,
+  behavior: SendBehavior,
+) {
+  if (!shortcutsAvailable)
+    return `settings.general.defaultSend.touchDescriptions.${behavior}` as const;
+  if (sendShortcut === "mod-enter") {
+    return `settings.general.defaultSend.commandEnterDescriptions.${behavior}` as const;
+  }
+  return `settings.general.defaultSend.descriptions.${behavior}` as const;
+}
+
+// Without a keyboard, or while Enter inserts a new line, only the long-press reaches the alternate.
+function alternateSendHintKey(
+  shortcutsAvailable: boolean,
+  sendShortcut: SendShortcut,
+  behavior: SendBehavior,
+) {
+  if (shortcutsAvailable && sendShortcut === "enter") {
+    return `settings.general.alternateSend.descriptions.${behavior}` as const;
+  }
+  return `settings.general.alternateSend.longPressDescriptions.${behavior}` as const;
+}
+
 export function SendingSection() {
   const { t } = useTranslation();
   const { settings, updateSettings } = useAppSettings();
@@ -24,6 +49,10 @@ export function SendingSection() {
     (sendBehavior: SendBehavior) => void updateSettings({ sendBehavior }),
     [updateSettings],
   );
+  const changeAlternate = useCallback(
+    (alternateSendBehavior: SendBehavior) => void updateSettings({ alternateSendBehavior }),
+    [updateSettings],
+  );
   const shortcutOptions = useMemo(
     () =>
       (["enter", "mod-enter"] as const).map((value) => ({
@@ -36,6 +65,7 @@ export function SendingSection() {
     (sendShortcut: SendShortcut) => void updateSettings({ sendShortcut }),
     [updateSettings],
   );
+  const { sendShortcut, sendBehavior, alternateSendBehavior } = settings;
   return (
     <SettingsSection title={t("settings.general.sending")}>
       <SettingsCard>
@@ -49,15 +79,21 @@ export function SendingSection() {
         ) : null}
         <SettingsSelect
           label={t("settings.general.defaultSend.label")}
-          hint={t(
-            shortcutsAvailable && settings.sendShortcut === "mod-enter"
-              ? `settings.general.defaultSend.commandEnterDescriptions.${settings.sendBehavior}`
-              : `settings.general.defaultSend.descriptions.${settings.sendBehavior}`,
-            { modifier },
-          )}
+          hint={t(defaultSendHintKey(shortcutsAvailable, sendShortcut, sendBehavior), {
+            modifier,
+          })}
           value={settings.sendBehavior}
           options={options}
           onValueChange={change}
+        />
+        <SettingsSelect
+          label={t("settings.general.alternateSend.label")}
+          hint={t(alternateSendHintKey(shortcutsAvailable, sendShortcut, alternateSendBehavior), {
+            modifier,
+          })}
+          value={settings.alternateSendBehavior}
+          options={options}
+          onValueChange={changeAlternate}
         />
       </SettingsCard>
     </SettingsSection>

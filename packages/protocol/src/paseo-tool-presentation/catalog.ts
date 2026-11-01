@@ -171,6 +171,16 @@ export const PASEO_TOOL_CATALOG = {
     context: targetAgent(),
     detail: { inputOrder: ["agentId", "limit"] },
   },
+  ask_agent: {
+    label: "Ask agent",
+    completedLabel: "Asked agent",
+    context: field("question"),
+    detail: {
+      promptField: "question",
+      inputOrder: ["agentId", "serverId"],
+      outputFields: ["answer"],
+    },
+  },
   list_agents: {
     label: "List agents",
     completedLabel: "Listed agents",

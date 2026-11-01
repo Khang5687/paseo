@@ -11,11 +11,13 @@ import {
   useSidebarWorkspacesList,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
+  type SidebarWorkspacePlacement,
   type SidebarWorkspacesListResult,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import { usePinnedSidebarKeys, type PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
 import { useSidebarWorkspaceParents } from "@/hooks/use-sidebar-workspace-parents";
+import { useSettledSidebarKeys } from "@/hooks/use-sidebar-settled";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import {
   hasActiveSidebarLabelFilter,
@@ -49,6 +51,7 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   workspaceGroups: SidebarWorkspaceGroup[];
   projectIconTargets: SidebarProjectIconTarget[];
   pinnedGroups: PinnedSidebarGroups;
+  settledRows: SidebarWorkspacePlacement[];
   collapsedProjectKeys: ReadonlySet<string>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   shortcutModel: SidebarShortcutModel;
@@ -163,10 +166,12 @@ export function SidebarModelProvider({
     [list.workspacePlacements],
   );
   const parentKeyByWorkspaceKey = useSidebarWorkspaceParents(serverIds);
+  const settledKeys = useSettledSidebarKeys(filteredProjects);
   const projectionInput = useMemo(
     () => ({
       projects: filteredProjects,
       pinnedKeys,
+      settledKeys,
       pinnedWorkspaceOrder,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
       projectNamesByViewKey: list.projectNamesByViewKey,
@@ -187,6 +192,7 @@ export function SidebarModelProvider({
       filteredProjects,
       pinnedCollapsed,
       pinnedKeys,
+      settledKeys,
       pinnedWorkspaceOrder,
       filteredWorkspaceEntriesByKey,
       parentKeyByWorkspaceKey,
@@ -207,6 +213,7 @@ export function SidebarModelProvider({
       workspaceGroups: projection.workspaceGroups,
       projectIconTargets: projection.projectIconTargets,
       pinnedGroups: projection.pinnedGroups,
+      settledRows: projection.settledRows,
       collapsedProjectKeys,
       toggleProjectCollapsed,
       shortcutModel: projection.shortcutModel,

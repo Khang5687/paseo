@@ -1,0 +1,216 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { expect, test, vi } from "vitest";
+
+import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import { DaemonClient } from "../test-utils/daemon-client.js";
+import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
+import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
+import type { AgentPromptInput } from "../agent/agent-sdk-types.js";
+
+function promptText(prompt: AgentPromptInput): string {
+  return typeof prompt === "string"
+    ? prompt
+    : prompt.blocks.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+}
+
+/**
+ * Two clients on one daemon. A queues while the agent is parked on a permission
+ * prompt, B sees the entry through its agent subscription, A answers the
+ * prompt, the daemon dispatches the queued message exactly once, and both
+ * clients see an empty queue.
+ */
+test("a message queued by one client is visible to another and dispatched once by the daemon", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-"));
+  const startedPrompts: string[] = [];
+  let daemon: TestPaseoDaemon | null = null;
+  let clientA: DaemonClient | null = null;
+  let clientB: DaemonClient | null = null;
+  try {
+    daemon = await createTestPaseoDaemon({
+      agentClients: createTestAgentClients({
+        onStartTurn: (prompt) => {
+          startedPrompts.push(promptText(prompt));
+        },
+      }),
+    });
+    const url = `ws://127.0.0.1:${daemon.port}/ws`;
+    clientA = new DaemonClient({ url });
+    clientB = new DaemonClient({ url });
+    await clientA.connect();
+    await clientB.connect();
+    expect(clientA.getLastServerInfoMessage()?.features?.messageQueue).toBe(true);
+
+    const snapshotsSeenByB: AgentSnapshotPayload[] = [];
+    clientB.subscribeRawMessages((message) => {
+      if (message.type === "agent_update" && message.payload.kind === "upsert") {
+        snapshotsSeenByB.push(message.payload.agent);
+      }
+    });
+    await clientB.fetchAgents({ subscribe: {} });
+
+    const agent = await clientA.createAgent({ provider: "codex", cwd });
+
+    // The fake agent asks for permission on tool use in its default mode, which
+    // parks the turn until someone answers.
+    await clientA.sendMessage(agent.id, "run echo hello");
+    const parked = await clientA.waitForFinish(agent.id, 30_000);
+    const permission = parked.final?.pendingPermissions?.[0];
+    expect(permission?.id).toBeTruthy();
+
+    const queued = await clientA.addQueuedAgentMessage({
+      agentId: agent.id,
+      text: "and then say goodbye",
+    });
+    expect(queued).toMatchObject({ text: "and then say goodbye", imageCount: 0 });
+
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuedMessages).toEqual([queued]);
+    });
+    expect((await clientB.fetchAgent(agent.id))?.agent.queuedMessages).toEqual([queued]);
+
+    await clientA.respondToPermission(agent.id, permission!.id, { behavior: "allow" });
+
+    await vi.waitFor(() => {
+      expect(startedPrompts).toEqual(["run echo hello", "and then say goodbye"]);
+    });
+    const finished = await clientA.waitForFinish(agent.id, 30_000);
+    expect(finished.status).toBe("idle");
+    expect(startedPrompts).toHaveLength(2);
+
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuedMessages).toEqual([]);
+    });
+    expect((await clientA.fetchAgent(agent.id))?.agent.queuedMessages).toEqual([]);
+    expect((await clientB.fetchAgent(agent.id))?.agent.queuedMessages).toEqual([]);
+  } finally {
+    await clientA?.close().catch(() => undefined);
+    await clientB?.close().catch(() => undefined);
+    await daemon?.close().catch(() => undefined);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 60_000);
+
+/**
+ * Queue controls by one client show up in the other client's snapshots: a
+ * move reorders B's list, a pause flags it, and a clear empties it.
+ */
+test("queue controls by one client are reflected in another client's snapshots", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-controls-"));
+  let daemon: TestPaseoDaemon | null = null;
+  let clientA: DaemonClient | null = null;
+  let clientB: DaemonClient | null = null;
+  try {
+    daemon = await createTestPaseoDaemon({ agentClients: createTestAgentClients() });
+    const url = `ws://127.0.0.1:${daemon.port}/ws`;
+    clientA = new DaemonClient({ url });
+    clientB = new DaemonClient({ url });
+    await clientA.connect();
+    await clientB.connect();
+    expect(clientA.getLastServerInfoMessage()?.features?.messageQueueControls).toBe(true);
+
+    const snapshotsSeenByB: AgentSnapshotPayload[] = [];
+    clientB.subscribeRawMessages((message) => {
+      if (message.type === "agent_update" && message.payload.kind === "upsert") {
+        snapshotsSeenByB.push(message.payload.agent);
+      }
+    });
+    await clientB.fetchAgents({ subscribe: {} });
+
+    const agent = await clientA.createAgent({ provider: "codex", cwd });
+    // Park the turn on a permission prompt so nothing drains while we edit.
+    await clientA.sendMessage(agent.id, "run echo hello");
+    const parked = await clientA.waitForFinish(agent.id, 30_000);
+    expect(parked.final?.pendingPermissions?.[0]?.id).toBeTruthy();
+
+    const first = await clientA.addQueuedAgentMessage({ agentId: agent.id, text: "first" });
+    const second = await clientA.addQueuedAgentMessage({ agentId: agent.id, text: "second" });
+
+    await clientA.moveQueuedAgentMessage({ agentId: agent.id, messageId: second.id, toIndex: 0 });
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuedMessages?.map((item) => item.id)).toEqual([second.id, first.id]);
+    });
+
+    expect(await clientA.setAgentQueuePaused({ agentId: agent.id, paused: true })).toBe(true);
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuePaused).toBe(true);
+    });
+
+    expect(await clientA.clearQueuedAgentMessages({ agentId: agent.id })).toBe(2);
+    await vi.waitFor(() => {
+      const latest = snapshotsSeenByB.findLast((snapshot) => snapshot.id === agent.id);
+      expect(latest?.queuedMessages).toEqual([]);
+    });
+  } finally {
+    await clientA?.close().catch(() => undefined);
+    await clientB?.close().catch(() => undefined);
+    await daemon?.close().catch(() => undefined);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 60_000);
+
+/**
+ * A message still queued when the daemon stops is sent by the next daemon on
+ * its own: no client connects to the restarted daemon until it has drained.
+ */
+test("a stored queue drains after a daemon restart without any client", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-restart-"));
+  const paseoHomeRoot = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-restart-home-"));
+  const promptsAfterRestart: string[] = [];
+  let daemon: TestPaseoDaemon | null = null;
+  let client: DaemonClient | null = null;
+  try {
+    daemon = await createTestPaseoDaemon({
+      agentClients: createTestAgentClients(),
+      paseoHomeRoot,
+      cleanup: false,
+    });
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    const agent = await client.createAgent({ provider: "codex", cwd });
+    // Park the turn on a permission prompt so the queued entry is still there at shutdown.
+    await client.sendMessage(agent.id, "run echo hello");
+    const parked = await client.waitForFinish(agent.id, 30_000);
+    expect(parked.final?.pendingPermissions?.[0]?.id).toBeTruthy();
+    const queued = await client.addQueuedAgentMessage({
+      agentId: agent.id,
+      text: "carry on after the restart",
+    });
+    await client.close();
+    client = null;
+    await daemon.close();
+    daemon = null;
+
+    // Restart recovery would also resume the parked turn; this test covers the queue alone.
+    daemon = await createTestPaseoDaemon({
+      agentClients: createTestAgentClients({
+        onStartTurn: (prompt) => {
+          promptsAfterRestart.push(promptText(prompt));
+        },
+      }),
+      paseoHomeRoot,
+      cleanup: false,
+      resumeOnStartup: false,
+    });
+    await vi.waitFor(() => expect(promptsAfterRestart).toEqual([queued.text]), {
+      timeout: 20_000,
+    });
+
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    await vi.waitFor(async () => {
+      expect((await client!.fetchAgent(agent.id))?.agent.queuedMessages).toEqual([]);
+    });
+    expect(promptsAfterRestart).toEqual([queued.text]);
+  } finally {
+    await client?.close().catch(() => undefined);
+    await daemon?.close().catch(() => undefined);
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(paseoHomeRoot, { recursive: true, force: true });
+  }
+}, 90_000);

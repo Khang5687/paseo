@@ -5,6 +5,7 @@ import { createValidatedPersistStorage } from "@/storage/validated-persist-stora
 import {
   type CollapsedProjectsState,
   type PersistedCollapsedProjects,
+  createDefaultCollapsedProjectsState,
   mergePersistedCollapsedProjects,
   PersistedCollapsedProjectsSchema,
   serializeCollapsedProjects,
@@ -12,6 +13,7 @@ import {
   togglePinnedCollapsed,
   toggleProjectCollapsed,
   toggleThreadExpanded,
+  toggleSettledCollapsed,
   toggleWorkspaceGroupCollapsed,
 } from "./state";
 
@@ -21,15 +23,13 @@ interface SidebarCollapsedSectionsState extends CollapsedProjectsState {
   toggleWorkspaceGroupCollapsed: (workspaceGroupKey: string) => void;
   togglePinnedCollapsed: () => void;
   toggleThreadExpanded: (workspaceKey: string) => void;
+  toggleSettledCollapsed: () => void;
 }
 
 export const useSidebarCollapsedSectionsStore = create<SidebarCollapsedSectionsState>()(
   persist<SidebarCollapsedSectionsState, [], [], PersistedCollapsedProjects>(
     (set) => ({
-      collapsedProjectKeys: new Set(),
-      collapsedWorkspaceGroupKeys: new Set(),
-      collapsedPinned: false,
-      expandedThreadKeys: new Set(),
+      ...createDefaultCollapsedProjectsState(),
       toggleProjectCollapsed: (projectKey) =>
         set((state) => toggleProjectCollapsed(state, projectKey)),
       setProjectCollapsed: (projectKey, collapsed) =>
@@ -39,6 +39,7 @@ export const useSidebarCollapsedSectionsStore = create<SidebarCollapsedSectionsS
       togglePinnedCollapsed: () => set((state) => togglePinnedCollapsed(state)),
       toggleThreadExpanded: (workspaceKey) =>
         set((state) => toggleThreadExpanded(state, workspaceKey)),
+      toggleSettledCollapsed: () => set((state) => toggleSettledCollapsed(state)),
     }),
     {
       name: "sidebar-collapsed-sections",

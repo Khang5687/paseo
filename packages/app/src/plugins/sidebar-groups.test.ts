@@ -39,6 +39,7 @@ function installed(
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
   };

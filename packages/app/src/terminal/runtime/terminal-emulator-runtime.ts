@@ -3,10 +3,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
-import { Terminal, type ITheme, type IMarker } from "@xterm/xterm";
+import { Terminal, type IBufferRange, type ITheme, type IMarker } from "@xterm/xterm";
+import type { TerminalCharacterWidths } from "../character-widths";
 import {
   type TerminalInputModeState,
   TerminalInputModeTracker,
@@ -25,6 +27,7 @@ import {
 } from "@/utils/terminal-keys";
 import {
   createTerminalLocalFileLinkProvider,
+  isBufferCellInRange,
   type TerminalLocalFileLinkSource,
   type TerminalLocalFileLinkTarget,
 } from "../local-links/terminal-local-link-provider";
@@ -80,6 +83,11 @@ export interface TerminalEmulatorRuntimeCallbacks {
     target: TerminalLocalFileLinkTarget,
     disposition: "main" | "side",
   ) => Promise<void> | void;
+  /** A right click on a local file link, at the pointer's viewport position. */
+  onLocalFileLinkContextMenu?: (
+    target: TerminalLocalFileLinkTarget,
+    point: { x: number; y: number },
+  ) => Promise<void> | void;
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
   /** A paste gesture that can carry a file; resolves to null when it carried none. */
   onFilePaste?: (file: Promise<TerminalFile | null>) => void;
@@ -123,6 +131,7 @@ interface TerminalEmulatorRuntimeDisposables {
   removeFontListeners: () => void;
   removeTouchListeners: () => void;
   removeFilePasteListener: () => void;
+  removeFileLinkContextMenuListener: () => void;
   restoreDocumentStyles: () => void;
   restoreViewportStyles: () => void;
   disposeFitAddon: () => void;
@@ -232,6 +241,27 @@ function findFileOnlyPaste(transfer: DataTransfer | null): File | null {
   return null;
 }
 
+/** The 1-based buffer cell under a pointer event, in the coordinates xterm link ranges use. */
+function bufferCellAtPoint(terminal: Terminal, event: MouseEvent): { x: number; y: number } | null {
+  const screen = terminal.element?.querySelector(".xterm-screen");
+  if (!screen || terminal.cols === 0 || terminal.rows === 0) {
+    return null;
+  }
+  const rect = screen.getBoundingClientRect();
+  const column = Math.floor(((event.clientX - rect.left) * terminal.cols) / rect.width);
+  const row = Math.floor(((event.clientY - rect.top) * terminal.rows) / rect.height);
+  if (column < 0 || column >= terminal.cols || row < 0 || row >= terminal.rows) {
+    return null;
+  }
+  return { x: column + 1, y: terminal.buffer.active.viewportY + row + 1 };
+}
+
+// Grapheme widths match the daemon and native buffers. Legacy hosts keep the
+// Unicode 11 table web used before. See docs/terminal-rendering.md.
+function applyCharacterWidths(terminal: Terminal, widths: TerminalCharacterWidths): void {
+  terminal.unicode.activeVersion = widths === "graphemes" ? "15-graphemes" : "11";
+}
+
 export class TerminalEmulatorRuntime {
   constructor(
     private readonly options: FindShortcutPlatform = { isMac: isMacUserAgent() },
@@ -244,6 +274,7 @@ export class TerminalEmulatorRuntime {
     shift: false,
     alt: false,
   };
+  private characterWidths: TerminalCharacterWidths = "graphemes";
   private terminal: Terminal | null = null;
   private fitAddon: FitAddon | null = null;
   private searchAddon: SearchAddon | null = null;
@@ -329,6 +360,16 @@ export class TerminalEmulatorRuntime {
 
   setPendingModifiers(input: { pendingModifiers: PendingTerminalModifiers }): void {
     this.pendingModifiers = input.pendingModifiers;
+  }
+
+  setCharacterWidths(input: { widths: TerminalCharacterWidths }): void {
+    this.characterWidths = input.widths;
+    const terminal = this.terminal;
+    if (!terminal) {
+      return;
+    }
+    applyCharacterWidths(terminal, input.widths);
+    this.refreshVisibleRows();
   }
 
   private loadSearchAddon(terminal: Terminal): void {
@@ -555,12 +596,15 @@ export class TerminalEmulatorRuntime {
       theme: withOverviewRulerBorderHidden(input.theme),
     });
     const fitAddon = new FitAddon();
-    const unicode11Addon = new Unicode11Addon();
     let webglAddon: WebglAddon | null = null;
     let imageAddon: ImageAddon | null = null;
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(unicode11Addon);
+    terminal.loadAddon(new Unicode11Addon());
+    terminal.loadAddon(new UnicodeGraphemesAddon());
+    applyCharacterWidths(terminal, this.characterWidths);
     terminal.loadAddon(new WebLinksAddon(openExternalLink));
+    let hoveredLocalFileLink: { target: TerminalLocalFileLinkTarget; range: IBufferRange } | null =
+      null;
     const localFileLinkProvider = terminal.registerLinkProvider(
       createTerminalLocalFileLinkProvider(terminal, {
         resolveLink: async (source) => {
@@ -569,6 +613,9 @@ export class TerminalEmulatorRuntime {
         },
         openLink: (target, disposition) => {
           void this.callbacks.onOpenLocalFileLink?.(target, disposition);
+        },
+        hoverLink: (link) => {
+          hoveredLocalFileLink = link;
         },
       }),
     );
@@ -594,11 +641,6 @@ export class TerminalEmulatorRuntime {
     terminal.open(input.host);
     this.themeBackgroundElements = this.collectThemeBackgroundElements(input);
     this.applyThemeBackground(input.theme);
-    try {
-      terminal.unicode.activeVersion = "11";
-    } catch {
-      // Ignore if unicode API isn't available in this build/runtime.
-    }
 
     const disposeImageAddon = (): void => {
       try {
@@ -747,6 +789,23 @@ export class TerminalEmulatorRuntime {
     };
     input.host.addEventListener("paste", filePasteHandler, true);
 
+    // A right click on a file link opens the file menu instead of the browser's text menu.
+    const fileLinkContextMenuHandler = (event: MouseEvent): void => {
+      const onLocalFileLinkContextMenu = this.callbacks.onLocalFileLinkContextMenu;
+      const link = hoveredLocalFileLink;
+      if (!onLocalFileLinkContextMenu || !link) {
+        return;
+      }
+      const cell = bufferCellAtPoint(terminal, event);
+      if (!cell || !isBufferCellInRange(cell, link.range)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void onLocalFileLinkContextMenu(link.target, { x: event.clientX, y: event.clientY });
+    };
+    input.host.addEventListener("contextmenu", fileLinkContextMenuHandler, true);
+
     const removeTouchListeners = this.setupTouchScrollHandlers({
       root: input.root,
       host: input.host,
@@ -835,6 +894,9 @@ export class TerminalEmulatorRuntime {
       removeFilePasteListener: () => {
         input.host.removeEventListener("paste", filePasteHandler, true);
       },
+      removeFileLinkContextMenuListener: () => {
+        input.host.removeEventListener("contextmenu", fileLinkContextMenuHandler, true);
+      },
       restoreDocumentStyles,
       restoreViewportStyles,
       disposeFitAddon: () => {
@@ -865,6 +927,7 @@ export class TerminalEmulatorRuntime {
       disposables.removeFontListeners();
       disposables.removeTouchListeners();
       disposables.removeFilePasteListener();
+      disposables.removeFileLinkContextMenuListener();
       disposables.disposeFitAddon();
       disposables.disposeWebglAddon();
       disposables.disposeTerminal();

@@ -17,10 +17,17 @@ const grokModel: AgentModelDefinition = {
   label: "Grok Build",
 };
 
+const grokFastModel: AgentModelDefinition = {
+  provider: "grok",
+  id: "grok-fast",
+  label: "Grok Fast",
+};
+
 function resolveModels(input: {
   serverId?: string;
   provider: string;
   currentModels?: AgentModelDefinition[];
+  currentDisabledModels?: AgentModelDefinition[];
   loading?: boolean;
   cache?: ProviderDiscoveredModelsCache | null;
 }) {
@@ -28,6 +35,7 @@ function resolveModels(input: {
     serverId: input.serverId ?? "local",
     provider: input.provider,
     currentModels: input.currentModels,
+    currentDisabledModels: input.currentDisabledModels,
     providerSnapshotRefreshing: input.loading === true,
     previousCache: input.cache ?? null,
   });
@@ -57,6 +65,29 @@ describe("resolveProviderDiscoveredModels", () => {
 
     expect(result.models).toEqual([piModel]);
     expect(result.cache?.models).toEqual([piModel]);
+  });
+
+  it("lists every reported model, disabled ones after the enabled ones", () => {
+    const result = resolveModels({
+      provider: "grok",
+      currentModels: [grokFastModel],
+      currentDisabledModels: [grokModel],
+    });
+
+    expect(result.models).toEqual([grokFastModel, grokModel]);
+  });
+
+  it("keeps each row in place when a toggle moves it to the disabled list", () => {
+    const ready = resolveModels({ provider: "grok", currentModels: [grokModel, grokFastModel] });
+
+    const toggled = resolveModels({
+      provider: "grok",
+      currentModels: [grokFastModel],
+      currentDisabledModels: [grokModel],
+      cache: ready.cache,
+    });
+
+    expect(toggled.models).toEqual([grokModel, grokFastModel]);
   });
 
   it("does not show one provider's cached models while another provider loads", () => {
