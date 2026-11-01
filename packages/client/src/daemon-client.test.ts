@@ -1434,6 +1434,51 @@ test("disabling reconnect cancels a pending retry until explicitly resumed", asy
   }
 });
 
+test("suspend closes the socket and stays down until ensureConnected", async () => {
+  useHeartbeatClock();
+  try {
+    const first = createMockTransport();
+    const second = createMockTransport();
+    const transports = [first, second];
+    let transportIndex = 0;
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: "clsk_suspended",
+      reconnect: { enabled: true, baseDelayMs: 1_500, maxDelayMs: 1_500 },
+      transportFactory: () => {
+        const transport = transports[transportIndex];
+        if (!transport) throw new Error("unexpected extra reconnect");
+        transportIndex += 1;
+        return transport.transport;
+      },
+    });
+    clients.push(client);
+
+    const initialConnect = client.connect();
+    first.triggerOpen();
+    await initialConnect;
+    const close = vi.spyOn(first.transport, "close");
+
+    client.suspend();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect({
+      closed: close.mock.calls,
+      status: client.getConnectionState().status,
+      transportsOpened: transportIndex,
+    }).toEqual({
+      closed: [[1000, "Client suspended"]],
+      status: "disconnected",
+      transportsOpened: 1,
+    });
+
+    client.ensureConnected();
+    expect(client.getConnectionState().status).toBe("connecting");
+    expect(transportIndex).toBe(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("keeps the transport connected when a session RPC ping times out", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
