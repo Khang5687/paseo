@@ -97,6 +97,7 @@ import { AssistantSelectionCopySurface } from "@/assistant-selection-copy/surfac
 import { ChatNoteRowProvider, ChatNotesProvider } from "@/chat-notes/context";
 import { ChatNotesSurface } from "@/chat-notes/surface";
 import { AssistantFileLinkResolverProvider, createInlinePathOpener } from "@/assistant-file-links";
+import { CodeRunScopeProvider } from "@/code-run/scope";
 import { useOpenOutsideWorkspaceFolder } from "@/workspace/open-in-file-manager/outside-folder";
 import {
   createWorkspaceFileTabTarget,
@@ -326,6 +327,15 @@ function resolveBottomOverlayControlOffset(clearance: number | undefined): numbe
   return Math.max(16, clearance ?? 0);
 }
 
+/** Read-only transcripts (provider subagent threads) show commands without running them. */
+function resolveCodeRunWorkspaceId(input: {
+  readOnly: boolean;
+  workspaceId: string | null | undefined;
+}): string | null {
+  if (input.readOnly || !input.workspaceId) return null;
+  return input.workspaceId;
+}
+
 const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamViewProps>(
   function AgentStreamView(
     {
@@ -401,6 +411,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const workspaceRoot = context.cwd?.trim() || "";
+    const codeRunWorkspaceId = resolveCodeRunWorkspaceId({
+      readOnly,
+      workspaceId: context.workspaceId,
+    });
     const { revealDirectory } = useFileExplorerActions({
       serverId: resolvedServerId,
       workspaceId: context.workspaceId,
@@ -475,6 +489,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const handleInlinePathPress = useStableEvent(
       (target: InlinePathTarget, disposition: OpenFileDisposition) => {
         if (isActive) void inlinePathOpener.open(target, disposition);
+      },
+    );
+    const openCodeRunTerminal = useStableEvent(
+      (input: { workspaceId: string; terminalId: string }) => {
+        navigateToWorkspace({
+          serverId: resolvedServerId,
+          workspaceId: input.workspaceId,
+          target: { kind: "terminal", terminalId: input.terminalId },
+        });
       },
     );
 
@@ -754,6 +777,29 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderAssistantMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "assistant_message" }>) => {
+        const message = (
+          <ChatFindExpansion messageId={getStreamItemMessageId(item)}>
+            {(renderFullContent) => (
+              <ChatNoteRowProvider
+                rowId={item.id}
+                messageId={getStreamItemMessageId(item)}
+                role="assistant"
+              >
+                <AssistantMessage
+                  renderFullContent={renderFullContent}
+                  occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
+                  message={item.text}
+                  timestamp={item.timestamp.getTime()}
+                  workspaceRoot={workspaceRoot}
+                  serverId={resolvedServerId}
+                  client={client}
+                  spacing={layoutItem.assistantSpacing}
+                  phase={layoutItem.phase}
+                />
+              </ChatNoteRowProvider>
+            )}
+          </ChatFindExpansion>
+        );
         return (
           <AssistantFileLinkResolverProvider
             client={client}
@@ -762,31 +808,33 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             onOpenWorkspaceFile={handleInlinePathPress}
             toast={toast}
           >
-            <ChatFindExpansion messageId={getStreamItemMessageId(item)}>
-              {(renderFullContent) => (
-                <ChatNoteRowProvider
-                  rowId={item.id}
-                  messageId={getStreamItemMessageId(item)}
-                  role="assistant"
-                >
-                  <AssistantMessage
-                    renderFullContent={renderFullContent}
-                    occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
-                    message={item.text}
-                    timestamp={item.timestamp.getTime()}
-                    workspaceRoot={workspaceRoot}
-                    serverId={resolvedServerId}
-                    client={client}
-                    spacing={layoutItem.assistantSpacing}
-                    phase={layoutItem.phase}
-                  />
-                </ChatNoteRowProvider>
-              )}
-            </ChatFindExpansion>
+            {codeRunWorkspaceId && workspaceRoot ? (
+              <CodeRunScopeProvider
+                serverId={resolvedServerId}
+                agentId={agentId}
+                workspaceId={codeRunWorkspaceId}
+                cwd={workspaceRoot}
+                messageKey={item.messageId ?? item.id}
+                openTerminal={openCodeRunTerminal}
+              >
+                {message}
+              </CodeRunScopeProvider>
+            ) : (
+              message
+            )}
           </AssistantFileLinkResolverProvider>
         );
       },
-      [agentId, client, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
+      [
+        agentId,
+        client,
+        codeRunWorkspaceId,
+        handleInlinePathPress,
+        openCodeRunTerminal,
+        resolvedServerId,
+        toast,
+        workspaceRoot,
+      ],
     );
 
     const renderThoughtItem = useCallback(

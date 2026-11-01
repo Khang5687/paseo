@@ -29,6 +29,7 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { RetainedChatContent } from "./retained-chat-content";
 import { Composer } from "@/composer";
 import { AgentCommandsProvider } from "@/agent-commands";
+import { CodeRunComposerProvider } from "@/code-run/scope";
 import {
   useComposerEditingSession,
   useComposerFullscreen,
@@ -1317,7 +1318,9 @@ function wrapAgentCommandProvider({
       editingSession={editingSession}
       enabled={enabled}
     >
-      {children}
+      <CodeRunComposerProvider editingSession={enabled ? editingSession : null}>
+        {children}
+      </CodeRunComposerProvider>
     </AgentCommandsProvider>
   );
 }
