@@ -83,6 +83,18 @@ import {
   ScheduleUpdateResponseSchema,
 } from "./schedule/rpc-schemas.js";
 import {
+  NotesCreateRequestSchema,
+  NotesCreateResponseSchema,
+  NotesChangedMessageSchema,
+  NotesDeleteRequestSchema,
+  NotesDeleteResponseSchema,
+  NotesEditRequestSchema,
+  NotesEditResponseSchema,
+  NotesFiredMessageSchema,
+  NotesListRequestSchema,
+  NotesListResponseSchema,
+} from "./notes/schemas.js";
+import {
   SpeechLocalModelsDeleteRequestSchema,
   SpeechLocalModelsDeleteResponseSchema,
   SpeechLocalModelsDownloadRequestSchema,
@@ -3237,6 +3249,8 @@ export const SessionEventSubscriptionSchema = z.enum([
   "activity_log",
   "hub.execution.agent.update",
   "hub.execution.agent.stream",
+  // Send only to hosts with features.notes; older hosts reject unknown event names.
+  "notes.fired",
 ]);
 export type SessionEventSubscription = z.infer<typeof SessionEventSubscriptionSchema>;
 export const SessionEventsSetSubscriptionRequestSchema = z.object({
@@ -3491,6 +3505,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectRequestSchema,
   LoopLogsRequestSchema,
   LoopStopRequestSchema,
+  NotesListRequestSchema,
+  NotesCreateRequestSchema,
+  NotesEditRequestSchema,
+  NotesDeleteRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -3687,6 +3705,8 @@ export const ServerInfoStatusPayloadSchema = z
         directorySync: z.boolean().optional(),
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
+        // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
+        notes: z.boolean().optional(),
         // COMPAT(workspaceSetupRun): added in v0.8.0, remove gate after 2027-09-02.
         workspaceSetupRun: z.boolean().optional(),
         // COMPAT(workspaceTerminals): added in v0.8.0, remove gate after 2027-09-05.
@@ -7237,6 +7257,12 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LoopStopResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
+  NotesListResponseSchema,
+  NotesChangedMessageSchema,
+  NotesFiredMessageSchema,
+  NotesCreateResponseSchema,
+  NotesEditResponseSchema,
+  NotesDeleteResponseSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;

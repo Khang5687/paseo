@@ -17,6 +17,7 @@ import { createMarkdownStyles } from "./styles";
 import { PENDING_MARKDOWN_IMAGE } from "./source";
 import { splitStreamingMarkdown } from "./streaming";
 import { useMarkdownSource, type MarkdownImageContext } from "./images";
+import { useChatNoteContextMenuItems } from "@/chat-notes/context";
 
 import { MermaidFence, MermaidStreamingContext, splitMermaidFences } from "./fence/mermaid";
 
@@ -119,6 +120,9 @@ const MarkdownPart = memo(function MarkdownPart({
     if (url !== PENDING_MARKDOWN_IMAGE) setImage({ type: "uri", uri: url });
   });
   const closeImage = useStableEvent(() => setImage(null));
+  // Web offers "Add note" over the browser selection; native has only the selection menu.
+  const noteMenuItems = useChatNoteContextMenuItems();
+  const contextMenuItems = isWeb ? undefined : noteMenuItems;
   const segments = useMemo(
     () =>
       isWeb ? [{ kind: "markdown", id: "0", source: markdown }] : splitMermaidFences(markdown),
@@ -142,6 +146,7 @@ const MarkdownPart = memo(function MarkdownPart({
               enableTaskListItemToggle={false}
               enableLinkPreview={false}
               enableBlockContextMenu={false}
+              contextMenuItems={contextMenuItems}
               // JS reveal owns pacing; native fade animation is a separate experiment.
               streamingAnimation={false}
               onLinkPress={pressLink}

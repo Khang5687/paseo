@@ -76,7 +76,11 @@ import { useBlockMobilePanelOpenGestures } from "@/mobile-panels/provider";
 import { useSessionStore } from "@/stores/session-store";
 import { toXtermTheme } from "@/utils/to-xterm-theme";
 import TerminalEmulator, { type TerminalEmulatorHandle } from "./terminal-emulator";
-import { TerminalFloatingCopyAction, TerminalPasteAction } from "./terminal-copy-paste-actions";
+import {
+  TerminalFloatingAddNoteAction,
+  TerminalFloatingCopyAction,
+  TerminalPasteAction,
+} from "./terminal-copy-paste-actions";
 import {
   createTerminalResizeDebouncer,
   type TerminalResizeRequest,
@@ -100,11 +104,16 @@ import {
   type OpenFileDisposition,
   type WorkspaceFileOpenRequest,
 } from "@/workspace/file-open";
+import {
+  TerminalSelectionNoteAction,
+  useTerminalPaneNotes,
+} from "@/terminal/notes/terminal-pane-notes";
 
 interface TerminalPaneProps {
   serverId: string;
   cwd: string;
   terminalId: string;
+  workspaceId: string;
   isWorkspaceFocused: boolean;
   isPaneFocused: boolean;
   onOpenFileExplorer: () => void;
@@ -259,6 +268,7 @@ export function TerminalPane({
   serverId,
   cwd,
   terminalId,
+  workspaceId,
   isWorkspaceFocused,
   isPaneFocused,
   onOpenFileExplorer,
@@ -416,6 +426,17 @@ export function TerminalPane({
   const handleSelectionChange = useCallback((nextHasSelection: boolean) => {
     setHasSelection(nextHasSelection);
   }, []);
+
+  const notes = useTerminalPaneNotes({
+    serverId,
+    cwd,
+    terminalId,
+    workspaceId,
+    emulatorRef,
+    isTerminalPresented,
+    isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+    isAttaching,
+  });
 
   const requestTerminalFocus = useCallback(() => {
     setFocusRequestToken((current) => current + 1);
@@ -1191,6 +1212,7 @@ export function TerminalPane({
             onFilePaste={handleFilePaste}
             onInputModeChange={handleInputModeChange}
             onSelectionChange={handleSelectionChange}
+            {...notes.emulatorProps}
             onResolveLocalFileLink={handleResolveLocalFileLink}
             onOpenLocalFileLink={handleOpenLocalFileLink}
             onPendingModifiersConsumed={handlePendingModifiersConsumed}
@@ -1218,9 +1240,16 @@ export function TerminalPane({
 
         {showFloatingCopyAction ? (
           <View pointerEvents="box-none" style={styles.floatingCopyContainer}>
+            <TerminalFloatingAddNoteAction
+              enabled={notes.supportsNotes}
+              hasSelection={hasSelection}
+              onAddNote={notes.addNote}
+            />
             <TerminalFloatingCopyAction hasSelection={hasSelection} onCopy={handleTerminalCopy} />
           </View>
         ) : null}
+
+        <TerminalSelectionNoteAction action={notes.selectionAction} onAddNote={notes.addNote} />
       </FileDropZone>
 
       {streamError ? (
@@ -1280,6 +1309,8 @@ const styles = StyleSheet.create((theme) => ({
     right: theme.spacing[3],
     bottom: theme.spacing[12],
     zIndex: 2,
+    flexDirection: "row",
+    gap: theme.spacing[2],
   },
   errorRow: {
     paddingHorizontal: theme.spacing[3],

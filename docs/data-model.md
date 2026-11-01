@@ -67,6 +67,7 @@ $PASEO_HOME/
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
+├── notes.json                           # Notes on chat/terminal selections (see docs/notes.md)
 └── push-tokens.json                     # Expo push notification tokens
 ```
 
@@ -525,6 +526,14 @@ than treating it as valid.
 ```
 
 Simple set of Expo push notification tokens. Loaded with permissive parsing (filters non-string entries). Persisted with atomic temp-file rename.
+
+---
+
+## 6a. Notes
+
+**Path:** `$PASEO_HOME/notes.json`
+
+`{ "notes": Note[] }`, where `Note` is `NoteSchema` in `packages/protocol/src/notes/schemas.ts`. Each entry is parsed on its own at load, so one invalid note is skipped and logged instead of dropping the file. Written atomically on every change. What the fields mean and how waiting-on notes fire is in [notes.md](notes.md).
 
 ---
 

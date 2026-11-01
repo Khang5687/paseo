@@ -873,6 +873,15 @@ export type ProjectListPayload = Extract<
   SessionOutboundMessage,
   { type: "project.list.response" }
 >["payload"];
+export type NotesListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "notes.list.response" }
+>["payload"];
+type NotesCreateRequest = Extract<SessionInboundMessage, { type: "notes.create.request" }>;
+type NotesEditRequest = Extract<SessionInboundMessage, { type: "notes.edit.request" }>;
+export type CreateNoteOptions = Omit<NotesCreateRequest, "type" | "requestId">;
+export type EditNoteOptions = Omit<NotesEditRequest, "type" | "requestId">;
+export type NoteRecord = NotesListPayload["notes"][number];
 type ProjectListRequest = Extract<SessionInboundMessage, { type: "project.list.request" }>;
 export type ProjectListOptions = Omit<ProjectListRequest, "type" | "requestId"> & {
   requestId?: string;
@@ -2953,6 +2962,65 @@ export class DaemonClient {
         type: "workspace.label.delete.inspect.request",
         name: options.name,
       },
+    });
+  }
+
+  listNotes(): Promise<NoteRecord[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.list.response", NoteRecord[]>({
+      message: { type: "notes.list.request" },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.noteError("notes.list.request", payload);
+        return payload.notes;
+      },
+    });
+  }
+
+  /** Snapshot plus `notes.changed` updates while the caller holds the subscription. */
+  observeNotes(options?: { signal?: AbortSignal }): OwnedSubscription<NotesListPayload> {
+    return this.observe(
+      "notes.list.response",
+      { type: "notes.list.request", subscribe: {} },
+      options,
+    );
+  }
+
+  createNote(options: CreateNoteOptions): Promise<NoteRecord> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.create.response", NoteRecord>({
+      message: { type: "notes.create.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.note) throw this.noteError("notes.create.request", payload);
+        return payload.note;
+      },
+    });
+  }
+
+  editNote(options: EditNoteOptions): Promise<NoteRecord> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.edit.response", NoteRecord>({
+      message: { type: "notes.edit.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.note) throw this.noteError("notes.edit.request", payload);
+        return payload.note;
+      },
+    });
+  }
+
+  deleteNote(noteId: string): Promise<void> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.delete.response", void>({
+      message: { type: "notes.delete.request", noteId },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.noteError("notes.delete.request", payload);
+      },
+    });
+  }
+
+  private noteError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "Note request failed",
     });
   }
 
