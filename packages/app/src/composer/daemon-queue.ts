@@ -10,6 +10,7 @@ import {
   splitComposerAttachmentsForSubmit,
   type ComposerAttachmentSubmitFormat,
 } from "@/composer/attachments/submit";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import { createUserMessage, type StreamItem, type UserMessageItem } from "@/types/stream";
 import type {
   AttachmentPersister,
@@ -29,6 +30,7 @@ export interface DaemonQueueClient {
     text: string;
     images?: Array<{ data: string; mimeType: string }>;
     attachments?: AgentQueuedMessagePayload["attachments"];
+    attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
   }) => Promise<AgentQueuedMessageSummaryPayload>;
   removeQueuedAgentMessage: (input: {
     agentId: string;
@@ -79,6 +81,11 @@ export async function queueMessageOnDaemon(
       text: input.text,
       images: imagesData ?? [],
       attachments: wirePayload.attachments,
+      attachmentRefs: matchEncodedImageRefs(
+        wirePayload.attachmentRefs,
+        imagesData,
+        wirePayload.images,
+      ),
     });
     input.localMirror.write((prev) => {
       const next = new Map(prev);
@@ -121,21 +128,38 @@ export async function restoreQueuedMessageFromDaemon(
   if (mirrored) {
     return { id: removed.id, text: removed.text, attachments: mirrored.attachments };
   }
-  const attachments: ComposerAttachment[] = [];
-  for (const image of removed.images) {
+  // Rebuild in the order the `[Image #N]` / `[File #N]` labels name, so the text's tokens
+  // still point at the right attachment.
+  const rebuilt: Array<{ attachment: ComposerAttachment; position: number }> = [];
+  const positionOf = (key: "imageIndex" | "attachmentIndex", index: number) => {
+    const ref = removed.attachmentRefs?.find((candidate) => candidate[key] === index);
+    return Number(ref?.label.match(/#(\d+)$/)?.[1] ?? Number.MAX_SAFE_INTEGER);
+  };
+  for (const [index, image] of removed.images.entries()) {
     const metadata = await input.persister.persistFromDataUrl({
       dataUrl: `data:${image.mimeType};base64,${image.data}`,
       mimeType: image.mimeType,
       fileName: null,
     });
-    attachments.push({ kind: "image", metadata });
+    rebuilt.push({
+      attachment: { kind: "image", metadata },
+      position: positionOf("imageIndex", index),
+    });
   }
-  for (const attachment of removed.attachments) {
+  for (const [index, attachment] of removed.attachments.entries()) {
     if (attachment.type === "uploaded_file") {
-      attachments.push({ kind: "file", attachment });
+      rebuilt.push({
+        attachment: { kind: "file", attachment },
+        position: positionOf("attachmentIndex", index),
+      });
     }
   }
-  return { id: removed.id, text: removed.text, attachments };
+  rebuilt.sort((a, b) => a.position - b.position);
+  return {
+    id: removed.id,
+    text: removed.text,
+    attachments: rebuilt.map((item) => item.attachment),
+  };
 }
 
 export interface SendQueuedMessageNowOnDaemonInput {

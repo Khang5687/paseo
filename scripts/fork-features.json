@@ -636,6 +636,10 @@
     "tests": [
       "packages/app/src/composer/attachments/inline-refs.test.ts",
       "packages/server/src/server/agent/prompt-attachments.test.ts"
+    ],
+    "e2e": [
+      "packages/app/e2e/browser/agent-message-submission.spec.ts",
+      "packages/app/e2e/browser/queue-controls.spec.ts"
     ]
   }
 ]

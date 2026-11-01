@@ -142,8 +142,11 @@ function editRange(
 }
 
 /**
- * A user edit that touches part of a token removes the whole token and its attachment, so a
- * single backspace deletes a chip on every keyboard. Returns null when the edit needs no help.
+ * A deletion that falls inside one token (a backspace or delete on a chip, on any keyboard)
+ * removes the whole token and its attachment. Every other edit, including select-all + type,
+ * paste over, and programmatic replacement, leaves attachments alone: a token that leaves the
+ * text only stops naming its attachment, which still sends, labeled, after the text.
+ * Returns null when the edit needs no help.
  */
 export function reconcileInlineRefEdit(input: {
   previous: string;
@@ -153,47 +156,37 @@ export function reconcileInlineRefEdit(input: {
   const { previous, next, attachments } = input;
   const labels = inlineRefLabels(attachments);
   if (labels.size === 0 || previous === next) return null;
+  const { start, end, inserted } = editRange(previous, next);
+  if (inserted !== "") return null;
+
   const known = new Map<string, number>();
   for (const [index, label] of labels) known.set(label, index);
+  const touched = findInlineRefTokens(previous).filter(
+    (token) => known.has(token.label) && start < token.end && end > token.start,
+  );
+  const token = touched.length === 1 ? touched[0]! : null;
+  if (!token || start < token.start || end > token.end) return null;
 
-  const range = editRange(previous, next);
-  const { inserted } = range;
-  let { start, end } = range;
-  const previousTokens = findInlineRefTokens(previous).filter((token) => known.has(token.label));
-  let expanded = false;
-  for (const token of previousTokens) {
-    const touches =
-      start === end
-        ? start > token.start && start < token.end
-        : start < token.end && end > token.start;
-    if (touches) {
-      start = Math.min(start, token.start);
-      end = Math.max(end, token.end);
-      expanded = true;
-    }
-  }
   // Take the space the token was inserted with, so deleting a chip leaves no double space.
-  if (
-    expanded &&
-    inserted === "" &&
-    previous[end] === " " &&
-    /^$|\s$/.test(previous.slice(0, start))
-  ) {
-    end += 1;
+  const tokenEnd =
+    previous[token.end] === " " && /^$|\s$/.test(previous.slice(0, token.start))
+      ? token.end + 1
+      : token.end;
+  const text = previous.slice(0, token.start) + previous.slice(tokenEnd);
+  // A copy of the same token elsewhere keeps naming the attachment.
+  if (findInlineRefTokens(text).some((other) => other.label === token.label)) {
+    return {
+      text,
+      selection: { start: token.start, end: token.start },
+      attachments: [...attachments],
+    };
   }
-  const text = previous.slice(0, start) + inserted + previous.slice(end);
-  const caret = start + inserted.length;
-
-  const present = new Set(findInlineRefTokens(text).map((token) => token.label));
-  const removed = new Set<number>();
-  for (const token of previousTokens) {
-    if (!present.has(token.label)) removed.add(known.get(token.label)!);
-  }
-  if (removed.size === 0) {
-    if (text === next) return null;
-    return { text, selection: { start: caret, end: caret }, attachments: [...attachments] };
-  }
-  const result = removeInlineRefs({ text, attachments, removed, caret });
+  const result = removeInlineRefs({
+    text,
+    attachments,
+    removed: new Set([known.get(token.label)!]),
+    caret: token.start,
+  });
   return {
     text: result.text,
     selection: { start: result.caret, end: result.caret },

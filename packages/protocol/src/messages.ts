@@ -2914,6 +2914,7 @@ export const AgentQueuedMessagePayloadSchema = z.object({
   createdAt: z.string(),
   images: z.array(ImageAttachmentSchema),
   attachments: z.array(AgentAttachmentSchema),
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export type AgentQueuedMessagePayload = z.infer<typeof AgentQueuedMessagePayloadSchema>;
@@ -2925,6 +2926,7 @@ export const AgentQueueAddRequestSchema = z.object({
   text: z.string(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: z.array(AgentAttachmentSchema).optional(),
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export const AgentQueueRemoveRequestSchema = z.object({
