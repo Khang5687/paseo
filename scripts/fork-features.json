@@ -637,5 +637,13 @@
       "packages/app/src/composer/attachments/inline-refs.test.ts",
       "packages/server/src/server/agent/prompt-attachments.test.ts"
     ]
+  },
+  {
+    "pr": 81,
+    "title": "fix(queue): keep inline attachment labels on queued messages",
+    "tests": [
+      "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
+      "packages/app/src/composer/daemon-queue.test.ts"
+    ]
   }
 ]
