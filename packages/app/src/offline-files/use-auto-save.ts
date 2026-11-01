@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { fetchDaemonResolution } from "@/assistant-file-links/resolver";
 import { collectFileMentions } from "@/components/markdown/source";
 import { getAppSettings } from "@/hooks/use-settings";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
@@ -36,8 +37,23 @@ export function useOfflineAutoSave(input: {
       if (!(await getAppSettings()).offlineFilesAutoSave) return;
       for (const item of fresh) {
         scanned.current.add(item.id);
-        for (const path of collectFileMentions(item.text, { workspaceRoot })) {
-          void autoSaveOfflineFile({ serverId, client, canStat, workspaceRoot, path });
+        for (const mention of collectFileMentions(item.text, { workspaceRoot })) {
+          void autoSaveOfflineFile({
+            serverId,
+            client,
+            canStat,
+            workspaceRoot,
+            mention: mention.kind === "path" ? mention.path : mention.token,
+            resolvePath: async () => {
+              if (mention.kind === "path") return mention.path;
+              const target = await fetchDaemonResolution({
+                ...mention,
+                workspaceRoot,
+                getDirectorySuggestions: (query) => client.getDirectorySuggestions(query),
+              });
+              return target.path;
+            },
+          });
         }
       }
     })();

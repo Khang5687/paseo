@@ -12,7 +12,7 @@ const MB = 1024 * 1024;
 const RECHECK_MS = 10 * 60 * 1000;
 
 export type OfflineSaveResult =
-  | { status: "saved" | "fresh" | "skipped" }
+  | { status: "saved" | "fresh" }
   | { status: "tooLarge"; maxFileMb: number }
   | { status: "failed"; error: string };
 
@@ -26,6 +26,13 @@ export interface OfflineSaveRequest {
   path: string;
 }
 
+export interface OfflineAutoSaveRequest extends Omit<OfflineSaveRequest, "path"> {
+  /** The mention as the chat writes it; repeats within the recheck window are dropped. */
+  mention: string;
+  /** Finds the file, asking the host for bare names; null when it has none. */
+  resolvePath: () => Promise<string | null>;
+}
+
 const inFlight = new Map<string, Promise<OfflineSaveResult>>();
 const checkedAt = new Map<string, number>();
 let autoTail: Promise<unknown> = Promise.resolve();
@@ -34,23 +41,26 @@ let autoTail: Promise<unknown> = Promise.resolve();
  * Saves a file the chat mentions, when automatic saving is on, the app is in the foreground and
  * the device is on Wi-Fi. Automatic saves run one at a time.
  */
-export function autoSaveOfflineFile(request: OfflineSaveRequest): Promise<void> {
-  const key = fileKey(request);
-  const last = checkedAt.get(key);
-  if (inFlight.has(key) || (last && Date.now() - last < RECHECK_MS)) return Promise.resolve();
-  checkedAt.set(key, Date.now());
+export function autoSaveOfflineFile(request: OfflineAutoSaveRequest): Promise<void> {
+  const mentionKey = `${request.serverId}\n${request.workspaceRoot}\n${request.mention}`;
+  const last = checkedAt.get(mentionKey);
+  if (last && Date.now() - last < RECHECK_MS) return Promise.resolve();
+  checkedAt.set(mentionKey, Date.now());
   const next = (async () => {
     await autoTail;
     const settings = await getAppSettings();
-    if (AppState.currentState !== "active" || !settings.offlineFilesAutoSave) {
-      checkedAt.delete(key);
+    if (
+      AppState.currentState !== "active" ||
+      !settings.offlineFilesAutoSave ||
+      !(await isOnUnmeteredNetwork())
+    ) {
+      checkedAt.delete(mentionKey);
       return;
     }
-    if (!(await isOnUnmeteredNetwork())) {
-      checkedAt.delete(key);
-      return;
-    }
-    await run(key, request);
+    const path = await request.resolvePath().catch(() => null);
+    if (!path) return;
+    const save = { ...request, path };
+    await run(fileKey(save), save);
   })();
   autoTail = next.catch(() => undefined);
   return next;
@@ -58,9 +68,7 @@ export function autoSaveOfflineFile(request: OfflineSaveRequest): Promise<void> 
 
 /** Saves a file the user asked for, on any network. */
 export function saveOfflineFileNow(request: OfflineSaveRequest): Promise<OfflineSaveResult> {
-  const key = fileKey(request);
-  checkedAt.set(key, Date.now());
-  return run(key, request);
+  return run(fileKey(request), request);
 }
 
 function run(key: string, request: OfflineSaveRequest): Promise<OfflineSaveResult> {

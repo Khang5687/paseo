@@ -124,6 +124,31 @@ export function getOfflineFile(serverId: string, path: string): Promise<OfflineF
   return load().then((all) => all.find((entry) => sameFile(entry, serverId, path)) ?? null);
 }
 
+/**
+ * Saved files of one host under `cwd` whose path ends with `query`, newest first, relative to
+ * `cwd`. Answers the bare-name lookups chat links make while the host is offline.
+ */
+export function matchOfflineFiles(
+  current: readonly OfflineFile[],
+  input: { serverId: string; cwd: string; query: string },
+): string[] {
+  const prefix = `${input.cwd.replace(/[\\/]+$/, "")}/`;
+  const query = input.query.replace(/^[\\/]+/, "");
+  return current
+    .filter((entry) => entry.serverId === input.serverId && entry.path.startsWith(prefix))
+    .sort((a, b) => b.savedAt - a.savedAt)
+    .map((entry) => entry.path.slice(prefix.length))
+    .filter((relative) => relative === query || relative.endsWith(`/${query}`));
+}
+
+export async function findOfflineFiles(input: {
+  serverId: string;
+  cwd: string;
+  query: string;
+}): Promise<string[]> {
+  return matchOfflineFiles(await load(), input);
+}
+
 export function saveOfflineFile(input: {
   serverId: string;
   path: string;

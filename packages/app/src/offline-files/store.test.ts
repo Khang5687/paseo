@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  isSameOfflineVersion,
+  matchOfflineFiles,
+  selectOfflineEvictions,
+  type OfflineFile,
+} from "./store";
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: vi.fn(), setItem: vi.fn() },
 }));
 vi.mock("@/attachments/service", () => ({}));
-
-const { isSameOfflineVersion, selectOfflineEvictions } = await import("./store");
-type OfflineFile = Parameters<typeof selectOfflineEvictions>[0][number];
 
 const DAY = 24 * 60 * 60 * 1000;
 const MB = 1024 * 1024;
@@ -67,5 +70,23 @@ describe("isSameOfflineVersion", () => {
     );
     expect(isSameOfflineVersion(base, { ...base })).toBe(true);
     expect(isSameOfflineVersion(base, { ...base, modifiedAt: "b" })).toBe(false);
+  });
+});
+
+describe("matchOfflineFiles", () => {
+  it("finds saved files of the host under the workspace by name, newest first", () => {
+    const saved = [
+      file("/repo/a/notes.txt", NOW - 2 * DAY),
+      file("/repo/b/notes.txt", NOW - DAY),
+      file("/repo/b/old-notes.txt", NOW),
+      file("/other/notes.txt", NOW),
+      { ...file("/repo/c/notes.txt", NOW), serverId: "other-host" },
+    ];
+    expect(
+      matchOfflineFiles(saved, { serverId: "host", cwd: "/repo/", query: "notes.txt" }),
+    ).toEqual(["b/notes.txt", "a/notes.txt"]);
+    expect(
+      matchOfflineFiles(saved, { serverId: "host", cwd: "/repo", query: "a/notes.txt" }),
+    ).toEqual(["a/notes.txt"]);
   });
 });

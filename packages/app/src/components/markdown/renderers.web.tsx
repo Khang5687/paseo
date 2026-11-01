@@ -1,10 +1,11 @@
-import { Text, type ViewStyle } from "react-native";
+import { Text } from "react-native";
 import {
   forwardRef,
   useCallback,
   useMemo,
   useState,
   type ComponentProps,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import type {
@@ -13,16 +14,16 @@ import type {
   MarkdownRenderers,
 } from "react-native-enriched-markdown";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { useFileLink } from "@/assistant-file-links";
+import { useTranslation } from "react-i18next";
+import { useFileLink, type AssistantFileLinkSource } from "@/assistant-file-links";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuTrigger,
+  useContextMenu,
 } from "@/components/ui/context-menu";
 import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
-import { useTranslation } from "react-i18next";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import type { Theme } from "@/styles/theme";
 import { MermaidFence } from "./fence/mermaid";
@@ -62,52 +63,60 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
     }),
     [anchorProps.style, hovered],
   );
-  const anchor = (
-    <a
-      {...anchorProps}
-      style={anchorStyle}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      {children}
-    </a>
+  const renderLink = useCallback(
+    (onContextMenu?: (event: MouseEvent<HTMLAnchorElement>) => void) => (
+      <Tooltip delayDuration={400}>
+        <TooltipTrigger asChild onHoverIn={onHoverIn}>
+          <InlineLinkTrigger>
+            <a
+              {...anchorProps}
+              style={anchorStyle}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              onContextMenu={onContextMenu}
+            >
+              {children}
+            </a>
+          </InlineLinkTrigger>
+        </TooltipTrigger>
+        {tooltipPath ? (
+          <TooltipContent side="top" align="start" maxWidth={520}>
+            <Text selectable={false} style={styles.tooltipPath}>
+              {tooltipPath}
+            </Text>
+          </TooltipContent>
+        ) : null}
+      </Tooltip>
+    ),
+    [
+      anchorProps,
+      anchorStyle,
+      children,
+      handleMouseEnter,
+      handleMouseLeave,
+      onHoverIn,
+      tooltipPath,
+    ],
   );
-  return (
-    <Tooltip delayDuration={400}>
-      <TooltipTrigger asChild onHoverIn={onHoverIn}>
-        <InlineLinkTrigger>
-          {isFile ? <FileLinkMenu source={source}>{anchor}</FileLinkMenu> : anchor}
-        </InlineLinkTrigger>
-      </TooltipTrigger>
-      {tooltipPath ? (
-        <TooltipContent side="top" align="start" maxWidth={520}>
-          <Text selectable={false} style={styles.tooltipPath}>
-            {tooltipPath}
-          </Text>
-        </TooltipContent>
-      ) : null}
-    </Tooltip>
-  );
+  return isFile ? <FileLinkMenu source={source} renderLink={renderLink} /> : renderLink();
 }
-// "contents" leaves no box, so a long path still wraps across lines like the bare link does.
-const MENU_TRIGGER_STYLE = { display: "contents" } as unknown as ViewStyle;
+
+type RenderLink = (onContextMenu: (event: MouseEvent<HTMLAnchorElement>) => void) => ReactNode;
 
 /** Right click, or a long press in a phone browser, offers to save a file link for offline use. */
 function FileLinkMenu({
   source,
-  children,
+  renderLink,
 }: {
-  source: ReturnType<typeof markdownLinkSource>;
-  children: ReactNode;
+  source: AssistantFileLinkSource;
+  renderLink: RenderLink;
 }) {
   const { t } = useTranslation();
   const saveOffline = useSaveFileLinkOffline();
   const save = useCallback(() => saveOffline(source), [saveOffline, source]);
   return (
     <ContextMenu>
-      <ContextMenuTrigger contextOnly style={MENU_TRIGGER_STYLE}>
-        {children}
-      </ContextMenuTrigger>
+      <FileLinkMenuTrigger renderLink={renderLink} />
       <ContextMenuContent align="start" minWidth={180} testID="file-link-context-menu">
         <ContextMenuItem onSelect={save} testID="file-link-save-offline">
           {t("offlineFiles.saveOffline")}
@@ -115,6 +124,22 @@ function FileLinkMenu({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+// ContextMenuTrigger renders a View, and a div is invalid inside the library's prose paragraphs,
+// so the link's own anchor opens the menu at the pointer.
+function FileLinkMenuTrigger({ renderLink }: { renderLink: RenderLink }) {
+  const menu = useContextMenu();
+  const open = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      menu.setAnchorRect({ x: event.pageX, y: event.pageY, width: 0, height: 0 });
+      menu.setOpen(true);
+    },
+    [menu],
+  );
+  return renderLink(open);
 }
 
 // TooltipTrigger also supplies native Pressable handlers; forward only DOM events.

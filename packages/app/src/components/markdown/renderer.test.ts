@@ -241,11 +241,18 @@ describe("file mentions saved for offline use", () => {
       'import x from "/repo/src/hidden.ts";',
       "```",
     ].join("\n");
-    expect(collectFileMentions(source, { workspaceRoot: "/repo" }).sort()).toEqual([
-      "/repo/README.md",
-      "/repo/docs/plan.md",
-      "/repo/src/app.ts",
-    ]);
+    const paths = collectFileMentions(source, { workspaceRoot: "/repo" }).map((mention) =>
+      mention.kind === "path" ? mention.path : `lookup:${mention.token}`,
+    );
+    expect(paths.sort()).toEqual(["/repo/README.md", "/repo/docs/plan.md", "/repo/src/app.ts"]);
+  });
+
+  it("keeps bare file names for the host to find", () => {
+    const mentions = collectFileMentions("Updated `notes.txt` twice: `notes.txt`.", {
+      workspaceRoot: "/repo",
+    });
+    expect(mentions).toHaveLength(1);
+    expect(mentions[0]).toMatchObject({ kind: "needsLookup", token: "notes.txt" });
   });
 });
 
