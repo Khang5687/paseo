@@ -633,7 +633,9 @@
   {
     "pr": 80,
     "title": "feat(app): inline attachment references in the composer",
-    "tests": [],
-    "retired": "reverted in a38079a85: replacing the composer text drops attached images (agent-message-submission and queue-controls e2e failed); PR back to blocked"
+    "tests": [
+      "packages/app/src/composer/attachments/inline-refs.test.ts",
+      "packages/server/src/server/agent/prompt-attachments.test.ts"
+    ]
   }
 ]

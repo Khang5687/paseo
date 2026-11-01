@@ -4,6 +4,7 @@ import type {
 } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload, CreationSnapshot } from "@getpaseo/protocol/messages";
 import { encodeImages } from "@/utils/encode-images";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -460,6 +461,7 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
     clientMessageId: `${input.draftId}:initial-message`,
     images: images?.length ? images : undefined,
     attachments: wirePayload.attachments?.length ? wirePayload.attachments : undefined,
+    attachmentRefs: matchEncodedImageRefs(wirePayload.attachmentRefs, images, wirePayload.images),
   };
   const execute = async (requestedAgent = initialAgent): Promise<AgentSnapshotPayload> => {
     const { agent } = await ensureWorkspace({

@@ -1,3 +1,4 @@
+import { findInlineRefTokens } from "@/composer/attachments/inline-refs";
 import { MessagePreview, MessageSender } from "@/components/user-message";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
@@ -312,6 +313,11 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     minWidth: 0,
     flexShrink: 1,
   },
+  inlineRef: {
+    color: theme.colors.accent,
+    backgroundColor: theme.colors.surface1,
+    borderRadius: theme.borderRadius.sm,
+  },
   text: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.content,
@@ -380,6 +386,25 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
 }
 
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
+
+/** `[Image #1]`-style attachment tokens render as chips where the user typed them. */
+function renderInlineRefChips(text: string): ReactNode {
+  const tokens = findInlineRefTokens(text);
+  if (tokens.length === 0) return text;
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const token of tokens) {
+    if (token.start > at) parts.push(text.slice(at, token.start));
+    parts.push(
+      <Text key={token.start} style={userMessageStylesheet.inlineRef}>
+        {text.slice(token.start, token.end)}
+      </Text>,
+    );
+    at = token.end;
+  }
+  if (at < text.length) parts.push(text.slice(at));
+  return parts;
+}
 
 export const UserMessage = memo(function UserMessage({
   sender,
@@ -506,7 +531,7 @@ export const UserMessage = memo(function UserMessage({
             ) : null}
             {hasText ? (
               <Text selectable style={userMessageStylesheet.text} dataSet={MESSAGE_TEXT_DATASET}>
-                {message}
+                {renderInlineRefChips(message)}
               </Text>
             ) : null}
           </MessagePreview>
