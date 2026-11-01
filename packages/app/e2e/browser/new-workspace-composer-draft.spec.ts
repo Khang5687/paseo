@@ -1,3 +1,4 @@
+import { chooseModel, startWithoutRememberedModel } from "../support/helpers/model-memory";
 import {
   composerLocator,
   enterComposerFullscreen,
@@ -133,6 +134,7 @@ test.describe("New workspace composer draft", () => {
     const project = await seedWorkspace({ repoPrefix: "new-workspace-submitted-draft-" });
 
     try {
+      await startWithoutRememberedModel(page);
       await gotoAppShell(page);
       await waitForSidebarHydration(page);
       await openNewWorkspaceComposer(page, {
@@ -140,6 +142,7 @@ test.describe("New workspace composer draft", () => {
         projectDisplayName: project.projectDisplayName,
       });
 
+      await chooseModel(page, "mock", "Ten second stream");
       const composer = page.getByRole("textbox", { name: "Message agent..." });
       const createButton = page.getByTestId("workspace-create-submit");
       await expect(composer).toBeEditable({ timeout: 30_000 });

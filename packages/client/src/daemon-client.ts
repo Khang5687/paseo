@@ -1,4 +1,8 @@
 import {
+  ChunkedTransport,
+  ChunkedTransportProtocolError,
+} from "@getpaseo/protocol/chunked-transport";
+import {
   HOST_ROUTE_OPCODE,
   encodeHostRouteFrame,
   decodeHostRouteFrame,
@@ -1470,7 +1474,7 @@ function toReasonCode(reason: string | null | undefined): string | null {
 }
 
 interface PendingSend {
-  send: () => void;
+  send: () => void | Promise<void>;
   resolve: () => void;
   reject: (error: Error) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
@@ -1570,6 +1574,7 @@ export class DaemonClient {
     failed: (error) => this.logger.error({ err: error }, "Subscription failed"),
   });
   private transport: DaemonTransport | null = null;
+  private chunkedTransport: ChunkedTransport | null = null;
   private helloAuth: HelloAuth;
   private transportCleanup: Array<() => void> = [];
   private rawMessageListeners: Set<(message: SessionOutboundMessage) => void> = new Set();
@@ -1765,6 +1770,17 @@ export class DaemonClient {
       });
       this.traceConnectionAttempt += 1;
       this.transport = transport;
+      this.chunkedTransport = new ChunkedTransport({
+        get supportsDrain() {
+          return transport.supportsDrain;
+        },
+        get frameBytes() {
+          return transport.maxFrameBytes ?? 32 * 1024 * 1024;
+        },
+        send: (frame) => transport.send(frame),
+        onFailure: () => transport.close(4003, "Transport send failed"),
+        deliver: (frame) => this.handleTransportMessage(frame),
+      });
       this.lastServerInfoMessage = null;
       this.authFailureReasonValue = null;
 
@@ -1871,7 +1887,16 @@ export class DaemonClient {
           });
         }),
         transport.onMessage((data) => {
-          if (this.transport === transport) this.handleTransportMessage(data);
+          if (this.transport !== transport) return;
+          const bytes = asUint8Array(data);
+          try {
+            if (typeof data === "string" || bytes)
+              this.chunkedTransport!.receive(typeof data === "string" ? data : bytes!);
+            else this.handleTransportMessage(data);
+          } catch (error) {
+            if (!(error instanceof ChunkedTransportProtocolError)) throw error;
+            transport.close(4003, "Invalid chunked transport");
+          }
         }),
       ];
     } catch (error) {
@@ -2073,9 +2098,9 @@ export class DaemonClient {
       })
     ).routeId;
   }
-  sendHostFrame(routeId: string, data: string | Uint8Array): void {
+  sendHostFrame(routeId: string, data: string | Uint8Array): Promise<void> {
     if (typeof data === "string") {
-      this.sendSessionMessageStrict({
+      return this.sendSessionMessageStrict({
         type: "hosts.route.frame.request",
         routeId,
         data,
@@ -2083,7 +2108,7 @@ export class DaemonClient {
       });
     } else {
       if (!this.isConnected || !this.transport) throw this.unavailableError();
-      this.sendTransportFrame(encodeHostRouteFrame(routeId, data));
+      return this.sendTransportFrame(encodeHostRouteFrame(routeId, data));
     }
   }
   private readonly hostFrameListeners = new Set<(frame: HostRouteFrame) => void>();
@@ -2140,6 +2165,11 @@ export class DaemonClient {
   // ============================================================================
   // Message Subscription
   // ============================================================================
+
+  /** Drain capability inherited by transports routed through this connection. */
+  get supportsDrain(): boolean {
+    return this.transport?.supportsDrain !== false;
+  }
 
   subscribe(handler: DaemonEventHandler): () => void {
     this.eventListeners.add(handler);
@@ -2249,7 +2279,7 @@ export class DaemonClient {
     messageType: string,
     message: unknown,
     submitted?: () => void,
-  ): void {
+  ): Promise<void> {
     const isOpen =
       this.config.trace?.isEnabled() === true &&
       this.beginTraceSection("paseo.ws.message.outbound", {
@@ -2258,25 +2288,30 @@ export class DaemonClient {
         ...describeRequestIdentity(message),
       });
     try {
-      this.sendTransportFrame(JSON.stringify(message), submitted);
+      return this.sendTransportFrame(JSON.stringify(message), submitted);
     } finally {
       this.endTraceSection(isOpen);
     }
   }
 
-  private sendSessionPayload(payload: SessionInboundMessage): void {
-    this.sendJsonMessage("session", payload.type, { type: "session", message: payload }, () => {
-      if (!("requestId" in payload) || typeof payload.requestId !== "string") return;
-      for (const waiter of this.waiters) {
-        if (waiter.requestId === payload.requestId) waiter.submitted = true;
-      }
-    });
+  private sendSessionPayload(payload: SessionInboundMessage): Promise<void> {
+    return this.sendJsonMessage(
+      "session",
+      payload.type,
+      { type: "session", message: payload },
+      () => {
+        if (!("requestId" in payload) || typeof payload.requestId !== "string") return;
+        for (const waiter of this.waiters) {
+          if (waiter.requestId === payload.requestId) waiter.submitted = true;
+        }
+      },
+    );
   }
 
   private sendTransportFrame(
     frame: string | Uint8Array | ArrayBuffer,
     submitted?: () => void,
-  ): void {
+  ): Promise<void> {
     if (!this.transport) {
       throw this.unavailableError();
     }
@@ -2289,7 +2324,8 @@ export class DaemonClient {
     });
     try {
       submitted?.();
-      this.transport.send(frame);
+      const payload = typeof frame === "string" ? frame : asUint8Array(frame)!;
+      return this.chunkedTransport!.send(payload);
     } finally {
       this.endTraceSection(isOpen);
     }
@@ -2318,10 +2354,10 @@ export class DaemonClient {
     }
   }
 
-  private sendBinaryFrame(frame: Uint8Array): void {
+  private sendBinaryFrame(frame: Uint8Array): Promise<void> {
     if (!this.transport || this.connectionState.status !== "connected") {
       if (this.config.suppressSendErrors) {
-        return;
+        return Promise.resolve();
       }
       throw new Error(`Transport not connected (status: ${this.connectionState.status})`);
     }
@@ -2330,10 +2366,10 @@ export class DaemonClient {
         envelopeType: "binary",
         messageType: "binary",
       });
-      this.sendTransportFrame(frame);
+      return this.sendTransportFrame(frame);
     } catch (error) {
       if (this.config.suppressSendErrors) {
-        return;
+        return Promise.resolve();
       }
       throw error instanceof Error ? error : new Error(String(error));
     }
@@ -2348,7 +2384,7 @@ export class DaemonClient {
   private sendSessionMessageOrThrow(message: SessionInboundMessage): Promise<void> {
     return this.sendWhenConnected(() => {
       const payload = SessionInboundMessageSchema.parse(message);
-      this.sendSessionPayload(payload);
+      return this.sendSessionPayload(payload);
     });
   }
 
@@ -2357,13 +2393,12 @@ export class DaemonClient {
     return this.sendWhenConnected(() => undefined);
   }
 
-  private sendWhenConnected(send: () => void): Promise<void> {
+  private sendWhenConnected(send: () => void | Promise<void>): Promise<void> {
     const status = this.connectionState.status;
 
     // If connected, send immediately
     if (this.transport && status === "connected") {
-      send();
-      return Promise.resolve();
+      return Promise.resolve(send());
     }
 
     // If connecting, queue the message to be sent once connected
@@ -2402,8 +2437,7 @@ export class DaemonClient {
       clearTimeout(pending.timeoutHandle);
       try {
         if (this.transport && this.connectionState.status === "connected") {
-          pending.send();
-          pending.resolve();
+          void Promise.resolve(pending.send()).then(pending.resolve, pending.reject);
         } else {
           pending.reject(new DaemonConnectionError("Connection lost before message could be sent"));
         }
@@ -2459,24 +2493,21 @@ export class DaemonClient {
       { ...params.options, requestId: params.requestId, signal: params.options?.signal },
     );
 
-    if (params.options?.signal?.aborted) {
-      const reason = params.options.signal.reason;
-      cancel(reason instanceof Error ? reason : new Error("Request aborted"));
-    } else {
-      try {
-        await this.sendSessionMessageOrThrow(wire.message);
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        cancel(err);
-        void promise.catch(() => undefined);
-        throw err;
-      }
-    }
-
+    // The response deadline still applies while the transport waits for drain.
+    void promise.catch(() => undefined);
     try {
-      const result = await promise;
+      if (params.options?.signal?.aborted) {
+        const reason = params.options.signal.reason;
+        throw reason instanceof Error ? reason : new Error("Request aborted");
+      }
+      const sent = this.sendSessionMessageOrThrow(wire.message);
+      const result = await Promise.race([promise, sent.then(() => promise)]);
       if (result.kind === "error") throw result.error;
       return result.value;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      cancel(err);
+      throw err;
     } finally {
       await wire.finish();
     }
@@ -2569,13 +2600,13 @@ export class DaemonClient {
     });
   }
 
-  private sendSessionMessageStrict(message: SessionInboundMessage): void {
+  private sendSessionMessageStrict(message: SessionInboundMessage): Promise<void> {
     if (!this.transport || this.connectionState.status !== "connected") {
       throw this.unavailableError();
     }
     const payload = SessionInboundMessageSchema.parse(message);
     try {
-      this.sendSessionPayload(payload);
+      return this.sendSessionPayload(payload);
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error));
     }
@@ -2914,15 +2945,16 @@ export class DaemonClient {
     };
     this.pingProbe = probe;
 
-    try {
-      this.sendJsonMessage("ping", "ping", { type: "ping" });
-    } catch (error) {
-      this.clearPingProbe();
+    const rejectSend = (error: unknown) => {
+      if (this.pingProbe !== probe) return;
       const sendError = error instanceof Error ? error : new Error(String(error));
-      if (probe.drivesLivenessFailure) {
-        this.recordLivenessFailure(sendError);
-      }
-      return Promise.reject(sendError);
+      this.rejectPingProbe(sendError);
+      if (probe.drivesLivenessFailure) this.recordLivenessFailure(sendError);
+    };
+    try {
+      void this.sendJsonMessage("ping", "ping", { type: "ping" }).catch(rejectSend);
+    } catch (error) {
+      rejectSend(error);
     }
 
     return promise;
@@ -4842,7 +4874,7 @@ export class DaemonClient {
   }
 
   async sendVoiceAudioChunk(audio: string, format: string, isLast = false): Promise<void> {
-    this.sendSessionMessage({ type: "voice_audio_chunk", audio, format, isLast });
+    return this.sendSessionMessageStrict({ type: "voice_audio_chunk", audio, format, isLast });
   }
 
   async startDictationStream(dictationId: string, format: string): Promise<void> {
@@ -4883,8 +4915,13 @@ export class DaemonClient {
 
     const cleanupError = new Error("Cancelled dictation start waiter");
     try {
-      this.sendSessionMessageStrict({ type: "dictation_stream_start", dictationId, format });
-      await Promise.race([ackPromise, errorPromise]);
+      const sent = this.sendSessionMessageStrict({
+        type: "dictation_stream_start",
+        dictationId,
+        format,
+      });
+      const response = Promise.race([ackPromise, errorPromise]);
+      await Promise.race([response, sent.then(() => response)]);
     } finally {
       ack.cancel(cleanupError);
       streamError.cancel(cleanupError);
@@ -5019,12 +5056,17 @@ export class DaemonClient {
 
     const cleanupError = new Error("Cancelled dictation finish waiter");
     try {
-      this.sendSessionMessageStrict({ type: "dictation_stream_finish", dictationId, finalSeq });
-      const firstOutcome = await Promise.race([
+      const sent = this.sendSessionMessageStrict({
+        type: "dictation_stream_finish",
+        dictationId,
+        finalSeq,
+      });
+      const response = Promise.race([
         finalOutcomePromise,
         errorOutcomePromise,
         finishAcceptedOutcomePromise,
       ]);
+      const firstOutcome = await Promise.race([response, sent.then(() => response)]);
 
       if (firstOutcome.kind === "final") {
         return firstOutcome.payload;
@@ -5940,8 +5982,10 @@ export class DaemonClient {
         return undefined;
       },
     );
+    const sendFrame = (frame: Uint8Array) =>
+      Promise.race([this.sendBinaryFrame(frame), responsePromise]);
     try {
-      this.sendBinaryFrame(
+      await sendFrame(
         encodeFileTransferFrame({
           opcode: FileTransferOpcode.FileBegin,
           requestId: resolvedRequestId,
@@ -5955,6 +5999,7 @@ export class DaemonClient {
         }),
       );
 
+      if (settled) return await responsePromise;
       const chunkSize = input.chunkSize ?? 128 * 1024;
       for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
         // Native WebSocket.send encodes binary synchronously. Let rendering and
@@ -5964,7 +6009,7 @@ export class DaemonClient {
         if (this.transport !== uploadTransport || this.connectionState.status !== "connected") {
           throw new DaemonConnectionError("Connection changed during file upload");
         }
-        this.sendBinaryFrame(
+        await sendFrame(
           encodeFileTransferFrame({
             opcode: FileTransferOpcode.FileChunk,
             requestId: resolvedRequestId,
@@ -5973,7 +6018,7 @@ export class DaemonClient {
         );
       }
 
-      this.sendBinaryFrame(
+      await sendFrame(
         encodeFileTransferFrame({
           opcode: FileTransferOpcode.FileEnd,
           requestId: resolvedRequestId,
@@ -7034,7 +7079,8 @@ export class DaemonClient {
   }
 
   /**
-   * Snapshot/restore and output arrive in receive. Subscribe to the returned handle
+   * Defaults to a full ANSI replay. Replay begin/data/end and live output arrive in receive.
+   * Subscribe to the returned handle
    * for terminal_stream_exit: payload.error means observation failure, not PTY exit.
    * Either outcome detaches this slot and releases the handle automatically.
    */
@@ -7053,7 +7099,7 @@ export class DaemonClient {
       {
         type: "subscribe_terminal_request",
         terminalId,
-        ...(options?.restore ? { restore: options.restore } : {}),
+        restore: options?.restore ?? { mode: "full-snapshot" },
       },
       options,
     );
@@ -7380,6 +7426,8 @@ export class DaemonClient {
   }
 
   private disposeTransport(code = 1001, reason = "Reconnecting"): void {
+    this.chunkedTransport?.close();
+    this.chunkedTransport = null;
     this.owned.disconnected();
     this.providerSnapshotUpdates.clear();
     this.stopLivenessHeartbeat();
@@ -7854,15 +7902,6 @@ export class DaemonClient {
     probe.resolve(perfNow() - probe.startedAt);
   }
 
-  private clearPingProbe(): void {
-    const probe = this.pingProbe;
-    if (!probe) {
-      return;
-    }
-    this.pingProbe = null;
-    clearTimeout(probe.timeoutHandle);
-  }
-
   private rejectPingProbe(error: Error): void {
     const probe = this.pingProbe;
     if (!probe) {
@@ -7911,6 +7950,10 @@ export class DaemonClient {
     if (consumerMessage.type === "status") {
       const serverInfo = parseServerInfoStatusPayload(consumerMessage.payload);
       if (serverInfo) {
+        if (this.chunkedTransport)
+          this.chunkedTransport.enabled =
+            serverInfo.features?.binaryChunkingV1 === true &&
+            this.config.capabilities?.[CLIENT_CAPS.binaryChunkingV1] !== false;
         this.lastServerInfoMessage = serverInfo;
         this.destinationServerId = serverInfo.serverId;
         this.connectionFailure = undefined;

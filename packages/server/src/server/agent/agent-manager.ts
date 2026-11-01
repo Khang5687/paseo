@@ -3333,7 +3333,13 @@ export class AgentManager {
         expectedTurnId,
       });
       if (admission.status === "accepted") {
-        await this.recordAcceptedSteer(agent, prompt, options?.clientMessageId, expectedTurnId);
+        await this.recordAcceptedSteer(
+          agent,
+          prompt,
+          options?.clientMessageId,
+          expectedTurnId,
+          admission.providerMessageId,
+        );
       }
       return admission;
     });
@@ -3366,7 +3372,13 @@ export class AgentManager {
             expectedTurnId,
           });
           if (admission.status === "accepted") {
-            await this.recordAcceptedSteer(agent, prompt, options?.clientMessageId, expectedTurnId);
+            await this.recordAcceptedSteer(
+              agent,
+              prompt,
+              options?.clientMessageId,
+              expectedTurnId,
+              admission.providerMessageId,
+            );
           }
           return admission;
         })
@@ -3471,6 +3483,7 @@ export class AgentManager {
     prompt: AgentPromptInput,
     clientMessageId: string | undefined,
     expectedTurnId: string,
+    providerMessageId: string | undefined,
   ): Promise<void> {
     if (!clientMessageId) {
       return;
@@ -3478,6 +3491,7 @@ export class AgentManager {
     this.recordSubmittedPrompt(agent, prompt, clientMessageId, "accepted", {
       messageId: clientMessageId,
       turnId: expectedTurnId,
+      ...(providerMessageId ? { providerMessageId } : {}),
     });
     this.emitState(agent);
   }
@@ -3809,6 +3823,10 @@ export class AgentManager {
         "agent.rewind.complete",
       );
     } catch (error) {
+      // Native rewind can commit a fork before history refresh fails. Recovery
+      // must resume that latest handle rather than the abandoned conversation.
+      this.refreshSessionPersistence(agent);
+      await this.persistSnapshot(agent);
       this.logger.warn(
         { err: error, agentId, provider: agent.provider, messageId, mode },
         "agent.rewind.failed",
