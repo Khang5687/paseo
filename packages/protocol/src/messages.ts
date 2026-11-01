@@ -1251,6 +1251,18 @@ const ImageAttachmentSchema = z.object({
   mimeType: z.string(), // e.g., "image/jpeg", "image/png"
 });
 
+/**
+ * Maps a placeholder the user typed in `text` (as `[label]`, e.g. `[Image #1]`) to the image or
+ * attachment it names. Exactly one of `imageIndex` (into `images`) or `attachmentIndex` (into
+ * `attachments`) is set. Daemons without `features.inlineAttachmentRefs` ignore it.
+ */
+export const InlineAttachmentRefSchema = z.object({
+  label: z.string(),
+  imageIndex: z.number().int().nonnegative().optional(),
+  attachmentIndex: z.number().int().nonnegative().optional(),
+});
+export type InlineAttachmentRef = z.infer<typeof InlineAttachmentRefSchema>;
+
 export const ActiveTurnBehaviorSchema = z.enum(["interrupt", "steer"]);
 export type ActiveTurnBehavior = z.infer<typeof ActiveTurnBehaviorSchema>;
 
@@ -1262,6 +1274,7 @@ export const SendAgentMessageSchema = z.object({
   activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 // ============================================================================
@@ -1424,6 +1437,7 @@ export const SendAgentMessageRequestSchema = z.object({
   activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export const WaitForFinishRequestSchema = z.object({
@@ -1777,6 +1791,7 @@ export const CreateAgentRequestMessageSchema = z.object({
   outputSchema: z.record(z.string(), z.unknown()).optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
   git: GitSetupOptionsSchema.optional(),
   worktree: CreateAgentWorktreeTargetSchema.optional(),
   autoArchive: z.boolean().optional(),
@@ -3841,6 +3856,8 @@ export const ServerInfoStatusPayloadSchema = z
         canonicalSubmittedPrompts: z.boolean().optional(),
         agentMessageProvenance: z.boolean().optional(),
         agentMessageBatching: z.boolean().optional(),
+        // COMPAT(inlineAttachmentRefs): added in v0.14.1, remove gate after 2027-05-01.
+        inlineAttachmentRefs: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): accept peers that observed pre-release v0.2.6 through 2027-01-31.
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.

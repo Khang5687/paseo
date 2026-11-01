@@ -91,6 +91,13 @@ import {
   type QueueWriter,
   type QueuedComposerMessage,
 } from "@/composer/actions";
+import {
+  inlineRefLabels,
+  insertInlineRefTokens,
+  isInlineRefAttachment,
+  reconcileInlineRefEdit,
+  removeInlineRefs,
+} from "@/composer/attachments/inline-refs";
 import { useVoiceOptional } from "@/contexts/voice-context";
 import { useToast } from "@/contexts/toast-context";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -326,6 +333,7 @@ interface RenderAttachmentTrayArgs {
   isComposerLocked: boolean;
   handleOpenAttachment: (attachment: ComposerAttachment) => void;
   handleRemoveAttachment: (index: number) => void;
+  inlineRefsEnabled: boolean;
   labels: {
     openImage: string;
     removeImage: string;
@@ -343,9 +351,11 @@ function renderAttachmentTray(args: RenderAttachmentTrayArgs): ReactElement | nu
     isComposerLocked,
     handleOpenAttachment,
     handleRemoveAttachment,
+    inlineRefsEnabled,
     labels,
   } = args;
   if (selectedAttachments.length === 0 && pendingFiles.length === 0) return null;
+  const refLabels = inlineRefsEnabled ? inlineRefLabels(selectedAttachments) : null;
   return (
     <View style={styles.attachmentTray} testID="composer-attachment-tray">
       {selectedAttachments.map((attachment, index) =>
@@ -353,6 +363,7 @@ function renderAttachmentTray(args: RenderAttachmentTrayArgs): ReactElement | nu
           serverId,
           attachment,
           index,
+          refNumber: refLabels?.get(index)?.replace(/^\S+ /, ""),
           disabled: isComposerLocked,
           onOpen: handleOpenAttachment,
           onRemove: handleRemoveAttachment,
@@ -404,6 +415,7 @@ interface RenderComposerAttachmentPillArgs {
   serverId: string;
   attachment: ComposerAttachment;
   index: number;
+  refNumber?: string;
   disabled: boolean;
   onOpen: (attachment: ComposerAttachment) => void;
   onRemove: (index: number) => void;
@@ -411,13 +423,14 @@ interface RenderComposerAttachmentPillArgs {
 }
 
 function renderComposerAttachmentPill(args: RenderComposerAttachmentPillArgs): ReactElement {
-  const { attachment, index, disabled, onOpen, onRemove, labels } = args;
+  const { attachment, index, refNumber, disabled, onOpen, onRemove, labels } = args;
   if (attachment.kind === "image") {
     return (
       <ImageAttachmentPill
         key={attachment.metadata.id}
         attachment={attachment}
         index={index}
+        refNumber={refNumber}
         disabled={disabled}
         onOpen={onOpen}
         onRemove={onRemove}
@@ -432,6 +445,7 @@ function renderComposerAttachmentPill(args: RenderComposerAttachmentPillArgs): R
         key={attachment.attachment.id}
         attachment={attachment}
         index={index}
+        refNumber={refNumber}
         disabled={disabled}
         onRemove={onRemove}
         removeLabel={labels.removeFile}
@@ -713,6 +727,7 @@ function QueuedMessageRow({
 interface ImageAttachmentPillProps {
   attachment: Extract<ComposerAttachment, { kind: "image" }>;
   index: number;
+  refNumber: string | undefined;
   disabled: boolean;
   onOpen: (attachment: ComposerAttachment) => void;
   onRemove: (index: number) => void;
@@ -723,6 +738,7 @@ interface ImageAttachmentPillProps {
 function ImageAttachmentPill({
   attachment,
   index,
+  refNumber,
   disabled,
   onOpen,
   onRemove,
@@ -744,7 +760,7 @@ function ImageAttachmentPill({
       removeAccessibilityLabel={removeLabel}
       disabled={disabled}
     >
-      <AttachmentThumbnail metadata={attachment.metadata} />
+      <AttachmentThumbnail metadata={attachment.metadata} badge={refNumber} />
     </AttachmentPill>
   );
 }
@@ -804,6 +820,7 @@ function GithubAttachmentPill({
 interface FileAttachmentPillProps {
   attachment: Extract<ComposerAttachment, { kind: "file" }>;
   index: number;
+  refNumber: string | undefined;
   disabled: boolean;
   onRemove: (index: number) => void;
   removeLabel: string;
@@ -812,6 +829,7 @@ interface FileAttachmentPillProps {
 function FileAttachmentPill({
   attachment,
   index,
+  refNumber,
   disabled,
   onRemove,
   removeLabel,
@@ -833,7 +851,9 @@ function FileAttachmentPill({
       <AttachmentLabel
         icon={filePillIcon}
         title={fileName}
-        subtitle={getFileTypeLabel(fileName) ?? t("message.attachments.file")}
+        subtitle={[refNumber, getFileTypeLabel(fileName) ?? t("message.attachments.file")]
+          .filter(Boolean)
+          .join(" · ")}
       />
     </AttachmentPill>
   );
@@ -1489,21 +1509,76 @@ function ComposerContentImpl({
   >(null);
   const onSubmitMessageRef = useRef(onSubmitMessage);
 
+  // COMPAT(inlineAttachmentRefs): older hosts do not label attachments, so their drafts get no
+  // inline tokens.
+  const inlineRefsEnabled = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.inlineAttachmentRefs === true,
+  );
+  // Picks and pastes finish asynchronously; numbering reads the latest list, not a render's.
+  const latestAttachmentsRef = useRef(attachments);
+  latestAttachmentsRef.current = attachments;
+
+  const appendAttachments = useCallback(
+    (added: UserComposerAttachment[]) => {
+      const before = latestAttachmentsRef.current;
+      const after = [...before, ...added];
+      const input = messageInputRef.current;
+      if (inlineRefsEnabled && input) {
+        const labels = inlineRefLabels(after);
+        const addedLabels = added.flatMap((_, offset) => labels.get(before.length + offset) ?? []);
+        if (addedLabels.length > 0) {
+          const next = insertInlineRefTokens({ ...input.getInputSnapshot(), labels: addedLabels });
+          input.replaceText(next.text, next.selection);
+        }
+      }
+      latestAttachmentsRef.current = after;
+      setSelectedAttachments((prev) => [...prev, ...added]);
+    },
+    [inlineRefsEnabled, setSelectedAttachments],
+  );
+
   const addImages = useCallback(
     (images: ImageAttachment[]) => {
-      setSelectedAttachments((prev) => [
-        ...prev,
-        ...images.map((metadata) => ({ kind: "image" as const, metadata })),
-      ]);
+      appendAttachments(images.map((metadata) => ({ kind: "image" as const, metadata })));
     },
-    [setSelectedAttachments],
+    [appendAttachments],
   );
 
   const addFiles = useCallback(
     (files: UserComposerAttachment[]) => {
-      setSelectedAttachments((prev) => [...prev, ...files]);
+      appendAttachments(files);
     },
-    [setSelectedAttachments],
+    [appendAttachments],
+  );
+
+  const reconcileTextEdit = useCallback(
+    (previous: string, next: string) => {
+      if (!inlineRefsEnabled) return null;
+      const reconciled = reconcileInlineRefEdit({
+        previous,
+        next,
+        attachments: latestAttachmentsRef.current,
+      });
+      if (!reconciled) return null;
+      const removed = latestAttachmentsRef.current.filter(
+        (attachment) => !reconciled.attachments.includes(attachment),
+      );
+      if (removed.length > 0) {
+        void deleteAttachments(
+          removed.flatMap((attachment) =>
+            attachment.kind === "image" ? [attachment.metadata] : [],
+          ),
+        );
+        latestAttachmentsRef.current = latestAttachmentsRef.current.filter(
+          (attachment) => !removed.includes(attachment),
+        );
+        setSelectedAttachments((prev) =>
+          prev.filter((attachment) => !removed.includes(attachment)),
+        );
+      }
+      return { text: reconciled.text, selection: reconciled.selection };
+    },
+    [inlineRefsEnabled, setSelectedAttachments],
   );
 
   const focusInput = useCallback(() => {
@@ -1870,11 +1945,30 @@ function ComposerContentImpl({
       if (didRemoveWorkspaceAttachment) {
         return;
       }
+      const input = messageInputRef.current;
+      const removedAttachment = latestAttachmentsRef.current[index];
+      if (
+        inlineRefsEnabled &&
+        input &&
+        removedAttachment &&
+        isInlineRefAttachment(removedAttachment)
+      ) {
+        const snapshot = input.getInputSnapshot();
+        const next = removeInlineRefs({
+          text: snapshot.text,
+          attachments: latestAttachmentsRef.current,
+          removed: new Set([index]),
+          caret: snapshot.selection.start,
+        });
+        if (next.text !== snapshot.text) {
+          input.replaceText(next.text, { start: next.caret, end: next.caret });
+        }
+      }
       setSelectedAttachments((prev) =>
         removeComposerAttachmentAtIndex({ attachments: prev, index, deleteAttachments }),
       );
     },
-    [removeAttachment, selectedAttachments, setSelectedAttachments],
+    [inlineRefsEnabled, removeAttachment, selectedAttachments, setSelectedAttachments],
   );
 
   const handleOpenAttachment = useCallback(
@@ -2329,6 +2423,7 @@ function ComposerContentImpl({
         isComposerLocked,
         handleOpenAttachment,
         handleRemoveAttachment,
+        inlineRefsEnabled,
         labels: {
           openImage: t("composer.attachments.openImage"),
           removeImage: t("composer.attachments.removeImage"),
@@ -2342,6 +2437,7 @@ function ComposerContentImpl({
     [
       handleOpenAttachment,
       handleRemoveAttachment,
+      inlineRefsEnabled,
       isComposerLocked,
       serverId,
       selectedAttachments,
@@ -2466,6 +2562,7 @@ function ComposerContentImpl({
                   submissionError={sendErrorNode}
                   value={textSource.getSnapshot()}
                   onChangeText={setUserInput}
+                  reconcileTextEdit={reconcileTextEdit}
                   onSubmit={handleSubmit}
                   hasExternalContent={hasExternalContent}
                   allowEmptySubmit={allowEmptySubmit}
