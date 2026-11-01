@@ -8,6 +8,7 @@ import type {
 import { StyleSheet } from "react-native-unistyles";
 import { useFileLink } from "@/assistant-file-links";
 import { CodeFence } from "@/code-run/fence";
+import { FileLinkContextMenu } from "@/assistant-file-links/context-menu";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { MermaidFence } from "./fence/mermaid";
 import { markdownLinkSource } from "./source";
@@ -21,7 +22,9 @@ function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
 const LINK_HOVER_STYLE = { textDecoration: "underline" } as const;
 
 function WebLink({ link, anchorProps, children }: LinkRendererProps) {
-  const { tooltipPath, onHoverIn } = useFileLink(markdownLinkSource(link.url, link.sourceType));
+  const { tooltipPath, fileCandidate, onHoverIn, resolveFile } = useFileLink(
+    markdownLinkSource(link.url, link.sourceType),
+  );
   const [hovered, setHovered] = useState(false);
   const handleMouseEnter = useCallback(() => setHovered(true), []);
   const handleMouseLeave = useCallback(() => setHovered(false), []);
@@ -46,7 +49,15 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
   return (
     <Tooltip delayDuration={400}>
       <TooltipTrigger asChild onHoverIn={onHoverIn}>
-        <InlineLinkTrigger>{anchor}</InlineLinkTrigger>
+        <InlineLinkTrigger>
+          {fileCandidate ? (
+            <FileLinkContextMenu fileCandidate={fileCandidate} resolveFile={resolveFile}>
+              {anchor}
+            </FileLinkContextMenu>
+          ) : (
+            anchor
+          )}
+        </InlineLinkTrigger>
       </TooltipTrigger>
       {tooltipPath ? (
         <TooltipContent side="top" align="start" maxWidth={520}>
