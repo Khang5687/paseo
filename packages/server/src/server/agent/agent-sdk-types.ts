@@ -206,8 +206,7 @@ export interface ForkedNativeSession {
 }
 
 export type AgentPromptContentBlock =
-  // `placeholders` lists the `[Image #1]`-style tokens in `text` that name a labeled attachment.
-  | { type: "text"; text: string; placeholders?: string[] }
+  | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
   | AgentAttachment;
 

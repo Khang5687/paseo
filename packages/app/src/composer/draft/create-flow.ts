@@ -13,7 +13,7 @@ import {
   type StreamItem,
   type UserMessageImageAttachment,
 } from "@/types/stream";
-import type { AgentAttachment, InlineAttachmentRef } from "@getpaseo/protocol/messages";
+import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { PendingMessageSubmission } from "@/composer/submission/model";
 
 const EMPTY_STREAM_ITEMS: StreamItem[] = [];
@@ -24,7 +24,6 @@ interface CreateAttempt {
   timestamp: Date;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
-  attachmentRefs?: InlineAttachmentRef[];
 }
 
 type DraftAgentMachineState<TDraftAgent> =
@@ -319,7 +318,6 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         timestamp: new Date(),
         ...(images.length > 0 ? { images } : {}),
         ...(wirePayload.attachments.length > 0 ? { attachments: wirePayload.attachments } : {}),
-        attachmentRefs: wirePayload.attachmentRefs,
       };
 
       startCreateAttempt(attempt);

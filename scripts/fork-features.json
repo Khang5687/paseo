@@ -629,13 +629,5 @@
       "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
       "packages/app/src/components/sidebar/workspace-meta-row/meta-items.test.ts"
     ]
-  },
-  {
-    "pr": 80,
-    "title": "feat(app): inline attachment references in the composer",
-    "tests": [
-      "packages/app/src/composer/attachments/inline-refs.test.ts",
-      "packages/server/src/server/agent/prompt-attachments.test.ts"
-    ]
   }
 ]
