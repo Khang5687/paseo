@@ -17,6 +17,7 @@ import { TaskListRow } from "@/components/task-list-row";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
+import { FilePathMenu, useFilePathMenuPaths } from "@/file-path-menu/menu";
 import { useRevealedText, type MarkdownPhase } from "@/hooks/use-revealed-text";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
@@ -1547,6 +1548,8 @@ interface ExpandableBadgeProps {
   style?: StyleProp<ViewStyle>;
   onToggle?: () => void;
   onOpenFile?: () => void;
+  /** Right click (web) or long press (native) on the header, at the gesture's page point. */
+  onFileContextMenu?: (point: { x: number; y: number }) => void;
   onDetailHoverChange?: (hovered: boolean) => void;
   renderDetails?: () => ReactNode;
   isLoading?: boolean;
@@ -1910,6 +1913,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   isExpanded,
   onToggle,
   onOpenFile,
+  onFileContextMenu,
   onDetailHoverChange,
   renderDetails,
   isLoading = false,
@@ -1949,6 +1953,25 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   );
   const handleOpenFileHoverIn = useCallback(() => setIsOpenFileHovered(true), []);
   const handleOpenFileHoverOut = useCallback(() => setIsOpenFileHovered(false), []);
+  const handleFileContextMenu = useCallback(
+    (event: {
+      preventDefault: () => void;
+      stopPropagation: () => void;
+      pageX: number;
+      pageY: number;
+    }) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onFileContextMenu?.({ x: event.pageX, y: event.pageY });
+    },
+    [onFileContextMenu],
+  );
+  const handleFileLongPress = useCallback(
+    (event: GestureResponderEvent) => {
+      onFileContextMenu?.({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+    },
+    [onFileContextMenu],
+  );
 
   const nativeGradientIdRef = useRef(
     `shimmer-gradient-${Math.random().toString(36).substring(2, 9)}`,
@@ -2183,6 +2206,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     >
       <Pressable
         {...pressHandlers}
+        {...buildFileContextMenuProps({
+          onFileContextMenu,
+          onLongPress: handleFileLongPress,
+          onContextMenu: handleFileContextMenu,
+        })}
         disabled={!isInteractive}
         accessibilityState={accessibilityState}
         style={pressableStyle}
@@ -2230,6 +2258,18 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   );
 }, areExpandableBadgePropsEqual);
 
+// Long press on native; right click, or a phone browser's long press, on web.
+function buildFileContextMenuProps<TLongPress, TContextMenu>(input: {
+  onFileContextMenu: ExpandableBadgeProps["onFileContextMenu"];
+  onLongPress: TLongPress;
+  onContextMenu: TContextMenu;
+}): { onLongPress?: TLongPress; onContextMenu?: TContextMenu } {
+  if (!input.onFileContextMenu) {
+    return {};
+  }
+  return isNative ? { onLongPress: input.onLongPress } : { onContextMenu: input.onContextMenu };
+}
+
 function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: ExpandableBadgeProps) {
   if (previous.label !== next.label) return false;
   if (previous.secondaryLabel !== next.secondaryLabel) return false;
@@ -2244,6 +2284,7 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
+  if (previous.onFileContextMenu !== next.onFileContextMenu) return false;
   if (previous.onDetailHoverChange !== next.onDetailHoverChange) return false;
   if (previous.renderDetails !== next.renderDetails) return false;
   return true;
@@ -2342,6 +2383,11 @@ export const ToolCall = memo(function ToolCall({
     }
     return () => onOpenFilePath(openFilePath);
   }, [presentation.openFilePath, onOpenFilePath]);
+  const filePathMenuPaths = useFilePathMenuPaths({
+    serverId: serverId ?? "",
+    workspaceRoot: cwd ?? "",
+    path: presentation.openFilePath,
+  });
 
   const handleToggle = useCallback(() => {
     if (!shouldRenderInline) {
@@ -2429,7 +2475,7 @@ export const ToolCall = memo(function ToolCall({
     );
   }
 
-  return (
+  const renderBadge = (onFileContextMenu?: (point: { x: number; y: number }) => void) => (
     <ExpandableBadge
       testID="tool-call-badge"
       label={presentation.displayName}
@@ -2438,6 +2484,7 @@ export const ToolCall = memo(function ToolCall({
       isExpanded={shouldRenderInline && isExpanded}
       onToggle={presentation.canOpenDetails ? handleToggle : undefined}
       onOpenFile={handleOpenFile}
+      onFileContextMenu={onFileContextMenu}
       renderDetails={presentation.canOpenDetails && shouldRenderInline ? renderDetails : undefined}
       isLoading={status === "running" || status === "executing"}
       isError={status === "failed"}
@@ -2446,6 +2493,15 @@ export const ToolCall = memo(function ToolCall({
       onDetailHoverChange={onInlineDetailsHoverChange}
     />
   );
+
+  if (serverId && filePathMenuPaths) {
+    return (
+      <FilePathMenu serverId={serverId} workspaceRoot={cwd ?? ""} paths={filePathMenuPaths}>
+        {renderBadge}
+      </FilePathMenu>
+    );
+  }
+  return renderBadge();
 }, areToolCallPropsEqual);
 
 function areToolCallPropsEqual(previous: ToolCallProps, next: ToolCallProps) {

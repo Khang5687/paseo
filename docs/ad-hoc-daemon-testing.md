@@ -163,3 +163,14 @@ try {
 ### 7. ACP providers spawn real processes
 
 When testing ACP providers (e.g., Gemini with `extends: "acp"`), the daemon will spawn real processes to probe for models and modes. The binary must be installed and on PATH. Probing can take 5-15 seconds depending on the provider.
+
+### 8. OMP account routing needs the scripted native peer
+
+`createTestPaseoDaemon({ ompRouting: { catalogs } })` swaps the OMP client for the real one over a scripted JSONL child (`FakeOmpChild`), bound to the daemon's own routing authority. No process is spawned and no credential is read. The result carries `routingFixture` with `openAgent`, `requestAdmission` and `started`, which write the native frames; policy changes go through a versioned client, never the store.
+
+- `features.ompAccountRouting` is false until `openAgent` negotiates a managed runtime, and falls back to the startup probe once the last one closes. The test daemon's probe learns nothing by default (never a real `omp`); pass `ompCapabilityProbe` to simulate one. Modern clients only see the change if they subscribed to `status.server_info` with `client.observeEvents`.
+- The authority runs on the system clock, so catalog billing windows must be built from `Date.now()`, not the fixture's fixed `ROUTING_T0`.
+- Pass `providerOverrides` yourself only to add providers; the fixture enables `omp` (disabled by default).
+- Run the suite with outbound network denied but loopback allowed: `sandbox-exec -p '(version 1)(allow default)(deny network-outbound (remote ip))(allow network-outbound (remote ip "localhost:*"))' npx vitest run <file>`.
+
+`packages/server/src/server/account-routing/routing.integration.test.ts` is the worked example.

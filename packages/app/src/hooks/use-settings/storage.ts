@@ -81,7 +81,10 @@ export interface AppSettings {
   /** Which contributed theme `theme: "plugin"` selects. */
   pluginThemeId: string | null;
   language: AppLanguage;
+  /** What Send does while the agent is running. */
   sendBehavior: SendBehavior;
+  /** What the alternate send (Mod+Enter, long-press on Send) does while the agent is running. */
+  alternateSendBehavior: SendBehavior;
   serviceUrlBehavior: ServiceUrlBehavior;
   terminalScrollbackLines: number;
   uiFontFamily: string; // "" = platform default UI stack
@@ -143,6 +146,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   pluginThemeId: null,
   language: "system",
   sendBehavior: "steer",
+  alternateSendBehavior: "queue",
   serviceUrlBehavior: "ask",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   uiFontFamily: "",
@@ -223,6 +227,8 @@ const StoredAppSettingsSchema = z
       .enum(["system", "ar", "en", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-CN"])
       .catch("system"),
     sendBehavior: z.enum(["interrupt", "steer", "queue"]).catch("steer"),
+    // COMPAT(alternateSendBehavior): derived for settings saved before v0.14, remove after 2027-10-29.
+    alternateSendBehavior: z.enum(["interrupt", "steer", "queue"]).optional().catch("queue"),
     serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).catch("ask"),
     terminalScrollbackLines: clampedNumber(
       MIN_TERMINAL_SCROLLBACK_LINES,
@@ -303,7 +309,8 @@ const StoredAppSettingsSchema = z
     const { legacyPullRequestsInSidePane, ...openInSidePane } = stored.openInSidePane;
     const needsWrite =
       (stored.uiBaseFontSize === undefined && stored.uiFontSize !== undefined) ||
-      stored.contentFontSize === undefined;
+      stored.contentFontSize === undefined ||
+      stored.alternateSendBehavior === undefined;
     const uiBaseFontSize =
       stored.uiBaseFontSize ??
       (stored.uiFontSize === undefined
@@ -320,6 +327,10 @@ const StoredAppSettingsSchema = z
     const chatDisplay = stored.chatDisplay ?? (groupsToolCalls ? "collapseToolCalls" : "full");
     return {
       ...stored,
+      // COMPAT(alternateSendBehavior): before the setting existed the alternate queued, or sent
+      // now (interrupting) when Send itself queued.
+      alternateSendBehavior:
+        stored.alternateSendBehavior ?? (stored.sendBehavior === "queue" ? "interrupt" : "queue"),
       openInSidePane,
       pullRequestOpenLocation:
         stored.pullRequestOpenLocation ?? (legacyPullRequestsInSidePane ? "side" : "explorer"),

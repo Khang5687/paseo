@@ -1,4 +1,4 @@
-import { ASSISTANT_FILE_EXTENSIONS } from "./extensions";
+import { ASSISTANT_EXTENSIONLESS_FILE_NAMES, ASSISTANT_FILE_EXTENSIONS } from "./extensions";
 import { isAbsolutePath } from "@/utils/path";
 
 function safeDecodeURIComponent(value: string): string {
@@ -65,7 +65,8 @@ function normalizePathToken(value: string): string | null {
     return null;
   }
 
-  return trimmed.replace(/\\/g, "/");
+  // `$HOME/.zshrc` and `${HOME}/.zshrc` name the same file as `~/.zshrc`.
+  return trimmed.replace(/\\/g, "/").replace(/^\$(?:HOME|\{HOME\})(?=\/)/, "~");
 }
 
 function parseLineFragment(value: string): Pick<InlinePathTarget, "lineStart" | "lineEnd"> | null {
@@ -229,7 +230,7 @@ export function classifyAssistantFileLink(
     };
   }
 
-  if (/\s/.test(trimmed)) {
+  if (/\s/.test(trimmed) && !isSpacedAnchoredPath(trimmed)) {
     return null;
   }
 
@@ -616,16 +617,32 @@ function isPlausibleAssistantLocalPath(pathValue: string): boolean {
 
   const segments = normalized.split("/").filter(Boolean);
   const firstSegment = segments[0];
-  if (!firstSegment) {
+  const lastSegment = segments.at(-1);
+  if (!firstSegment || !lastSegment) {
     return false;
   }
 
-  if (segments.length > 1) {
-    const lastSegment = segments[segments.length - 1];
-    return !isDomainLikePathSegment(firstSegment) && isPlausibleAssistantFileName(lastSegment);
+  // A trailing slash names a directory: `src/components/`, `node_modules/`.
+  if (normalized.endsWith("/")) {
+    return !isDomainLikePathSegment(firstSegment) && hasPathLetter(lastSegment);
   }
 
-  return isPlausibleAssistantFileName(firstSegment);
+  if (segments.length === 1) {
+    return isPlausibleAssistantFileName(firstSegment);
+  }
+
+  if (isDomainLikePathSegment(firstSegment)) {
+    return false;
+  }
+
+  // A directory already marks a path, so any lowercase extension counts
+  // (`records/q3/contract.pdf`). Two extensionless segments stay prose (`and/or`,
+  // `packages/app`); three are a path.
+  return (
+    isPlausibleAssistantFileName(lastSegment) ||
+    /^[^.]+.*\.[a-z][a-z0-9]{0,9}$/.test(lastSegment) ||
+    (segments.length >= 3 && hasPathLetter(lastSegment))
+  );
 }
 
 function isPlausibleAssistantFileName(fileName: string | undefined): boolean {
@@ -637,6 +654,10 @@ function isPlausibleAssistantFileName(fileName: string | undefined): boolean {
     return true;
   }
 
+  if (ASSISTANT_EXTENSIONLESS_FILE_NAMES.has(fileName)) {
+    return true;
+  }
+
   const lastDot = fileName.lastIndexOf(".");
   if (lastDot < 0) {
     return false;
@@ -644,6 +665,25 @@ function isPlausibleAssistantFileName(fileName: string | undefined): boolean {
 
   const extension = fileName.slice(lastDot + 1).toLowerCase();
   return ASSISTANT_FILE_EXTENSIONS.has(extension);
+}
+
+// Fullwidth digits are excluded so dates like `２０２４/１０/１６` stay text.
+function hasPathLetter(segment: string): boolean {
+  return /[A-Za-z\u0080-\uFF0F\uFF1A-\uFFFF]/.test(segment);
+}
+
+/**
+ * macOS and Windows paths often hold spaces (`~/Library/Application Support/…`). Only paths
+ * anchored at a root qualify, and nothing that reads as a shell command: no flags, operators,
+ * variables, or a program under a `bin` directory followed by its arguments.
+ */
+function isSpacedAnchoredPath(value: string): boolean {
+  const beforeFirstSpace = value.slice(0, value.search(/\s/));
+  return (
+    /^(?:\/|~\/|[A-Za-z]:[\\/])/.test(value) &&
+    !/\s-|\s\s|\s$|[|&;<>$`*]/.test(value) &&
+    !/[\\/]s?bin[\\/][^\\/]*$/.test(beforeFirstSpace)
+  );
 }
 
 function isDomainLikePathSegment(segment: string): boolean {
