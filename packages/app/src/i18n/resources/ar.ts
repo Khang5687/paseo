@@ -2001,6 +2001,39 @@ export const ar: TranslationResources = {
     shareFile: "مشاركة الملف",
     shareFileNamed: "مشاركة{{fileName}}",
   },
+  offlineFiles: {
+    title: "الملفات دون اتصال",
+    autoSave: {
+      label: "حفظ ملفات المحادثة تلقائيًا",
+      description:
+        "احفظ الملفات المذكورة في المحادثات التي تفتحها، عبر Wi-Fi فقط، لتفتح والمضيف غير متصل.",
+    },
+    retentionDays: {
+      label: "الاحتفاظ لمدة (أيام)",
+      description: "تُحذف الملفات المحفوظة الأقدم من ذلك.",
+    },
+    maxTotalMb: {
+      label: "حد التخزين (ميغابايت)",
+      description: "تُحذف أقدم الملفات المحفوظة بعد تجاوز هذا الحجم.",
+    },
+    maxFileMb: {
+      label: "أكبر ملف (ميغابايت)",
+      description: "لا تُحفظ الملفات الأكبر.",
+    },
+    saved: {
+      label: "المحفوظ: {{count}} ملفات، {{size}}",
+      description: "أحدث الملفات المحفوظة مدرجة أدناه.",
+    },
+    clearAll: "مسح الكل",
+    clearConfirmTitle: "مسح الملفات دون اتصال؟",
+    clearConfirmMessage: "تُحذف النسخ المحفوظة من هذا الجهاز. لا تتأثر الملفات على المضيف.",
+    saveOffline: "حفظ للاستخدام دون اتصال",
+    savedToast: "تم الحفظ للاستخدام دون اتصال",
+    tooLarge: "الملف أكبر من حد {{size}} ميغابايت للملفات دون اتصال.",
+    readOnly: "هذه نسخة محفوظة. اتصل بالمضيف لتعديلها.",
+    savedAgo: "نسخة دون اتصال، حُفظت {{time}}",
+    share: "مشاركة",
+  },
   menu: {
     backdrop: "خلفية القائمة",
   },

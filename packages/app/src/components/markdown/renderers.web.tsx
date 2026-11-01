@@ -9,6 +9,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { useFileLink } from "@/assistant-file-links";
 import { CodeFence } from "@/code-run/fence";
 import { FileLinkContextMenu } from "@/assistant-file-links/context-menu";
+import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { MermaidFence } from "./fence/mermaid";
 import { markdownLinkSource } from "./source";
@@ -22,9 +23,13 @@ function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
 const LINK_HOVER_STYLE = { textDecoration: "underline" } as const;
 
 function WebLink({ link, anchorProps, children }: LinkRendererProps) {
-  const { tooltipPath, fileCandidate, onHoverIn, resolveFile } = useFileLink(
-    markdownLinkSource(link.url, link.sourceType),
+  const source = useMemo(
+    () => markdownLinkSource(link.url, link.sourceType),
+    [link.url, link.sourceType],
   );
+  const { tooltipPath, fileCandidate, onHoverIn, resolveFile } = useFileLink(source);
+  const saveFileLinkOffline = useSaveFileLinkOffline();
+  const saveOffline = useCallback(() => saveFileLinkOffline(source), [saveFileLinkOffline, source]);
   const [hovered, setHovered] = useState(false);
   const handleMouseEnter = useCallback(() => setHovered(true), []);
   const handleMouseLeave = useCallback(() => setHovered(false), []);
@@ -51,7 +56,11 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
       <TooltipTrigger asChild onHoverIn={onHoverIn}>
         <InlineLinkTrigger>
           {fileCandidate ? (
-            <FileLinkContextMenu fileCandidate={fileCandidate} resolveFile={resolveFile}>
+            <FileLinkContextMenu
+              fileCandidate={fileCandidate}
+              resolveFile={resolveFile}
+              onSaveOffline={saveOffline}
+            >
               {anchor}
             </FileLinkContextMenu>
           ) : (

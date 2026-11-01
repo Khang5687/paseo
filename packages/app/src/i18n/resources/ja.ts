@@ -2020,6 +2020,39 @@ export const ja: TranslationResources = {
     shareFile: "ファイルを共有",
     shareFileNamed: "{{fileName}}を共有",
   },
+  offlineFiles: {
+    title: "オフラインファイル",
+    autoSave: {
+      label: "チャットのファイルを自動保存",
+      description:
+        "開いたチャットに出てくるファイルを Wi-Fi 接続時のみ保存し、ホストがオフラインでも開けるようにします。",
+    },
+    retentionDays: {
+      label: "保存期間（日）",
+      description: "これより古い保存ファイルは削除されます。",
+    },
+    maxTotalMb: {
+      label: "保存容量の上限（MB）",
+      description: "この容量を超えると古いファイルから削除されます。",
+    },
+    maxFileMb: {
+      label: "最大ファイルサイズ（MB）",
+      description: "これより大きいファイルは保存しません。",
+    },
+    saved: {
+      label: "保存済み: {{count}} ファイル、{{size}}",
+      description: "最近保存したファイルを下に表示します。",
+    },
+    clearAll: "すべて削除",
+    clearConfirmTitle: "オフラインファイルを削除しますか？",
+    clearConfirmMessage: "このデバイスの保存コピーを削除します。ホスト上のファイルは変わりません。",
+    saveOffline: "オフライン用に保存",
+    savedToast: "オフライン用に保存しました",
+    tooLarge: "ファイルがオフラインファイルの上限 {{size}} MB を超えています。",
+    readOnly: "これは保存コピーです。編集するにはホストに接続してください。",
+    savedAgo: "オフラインコピー、{{time}}に保存",
+    share: "共有",
+  },
   menu: {
     backdrop: "メニューの背景",
   },

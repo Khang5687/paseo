@@ -36,6 +36,7 @@ import {
 } from "./migration";
 import { createDraftPersistStorage } from "./persistence";
 import { createValidatedPersistStorage } from "@/storage/validated-persist-storage";
+import { listOfflineFileAttachmentIds } from "@/offline-files/store";
 
 export type { DraftInput, DraftLifecycleState } from "./state";
 
@@ -187,6 +188,11 @@ async function runAttachmentGc(): Promise<void> {
         referencedIds.add(attachment.attachment.screenshot.id);
       }
     }
+  }
+
+  // Saved offline files live in the attachment store too.
+  for (const id of await listOfflineFileAttachmentIds()) {
+    referencedIds.add(id);
   }
 
   try {

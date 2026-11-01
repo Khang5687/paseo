@@ -8,6 +8,7 @@ import { useAssistantFileLinkResolverContext } from "./provider";
 interface FileLinkContextMenuProps {
   fileCandidate: InlinePathTarget;
   resolveFile: () => Promise<InlinePathTarget>;
+  onSaveOffline: () => void;
   children: ReactNode;
 }
 
@@ -25,6 +26,7 @@ const TRIGGER_STYLE: ViewStyle = {
 export function FileLinkContextMenu({
   fileCandidate,
   resolveFile,
+  onSaveOffline,
   children,
 }: FileLinkContextMenuProps): ReactNode {
   const { configRef } = useAssistantFileLinkResolverContext();
@@ -42,6 +44,7 @@ export function FileLinkContextMenu({
       workspaceRoot={workspaceRoot}
       paths={paths}
       resolveTarget={resolveFile}
+      onSaveOffline={onSaveOffline}
     >
       {() => (
         <ContextMenuTrigger contextOnly style={TRIGGER_STYLE}>

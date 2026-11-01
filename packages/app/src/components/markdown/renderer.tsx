@@ -1,5 +1,11 @@
 import { memo, useMemo, useState } from "react";
-import { EnrichedMarkdownText, type LinkPressEvent } from "react-native-enriched-markdown";
+import { Alert } from "react-native";
+import {
+  EnrichedMarkdownText,
+  type LinkLongPressEvent,
+  type LinkPressEvent,
+} from "react-native-enriched-markdown";
+import { useTranslation } from "react-i18next";
 import { withUnistyles } from "react-native-unistyles";
 import {
   useAssistantFileLinkActions,
@@ -9,7 +15,8 @@ import { useStableEvent } from "@/hooks/use-stable-event";
 import { matchCommandLink, useAgentCommandHints, type CommandHints } from "@/agent-commands";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
-import { isWeb } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
+import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
 import { density, resolveDensity } from "@/styles/density";
 import { MarkdownBlockStack } from "./block-stack";
 import { WEB_RENDERERS } from "./renderers";
@@ -120,6 +127,18 @@ const MarkdownPart = memo(function MarkdownPart({
     if (onLinkPress && !actions.canResolveFile(source)) onLinkPress(url);
     else actions.open(source, "preferred");
   });
+  // Native links have no menu; a long press on a file offers to save it for offline use.
+  // Web links get the same action from their right-click menu (`renderers.web.tsx`).
+  const { t } = useTranslation();
+  const saveOffline = useSaveFileLinkOffline();
+  const longPressLink = useStableEvent(({ url }: LinkLongPressEvent) => {
+    const source = linkSource(url);
+    if (!actions.canResolveFile(source)) return;
+    Alert.alert(url, undefined, [
+      { text: t("offlineFiles.saveOffline"), onPress: () => saveOffline(source) },
+      { text: t("common.actions.cancel"), style: "cancel" },
+    ]);
+  });
   const pressImage = useStableEvent(({ url }: { url: string }) => {
     if (url !== PENDING_MARKDOWN_IMAGE) setImage({ type: "uri", uri: url });
   });
@@ -160,6 +179,7 @@ const MarkdownPart = memo(function MarkdownPart({
               // JS reveal owns pacing; native fade animation is a separate experiment.
               streamingAnimation={false}
               onLinkPress={pressLink}
+              onLinkLongPress={isNative ? longPressLink : undefined}
               onImagePress={pressImage}
               renderers={isWeb ? WEB_RENDERERS : undefined}
             />

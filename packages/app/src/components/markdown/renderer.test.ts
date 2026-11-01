@@ -12,7 +12,7 @@ import { decodeMarkdownImage, getMarkdownImageStatus } from "./image-decoding";
 import { describe, expect, it } from "vitest";
 import { darkTheme, lightTheme } from "@/styles/theme";
 import { createMarkdownStyles } from "./styles";
-import { prepareMarkdownSource, PENDING_MARKDOWN_IMAGE } from "./source";
+import { collectFileMentions, prepareMarkdownSource, PENDING_MARKDOWN_IMAGE } from "./source";
 import { normalizeMarkdownHtml } from "./html";
 
 it("recognizes complete known commands in inline code", () => {
@@ -230,6 +230,30 @@ it("lets the engine own code boundaries while classifying candidate values", asy
     "src/final.ts",
     "src/newline.ts",
   ]);
+});
+
+describe("file mentions saved for offline use", () => {
+  it("collects prose, inline-code and linked paths but not code blocks or URLs", () => {
+    const source = [
+      "Edited /repo/src/app.ts and `/repo/README.md`.",
+      "See [the plan](/repo/docs/plan.md) and https://example.com/a.ts.",
+      "```ts",
+      'import x from "/repo/src/hidden.ts";',
+      "```",
+    ].join("\n");
+    const paths = collectFileMentions(source, { workspaceRoot: "/repo" }).map((mention) =>
+      mention.kind === "path" ? mention.path : `lookup:${mention.token}`,
+    );
+    expect(paths.sort()).toEqual(["/repo/README.md", "/repo/docs/plan.md", "/repo/src/app.ts"]);
+  });
+
+  it("keeps bare file names for the host to find", () => {
+    const mentions = collectFileMentions("Updated `notes.txt` twice: `notes.txt`.", {
+      workspaceRoot: "/repo",
+    });
+    expect(mentions).toHaveLength(1);
+    expect(mentions[0]).toMatchObject({ kind: "needsLookup", token: "notes.txt" });
+  });
 });
 
 describe("bare URL sentence punctuation", () => {

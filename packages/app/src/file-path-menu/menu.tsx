@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import * as Clipboard from "expo-clipboard";
-import { Copy, ExternalLink, FolderOpen } from "lucide-react-native";
+import { Copy, Download, ExternalLink, FolderOpen } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { withUnistyles } from "react-native-unistyles";
 import {
@@ -64,6 +64,8 @@ interface FilePathMenuProps {
    * action uses the daemon-resolved path. Defaults to `paths.absolutePath`.
    */
   resolveTarget?: () => Promise<FilePathMenuTarget>;
+  /** Adds a Save offline item; only chat file links can be saved for offline use. */
+  onSaveOffline?: () => void;
   /** Receives a function that opens the menu at a screen point. */
   children: (openAtPoint: (point: FilePathMenuPoint) => void) => ReactNode;
 }
@@ -78,6 +80,7 @@ export function FilePathMenu({
   workspaceRoot,
   paths,
   resolveTarget,
+  onSaveOffline,
   children,
 }: FilePathMenuProps): ReactElement {
   const [open, setOpen] = useState(false);
@@ -90,6 +93,7 @@ export function FilePathMenu({
           workspaceRoot={workspaceRoot}
           paths={paths}
           resolveTarget={resolveTarget}
+          onSaveOffline={onSaveOffline}
         />
       ) : null}
     </ContextMenu>
@@ -115,12 +119,16 @@ function FilePathMenuChildren({
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolderOpen = withUnistyles(FolderOpen);
 const ThemedCopy = withUnistyles(Copy);
+const ThemedDownload = withUnistyles(Download);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const openInEditorIcon = (
   <ThemedExternalLink size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />
 );
 const revealIcon = <ThemedFolderOpen size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />;
 const copyIcon = <ThemedCopy size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />;
+const saveOfflineIcon = (
+  <ThemedDownload size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />
+);
 
 interface ResolvedFilePath {
   target: FilePathMenuTarget;
@@ -132,6 +140,7 @@ function FilePathMenuContent({
   workspaceRoot,
   paths: candidatePaths,
   resolveTarget,
+  onSaveOffline,
 }: Omit<FilePathMenuProps, "children">): ReactElement {
   const { t } = useTranslation();
   const toast = useToast();
@@ -282,6 +291,18 @@ function FilePathMenuContent({
       >
         {t("workspace.fileActions.copyFullPath")}
       </ContextMenuItem>
+      {onSaveOffline ? (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            testID="file-link-save-offline"
+            leading={saveOfflineIcon}
+            onSelect={onSaveOffline}
+          >
+            {t("offlineFiles.saveOffline")}
+          </ContextMenuItem>
+        </>
+      ) : null}
     </ContextMenuContent>
   );
 }

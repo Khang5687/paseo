@@ -2047,6 +2047,40 @@ export const fr: TranslationResources = {
     shareFile: "Partager le fichier",
     shareFileNamed: "Partager {{fileName}}",
   },
+  offlineFiles: {
+    title: "Fichiers hors ligne",
+    autoSave: {
+      label: "Enregistrer automatiquement les fichiers du chat",
+      description:
+        "Enregistre les fichiers cités dans les chats que vous ouvrez, en Wi-Fi uniquement, pour les ouvrir quand l'hôte est hors ligne.",
+    },
+    retentionDays: {
+      label: "Conserver (jours)",
+      description: "Les fichiers enregistrés plus anciens sont supprimés.",
+    },
+    maxTotalMb: {
+      label: "Limite de stockage (Mo)",
+      description: "Au-delà de cette taille, les fichiers les plus anciens sont supprimés.",
+    },
+    maxFileMb: {
+      label: "Fichier le plus gros (Mo)",
+      description: "Les fichiers plus gros ne sont pas enregistrés.",
+    },
+    saved: {
+      label: "Enregistrés : {{count}} fichiers, {{size}}",
+      description: "Les fichiers enregistrés les plus récents sont listés ci-dessous.",
+    },
+    clearAll: "Tout effacer",
+    clearConfirmTitle: "Effacer les fichiers hors ligne ?",
+    clearConfirmMessage:
+      "Les copies enregistrées sont supprimées de cet appareil. Les fichiers de l'hôte ne changent pas.",
+    saveOffline: "Enregistrer hors ligne",
+    savedToast: "Enregistré pour un usage hors ligne",
+    tooLarge: "Le fichier dépasse la limite de {{size}} Mo pour les fichiers hors ligne.",
+    readOnly: "Ceci est une copie enregistrée. Connectez-vous à l'hôte pour la modifier.",
+    savedAgo: "Copie hors ligne, enregistrée {{time}}",
+    share: "Partager",
+  },
   menu: {
     backdrop: "Arrière-plan du menu",
   },

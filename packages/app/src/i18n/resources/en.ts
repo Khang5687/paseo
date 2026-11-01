@@ -2026,6 +2026,40 @@ export const en = {
     shareFile: "Share file",
     shareFileNamed: "Share {{fileName}}",
   },
+  offlineFiles: {
+    title: "Offline files",
+    autoSave: {
+      label: "Save chat files automatically",
+      description:
+        "Save files mentioned in chats you open, on Wi-Fi only, so they open while the host is offline.",
+    },
+    retentionDays: {
+      label: "Keep for (days)",
+      description: "Saved files older than this are removed.",
+    },
+    maxTotalMb: {
+      label: "Storage limit (MB)",
+      description: "The oldest saved files are removed past this size.",
+    },
+    maxFileMb: {
+      label: "Largest file (MB)",
+      description: "Larger files are not saved.",
+    },
+    saved: {
+      label: "Saved: {{count}} files, {{size}}",
+      description: "The newest saved files are listed below.",
+    },
+    clearAll: "Clear all",
+    clearConfirmTitle: "Clear offline files?",
+    clearConfirmMessage:
+      "Saved copies are deleted from this device. Files on the host are not touched.",
+    saveOffline: "Save offline",
+    savedToast: "Saved for offline use",
+    tooLarge: "The file is over the {{size}} MB limit for offline files.",
+    readOnly: "This is a saved copy. Connect to the host to edit it.",
+    savedAgo: "Offline copy, saved {{time}}",
+    share: "Share",
+  },
   menu: {
     backdrop: "Menu backdrop",
   },

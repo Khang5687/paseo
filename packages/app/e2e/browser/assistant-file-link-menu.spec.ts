@@ -96,6 +96,28 @@ test("a file path in an agent reply copies its resolved name, relative and full 
   }
 });
 
+test("a file path in an agent reply saves the file for offline use from its menu", async ({
+  page,
+}) => {
+  const workspace = await seedMockAgentWorkspace({
+    repoPrefix: "assistant-file-link-offline-",
+    title: "File link offline",
+    initialPrompt: promptMentioning(FILE_TOKEN),
+  });
+  try {
+    await mkdir(path.join(workspace.cwd, "src"), { recursive: true });
+    await writeFile(path.join(workspace.cwd, "src", "linked.ts"), "one\ntwo\nthree\n", "utf8");
+    await openAgentRoute(page, workspace);
+
+    const menu = await longPressFileLink(page);
+    await menu.getByTestId("file-link-save-offline").tap();
+    await expect(page.getByText("Saved for offline use")).toBeVisible();
+    await expect(page.getByTestId("file-path-menu-content")).toHaveCount(0);
+  } finally {
+    await workspace.cleanup();
+  }
+});
+
 test("a home-relative file path copies its full path under the daemon's home directory", async ({
   context,
   page,
