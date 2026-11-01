@@ -1061,6 +1061,7 @@ function StatusWorkspaceRowInnerContent({
               onToggleSettle={onToggleSettle}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
+              draggable={Boolean(dragInteraction)}
               accessibilityRole="button"
               accessibilityState={accessibilityState}
               style={workspaceRowStyle}

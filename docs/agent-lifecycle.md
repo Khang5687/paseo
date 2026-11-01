@@ -360,12 +360,18 @@ A finished workspace can be marked unread after it has been reviewed. The daemon
 `finished` attention on its newest eligible workspace-root agent without sending a new completion
 notification. Opening the workspace clears that attention through the normal focus flow.
 
-Attention is set by the agent finishing or failing and cleared by the client's
-`workspace.clear_attention`, which fires when the user reads the chat. Loading an agent's runtime is
-neither, so resuming carries the stored attention and the stored last-activity time through
-untouched. Forging either makes a background resume look like the user read a workspace and like the
-agent worked in it just now, which rewrites the sidebar timestamp permanently — persisted
-`updatedAt` is what workspace `statusEnteredAt` is re-derived from on the next daemon start.
+Attention is set by the agent finishing or failing. Reading the chat clears it through
+`clear_agent_attention`; "Mark as read" in the sidebar row menu clears it for the whole workspace
+through `workspace.clear_attention`. Lifecycle `error` alone keeps an agent in the failed bucket, so
+reading the chat leaves the row red. "Mark as read" also moves an `error` agent, live or stored, to
+`idle`, so the row stays clear until the next error. The error stays in the timeline and in
+`lastError`. Nothing new goes on the wire, so older clients get the same dismissal.
+
+Loading an agent's runtime neither sets nor clears attention, so resuming carries the stored
+attention and the stored last-activity time through untouched. Forging either makes a background
+resume look like the user read a workspace and like the agent worked in it just now, which rewrites
+the sidebar timestamp permanently — persisted `updatedAt` is what workspace `statusEnteredAt` is
+re-derived from on the next daemon start.
 
 ## The subagents track
 

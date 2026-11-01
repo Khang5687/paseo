@@ -309,6 +309,7 @@ function WorkspaceRowBody({
               archiveShortcutKeys={archiveShortcutKeys}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
+              draggable={draggable}
               aria-selected={selected}
               accessibilityRole="button"
               accessibilityState={accessibilityState}
