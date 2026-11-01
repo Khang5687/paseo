@@ -87,6 +87,49 @@ describe("inline attachment refs", () => {
     ).toBeNull();
   });
 
+  it("removes the attachment when one backspace or delete lands on a chip", () => {
+    const attachments = [image("a"), image("b")];
+    const previous = "[Image #1] then [Image #2] ";
+    // Delete key at the start of the second chip.
+    const next = "[Image #1] then Image #2] ";
+
+    expect(reconcileInlineRefEdit({ previous, next, attachments })).toEqual({
+      text: "[Image #1] then ",
+      selection: { start: 16, end: 16 },
+      attachments: [attachments[0]],
+    });
+  });
+
+  it("keeps attachments when select-all + type replaces the text", () => {
+    expect(
+      reconcileInlineRefEdit({
+        previous: "Compare [Image #1] with [File #2] ",
+        next: "Describe the image",
+        attachments: [image("a"), file("b")],
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps attachments when a selection spanning more than one chip is deleted", () => {
+    const attachments = [image("a"), image("b")];
+    expect(
+      reconcileInlineRefEdit({ previous: "[Image #1] [Image #2] ", next: "", attachments }),
+    ).toBeNull();
+    expect(
+      reconcileInlineRefEdit({ previous: "see [Image #1] now", next: "see now", attachments }),
+    ).toBeNull();
+  });
+
+  it("keeps attachments when a draft restore or queue edit replaces the text programmatically", () => {
+    expect(
+      reconcileInlineRefEdit({
+        previous: "[Image #1] old draft",
+        next: "Describe the queued image",
+        attachments: [image("a")],
+      }),
+    ).toBeNull();
+  });
+
   it("renumbers tokens when the tray removes an attachment, leaving no double space", () => {
     const attachments = [image("a"), file("b")];
     expect(
