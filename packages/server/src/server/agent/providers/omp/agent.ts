@@ -1400,9 +1400,7 @@ export class OmpAgentSession implements AgentSession {
       return this.commandCache;
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to refresh OMP slash commands; using cached list");
-      return (
-        this.commandCache ?? mapOmpSlashCommands(await this.runtimeSession.getCommands())
-      );
+      return this.commandCache ?? mapOmpSlashCommands(await this.runtimeSession.getCommands());
     }
   }
 
