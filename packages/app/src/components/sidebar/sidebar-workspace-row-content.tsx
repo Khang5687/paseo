@@ -30,7 +30,7 @@ import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
-import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 
 const needsInputColorMapping = (theme: Theme) => ({
@@ -356,8 +356,6 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     position: "absolute",
     top: 0,
     right: 0,
-    flexDirection: "row",
-    alignItems: "center",
   },
 }));
 
@@ -460,31 +458,21 @@ export function SidebarWorkspaceTrailingActionBase({
   );
 }
 
-// The settle button's box (14px icon plus 2px padding each side) and the kebab's 2px lead.
-const SETTLE_ACTION_WIDTH = 20;
-
 export function SidebarWorkspaceTrailingActionOverlay({
   visible,
   scrimBackdrop,
-  hasSettleAction = false,
   children,
 }: {
   visible: boolean;
   /** Fade the row into the kebab when something (the diff stat) is still rendered behind it. */
   scrimBackdrop?: SidebarSurfaceBackdrop;
-  /** The settle button sits before the kebab, so the scrim reaches further to cover both. */
-  hasSettleAction?: boolean;
   children: ReactNode;
 }) {
   if (!visible || !children) return null;
   return (
     <>
       {scrimBackdrop ? (
-        <TrailingActionScrim
-          backdrop={scrimBackdrop}
-          width={hasSettleAction ? SCRIM_WIDTH + SETTLE_ACTION_WIDTH : SCRIM_WIDTH}
-          testID="sidebar-workspace-trailing-scrim"
-        />
+        <TrailingActionScrim backdrop={scrimBackdrop} testID="sidebar-workspace-trailing-scrim" />
       ) : null}
       <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>{children}</View>
     </>

@@ -47,7 +47,6 @@ import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import {
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
-  type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { density } from "@/styles/density";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
@@ -80,7 +79,6 @@ interface SidebarSharedProps {
   workspaceGroups: SidebarWorkspaceGroup[];
   projectIconTargets: SidebarProjectIconTarget[];
   pinnedGroups: PinnedSidebarGroups;
-  settledRows: SidebarWorkspacePlacement[];
   projects: SidebarProjectEntry[];
   hasProjectsBeforeFilter: boolean;
   hasActiveProjectFilter: boolean;
@@ -141,7 +139,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     workspaceGroups,
     projectIconTargets,
     pinnedGroups,
-    settledRows,
     collapsedProjectKeys,
     toggleProjectCollapsed,
     groupMode,
@@ -219,7 +216,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     workspaceGroups,
     projectIconTargets,
     pinnedGroups,
-    settledRows,
     projects,
     hasProjectsBeforeFilter,
     hasActiveProjectFilter: resolvedProjectFilters.length > 0,
@@ -511,7 +507,6 @@ function MobileSidebar({
   workspaceGroups,
   projectIconTargets,
   pinnedGroups,
-  settledRows,
   projects,
   hasProjectsBeforeFilter,
   hasActiveProjectFilter,
@@ -590,7 +585,6 @@ function MobileSidebar({
             workspaceGroups={workspaceGroups}
             projectIconTargets={projectIconTargets}
             pinnedGroups={pinnedGroups}
-            settledRows={settledRows}
             projects={projects}
             hasProjectsBeforeFilter={hasProjectsBeforeFilter}
             hasActiveProjectFilter={hasActiveProjectFilter}
@@ -624,7 +618,6 @@ function DesktopSidebar({
   workspaceGroups,
   projectIconTargets,
   pinnedGroups,
-  settledRows,
   projects,
   hasProjectsBeforeFilter,
   hasActiveProjectFilter,
@@ -776,7 +769,6 @@ function DesktopSidebar({
             workspaceGroups={workspaceGroups}
             projectIconTargets={projectIconTargets}
             pinnedGroups={pinnedGroups}
-            settledRows={settledRows}
             projects={projects}
             hasProjectsBeforeFilter={hasProjectsBeforeFilter}
             hasActiveProjectFilter={hasActiveProjectFilter}

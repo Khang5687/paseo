@@ -59,6 +59,7 @@
   {
     "pr": 7,
     "title": "feat(sidebar): settle workspaces into a collapsible Settled section",
+    "retired": "removed by #25",
     "tests": [
       "packages/app/src/components/sidebar/sidebar-projection.test.ts",
       "packages/app/src/stores/sidebar-collapsed-sections-store/state.test.ts",
@@ -758,6 +759,16 @@
     "tests": [
       "scripts/fork-daemon-idle.test.mjs",
       "packages/desktop/src/daemon/external-daemon-launcher.test.ts"
+    ]
+  },
+  {
+    "pr": 25,
+    "title": "Revert \"feat(sidebar): settle workspaces into a collapsible Settled section\"",
+    "tests": [
+      "packages/app/src/components/sidebar/sidebar-projection.test.ts",
+      "packages/app/src/stores/sidebar-collapsed-sections-store/state.test.ts",
+      "packages/server/src/server/workspace-registry.test.ts",
+      "packages/server/src/server/session.workspaces.test.ts"
     ]
   }
 ]

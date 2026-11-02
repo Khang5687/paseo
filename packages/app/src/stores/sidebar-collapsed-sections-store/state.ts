@@ -6,7 +6,6 @@ export interface CollapsedProjectsState {
   collapsedPinned: boolean;
   /** Thread rows whose subagent rows are unfolded. Threads start folded, so this holds the exceptions. */
   expandedThreadKeys: Set<string>;
-  collapsedSettled: boolean;
 }
 
 export interface PersistedCollapsedProjects {
@@ -15,7 +14,6 @@ export interface PersistedCollapsedProjects {
   collapsedStatusGroupKeys?: string[];
   collapsedPinned?: boolean;
   expandedThreadKeys?: string[];
-  collapsedSettled?: boolean;
 }
 
 export const PersistedCollapsedProjectsSchema: z.ZodType<PersistedCollapsedProjects> =
@@ -26,26 +24,10 @@ export const PersistedCollapsedProjectsSchema: z.ZodType<PersistedCollapsedProje
     collapsedStatusGroupKeys: z.array(z.string()).optional(),
     collapsedPinned: z.boolean().optional(),
     expandedThreadKeys: z.array(z.string()).optional(),
-    collapsedSettled: z.boolean().optional(),
   });
-
-// Settled workspaces are the ones the user put away, so their section starts folded.
-export function createDefaultCollapsedProjectsState(): CollapsedProjectsState {
-  return {
-    collapsedProjectKeys: new Set(),
-    collapsedWorkspaceGroupKeys: new Set(),
-    collapsedPinned: false,
-    expandedThreadKeys: new Set(),
-    collapsedSettled: true,
-  };
-}
 
 export function togglePinnedCollapsed(state: CollapsedProjectsState): CollapsedProjectsState {
   return { ...state, collapsedPinned: !state.collapsedPinned };
-}
-
-export function toggleSettledCollapsed(state: CollapsedProjectsState): CollapsedProjectsState {
-  return { ...state, collapsedSettled: !state.collapsedSettled };
 }
 
 export function toggleProjectCollapsed(
@@ -107,14 +89,12 @@ export function serializeCollapsedProjects(state: CollapsedProjectsState): {
   collapsedWorkspaceGroupKeys: string[];
   collapsedPinned: boolean;
   expandedThreadKeys: string[];
-  collapsedSettled: boolean;
 } {
   return {
     collapsedProjectKeys: Array.from(state.collapsedProjectKeys),
     collapsedWorkspaceGroupKeys: Array.from(state.collapsedWorkspaceGroupKeys),
     collapsedPinned: state.collapsedPinned,
     expandedThreadKeys: Array.from(state.expandedThreadKeys),
-    collapsedSettled: state.collapsedSettled,
   };
 }
 
@@ -139,13 +119,11 @@ export function mergePersistedCollapsedProjects<S extends CollapsedProjectsState
   const restoredThreads = deserializeCollapsedKeys(
     persisted.expandedThreadKeys ?? Array.from(current.expandedThreadKeys),
   );
-  const restoredSettled = persisted.collapsedSettled ?? current.collapsedSettled;
   if (
     areSetsEqual(current.collapsedProjectKeys, restoredProjects) &&
     areSetsEqual(current.collapsedWorkspaceGroupKeys, restoredWorkspaceGroups) &&
     current.collapsedPinned === restoredPinned &&
-    areSetsEqual(current.expandedThreadKeys, restoredThreads) &&
-    current.collapsedSettled === restoredSettled
+    areSetsEqual(current.expandedThreadKeys, restoredThreads)
   ) {
     return current;
   }
@@ -155,7 +133,6 @@ export function mergePersistedCollapsedProjects<S extends CollapsedProjectsState
     collapsedWorkspaceGroupKeys: restoredWorkspaceGroups,
     collapsedPinned: restoredPinned,
     expandedThreadKeys: restoredThreads,
-    collapsedSettled: restoredSettled,
   };
 }
 
