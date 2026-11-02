@@ -65,6 +65,11 @@ and thumbnails). The cache is IndexedDB with `blob:` URLs on web and Electron, a
 document directory on native. When a connected plugin contributes a new `version` of a selected
 skin, the backdrop re-fetches it. The selection is per device and per color scheme.
 
+On Electron the open dialog returns a filesystem path, and the renderer cannot `fetch` it: the
+packaged app serves pages from the `paseo://` scheme, so the path resolves inside the app bundle.
+Import desktop files through the desktop bridge, as
+`screens/settings/appearance/background/picked-image.ts` does.
+
 `skins/plugin-cache.ts` implements `client.applySkin` and must not import the plugin registry:
 `plugins/evaluate.ts` imports it, and the registry imports `evaluate.ts`.
 
