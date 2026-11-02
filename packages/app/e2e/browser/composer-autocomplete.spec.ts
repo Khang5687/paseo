@@ -442,16 +442,14 @@ test.describe("Composer autocomplete", () => {
       });
       await expect(page.getByTestId("composer-file-attachment-pill")).toContainText("note.txt");
       await message.getByRole("link", { name: "/mock", exact: true }).click();
-      await expect(composerLocator(page)).toHaveValue("/mock ");
-      // The inserted command shows its argument hint, not the command list.
-      const argumentHint = page
-        .getByTestId("composer-autocomplete-popover")
-        .filter({ visible: true });
-      await expect(argumentHint).toContainText("/mock handled-command");
-      await expect(argumentHint).not.toContainText("/exit");
+      await expect(composerLocator(page)).toHaveValue("[File #1] /mock ");
+      // A command behind the inline file ref is not at the start, so no command or argument menu opens.
+      await expect(
+        page.getByTestId("composer-autocomplete-popover").filter({ visible: true }),
+      ).toHaveCount(0);
       await expect(composerLocator(page)).toBeFocused();
       await message.getByRole("link", { name: "Run mock" }).click();
-      await expect(composerLocator(page)).toHaveValue("/mock /mock ");
+      await expect(composerLocator(page)).toHaveValue("[File #1] /mock /mock ");
       await expect(
         page.getByTestId("composer-autocomplete-popover").filter({ visible: true }),
       ).toHaveCount(0);
