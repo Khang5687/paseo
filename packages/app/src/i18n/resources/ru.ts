@@ -193,6 +193,7 @@ export const ru: TranslationResources = {
     clientCommands: {
       archiveAgent: "Архивировать текущего агента",
       freshDraft: "Архивировать этого агента и создать новый черновик",
+      forkAgent: "Ответвить этот чат в новой вкладке",
     },
     github: {
       searching: "Идет поиск...",

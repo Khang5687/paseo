@@ -192,6 +192,7 @@ export const ptBR: TranslationResources = {
     clientCommands: {
       archiveAgent: "Arquivar o agente atual",
       freshDraft: "Arquivar este agente e iniciar um novo rascunho",
+      forkAgent: "Bifurcar este chat em uma nova aba",
     },
     github: {
       searching: "Buscando...",

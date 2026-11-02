@@ -194,6 +194,7 @@ export const fr: TranslationResources = {
     clientCommands: {
       archiveAgent: "Archiver l’agent actuel",
       freshDraft: "Archiver cet agent et démarrer un nouveau brouillon",
+      forkAgent: "Dupliquer ce chat dans un nouvel onglet",
     },
     github: {
       searching: "Recherche…",

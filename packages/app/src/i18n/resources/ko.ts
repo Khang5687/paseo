@@ -191,6 +191,7 @@ export const ko: TranslationResources = {
     clientCommands: {
       archiveAgent: "현재 에이전트 보관",
       freshDraft: "이 에이전트를 보관하고 새 초안을 시작합니다",
+      forkAgent: "이 채팅을 새 탭으로 포크",
     },
     github: {
       searching: "검색 중...",

@@ -13,7 +13,12 @@ import { orderAutocompleteOptions } from "@/components/ui/autocomplete-utils";
 import { useAutocomplete } from "./use-autocomplete";
 import { useSessionStore } from "@/stores/session-store";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
-import { CLIENT_SLASH_COMMANDS, type ClientSlashCommand } from "@/client-slash-commands";
+import {
+  CLIENT_SLASH_COMMANDS,
+  isClientSlashCommandAvailable,
+  type ClientSlashCommand,
+} from "@/client-slash-commands";
+import { useHostFeature } from "@/runtime/host-features";
 import type { PluginClientSlashCommand } from "@/plugins/client-slash-commands";
 import { mergeSlashCommandSources } from "@/plugins/client-slash-commands/model";
 import {
@@ -196,6 +201,7 @@ interface BuildAutocompleteOptionsInput {
   commands: AgentSlashCommand[];
   pluginCommands: readonly PluginClientSlashCommand[];
   isDraftContext: boolean;
+  supportsAgentFork: boolean;
   commandFilterQuery: string;
   activeSlashCommand: SlashCommandRange | null;
   activeFileMention: FileMentionRange | null;
@@ -214,7 +220,9 @@ function buildCommandAutocompleteOptions(input: BuildAutocompleteOptionsInput) {
       command,
     }));
     const rootCommands: AvailableCommand[] = mergeSlashCommandSources({
-      builtIn: CLIENT_SLASH_COMMANDS,
+      builtIn: CLIENT_SLASH_COMMANDS.filter((command) =>
+        isClientSlashCommandAvailable(command, input),
+      ),
       plugins: input.pluginCommands,
       provider: input.commands,
       onPluginCollision(command, winner) {
@@ -422,6 +430,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   }, [agentCwd, isDraftContext, queryDraftConfig]);
 
   const client = useHostRuntimeClient(serverId);
+  const supportsAgentFork = useHostFeature(serverId, "agentFork");
   const isConnected = useHostRuntimeIsConnected(serverId);
 
   const mode = resolveAutocompleteMode({ showFileAutocomplete, showCommandAutocomplete });
@@ -489,6 +498,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
         activeSlashCommand,
         fileSuggestions: fileSuggestionsQuery.data ?? [],
         isDraftContext,
+        supportsAgentFork,
         isVisible,
         mode,
         t,
@@ -501,6 +511,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       pluginClientSlashCommands,
       fileSuggestionsQuery.data,
       isDraftContext,
+      supportsAgentFork,
       isVisible,
       mode,
       t,
