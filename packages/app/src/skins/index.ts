@@ -12,8 +12,13 @@ export {
   updateLocalSkin,
 } from "./select";
 export {
+  previewSkinBlur,
+  previewSkinVisibility,
   setSkinBlur,
   setSkinShowBehindContent,
   setSkinShowBehindSidebar,
   setSkinVisibility,
+  useSkinBlur,
+  useSkinVisibility,
 } from "./preferences-store";
+export { SKIN_BLUR_MAX } from "./preferences-schema";

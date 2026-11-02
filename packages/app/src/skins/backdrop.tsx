@@ -7,18 +7,12 @@ import { usePrefersMoreContrast, useReduceMotion } from "./accessibility";
 import { useActiveSkin } from "./active";
 import { useRefreshSelectedPluginSkins } from "./catalog";
 import { computeArtLimit } from "./contrast";
-import { useSkinPreferencesStore } from "./preferences-store";
+import { useSkinBlur, useSkinVisibility } from "./preferences-store";
 import { useSkinRoute } from "./route";
 import { useActiveSkinScheme } from "./scheme";
-import type { SkinBlur, SkinImageUris, SkinMetadata } from "./types";
+import type { SkinImageUris, SkinMetadata } from "./types";
 
 const FADE_MS = 220;
-
-const BLUR_RADIUS: Record<Exclude<SkinBlur, "off">, number> = {
-  low: 8,
-  medium: 16,
-  high: 28,
-};
 
 // Static layout only: Reanimated views must not take Unistyles styles.
 const layout = StyleSheet.create({
@@ -71,8 +65,8 @@ function SkinArt({
   colorScheme,
 }: ShownSkin & ThemeColors) {
   const route = useSkinRoute();
-  const blur = useSkinPreferencesStore((state) => state.blur);
-  const visibility = useSkinPreferencesStore((state) => state.visibility);
+  const blur = useSkinBlur();
+  const visibility = useSkinVisibility();
   const moreContrast = usePrefersMoreContrast();
   const reduceMotion = useReduceMotion();
   const low = metadata.luminance?.low;
@@ -97,7 +91,7 @@ function SkinArt({
   }, [opacity, reduceMotion, targetOpacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  const uri = blur === "off" ? images.display : images.small;
+  const uri = blur > 0 ? images.small : images.display;
   const source = useMemo(() => ({ uri }), [uri]);
   const { x, y } = metadata.focal;
   const contentPosition = useMemo(() => ({ left: `${x * 100}%`, top: `${y * 100}%` }), [x, y]);
@@ -106,7 +100,7 @@ function SkinArt({
     <Animated.View pointerEvents="none" style={[layout.fill, animatedStyle]}>
       <Image
         source={source}
-        blurRadius={blur === "off" ? 0 : BLUR_RADIUS[blur]}
+        blurRadius={blur}
         contentFit="cover"
         contentPosition={contentPosition}
         transition={reduceMotion ? 0 : FADE_MS}
