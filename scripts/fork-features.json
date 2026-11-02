@@ -682,6 +682,77 @@
     "tests": ["packages/server/src/server/agent/mcp-server.test.ts"]
   },
   {
+    "pr": 88,
+    "title": "fix(omp): don't block agent resume on the account-routing capability probe",
+    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
+  },
+  {
+    "pr": 89,
+    "title": "fix(app): show the slash command menu while provider commands load",
+    "tests": ["packages/app/src/components/ui/autocomplete-utils.test.ts"],
+    "e2e": ["packages/app/e2e/browser/composer-autocomplete.spec.ts"]
+  },
+  {
+    "pr": 90,
+    "title": "fix(app): slash command arguments, subcommands and aliases",
+    "tests": [
+      "packages/server/src/server/agent/providers/omp/agent.test.ts",
+      "packages/server/src/server/agent/providers/omp/commands.test.ts",
+      "packages/protocol/src/messages.list-commands.test.ts",
+      "packages/app/src/utils/agent-command-autocomplete.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/composer-autocomplete.spec.ts"]
+  },
+  {
+    "pr": 91,
+    "title": "fix(app): anchor the context window hover card to its ring",
+    "tests": [],
+    "e2e": ["packages/app/e2e/browser/context-window-meter.spec.ts"]
+  },
+  {
+    "pr": 92,
+    "title": "fix(omp): show MCP mount notices as one compact row",
+    "tests": [
+      "packages/server/src/server/agent/providers/omp/event-mapper.test.ts",
+      "packages/protocol/src/tool-call-display.test.ts",
+      "packages/app/src/utils/tool-call-icon-name.test.ts"
+    ]
+  },
+  {
+    "pr": 93,
+    "title": "feat(app): show waiting and fired notes in chats, terminals and sidebar",
+    "tests": ["packages/app/src/notes/model.test.ts", "packages/app/src/notes/chat-badges.test.ts"]
+  },
+  {
+    "pr": 94,
+    "title": "fix(omp): skip OMP metadata records when mapping history",
+    "tests": ["packages/server/src/server/agent/providers/omp/history-mapper.test.ts"]
+  },
+  {
+    "pr": 95,
+    "title": "feat(server): search and unarchive agents from agent tools",
+    "tests": [
+      "packages/server/src/server/agent/agent-search.test.ts",
+      "packages/server/src/server/agent/mcp-server.test.ts",
+      "packages/server/src/server/authorization/index.test.ts"
+    ]
+  },
+  {
+    "pr": 96,
+    "title": "fix(server): keep a linked worktree under its project",
+    "tests": [
+      "packages/server/src/server/session/workspace-provisioning/workspace-provisioning-service.test.ts"
+    ]
+  },
+  {
+    "pr": 97,
+    "title": "feat(server): compact agent tool output",
+    "tests": [
+      "packages/server/src/server/agent/tools/paseo-tool-compaction.test.ts",
+      "packages/server/src/server/agent/mcp-server.test.ts"
+    ]
+  },
+  {
     "pr": 87,
     "title": "feat(fork): apply fork builds without interrupting running agents",
     "tests": [
