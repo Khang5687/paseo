@@ -1035,7 +1035,7 @@ describe("browser MCP tools", () => {
         agents: [],
       });
       expectSingleTextContent(browserResult);
-      expect(expectSingleTextContent(listAgentsResult)).toContain('"agents": []');
+      expect(expectSingleTextContent(listAgentsResult)).toBe('{"agents":[]}');
 
       const listedTools = await client.listTools();
       expect(listedTools.tools.map((tool) => tool.name)).toEqual(
@@ -1876,6 +1876,7 @@ describe("create_agent MCP tool", () => {
       title: "Mode test",
       provider: "codex/gpt-5.4",
       initialPrompt: "Do work",
+      detail: "full",
     });
 
     expect(response.structuredContent).toEqual(
@@ -1896,6 +1897,41 @@ describe("create_agent MCP tool", () => {
         ],
       }),
     );
+  });
+
+  it("omits the mode catalog from create_agent by default", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.createAgent.mockResolvedValue({
+      id: "compact-agent",
+      provider: "codex",
+      cwd: REPO_CWD,
+      lifecycle: "idle",
+      currentModeId: null,
+      availableModes: [{ id: "build", label: "Build", description: null }],
+      config: { title: "Compact" },
+    } as ManagedAgent);
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      ensureWorkspaceForCreate,
+      logger,
+    });
+    const response = await registeredTool(server, "create_agent").handler({
+      ...detachedDirectoryWorkspace(existingCwd),
+      title: "Compact",
+      provider: "codex/gpt-5.4",
+      initialPrompt: "Do work",
+    });
+
+    expect(response.structuredContent).toEqual({
+      agentId: "compact-agent",
+      type: "codex",
+      status: "idle",
+      cwd: REPO_CWD,
+      guidance: expect.any(String),
+    });
   });
 
   it("requires provider as provider/model and rejects the old model field", async () => {
@@ -2712,6 +2748,73 @@ describe("create_agent MCP tool", () => {
 
     expect(response.structuredContent.workspaces).toEqual([
       expect.objectContaining({ workspaceId: "ws-feature", isolation: "worktree" }),
+    ]);
+  });
+
+  it("filters, orders newest first, and truncates list_workspaces", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const records = Array.from({ length: 30 }, (_, index) =>
+      createPersistedWorkspaceRecord({
+        workspaceId: `ws-${index}`,
+        projectId: index % 2 === 0 ? "project-even" : "project-odd",
+        cwd: `/tmp/paseo/repo-${index}`,
+        kind: "directory",
+        displayName: `Repo ${index}`,
+        title: `Repo ${index}`,
+        createdAt: "2026-07-01T00:00:00.000Z",
+        updatedAt: new Date(Date.UTC(2026, 6, 1, 0, index)).toISOString(),
+      }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      workspaceRegistry: {
+        get: vi.fn(async () => records[0]),
+        list: vi.fn(async () => records),
+        upsert: vi.fn(async () => undefined),
+      },
+      logger,
+    });
+    const tool = registeredTool(server, "list_workspaces");
+
+    const first = await tool.handler({});
+    expect(first.structuredContent.workspaces).toHaveLength(20);
+    expect(first.structuredContent.workspaces[0]).toEqual({
+      workspaceId: "ws-29",
+      title: "Repo 29",
+      cwd: "/tmp/paseo/repo-29",
+      projectId: "project-odd",
+    });
+    expect(first.structuredContent).toMatchObject({ more: 10 });
+
+    const byQuery = await tool.handler({ query: "REPO-1", limit: 100 });
+    expect(
+      byQuery.structuredContent.workspaces.map((w: { workspaceId: string }) => w.workspaceId),
+    ).toEqual([
+      "ws-19",
+      "ws-18",
+      "ws-17",
+      "ws-16",
+      "ws-15",
+      "ws-14",
+      "ws-13",
+      "ws-12",
+      "ws-11",
+      "ws-10",
+      "ws-1",
+    ]);
+    expect(byQuery.structuredContent).not.toHaveProperty("more");
+
+    const byProject = await tool.handler({ projectId: "project-even", limit: 2 });
+    expect(byProject.structuredContent).toMatchObject({
+      workspaces: [{ workspaceId: "ws-28" }, { workspaceId: "ws-26" }],
+      more: 13,
+    });
+
+    const full = await tool.handler({ limit: 1, detail: "full" });
+    expect(full.structuredContent.workspaces).toEqual([
+      expect.objectContaining({ workspaceId: "ws-29", isolation: "local", kind: "directory" }),
     ]);
   });
 
@@ -5802,6 +5905,27 @@ describe("provider listing MCP tool", () => {
         {
           id: "claude",
           label: "Claude",
+          status: "available",
+          modes: [{ id: "default", label: "Default" }],
+        },
+        {
+          id: "zai",
+          label: "ZAI",
+          status: "available",
+          modes: [{ id: "default", label: "Default" }],
+        },
+      ],
+    });
+    expect(modelVisibleText).not.toContain("providers_count");
+    expect(modelVisibleText).not.toContain("providers_ids");
+    expect(modelVisibleText).toBe(JSON.stringify(response.structuredContent));
+
+    const full = await tool.handler({ detail: "full" });
+    expect(full.structuredContent).toEqual({
+      providers: [
+        {
+          id: "claude",
+          label: "Claude",
           description: "Test provider",
           enabled: true,
           status: "available",
@@ -5817,9 +5941,6 @@ describe("provider listing MCP tool", () => {
         },
       ],
     });
-    expect(modelVisibleText).toContain("providers_count=2");
-    expect(modelVisibleText).toContain("providers_ids=claude,zai");
-    expect(modelVisibleText).toContain('"providers"');
   });
 
   it("returns provider modes from the shared snapshot catalog", async () => {
@@ -5841,7 +5962,7 @@ describe("provider listing MCP tool", () => {
     });
     const tool = registeredTool(server, "list_providers");
 
-    const response = await tool.handler({});
+    const response = await tool.handler({ detail: "full" });
 
     expect(response.structuredContent.providers).toEqual([
       expect.objectContaining({
@@ -5871,7 +5992,7 @@ describe("provider listing MCP tool", () => {
       logger,
     });
     const tool = registeredTool(server, "list_providers");
-    const response = await tool.handler({});
+    const response = await tool.handler({ detail: "full" });
 
     expect(response.structuredContent).toEqual({
       providers: [
@@ -6015,7 +6136,7 @@ describe("provider MCP tools", () => {
     const parsed = await tool.inputSchema.safeParseAsync(input);
     expect(parsed.success).toBe(true);
 
-    const response = await tool.handler(input);
+    const response = await tool.handler({ ...input, detail: "full" });
 
     expect(spies.agentManager.listDraftFeatures).toHaveBeenCalledWith({
       provider: "codex",
@@ -6041,6 +6162,17 @@ describe("provider MCP tools", () => {
           value: false,
         },
       ],
+    });
+
+    const compact = await tool.handler(input);
+    expect(compact.structuredContent).toEqual({
+      provider: "codex",
+      label: "Codex",
+      enabled: true,
+      status: "available",
+      modes: [{ id: "full-access", label: "Full Access" }],
+      selectedModel: "gpt-5.4",
+      features: response.structuredContent.features,
     });
   });
 
@@ -6083,7 +6215,7 @@ describe("provider MCP tools", () => {
 
       expect(response.structuredContent).toEqual({
         provider: "claude",
-        models: [{ provider: "claude", id: "sonnet", label: "Sonnet", isDefault: false }],
+        models: [{ id: "sonnet", label: "Sonnet" }],
       });
     } finally {
       providerSnapshotManager.destroy();
@@ -6192,7 +6324,7 @@ describe("agent snapshot MCP serialization", () => {
       logger,
     });
     const tool = registeredTool(server, "list_agents");
-    const response = await tool.handler({});
+    const response = await tool.handler({ detail: "full" });
     const structured = z
       .object({ agents: z.array(z.record(z.string(), z.unknown())) })
       .parse(response.structuredContent);
@@ -6228,6 +6360,64 @@ describe("agent snapshot MCP serialization", () => {
     expect(structured.agents[0]).not.toHaveProperty("pendingPermissions");
   });
 
+  it("returns minimal list items by default and reports truncation", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.listAgents = vi.fn().mockReturnValue([
+      createManagedAgent({
+        id: "agent-child",
+        provider: "codex",
+        cwd: REPO_CWD,
+        config: { model: "gpt-5.4", title: "Child worker" },
+        labels: { role: "researcher", "paseo.parent-agent-id": "agent-parent" },
+      }),
+      createManagedAgent({
+        id: "agent-other",
+        provider: "codex",
+        cwd: REPO_CWD,
+        config: { model: "gpt-5.4", title: "Unrelated" },
+      }),
+    ]);
+    spies.agentStorage.get.mockImplementation(async (id: string) =>
+      id === "agent-child" ? { title: "Child worker" } : null,
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+    const tool = registeredTool(server, "list_agents");
+
+    const compact = await tool.handler({ limit: 1 });
+    expect(compact.structuredContent.agents).toHaveLength(1);
+    expect(compact.structuredContent).toMatchObject({
+      more: 1,
+      note: expect.stringContaining("1 more"),
+    });
+    const [item] = compact.structuredContent.agents;
+    for (const dropped of ["createdAt", "lastUserMessageAt", "archivedAt", "labels"]) {
+      expect(item).not.toHaveProperty(dropped);
+    }
+
+    const filtered = await tool.handler({ query: "CHILD" });
+    expect(filtered.structuredContent).toEqual({
+      agents: [
+        {
+          id: "agent-child",
+          shortId: "agent-c",
+          title: "Child worker",
+          status: "idle",
+          provider: "codex",
+          model: "gpt-5.4",
+          cwd: REPO_CWD,
+          updatedAt: expect.any(String),
+          parentId: "agent-parent",
+          labelCount: 1,
+        },
+      ],
+    });
+  });
+
   it("returns archived agent snapshots from storage for get_agent_status", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const record = createStoredRecord({
@@ -6244,7 +6434,7 @@ describe("agent snapshot MCP serialization", () => {
       providerSnapshotManager: createClaudeOnlyManager(),
     });
     const tool = registeredTool(server, "get_agent_status");
-    const response = await tool.handler({ agentId: "archived-agent" });
+    const response = await tool.handler({ agentId: "archived-agent", detail: "full" });
 
     expect(response.structuredContent).toEqual({
       status: "closed",
@@ -6256,6 +6446,41 @@ describe("agent snapshot MCP serialization", () => {
       }),
     });
     expect(spies.agentStorage.get).toHaveBeenCalledWith("archived-agent");
+  });
+
+  it("returns a minimal snapshot from get_agent_status by default", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(null);
+    spies.agentStorage.get.mockResolvedValue(
+      createStoredRecord({ id: "archived-agent", archivedAt: "2026-04-12T00:00:00.000Z" }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      logger,
+      providerSnapshotManager: createClaudeOnlyManager(),
+    });
+    const response = await registeredTool(server, "get_agent_status").handler({
+      agentId: "archived-agent",
+    });
+
+    const snapshot = response.structuredContent.snapshot;
+    expect(response.structuredContent.status).toBe("closed");
+    expect(snapshot).toMatchObject({
+      id: "archived-agent",
+      title: "Stored agent",
+      status: "closed",
+      archived: true,
+    });
+    for (const dropped of [
+      "capabilities",
+      "availableModes",
+      "persistence",
+      "labels",
+      "createdAt",
+    ]) {
+      expect(snapshot).not.toHaveProperty(dropped);
+    }
   });
 
   it("returns full-detail snapshots from get_agent_status", async () => {
@@ -6315,7 +6540,7 @@ describe("agent snapshot MCP serialization", () => {
       logger,
     });
     const tool = registeredTool(server, "get_agent_status");
-    const response = await tool.handler({ agentId: "full-detail-agent" });
+    const response = await tool.handler({ agentId: "full-detail-agent", detail: "full" });
     const snapshot = z.record(z.string(), z.unknown()).parse(response.structuredContent.snapshot);
 
     const parsed = AgentSnapshotPayloadSchema.safeParse(snapshot);
@@ -6523,14 +6748,15 @@ describe("agent snapshot MCP serialization", () => {
     const response = await tool.handler({ includeArchived: true });
     const agentIds = agentsOf(response).map((agent) => agent.id);
 
-    expect(agentIds).toHaveLength(50);
+    expect(agentIds).toHaveLength(20);
     expect(agentIds).toEqual(
       Array.from(
-        { length: 50 },
+        { length: 20 },
         (_, index) => `recent-archived-${index.toString().padStart(2, "0")}`,
       ),
     );
     expect(agentIds).not.toContain("old-archived");
+    expect(response.structuredContent).toMatchObject({ more: 35 });
   });
 
   it("returns compact list items for stored archived agents", async () => {
@@ -6561,7 +6787,7 @@ describe("agent snapshot MCP serialization", () => {
       providerSnapshotManager: createClaudeOnlyManager(),
     });
     const tool = registeredTool(server, "list_agents");
-    const response = await tool.handler({ cwd: REPO_CWD, includeArchived: true });
+    const response = await tool.handler({ cwd: REPO_CWD, includeArchived: true, detail: "full" });
     const item = agentsOf(response)[0];
 
     expect(item).toEqual({
@@ -6672,7 +6898,7 @@ describe("agent snapshot MCP serialization", () => {
       providerSnapshotManager: createClaudeOnlyManager(),
     });
     const tool = registeredTool(server, "list_agents");
-    const response = await tool.handler({ includeArchived: true });
+    const response = await tool.handler({ includeArchived: true, detail: "full" });
 
     const parsed = z.array(AgentListItemPayloadSchema).safeParse(response.structuredContent.agents);
     if (!parsed.success) {

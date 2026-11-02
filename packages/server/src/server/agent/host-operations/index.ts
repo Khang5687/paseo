@@ -14,7 +14,8 @@ import type { HostDirectory } from "@getpaseo/protocol/hosts";
 import { OWNER_PERMISSIONS } from "../../authorization/index.js";
 import type { ConnectedHosts } from "../../connected-hosts/index.js";
 import { resolveRequiredProviderModel } from "../mcp-shared.js";
-import { selectAgentListItems } from "../agent-projections.js";
+import { selectAgentListPage } from "../agent-projections.js";
+import { moreNote, selectWorkspaceSummaries } from "../tools/paseo-tool-compaction.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
 import { expandUserPath } from "../../path-utils.js";
 import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
@@ -364,25 +365,46 @@ export function createHostResolver(input: {
               includeBackground: args.includeBackground === true,
               filter: { includeArchived: args.includeArchived === true },
             });
+            const page = selectAgentListPage(
+              entries.map((entry) => entry.agent),
+              {
+                cwd: (args.cwd as string | undefined)?.trim()
+                  ? expandUserPath(args.cwd as string)
+                  : undefined,
+                statuses: args.statuses as AgentSnapshotPayload["status"][] | undefined,
+                sinceHours: args.sinceHours as number | undefined,
+                limit: args.limit as number | undefined,
+                query: args.query as string | undefined,
+              },
+            );
             return result({
-              agents: selectAgentListItems(
-                entries.map((entry) => entry.agent),
-                {
-                  cwd: (args.cwd as string | undefined)?.trim()
-                    ? expandUserPath(args.cwd as string)
-                    : undefined,
-                  statuses: args.statuses as AgentSnapshotPayload["status"][] | undefined,
-                  sinceHours: args.sinceHours as number | undefined,
-                  limit: args.limit as number | undefined,
-                },
-              ),
+              agents: page.agents,
+              ...(page.more > 0
+                ? moreNote(page.more, "narrow with query, cwd, or statuses, or raise limit")
+                : {}),
             });
           },
           async listWorkspaces(args) {
             const { entries } = await client.fetchWorkspaces({
               includeBackground: args.includeBackground === true,
             });
-            return result({ workspaces: entries.map(workspaceSummary) });
+            const newestFirst = entries.toSorted(
+              (a, b) =>
+                Date.parse(b.activityAt ?? b.createdAt ?? "") -
+                Date.parse(a.activityAt ?? a.createdAt ?? ""),
+            );
+            const page = selectWorkspaceSummaries(newestFirst.map(workspaceSummary), {
+              query: args.query as string | undefined,
+              projectId: args.projectId as string | undefined,
+              cwd: args.cwd as string | undefined,
+              limit: args.limit as number | undefined,
+            });
+            return result({
+              workspaces: page.items,
+              ...(page.more > 0
+                ? moreNote(page.more, "narrow with query, projectId, or cwd, or raise limit")
+                : {}),
+            });
           },
           async createWorkspace(args) {
             const isolation = z.enum(["local", "worktree"]).parse(args.isolation);
