@@ -770,6 +770,7 @@ export interface AgentForkSessionInput {
    */
   cutBeforeMessageId: string | null;
   cwd: string;
+  providerOptions?: Record<string, unknown>;
 }
 
 export interface AgentForkSessionResult {

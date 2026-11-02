@@ -321,9 +321,7 @@ export function resolveForkCutPoint(input: {
       row.item.status === "completed" &&
       (boundarySeq === null || row.seqEnd <= boundarySeq),
   );
-  const compactedRows = compaction
-    ? input.rows.filter((row) => row.seq < compaction.seqStart)
-    : [];
+  const compactedRows = compaction ? input.rows.filter((row) => row.seq < compaction.seqStart) : [];
   return { cutBeforeMessageId, compactedRows };
 }
 

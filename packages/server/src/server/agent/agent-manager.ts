@@ -1578,15 +1578,11 @@ export class AgentManager {
    */
   createForkSummaryAgent(agentId: string, input: { title?: string | null }): Promise<ManagedAgent> {
     const source = this.requireSessionAgent(agentId);
-    return this.createAgent(
-      forkSessionConfig(source, input.title),
-      undefined,
-      {
-        workspaceId: source.workspaceId,
-        labels: forkLabels(source.labels),
-        ...(input.title ? { initialTitle: input.title } : {}),
-      },
-    );
+    return this.createAgent(forkSessionConfig(source, input.title), undefined, {
+      workspaceId: source.workspaceId,
+      labels: forkLabels(source.labels),
+      ...(input.title ? { initialTitle: input.title } : {}),
+    });
   }
 
   /**
@@ -1612,6 +1608,7 @@ export class AgentManager {
     const forked = await client.forkSession(source.persistence, {
       cutBeforeMessageId: input.cutBeforeMessageId,
       cwd: source.cwd,
+      providerOptions: source.config.providerOptions,
     });
     const agent = await this.resumeAgentFromPersistence(
       forked.persistence,

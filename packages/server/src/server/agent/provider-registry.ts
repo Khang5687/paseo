@@ -494,6 +494,7 @@ function wrapClientProvider(
   const listFeatures = inner.listFeatures?.bind(inner);
   const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
   const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  const forkSession = inner.forkSession?.bind(inner);
   const configuredModelIds = [...profileModels, ...additionalModels].map((model) => model.id);
 
   return {
@@ -599,6 +600,18 @@ function wrapClientProvider(
             },
             persistence,
           };
+        }
+      : undefined,
+    forkSession: forkSession
+      ? async (handle, input) => {
+          const forked = await forkSession(
+            { ...handle, provider: inner.provider },
+            {
+              ...input,
+              providerOptions: mergeProviderOptions(providerOptions, input.providerOptions),
+            },
+          );
+          return { ...forked, persistence: { ...forked.persistence, provider } };
         }
       : undefined,
     archiveNativeSession: archiveNativeSession

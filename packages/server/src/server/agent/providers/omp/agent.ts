@@ -2442,7 +2442,7 @@ export class OmpAgentClient implements AgentClient {
     if (!sourceFile) {
       throw new Error("OMP fork requires a native session file handle");
     }
-    const runtimeSession = await this.resolveRuntime(undefined).startSession({
+    const runtimeSession = await this.resolveRuntime(input.providerOptions).startSession({
       cwd: input.cwd,
       protocolMode: "rpc",
       fork: sourceFile,
