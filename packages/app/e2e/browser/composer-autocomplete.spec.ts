@@ -87,6 +87,27 @@ const TEST_COMMANDS = [
     description: "Inspect host connection metadata",
     argumentHint: "",
   },
+  {
+    name: "compact",
+    description: "Compact the conversation",
+    argumentHint: "[soft|remote|snapcompact] [focus]",
+    subcommands: [
+      {
+        name: "soft",
+        description: "Summarize locally with the active model",
+        usage: "[focus]",
+      },
+      {
+        name: "remote",
+        description: "Summarize via server compaction",
+        usage: "[focus]",
+      },
+      {
+        name: "snapcompact",
+        description: "Archive history onto dense bitmap images",
+      },
+    ],
+  },
 ] as const;
 
 interface PopoverFrame {
@@ -391,9 +412,12 @@ test.describe("Composer autocomplete", () => {
       await expect(page.getByTestId("composer-file-attachment-pill")).toContainText("note.txt");
       await message.getByRole("link", { name: "/mock", exact: true }).click();
       await expect(composerLocator(page)).toHaveValue("/mock ");
-      await expect(
-        page.getByTestId("composer-autocomplete-popover").filter({ visible: true }),
-      ).toHaveCount(0);
+      // The inserted command shows its argument hint, not the command list.
+      const argumentHint = page
+        .getByTestId("composer-autocomplete-popover")
+        .filter({ visible: true });
+      await expect(argumentHint).toContainText("/mock handled-command");
+      await expect(argumentHint).not.toContainText("/exit");
       await expect(composerLocator(page)).toBeFocused();
       await message.getByRole("link", { name: "Run mock" }).click();
       await expect(composerLocator(page)).toHaveValue("/mock /mock ");
@@ -733,6 +757,40 @@ test.describe("Composer autocomplete", () => {
     }
   });
 
+  test("picks a command choice with Tab and leaves Enter to send the bare command", async ({
+    page,
+  }) => {
+    await installListCommandsStub(page);
+    const agent = await openReadyMockAgent(page);
+
+    try {
+      const input = composerLocator(page);
+      await expect(input).toBeEditable({ timeout: 30_000 });
+      const popover = page.getByTestId("composer-autocomplete-popover").filter({ visible: true });
+
+      await input.fill("/compact s");
+      // The selected choice is also named in the detail card above the rows; the row is last.
+      await expect(popover.getByText("snapcompact", { exact: true }).last()).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(popover.getByText("soft", { exact: true }).last()).toBeVisible();
+      await expect(popover.getByText("remote", { exact: true })).toHaveCount(0);
+
+      await input.fill("/compact sn");
+      await expect(popover.getByText("soft", { exact: true })).toHaveCount(0);
+      await input.press("Tab");
+      await expect(input).toHaveValue("/compact snapcompact ");
+      await expect(popover).toHaveCount(0);
+
+      await input.fill("/compact ");
+      await expect(popover.getByText("remote", { exact: true }).last()).toBeVisible();
+      await input.press("Enter");
+      await expect(input).toHaveValue("");
+    } finally {
+      await agent.cleanup();
+    }
+  });
+
   test.describe("compact sidebar layering", () => {
     test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
@@ -759,6 +817,36 @@ test.describe("Composer autocomplete", () => {
         await closeMobileAgentSidebar(page);
         await expectMobileAgentSidebarHidden(page);
         await expect(popover.getByText("/help", { exact: true }).first()).toBeVisible();
+      } finally {
+        await agent.cleanup();
+      }
+    });
+  });
+
+  test.describe("slash command arguments on a phone", () => {
+    test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+    test("offers a command's choices after its name and fills in the tapped one", async ({
+      page,
+    }) => {
+      await installListCommandsStub(page);
+      const agent = await openReadyMockAgent(page, { expectWorkspaceTab: false });
+
+      try {
+        const input = composerLocator(page);
+        await expect(input).toBeEditable({ timeout: 30_000 });
+        await input.fill("/compact ");
+
+        const popover = page.getByTestId("composer-autocomplete-popover").filter({ visible: true });
+        const snapcompact = popover.getByText("snapcompact", { exact: true }).last();
+        await expect(snapcompact).toBeVisible({ timeout: 30_000 });
+        await expect(popover.getByText("soft", { exact: true }).last()).toBeVisible();
+        await expect(popover).toContainText("Archive history onto dense bitmap images");
+        await expect(popover).not.toContainText("/help");
+
+        await snapcompact.tap();
+        await expect(input).toHaveValue("/compact snapcompact ");
+        await expect(popover).toHaveCount(0);
       } finally {
         await agent.cleanup();
       }

@@ -267,6 +267,8 @@ Paseo 刷新 Agent 的方式是关闭它当前的 Provider 会话，然后用当
 
 发布 `session.commands`，向 Composer 添加结构化命令。命令可以开始一个普通轮次，也可以作为副作用完成，并返回一个 `completed` 的提示词结果。
 
+用户输入 `/name ` 后，Composer 会显示该命令的 `argumentHint`。为命令提供 `subcommands`（`name`，以及可选的 `description` 和 `usage`），即可为第一个参数提供固定选项；选中后会自动填入。
+
 只声明你实现了的能力。如果不支持引导，请省略 `prompt.steer`；Paseo 可以改为替换当前轮次。
 
 ## 允许清理空闲运行时 {#permit-idle-runtime-cleanup}

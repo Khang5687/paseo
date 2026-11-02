@@ -106,4 +106,27 @@ describe("list_commands_request schema", () => {
     }
     expect(parsed.payload.commands[0]?.kind).toBe("command");
   });
+
+  test("preserves subcommand choices and aliases in responses", () => {
+    const compact = {
+      name: "compact",
+      description: "Compact the conversation",
+      argumentHint: "[soft|remote|snapcompact] [focus]",
+      kind: "command",
+      aliases: ["c"],
+      subcommands: [
+        { name: "soft", description: "Summarize locally", usage: "[focus]" },
+        { name: "snapcompact", description: "Archive history onto images" },
+      ],
+    };
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "list_commands_response",
+      payload: { agentId: "agent-123", requestId: "req-123", error: null, commands: [compact] },
+    });
+
+    if (parsed.type !== "list_commands_response") {
+      throw new Error("Expected list_commands_response message");
+    }
+    expect(parsed.payload.commands).toEqual([compact]);
+  });
 });

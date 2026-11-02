@@ -11,11 +11,19 @@ import {
   type AgentCommandsDraftConfig,
 } from "./cache";
 
+export interface AgentSlashCommandSubcommand {
+  name: string;
+  description?: string;
+  usage?: string;
+}
+
 export interface AgentSlashCommand {
   name: string;
   description: string;
   argumentHint: string;
   kind?: string;
+  aliases?: string[];
+  subcommands?: AgentSlashCommandSubcommand[];
 }
 
 export type DraftCommandConfig = AgentCommandsDraftConfig;

@@ -184,13 +184,23 @@ export const OmpSessionStatsSchema = z
   })
   .passthrough();
 
+const OmpSlashSubcommandSchema = z
+  .object({
+    name: z.string(),
+    description: z.string().optional(),
+    usage: z.string().optional(),
+  })
+  .passthrough();
+
 export const OmpRpcSlashCommandSchema = z
   .object({
     name: z.string(),
     description: z.string().optional(),
     source: z.string().optional(),
     sourceInfo: z.record(z.string(), z.unknown()).optional(),
+    aliases: z.array(z.string()).optional(),
     input: z.object({ hint: z.string().optional() }).passthrough().nullable().optional(),
+    subcommands: z.array(OmpSlashSubcommandSchema).optional(),
   })
   .passthrough();
 
@@ -451,12 +461,26 @@ export const OmpAutoCompactionEndEventSchema = z
     skipped: z.boolean().optional(),
   })
   .passthrough();
+export const OmpManualCompactionStartEventSchema = z
+  .object({ type: z.literal("manual_compaction_start"), mode: z.string().optional() })
+  .passthrough();
+export const OmpManualCompactionEndEventSchema = z
+  .object({
+    type: z.literal("manual_compaction_end"),
+    aborted: z.boolean().optional(),
+    skipped: z.boolean().optional(),
+    errorMessage: z.string().optional(),
+    result: z.unknown().optional(),
+  })
+  .passthrough();
 export const OmpAvailableCommandSchema = z
   .object({
     name: z.string(),
     description: z.string().optional(),
     source: z.string().optional(),
+    aliases: z.array(z.string()).optional(),
     input: z.object({ hint: z.string().optional() }).passthrough().nullable().optional(),
+    subcommands: z.array(OmpSlashSubcommandSchema).optional(),
   })
   .passthrough();
 export const OmpAvailableCommandsUpdateEventSchema = z
@@ -523,6 +547,8 @@ export const OmpRuntimeEventSchema = z.discriminatedUnion("type", [
   OmpRetryFallbackSucceededEventSchema,
   OmpAutoCompactionStartEventSchema,
   OmpAutoCompactionEndEventSchema,
+  OmpManualCompactionStartEventSchema,
+  OmpManualCompactionEndEventSchema,
   OmpAvailableCommandsUpdateEventSchema,
   OmpRpcHostToolCallRequestSchema,
   OmpRpcHostToolCancelRequestSchema,

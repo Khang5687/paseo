@@ -20,6 +20,11 @@ interface UseAutocompleteInput<
   onSelectOption: (option: TOption, event?: TKeyPressEvent) => void;
   onEscape?: () => void;
   optionsPosition?: AutocompleteOptionsPosition;
+  /**
+   * When false, Enter is left to the input (it sends) until the user moves the
+   * selection with the arrow keys; Tab still picks. Defaults to true.
+   */
+  enterSelects?: boolean;
 }
 
 interface UseAutocompleteResult<TKeyPressEvent extends AutocompleteKeyPressEvent> {
@@ -33,16 +38,21 @@ export function useAutocomplete<
 >(input: UseAutocompleteInput<TOption, TKeyPressEvent>): UseAutocompleteResult<TKeyPressEvent> {
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const previousQueryRef = useRef("");
+  const navigatedRef = useRef(false);
 
   useEffect(() => {
     if (!input.isVisible) {
       previousQueryRef.current = input.query;
+      navigatedRef.current = false;
       setSelectedIndex(-1);
       return;
     }
 
     const queryChanged = previousQueryRef.current !== input.query;
     previousQueryRef.current = input.query;
+    if (queryChanged) {
+      navigatedRef.current = false;
+    }
 
     setSelectedIndex((current) => {
       if (input.options.length === 0) {
@@ -71,6 +81,7 @@ export function useAutocomplete<
       }
 
       if (event.key === "ArrowUp") {
+        navigatedRef.current = true;
         event.preventDefault();
         setSelectedIndex((current) =>
           getAutocompleteNextIndex({
@@ -83,6 +94,7 @@ export function useAutocomplete<
       }
 
       if (event.key === "ArrowDown") {
+        navigatedRef.current = true;
         event.preventDefault();
         setSelectedIndex((current) =>
           getAutocompleteNextIndex({
@@ -92,6 +104,10 @@ export function useAutocomplete<
           }),
         );
         return true;
+      }
+
+      if (event.key === "Enter" && input.enterSelects === false && !navigatedRef.current) {
+        return false;
       }
 
       if (event.key === "Tab" || event.key === "Enter") {

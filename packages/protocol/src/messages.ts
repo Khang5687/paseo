@@ -6510,11 +6510,20 @@ export const UsageListReportsResponseMessageSchema = z.object({
   payload: z.object({ requestId: z.string(), error: z.string().nullable() }),
 });
 
+const AgentSlashCommandSubcommandSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  usage: z.string().optional(),
+});
+
 const AgentSlashCommandSchema = z.object({
   name: z.string(),
   description: z.string(),
   argumentHint: z.string(),
   kind: z.enum(["command", "skill"]).optional().catch("command"),
+  aliases: z.array(z.string()).optional(),
+  // Fixed choices for the first argument, e.g. `/compact soft|remote|snapcompact`.
+  subcommands: z.array(AgentSlashCommandSubcommandSchema).optional(),
 });
 
 export const ListCommandsResponseSchema = z.object({
