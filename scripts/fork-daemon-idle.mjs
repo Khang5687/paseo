@@ -13,31 +13,36 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+function agentReasons(agent) {
+  const reasons = [];
+  const name = agent.title?.trim() || agent.id.slice(0, 8);
+  if (agent.status === "running" || agent.status === "initializing") {
+    reasons.push(`agent ${name} is ${agent.status}`);
+  }
+  const permissions = agent.pendingPermissions?.length ?? 0;
+  if (permissions > 0) {
+    reasons.push(`agent ${name} waits on ${permissions} permission request(s)`);
+  }
+  const queued = agent.queuedMessages?.length ?? 0;
+  if (queued > 0 && !agent.queuePaused && agent.status === "idle" && permissions === 0) {
+    reasons.push(`agent ${name} has ${queued} queued message(s) about to send`);
+  }
+  return reasons;
+}
+
 /**
  * What keeps the daemon busy. Empty means a restart interrupts nothing: agents waiting for a
  * person (finished, attention, error) are idle, and so is a paused queue. A queue that is not
  * paused drains into an idle agent on its own, so it counts as work about to start.
  */
 export function busyReasons({ agents, workspaces, schedules }) {
-  const reasons = [];
-  for (const agent of agents) {
-    const name = agent.title?.trim() || agent.id.slice(0, 8);
-    if (agent.status === "running" || agent.status === "initializing") {
-      reasons.push(`agent ${name} is ${agent.status}`);
-    }
-    const permissions = agent.pendingPermissions?.length ?? 0;
-    if (permissions > 0) {
-      reasons.push(`agent ${name} waits on ${permissions} permission request(s)`);
-    }
-    const queued = agent.queuedMessages?.length ?? 0;
-    if (queued > 0 && !agent.queuePaused && agent.status === "idle" && permissions === 0) {
-      reasons.push(`agent ${name} has ${queued} queued message(s) about to send`);
-    }
-  }
+  const reasons = agents.flatMap(agentReasons);
   for (const workspace of workspaces) {
     const subagents = workspace.runningSubagentCount ?? 0;
     if (subagents > 0) {
-      reasons.push(`workspace ${workspace.name ?? workspace.id} has ${subagents} running subagent(s)`);
+      reasons.push(
+        `workspace ${workspace.name ?? workspace.id} has ${subagents} running subagent(s)`,
+      );
     }
   }
   for (const schedule of schedules) {
@@ -76,7 +81,10 @@ async function loadState({ modules, home }) {
     clientType: "cli",
     ...(password
       ? { password }
-      : { localCredential: () => control.readLocalCredentialForTarget(paseoHome, listen) ?? undefined }),
+      : {
+          localCredential: () =>
+            control.readLocalCredentialForTarget(paseoHome, listen) ?? undefined,
+        }),
     connectTimeoutMs: 10_000,
     reconnect: { enabled: false },
   });

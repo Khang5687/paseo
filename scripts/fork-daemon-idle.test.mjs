@@ -23,7 +23,10 @@ test("agents waiting for a person keep the daemon idle", () => {
       agent({ status: "error", requiresAttention: true, attentionReason: "error" }),
       agent({ status: "closed" }),
     ],
-    workspaces: [{ id: "w1", name: "main" }, { id: "w2", runningSubagentCount: 0 }],
+    workspaces: [
+      { id: "w1", name: "main" },
+      { id: "w2", runningSubagentCount: 0 },
+    ],
     schedules: [{ id: "s1", runs: [{ status: "succeeded" }, { status: "failed" }] }],
   };
   assert.deepEqual(busyReasons(state), []);
@@ -74,7 +77,9 @@ test("a running provider subagent is busy while its parent is idle", () => {
 test("a schedule run in progress is busy", () => {
   const state = {
     ...empty,
-    schedules: [{ id: "s1", name: "nightly", runs: [{ status: "succeeded" }, { status: "running" }] }],
+    schedules: [
+      { id: "s1", name: "nightly", runs: [{ status: "succeeded" }, { status: "running" }] },
+    ],
   };
   assert.deepEqual(busyReasons(state), ["schedule nightly has a run in progress"]);
 });

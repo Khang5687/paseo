@@ -680,5 +680,13 @@
     "pr": 86,
     "title": "feat(server): agents can answer other agents' question boxes, across hosts",
     "tests": ["packages/server/src/server/agent/mcp-server.test.ts"]
+  },
+  {
+    "pr": 87,
+    "title": "feat(fork): apply fork builds without interrupting running agents",
+    "tests": [
+      "scripts/fork-daemon-idle.test.mjs",
+      "packages/desktop/src/daemon/external-daemon-launcher.test.ts"
+    ]
   }
 ]
