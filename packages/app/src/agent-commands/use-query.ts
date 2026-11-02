@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useFetchQuery } from "@/data/query";
 import { useTranslation } from "react-i18next";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -11,11 +12,27 @@ import {
   type AgentCommandsDraftConfig,
 } from "./cache";
 
+// Commands change on disk (new skills, edited prompt files) without any daemon event, so the
+// list revalidates each time the command menu opens after this long, for drafts and running
+// agents alike. Cached rows stay visible while the refetch runs.
+const COMMANDS_STALE_TIME = 10_000;
+// A query that matches nothing may be looking for a command that landed after the last fetch.
+// Refetch for it only when the cached list is older than this, so typing does not refetch per key.
+const MISS_REVALIDATE_MIN_AGE = 3_000;
+
+export interface AgentSlashCommandSubcommand {
+  name: string;
+  description?: string;
+  usage?: string;
+}
+
 export interface AgentSlashCommand {
   name: string;
   description: string;
   argumentHint: string;
   kind?: string;
+  aliases?: string[];
+  subcommands?: AgentSlashCommandSubcommand[];
 }
 
 export type DraftCommandConfig = AgentCommandsDraftConfig;
@@ -63,9 +80,10 @@ export function useAgentCommandsQuery({
 }: UseAgentCommandsQueryOptions) {
   const { t } = useTranslation();
   const retainedPanelActive = useRetainedPanelActive();
-  const queryEnabled = enabled && retainedPanelActive;
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const panelActive = enabled && retainedPanelActive;
+  const queryEnabled = panelActive && !!client && isConnected && (!!agentId || !!draftConfig);
   const { provider, cwd } = useSessionStore(
     useShallow((state) => {
       const agent =
@@ -83,16 +101,15 @@ export function useAgentCommandsQuery({
       }
       return fetchAgentCommands({ client, agentId, draftConfig });
     },
-    enabled: queryEnabled && !!client && isConnected && (!!agentId || !!draftConfig),
+    enabled: queryEnabled,
     dataShape: "value",
     meta: {
       agentCommandProvider: draftConfig?.provider ?? provider,
       agentCommandCwd: draftConfig?.cwd ?? cwd,
     },
-    ...(draftConfig
-      ? { immutableWhen: () => true as const }
-      : { ...sessionCommandQueryPolicy, staleTimeMs: sessionCommandQueryPolicy.staleTime }),
-    subscribed: queryEnabled,
+    ...sessionCommandQueryPolicy,
+    staleTimeMs: COMMANDS_STALE_TIME,
+    subscribed: panelActive,
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
   });
@@ -100,11 +117,22 @@ export function useAgentCommandsQuery({
   // isPending is true when the query has never run yet (no cached data and not fetching)
   // isLoading is true when fetching and no data yet
   const isLoading = query.isPending || query.isLoading;
+  const { refetch, isFetching, dataUpdatedAt } = query;
+
+  const revalidateForMiss = useCallback(() => {
+    if (!queryEnabled || isFetching || Date.now() - dataUpdatedAt < MISS_REVALIDATE_MIN_AGE) {
+      return;
+    }
+    void refetch();
+  }, [queryEnabled, isFetching, dataUpdatedAt, refetch]);
 
   return {
     commands: query.data ?? [],
     isLoading,
+    isFetching,
+    // A failed background refetch keeps the cached list; only a failed first load is an error.
     isError: query.isError && query.data === undefined,
-    error: query.error,
+    error: query.data === undefined ? query.error : null,
+    revalidateForMiss,
   };
 }

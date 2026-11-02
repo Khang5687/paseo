@@ -120,7 +120,10 @@ one; disconnect and backgrounding keep it.
 
 Foregrounding probes a nominally connected session immediately. A healthy response preserves the
 socket; a failed three-second probe starts reconnecting without waiting for the background heartbeat
-or retry backoff. This cannot keep a mobile socket alive after the operating system suspends it.
+or retry backoff. This cannot keep a mobile socket alive after the operating system suspends it, so
+iOS and Android do not try: ten seconds after the app leaves the foreground they close host sockets
+and stop probing, and foregrounding reconnects at once. Push notifications cover attention while
+the app is away. The policy is `NATIVE_BACKGROUND_POLICY` in `packages/app/src/runtime/host-runtime.ts`.
 
 - The same epoch and `window.maxSeq` is an exact display no-op. The app advances synchronization
   bookkeeping without replacing timeline arrays, preserving an upward-scrolled viewport.
@@ -199,19 +202,28 @@ replica cache.
 
 The app chooses one delivery policy from `server_info.features.selectiveAgentTimeline`:
 
-- Selective daemons receive the chats this session has opened, plus any visible agent pane. A chat
-  enters that set the first time the user opens it and leaves when its tab closes or the session
-  ends, independently of mounted or retained React views: switching workspaces, evicting a retained
-  view, app backgrounding, and reconnect all preserve the demand. There is no recent-agent limit.
+- Selective daemons receive the chats the platform's live scope keeps (`TimelineLiveScope` in
+  `viewed-timeline-sync.ts`):
+  - Desktop and browser keep the chats this session has opened, plus any visible agent pane. A chat
+    enters that set the first time the user opens it and leaves when its tab closes or the session
+    ends, independently of mounted or retained React views: switching workspaces, evicting a
+    retained view, app backgrounding, and reconnect all preserve the demand. There is no
+    recent-agent limit. Hidden chats update the replica while their retained presentation stays
+    suspended until revealed.
+  - iOS and Android keep only the chats on screen, and none while the app is not active. Each live
+    update is decrypted, parsed and committed, which a phone pays for in battery for chats nobody
+    sees. Showing a chat again catches up from its cached cursor like any reopen. Navigating away
+    ends the catch-up obligation; backgrounding keeps it.
+
   Restored workspace layout is a release signal, never a source. It carries a tab for every chat the
   user has ever opened on the host, and a catch-up fetch resumes its agent on the daemon, so
   subscribing from layout spawns a provider session per historical tab at every launch and stamps
   every one of those workspaces as just used (see
   [agent lifecycle](agent-lifecycle.md#workspace-activity)). Visible chats get the first catch-up
   attempt; the rest follow when those attempts settle, including failures, so a failed visible chat
-  does not starve background recovery. Split panes catch up together. Hidden chats update the
-  replica; on web their retained presentation stays suspended until revealed, on native it keeps
-  rendering. Revealing a chat reads the current store and preserves its local UI state.
+  does not starve background recovery. Split panes catch up together. Revealing a chat reads the
+  current store and preserves its local UI state.
+
 - Legacy daemons keep globally streaming agent timelines. Visibility still triggers the existing
   authoritative catch-up, but the app does not issue selective-subscription RPCs.
 

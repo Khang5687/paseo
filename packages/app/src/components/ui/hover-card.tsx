@@ -31,7 +31,6 @@ import {
   measureElement,
   type Alignment,
   type Placement,
-  type Rect,
   type Size,
 } from "./anchor";
 
@@ -330,39 +329,37 @@ function HoverCardSurface({
   contentRef: RefObject<View | null>;
 }): ReactElement {
   const portalHostName = useFloatingPanelPortalHostName();
-  const [anchor, setAnchor] = useState<{ triggerRect: Rect; hostRect: Rect } | null>(null);
   const [contentSize, setContentSize] = useState<Size | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
+  // Measure the trigger each time the content's size changes, not once on open: the trigger can
+  // still be settling into its final layout when the card mounts, and a stale rect leaves the
+  // card where the trigger used to be.
   useEffect(() => {
-    if (!triggerRef.current) return;
+    if (!triggerRef.current || !contentSize) return;
     let cancelled = false;
     void Promise.all([
       measureElement(triggerRef.current),
       measureFloatingPanelPortalHost(portalHostName),
     ]).then(([triggerRect, hostRect]) => {
-      if (!cancelled && hostRect) setAnchor({ triggerRect, hostRect });
+      if (cancelled || !hostRect) return undefined;
+      const { width, height } = Dimensions.get("window");
+      const { x, y } = computePosition({
+        triggerRect,
+        contentSize,
+        displayArea: { x: 0, y: 0, width, height },
+        placement,
+        flipHorizontal: true,
+        alignment,
+        offset,
+      });
+      setPosition({ x: x - hostRect.x, y: y - hostRect.y });
       return undefined;
     });
     return () => {
       cancelled = true;
     };
-  }, [portalHostName, triggerRef]);
-
-  useEffect(() => {
-    if (!anchor || !contentSize) return;
-    const { width, height } = Dimensions.get("window");
-    const { x, y } = computePosition({
-      triggerRect: anchor.triggerRect,
-      contentSize,
-      displayArea: { x: 0, y: 0, width, height },
-      placement,
-      flipHorizontal: true,
-      alignment,
-      offset,
-    });
-    setPosition({ x: x - anchor.hostRect.x, y: y - anchor.hostRect.y });
-  }, [alignment, anchor, contentSize, offset, placement]);
+  }, [alignment, contentSize, offset, placement, portalHostName, triggerRef]);
 
   const handleLayout = useCallback(
     (event: { nativeEvent: { layout: { width: number; height: number } } }) => {

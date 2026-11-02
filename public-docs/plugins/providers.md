@@ -308,6 +308,10 @@ All user input arrives through `session.prompt`:
 Publish `session.commands` to add structured commands to the composer. A command can start a normal
 turn or finish as a side effect with a `completed` prompt result.
 
+After the user types `/name `, the composer shows the command's `argumentHint`. Give a command
+`subcommands` (`name`, optional `description` and `usage`) to offer fixed choices for its first
+argument instead; picking one fills it in.
+
 Advertise only capabilities you implement. If steering is unsupported, omit `prompt.steer`; Paseo
 can replace the active turn instead.
 

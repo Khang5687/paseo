@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -396,6 +396,48 @@ describe("daemon E2E (real OMP)", () => {
             (snapshot.lastUsage?.contextWindowUsedTokens ?? Infinity) < (usedBefore ?? 0),
           60_000,
         );
+      } finally {
+        await closeHarness(harness);
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "/compact snapcompact runs OMP's snapcompact mode",
+    async () => {
+      const harness = await createHarness();
+      try {
+        const agent = await createAgent(harness, "snapcompact");
+        await promptAndFinish(
+          harness,
+          agent.id,
+          `${compactionFiller(2500)}\n\nWhich tea is in record 00007? Reply with one word.`,
+        );
+        await promptAndFinish(harness, agent.id, "Reply exactly: after-filler");
+
+        await harness.client.sendMessage(agent.id, "/compact snapcompact");
+        await waitForTimelineItem(
+          harness.client,
+          agent.id,
+          (item) => item.type === "compaction" && item.status === "completed",
+        );
+        await harness.client.waitForFinish(agent.id, TIMEOUT_MS);
+
+        const items = await timeline(harness.client, agent.id);
+        expect(
+          items.filter(
+            (item) => item.type === "assistant_message" && item.text.startsWith("[Error]"),
+          ),
+        ).toEqual([]);
+        const sessionFile = (await harness.client.fetchAgent(agent.id))?.agent.persistence
+          ?.nativeHandle;
+        if (!sessionFile) throw new Error("OMP agent has no session file");
+        const compactions = readFileSync(sessionFile, "utf8")
+          .split("\n")
+          .filter((line) => line.includes('"type":"compaction"'))
+          .map((line) => JSON.parse(line) as { method?: string });
+        expect(compactions.map((entry) => entry.method)).toEqual(["snapcompact"]);
       } finally {
         await closeHarness(harness);
       }

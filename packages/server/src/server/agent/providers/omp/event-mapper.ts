@@ -13,6 +13,7 @@ import {
   type OmpGoal,
   type OmpGoalUpdatedEvent,
 } from "./rpc-types.js";
+import { OmpXdevMountNotices, parseXdevMountNotice } from "./xdev-mount-notice.js";
 
 type OmpTelemetryToolCallItem = Extract<AgentTimelineItem, { type: "tool_call" }>;
 
@@ -41,11 +42,18 @@ interface StatusLineInput {
   metadata?: Record<string, unknown>;
 }
 
-export function mapOmpRuntimeEventToTimelineItem(event: unknown): OmpRuntimeEventMapping {
+/**
+ * `xdevMountNotices` holds the session's last mount change; pass the session's instance so exact
+ * repeats are dropped across events.
+ */
+export function mapOmpRuntimeEventToTimelineItem(
+  event: unknown,
+  xdevMountNotices = new OmpXdevMountNotices(),
+): OmpRuntimeEventMapping {
   const type = readEventType(event);
   switch (type) {
     case "notice":
-      return mapNoticeEvent(event);
+      return mapNoticeEvent(event, xdevMountNotices);
     case "goal_updated":
       return mapGoalUpdatedEvent(event);
     case "auto_retry_start":
@@ -65,10 +73,20 @@ export function mapOmpRuntimeEventToTimelineItem(event: unknown): OmpRuntimeEven
   }
 }
 
-function mapNoticeEvent(event: unknown): OmpRuntimeEventMapping {
+function mapNoticeEvent(
+  event: unknown,
+  xdevMountNotices: OmpXdevMountNotices,
+): OmpRuntimeEventMapping {
   const parsed = OmpNoticeEventSchema.safeParse(event);
   if (!parsed.success) {
     return { handled: true, item: null, logReason: "malformed_omp_notice" };
+  }
+  const mountChange = parseXdevMountNotice(parsed.data);
+  if (mountChange) {
+    const item = xdevMountNotices.map(mountChange);
+    return item
+      ? { handled: true, item }
+      : { handled: true, item: null, logReason: "repeated_omp_xdev_mount_notice" };
   }
   return {
     handled: true,

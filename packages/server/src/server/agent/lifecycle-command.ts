@@ -5,8 +5,11 @@ import {
   type AgentRunCancellationResult,
   type ManagedAgent,
 } from "./agent-manager.js";
-import type { StoredAgentRecord } from "./agent-storage.js";
+import type { AgentStorage, StoredAgentRecord } from "./agent-storage.js";
 import type { AgentProviderNotice } from "./agent-sdk-types.js";
+import { unarchiveAgentState, type AgentUnarchiveController } from "./agent-prompt.js";
+import { AgentNotFoundError } from "./agent-loading.js";
+import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
 
 export type LifecycleAgentSnapshot = Pick<ManagedAgent, "id" | "cwd" | "lifecycle" | "internal">;
 
@@ -145,6 +148,69 @@ export async function archiveAgentCommand(
     agentId,
     archivedAt: record.archivedAt,
     record,
+  };
+}
+
+export interface UnarchiveAgentDependencies {
+  agentManager: AgentUnarchiveController;
+  agentStorage: AgentStorage;
+  getWorkspace(workspaceId: string): Promise<PersistedWorkspaceRecord | null>;
+  /** Clears the workspace's archivedAt and publishes the restored workspace to clients. */
+  restoreWorkspace(workspace: PersistedWorkspaceRecord): Promise<void>;
+  isDirectory(path: string): Promise<boolean>;
+}
+
+export interface UnarchiveAgentResult {
+  agentId: string;
+  /** False when the agent was already active; the call was then a no-op. */
+  wasArchived: boolean;
+  workspaceId: string | null;
+  workspaceRestored: boolean;
+  warning: string | null;
+}
+
+/**
+ * Bring an archived agent back to the active list without starting a turn. Restores
+ * its archived workspace first so clients can place the agent when it reappears.
+ */
+export async function unarchiveAgentCommand(
+  dependencies: UnarchiveAgentDependencies,
+  agentId: string,
+): Promise<UnarchiveAgentResult> {
+  const record = await dependencies.agentStorage.get(agentId);
+  if (!record || record.internal) {
+    throw new AgentNotFoundError(agentId);
+  }
+  const workspace = record.workspaceId ? await dependencies.getWorkspace(record.workspaceId) : null;
+  const directory = workspace?.cwd ?? record.cwd;
+  const directoryExists = await dependencies.isDirectory(directory);
+
+  // A workspace whose directory is gone stays archived: the app's workspace recovery
+  // can recreate a removed worktree, and an unarchived record would only show it broken.
+  const workspaceRestored = Boolean(workspace?.archivedAt && directoryExists);
+  if (workspace && workspaceRestored) {
+    await dependencies.restoreWorkspace(workspace);
+  }
+  const wasArchived = await unarchiveAgentState(
+    dependencies.agentStorage,
+    dependencies.agentManager,
+    agentId,
+  );
+
+  let warning: string | null = null;
+  if (!directoryExists) {
+    warning = `The agent's directory ${directory} no longer exists, so it cannot run until that directory exists again.`;
+    if (workspace?.archivedAt) {
+      warning += ` Its workspace ${workspace.workspaceId} stays archived; restore it from the app to recreate the worktree.`;
+    }
+  }
+
+  return {
+    agentId,
+    wasArchived,
+    workspaceId: workspace?.workspaceId ?? record.workspaceId ?? null,
+    workspaceRestored,
+    warning,
   };
 }
 

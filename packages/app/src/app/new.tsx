@@ -34,7 +34,7 @@ export default function NewWorkspaceRoute() {
 
   // The shell remounts this route when the viewport crosses the compact breakpoint;
   // the draft's editing session (fullscreen, retained caret) lives above the shell.
-  const draftKey = buildNewWorkspaceDraftKey(draftId);
+  const draftKey = buildNewWorkspaceDraftKey({ draftId, serverId, sourceDirectory, projectId });
   const sessionTabIds = useMemo(() => [draftKey], [draftKey]);
 
   return (

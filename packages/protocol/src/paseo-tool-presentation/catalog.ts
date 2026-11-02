@@ -171,10 +171,36 @@ export const PASEO_TOOL_CATALOG = {
     context: targetAgent(),
     detail: { inputOrder: ["agentId", "limit"] },
   },
+  ask_agent: {
+    label: "Ask agent",
+    completedLabel: "Asked agent",
+    context: field("question"),
+    detail: {
+      promptField: "question",
+      inputOrder: ["agentId", "serverId"],
+      outputFields: ["answer"],
+    },
+  },
   list_agents: {
     label: "List agents",
     completedLabel: "Listed agents",
     detail: { inputOrder: ["cwd", "statuses", "sinceHours", "limit", "includeArchived"] },
+  },
+  search_agents: {
+    label: "Search agents",
+    completedLabel: "Searched agents",
+    context: field("query"),
+    detail: {
+      inputOrder: [
+        "query",
+        "includeArchived",
+        "cwd",
+        "workspaceId",
+        "provider",
+        "sinceHours",
+        "limit",
+      ],
+    },
   },
   update_agent: {
     label: "Update agent",
@@ -200,6 +226,15 @@ export const PASEO_TOOL_CATALOG = {
     context: targetAgent(),
     detail: { inputOrder: ["agentId"] },
   },
+  unarchive_agent: {
+    label: "Unarchive agent",
+    completedLabel: "Unarchived agent",
+    context: targetAgent(),
+    detail: {
+      inputOrder: ["agentId"],
+      outputFields: ["wasArchived", "workspaceRestored", "warning"],
+    },
+  },
   kill_agent: {
     label: "Kill agent",
     completedLabel: "Killed agent",
@@ -211,7 +246,7 @@ export const PASEO_TOOL_CATALOG = {
     label: "Respond to permission",
     completedLabel: "Responded to permission",
     context: targetAgent(),
-    detail: { inputOrder: ["agentId", "requestId", "response"] },
+    detail: { inputOrder: ["agentId", "requestId", "answers", "response"] },
   },
 
   // Workspaces and scripts
