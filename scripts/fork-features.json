@@ -688,10 +688,5 @@
       "scripts/fork-daemon-idle.test.mjs",
       "packages/desktop/src/daemon/external-daemon-launcher.test.ts"
     ]
-  },
-  {
-    "pr": 88,
-    "title": "fix(omp): don't block agent resume on the account-routing capability probe",
-    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   }
 ]
