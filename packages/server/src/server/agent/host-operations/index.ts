@@ -18,7 +18,12 @@ import { selectAgentListPage } from "../agent-projections.js";
 import { moreNote, selectWorkspaceSummaries } from "../tools/paseo-tool-compaction.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
 import { expandUserPath } from "../../path-utils.js";
-import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
+import {
+  PaseoToolInputError,
+  type PaseoToolExecutionContext,
+  type PaseoToolResult,
+} from "../tools/types.js";
+import { buildForkTaskPrompt } from "../fork-agent.js";
 import type { AgentPermissionResponse } from "../agent-sdk-types.js";
 import { resolvePermissionResponse } from "../permission-answers.js";
 
@@ -46,6 +51,7 @@ export interface HostOperations {
   getStatus: HostOperation;
   getActivity: HostOperation;
   listAgents: HostOperation;
+  forkAgent: HostOperation;
   askAgent: HostOperation;
   listPermissions: HostOperation;
   respondToPermission: HostOperation;
@@ -255,6 +261,39 @@ export function createHostResolver(input: {
               workspaceId: snapshot.workspaceId,
               currentModeId: snapshot.currentModeId,
               availableModes: snapshot.availableModes,
+            });
+          },
+          async forkAgent(args) {
+            const agentId = args.agentId as string | undefined;
+            if (!agentId) {
+              throw new PaseoToolInputError(
+                `A fork needs the source session on the same host. The calling agent runs on ${input.serverId}, not ${destination}; pass agentId of an agent on ${destination}.`,
+              );
+            }
+            const source = (await client.fetchAgent(agentId))?.agent;
+            if (!source) throw new PaseoToolInputError(`Agent ${agentId} not found`);
+            if (args.workspaceId && args.workspaceId !== source.workspaceId) {
+              throw new PaseoToolInputError(
+                `A fork stays in the source agent's workspace ${source.workspaceId}.`,
+              );
+            }
+            const forked = await client.forkAgent(agentId);
+            if (args.title)
+              await client.updateAgent(forked.forkedAgentId, { name: args.title as string });
+            if (args.prompt) {
+              await client.sendMessage(
+                forked.forkedAgentId,
+                buildForkTaskPrompt(args.prompt as string),
+                {
+                  activeTurnBehavior: "steer",
+                },
+              );
+            }
+            return result({
+              forkedAgentId: forked.forkedAgentId,
+              method: forked.method,
+              sourceAgentId: agentId,
+              workspaceId: source.workspaceId,
             });
           },
           async sendPrompt(args) {

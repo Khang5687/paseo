@@ -83,6 +83,7 @@ MCP 不提供解除 Agent 父子关系的工具。解除关系是用户在应用
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `create_agent`       | 创建 Agent，可用 `workspaceId` 把它放到已有的工作区。用 `initialPrompt` 开始工作；不等待完成就返回。                     |
 | `send_agent_prompt`  | 用 `agentId` 和 `prompt` 发送提示词；不等待完成就返回。                                                                  |
+| `fork_agent`         | 把 Agent（默认是自己）分叉成一个新的主 Agent，继承当前对话，并用 `prompt` 开始另一项任务；原 Agent 不受影响。            |
 | `get_agent_status`   | 返回 Agent 的最新快照。                                                                                                  |
 | `list_agents`        | 以精简元数据列出最近的 Agent；`includeBackground: true` 会包含后台工作。                                                 |
 | `cancel_agent`       | 中止 Agent 当前的运行，但保留该 Agent。                                                                                  |

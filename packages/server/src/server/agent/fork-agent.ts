@@ -31,6 +31,13 @@ const COMPACTED_HISTORY_PROMPT =
 const SUMMARY_FORK_PROMPT =
   "This chat was forked from another chat. The attached chat history is everything up to the fork point. Treat it as background. Reply with OK only and wait for the next message.";
 
+/**
+ * First message for a fork spawned to work on a different task than its source. The fork inherits
+ * the source conversation, so without this it would continue the source's work.
+ */
+export function buildForkTaskPrompt(prompt: string): string {
+  return `You are a fork of another agent, started to work on a separate task. Your conversation so far is the context you inherited. Do not continue the task the original agent was working on; the original keeps working on it. Your task:\n\n${prompt}`;
+}
 function hasConversation(rows: readonly { item: { type: string } }[]): boolean {
   return rows.some(
     (row) => row.item.type === "user_message" || row.item.type === "assistant_message",
