@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applySlashArgumentReplacement,
   applySlashCommandReplacement,
   filterAndRankCommandAutocompleteEntries,
   filterInlineSkillCommandEntries,
+  filterSlashArgumentChoices,
+  findActiveSlashArgument,
   findActiveSlashCommand,
 } from "./agent-command-autocomplete";
 
@@ -132,5 +135,80 @@ describe("filterInlineSkillCommandEntries", () => {
     expect(filterInlineSkillCommandEntries(entries).map((entry) => entry.command.name)).toEqual([
       "taste",
     ]);
+  });
+});
+
+describe("findActiveSlashArgument", () => {
+  it("finds the first argument once the command name is followed by a space", () => {
+    expect(findActiveSlashArgument({ text: "/compact ", cursorIndex: 9 })).toEqual({
+      commandName: "compact",
+      start: 9,
+      end: 9,
+      query: "",
+    });
+    expect(findActiveSlashArgument({ text: "/compact sn", cursorIndex: 11 })).toEqual({
+      commandName: "compact",
+      start: 9,
+      end: 11,
+      query: "sn",
+    });
+  });
+
+  it("covers the whole token when the cursor is inside it", () => {
+    expect(findActiveSlashArgument({ text: "/compact snapcompact", cursorIndex: 11 })).toEqual({
+      commandName: "compact",
+      start: 9,
+      end: 20,
+      query: "sn",
+    });
+  });
+
+  it("ignores later arguments, inline commands, bare names and other lines", () => {
+    const misses = [
+      { text: "/compact soft focus", cursorIndex: 19 },
+      { text: "/compact soft ", cursorIndex: 14 },
+      { text: "please /compact ", cursorIndex: 16 },
+      { text: "/compact", cursorIndex: 8 },
+      { text: "/compact\nsoft", cursorIndex: 13 },
+      { text: " /compact ", cursorIndex: 10 },
+    ];
+    for (const input of misses) {
+      expect(findActiveSlashArgument(input)).toBeNull();
+    }
+  });
+});
+
+describe("filterSlashArgumentChoices", () => {
+  const choices = [{ name: "soft" }, { name: "remote" }, { name: "snapcompact" }];
+
+  it("keeps choices that start with the typed prefix, in their given order", () => {
+    expect(filterSlashArgumentChoices(choices, "")).toEqual(choices);
+    expect(filterSlashArgumentChoices(choices, "S")).toEqual([
+      { name: "soft" },
+      { name: "snapcompact" },
+    ]);
+    expect(filterSlashArgumentChoices(choices, "pact")).toEqual([]);
+  });
+});
+
+describe("applySlashArgumentReplacement", () => {
+  it("fills in the choice and a space at the end of the text", () => {
+    const text = "/compact sn";
+    const argument = findActiveSlashArgument({ text, cursorIndex: text.length });
+    if (!argument) throw new Error("expected an argument");
+
+    expect(applySlashArgumentReplacement({ text, argument, value: "snapcompact" })).toBe(
+      "/compact snapcompact ",
+    );
+  });
+
+  it("replaces the whole token and keeps the rest of the text", () => {
+    const text = "/compact rem keep tests";
+    const argument = findActiveSlashArgument({ text, cursorIndex: 10 });
+    if (!argument) throw new Error("expected an argument");
+
+    expect(applySlashArgumentReplacement({ text, argument, value: "soft" })).toBe(
+      "/compact soft keep tests",
+    );
   });
 });

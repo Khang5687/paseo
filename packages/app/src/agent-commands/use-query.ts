@@ -20,11 +20,19 @@ const COMMANDS_STALE_TIME = 10_000;
 // Refetch for it only when the cached list is older than this, so typing does not refetch per key.
 const MISS_REVALIDATE_MIN_AGE = 3_000;
 
+export interface AgentSlashCommandSubcommand {
+  name: string;
+  description?: string;
+  usage?: string;
+}
+
 export interface AgentSlashCommand {
   name: string;
   description: string;
   argumentHint: string;
   kind?: string;
+  aliases?: string[];
+  subcommands?: AgentSlashCommandSubcommand[];
 }
 
 export type DraftCommandConfig = AgentCommandsDraftConfig;

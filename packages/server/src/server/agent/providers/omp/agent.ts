@@ -115,7 +115,11 @@ import {
   type OmpToolResult,
   type OmpTrackedToolCall,
 } from "./tool-call-detail.js";
-import { mapOmpAvailableCommandsUpdate, mapOmpRuntimeSlashCommands } from "./commands.js";
+import {
+  mapOmpAvailableCommandsUpdate,
+  mapOmpSlashCommands,
+  resolveOmpCompactRequest,
+} from "./commands.js";
 import { readOmpHistoryTodoState, streamOmpHistory } from "./history.js";
 import { mapOmpTodoReminderEvent, mapOmpTodoState, mapOmpTodoToolResult } from "./todo-mapper.js";
 import { mapOmpRuntimeEventToTimelineItem } from "./event-mapper.js";
@@ -787,6 +791,8 @@ export class OmpAgentSession implements AgentSession {
   private pendingNoTurnCompletionAbort: AbortController | null = null;
   private lastKnownThinkingOptionId: string | null;
   private manualCompactionRunning = false;
+  /** Settles a `/compact <mode>` run with its error, or undefined once it committed. */
+  private settleModeCompaction: ((errorMessage: string | undefined) => void) | null = null;
   private commandCache: AgentSlashCommand[] | null = null;
   private commandRefresh: Promise<AgentSlashCommand[]> | null = null;
   private lastCommandRefreshAt: number | null = null;
@@ -1332,6 +1338,7 @@ export class OmpAgentSession implements AgentSession {
     this.unsubscribeRuntime?.();
     this.usagePoller.close();
     this.cancelNoTurnPromptCompletion();
+    this.settleModeCompaction?.("OMP session closed");
     try {
       await this.runtimeSession.close();
     } finally {
@@ -1389,13 +1396,11 @@ export class OmpAgentSession implements AgentSession {
   private async refreshCommandCache(): Promise<AgentSlashCommand[]> {
     this.lastCommandRefreshAt = Date.now();
     try {
-      this.commandCache = mapOmpRuntimeSlashCommands(await this.runtimeSession.refreshCommands());
+      this.commandCache = mapOmpSlashCommands(await this.runtimeSession.refreshCommands());
       return this.commandCache;
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to refresh OMP slash commands; using cached list");
-      return (
-        this.commandCache ?? mapOmpRuntimeSlashCommands(await this.runtimeSession.getCommands())
-      );
+      return this.commandCache ?? mapOmpSlashCommands(await this.runtimeSession.getCommands());
     }
   }
 
@@ -1605,14 +1610,28 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private async executeCompactCommand(
-    customInstructions: string | undefined,
+    args: string | undefined,
     emit: (event: AgentStreamEvent) => void,
   ): Promise<void> {
     if (this.manualCompactionRunning) {
       throw new Error("An OMP compact command is already running");
     }
-    // OMP answers a manual compact with its RPC response alone, without
-    // compaction_start or compaction_end, so the request owns both rows.
+    const emitError = (text: string) =>
+      emit({
+        type: "timeline",
+        provider: this.provider,
+        item: { type: "assistant_message", text: `[Error] ${text}` },
+      });
+    const compactCommand = (await this.listCommands()).find(
+      (command) => command.name === "compact",
+    );
+    const request = resolveOmpCompactRequest(args, compactCommand?.subcommands ?? []);
+    if (request.kind === "invalid") {
+      emitError(request.error);
+      return;
+    }
+    // Manual compaction progress events are new in OMP, so the request owns both rows
+    // rather than depending on them.
     this.manualCompactionRunning = true;
     const emitCompaction = (status: "loading" | "completed") =>
       emit({
@@ -1621,25 +1640,71 @@ export class OmpAgentSession implements AgentSession {
         item: { type: "compaction", status, trigger: "manual" },
       });
     emitCompaction("loading");
+    let errorMessage: string | undefined;
     try {
-      await this.runtimeSession.compact(customInstructions);
+      if (request.kind === "prompt") {
+        errorMessage = await this.runModeCompaction(request.message);
+      } else {
+        await this.runtimeSession.compact(request.customInstructions);
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      emitCompaction("completed");
-      emit({
-        type: "timeline",
-        provider: this.provider,
-        item: {
-          type: "assistant_message",
-          text: `[Error] Failed to compact context: ${message}`,
-        },
-      });
-      return;
+      errorMessage = error instanceof Error ? error.message : String(error);
     } finally {
       this.manualCompactionRunning = false;
     }
     emitCompaction("completed");
+    if (errorMessage) {
+      emitError(`Failed to compact context: ${errorMessage}`);
+      return;
+    }
     await this.usagePoller.refresh();
+  }
+
+  // OMP's `/compact` handler answers the prompt at once and compacts in the
+  // background, so the end arrives later as an event (see settleModeCompactionFrom).
+  private async runModeCompaction(message: string): Promise<string | undefined> {
+    // The server's TypeScript lib predates Promise.withResolvers.
+    const promise = new Promise<string | undefined>((resolve) => {
+      this.settleModeCompaction = resolve;
+    });
+    try {
+      await this.runtimeSession.prompt({ message });
+      return await promise;
+    } finally {
+      this.settleModeCompaction = null;
+    }
+  }
+
+  /** Returns true when the event belonged to a running `/compact <mode>`. */
+  private settleModeCompactionFrom(event: OmpRuntimeEvent): boolean {
+    const settle = this.settleModeCompaction;
+    if (!settle) {
+      return false;
+    }
+    if (event.type === "manual_compaction_start") {
+      return true;
+    }
+    if (event.type === "manual_compaction_end") {
+      const committed = event.result !== undefined && !event.aborted && !event.skipped;
+      settle(
+        committed ? undefined : (event.errorMessage ?? (event.aborted ? "Cancelled" : "Skipped")),
+      );
+      return true;
+    }
+    // COMPAT(ompManualCompactionEvents): added in v0.2.0; OMP 18.13.3 and older end a
+    // `/compact <mode>` only with the handler's command_output ("Compaction complete…" or
+    // "Compaction failed: …", or a usage error). Remove after 2027-05-01 once the minimum
+    // OMP version sends manual_compaction_end.
+    if (event.type === "command_output") {
+      const text = stripAnsi(optionalString(event.text) ?? "").trim();
+      settle(
+        text.startsWith("Compaction complete")
+          ? undefined
+          : text.replace(/^Compaction failed:\s*/, "") || "Compaction failed",
+      );
+      return true;
+    }
+    return false;
   }
 
   private async executeGoalCommand(
@@ -1954,6 +2019,9 @@ export class OmpAgentSession implements AgentSession {
       this.handleProcessExit(event.error);
       return;
     }
+    if (this.settleModeCompactionFrom(event)) {
+      return;
+    }
     if (event.type === "command_output") {
       this.handleCommandOutput(event.text);
       return;
@@ -2000,6 +2068,7 @@ export class OmpAgentSession implements AgentSession {
 
   private handleProcessExit(error: string): void {
     this.runtimeDead = true;
+    this.settleModeCompaction?.(error);
     void this.hostTools?.close();
     this.usagePoller.stopTurn();
     if (!this.activeTurnId) {

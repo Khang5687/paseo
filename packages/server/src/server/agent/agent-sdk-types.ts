@@ -550,6 +550,14 @@ export interface AgentRuntimeInfo {
 
 export type AgentSlashCommandKind = "command" | "skill";
 
+/** A fixed choice for a slash command's first argument. */
+export interface AgentSlashCommandSubcommand {
+  name: string;
+  description?: string;
+  /** Arguments the choice takes after its name, e.g. `[focus]`. */
+  usage?: string;
+}
+
 /**
  * Represents a slash command available in an agent session.
  * Commands are executed by sending them as prompts with / prefix.
@@ -559,6 +567,8 @@ export interface AgentSlashCommand {
   description: string;
   argumentHint: string;
   kind?: AgentSlashCommandKind;
+  aliases?: string[];
+  subcommands?: AgentSlashCommandSubcommand[];
 }
 
 export interface ListImportableSessionsOptions {

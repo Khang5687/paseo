@@ -222,6 +222,34 @@ export class OmpHarness {
     return [...emitted, ...this.events.slice(sessionEventCount)];
   }
 
+  /** Runs a `/compact …` line; `onPrompt` plays OMP's side once Paseo sends a prompt. */
+  async runCompactCommand(
+    text: string,
+    onPrompt?: (runtime: FakeOmpSession) => void,
+  ): Promise<{
+    events: AgentStreamEvent[];
+    prompts: string[];
+    compactRequests: Array<{ customInstructions?: string }>;
+  }> {
+    const handler = this.requireSession().tryHandleOutOfBand(text);
+    if (!handler) throw new Error(`OMP session did not handle ${text} out-of-band`);
+    const runtime = this.omp.latestSession();
+    const sessionEventCount = this.events.length;
+    const emitted: AgentStreamEvent[] = [];
+    const promptSent = runtime.nextPrompt();
+    const run = handler.run({ emit: (event) => emitted.push(event) });
+    if (onPrompt) {
+      await promptSent;
+      onPrompt(runtime);
+    }
+    await run;
+    return {
+      events: [...emitted, ...this.events.slice(sessionEventCount)],
+      prompts: runtime.prompts.map((prompt) => prompt.message),
+      compactRequests: [...runtime.compactRequests],
+    };
+  }
+
   async runPrompt(
     input: string,
     output: string,
