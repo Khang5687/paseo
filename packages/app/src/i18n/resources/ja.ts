@@ -3015,16 +3015,12 @@ export const ja: TranslationResources = {
         },
         visibility: {
           title: "画像の表示量",
-          hint: "Paseo は文字の読みやすさを自動で保つため、明るい画像では表示が控えめになることがあります。",
+          hint: "100% でも Paseo は文字が読めるように画像の表示量を抑えるため、明るい画像ほど控えめに表示されます。",
         },
         blur: {
           title: "ぼかし",
-          options: {
-            off: "オフ",
-            low: "弱",
-            medium: "中",
-            high: "強",
-          },
+          off: "オフ",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "サイドバーの背後に表示",
         showBehindContent: "コンテンツの背後に表示",

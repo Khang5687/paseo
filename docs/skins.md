@@ -38,6 +38,11 @@ that changes while previewing or dragging a control must not be in that key. The
 change only when a skin starts or stops being drawn, through `skins/apply-surfaces.ts`, which
 patches every registered theme the way `appearance/apply.ts` does.
 
+The skins store is persisted, and zustand's `persist` writes storage on every change. While the
+Art visibility or Blur slider is dragged, its value goes to a second, unpersisted store
+(`previewSkinVisibility`, `previewSkinBlur`), which the backdrop reads first; the slider writes the
+persisted store once, on release. Route new live controls the same way.
+
 ## Contrast limit
 
 Paseo caps the art's opacity, so a skin cannot make text unreadable. `computeArtLimit` in
@@ -73,9 +78,9 @@ Import desktop files through the desktop bridge, as
 `skins/plugin-cache.ts` implements `client.applySkin` and must not import the plugin registry:
 `plugins/evaluate.ts` imports it, and the registry imports `evaluate.ts`.
 
-Blur renders the `small` variant with `blurRadius`. It does not use `backdrop-filter`: live
-backdrop blur behind scrolling content costs GPU readback on every frame and lags with hardware
-acceleration off.
+Blur is a radius from 0 to 32 px; 0 draws the `display` variant sharp, anything above renders the
+`small` variant with `blurRadius`. It does not use `backdrop-filter`: live backdrop blur behind
+scrolling content costs GPU readback on every frame and lags with hardware acceleration off.
 
 ## Accessibility
 

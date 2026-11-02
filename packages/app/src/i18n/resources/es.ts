@@ -3056,16 +3056,12 @@ export const es: TranslationResources = {
         },
         visibility: {
           title: "Visibilidad de la imagen",
-          hint: "Paseo mantiene el texto legible automáticamente, por lo que las imágenes claras pueden mostrar menos imagen.",
+          hint: "Incluso al 100 %, Paseo limita la imagen para que el texto siga siendo legible, así que las imágenes claras se ven menos.",
         },
         blur: {
           title: "Desenfoque",
-          options: {
-            off: "Desactivado",
-            low: "Bajo",
-            medium: "Medio",
-            high: "Alto",
-          },
+          off: "Desactivado",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "Mostrar detrás de la barra lateral",
         showBehindContent: "Mostrar detrás del contenido",
