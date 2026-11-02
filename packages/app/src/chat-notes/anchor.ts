@@ -1,5 +1,3 @@
-import { noteFired, noteState, type Note } from "@/notes/model";
-
 /** Character offsets into a chat row's rendered text, end exclusive. */
 export interface TextSpan {
   start: number;
@@ -94,12 +92,4 @@ export function noteFindQuery(quote: string, maxLength = 80): string {
   const cut = line.slice(0, maxLength);
   const space = cut.lastIndexOf(" ");
   return space > maxLength / 2 ? cut.slice(0, space) : cut;
-}
-
-/** Waiting and open notes share one tint; resolved notes are drawn done, green when fired. */
-export type ChatNoteHighlightKind = "open" | "fired" | "resolved";
-
-export function chatNoteHighlightKind(note: Note): ChatNoteHighlightKind {
-  if (noteState(note) !== "resolved") return "open";
-  return noteFired(note) ? "fired" : "resolved";
 }

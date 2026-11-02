@@ -1,3 +1,5 @@
+import type { NoteHighlightKind } from "@/notes/model";
+
 /**
  * Buffer lines here index the terminal's buffer the way xterm does: 0 is the oldest row the
  * buffer still keeps. They are hints only; rows shift as scrollback is trimmed, so notes are found
@@ -16,8 +18,7 @@ export interface TerminalNoteHighlight {
   id: string;
   quote: string;
   startLine?: number;
-  /** Resolved by its event: drawn green. */
-  fired: boolean;
+  kind: NoteHighlightKind;
 }
 
 /** "Jump to note": the quote to scroll to and select. */

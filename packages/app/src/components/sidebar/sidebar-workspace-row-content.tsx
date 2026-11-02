@@ -17,6 +17,8 @@ import {
 } from "@/components/sidebar/workspace-trailing";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
+import { useWorkspaceNoteBadge } from "@/notes/chat-badges-store";
+import { SidebarNoteBadge } from "@/components/sidebar/sidebar-note-badge";
 import { densityIconBox } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
@@ -125,6 +127,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   } = useAppSettings();
   const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource });
   const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
+  const noteBadge = useWorkspaceNoteBadge(workspace.serverId, workspace.workspaceId);
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
@@ -165,7 +168,13 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             <Text style={workspaceBranchTextStyle} numberOfLines={1}>
               {workspaceLabel}
             </Text>
-            <View style={sidebarWorkspaceRowStyles.rowRight}>{children}</View>
+            <View style={sidebarWorkspaceRowStyles.rowRight}>
+              <SidebarNoteBadge
+                badge={noteBadge}
+                testID={`sidebar-workspace-note-badge-${workspace.workspaceKey}`}
+              />
+              {children}
+            </View>
           </View>
           <WorkspaceMetaRow
             currentBranch={workspace.currentBranch}

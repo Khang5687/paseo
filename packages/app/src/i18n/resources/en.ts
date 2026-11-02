@@ -2494,6 +2494,20 @@ export const en = {
     addNote: "Add note",
     offline: "This host is offline.",
     unsupported: "Update this host to use notes.",
+    marker: {
+      open: "{{count}} notes",
+      open_one: "{{count}} note",
+      open_other: "{{count}} notes",
+      waiting: "{{count}} notes waiting",
+      waiting_one: "{{count}} note waiting",
+      waiting_other: "{{count}} notes waiting",
+      fired: "{{count}} notes fired",
+      fired_one: "{{count}} note fired",
+      fired_other: "{{count}} notes fired",
+      resolved: "{{count}} resolved notes",
+      resolved_one: "{{count}} resolved note",
+      resolved_other: "{{count}} resolved notes",
+    },
     composer: {
       titleNew: "New note",
       titleEdit: "Edit note",
@@ -3762,6 +3776,7 @@ type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
 type DurationPluralKey = `${"days" | "hours" | "minutes"}_${PluralCategory}`;
 type AgoPluralKey = `${"daysAgo" | "hoursAgo" | "minutesAgo"}_${PluralCategory}`;
 type WorkingSubagentsPluralKey = `workingSubagents_${PluralCategory}`;
+type NoteMarkerPluralKey = `${"open" | "waiting" | "fired" | "resolved"}_${PluralCategory}`;
 
 // i18next plural categories differ by locale, so locale catalogs may add the
 // explicit v4 suffixes they need while retaining the canonical fallback keys.
@@ -3775,5 +3790,9 @@ export type TranslationResources = TranslationResourcesBase & {
   sidebar: TranslationResourcesBase["sidebar"] & {
     workspace: TranslationResourcesBase["sidebar"]["workspace"] &
       Partial<Record<WorkingSubagentsPluralKey, string>>;
+  };
+  notes: TranslationResourcesBase["notes"] & {
+    marker: TranslationResourcesBase["notes"]["marker"] &
+      Partial<Record<NoteMarkerPluralKey, string>>;
   };
 };

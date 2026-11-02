@@ -1,4 +1,5 @@
 import type { IDecoration, IDisposable, IMarker, Terminal } from "@xterm/xterm";
+import type { NoteHighlightKind } from "@/notes/model";
 import {
   locateTerminalQuote,
   terminalQuoteRowSpans,
@@ -12,9 +13,17 @@ import type {
   TerminalSelectionNoteContext,
 } from "./terminal-note-types";
 
-const NOTE_TINT = "#eab308";
-const FIRED_TINT = "#22c55e";
-const TINT_STRENGTH = 0.32;
+/**
+ * Decorations take only `#rrggbb`, so the tints are fixed hues blended over the terminal's own
+ * background. A plain note is a neutral wash, a waiting one amber, a fired one green; xterm draws
+ * no underline, so a note resolved by hand is a fainter neutral wash.
+ */
+const NOTE_TINTS: Record<NoteHighlightKind, { color: string; strength: number }> = {
+  open: { color: "#a1a1aa", strength: 0.32 },
+  waiting: { color: "#eab308", strength: 0.32 },
+  fired: { color: "#22c55e", strength: 0.32 },
+  resolved: { color: "#a1a1aa", strength: 0.16 },
+};
 const FALLBACK_BACKGROUND = "#0b0b0b";
 const REFRESH_DELAY_MS = 300;
 
@@ -103,13 +112,13 @@ function parseHexColor(value: string | undefined): [number, number, number] | nu
   ];
 }
 
-/** `tint` laid over `background` at `TINT_STRENGTH`, as `#rrggbb` (decorations take only that). */
-function blendTint(background: string | undefined, tint: string): string {
+/** `tint` laid over `background` at `strength`, as `#rrggbb` (decorations take only that). */
+function blendTint(background: string | undefined, tint: string, strength: number): string {
   const base = parseHexColor(background) ?? parseHexColor(FALLBACK_BACKGROUND)!;
   const over = parseHexColor(tint)!;
   return `#${base
     .map((channel, index) =>
-      Math.round(channel + (over[index]! - channel) * TINT_STRENGTH)
+      Math.round(channel + (over[index]! - channel) * strength)
         .toString(16)
         .padStart(2, "0"),
     )
@@ -118,7 +127,7 @@ function blendTint(background: string | undefined, tint: string): string {
 
 interface DrawnHighlight {
   quote: string;
-  fired: boolean;
+  kind: NoteHighlightKind;
   markers: IMarker[];
   decorations: IDecoration[];
 }
@@ -210,7 +219,7 @@ export class XtermNoteHighlights {
     for (const [id, drawn] of this.drawn) {
       const wanted = this.wanted.get(id);
       const live = drawn.markers.length > 0 && drawn.markers.every((marker) => !marker.isDisposed);
-      if (wanted && live && wanted.quote === drawn.quote && wanted.fired === drawn.fired) continue;
+      if (wanted && live && wanted.quote === drawn.quote && wanted.kind === drawn.kind) continue;
       disposeDrawn(drawn);
       this.drawn.delete(id);
     }
@@ -249,11 +258,11 @@ export class XtermNoteHighlights {
     const terminal = this.terminal;
     const buffer = terminal.buffer.active;
     const cursorRow = buffer.baseY + buffer.cursorY;
-    const tint = highlight.fired ? FIRED_TINT : NOTE_TINT;
-    const backgroundColor = blendTint(this.background, tint);
+    const tint = NOTE_TINTS[highlight.kind];
+    const backgroundColor = blendTint(this.background, tint.color, tint.strength);
     const drawn: DrawnHighlight = {
       quote: highlight.quote,
-      fired: highlight.fired,
+      kind: highlight.kind,
       markers: [],
       decorations: [],
     };
@@ -268,7 +277,7 @@ export class XtermNoteHighlights {
         backgroundColor,
         layer: "bottom",
         ...(drawn.decorations.length === 0
-          ? { overviewRulerOptions: { color: tint, position: "full" as const } }
+          ? { overviewRulerOptions: { color: tint.color, position: "full" as const } }
           : {}),
       });
       if (decoration) drawn.decorations.push(decoration);

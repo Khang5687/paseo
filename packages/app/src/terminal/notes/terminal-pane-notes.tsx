@@ -14,7 +14,7 @@ import { queryClient } from "@/data/query-client";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { openNoteComposer } from "@/notes/composer-store";
 import { useNoteFocusStore } from "@/notes/focus-store";
-import { noteFired } from "@/notes/model";
+import { noteHighlightKind } from "@/notes/model";
 import { useHostSupportsNotes, useTerminalNotes } from "@/notes/store";
 import { buildTerminalsQueryKey } from "@/screens/workspace/terminals/state";
 import { terminalSelectionCommand } from "./command-line";
@@ -95,7 +95,7 @@ function useTerminalNoteHighlights(serverId: string, terminalId: string): Termin
         id: note.id,
         quote: note.quote,
         startLine: note.anchor.kind === "terminal" ? note.anchor.startLine : undefined,
-        fired: noteFired(note),
+        kind: noteHighlightKind(note),
       }),
     );
   }, [terminalNotes]);

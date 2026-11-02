@@ -1,10 +1,15 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TextContextMenuItem } from "react-native-enriched-markdown";
-import { openNoteComposer } from "@/notes/composer-store";
+import { openNoteComposer, openNoteEditor } from "@/notes/composer-store";
 import { useAgentNotes, useHostSupportsNotes } from "@/notes/store";
 import { useNoteFocusStore, type NoteFocusTarget } from "@/notes/focus-store";
-import type { Note } from "@/notes/model";
+import {
+  noteHighlightKind,
+  strongestNoteHighlightKind,
+  type Note,
+  type NoteHighlightKind,
+} from "@/notes/model";
 
 /** The chat a note entry point belongs to. Null when its host does not support notes. */
 export interface ChatNotesTarget {
@@ -30,12 +35,21 @@ export interface ChatNoteRowIdentity {
   role: "user" | "assistant";
 }
 
+/** What a message shows for its notes: the most pressing kind, and how to open those notes. */
+export interface MessageNoteMarker {
+  kind: NoteHighlightKind;
+  /** How many of the message's notes are of that kind. */
+  count: number;
+  /** Opens the editor on the first of those notes. */
+  openNote: () => void;
+}
+
 const EMPTY_NOTES: readonly Note[] = [];
-const NO_MARKED_MESSAGES: ReadonlySet<string> = new Set();
+const NO_MESSAGE_NOTES: ReadonlyMap<string, readonly Note[]> = new Map();
 
 const TargetContext = createContext<ChatNotesTarget | null>(null);
 const NotesContext = createContext<readonly Note[]>(EMPTY_NOTES);
-const MarkedMessagesContext = createContext<ReadonlySet<string>>(NO_MARKED_MESSAGES);
+const MessageNotesContext = createContext<ReadonlyMap<string, readonly Note[]>>(NO_MESSAGE_NOTES);
 const RowContext = createContext<ChatNoteRowIdentity | null>(null);
 
 interface ChatNoteRowProviderProps extends ChatNoteRowIdentity {
@@ -79,19 +93,26 @@ export function ChatNotesProvider({
     [supported, serverId, agentId, workspaceId],
   );
   const visibleNotes = supported ? notes : EMPTY_NOTES;
-  const marked = useMemo(() => {
-    const ids = new Set<string>();
+  const byMessage = useMemo(() => {
+    const map = new Map<string, Note[]>();
+    const add = (key: string, note: Note) => {
+      const list = map.get(key);
+      if (list) list.push(note);
+      else map.set(key, [note]);
+    };
     for (const note of visibleNotes) {
       if (note.anchor.kind !== "agent") continue;
-      if (note.anchor.messageId) ids.add(note.anchor.messageId);
-      if (note.anchor.rowId) ids.add(note.anchor.rowId);
+      if (note.anchor.messageId) add(note.anchor.messageId, note);
+      if (note.anchor.rowId && note.anchor.rowId !== note.anchor.messageId) {
+        add(note.anchor.rowId, note);
+      }
     }
-    return ids;
+    return map;
   }, [visibleNotes]);
   return (
     <TargetContext.Provider value={target}>
       <NotesContext.Provider value={visibleNotes}>
-        <MarkedMessagesContext.Provider value={marked}>{children}</MarkedMessagesContext.Provider>
+        <MessageNotesContext.Provider value={byMessage}>{children}</MessageNotesContext.Provider>
       </NotesContext.Provider>
     </TargetContext.Provider>
   );
@@ -107,9 +128,35 @@ export function useChatNotes(): readonly Note[] {
   return useContext(NotesContext);
 }
 
-/** Row and message ids that carry at least one note, for a cheap marker on native. */
-export function useChatNoteMarkedMessages(): ReadonlySet<string> {
-  return useContext(MarkedMessagesContext);
+/**
+ * The note marker for the row below a `ChatNoteRowProvider`. Native draws no highlights, so its
+ * message button carries the kind; web marks a waiting note, which a highlight cannot say alone.
+ */
+export function useMessageNoteMarker(): MessageNoteMarker | null {
+  const target = useChatNotesTarget();
+  const row = useChatNoteRow();
+  const byMessage = useContext(MessageNotesContext);
+  const serverId = target?.serverId;
+  const byRowId = row ? byMessage.get(row.rowId) : undefined;
+  const byMessageId = row ? byMessage.get(row.messageId) : undefined;
+  return useMemo(() => {
+    if (!serverId) return null;
+    const notes = [...(byMessageId ?? EMPTY_NOTES)];
+    for (const note of byRowId ?? EMPTY_NOTES) {
+      if (!notes.some((entry) => entry.id === note.id)) notes.push(note);
+    }
+    const kind = strongestNoteHighlightKind(notes);
+    if (!kind) return null;
+    const ofKind = notes
+      .filter((note) => noteHighlightKind(note) === kind)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const first = ofKind[0]!;
+    return {
+      kind,
+      count: ofKind.length,
+      openNote: () => openNoteEditor(serverId, first.id),
+    };
+  }, [byMessageId, byRowId, serverId]);
 }
 
 /** A pending "jump to note" aimed at this chat, or null. */
@@ -123,22 +170,22 @@ export function useChatNoteFocusTarget(): NoteFocusTarget | null {
   });
 }
 
+/** The row below holds a note still waiting on its event: web keeps the row's clock on screen. */
+export function useMessageHasWaitingNote(): boolean {
+  return useMessageNoteMarker()?.kind === "waiting";
+}
+
 /**
  * Message-level "Add note" for the row below a `ChatNoteRowProvider`, quoting the whole message.
  * Null when the chat has no notes or the row is unnamed.
  */
-export function useAddMessageNote(getQuote: () => string): {
-  onPress: () => void;
-  marked: boolean;
-} | null {
+export function useAddMessageNote(getQuote: () => string): (() => void) | null {
   const target = useChatNotesTarget();
   const row = useChatNoteRow();
-  const marked = useChatNoteMarkedMessages();
   const onPress = useCallback(() => {
     if (target && row) openChatNoteComposer(target, { ...row, quote: getQuote() });
   }, [getQuote, row, target]);
-  if (!target || !row) return null;
-  return { onPress, marked: marked.has(row.messageId) || marked.has(row.rowId) };
+  return target && row ? onPress : null;
 }
 
 /**

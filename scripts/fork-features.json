@@ -688,5 +688,10 @@
       "scripts/fork-daemon-idle.test.mjs",
       "packages/desktop/src/daemon/external-daemon-launcher.test.ts"
     ]
+  },
+  {
+    "pr": 93,
+    "title": "feat(app): show waiting and fired notes in chats, terminals and sidebar",
+    "tests": ["packages/app/src/notes/model.test.ts", "packages/app/src/notes/chat-badges.test.ts"]
   }
 ]
