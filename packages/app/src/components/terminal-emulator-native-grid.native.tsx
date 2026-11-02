@@ -50,6 +50,7 @@ import {
   terminalSelectionHandles,
   TERMINAL_SELECTION_GRIP_SIZE,
 } from "../terminal/native-renderer/terminal-selection-controller";
+import { locateNativeNote, nativeSelectionNoteContext } from "../terminal/notes/native-notes";
 import { resolveNativeTerminalMountAction } from "../terminal/native-renderer/terminal-mount-policy";
 import {
   forwardNativeTerminalKey,
@@ -463,13 +464,50 @@ function NativeTerminalEmulator({
         inputRef.current?.blur();
         Keyboard.dismiss();
       },
+      getSelectionNoteContext: () => {
+        const terminal = terminalRef.current;
+        if (!terminal) return null;
+        return nativeSelectionNoteContext(terminal, selectionModelRef.current.getSnapshot().range);
+      },
+      revealNote: (input) => {
+        const terminal = terminalRef.current;
+        const model = screenModelRef.current;
+        if (!terminal || !model) return false;
+        const location = locateNativeNote(terminal, input);
+        if (!location) return false;
+        const bounds = terminal.getBufferBounds();
+        selectionControllerRef.current?.cancel();
+        selectionModelRef.current.begin({
+          coordinate: { row: location.startRow, col: location.startCol },
+          bounds,
+        });
+        commitSelectionRange(
+          selectionModelRef.current.update({
+            coordinate: { row: location.endRow, col: Math.max(0, location.endCol - 1) },
+            bounds,
+          }).range,
+        );
+        // Put the quote a third of the way down the screen.
+        const visibleRows = resolveVisibleRows(terminal);
+        const current = model.sync({ visibleRows });
+        const delta = current.scroll.firstRow - (location.startRow - Math.floor(visibleRows / 3));
+        commitTerminalScreen(
+          delta > 0
+            ? model.scrollUp({ rows: delta, visibleRows })
+            : model.scrollDown({ rows: -delta, visibleRows }),
+        );
+        return true;
+      },
     }),
     [
       enqueueOutputText,
       claimActiveTerminalSize,
       claimActiveTerminalSizeForAction,
       clearSelection,
+      commitSelectionRange,
+      commitTerminalScreen,
       resetInputModeTracker,
+      resolveVisibleRows,
       schedulePaint,
     ],
   );

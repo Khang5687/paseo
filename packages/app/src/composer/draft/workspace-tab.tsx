@@ -32,7 +32,8 @@ import {
   validateDraftSubmission,
 } from "@/composer/draft/workspace-tab-core";
 import type { AgentCapabilityFlags } from "@getpaseo/protocol/agent-types";
-import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import type { AgentSnapshotPayload, InlineAttachmentRef } from "@getpaseo/protocol/messages";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import {
@@ -117,7 +118,7 @@ function resolveDraftModeId(input: {
 
 async function submitDraftCreateRequest(input: {
   draftId: string;
-  attempt: { clientMessageId: string };
+  attempt: { clientMessageId: string; attachmentRefs?: InlineAttachmentRef[] };
   text: string;
   images?: UserMessageImageAttachment[];
   attachments?: unknown;
@@ -183,6 +184,7 @@ async function submitDraftCreateRequest(input: {
     clientMessageId: attempt.clientMessageId,
     ...(imagesData && imagesData.length > 0 ? { images: imagesData } : {}),
     ...(attachmentsArray && attachmentsArray.length > 0 ? { attachments: attachmentsArray } : {}),
+    attachmentRefs: matchEncodedImageRefs(attempt.attachmentRefs, imagesData, images),
   };
   const creation = useWorkspaceDraftSubmissionStore.getState().creationByDraftId[input.draftId];
   const result = creation ? await creation.retry(options) : await client.createAgent(options);
@@ -685,7 +687,7 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
     width: "100%",
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   contentContainer: {
     flex: 1,

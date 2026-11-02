@@ -3,6 +3,7 @@ import type { HubExecutionAgentValidationIssue } from "@getpaseo/protocol/messag
 
 import type { ProviderSnapshotEntry } from "./agent-sdk-types.js";
 import { filterSelectableAgentModels } from "./agent-sdk-types.js";
+import { DisabledModelError } from "./provider-disabled-models.js";
 
 export interface AgentConfigurationValidationInput {
   provider: string;
@@ -29,9 +30,14 @@ export function validateAgentConfigurationAgainstProvider({
     : (models.find((model) => model.isDefault) ?? models[0]);
 
   if (requestedModel && !selectedModel) {
+    const isDisabled = provider.disabledModels?.some(
+      (model) => model.id === requestedModel || model.aliases?.includes(requestedModel),
+    );
     issues.push({
       path: ["model"],
-      message: `Model '${requestedModel}' is not available for provider '${input.provider}'`,
+      message: isDisabled
+        ? new DisabledModelError(input.provider, requestedModel).message
+        : `Model '${requestedModel}' is not available for provider '${input.provider}'`,
     });
   }
   if (input.modeId && !provider.modes?.some((mode) => mode.id === input.modeId)) {

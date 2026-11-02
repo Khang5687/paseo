@@ -38,7 +38,7 @@ import { resolveAppVersion } from "@/utils/app-version";
 import { ConnectionOfferSchema, type ConnectionOffer } from "@getpaseo/protocol/connection-offer";
 import { HostConfirmations, type HostConfirmationRequest } from "./host-confirmation";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
-import { isWeb } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
 import { connectToDaemon, getConnectionAuthFailureReason } from "@/utils/test-daemon-connection";
 import { getOrCreateClientId } from "@/utils/client-id";
 import { z } from "zod";
@@ -84,6 +84,7 @@ import { createReplicaRowStore } from "@/runtime/replica-cache/row-store-factory
 import {
   createTimelineReplica,
   createViewedTimelineOwner,
+  type TimelineLiveScope,
   type TimelineReplica,
   type ViewedTimelineOwner,
   type ViewedTimelineOwnerPorts,
@@ -245,6 +246,28 @@ const PROBE_INACTIVE_WHILE_ONLINE_MS = 120_000;
 const ADAPTIVE_SWITCH_THRESHOLD_MS = 40;
 const ADAPTIVE_SWITCH_CONSECUTIVE_PROBES = 3;
 const CONFIGURED_OVERRIDE_BOOTSTRAP_RETRY_MS = 1_000;
+
+/**
+ * How much work the app keeps doing for hosts while it is not on screen. Phones pay for every
+ * live socket and timeline subscription in battery, and push notifications cover attention while
+ * the app is away. Desktop and browser keep both warm so coming back is instant.
+ */
+export interface HostRuntimeBackgroundPolicy {
+  /** Close host sockets this long after the app leaves the foreground; null keeps them open. */
+  suspendSocketsAfterMs: number | null;
+  timelineLiveScope: TimelineLiveScope;
+}
+
+export const NATIVE_BACKGROUND_POLICY: HostRuntimeBackgroundPolicy = {
+  // Long enough to ride out a notification-shade pull or a quick app switch without a reconnect.
+  suspendSocketsAfterMs: 10_000,
+  timelineLiveScope: "visible",
+};
+
+const DESKTOP_BACKGROUND_POLICY: HostRuntimeBackgroundPolicy = {
+  suspendSocketsAfterMs: null,
+  timelineLiveScope: "opened",
+};
 
 function toActiveConnection(connection: HostConnection): ActiveConnection {
   if (connection.type === "routed")
@@ -725,6 +748,9 @@ export class HostRuntimeController {
   private unsubscribeClientHandlers: (() => void) | null = null;
   private probeIntervalHandle: ReturnType<typeof setInterval> | null = null;
   private started = false;
+  private autoProbe = true;
+  // Backgrounded: the socket is closed and nothing probes until resume().
+  private suspended = false;
   private connectionFirstSeenAt = new Map<string, number>();
   private connectionLastProbedAt = new Map<string, number>();
   private switchCandidateConnectionId: string | null = null;
@@ -796,17 +822,22 @@ export class HostRuntimeController {
     if (!this.started) {
       return;
     }
-    if (options?.autoProbe !== false) {
-      this.probeIntervalHandle = setInterval(() => {
-        void this.runProbeCycleNow();
-      }, PROBE_TICK_MS);
-    }
+    this.autoProbe = options?.autoProbe !== false;
+    if (!this.suspended) this.startProbeInterval();
+  }
+
+  private startProbeInterval(): void {
+    if (!this.autoProbe || this.probeIntervalHandle) return;
+    this.probeIntervalHandle = setInterval(() => {
+      void this.runProbeCycleNow();
+    }, PROBE_TICK_MS);
   }
 
   async stop(): Promise<void> {
     this.switchRequestVersion += 1;
     this.probeRequestVersion += 1;
     this.started = false;
+    this.suspended = false;
     if (this.probeIntervalHandle) {
       clearInterval(this.probeIntervalHandle);
       this.probeIntervalHandle = null;
@@ -864,6 +895,30 @@ export class HostRuntimeController {
 
   ensureConnected(options?: { verify?: boolean }): void {
     this.activeClient?.ensureConnected(options);
+  }
+
+  /**
+   * Closes the socket and stops probing while the app is in the background. Probing would
+   * otherwise open a fresh socket to every connection on its own schedule.
+   */
+  suspend(): void {
+    if (!this.started || this.suspended) return;
+    this.suspended = true;
+    this.probeRequestVersion += 1;
+    if (this.probeIntervalHandle) {
+      clearInterval(this.probeIntervalHandle);
+      this.probeIntervalHandle = null;
+    }
+    this.activeClient?.suspend();
+  }
+
+  /** Reconnects right away, skipping backoff, and confirms a socket that stayed open still works. */
+  resume(): void {
+    if (this.suspended) {
+      this.suspended = false;
+      if (this.started) this.startProbeInterval();
+    }
+    this.activeClient?.ensureConnected({ verify: true });
   }
 
   markAgentDirectorySyncLoading(): void {
@@ -1642,17 +1697,22 @@ export class HostRuntimeStore {
   private storage: HostRuntimeStorage;
   private replicaCache: ReplicaCache;
   private readonly revokePushNotifications: typeof revokePushNotifications;
+  private readonly backgroundPolicy: HostRuntimeBackgroundPolicy;
+  private suspendSocketsTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(input?: {
     deps?: HostRuntimeControllerDeps;
     storage?: HostRuntimeStorage;
     replicaRowStore?: ReplicaRowStore;
     revokePushNotifications?: typeof revokePushNotifications;
+    backgroundPolicy?: HostRuntimeBackgroundPolicy;
   }) {
     this.deps = input?.deps ?? createDefaultDeps((serverId) => this.getClient(serverId));
     this.storage = input?.storage ?? AsyncStorage;
     this.replicaCache = new ReplicaCache(input?.replicaRowStore ?? createReplicaRowStore());
     this.revokePushNotifications = input?.revokePushNotifications ?? revokePushNotifications;
+    this.backgroundPolicy =
+      input?.backgroundPolicy ?? (isNative ? NATIVE_BACKGROUND_POLICY : DESKTOP_BACKGROUND_POLICY);
   }
 
   // --- Host registry ---
@@ -2565,6 +2625,10 @@ export class HostRuntimeStore {
     if (this.queuedAgentDrainInFlight.has(drainKey)) return;
     const store = useSessionStore.getState();
     const session = store.sessions[serverId];
+    // COMPAT(messageQueue): added in v0.10.0, remove the client-local drain after
+    // 2027-10-02 once the daemon floor >= v0.10.0. When the host owns the queue it
+    // dispatches on idle itself; the local map only mirrors this client's entries.
+    if (session?.serverInfo?.features?.messageQueue === true) return;
     const queue = session?.queuedMessages.get(agentId);
     const client = session?.client;
     if (!client || !queue?.length || session.initializingAgents.get(agentId) === true) {
@@ -2726,14 +2790,34 @@ export class HostRuntimeStore {
   }
 
   setAppVisible(visible: boolean): void {
-    // Keep normal reconnect backoff running while hidden, for as long as the OS
-    // lets us execute. Foregrounding bypasses that backoff without closing healthy sockets.
     if (!visible) {
       void this.replicaCache.flush();
+      this.scheduleSocketSuspend();
       return;
     }
 
-    this.ensureConnectedAll({ verify: true });
+    if (this.suspendSocketsTimer) {
+      clearTimeout(this.suspendSocketsTimer);
+      this.suspendSocketsTimer = null;
+    }
+    // Foregrounding bypasses reconnect backoff, reopens suspended sockets, and verifies the
+    // ones that stayed open.
+    for (const controller of this.controllers.values()) {
+      controller.resume();
+    }
+  }
+
+  private scheduleSocketSuspend(): void {
+    const delayMs = this.backgroundPolicy.suspendSocketsAfterMs;
+    // Without a suspend delay, normal reconnect backoff keeps running while hidden for as long
+    // as the OS lets the app execute.
+    if (delayMs === null || this.suspendSocketsTimer) return;
+    this.suspendSocketsTimer = setTimeout(() => {
+      this.suspendSocketsTimer = null;
+      for (const controller of this.controllers.values()) {
+        controller.suspend();
+      }
+    }, delayMs);
   }
 
   runProbeCycleNow(serverId?: string): Promise<void> {
@@ -2828,6 +2912,7 @@ export class HostRuntimeStore {
       replica,
       replaceDemandedAgentIds: (agentIds) => directory.setAgentRouteDemand(agentIds),
       drainQueuedAgentMessage: (agentId) => this.drainQueuedAgentMessage(serverId, agentId),
+      liveScope: this.backgroundPolicy.timelineLiveScope,
       ports,
     });
   }

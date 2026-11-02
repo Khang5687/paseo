@@ -67,6 +67,7 @@ export function WorkspaceMetaRow({
   prHint,
   serviceSummary,
   labels = EMPTY_LABELS,
+  workingSubagentCount = 0,
 }: {
   currentBranch: string | null;
   projectName: string | null;
@@ -74,9 +75,11 @@ export function WorkspaceMetaRow({
   prHint: PrHint | null;
   serviceSummary: WorkspaceServiceSummary | null;
   labels?: readonly WorkspaceLabelDefinition[];
+  workingSubagentCount?: number;
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
   const items = selectMetaRowItems({
+    workingSubagentCount,
     currentBranch,
     projectName,
     hasHostBadge: hostBadge !== null,
@@ -111,6 +114,9 @@ function MetaItemNode({
   /** First on the line, so this item's ink sets the rail the title above it already uses. */
   leading: boolean;
 }): ReactNode {
+  if (item.kind === "subagents") {
+    return <SubagentsItem count={item.count} />;
+  }
   if (item.kind === "branch") {
     return <IdentityItem kind="branch" name={item.name} />;
   }
@@ -141,6 +147,22 @@ function IdentityItem({ kind, name }: { kind: "branch" | "project"; name: string
       </View>
       <Text style={styles.identityText} numberOfLines={1}>
         {name}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * How many subagents are still working while the row reports that the root agent waits on you.
+ * Muted text with no spinner: the leading slot owns the row's status, and a second spinner would
+ * read as the row itself working.
+ */
+function SubagentsItem({ count }: { count: number }) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.item} testID="sidebar-workspace-working-subagents">
+      <Text style={styles.subagentsText} numberOfLines={1}>
+        {t("sidebar.workspace.workingSubagents", { count })}
       </Text>
     </View>
   );
@@ -341,6 +363,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   itemPressed: {
     opacity: 0.82,
+  },
+  subagentsText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 16,
+    flexShrink: 0,
   },
   separator: {
     color: theme.colors.foregroundExtraMuted,
