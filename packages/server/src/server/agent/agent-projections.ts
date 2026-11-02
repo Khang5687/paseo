@@ -328,24 +328,33 @@ function compareAgentListItems(a: AgentListItemPayload, b: AgentListItemPayload)
   return resolveAgentListActivityTime(b) - resolveAgentListActivityTime(a);
 }
 
-export function selectAgentListItems(
+export const DEFAULT_AGENT_LIST_LIMIT = 20;
+
+export interface AgentListSelection {
+  cwd?: string;
+  statuses?: AgentSnapshotPayload["status"][];
+  sinceHours?: number;
+  limit?: number;
+  /** Case-insensitive substring of the agent title. */
+  query?: string;
+}
+
+export function selectAgentListPage(
   agents: readonly AgentSnapshotPayload[],
-  options: {
-    cwd?: string;
-    statuses?: AgentSnapshotPayload["status"][];
-    sinceHours?: number;
-    limit?: number;
-  } = {},
-): AgentListItemPayload[] {
+  options: AgentListSelection = {},
+): { agents: AgentListItemPayload[]; more: number } {
   const statusFilter = options.statuses?.length ? new Set(options.statuses) : null;
   const sinceMs = Date.now() - (options.sinceHours ?? 48) * 60 * 60 * 1000;
-  return agents
+  const query = options.query?.trim().toLowerCase();
+  const limit = options.limit ?? DEFAULT_AGENT_LIST_LIMIT;
+  const matches = agents
     .map(toAgentListItemPayload)
     .filter((agent) => !options.cwd || isSameOrDescendantPath(options.cwd, agent.cwd))
     .filter((agent) => !statusFilter || statusFilter.has(agent.status))
+    .filter((agent) => !query || (agent.title ?? "").toLowerCase().includes(query))
     .filter((agent) => !agent.archivedAt || resolveAgentListActivityTime(agent) >= sinceMs)
-    .sort(compareAgentListItems)
-    .slice(0, options.limit ?? 50);
+    .sort(compareAgentListItems);
+  return { agents: matches.slice(0, limit), more: Math.max(0, matches.length - limit) };
 }
 
 export function toRecentProviderSessionDescriptorPayload(

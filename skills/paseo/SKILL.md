@@ -48,7 +48,7 @@ For a local daemon, `project create` defaults to the current directory and resol
 
 Choose `baseBranch` explicitly: `origin/main` selects the remote-tracking branch; `refs/heads/main` selects local main. Bare `main` prefers local main when it exists, otherwise origin/main. Paseo retains the resolved ref for workspace comparisons, even after rebasing the branch or changing its PR target.
 
-**`list_workspaces`** — list active workspaces, excluding background workspaces unless `includeBackground: true`.
+**`list_workspaces`** — list active workspaces newest first, excluding background workspaces unless `includeBackground: true`. Filter with `query` (title or cwd substring), `projectId`, or `cwd`; `limit` defaults to 20 and the result carries `more` when truncated.
 
 **`archive_workspace`** — `{ workspaceId }`. Archives the workspace, its agents, and its terminals. Local directories remain; Paseo removes an owned worktree only after its final active workspace reference is archived.
 
@@ -74,7 +74,7 @@ paseo script stop <name> [--cwd <path> | --workspace <workspace-id>]
 
 ## Agents
 
-**`create_agent`** — required: `title`, `provider` (`claude/opus`, `codex/gpt-5.4`, …), `initialPrompt`. Optional: `workspaceId`, `notifyOnFinish`, `settings`, `labels`. Returns `{ agentId, workspaceId, … }`.
+**`create_agent`** — required: `title`, `provider` (`claude/opus`, `codex/gpt-5.4`, …), `initialPrompt`. Optional: `workspaceId`, `notifyOnFinish`, `settings`, `labels`. Returns `{ agentId, workspaceId, … }` without the mode catalog; use `inspect_provider` for modes, or `detail: "full"` to echo `availableModes`.
 
 Initial runtime settings live under `settings`: `modeId`, `thinkingOptionId`, and provider-specific `features`. Agent profiles are the preferred source for these values. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }` when creating the agent.
 
@@ -88,7 +88,9 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 **`update_agent`** — `{ agentId, name?, labels?, settings? }`. Use `settings` for runtime changes on an existing agent: `modeId`, `model`, `thinkingOptionId`, and provider-specific `features`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }`.
 
-**`list_agents`** — filter by `cwd`, `statuses`, `sinceHours`, `includeArchived`; set `includeBackground: true` to include agents in background workspaces.
+**`list_agents`** — filter by `query` (title substring), `cwd`, `statuses`, `sinceHours`, `includeArchived`; set `includeBackground: true` to include agents in background workspaces. `limit` defaults to 20 and the result carries `more` when truncated.
+
+List and status tools (`list_agents`, `get_agent_status`, `list_workspaces`, `list_terminals`, `list_schedules`, `list_providers`, `list_models`, `inspect_provider`, `create_agent`, `create_workspace`) return compact items by default: empty fields are omitted, labels collapse to `parentId` and `labelCount`. Pass `detail: "full"` for the complete payload.
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
 
@@ -107,9 +109,9 @@ Omit absent values. Do not remember a selected profile or infer drift later; a p
 
 If no profile fits, or no profiles are configured, use the provider discovery tools below rather than guessing. Tell the user when you fall back because no configured profile fits.
 
-**`list_providers`** — compact provider availability and modes.
+**`list_providers`** — compact provider availability and mode ids.
 
-**`list_models`** — full model list for one provider. Use only when you need model IDs or thinking options; the list can be large.
+**`list_models`** — model ids and labels for one provider. Pass `model` to get one model with its thinking options, or `detail: "full"` for every model with thinking options.
 
 **`inspect_provider`** — compact provider capability and feature inspection. Required: `provider`; pass `cwd` when you are not in an agent-scoped session. Optional: `settings` with draft `model`, `modeId`, `thinkingOptionId`, and `features`.
 
