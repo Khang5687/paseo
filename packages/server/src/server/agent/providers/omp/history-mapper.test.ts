@@ -789,18 +789,6 @@ describe("OMP history mapper", () => {
         callId: "omp-custom-1",
         name: "custom-message",
         status: "completed",
-        detail: {
-          type: "plain_text",
-          text: "[future_control] Unsupported history record",
-        },
-        metadata: { synthetic: true, customType: "custom-message" },
-        error: null,
-      },
-      {
-        type: "tool_call",
-        callId: "omp-custom-2",
-        name: "custom-message",
-        status: "completed",
         detail: { type: "plain_text", text: "[developer] developer note" },
         metadata: { synthetic: true, customType: "custom-message" },
         error: null,
@@ -886,6 +874,71 @@ describe("OMP history mapper", () => {
       { type: "assistant_message", text: "After.", messageId: "resp-2" },
     ]);
     expect(events[1]).toMatchObject({ type: "timeline", timestamp: "2026-10-05T04:31:19.537Z" });
+  });
+
+  test("skips OMP metadata entries and keeps the compaction row after a credential pin", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omp-metadata-history-"));
+    const sessionFile = join(dir, "session.jsonl");
+    const entries: Record<string, unknown>[] = [
+      { type: "session", id: "root" },
+      { type: "message", id: "user-1", message: { role: "user", content: "Summarise" } },
+      {
+        type: "message",
+        id: "answer-1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Before." }],
+          responseId: "resp-1",
+        },
+      },
+      { type: "credential_pin", id: "pin-1", provider: "anthropic", hash: "601be4aa" },
+      { type: "service_tier_change", id: "tier-1", serviceTier: null },
+      { type: "mode_change", id: "mode-1", mode: "plan", data: { planFilePath: "/tmp/plan.md" } },
+      { type: "label", id: "label-1", targetId: "user-1", label: "bookmark" },
+      { type: "model_usage", id: "usage-1", purpose: "cache-warm", provider: "anthropic" },
+      { type: "branch_summary", id: "branch-1", fromId: "answer-1", summary: "Abandoned branch" },
+      { type: "reset_boundary", id: "reset-1" },
+      { type: "compaction", id: "compaction-1", summary: "Summary", tokensBefore: 77611 },
+      { type: "credential_pin", id: "pin-2", provider: "anthropic", hash: "601be4aa" },
+      { type: "future_record", id: "future-1", content: "future conversation text" },
+      {
+        type: "message",
+        id: "answer-2",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "After." }],
+          responseId: "resp-2",
+        },
+      },
+    ];
+    writeFileSync(
+      sessionFile,
+      entries
+        .map((entry, index) =>
+          JSON.stringify({ ...entry, parentId: index ? entries[index - 1]!.id : null }),
+        )
+        .join("\n"),
+    );
+
+    const events: AgentStreamEvent[] = [];
+    for await (const event of streamOmpHistory({ sessionFile, provider: "omp" })) {
+      events.push(event);
+    }
+    expect(events.map((event) => event.item)).toEqual([
+      { type: "user_message", text: "Summarise", messageId: "user-1" },
+      { type: "assistant_message", text: "Before.", messageId: "resp-1" },
+      { type: "compaction", status: "completed", preTokens: 77611 },
+      {
+        type: "tool_call",
+        callId: "omp-custom-1",
+        name: "custom-message",
+        status: "completed",
+        detail: { type: "plain_text", text: "[future_record] future conversation text" },
+        metadata: { synthetic: true, customType: "custom-message" },
+        error: null,
+      },
+      { type: "assistant_message", text: "After.", messageId: "resp-2" },
+    ]);
   });
 
   test("maps omp 18.1 custom_message entries like live custom messages", async () => {
