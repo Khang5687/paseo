@@ -14,20 +14,26 @@ export function applyTerminalRendererReadyChange(
   return currentReadyStreamKey === change.streamKey ? null : currentReadyStreamKey;
 }
 
-export function shouldReplayTerminalSnapshotForRenderer(input: {
-  change: TerminalRendererReadyChange;
-  terminalStreamKey: string;
-}): boolean {
-  return input.change.isReady && input.change.streamKey === input.terminalStreamKey;
-}
-
 export function resolveTerminalStreamTarget(input: {
   terminalId: string;
   terminalStreamKey: string;
   rendererReadyStreamKey: string | null;
   isWorkspaceFocused: boolean;
+  /** This terminal's tab is the one shown in its pane. */
+  isPanelActive: boolean;
+  isAppVisible: boolean;
+  /**
+   * Desktop and browser keep hidden tabs of the focused workspace streaming, so switching back
+   * needs no fresh snapshot. Phones stream only the terminal on screen while the app is visible:
+   * every byte is parsed by a JS terminal emulator and repainted, which costs battery for output
+   * nobody sees.
+   */
+  streamHiddenTabs: boolean;
 }): string | null {
-  return input.isWorkspaceFocused && input.rendererReadyStreamKey === input.terminalStreamKey
+  const isStreamDemanded =
+    input.isWorkspaceFocused &&
+    (input.streamHiddenTabs || (input.isPanelActive && input.isAppVisible));
+  return isStreamDemanded && input.rendererReadyStreamKey === input.terminalStreamKey
     ? input.terminalId
     : null;
 }

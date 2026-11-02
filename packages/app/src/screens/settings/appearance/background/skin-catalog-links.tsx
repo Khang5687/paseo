@@ -39,7 +39,7 @@ function useSkinCatalogScreens(): SkinCatalogScreen[] {
           serverId: plugin.serverId,
           pluginId: plugin.id,
           screenId: screen.id,
-          title: screen.title,
+          title: plugin.i18n.resolve(screen.title, plugin.locale),
         });
       }
     }

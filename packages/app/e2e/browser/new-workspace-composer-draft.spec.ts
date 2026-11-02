@@ -1,7 +1,15 @@
+import { chooseModel, startWithoutRememberedModel } from "../support/helpers/model-memory";
+import {
+  composerLocator,
+  enterComposerFullscreen,
+  exitComposerFullscreen,
+  resizeComposerViewport,
+} from "../support/helpers/composer";
 import { expect, test } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
 import { getE2EDaemonPort } from "../support/helpers/daemon-port";
 import {
+  delayBrowserWorkspaceCreatedResponse,
   expectNewWorkspaceDraft,
   expectNewWorkspaceProjectSelected,
   fillNewWorkspaceDraft,
@@ -53,6 +61,42 @@ test.describe("New workspace composer draft", () => {
     }
   });
 
+  test("keeps a separate draft for each project", async ({ page }) => {
+    const firstProject: SeededWorkspace = await seedWorkspace({
+      repoPrefix: "new-workspace-draft-separate-a-",
+    });
+    const secondProject: SeededWorkspace = await seedWorkspace({
+      repoPrefix: "new-workspace-draft-separate-b-",
+    });
+    const first = {
+      projectKey: firstProject.projectKey,
+      projectDisplayName: firstProject.projectDisplayName,
+    };
+    const second = {
+      projectKey: secondProject.projectKey,
+      projectDisplayName: secondProject.projectDisplayName,
+    };
+
+    try {
+      await gotoAppShell(page);
+      await waitForSidebarHydration(page);
+      await openNewWorkspaceComposer(page, first);
+      await expectNewWorkspaceProjectSelected(page, first.projectDisplayName);
+      await fillNewWorkspaceDraft(page, DRAFT);
+
+      await openNewWorkspaceComposer(page, second);
+      await expectNewWorkspaceProjectSelected(page, second.projectDisplayName);
+      await expectNewWorkspaceDraft(page, "");
+
+      await openNewWorkspaceComposer(page, first);
+      await expectNewWorkspaceProjectSelected(page, first.projectDisplayName);
+      await expectNewWorkspaceDraft(page, DRAFT);
+    } finally {
+      await secondProject.cleanup();
+      await firstProject.cleanup();
+    }
+  });
+
   test("keeps the draft when the host changes", async ({ page }) => {
     const project: SeededWorkspace = await seedWorkspace({
       repoPrefix: "new-workspace-draft-host-",
@@ -90,6 +134,7 @@ test.describe("New workspace composer draft", () => {
     const project = await seedWorkspace({ repoPrefix: "new-workspace-submitted-draft-" });
 
     try {
+      await startWithoutRememberedModel(page);
       await gotoAppShell(page);
       await waitForSidebarHydration(page);
       await openNewWorkspaceComposer(page, {
@@ -97,6 +142,7 @@ test.describe("New workspace composer draft", () => {
         projectDisplayName: project.projectDisplayName,
       });
 
+      await chooseModel(page, "mock", "Ten second stream");
       const composer = page.getByRole("textbox", { name: "Message agent..." });
       const createButton = page.getByTestId("workspace-create-submit");
       await expect(composer).toBeEditable({ timeout: 30_000 });
@@ -133,4 +179,46 @@ test.describe("New workspace composer draft", () => {
       await project.cleanup();
     }
   });
+});
+
+test("fullscreen creation returns inline and keeps submission locked when reopened", async ({
+  page,
+}) => {
+  const project = await seedWorkspace({ repoPrefix: "fullscreen-submit-pending-" });
+  const delay = await delayBrowserWorkspaceCreatedResponse(page);
+  try {
+    await gotoAppShell(page);
+    await waitForSidebarHydration(page);
+    await openNewWorkspaceComposer(page, project);
+    await resizeComposerViewport(page, "portrait");
+    await fillNewWorkspaceDraft(page, DRAFT);
+    await enterComposerFullscreen(page);
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await delay.waitForCreateRequest();
+
+    await test.step("submission returns inline with the original draft and spinner", async () => {
+      await expect(page.getByTestId("composer-fullscreen")).toHaveCount(0);
+      await expect(composerLocator(page)).toHaveValue(DRAFT);
+      await expect(composerLocator(page)).not.toBeEditable();
+      await expect(page.getByRole("button", { name: "Create", exact: true })).toBeDisabled();
+      await expect(page.getByRole("progressbar")).toBeVisible();
+    });
+    await test.step("fullscreen can reopen while pending without unlocking or duplicating submission", async () => {
+      await enterComposerFullscreen(page);
+      await expect(page.getByTestId("composer-fullscreen")).toBeVisible();
+      await expect(composerLocator(page)).toHaveValue(DRAFT);
+      await expect(composerLocator(page)).not.toBeEditable();
+      await expect(page.getByRole("button", { name: "Create", exact: true })).toBeDisabled();
+      await expect(page.getByRole("progressbar")).toBeVisible();
+      await exitComposerFullscreen(page);
+    });
+    delay.release();
+    await page.waitForURL((url) => url.pathname.includes("/workspace/"));
+    await expect(composerLocator(page)).toHaveValue("");
+    await expect(composerLocator(page)).toBeEditable();
+    expect(delay.agentRequests).toHaveLength(1);
+  } finally {
+    delay.release();
+    await project.cleanup();
+  }
 });

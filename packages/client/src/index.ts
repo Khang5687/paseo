@@ -1,3 +1,10 @@
+export type { TerminalReplayEvent, TerminalStreamEvent } from "./terminal-stream-router.js";
+import type { AgentAddress } from "@getpaseo/protocol/addresses";
+import { parentAddressLabels } from "@getpaseo/protocol/agent-labels";
+export type { AgentAddress } from "@getpaseo/protocol/addresses";
+import { createHostActions, type PaseoHostActions } from "./hosts/index.js";
+export type { PaseoHostActions } from "./hosts/index.js";
+export type { HostAdd, HostUpdate, HostSummary, HostDirectory } from "@getpaseo/protocol/hosts";
 import type { OwnedSubscription } from "./connection/index.js";
 export type { OwnedSubscription, SubscriptionObserver } from "./connection/index.js";
 import type { DaemonClientConfig } from "./daemon-client.js";
@@ -10,6 +17,9 @@ import type {
   FetchWorkspacesResponseMessage,
   GetProvidersSnapshotResponseMessage,
   ListAvailableProvidersResponse,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
+  OmpAccountRoutingState,
   ListCommandsResponse,
   ListProviderFeaturesRequestMessage,
   ListProviderFeaturesResponseMessage,
@@ -28,7 +38,25 @@ import type {
   WorkspaceDescriptorPayload,
   WorkspaceCreateRequest,
 } from "@getpaseo/protocol/messages";
-import { DaemonClient, type CreateAgentRequestOptions } from "./daemon-client.js";
+import {
+  DaemonClient,
+  type CreateAgentRequestOptions,
+  type OmpAccountRoutingRead,
+  type OmpAccountRoutingSubscribedRead,
+} from "./daemon-client.js";
+export {
+  OmpAccountLoginUnsupportedError,
+  OmpAccountRoutingUnsupportedError,
+} from "./daemon-client.js";
+export type { OmpAccountRoutingRead, OmpAccountRoutingSubscribedRead } from "./daemon-client.js";
+export type {
+  OmpRoutingAccountRef,
+  OmpRoutingAccount,
+  OmpAccountRoutingMutation,
+  OmpAccountRoutingMutationResult,
+  OmpAccountRoutingPolicy,
+  OmpAccountRoutingState,
+} from "@getpaseo/protocol/messages";
 import {
   createTerminalActions,
   type PaseoTerminalActions,
@@ -246,7 +274,7 @@ export interface PaseoAgentCreateOptions {
   onEvent?: (snapshot: CreationSnapshot) => void;
   config: PaseoAgentConfig;
   cwd: string;
-  parent?: string | PaseoAgentHandle;
+  parent?: string | AgentAddress | PaseoAgentHandle;
   title?: PaseoAgentSessionConfig["title"];
   env?: CreateAgentRequestMessage["env"];
   prompt?: string;
@@ -257,6 +285,8 @@ export interface PaseoAgentCreateOptions {
   git?: CreateAgentRequestMessage["git"];
   worktree?: CreateAgentRequestMessage["worktree"];
   autoArchive?: CreateAgentRequestMessage["autoArchive"];
+  /** Visibility intent for a NEW workspace. Existing targets reject this option. */
+  background?: CreateAgentRequestMessage["background"];
   requestId?: string;
   labels?: Record<string, string>;
 }
@@ -338,6 +368,7 @@ export interface PaseoAgentTimelineHandle {
 
 export interface PaseoAgentHandle {
   readonly id: string;
+  readonly address: AgentAddress;
   /**
    * `workspaceId` through `archivedAt` mirror the last snapshot this handle
    * observed. A handle from `ref()` reads `null` for all of them until
@@ -360,6 +391,11 @@ export interface PaseoAgentHandle {
   readonly timeline: PaseoAgentTimelineHandle;
   current(): PaseoAgent | null;
   refresh(requestId?: string): Promise<PaseoAgentRefetchResult | null>;
+  /**
+   * Reopens the provider session with current configuration, rerunning session-open hooks.
+   * Interrupts a running turn and returns the refreshed snapshot.
+   */
+  reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
   respondToPermission(options: PaseoAgentRespondToPermissionOptions): Promise<void>;
   /** Sends a prompt and resolves when that turn finishes or needs attention. */
@@ -481,7 +517,24 @@ export interface PaseoConfigActions {
   ): Promise<{ requestId: string; config: MutableDaemonConfig }>;
 }
 
+export interface PaseoAccountRoutingActions {
+  get(options: {
+    subscribe: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingSubscribedRead>;
+  get(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  /** Owned observation without a separate read; `ready` resolves with the first snapshot. */
+  observe(options?: { signal?: AbortSignal }): OwnedSubscription<OmpAccountRoutingState>;
+  /** Revision-checked mutation. Host conflicts return in `error`; transport failures throw. */
+  mutate(options: {
+    expectedPolicyRevision: number;
+    command: OmpAccountRoutingMutation;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingMutationResult>;
+}
+
 export interface PaseoApi {
+  readonly hosts: PaseoHostActions;
   dispose(): Promise<void>;
   observeEvents: DaemonClient["observeEvents"];
   readonly terminals: PaseoTerminalActions;
@@ -490,6 +543,7 @@ export interface PaseoApi {
   readonly agents: PaseoAgentActions;
   readonly providers: PaseoProviderActions;
   readonly config: PaseoConfigActions;
+  readonly accountRouting: PaseoAccountRoutingActions;
 }
 
 export interface PaseoClient extends PaseoApi {
@@ -524,10 +578,12 @@ export function createPaseoClient(config: PaseoClientConfig): PaseoClient {
 function toDaemonAgentCreateOptions(
   options: PaseoAgentCreateOptions,
   placement?: { workspaceId: string; cwd: string },
+  serverId?: string,
 ): CreateAgentRequestOptions {
   const { config: agentConfig, cwd, parent, title, prompt, ...requestOptions } = options;
   const { provider: providerModel, options: providerOptions, ...runtimeConfig } = agentConfig;
   const { provider, model } = parseProviderModel(providerModel);
+  const relationship = parent ? encodeParent(parent, serverId) : {};
   return {
     ...requestOptions,
     config: {
@@ -539,7 +595,12 @@ function toDaemonAgentCreateOptions(
       ...(providerOptions !== undefined ? { providerOptions } : {}),
     },
     ...(placement ? { workspaceId: placement.workspaceId } : {}),
-    ...(parent ? { callerAgentId: resolveAgentId(parent) } : {}),
+    ...(parent
+      ? {
+          ...relationship,
+          labels: { ...requestOptions.labels, ...relationship.labels },
+        }
+      : {}),
     ...(prompt !== undefined ? { initialPrompt: prompt } : {}),
   };
 }
@@ -586,7 +647,13 @@ export function createPaseoApi(
     options: PaseoAgentCreateOptions,
     placement?: { workspaceId: string; cwd: string },
   ) => {
-    const agent = await daemonClient.createAgent(toDaemonAgentCreateOptions(options, placement));
+    const agent = await daemonClient.createAgent(
+      toDaemonAgentCreateOptions(
+        options,
+        placement,
+        daemonClient.getLastServerInfoMessage()?.serverId,
+      ),
+    );
     return createAgentHandle(agent);
   };
   const terminals = createTerminalActions(daemonClient, async (workspaceId) => {
@@ -691,8 +758,35 @@ export function createPaseoApi(
     return { ...(await subscription.ready), subscription };
   }
 
+  function getAccountRouting(options: {
+    subscribe: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingSubscribedRead>;
+  function getAccountRouting(options?: { signal?: AbortSignal }): Promise<OmpAccountRoutingRead>;
+  async function getAccountRouting(options?: {
+    subscribe?: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingRead> {
+    if (lifetime.signal.aborted) throw new Error("Paseo API is disposed");
+    const result = await daemonClient.getOmpAccountRoutingState(options);
+    if (!options?.subscribe) return { state: result.state };
+    const subscription = result.subscription;
+    if (!subscription) throw new Error("The daemon did not return an account-routing subscription");
+    try {
+      return { state: result.state, subscription: own(() => subscription) };
+    } catch (error) {
+      // The API was disposed while the subscription bootstrapped; nothing owns it yet. A failed
+      // release is logged so it cannot replace the disposal error the caller is waiting on.
+      await subscription.release().catch((releaseError) => {
+        console.error("Account routing subscription cleanup failed", releaseError);
+      });
+      throw error;
+    }
+  }
+
   return {
     dispose,
+    hosts: createHostActions(daemonClient, { own, signal: lifetime.signal, api: createPaseoApi }),
     observeEvents,
     terminals,
     projects: {
@@ -710,7 +804,18 @@ export function createPaseoApi(
         openWorkspace(daemonClient, createWorkspaceHandle, input, requestId),
       create: async ({ requestId, agent, ...options }) => {
         const result = await daemonClient.createWorkspace(
-          { ...options, ...(agent ? { agent: toDaemonAgentCreateOptions(agent) } : {}) },
+          {
+            ...options,
+            ...(agent
+              ? {
+                  agent: toDaemonAgentCreateOptions(
+                    agent,
+                    undefined,
+                    daemonClient.getLastServerInfoMessage()?.serverId,
+                  ),
+                }
+              : {}),
+          },
           requestId,
         );
         if (result.error || !result.workspace) {
@@ -753,6 +858,11 @@ export function createPaseoApi(
         });
       },
     },
+    accountRouting: {
+      get: getAccountRouting,
+      observe: (options) => own(() => daemonClient.observeOmpAccountRoutingState(options)),
+      mutate: (options) => daemonClient.mutateOmpAccountRouting(options),
+    },
     config: {
       get: (requestId) => daemonClient.getDaemonConfig(requestId),
       patch: (patch, requestId) => daemonClient.patchDaemonConfig(patch, requestId),
@@ -780,9 +890,12 @@ function createWorkspaceHandleFactory(
     const refresh = async (options?: { requestId?: string }) => {
       let cursor: string | undefined;
       let requestId = options?.requestId;
+      // A ref addresses one workspace by id, so a background one resolves too.
+      const filter = daemonClient.supportsBackgroundWorkspaces() ? { includeBackground: true } : {};
       do {
         const result = await daemonClient.fetchWorkspaces({
           requestId,
+          filter,
           page: { limit: 200, ...(cursor ? { cursor } : {}) },
         });
         const match = result.entries.find((entry) => entry.id === id);
@@ -860,8 +973,14 @@ function createAgentHandleFactory(
     const id = typeof agent === "string" ? agent : agent.id;
     let current = typeof agent === "string" ? null : agent;
 
+    let serverId = daemonClient.getLastServerInfoMessage()?.serverId;
     const handle: PaseoAgentHandle = {
       id,
+      get address() {
+        serverId ??= daemonClient.getLastServerInfoMessage()?.serverId;
+        if (!serverId) throw new Error("Connect to a host before obtaining an agent address");
+        return { serverId, agentId: id };
+      },
       timeline: {
         append: (item) => daemonClient.appendAgentTimelineItem(id, item),
         refetch: async (options) => {
@@ -934,6 +1053,12 @@ function createAgentHandleFactory(
       current: () => current,
       refresh: async (requestId) => {
         const result = await daemonClient.fetchAgent({ agentId: id, requestId });
+        current = result?.agent ?? null;
+        return result;
+      },
+      reload: async (options) => {
+        await daemonClient.refreshAgent(id, options?.requestId);
+        const result = await daemonClient.fetchAgent({ agentId: id });
         current = result?.agent ?? null;
         return result;
       },
@@ -1010,8 +1135,16 @@ function resolveWorkspaceId(workspace: string | PaseoWorkspaceHandle): string {
   return typeof workspace === "string" ? workspace : workspace.id;
 }
 
-function resolveAgentId(agent: string | PaseoAgentHandle): string {
-  return typeof agent === "string" ? agent : agent.id;
+function encodeParent(
+  parent: string | AgentAddress | PaseoAgentHandle,
+  serverId?: string,
+): Pick<CreateAgentRequestOptions, "callerAgentId" | "labels"> {
+  if (typeof parent === "string") return { callerAgentId: parent };
+  const address = "address" in parent ? parent.address : parent;
+  if (!serverId) throw new Error("Connect to a host before creating a child");
+  return address.serverId === serverId
+    ? { callerAgentId: address.agentId, labels: parentAddressLabels(address) }
+    : { labels: parentAddressLabels(address) };
 }
 
 function parseProviderModel(selection: string): { provider: string; model: string } {
@@ -1029,6 +1162,7 @@ function listProviderUsage(
   daemonClient: DaemonClient,
   options?: PaseoProviderUsageOptions,
 ): Promise<PaseoProviderUsageResult> {
+  daemonClient.ensureConnected();
   // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-02-28 once daemon floor >= v0.1.98.
   if (daemonClient.getLastServerInfoMessage()?.features?.providerUsageList !== true) {
     return Promise.reject(new Error("Update the host to list provider usage."));
@@ -1046,7 +1180,7 @@ async function waitForProvidersReady(
 
   try {
     await observation.ready;
-    signal.throwIfAborted();
+    if (signal.aborted) throw new Error("Paseo API is disposed");
     return await new Promise<PaseoProviderSnapshotResult>((resolve, reject) => {
       let settled = false;
       let requestId: string | null = null;

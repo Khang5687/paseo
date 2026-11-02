@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
+  MutableDaemonConfigSchema,
+  MutableDaemonConfigPatchSchema,
+  UsageReportEntrySchema,
   AgentSnapshotPayloadSchema,
   AgentTimelineItemPayloadSchema,
   ServerInfoStatusPayloadSchema,
@@ -141,6 +144,24 @@ describe("wire schema compatibility", () => {
     });
   });
 
+  test("routing capability is additive and stays separate from server capabilities", () => {
+    const legacy = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "legacy-routing-server",
+      features: { ownedSubscriptions: true },
+    });
+    const capable = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "routing-server",
+      capabilities: { owned_subscriptions: true },
+      features: { ownedSubscriptions: true, ompAccountRouting: true },
+    });
+
+    expect(legacy.features?.ompAccountRouting).toBeUndefined();
+    expect(capable.features?.ompAccountRouting).toBe(true);
+    expect(capable.capabilities).toMatchObject({ owned_subscriptions: true });
+  });
+
   test("assistant timeline message ids are optional on the wire", () => {
     expect(
       AgentTimelineItemPayloadSchema.parse({
@@ -198,8 +219,8 @@ describe("wire schema compatibility", () => {
     });
   });
 
-  test("sub_agent tool-call payload still parses against the v0.1.65-beta.3 schema", () => {
-    const parsed = LegacySubAgentToolCallSchema.parse({
+  test("a sub-agent launch marker still parses against the v0.1.65-beta.3 schema", () => {
+    const card = {
       type: "tool_call",
       callId: "call-sub-agent-1",
       name: "Task",
@@ -210,12 +231,26 @@ describe("wire schema compatibility", () => {
         subAgentType: "Explore",
         description: "Inspect repository structure",
         childSessionId: "child-session-1",
-        log: "[Read] README.md",
+        log: "",
         actions: [],
       },
-    });
+    } as const;
 
-    expect(parsed.detail.actions).toEqual([]);
+    const parsed = LegacySubAgentToolCallSchema.parse(JSON.parse(JSON.stringify(card)));
+    expect(parsed.detail).toMatchObject({ log: "", actions: [] });
+    const { log: _log, ...withoutLog } = card.detail;
+    expect(LegacySubAgentToolCallSchema.safeParse({ ...card, detail: withoutLog }).success).toBe(
+      false,
+    );
+    expect(AgentTimelineItemPayloadSchema.parse({ ...card, detail: withoutLog })).toMatchObject({
+      detail: { type: "sub_agent", description: "Inspect repository structure" },
+    });
+    expect(
+      AgentTimelineItemPayloadSchema.parse({
+        ...card,
+        detail: { ...card.detail, log: "[Read] README.md" },
+      }),
+    ).toMatchObject({ detail: { log: "[Read] README.md" } });
   });
 
   test("old clients parse agent snapshots with rewind capabilities", () => {
@@ -522,4 +557,280 @@ test("usage login errors are additive and older reports still parse", () => {
   expect(SessionOutboundMessageSchema.parse(oldMessage)).toEqual(oldMessage);
   expect(SessionOutboundMessageSchema.parse(newMessage)).toEqual(newMessage);
   expect(legacy.parse(newMessage)).toEqual(oldMessage);
+});
+
+test("usage routing and subscription metadata are optional, nullable-unknown and strictly typed", () => {
+  const legacyEntry = {
+    id: "claude:a",
+    account: {},
+    fetchedAt: "2026-10-05T00:00:00.000Z",
+    sourceId: "claude",
+    sourceLabel: "Claude",
+    report: { status: "available", windows: [] },
+  };
+  const message = (report: unknown) => ({
+    type: "usage.list_reports.update",
+    payload: { requestId: "usage", report },
+  });
+  const extended = {
+    ...legacyEntry,
+    report: {
+      status: "available",
+      windows: [],
+      quotaIdentity: { accountUuid: "a", organizationUuid: "o" },
+      subscription: {
+        subscriptionType: null,
+        rateLimitTier: "max_5x",
+        observedAt: null,
+        source: "claude-supported-login",
+      },
+    },
+    routing: {
+      accountRef: { storeNamespace: "11111111-1111-4111-8111-111111111111", nativeRowId: 3 },
+      state: "serving",
+      hostEpoch: "epoch",
+      stateSequence: 4,
+    },
+  };
+  expect(SessionOutboundMessageSchema.parse(message(legacyEntry))).toEqual(message(legacyEntry));
+  expect(SessionOutboundMessageSchema.parse(message(extended))).toEqual(message(extended));
+  const unknownRouting = {
+    ...legacyEntry,
+    routing: { ...extended.routing, accountRef: null, state: "unknown" },
+  };
+  expect(SessionOutboundMessageSchema.parse(message(unknownRouting))).toEqual(
+    message(unknownRouting),
+  );
+  const bad = [
+    { ...legacyEntry, report: { ...extended.report, quotaIdentity: { accountUuid: "a" } } },
+    {
+      ...legacyEntry,
+      report: {
+        ...extended.report,
+        subscription: { ...extended.report.subscription, source: "x" },
+      },
+    },
+    { ...extended, routing: { ...extended.routing, state: "idle" } },
+    {
+      ...extended,
+      routing: { ...extended.routing, accountRef: { storeNamespace: "n", nativeRowId: "3" } },
+    },
+  ];
+  for (const report of bad) {
+    expect(SessionOutboundMessageSchema.safeParse(message(report)).success).toBe(false);
+  }
+});
+
+// Copied from the release before `ompAccountLoginLink`: what an older app parses.
+const LegacyOmpAccountLoginPayloadSchema = z.object({
+  requestId: z.string(),
+  status: z.object({
+    state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
+    failure: z
+      .enum([
+        "timeout",
+        "paste_code_unsupported",
+        "browser_open_failed",
+        "omp_failed",
+        "spawn_failed",
+      ])
+      .optional(),
+    startedAt: z.number().finite().optional(),
+  }),
+  error: z.enum(["already_running"]).nullable().optional(),
+});
+
+test("OMP login link fields are additive for older apps and older daemons", () => {
+  // New daemon to old app: every status the link daemon sends to an old app's requests parses.
+  const statuses = [
+    { state: "running", startedAt: 1, phase: "preparing" },
+    { state: "running", startedAt: 1, phase: "awaiting_browser", pasteAccepted: true },
+    {
+      state: "succeeded",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: {
+        kind: "added",
+        label: "b@example.com",
+        ref: { storeNamespace: "n", nativeRowId: 9 },
+      },
+    },
+    {
+      state: "failed",
+      failure: "omp_failed",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "already_listed", label: "a@example.com" },
+    },
+  ];
+  for (const status of statuses) {
+    for (const op of ["start", "get_status", "cancel"]) {
+      const message = {
+        type: `account.routing.login.${op}.response`,
+        payload: { requestId: "r", status, error: null },
+      };
+      expect(SessionOutboundMessageSchema.parse(message)).toMatchObject({ payload: { status } });
+      expect(LegacyOmpAccountLoginPayloadSchema.parse(message.payload).status.state).toBe(
+        status.state,
+      );
+    }
+  }
+
+  // Old app to new daemon: a start without `mode` still parses (and means add-only).
+  expect(
+    SessionInboundMessageSchema.parse({
+      type: "account.routing.login.start.request",
+      requestId: "r",
+    }),
+  ).toEqual({ type: "account.routing.login.start.request", requestId: "r" });
+
+  // Old daemon to new app: the pre-link failures still parse.
+  expect(
+    SessionOutboundMessageSchema.parse({
+      type: "account.routing.login.get_status.response",
+      payload: { requestId: "r", status: { state: "failed", failure: "browser_open_failed" } },
+    }),
+  ).toMatchObject({ payload: { status: { failure: "browser_open_failed" } } });
+  expect(
+    ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "old",
+      features: { ompAccountLogin: true },
+    }).features?.ompAccountLoginLink,
+  ).toBeUndefined();
+});
+
+test("usage entries accept older failures and additive successful snapshots", () => {
+  const oldEntry = {
+    id: "source:account",
+    sourceId: "source",
+    sourceLabel: "Source",
+    account: {},
+    fetchedAt: "2026-10-17T10:06:00Z",
+    report: { status: "error", error: "Rate limited" },
+  };
+  expect(UsageReportEntrySchema.parse(oldEntry)).toEqual(oldEntry);
+  const retained = {
+    ...oldEntry,
+    lastSuccessful: {
+      fetchedAt: "2026-10-17T10:00:00Z",
+      report: { status: "available", windows: [{ id: "weekly", label: "Weekly", usedPct: 42 }] },
+    },
+  };
+  expect(UsageReportEntrySchema.parse(retained)).toEqual(retained);
+  const available = {
+    ...oldEntry,
+    report: retained.lastSuccessful.report,
+    successfulAt: "2026-10-17T10:00:15Z",
+  };
+  expect(UsageReportEntrySchema.parse(available)).toEqual(available);
+  expect(
+    UsageReportEntrySchema.omit({ lastSuccessful: true, successfulAt: true }).parse(available),
+  ).toEqual({ ...oldEntry, report: available.report });
+  // An older client's entry shape strips the additive snapshot and still sees the failure.
+  expect(UsageReportEntrySchema.omit({ lastSuccessful: true }).parse(retained)).toEqual(oldEntry);
+  expect(
+    UsageReportEntrySchema.safeParse({
+      ...oldEntry,
+      lastSuccessful: { fetchedAt: oldEntry.fetchedAt, report: oldEntry.report },
+    }).success,
+  ).toBe(false);
+});
+
+// Frozen setup detail shape from v0.8.0: log is required, command output is optional.
+const ReleasedSetupDetailSchema = z.object({
+  type: z.literal("worktree_setup"),
+  worktreePath: z.string(),
+  branchName: z.string(),
+  log: z.string(),
+  commands: z.array(
+    z.object({
+      index: z.number().int().positive(),
+      command: z.string(),
+      cwd: z.string(),
+      log: z.string().optional().default(""),
+      status: z.enum(["running", "completed", "failed"]),
+      exitCode: z.number().nullable(),
+      durationMs: z.number().nonnegative().optional(),
+    }),
+  ),
+  truncated: z.boolean().optional(),
+});
+
+test("released setup clients parse empty combined logs and retain command output", () => {
+  const detail = {
+    type: "worktree_setup",
+    worktreePath: "/workspace",
+    branchName: "feature",
+    log: "",
+    commands: [
+      {
+        index: 1,
+        command: "echo ready",
+        cwd: "/workspace",
+        log: "ready\n",
+        status: "completed",
+        exitCode: 0,
+      },
+    ],
+  };
+  const parsed = ReleasedSetupDetailSchema.parse(JSON.parse(JSON.stringify(detail)));
+  expect(parsed).toEqual(detail);
+  expect(parsed.commands[0]?.log).toBe("ready\n");
+  const { log: _log, ...withoutLegacyField } = detail;
+  expect(ReleasedSetupDetailSchema.safeParse(withoutLegacyField).success).toBe(false);
+  expect(
+    WorkspaceSetupSnapshotSchema.parse({
+      status: "completed",
+      detail: { ...detail, log: "old daemon combined output" },
+      error: null,
+    }).detail.log,
+  ).toBe("old daemon combined output");
+});
+
+test("local STT language survives wire reads and patches", () => {
+  const patch = {
+    features: {
+      dictation: { stt: { provider: "local", language: "fr" } },
+      voiceMode: { stt: { provider: "local", language: null } },
+    },
+  };
+  expect(MutableDaemonConfigPatchSchema.parse(patch)).toEqual(patch);
+});
+
+test("speech config reads remain compatible with clients before features and future providers", () => {
+  const oldSchema = MutableDaemonConfigSchema.omit({ features: true, envOverrides: true });
+  const oldRead = oldSchema.parse({
+    providers: {},
+    relay: { enabled: false },
+    mcp: { enabled: true, injectIntoAgents: true },
+  });
+  const read = {
+    ...oldRead,
+    features: {
+      dictation: { enabled: true, stt: { provider: "local", language: "fr" } },
+      voiceMode: {
+        enabled: false,
+        stt: { provider: "future", model: "future-model", region: "eu" },
+        tts: { provider: "openai", hasApiKey: false },
+      },
+    },
+    envOverrides: { "features.voiceMode.stt.provider": "PASEO_VOICE_STT_PROVIDER" },
+  };
+  expect(oldSchema.parse(read)).toEqual(read);
+  expect(MutableDaemonConfigSchema.parse(oldRead)).toEqual(oldRead);
+  expect(MutableDaemonConfigSchema.parse(read).features?.dictation.stt).toEqual(
+    read.features.dictation.stt,
+  );
+  expect(MutableDaemonConfigSchema.parse(read).features?.voiceMode.stt).toEqual(
+    read.features.voiceMode.stt,
+  );
+  const oldPatchSchema = MutableDaemonConfigPatchSchema.omit({ features: true });
+  const oldPatch = oldPatchSchema.parse({ relay: { enabled: true } });
+  expect(MutableDaemonConfigPatchSchema.parse(oldPatch)).toEqual(oldPatch);
+  expect(
+    MutableDaemonConfigPatchSchema.parse({
+      features: { voiceMode: { stt: { provider: "future", region: "eu" } } },
+    }).features?.voiceMode?.stt,
+  ).toEqual({ provider: "future", region: "eu" });
 });

@@ -8,8 +8,10 @@ import type {
   ProviderOptions,
   ToolPolicy,
 } from "@getpaseo/protocol/agent-types";
+import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { PaseoToolCatalog } from "./tools/types.js";
+import type { ManagedRoutingSnapshot } from "../account-routing/usage-projection.js";
 
 export type {
   AgentFeature,
@@ -130,6 +132,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;
@@ -188,8 +192,22 @@ export interface AgentPersistenceHandle {
   metadata?: AgentMetadata;
 }
 
+/** A provider-side copy of a durable session. The source session is never modified. */
+export interface ForkedNativeSession {
+  /** Resume this handle to continue the copy. */
+  handle: AgentPersistenceHandle;
+  /**
+   * Mode for a copy that answers questions: it may read the workspace but must not change
+   * it or run commands without approval. The source shares its working directory.
+   */
+  readOnlyModeId: string;
+  /** Delete the copy's durable provider state. Idempotent; never touches the source. */
+  discard(): Promise<void>;
+}
+
 export type AgentPromptContentBlock =
-  | { type: "text"; text: string }
+  // `placeholders` lists the `[Image #1]`-style tokens in `text` that name a labeled attachment.
+  | { type: "text"; text: string; placeholders?: string[] }
   | { type: "image"; data: string; mimeType: string }
   | AgentAttachment;
 
@@ -207,7 +225,11 @@ export interface AgentSteerOptions extends AgentRunOptions {
   clearPendingPermissions?: boolean;
 }
 
-export type SteerResult = { status: "accepted" } | { status: "unavailable" };
+// providerMessageId names the steered message in the provider's own history, when the provider
+// mints one. Rewinding to the message needs it.
+export type SteerResult =
+  | { status: "accepted"; providerMessageId?: string }
+  | { status: "unavailable" };
 
 export interface SteerActiveTurnOptions extends AgentSteerOptions {
   expectedTurnId: string;
@@ -312,7 +334,10 @@ export type ToolCallDetail =
       subAgentType?: string;
       description?: string;
       childSessionId?: string;
-      log: string;
+      // COMPAT(subagent-log): added in v0.14.1, remove after 2027-04-30. Apps before v0.14.1
+      // require `log`; every producer sends it empty and carries the same tag. Optional here because
+      // protocol timeline items, where `log` is optional, flow into this type.
+      log?: string;
       actions?: Array<{
         index: number;
         toolName: string;
@@ -342,6 +367,8 @@ interface ToolCallBase {
   name: string;
   detail: ToolCallDetail;
   metadata?: Record<string, unknown>;
+  /** Set when the row is a delivered agent message rather than a provider tool call. */
+  agentMessage?: AgentMessage;
 }
 
 type ToolCallRunningTimelineItem = ToolCallBase & {
@@ -613,6 +640,9 @@ export interface AgentSessionConfig {
 }
 
 export interface AgentLaunchContext {
+  /** Launch-only plugin MCP servers and their owners; never persisted. */
+  mcpServers?: Record<string, McpServerConfig>;
+  mcpServerOwners?: Record<string, string>;
   agentId?: string;
   env?: Record<string, string>;
   /**
@@ -659,6 +689,11 @@ export interface AgentUsageSession {
   model?: string;
   env: Record<string, string>;
   sessionKey: string;
+  /**
+   * Present only for OMP launches whose accounts the host routes. Usage then comes from this
+   * authority snapshot, never from `env`. Other providers leave it unset.
+   */
+  managedRouting?: ManagedRoutingSnapshot;
 }
 
 export interface AgentSession {
@@ -684,6 +719,7 @@ export interface AgentSession {
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void>;
+  /** Null until a new provider process could resume this session; see docs/providers.md. */
   describePersistence(): AgentPersistenceHandle | null;
   /**
    * Resolve once every foreground turn that predates this call can no longer run or become active.
@@ -691,6 +727,10 @@ export interface AgentSession {
    * still uncertain.
    */
   interrupt(): Promise<void>;
+  /** True only when releasing this runtime loses no background work or pending replies.
+   * An optional additional veto: missing methods use daemon baseline eligibility;
+   * implemented checks that reject or return false keep the runtime resident. */
+  canStopRuntime?(): Promise<boolean>;
   /** Release live runtime resources without archiving or deleting the durable native session. */
   close(): Promise<void>;
   listCommands?(): Promise<AgentSlashCommand[]>;
@@ -803,6 +843,11 @@ export interface AgentClient {
    * Called before Paseo clears its archived flag so provider resume can succeed.
    */
   unarchiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
+   * Copy a durable native session with its full history. The source may be mid-turn and
+   * keeps running unchanged; the copy is resumed through resumeSession(fork.handle).
+   */
+  forkNativeSession?(handle: AgentPersistenceHandle): Promise<ForkedNativeSession>;
   /**
    * Release any provider-owned resources held by this client (background
    * processes, sockets, cached subprocesses, etc.). Called when the daemon

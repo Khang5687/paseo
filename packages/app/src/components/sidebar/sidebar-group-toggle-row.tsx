@@ -2,19 +2,14 @@ import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
-import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { StyleSheet } from "react-native-unistyles";
 import { isWeb } from "@/constants/platform";
 import { sidebarWorkspaceRowStyles } from "@/components/sidebar/sidebar-workspace-row-content";
-import type { Theme } from "@/styles/theme";
+import { DensityIcon } from "@/components/ui/density-icon";
+import { density, densityIconBox } from "@/styles/density";
 
-const foregroundMutedColorMapping = (theme: Theme) => ({
-  color: theme.colors.foregroundMuted,
-});
-const foregroundColorMapping = (theme: Theme) => ({
-  color: theme.colors.foreground,
-});
-const ThemedChevronDown = withUnistyles(ChevronDown);
-const ThemedChevronUp = withUnistyles(ChevronUp);
+const EXPANDED_STATE = { expanded: true } as const;
+const COLLAPSED_STATE = { expanded: false } as const;
 
 /**
  * The row that ends a truncated group. It is a workspace row that happens to say "Show more", so
@@ -30,30 +25,38 @@ export function SidebarGroupToggleRow({
   expanded,
   onPress,
   indented = false,
+  indentLevel,
+  label: labelOverride,
   testID,
 }: {
   expanded: boolean;
   onPress: () => void;
   indented?: boolean;
+  /** Nesting steps, for a fold row under a thread row; overrides `indented`. */
+  indentLevel?: number;
+  /** What the row folds, instead of "Show more" / "Show less". */
+  label?: string;
   testID: string;
 }) {
   const { t } = useTranslation();
-  const label = t(
-    expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore",
-  );
+  const label =
+    labelOverride ??
+    t(expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore");
   const rowStyle = useCallback(
     ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.row,
       indented && sidebarWorkspaceRowStyles.rowIndented,
+      indentLevel !== undefined && sidebarWorkspaceRowStyles.rowNested(indentLevel),
       hovered && !pressed && styles.rowHovered,
       pressed && styles.rowPressed,
     ],
-    [indented],
+    [indented, indentLevel],
   );
 
   return (
     <Pressable
       accessibilityRole={isWeb ? undefined : "button"}
+      accessibilityState={expanded ? EXPANDED_STATE : COLLAPSED_STATE}
       accessibilityLabel={label}
       onPress={onPress}
       style={rowStyle}
@@ -62,17 +65,11 @@ export function SidebarGroupToggleRow({
       {({ hovered, pressed }) => (
         <>
           <View style={styles.iconSlot}>
-            {expanded ? (
-              <ThemedChevronUp
-                size={14}
-                uniProps={hovered || pressed ? foregroundColorMapping : foregroundMutedColorMapping}
-              />
-            ) : (
-              <ThemedChevronDown
-                size={14}
-                uniProps={hovered || pressed ? foregroundColorMapping : foregroundMutedColorMapping}
-              />
-            )}
+            <DensityIcon
+              icon={expanded ? ChevronUp : ChevronDown}
+              size="sm"
+              color={hovered || pressed ? "foreground" : "foregroundMuted"}
+            />
           </View>
           <Text style={hovered || pressed ? styles.textHovered : styles.text} numberOfLines={1}>
             {label}
@@ -86,7 +83,7 @@ export function SidebarGroupToggleRow({
 const styles = StyleSheet.create((theme) => ({
   // Kept in step with `workspaceRow` in sidebar-workspace-list.tsx and sidebar-status-list.tsx.
   row: {
-    minHeight: 36,
+    minHeight: density.rowHeight,
     marginBottom: theme.spacing[0.5],
     paddingVertical: theme.spacing[2],
     paddingLeft: theme.spacing[2],
@@ -106,8 +103,8 @@ const styles = StyleSheet.create((theme) => ({
   // The width of a workspace row's status slot, so the label lands on the same rail as the
   // titles above it rather than two points to their left.
   iconSlot: {
-    width: theme.iconSize.md,
-    height: theme.iconSize.md,
+    width: densityIconBox("md"),
+    height: densityIconBox("md"),
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,

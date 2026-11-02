@@ -17,6 +17,7 @@ import {
 } from "@/components/sidebar/workspace-trailing";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
+import { densityIconBox } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { getStatusDotColor } from "@/utils/status-dot-color";
@@ -28,20 +29,18 @@ import {
 import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
+import { DensityIcon } from "@/components/ui/density-icon";
 import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 
-const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
   fill: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
 });
 
 const ThemedCircleAlert = withUnistyles(CircleAlert);
-const ThemedMonitor = withUnistyles(Monitor);
-const ThemedFolder = withUnistyles(Folder);
-const ThemedFolderGit2 = withUnistyles(FolderGit2);
 const ThemedPencilLine = withUnistyles(PencilLine);
+const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 export function SidebarWorkspaceRowFrame({
   workspace,
@@ -175,6 +174,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             prHint={workspace.prHint}
             serviceSummary={serviceSummary}
             labels={labels}
+            workingSubagentCount={workspace.workingSubagentCount}
           />
         </View>
       </View>
@@ -260,15 +260,15 @@ function WorkspaceStatusIndicator({
     ) : null;
   }
 
-  let KindIcon: typeof ThemedMonitor;
-  if (workspaceKind === "local_checkout") KindIcon = ThemedMonitor;
-  else if (workspaceKind === "worktree") KindIcon = ThemedFolderGit2;
-  else KindIcon = ThemedFolder;
+  let KindIcon: typeof Monitor;
+  if (workspaceKind === "local_checkout") KindIcon = Monitor;
+  else if (workspaceKind === "worktree") KindIcon = FolderGit2;
+  else KindIcon = Folder;
 
   const dotColorStyle = getStatusDotColorStyle(bucket);
   return (
     <View style={styles.workspaceStatusDot} testID={`workspace-status-indicator-${bucket}`}>
-      <KindIcon size={14} uniProps={foregroundMutedColorMapping} />
+      <DensityIcon icon={KindIcon} size="sm" color="foregroundMuted" />
       {dotColorStyle ? <StatusDotOverlay dotColorStyle={dotColorStyle} /> : null}
     </View>
   );
@@ -305,6 +305,11 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
   rowIndented: {
     paddingLeft: theme.spacing[2] + theme.spacing[2],
   },
+  // A subagent workspace row under its parent row: `level` steps of the same indent, so each
+  // level of nesting is its own rail and a child's status dot lines up under its parent's title.
+  rowNested: (level: number) => ({
+    paddingLeft: theme.spacing[2] + level * (theme.spacing[2] + theme.spacing[2]),
+  }),
   rowRight: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -474,6 +479,9 @@ export function SidebarWorkspaceTrailingActionOverlay({
   );
 }
 
+// The status dot centres on the title's first line, so both share its line height.
+const TITLE_LINE_HEIGHT = 20;
+
 const styles = StyleSheet.create((theme) => ({
   workspaceRowContent: {
     position: "relative",
@@ -501,8 +509,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceStatusDot: {
     position: "relative",
-    width: theme.iconSize.md,
-    height: 20,
+    width: densityIconBox("md"),
+    height: TITLE_LINE_HEIGHT,
     borderRadius: theme.borderRadius.full,
     flexShrink: 0,
     alignItems: "center",
@@ -536,7 +544,7 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
     fontWeight: "400",
-    lineHeight: 20,
+    lineHeight: TITLE_LINE_HEIGHT,
     opacity: 0.76,
     flex: 1,
     minWidth: 0,

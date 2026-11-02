@@ -15,7 +15,7 @@ import {
 import {
   acceptMessageSubmission,
   beginMessageSubmission,
-  getActiveMessageSubmissions,
+  hasActiveMessageSubmission,
   observeMessageSubmissionCanonical,
   rejectMessageSubmission,
   type MessageSubmissionRecord,
@@ -54,6 +54,8 @@ import {
   buildWorkspaceAgentActivityIndex,
   type WorkspaceAgentActivity,
 } from "@/utils/workspace-agent-activity";
+import { buildThreadAgentIndex, buildWorkspaceParentIndex } from "@/subagents/policies";
+import type { ThreadAgents } from "@/subagents/thread-children";
 import {
   resolveTurnPresentation,
   TURN_LIVENESS_IDLE,
@@ -103,9 +105,15 @@ export interface Agent {
   projectPlacement?: ProjectPlacementPayload | null;
   /** Daemon-owned queue summaries. Absent or empty on hosts without `features.messageQueue`. */
   queuedMessages?: AgentQueuedMessageSummaryPayload[];
+  /** Whether the host holds the queue instead of draining it. Absent on older hosts. */
+  queuePaused?: boolean;
+  /** Why the host paused the queue itself (a send it could not complete); null otherwise. */
+  queuePauseReason?: string | null;
 }
 
 export interface WorkspaceDescriptor {
+  createdAt: Date | null;
+  lastUserMessageAt: Date | null;
   id: string;
   projectId: string;
   projectDisplayName: string;
@@ -114,14 +122,18 @@ export interface WorkspaceDescriptor {
   projectRootPath: string;
   workspaceDirectory: string;
   worktreeSlug?: WorkspaceDescriptorPayload["worktreeSlug"];
+  setupStatus?: WorkspaceDescriptorPayload["setupStatus"];
   projectKind: WorkspaceDescriptorPayload["projectKind"];
   workspaceKind: WorkspaceDescriptorPayload["workspaceKind"];
+  background?: boolean;
   name: string;
   title?: string | null;
   pinnedAt?: string | null;
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
+  // Absent when no subagent runs, or when the daemon predates the count.
+  runningSubagentCount?: number;
   archivingAt: string | null;
   diffStat: { additions: number; deletions: number } | null;
   scripts: WorkspaceDescriptorPayload["scripts"];
@@ -140,6 +152,9 @@ export function normalizeWorkspaceDescriptor(
       ? new Date(statusEnteredAtRaw)
       : null;
   return {
+    // COMPAT(workspaceSortTimes): added in v0.13.0, remove after 2027-04-22.
+    createdAt: payload.createdAt ? new Date(payload.createdAt) : null,
+    lastUserMessageAt: payload.lastUserMessageAt ? new Date(payload.lastUserMessageAt) : null,
     id: normalizeWorkspaceOpaqueId(payload.id) ?? payload.id,
     projectId: payload.projectId,
     projectDisplayName: payload.projectDisplayName,
@@ -151,8 +166,11 @@ export function normalizeWorkspaceDescriptor(
     // usable directory" (older daemons may omit it; the wire field is optional).
     workspaceDirectory: normalizeWorkspacePath(payload.workspaceDirectory) ?? "",
     worktreeSlug: payload.worktreeSlug,
+    // COMPAT(workspaceSetupObservation): added in v0.12.0, old hosts omit metadata; remove after 2027-04-19.
+    setupStatus: payload.setupStatus ?? null,
     projectKind: payload.projectKind,
     workspaceKind: payload.workspaceKind,
+    background: payload.background ?? false,
     name: payload.name,
     title: payload.title ?? null,
     pinnedAt: payload.pinnedAt ?? null,
@@ -160,6 +178,7 @@ export function normalizeWorkspaceDescriptor(
     labels: payload.labels ?? [],
     status: payload.status,
     statusEnteredAt,
+    runningSubagentCount: payload.runningSubagentCount,
     archivingAt: payload.archivingAt ?? null,
     diffStat: payload.diffStat ?? null,
     scripts: (payload.scripts ?? []).map((s) => Object.assign({}, s)),
@@ -233,8 +252,6 @@ function preserveMapIdentity<Key, Value>(
 }
 
 export type ExplorerEntryKind = "file" | "directory";
-export type ExplorerFileKind = "text" | "image" | "binary";
-export type ExplorerEncoding = "utf-8" | "base64" | "none";
 
 export interface ExplorerEntry {
   name: string;
@@ -244,19 +261,6 @@ export interface ExplorerEntry {
   modifiedAt: string;
 }
 
-export interface ExplorerFile {
-  path: string;
-  kind: ExplorerFileKind;
-  encoding: ExplorerEncoding;
-  content?: string;
-  // TextDecoder removes a leading UTF-8 BOM; retain this bit so file writes can restore it.
-  hasBom: boolean;
-  mimeType?: string;
-  size: number;
-  modifiedAt: string;
-  revision?: string;
-}
-
 export interface ExplorerDirectory {
   path: string;
   entries: ExplorerEntry[];
@@ -264,12 +268,11 @@ export interface ExplorerDirectory {
 
 interface ExplorerRequestState {
   path: string;
-  mode: "list" | "file";
+  mode: "list";
 }
 
 export interface AgentFileExplorerState {
   directories: Map<string, ExplorerDirectory>;
-  files: Map<string, ExplorerFile>;
   isLoading: boolean;
   lastError: string | null;
   pendingRequest: ExplorerRequestState | null;
@@ -283,6 +286,7 @@ export interface DaemonServerInfo {
   serverId: string;
   hostname: string | null;
   version: string | null;
+  homeDirectory?: string;
   desktopManaged?: boolean;
   capabilities?: ServerCapabilities;
   features?: ServerInfoStatusPayload["features"];
@@ -293,6 +297,7 @@ export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonS
     serverId: serverInfo.serverId,
     hostname: serverInfo.hostname ?? null,
     version: serverInfo.version ?? null,
+    ...(serverInfo.homeDirectory ? { homeDirectory: serverInfo.homeDirectory } : {}),
     ...(serverInfo.desktopManaged !== undefined
       ? { desktopManaged: serverInfo.desktopManaged }
       : {}),
@@ -341,6 +346,26 @@ export function selectAgentTimelineState(
   return items.length > 0 ? { status: "painted", items } : { status: "cold" };
 }
 
+/** Text of the loaded user messages, newest first, with back-to-back repeats collapsed. */
+export function selectAgentSentMessages(
+  session: SessionState | undefined,
+  agentId: string,
+): string[] {
+  if (!session) return [];
+  const items = [
+    ...(session.agentStreamTail.get(agentId) ?? []),
+    ...(session.agentStreamHead.get(agentId) ?? []),
+  ];
+  const messages: string[] = [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind !== "user_message" || item.text.trim().length === 0) continue;
+    if (messages[messages.length - 1] === item.text) continue;
+    messages.push(item.text);
+  }
+  return messages;
+}
+
 export function selectAgentTurnPresentation(
   session: SessionState | undefined,
   agentId: string,
@@ -349,7 +374,7 @@ export function selectAgentTurnPresentation(
     session?.agents.get(agentId)?.turn ??
       session?.agentDetails.get(agentId)?.turn ??
       TURN_LIVENESS_IDLE,
-    getActiveMessageSubmissions(session?.messageSubmissions.get(agentId)).length > 0,
+    hasActiveMessageSubmission(session?.messageSubmissions.get(agentId)),
   );
 }
 
@@ -418,6 +443,10 @@ export interface SessionState {
   // Agents
   agents: Map<string, Agent>;
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
+  // Subagent workspace id -> the workspace id it nests under in the sidebar.
+  workspaceParents: Map<string, string>;
+  // Workspace id -> its agents, and the same-workspace subagents that show as its child rows.
+  threadAgents: Map<string, ThreadAgents>;
   agentDetails: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   // All active project descriptors, keyed by host-local projectId.
@@ -662,6 +691,8 @@ function createInitialSessionState(
     initializingAgents: new Map(),
     agents: new Map(),
     workspaceAgentActivity: new Map(),
+    workspaceParents: new Map(),
+    threadAgents: new Map(),
     agentDetails: new Map(),
     workspaces: new Map(),
     projects: new Map(),
@@ -690,6 +721,7 @@ function isSessionServerInfoUnchanged(input: {
   currentServerInfo: SessionState["serverInfo"] | undefined;
   nextHostname: string | null;
   nextVersion: string | null;
+  nextHomeDirectory: string | undefined;
   nextDesktopManaged: boolean | undefined;
   nextCapabilities: ServerCapabilities | undefined;
   nextFeatures: ServerInfoStatusPayload["features"] | undefined;
@@ -699,6 +731,7 @@ function isSessionServerInfoUnchanged(input: {
     currentServerInfo,
     nextHostname,
     nextVersion,
+    nextHomeDirectory,
     nextDesktopManaged,
     nextCapabilities,
     nextFeatures,
@@ -709,6 +742,7 @@ function isSessionServerInfoUnchanged(input: {
     currentServerInfo?.serverId === input.nextServerId &&
     prevHostname === nextHostname &&
     prevVersion === nextVersion &&
+    currentServerInfo?.homeDirectory === nextHomeDirectory &&
     currentServerInfo?.desktopManaged === nextDesktopManaged &&
     areServerCapabilitiesEqual(currentServerInfo?.capabilities, nextCapabilities) &&
     areServerInfoFeaturesEqual(currentServerInfo?.features, nextFeatures)
@@ -846,6 +880,7 @@ export const useSessionStore = create<SessionStore>()(
 
           const nextHostname = info.hostname?.trim() || null;
           const nextVersion = info.version?.trim() || null;
+          const nextHomeDirectory = info.homeDirectory?.trim() || undefined;
           const nextDesktopManaged = info.desktopManaged;
           const nextCapabilities = info.capabilities;
           const nextFeatures = info.features;
@@ -855,6 +890,7 @@ export const useSessionStore = create<SessionStore>()(
               currentServerInfo: session.serverInfo,
               nextHostname,
               nextVersion,
+              nextHomeDirectory,
               nextDesktopManaged,
               nextCapabilities,
               nextFeatures,
@@ -874,6 +910,7 @@ export const useSessionStore = create<SessionStore>()(
                   serverId: info.serverId,
                   hostname: nextHostname,
                   version: nextVersion,
+                  ...(nextHomeDirectory ? { homeDirectory: nextHomeDirectory } : {}),
                   ...(nextDesktopManaged !== undefined
                     ? { desktopManaged: nextDesktopManaged }
                     : {}),
@@ -1503,6 +1540,8 @@ export const useSessionStore = create<SessionStore>()(
                   nextAgents,
                   session.workspaceAgentActivity,
                 ),
+                workspaceParents: buildWorkspaceParentIndex(nextAgents, session.workspaceParents),
+                threadAgents: buildThreadAgentIndex(nextAgents, session.threadAgents),
               },
             },
           };

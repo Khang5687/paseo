@@ -1,6 +1,6 @@
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
-import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
+import { getParentAddressFromLabels } from "@getpaseo/protocol/agent-labels";
 import {
   TURN_LIVENESS_IDLE,
   type ActiveTurnIdentity,
@@ -86,6 +86,8 @@ export function projectAgentSnapshot(agent: Agent): AgentSnapshotPayload {
     attentionTimestamp: agent.attentionTimestamp?.toISOString() ?? null,
     archivedAt: agent.archivedAt?.toISOString() ?? null,
     ...(agent.queuedMessages ? { queuedMessages: agent.queuedMessages } : {}),
+    ...(agent.queuePaused ? { queuePaused: agent.queuePaused } : {}),
+    ...(agent.queuePauseReason ? { queuePauseReason: agent.queuePauseReason } : {}),
   };
 }
 
@@ -99,7 +101,8 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     ? new Date(snapshot.attentionTimestamp)
     : null;
   const archivedAt = snapshot.archivedAt ? new Date(snapshot.archivedAt) : null;
-  const parentAgentId = getParentAgentIdFromLabels(snapshot.labels);
+  const parent = getParentAddressFromLabels(snapshot.labels, serverId);
+  const parentAgentId = parent?.serverId === serverId ? parent.agentId : null;
   // COMPAT(agentTurnIdentity): added in v0.2.6, remove after 2027-01-31 once daemon floor >= v0.2.6.
   // Old daemons expose only status. Normalize that legacy signal once so the rest
   // of the app consumes one activity shape.
@@ -136,5 +139,9 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     parentAgentId,
     labels: snapshot.labels,
     queuedMessages: snapshot.queuedMessages ?? [],
+    // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+    queuePaused: snapshot.queuePaused ?? false,
+    // COMPAT(queuePauseReason): added in v0.13.x, remove gate after 2027-10-27.
+    queuePauseReason: snapshot.queuePauseReason ?? null,
   };
 }

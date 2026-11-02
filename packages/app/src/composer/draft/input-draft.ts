@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UserComposerAttachment } from "@/attachments/types";
 import type { TextReplacement } from "@/composer/types";
 import type { DraftAgentControlsProps } from "@/composer/agent-controls";
-import type { DraftCommandTarget } from "@/hooks/use-agent-commands-query";
+import type { DraftCommandTarget } from "@/agent-commands";
 import {
   useAgentFormState,
   type CreateAgentInitialValues,
@@ -17,6 +17,7 @@ import {
 } from "@/composer/draft/input-draft-core";
 import {
   buildDraftCommandTarget,
+  resolveEffectiveComposerModeId,
   resolveEffectiveComposerModelId,
   resolveEffectiveComposerThinkingOptionId,
   type ProviderSelectionState,
@@ -46,6 +47,7 @@ interface UseAgentInputDraftInput {
 
 type DraftComposerState = UseAgentFormStateResult & {
   workingDir: string;
+  effectiveModeId: string;
   effectiveModelId: string;
   effectiveThinkingOptionId: string;
   featureValues: Record<string, unknown> | undefined;
@@ -66,7 +68,12 @@ export interface AgentInputDraft {
   composerState: DraftComposerState | null;
 }
 
-export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDraft {
+export interface AgentInputDraftWithSync extends AgentInputDraft {
+  /** Shows text the store already holds from another device, keeping the caret. */
+  showRemoteText: (text: string) => void;
+}
+
+export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDraftWithSync {
   const composerOptions = input.composer ?? null;
   const workingDir = composerOptions?.lockedWorkingDir?.trim() || "";
   const formState = useAgentFormState({
@@ -115,14 +122,16 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
   const isHydrated = hydratedDraftKey === draftKey;
   const textReplacementRevisionRef = useRef(0);
   const [textReplacement, setTextReplacement] = useState<TextReplacement>(() => ({
+    kind: "initial",
     key: `${draftKey}:0`,
     text: textSource.getSnapshot(),
   }));
 
   const publishTextReplacement = useCallback(
-    (nextText: string) => {
+    (kind: "hydrated" | "replace" | "remote", nextText: string) => {
       textReplacementRevisionRef.current += 1;
       setTextReplacement({
+        kind,
         key: `${draftKey}:${textReplacementRevisionRef.current}`,
         text: nextText,
       });
@@ -172,9 +181,17 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     (nextText: string) => {
       textPublication.cancel();
       useDraftStore.getState().editDraftText({ draftKey, text: nextText });
-      publishTextReplacement(nextText);
+      publishTextReplacement("replace", nextText);
     },
     [draftKey, publishTextReplacement, textPublication],
+  );
+
+  const showRemoteText = useCallback(
+    (nextText: string) => {
+      textPublication.cancel();
+      publishTextReplacement("remote", nextText);
+    },
+    [publishTextReplacement, textPublication],
   );
 
   const setAttachments = useCallback(
@@ -225,7 +242,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       await useDraftStore.getState().hydrateDraftInput({ draftKey });
       if (!cancelled) {
         const hydratedText = useDraftStore.getState().getDraftInput(draftKey)?.text ?? "";
-        publishTextReplacement(hydratedText);
+        publishTextReplacement("hydrated", hydratedText);
         setHydratedDraftKey(draftKey);
       }
     })();
@@ -252,6 +269,11 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       formState.selectedProvider,
       formState.selectedThinkingOptionId,
     ],
+  );
+
+  const effectiveModeId = useMemo(
+    () => resolveEffectiveComposerModeId(providerSelection, formState.isModelLoading),
+    [formState.isModelLoading, providerSelection],
   );
 
   const effectiveModelId = useMemo(
@@ -313,6 +335,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     return {
       ...formState,
       workingDir,
+      effectiveModeId,
       effectiveModelId,
       effectiveThinkingOptionId,
       featureValues: draftFeatureValues,
@@ -327,6 +350,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
   }, [
     commandDraft,
     composerOptions,
+    effectiveModeId,
     effectiveModelId,
     effectiveThinkingOptionId,
     draftFeatures,
@@ -341,6 +365,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     textSource,
     editText,
     replaceText,
+    showRemoteText,
     textReplacement,
     attachments,
     setAttachments,
@@ -353,6 +378,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
 
 export const __private__ = {
   resolveDraftKey,
+  resolveEffectiveComposerModeId,
   resolveEffectiveComposerModelId,
   resolveEffectiveComposerThinkingOptionId,
   buildDraftCommandTarget,

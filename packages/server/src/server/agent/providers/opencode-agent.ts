@@ -57,6 +57,7 @@ import {
   type SteerResult,
   type ToolCallDetail,
   type ToolCallTimelineItem,
+  type ForkedNativeSession,
 } from "../agent-sdk-types.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
@@ -102,6 +103,7 @@ import { runProviderTurn } from "./provider-runner.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { normalizeProviderReplayTimestamp } from "../provider-history-timestamps.js";
+import { readQuestionAnswerList } from "../question-answers.js";
 import { revertOpenCodeConversationAndFiles } from "./opencode/rewind.js";
 import {
   claimOpenCodeSubagentFallbackTitle,
@@ -141,6 +143,7 @@ const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
 };
 
 const OPENCODE_BUILD_MODE_ID = "build";
+const OPENCODE_PLAN_MODE_ID = "plan";
 const OPENCODE_LEGACY_FULL_ACCESS_MODE_ID = "full-access";
 const OPENCODE_DEFAULT_VARIANT_ID = "default";
 const EMPTY_OPENCODE_EVENT_SOURCE: OpenCodeEventSource = {
@@ -534,6 +537,14 @@ function isOpenCodeNotFoundError(error: unknown): boolean {
     "name" in error &&
     (error as { name?: unknown }).name === "NotFoundError"
   );
+}
+
+function requireOpenCodeNativeSessionCwd(handle: AgentPersistenceHandle, action: string): string {
+  const { cwd } = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
+  if (!cwd) {
+    throw new Error(`OpenCode native ${action} requires the original working directory`);
+  }
+  return cwd;
 }
 
 async function abortOpenCodeSession(params: {
@@ -1745,28 +1756,53 @@ export class OpenCodeAgentClient implements AgentClient {
     await this.setNativeSessionArchived(handle, 0);
   }
 
+  async forkNativeSession(handle: AgentPersistenceHandle): Promise<ForkedNativeSession> {
+    const cwd = requireOpenCodeNativeSessionCwd(handle, "fork");
+    // Without messageID OpenCode copies every message into a new top-level session.
+    const sessionId = await this.withNativeSessionClient(handle.sessionId, cwd, async (client) => {
+      const response = await client.session.fork({ sessionID: handle.sessionId, directory: cwd });
+      if (response.error || !response.data) {
+        throw new Error(
+          `Failed to fork OpenCode session: ${toDiagnosticErrorMessage(response.error)}`,
+        );
+      }
+      return response.data.id;
+    });
+    let discarded = false;
+    return {
+      handle: {
+        provider: handle.provider,
+        sessionId,
+        nativeHandle: sessionId,
+        metadata: handle.metadata,
+      },
+      // Plan denies edits; shell and other mutating tools ask, and the caller denies.
+      readOnlyModeId: OPENCODE_PLAN_MODE_ID,
+      discard: async () => {
+        if (discarded) return;
+        await this.withNativeSessionClient(sessionId, cwd, async (client) => {
+          const response = await client.session.delete({ sessionID: sessionId, directory: cwd });
+          if (response.error && !isOpenCodeNotFoundError(response.error)) {
+            throw new Error(
+              `Failed to delete OpenCode fork: ${toDiagnosticErrorMessage(response.error)}`,
+            );
+          }
+        });
+        discarded = true;
+      },
+    };
+  }
+
   private async setNativeSessionArchived(
     handle: AgentPersistenceHandle,
     archivedAt: number,
   ): Promise<void> {
-    const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
-    if (!metadata.cwd) {
-      throw new Error("OpenCode native archive update requires the original working directory");
-    }
-
-    const registeredServerUrl = getOpenCodeChildSessionServerUrl(handle.sessionId);
-    const acquisition =
-      (registeredServerUrl ? this.serverManager.acquireExisting(registeredServerUrl) : null) ??
-      (await this.serverManager.acquireCurrent());
-    const client = this.createOpenCodeClient({
-      baseUrl: acquisition.server.url,
-      directory: metadata.cwd,
-    });
-    try {
+    const cwd = requireOpenCodeNativeSessionCwd(handle, "archive update");
+    await this.withNativeSessionClient(handle.sessionId, cwd, async (client) => {
       const response = readOpenCodeRecord(
         await client.session.update({
           sessionID: handle.sessionId,
-          directory: metadata.cwd,
+          directory: cwd,
           time: { archived: archivedAt },
         }),
       );
@@ -1775,6 +1811,22 @@ export class OpenCodeAgentClient implements AgentClient {
           `Failed to ${archivedAt === 0 ? "unarchive" : "archive"} OpenCode session: ${toDiagnosticErrorMessage(response.error)}`,
         );
       }
+    });
+  }
+
+  private async withNativeSessionClient<T>(
+    sessionId: string,
+    directory: string,
+    operation: (client: OpencodeClient) => Promise<T>,
+  ): Promise<T> {
+    const registeredServerUrl = getOpenCodeChildSessionServerUrl(sessionId);
+    const acquisition =
+      (registeredServerUrl ? this.serverManager.acquireExisting(registeredServerUrl) : null) ??
+      (await this.serverManager.acquireCurrent());
+    try {
+      return await operation(
+        this.createOpenCodeClient({ baseUrl: acquisition.server.url, directory }),
+      );
     } finally {
       await acquisition.release();
     }
@@ -4846,15 +4898,6 @@ class OpenCodeAgentSession implements AgentSession {
             ...item,
             status: "failed",
             error,
-            detail:
-              item.detail.type === "sub_agent"
-                ? {
-                    ...item.detail,
-                    log: [item.detail.log, error.message]
-                      .filter((entry) => entry.trim().length > 0)
-                      .join("\n"),
-                  }
-                : item.detail,
           },
         },
         turnId,
@@ -5007,10 +5050,24 @@ class OpenCodeAgentSession implements AgentSession {
         const answersRecord = readOpenCodeRecord(response.updatedInput?.answers);
         const questions = Array.isArray(pending.input?.questions) ? pending.input.questions : [];
         const answers = questions.map((item) => {
-          const header = readNonEmptyString(readOpenCodeRecord(item)?.header);
-          const rawAnswer = header ? readNonEmptyString(answersRecord?.[header]) : null;
+          const question = readOpenCodeRecord(item);
+          const header = readNonEmptyString(question?.header);
+          if (!header) {
+            return [];
+          }
+          const answerList = readQuestionAnswerList(response.updatedInput, header);
+          if (answerList) {
+            return answerList;
+          }
+          // COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps
+          // before v0.11.0 send only the comma-joined `answers` string. Only a multi-select
+          // answer can hold several values, so a single-select answer is never split.
+          const rawAnswer = readNonEmptyString(answersRecord?.[header]);
           if (!rawAnswer) {
             return [];
+          }
+          if (question?.multiSelect !== true) {
+            return [rawAnswer];
           }
           return rawAnswer
             .split(",")
@@ -5053,6 +5110,43 @@ class OpenCodeAgentSession implements AgentSession {
         ...(this.config.model ? { model: this.config.model } : {}),
       },
     };
+  }
+
+  async canStopRuntime(): Promise<boolean> {
+    if (
+      this.closed ||
+      this.serverExited ||
+      this.reconnection ||
+      this.turnState.status !== "idle" ||
+      this.runningToolCalls.size ||
+      this.pendingPermissions.size ||
+      this.pendingSteerSubmissions.length
+    )
+      return false;
+    const request = { signal: AbortSignal.timeout(10_000) };
+    const family = new Map([[this.sessionId, this.config.cwd]]);
+    const inspected = new Set<string>();
+    for (const [sessionId, directory] of family) {
+      if (!inspected.has(directory)) {
+        const statuses = await this.client.session.status({ directory }, request);
+        if (statuses.error || !statuses.data)
+          throw new Error("Unable to inspect OpenCode executions");
+        if (Object.values(statuses.data).some((status) => status.type !== "idle")) return false;
+        const terminals = await this.client.pty.list({ directory }, request);
+        if (terminals.error || !terminals.data)
+          throw new Error("Unable to inspect OpenCode terminals");
+        if (terminals.data.some((terminal) => terminal.status === "running")) return false;
+        inspected.add(directory);
+      }
+      const response = await this.client.session.children(
+        { sessionID: sessionId, directory },
+        request,
+      );
+      const children = readOpenCodeChildSessionInfosFromResponse(response);
+      if (!children) throw new Error("Unable to inspect OpenCode child sessions");
+      for (const child of children) family.set(child.id, child.directory ?? directory);
+    }
+    return true;
   }
 
   async close(): Promise<void> {

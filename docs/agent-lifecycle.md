@@ -12,6 +12,26 @@ initializing → idle → running → idle (or error → closed)
 
 Each live agent in `AgentManager` carries a `lastStatus` of `initializing`, `idle`, `running`, or `error`. `closed` is the persisted, resumable state for an agent record that has no live provider runtime. State transitions persist to disk and stream to subscribed clients via WebSocket.
 
+## Daemon restart recovery
+
+Hosts resume interrupted agents by default after graceful shutdown or a crash. The daemon
+reopens the saved provider conversation and settings, then sends `Resume working.`. Change
+`agents.resumePrompt` or disable `agents.resumeOnStartup` in host config or Host settings → Agents.
+Disabling recovery consumes pending intent; enabling it later does not revive old work.
+
+Only agents recorded as running qualify. Idle and initializing agents stay inactive. Archived
+agents or workspaces, private helpers and Hub-owned executions retain their own lifecycle.
+Explicit creation environment overrides are saved with the agent and reapplied when reopening.
+
+Startup chooses candidates before anything else reads or repairs persisted running state, then
+opens connections and resumes every candidate in the background. A provider that is slow to reopen
+holds back only its own agent; a failed reopen is logged. Graceful shutdown records intent before
+closing runtimes.
+
+This is best-effort continuation. A crash between saving intent and dispatching a prompt can lose
+or repeat a continuation. Provider resume owns conversation restoration; there is no recovery retry
+loop or exactly-once turn guarantee.
+
 ## Runtime residency
 
 An unarchived agent may be `closed` without being deleted or archived. Closing releases its provider
@@ -25,8 +45,54 @@ Reload releases the old runtime before resuming its durable session: an idle pro
 still own an exclusive writer. A close failure retains that runtime for cleanup and blocks the
 replacement. Once closure succeeds, a failed resume leaves the durable agent closed and retryable.
 
-Idle agents remain resident indefinitely. Runtime closure happens only through an explicit lifecycle
-action such as archive, replacement, reload, workspace teardown, or daemon shutdown.
+Idle resumable runtimes are collected after one hour without activity, checked once a minute.
+Collection releases the process and preserves the agent record, conversation, relationships, and
+provider session. The next prompt resumes that session. Set `agents.idleRuntimeCleanup: false` in
+host config to disable automatic collection. The host setting applies immediately; config-file edits
+apply on reload. Disabling invalidates pending safety checks and close admission. A close already
+started finishes. Re-enabling keeps the existing idle timestamps.
+
+Foreground runs, permissions and responses, queued deliveries, lifecycle operations, and working
+managed or native descendants prevent collection. Outstanding local or remote finish subscriptions
+also protect their caller, including registration, recovery and notification dispatch acknowledgment.
+An idle managed child can still own background work.
+
+The daemon baseline always applies. An optional provider `canStopRuntime()` adds a veto: false,
+errors and timeouts retain ownership, while true cannot override daemon blockers. Without a provider
+check, the baseline decides collection after the same one-hour idle period. Once protected work
+finishes, a fresh idle hour starts. There is no deadline that overrides a veto.
+
+The `idle-runtime-cleanup/` module owns the clocks, eligibility policy and sweep lifetime.
+AgentManager supplies captured runtime capabilities and owns atomic revalidation and shutdown.
+Finish subscriptions expose caller protection through their public capability; the collector never
+reads their watches or durable records.
+
+The collector rechecks daemon state after asynchronous probes and event draining, in the existing
+close/load lifecycle lane. A prompt admitted before closure prevents collection. A prompt arriving
+after closure starts waits for release and resumes the saved session.
+
+Provider checks follow the signals their runtimes expose:
+
+- Claude uses its process-local background roster and pending completion notifications. A fresh
+  process starts empty. CLI 2.1.292 or newer is known to support the roster; older binaries must
+  demonstrate support by emitting one. Unknown versions stay resident until then.
+- Codex queries background terminals for loaded threads, including native children, and protects
+  pending provider requests. App servers without the terminal-list RPC stay resident.
+- OpenCode checks active executions and descendants. V1 checks PTYs; v2 also checks shell and
+  inbox inventories. The shared server remains leased while a session vetoes collection.
+- Pi checks streaming, compaction, pending replies, and adapter-owned operations. Known native
+  subagent signals also protect their parent through the daemon's subagent store.
+- OMP additionally requires `get_state.isSettled: true` and `hasPendingAsyncWork: false`.
+  These protect jobs with unsuppressed completion delivery, pending deliveries, queued result
+  injection, and admitted or scheduled continuations that can re-wake the session. Older OMP
+  runtimes without either field stay resident. These signals are not an inventory of arbitrary
+  processes.
+- ACP checks adapter-owned foreground turns, permissions, buffered user messages, and running
+  ACP terminals, including quiet terminals. Exited or failed-to-spawn terminal records do not
+  prevent collection. This does not inspect processes launched internally by the provider.
+
+These checks do not discover arbitrary detached processes or work hidden by third-party
+extensions. A provider plugin adds its own veto through the [runtime safety contract](../public-docs/plugins/providers.md#permit-idle-runtime-cleanup).
 
 A provider runtime can still die on its own — crash, OOM kill, host suspend. Work the agent parked
 inside that process dies with it: Claude Code's background Bash shells, `Monitor` watches, and
@@ -60,18 +126,58 @@ it and the queue survives a restart. `AgentMessageQueueDispatcher`
 the agent is already idle dispatches immediately. `send_now` pops a specific entry and sends it into
 the active turn with the caller's steer/interrupt behavior.
 
-Snapshots carry summaries only (`id`, `text`, counts, `createdAt`); the bytes stay on the record.
-Every client renders the same list from its agent subscription and edits it through the
-`agent.queue.*` RPCs. `remove` returns the full entry so the caller can put it back in a composer.
+An entry is never dropped. The pop is persisted before the send, so a send that throws before the
+provider admitted the prompt (load failure, refused steer, provider error) puts the same entry, id
+and bytes included, back at the head in one write. After an automatic drain the daemon also pauses
+the queue with the error as `queuePauseReason`, writes a `[System Error]` row to the timeline, and
+flags the agent with `error` attention: nobody may be watching, and retrying on every idle would
+loop. A failed `send_now` only restores the entry; its caller already gets the error. Once
+`sendPromptToAgent` returns, the prompt belongs to the provider: a run-start wait that times out or
+fails is treated as sent, because requeueing would deliver it twice (a rejected start already shows
+as a rejected message in the timeline).
+
+A queue must drain without a client. After start, the daemon loads every non-archived stored agent
+whose queue is non-empty and not paused, one at a time and in the background, and drains it. Idle
+runtime cleanup does not unload an agent whose queue would drain, since unloading strands it until
+something loads the agent again; a paused queue does not pin the runtime.
+
+`queuePaused` on the record stops the automatic drain and survives a restart; `send_now` still
+works while paused, and resuming drains the head if the agent is idle. Pausing or resuming clears
+`queuePauseReason`; the reason only exists for a pause the daemon made.
+
+Snapshots carry summaries only (`id`, `text`, counts, `createdAt`) plus `queuePaused` and
+`queuePauseReason` when set; the
+bytes stay on the record. Every client renders the same list from its agent subscription and edits
+it through the `agent.queue.*` RPCs: `add`, `update`, `remove`, `move`, `clear`, `set_paused`,
+`send_now`. `remove` returns the full entry so the caller can put it back in a composer. `move`
+clamps the target index to the end of the list.
 
 The app keeps a per-client mirror of the entries it queued itself, keyed by the daemon's id
 (`packages/app/src/composer/daemon-queue.ts`). The daemon holds the wire form, which cannot be turned
 back into forge, workspace-file, or plugin composer attachments; a same-client edit restores from the
-mirror instead. The mirror is pruned against each snapshot, so a dispatched or cross-client-removed
-entry never lingers. Cross-client edits restore text, images, and uploaded files and drop the rest.
+mirror instead. Cross-client edits restore text, images, and uploaded files and drop the rest.
+
+The mirror is also the only thing that keeps queued images on this client. Attachment cleanup
+deletes image bytes no draft, mirror entry, or timeline row references, and the composer clears its
+draft before the `add` RPC answers, so `queueMessageOnDaemon` retains the images until its mirror
+entry exists. The daemon never echoes images on user messages, so a dispatched entry's row shows
+images only if this client hands its copy over. The queue snapshot drops the entry before that row
+arrives: the mirror keeps it until a timeline row with the entry id appears, then hands its images to
+that row. An entry with no row after `DISPATCH_ECHO_WAIT_MS` was removed on another client and is
+dropped.
+
+The composer shows a reorder before the daemon confirms it. The optimistic order holds only while the
+daemon still lists the order it was applied over, not until the RPC resolves: the `move` response and
+the snapshot that carries the new order can arrive in either order, and unrelated agent updates
+resend an unchanged queue. Once the daemon lists any other order, the optimistic one is dropped for
+good. A failed `move` reverts and toasts. On phones the row menu is the reorder path; the drag handle
+(long press on native) is a shortcut.
 
 Hosts without `features.messageQueue` fall back to the client-local queue the app shipped before
-(`// COMPAT(messageQueue)` marks both branches).
+(`// COMPAT(messageQueue)` marks both branches). Hosts without `features.messageQueueControls` lack
+`move`, `clear`, and `set_paused`; the app hides those controls (`// COMPAT(messageQueueControls)`).
+Older hosts never send `queuePauseReason`, so the queue header shows a reason only when one arrives
+and needs no feature gate (`// COMPAT(queuePauseReason)`).
 
 ## Relationships
 
@@ -92,20 +198,72 @@ the marker. Closing a tab sets that client's label to `false`. Any `true` client
 open. Detach clears the parent and every open-tab label. The surviving child therefore becomes a
 normal root agent immediately, and closing its still-open tab archives it.
 
-Runtime ownership is resolved from explicit workspace ID and caller context, never from `cwd`. Workspace creation is a separate operation with `local | worktree` isolation; agent creation only selects an existing workspace.
+Runtime ownership is resolved from explicit workspace ID and caller context, never from `cwd`. Workspace creation is a separate operation with `local | worktree` isolation; agent creation reuses that workspace unless a new workspace is explicitly requested.
+
+Setup belongs to the workspace, including combined workspace-plus-agent creation and the supported agent `worktree` request. Run setup through the workspace workflow before launching configured terminals or scripts. Setup output is read in the Setup panel from per-command snapshots; never produce setup chat timeline rows or concatenate command logs. Legacy agent `git`/`worktreeName` inputs and hidden MCP worktree placement are rejected with workspace-creation guidance. Existing wire schemas retain an empty combined-log string for parsing compatibility.
 
 Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an agent-facing MCP tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
 
-`notifyOnFinish` defaults to `true` for agent-scoped creation and background prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` only for truly fire-and-forget agents or prompts.
+`notifyOnFinish` defaults to `true` for agent-scoped creation and prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` for explicit reporting or no completion callback.
+
+Agent-originated messages and automatic notifications share a recipient-daemon delivery module. A queued receipt acknowledges admission before provider dispatch, allowing a child to report and finish in the same two-second quiet window. Human prompts dispatch directly. Conflicting explicit interruption or session-mode choices retain separate ordered dispatches.
+
+The pending message window is in memory. Clean shutdown flushes it before closing agents; an abrupt
+crash can lose queued prompts. A durable send receipt remains pending until actual dispatch
+acknowledgment, so a lost window never becomes a completed receipt. Completion waits cover queued
+admission within their original timeout and cancellation scope.
+
+Finish notification intent has a separate daemon-owned lifetime. The finish-subscriptions module
+persists caller, child, host, and ownership policy through an injectable store; its JSON adapter uses
+`$PASEO_HOME/finish-subscriptions.json`. Registration must commit before creation or queued-prompt
+acknowledgment promises a notification. A pending replacement retains its predecessor until dispatch
+accepts; rejected dispatch removes only the candidate. Recovery coalesces registrations for the same
+caller, child, and host into one watch.
+
+Bootstrap restores these watches after repairing stale running records to `closed` and before opening
+ingress. Reading a closed child's result does not load its provider. A finish notification reports that
+the child's run has settled; the parent decides whether its task is complete. A child chosen for restart
+recovery is observed only after its resume was sent, so the parent never hears that it was closed
+in between. Archived or deleted parents suppress delivery;
+parent-owned creation watches also stop
+reporting after detachment.
+
+Intent remains stored until the parent's notification dispatch is acknowledged. Dispatch failure
+retries the captured notification; it does not change the child's reported outcome. Remote host loss
+follows the [connected-host observation policy](connected-hosts.md#delegating-agents). Shutdown stops observation before flushing message delivery, retaining
+outstanding intent. A crash after successful dispatch but before removal commits can repeat the
+notification. Clean shutdown can also flush an already queued callback while retaining its intent,
+so that callback can repeat after restart. This is an at-least-once wakeup, without turn attribution or exactly-once delivery.
+
 Permission requests are notification checkpoints, not the end of that subscription. The caller is notified again after a permission response when the child finishes, errors, or requests another permission.
 The permission notification includes the normalized request plus the child and request IDs, so the caller can inspect it and respond without fetching agent status.
 A watched child that closes before its finish event also notifies the caller so delegated work cannot disappear silently during archive or workspace teardown.
 
-## Provider-managed child agents
+## Background workspaces
 
-Some providers can create their own child sessions inside one provider runtime. OMP's task tool reports these with `child_session` events; `AgentManager` imports the live provider handle, stamps `paseo.parent-agent-id`, and surfaces the result as a normal subagent in the parent's subagents track.
+`workspace.background` controls discovery only. Background workspaces contain ordinary durable
+agents and terminals: provider history, plugin hooks, parentage, archive, and restart recovery
+keep their normal behavior. Visibility is creation-only; selecting an existing workspace cannot
+change it. New workspaces default to false, inherit the caller workspace's value when an agent
+creates one without an override, and accept explicit true or false.
 
-The provider still owns the underlying runtime. Paseo keeps an agent record so the child can be opened, tracked, archived, and cascaded with the parent, but prompts and history hydration route through the provider adapter for that native child handle.
+The daemon derives agent discovery from workspace ownership. Default workspace and agent lists,
+including History requests, exclude background work; `filter.includeBackground` includes it.
+Exact-ID operations bypass discovery filtering. The app replicates both kinds and filters only
+its sidebar with **Show background**, so direct navigation and restored tabs remain available.
+
+Sequenced directories keep complete canonical collections. A filtered read must never replace
+those collections with its subset. Inclusive and default observations have distinct cursor
+scopes, so changing scope requires a fresh snapshot rather than reusing an incomplete cache.
+Clients gate creation and inclusive discovery on `features.backgroundWorkspaces`.
+
+### Private daemon helpers
+
+Branch-name and commit-message generators still use private disposable internal runtimes.
+`AgentManager` does not persist them or their provider sessions, excludes them from public
+discovery and plugin hooks, and drops their timelines on archive. An archived helper retains
+its exact-ID result briefly to cover completion before a waiter attaches. This internal
+lifecycle is separate from public workspace visibility and is not a public creation option.
 
 ## Archive
 
@@ -148,11 +306,12 @@ lifecycle queue. Resume chooses its history or interactive purpose from the dura
 entering that queue. Shutdown must finish before the manager releases runtime ownership; a failed
 close retains the runtime for cleanup and blocks replacement through that close operation.
 
-Authoritative timeline catch-up can use a runtime-only `history` resume purpose. For Codex, that
-purpose initializes a temporary app-server, reads the persisted thread and child histories, and
-releases the process before returning. It never loads, resumes, or unarchives a native thread,
-including legacy records whose native archive failed. The retained history session contains only
-the read results. Interactive resume remains responsible for repairing a provider session archived
+Authoritative timeline catch-up can use a runtime-only `history` resume purpose. The retained
+history session contains only the read results and must release its provider process once replay
+finishes. Codex reads the persisted thread and child histories on a temporary app-server and never
+loads, resumes, or unarchives a native thread, including legacy records whose native archive failed.
+ACP providers spawn the CLI, replay the session through `session/load`, and terminate the process
+before returning. Interactive resume remains responsible for repairing a provider session archived
 outside Paseo while its Paseo agent is active.
 
 Provider session connection owns every process it spawns until the session is registered with
@@ -179,20 +338,40 @@ The asymmetry is intentional: a subagent's persistent relationship lives in the 
 
 Agent lifecycle status stays literal: a parent agent is `idle` when its own turn is idle, even if a child is running.
 
-Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. Same-workspace descendants contribute `running` to the nearest ancestor in that workspace; their non-running attention, permission, and error states stay in the parent's subagents track. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
+Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
 
-Running provider-native subagents contribute `running` to the workspace owned by their parent agent. Their completed, failed, and canceled states stay in the parent's subagents track.
+Running same-workspace descendants and running provider-native subagents count toward the workspace that owns their nearest workspace root. The descriptor carries that count as `runningSubagentCount`. A working subagent raises a `done` workspace to `running`. When the root agent waits on the user (`attention`, `needs_input`, `failed`), the workspace keeps that status so a spinner does not hide that the user is needed. The sidebar row then shows "N sub-agents working" under the title. The subagents' other states (attention, permission, error, completed, canceled) stay in the parent's subagents track.
+
+The sidebar uses the same ownership to place workspaces. Workspace W renders as an indented child row under workspace P when every unarchived workspace-root agent in W (an agent whose parent is not in W) is a subagent of an unarchived agent in P. W's own same-workspace helpers do not count. A root agent in W, or subagents of a second workspace, keep W at the top level. Detach and parent archive (which detaches cross-workspace children) return it there without user action. Nesting chains, and a parent cycle still places every row once. The client derives this from its agent list (`packages/app/src/subagents/workspace-parents.ts`); the daemon sends no relationship field.
+
+A child row keeps its own status, actions, and pin. It follows its parent's row: a collapsed project hides both, and pinning the parent brings its children into Pinned beneath it. A child pinned on its own stays a top-level row in Pinned when its parent is not. A child in a different project from its parent stays in its own project. Status grouping sorts only thread heads: a child row follows its parent into the parent's status group, whatever its own status, so a thread reads the same in both groupings. A subagent workspace's status does not roll up into its parent's row, so a folded child that needs input shows only once its thread is unfolded.
+
+### Sidebar thread children
+
+Every thread row in the sidebar carries its subagents behind one fold row ("3 subagents"), folded by default. Unfolding is remembered per thread in the sidebar's persisted collapse state (`expandedThreadKeys`); there is no global toggle. The count covers three kinds of children, all derived from state the client already holds:
+
+- Same-workspace Paseo subagents (and their descendants), using the root rule from [Workspace activity](#workspace-activity): an agent whose parent shares its workspace has no row of its own, so it shows here (`packages/app/src/subagents/thread-children.ts`). Tapping opens it as an agent tab.
+- Provider subagents of any agent in the workspace. They are read-only rows; tapping opens their transcript tab in the thread's workspace. The sidebar issues no list request of its own: a provider subagent shows once its parent has been listed (the subagents track lists the agent you open, and reconnects re-list it) or once the daemon announced it live. A thread whose parent you have not opened since the app started shows only the provider subagents that started meanwhile.
+- Subagent workspace rows nested under this one. They fold with the thread instead of rendering as indented rows.
+
+Detached children have no parent label, so they are top-level rows like any other agent.
 
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion
 notification. Opening the workspace clears that attention through the normal focus flow.
 
-Attention is set by the agent finishing or failing and cleared by the client's
-`workspace.clear_attention`, which fires when the user reads the chat. Loading an agent's runtime is
-neither, so resuming carries the stored attention and the stored last-activity time through
-untouched. Forging either makes a background resume look like the user read a workspace and like the
-agent worked in it just now, which rewrites the sidebar timestamp permanently — persisted
-`updatedAt` is what workspace `statusEnteredAt` is re-derived from on the next daemon start.
+Attention is set by the agent finishing or failing. Reading the chat clears it through
+`clear_agent_attention`; "Mark as read" in the sidebar row menu clears it for the whole workspace
+through `workspace.clear_attention`. Lifecycle `error` alone keeps an agent in the failed bucket, so
+reading the chat leaves the row red. "Mark as read" also moves an `error` agent, live or stored, to
+`idle`, so the row stays clear until the next error. The error stays in the timeline and in
+`lastError`. Nothing new goes on the wire, so older clients get the same dismissal.
+
+Loading an agent's runtime neither sets nor clears attention, so resuming carries the stored
+attention and the stored last-activity time through untouched. Forging either makes a background
+resume look like the user read a workspace and like the agent worked in it just now, which rewrites
+the sidebar timestamp permanently — persisted `updatedAt` is what workspace `statusEnteredAt` is
+re-derived from on the next daemon start.
 
 ## The subagents track
 
@@ -206,9 +385,9 @@ The rows combine two kinds of children:
 parentAgentId === thisAgent.id  AND  !archivedAt
 ```
 
-- **Provider subagents** are child executions owned by Claude, Codex, or OpenCode. They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track. A descriptor's optional `parentSubagentId` identifies its direct provider-subagent parent; an absent value identifies a direct child of the managed agent.
+- **Provider subagents** are child executions owned by Claude, Codex, OpenCode, or OMP (its `task` tool, `packages/server/src/server/agent/providers/omp/subagent-index.ts`). They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track and the [sidebar thread](#sidebar-thread-children). A descriptor's optional `parentSubagentId` identifies its direct provider-subagent parent; an absent value identifies a direct child of the managed agent.
 
-Clicking either kind opens a workspace tab. A Paseo subagent tab is a normal interactive agent pane. A provider subagent tab is a read-only timeline pane with no composer, archive, detach, rewind, or fork actions. It shows its own direct children in a subagents track. Both panes use `AgentStreamView`, so message, reasoning, tool-call, and layout rendering stay identical.
+Clicking either kind opens a workspace tab. On compact layouts it opens in a [sheet](explorer-sidebar.md#sheets) instead, replacing the subagents list in place (Back returns to the list); the sheet hides the composer and shows the agent's model and thinking as one line in its place (`PaneSubtitle`, the row provider subagents already use), and a Paseo subagent's sheet offers **Open as tab** (the full-screen glyph in the header) to get the composer back. A Paseo subagent tab is a normal interactive agent pane. A provider subagent tab is a read-only timeline pane with no composer, archive, detach, rewind, or fork actions. It shows its own direct children in a subagents track. Every subagent pane links back to its parent (`packages/app/src/subagents/parent/`): a pill above the composer when there is one, a parent box in the composer's place when there is not. Both panes use `AgentStreamView`, so message, reasoning, tool-call, and layout rendering stay identical.
 
 Provider timelines use the same structural timeline item format but deliberately have a separate lifecycle and transport. A provider thread/session identifier is not a Paseo agent identifier, and closing its tab is always layout-only.
 

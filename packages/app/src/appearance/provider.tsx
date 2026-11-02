@@ -25,6 +25,7 @@ import { useSkinSurfaces } from "@/skins/active";
 import { applySkinSurfaces } from "@/skins/apply-surfaces";
 import { resolveActiveScheme, SkinSchemeContext } from "@/skins/scheme";
 import { applyAppearance } from "./apply";
+import { AppearanceSystemBars } from "./system-bars";
 
 interface ContributedThemes {
   options: PluginThemeOption[];
@@ -138,7 +139,10 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
   return (
     <ContributedThemesContext.Provider value={value}>
-      <SkinSchemeContext.Provider value={scheme}>{children}</SkinSchemeContext.Provider>
+      <SkinSchemeContext.Provider value={scheme}>
+        <AppearanceSystemBars />
+        {children}
+      </SkinSchemeContext.Provider>
     </ContributedThemesContext.Provider>
   );
 }

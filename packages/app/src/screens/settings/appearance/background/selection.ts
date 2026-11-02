@@ -14,21 +14,6 @@ export function isSkinSelected(
   return selection[target] === id;
 }
 
-export const VISIBILITY_PERCENT_OPTIONS = [25, 50, 75, 100] as const;
-export type VisibilityPercent = (typeof VISIBILITY_PERCENT_OPTIONS)[number];
-
-/** Snaps a stored 0–1 visibility to the nearest offered step. */
-export function nearestVisibilityPercent(visibility: number): VisibilityPercent {
-  const percent = visibility * 100;
-  let best: VisibilityPercent = VISIBILITY_PERCENT_OPTIONS[0];
-  for (const option of VISIBILITY_PERCENT_OPTIONS) {
-    if (Math.abs(option - percent) < Math.abs(best - percent)) {
-      best = option;
-    }
-  }
-  return best;
-}
-
 /** File name without its extension, used as the default name of an imported skin. */
 export function skinNameFromFileName(
   fileName: string | null | undefined,

@@ -33,6 +33,8 @@ import { migrateAppSettings } from "./migrations";
 export { APP_SETTINGS_KEY } from "./keys";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
 
+export type SendShortcut = "enter" | "mod-enter";
+
 export type SendBehavior = ActiveTurnBehavior | "queue";
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
@@ -40,7 +42,8 @@ export type WorkspaceTitleSource = "title" | "branch";
 export type PullRequestOpenLocation = "main" | "side" | "explorer";
 /** What a sidebar workspace row shows in the space to the right of its title. */
 export type SidebarWorkspaceTrailing = "diff" | "timestamp" | "none";
-export type ToolCallDetailLevel = "overview" | "detailed";
+/** How much of an agent's work the chat shows between the user's message and the reply. */
+export type ChatDisplay = "full" | "collapseToolCalls" | "collapseTurns";
 
 const ThemePreferenceSchema = z.enum([
   ...THEME_OPTIONS.map((option) => option.name),
@@ -51,6 +54,13 @@ export const DEFAULT_THEME_PREFERENCE = "auto" satisfies ThemePreference;
 export const DEFAULT_TERMINAL_SCROLLBACK_LINES = 10_000;
 export const MIN_TERMINAL_SCROLLBACK_LINES = 0;
 export const MAX_TERMINAL_SCROLLBACK_LINES = 1_000_000;
+/** Saved copies of chat files are bounded by these app-local limits. */
+export const OFFLINE_FILE_LIMITS = {
+  retentionDays: { default: 30, min: 1, max: 365 },
+  maxTotalMb: { default: 500, min: 10, max: 10_000 },
+  // The session socket download cap is 64 MiB.
+  maxFileMb: { default: 10, min: 1, max: 64 },
+} as const;
 export function defaultUiBaseFontSize(native: boolean): number {
   return native ? 15 : FONT_SIZE.base;
 }
@@ -78,10 +88,12 @@ export interface AppSettings {
   /** Which contributed theme `theme: "plugin"` selects. */
   pluginThemeId: string | null;
   language: AppLanguage;
+  /** What Send does while the agent is running. */
   sendBehavior: SendBehavior;
+  /** What the alternate send (Mod+Enter, long-press on Send) does while the agent is running. */
+  alternateSendBehavior: SendBehavior;
   serviceUrlBehavior: ServiceUrlBehavior;
   terminalScrollbackLines: number;
-  useLegacyTerminalRenderer: boolean;
   uiFontFamily: string; // "" = platform default UI stack
   monoFontFamily: string; // "" = platform default mono stack
   uiBaseFontSize: number; // clamped px, platform default 14 or 15
@@ -101,12 +113,19 @@ export interface AppSettings {
   /** How usage reads and which windows the sidebar summary shows. */
   usage: UsagePreferences;
   autoExpandReasoning: boolean;
-  toolCallDetailLevel: ToolCallDetailLevel;
+  chatDisplay: ChatDisplay;
   chatOutlineEnabled: boolean;
   vimKeybindings: boolean;
+  sendShortcut: SendShortcut;
+  filePanelAssociations: Record<string, string>;
   /** Desktop-only preferences for implicit opens into the ordinary side pane. */
   openInSidePane: OpenInSidePanePreferences;
   pullRequestOpenLocation: PullRequestOpenLocation;
+  /** Save files mentioned in opened chats so they open while the host is offline. */
+  offlineFilesAutoSave: boolean;
+  offlineFilesRetentionDays: number;
+  offlineFilesMaxTotalMb: number;
+  offlineFilesMaxFileMb: number;
 }
 
 export type AppSettingsUpdate =
@@ -139,9 +158,9 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   pluginThemeId: null,
   language: "system",
   sendBehavior: "steer",
+  alternateSendBehavior: "queue",
   serviceUrlBehavior: "ask",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
-  useLegacyTerminalRenderer: false,
   uiFontFamily: "",
   monoFontFamily: "",
   uiBaseFontSize: DEFAULT_UI_BASE_FONT_SIZE,
@@ -157,11 +176,17 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sidebarFooterItems: [],
   usage: DEFAULT_USAGE_PREFERENCES,
   autoExpandReasoning: false,
-  toolCallDetailLevel: "detailed",
+  chatDisplay: "collapseTurns",
   chatOutlineEnabled: true,
   vimKeybindings: false,
+  sendShortcut: "enter",
+  filePanelAssociations: {},
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
+  offlineFilesAutoSave: isNative,
+  offlineFilesRetentionDays: OFFLINE_FILE_LIMITS.retentionDays.default,
+  offlineFilesMaxTotalMb: OFFLINE_FILE_LIMITS.maxTotalMb.default,
+  offlineFilesMaxFileMb: OFFLINE_FILE_LIMITS.maxFileMb.default,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -175,6 +200,11 @@ function clampedNumber(min: number, max: number) {
     .unknown()
     .transform((value) => parseClampedFontSize(value, { min, max }))
     .pipe(z.number());
+}
+
+function offlineFileLimit(key: keyof typeof OFFLINE_FILE_LIMITS) {
+  const limit = OFFLINE_FILE_LIMITS[key];
+  return clampedNumber(limit.min, limit.max).catch(limit.default);
 }
 
 function sanitizedFontFamily() {
@@ -199,6 +229,7 @@ const SidebarRowItemsSchema = z
 type StoredAppSettingsFallback = AppSettings & {
   uiFontSize?: number;
   compactToolCalls?: boolean;
+  toolCallDetailLevel?: "overview" | "detailed";
   manageBuiltInDaemon?: boolean;
   releaseChannel?: ReleaseChannel;
   needsWrite: boolean;
@@ -217,12 +248,13 @@ const StoredAppSettingsSchema = z
       .enum(["system", "ar", "en", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-CN"])
       .catch("system"),
     sendBehavior: z.enum(["interrupt", "steer", "queue"]).catch("steer"),
+    // COMPAT(alternateSendBehavior): derived for settings saved before v0.14, remove after 2027-10-29.
+    alternateSendBehavior: z.enum(["interrupt", "steer", "queue"]).optional().catch("queue"),
     serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).catch("ask"),
     terminalScrollbackLines: clampedNumber(
       MIN_TERMINAL_SCROLLBACK_LINES,
       MAX_TERMINAL_SCROLLBACK_LINES,
     ).catch(DEFAULT_TERMINAL_SCROLLBACK_LINES),
-    useLegacyTerminalRenderer: z.boolean().catch(false),
     uiFontFamily: sanitizedFontFamily().catch(""),
     monoFontFamily: sanitizedFontFamily().catch(""),
     uiBaseFontSize: clampedNumber(MIN_UI_BASE_FONT_SIZE, MAX_UI_BASE_FONT_SIZE)
@@ -252,15 +284,19 @@ const StoredAppSettingsSchema = z
     sidebarFooterItems: z.array(z.object({ key: z.string(), visible: z.boolean() })).catch([]),
     usage: UsagePreferencesSchema,
     autoExpandReasoning: z.boolean().catch(false),
+    chatDisplay: z.enum(["full", "collapseToolCalls", "collapseTurns"]).optional().catch("full"),
+    // COMPAT(toolCallDetailLevel): replaced by chatDisplay in v0.13, remove after 2027-04-24.
     toolCallDetailLevel: z
       .enum(["overview", "detailed"])
       .or(z.literal("concise").transform(() => "overview" as const))
       .optional()
-      .catch("detailed"),
+      .catch(undefined),
     // COMPAT(compactToolCalls): migrated in v0.1.105, remove after 2027-01-12.
     compactToolCalls: z.boolean().optional().catch(undefined),
     chatOutlineEnabled: z.boolean().catch(true),
     vimKeybindings: z.boolean().catch(false),
+    sendShortcut: z.enum(["enter", "mod-enter"]).catch("enter"),
+    filePanelAssociations: z.record(z.string(), z.string()).catch({}),
     openInSidePane: z
       .object({
         explorerFiles: z.boolean().catch(false),
@@ -284,6 +320,10 @@ const StoredAppSettingsSchema = z
         legacyPullRequestsInSidePane: undefined,
       }),
     pullRequestOpenLocation: z.enum(["main", "side", "explorer"]).optional(),
+    offlineFilesAutoSave: z.boolean().catch(isNative),
+    offlineFilesRetentionDays: offlineFileLimit("retentionDays"),
+    offlineFilesMaxTotalMb: offlineFileLimit("maxTotalMb"),
+    offlineFilesMaxFileMb: offlineFileLimit("maxFileMb"),
     // COMPAT(explorerSidebarRouting): replaced by source-specific side-pane preferences in v0.6.
     openSupportingTabsInSidePanel: z.boolean().optional().catch(undefined),
     // COMPAT(rendererDesktopSettings): these fields used to share this renderer-owned key.
@@ -294,7 +334,8 @@ const StoredAppSettingsSchema = z
     const { legacyPullRequestsInSidePane, ...openInSidePane } = stored.openInSidePane;
     const needsWrite =
       (stored.uiBaseFontSize === undefined && stored.uiFontSize !== undefined) ||
-      stored.contentFontSize === undefined;
+      stored.contentFontSize === undefined ||
+      stored.alternateSendBehavior === undefined;
     const uiBaseFontSize =
       stored.uiBaseFontSize ??
       (stored.uiFontSize === undefined
@@ -305,10 +346,16 @@ const StoredAppSettingsSchema = z
       (isChecksHiddenByLegacyRowItem(stored.sidebarRowItems)
         ? "none"
         : DEFAULT_SIDEBAR_CHECKS_DISPLAY);
-    const toolCallDetailLevel =
-      stored.toolCallDetailLevel ?? (stored.compactToolCalls ? "overview" : "detailed");
+    const groupsToolCalls = stored.toolCallDetailLevel
+      ? stored.toolCallDetailLevel === "overview"
+      : stored.compactToolCalls === true;
+    const chatDisplay = stored.chatDisplay ?? (groupsToolCalls ? "collapseToolCalls" : "full");
     return {
       ...stored,
+      // COMPAT(alternateSendBehavior): before the setting existed the alternate queued, or sent
+      // now (interrupting) when Send itself queued.
+      alternateSendBehavior:
+        stored.alternateSendBehavior ?? (stored.sendBehavior === "queue" ? "interrupt" : "queue"),
       openInSidePane,
       pullRequestOpenLocation:
         stored.pullRequestOpenLocation ?? (legacyPullRequestsInSidePane ? "side" : "explorer"),
@@ -321,7 +368,7 @@ const StoredAppSettingsSchema = z
           stored.sidebarRowItems.services ??
           (stored.sidebarRowItems.scripts === false ? false : DEFAULT_SIDEBAR_ROW_ITEMS.services),
       },
-      toolCallDetailLevel,
+      chatDisplay,
       needsWrite,
     };
   })
@@ -449,6 +496,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     manageBuiltInDaemon: _manageBuiltInDaemon,
     releaseChannel: _releaseChannel,
     compactToolCalls: _compactToolCalls,
+    toolCallDetailLevel: _toolCallDetailLevel,
     uiFontSize: _uiFontSize,
     ...settings
   } = StoredAppSettingsSchema.parse(value);
@@ -522,7 +570,24 @@ export function sanitizeFontFamily(value: unknown): string | null {
   if ([...trimmed].some((char) => char.charCodeAt(0) <= 0x1f)) {
     return null; // control chars would corrupt the font-family string
   }
-  return trimmed; // quotes/commas are legit in stacks
+  // Unistyles serializes theme values into one shared stylesheet. An unfinished
+  // string, escape, comment, or block consumes the declarations that follow.
+  let quote: string | null = null;
+  let escaped = false;
+  for (const char of trimmed) {
+    if (escaped) {
+      escaped = false;
+    } else if (char === "\\") {
+      escaped = true;
+    } else if (quote !== null) {
+      if (char === quote) quote = null;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+    } else if (/[()[\]/*]/.test(char)) {
+      return null;
+    }
+  }
+  return quote === null && !escaped ? trimmed : null;
 }
 
 async function loadLegacyDesktopSettingsFromStorage(storage: KeyValueStorage): Promise<{

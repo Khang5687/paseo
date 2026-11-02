@@ -65,6 +65,7 @@ per-agent examples and provider-specific keys.
 ## Table of Contents
 
 - [Extending a built-in provider](#extending-a-built-in-provider)
+- [OpenCode with an existing v2 server](#opencode-with-an-existing-v2-server)
 - [Z.AI (Zhipu) coding plan](#zai-zhipu-coding-plan)
 - [Alibaba Cloud (Qwen) coding plan](#alibaba-cloud-qwen-coding-plan)
 - [Codex with a custom OpenAI-compatible endpoint](#codex-with-a-custom-openai-compatible-endpoint)
@@ -104,6 +105,35 @@ Required fields for custom providers:
 - `label` — display name in the UI
 
 See [Codex with a custom OpenAI-compatible endpoint](#codex-with-a-custom-openai-compatible-endpoint) below for the dedicated Codex example.
+
+---
+
+## OpenCode with an existing v2 server
+
+Paseo first uses an explicitly configured server, then a healthy locally registered OpenCode v2 service, then starts its own helper. It never stops a reused service. To select a server explicitly, set its URL in the provider environment:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "opencode": {
+        "env": {
+          "PASEO_OPENCODE_SERVER_URL": "http://127.0.0.1:4096",
+          "PASEO_OPENCODE_SERVER_PASSWORD": "<server password>"
+        }
+      }
+    }
+  }
+}
+```
+
+`PASEO_OPENCODE_SERVER_URL` must be an absolute `http` or `https` URL. Omit `PASEO_OPENCODE_SERVER_PASSWORD` when the server has no authentication; when set, Paseo authenticates with HTTP Basic auth as `opencode`.
+
+A configured URL takes precedence even when unreachable; Paseo reports the connection error. The local service registration supplies its own authentication. For a discovered local service, Paseo installs its bridge package in OpenCode's watched global plugin directory without changing the existing configuration. Refresh reads the existing service's catalogs without starting another server.
+
+An explicitly configured server needs the bridge installed separately. Connect once and start a session: the setup error gives the local package directory. Copy that directory to the server's OpenCode global `plugins` directory, then retry. For a server on another machine, set `PASEO_OPENCODE_BRIDGE_PORT` in the Paseo OpenCode provider environment before starting Paseo, and set `PASEO_OPENCODE_BRIDGE_URL` to the URL the OpenCode server can use to reach that port. For example, an SSH reverse tunnel can expose the Paseo loopback port on the OpenCode host. The bridge token is exchanged through the OpenCode connection and is not written into the plugin package.
+
+OpenCode's custom MCP registrations are shared by all sessions in a location. Paseo rejects custom MCP servers and per-agent process environment overrides on a reused server rather than applying them to other sessions or ignoring them. Session identity is applied to each session's shell environment. A Paseo-owned helper supports custom process and MCP settings; it is selected when there is no explicit URL or healthy registered service.
 
 ---
 
@@ -232,7 +262,7 @@ For pay-as-you-go, use `ANTHROPIC_API_KEY` with a standard Model Studio key (`sk
 
 Codex talks to OpenAI's Responses API by default. Custom providers that extend `"codex"` can point Codex at any OpenAI-compatible endpoint (OpenRouter, LiteLLM, vLLM, llama.cpp server, an internal gateway, etc.) by setting `OPENAI_BASE_URL` and `OPENAI_API_KEY` in the provider `env`.
 
-Paseo passes those variables through to the Codex app-server process **and** maps them into Codex's thread config under `model_provider` / `model_providers`, because Codex reads provider routing from config rather than from `OPENAI_BASE_URL` alone.
+Paseo passes those variables through to the Codex app-server process **and** maps them into Codex's thread config under `model_provider` / `model_providers`, because Codex reads provider routing from config rather than from `OPENAI_BASE_URL` alone. The generated Codex provider key is `paseo:<provider-id>`, so a Paseo provider such as `ollama` does not override a Codex built-in. Existing custom sessions created with a non-built-in provider key remain available in Import session. Native Codex conversations using a built-in key stay separate from a custom provider of the same name.
 
 ### Setup
 
@@ -260,9 +290,9 @@ Paseo passes those variables through to the Codex app-server process **and** map
 Under the hood, for each custom Codex provider Paseo injects this into Codex's config:
 
 ```toml
-model_provider = "my-codex"
+model_provider = "paseo:my-codex"
 
-[model_providers.my-codex]
+[model_providers."paseo:my-codex"]
 name = "My Codex"
 base_url = "https://custom-relay.example.com/v1"
 wire_api = "responses"
@@ -339,6 +369,30 @@ You can also combine profiles with model overrides to pin specific models per pr
   }
 }
 ```
+
+### MCP servers for one profile
+
+`mcpServers` gives every agent launched with a profile its own MCP servers. Use it for a large or specialized tool set that you want only when you pick that profile, so agents on the base provider never load those tool descriptions into context:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "omp-rea": {
+        "extends": "omp",
+        "label": "OMP (REA)",
+        "mcpServers": {
+          "rea": { "type": "stdio", "command": "npx", "args": ["-y", "rea-agents@latest", "mcp"] }
+        }
+      }
+    }
+  }
+}
+```
+
+- A profile inherits its base provider's `mcpServers`. On a name clash the profile's server wins, and a server the agent itself was launched with wins over both. `paseo` is reserved.
+- The servers are added at launch and never saved into the agent's stored config. An edit applies to new and resumed agents after `paseo daemon reload`; running agents keep the servers they started with.
+- The provider must support MCP servers. Launching on one that does not fails instead of silently dropping them.
 
 ---
 
@@ -484,7 +538,7 @@ The [Agent Client Protocol (ACP)](https://agentclientprotocol.com) is an open st
 
 ACP agents communicate over JSON-RPC 2.0 on stdio. Paseo spawns the agent process and talks to it through stdin/stdout.
 
-Paseo also ships an in-app ACP provider catalog for common agents, including CodeWhale, Cursor, DeepAgents, DimCode, Gemini CLI, Hermes, Qwen Code, and Kimi Code. Catalog entries create the same `extends: "acp"` provider config shown below.
+Paseo also ships an in-app ACP provider catalog for common agents, including CodeWhale, Cursor, DeepAgents, DimCode, Gemini CLI, Hermes, Qwen Code, and Kimi Code. Most catalog entries create the same `extends: "acp"` provider config shown below. Hoplite activates its [bundled provider](plugins.md#built-in-plugins) instead.
 
 ### Adding a generic ACP provider
 
@@ -706,19 +760,45 @@ When an `additionalModels` entry has the same `id` as a discovered model, it upd
 
 Every entry under `agents.providers` accepts these fields:
 
-| Field              | Type                      | Required          | Description                                                        |
-| ------------------ | ------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `extends`          | `string`                  | Yes (custom only) | Built-in provider ID to inherit from, or `"acp"`                   |
-| `label`            | `string`                  | Yes (custom only) | Display name in the UI                                             |
-| `description`      | `string`                  | No                | Short description shown in the UI                                  |
-| `command`          | `string[]`                | Yes (ACP only)    | Command to spawn the agent process                                 |
-| `env`              | `Record<string, string>`  | No                | Environment variables to set for the agent process                 |
-| `options`          | `Record<string, unknown>` | No                | Provider-specific options such as `supportsMcpServers: false`      |
-| `models`           | `ProviderProfileModel[]`  | No                | Static model list (overrides runtime discovery)                    |
-| `additionalModels` | `ProviderProfileModel[]`  | No                | Static model additions (merged with runtime discovery or `models`) |
-| `disallowedTools`  | `string[]`                | No                | Tool names to disable for this provider (e.g. `["WebSearch"]`)     |
-| `enabled`          | `boolean`                 | No                | Set to `false` to hide the provider (default: `true`)              |
-| `order`            | `number`                  | No                | Sort order in the provider list                                    |
+| Field              | Type                                | Required          | Description                                                                                      |
+| ------------------ | ----------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
+| `extends`          | `string`                            | Yes (custom only) | Built-in provider ID to inherit from, or `"acp"`                                                 |
+| `label`            | `string`                            | Yes (custom only) | Display name in the UI                                                                           |
+| `description`      | `string`                            | No                | Short description shown in the UI                                                                |
+| `command`          | `string[]`                          | Yes (ACP only)    | Command to spawn the agent process                                                               |
+| `env`              | `Record<string, string>`            | No                | Environment variables to set for the agent process                                               |
+| `options`          | `Record<string, unknown>`           | No                | Provider-specific options such as `supportsMcpServers: false`                                    |
+| `mcpServers`       | `Record<string, McpServerConfig>`   | No                | MCP servers every agent of this provider launches with ([details](#mcp-servers-for-one-profile)) |
+| `models`           | `ProviderProfileModel[]`            | No                | Static model list (overrides runtime discovery)                                                  |
+| `additionalModels` | `ProviderProfileModel[]`            | No                | Static model additions (merged with runtime discovery or `models`)                               |
+| `disabledModels`   | `string[]`                          | No                | Model IDs hidden from model lists and refused for new agents (see below)                         |
+| `disallowedTools`  | `string[]`                          | No                | Tool names to disable for this provider (e.g. `["WebSearch"]`)                                   |
+| `featureDefaults`  | `Record<string, boolean \| string>` | No                | Feature values new agents start with, e.g. `{ "output_style": "ELI5" }`                          |
+| `enabled`          | `boolean`                           | No                | Set to `false` to hide the provider (default: `true`)                                            |
+| `order`            | `number`                            | No                | Sort order in the provider list                                                                  |
+
+### Disabling models
+
+`disabledModels` hides models a provider reports without replacing its list, so runtime discovery keeps working. The Provider settings sheet writes it: each discovered model has a toggle, and the header search filters long lists. You can also set it by hand:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "omp": { "disabledModels": ["openai/gpt-4.1", "zai/glm-4.5"] }
+    }
+  }
+}
+```
+
+Entries are exact model IDs as listed in Provider settings or by `list_models`, not aliases. Absent or empty means nothing is disabled. A config patch replaces the whole array.
+
+- **Lists.** Disabled models are removed from the provider snapshot's `models`, so every model picker, the `list_models` MCP tool, and `paseo provider models` omit them. The snapshot carries them separately in `disabledModels` for the settings sheet. Toggling republishes the snapshot without re-running provider discovery.
+- **New selections.** Creating an agent, changing an agent's model, or validating a Hub agent with a disabled model fails with `Model '<id>' is disabled for provider '<provider>' in Provider settings`.
+- **Running agents.** An agent already on a model when it becomes disabled keeps running on it; re-selecting its current model is not refused.
+- **Defaults.** If the provider's default model is disabled, it is not advertised as the default. An agent created without a model gets the first enabled model in the provider's order, the same model pickers preselect. If every model is disabled, creating an agent without a model fails.
+
+The settings toggles require a daemon that advertises `server_info.features.providerDisabledModels`; older daemons drop the key when they rewrite the config.
 
 ### Model definition
 
@@ -740,6 +820,26 @@ Each entry in the `models` array:
 | `label`       | `string`  | Yes      | Display name                        |
 | `description` | `string`  | No       | Short description                   |
 | `isDefault`   | `boolean` | No       | Mark as the default thinking option |
+
+### Feature defaults and output styles
+
+`featureDefaults` fills in agent features (`fast_mode`, `output_style`, and so on) that a create request leaves out. It exists at two levels: `agents.featureDefaults` for every provider, and `agents.providers.<id>.featureDefaults` for one. For each feature the request wins, then the provider's map, then the daemon-wide map. Daemon-internal agents such as branch naming ignore defaults. Both maps are replaced whole on every patch, so a key left out is cleared.
+
+```json
+{
+  "agents": {
+    "featureDefaults": { "output_style": "Concise" },
+    "providers": { "omp": { "featureDefaults": { "output_style": "ELI5" } } }
+  }
+}
+```
+
+Settings → Agents → Default style edits the daemon-wide `output_style`; its list is every style any ready provider offers. Settings → Providers → a provider → "Defaults for new agents" edits the provider's map. A provider that has no Style feature ignores the key.
+
+`output_style` takes a style name: `default`, `Proactive`, `Concise`, `Explanatory`, `Learning`, or a custom style file. Paseo reads custom styles in Claude Code's format from `$CLAUDE_CONFIG_DIR/output-styles` (default `~/.claude/output-styles`) and from every `.claude/output-styles` between the agent's cwd and its git root; the closest file wins a name clash, and a custom style named like a built-in replaces it. Plugin styles are not read.
+
+- **Claude** passes the name as `settings.outputStyle`, so Claude Code resolves the style, built-ins included. Changing it mid-session applies from the next message on Claude Code 2.1.251 and later.
+- **OMP** has no output-style setting, so Paseo appends the style's text to `--append-system-prompt`. Claude Code's built-in text ships inside its CLI and is not copied, so OMP's `Proactive`, `Concise`, `Explanatory`, and `Learning` use Paseo's own instructions with the same intent (`packages/server/src/server/agent/output-styles.ts`). Changing the style relaunches OMP on the same session file, so wait for the current turn to end.
 
 ### Claude settings.json model discovery
 

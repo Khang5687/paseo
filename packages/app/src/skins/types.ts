@@ -1,6 +1,5 @@
 export type SkinScheme = "light" | "dark";
 export type SkinSchemeTarget = SkinScheme | "both";
-export type SkinBlur = "off" | "low" | "medium" | "high";
 export type SkinRoute = "home" | "workspace" | "utility";
 export type SkinSource = "local" | "plugin";
 
@@ -75,7 +74,8 @@ export interface SkinPreferences {
   selection: Record<SkinScheme, string | null>;
   /** Fraction (0–1) of the contrast-safe maximum art visibility. 1 shows as much art as text contrast allows. */
   visibility: number;
-  blur: SkinBlur;
+  /** Blur radius of the art in px (0–`SKIN_BLUR_MAX`); 0 draws it sharp. */
+  blur: number;
   showBehindSidebar: boolean;
   showBehindContent: boolean;
 }

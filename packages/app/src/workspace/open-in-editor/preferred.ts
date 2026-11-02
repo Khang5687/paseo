@@ -2,7 +2,11 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "@/contexts/toast-context";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
-import { resolvePreferredEditorId, usePreferredEditor } from "@/hooks/use-preferred-editor";
+import {
+  resolvePreferredEditorId,
+  useDefaultEditor,
+  usePreferredEditor,
+} from "@/hooks/use-preferred-editor";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import {
@@ -13,6 +17,7 @@ import {
 interface UseOpenInPreferredEditorInput {
   serverId: string;
   workspaceDirectory: string;
+  projectId: string | null;
 }
 
 interface OpenInPreferredEditorAction {
@@ -30,11 +35,16 @@ type OpenRequest = Pick<PlanWorkspaceOpenTargetsInput, "directoryPath" | "active
 export function useOpenInPreferredEditor({
   serverId,
   workspaceDirectory,
+  projectId,
 }: UseOpenInPreferredEditorInput): OpenInPreferredEditorAction | null {
   const { t } = useTranslation();
   const toast = useToast();
   const isLocalExecution = useIsLocalDaemon(serverId);
-  const { preferredEditorId } = usePreferredEditor();
+  const projectEditor = usePreferredEditor({ serverId, projectId });
+  const defaultEditor = useDefaultEditor();
+  // Without a project (file links in chat) the default editor is the only choice there is.
+  const preferredEditorId =
+    projectId === null ? defaultEditor.preferredEditorId : projectEditor.preferredEditorId;
   const { targets, isAvailable } = useDesktopOpenTargets({ isLocalExecution });
   const editorTargets = useMemo(
     () => targets.filter((target) => target.kind === "editor"),

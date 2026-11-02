@@ -167,6 +167,9 @@ describe("measureLuminance", () => {
 });
 
 describe("skinPreferencesSchema", () => {
+  const blurOf = (blur: unknown) =>
+    skinPreferencesSchema.parse({ ...DEFAULT_SKIN_PREFERENCES, blur }).blur;
+
   it("accepts the defaults", () => {
     expect(skinPreferencesSchema.parse(DEFAULT_SKIN_PREFERENCES)).toEqual(DEFAULT_SKIN_PREFERENCES);
   });
@@ -180,6 +183,20 @@ describe("skinPreferencesSchema", () => {
     ).toBe(0);
   });
 
+  it("reads blur presets saved before blur became a radius", () => {
+    expect(blurOf("off")).toBe(0);
+    expect(blurOf("low")).toBe(8);
+    expect(blurOf("medium")).toBe(16);
+    expect(blurOf("high")).toBe(28);
+  });
+
+  it("clamps the blur radius into 0–32 px", () => {
+    expect(blurOf(12.5)).toBe(12.5);
+    expect(blurOf(80)).toBe(32);
+    expect(blurOf(-4)).toBe(0);
+    expect(blurOf(Number.NaN)).toBe(0);
+  });
+
   it("falls back per field instead of discarding everything", () => {
     const parsed = skinPreferencesSchema.parse({
       selection: { light: "local:abc", dark: 5 },
@@ -191,7 +208,7 @@ describe("skinPreferencesSchema", () => {
     expect(parsed).toEqual({
       selection: { light: "local:abc", dark: null },
       visibility: 1,
-      blur: "off",
+      blur: 0,
       showBehindSidebar: false,
       showBehindContent: true,
     });

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -381,6 +381,89 @@ test("a message queued after the turn already ended dispatches on drainIfIdle", 
   expect(started.prompt).toBe("late add");
 });
 
+test("move reorders the shared list and clamps the target index", async () => {
+  const { agentId } = await createRunningAgent();
+  const a = await manager.addQueuedMessage(agentId, { text: "a" });
+  const b = await manager.addQueuedMessage(agentId, { text: "b" });
+  const c = await manager.addQueuedMessage(agentId, { text: "c" });
+  const queuedIds = () => manager.getAgent(agentId)?.queuedMessages.map((item) => item.id);
+
+  await manager.moveQueuedMessage(agentId, c.id, 0);
+  expect(queuedIds()).toEqual([c.id, a.id, b.id]);
+
+  await manager.moveQueuedMessage(agentId, c.id, 99);
+  expect(queuedIds()).toEqual([a.id, b.id, c.id]);
+
+  await manager.moveQueuedMessage(agentId, b.id, 0);
+  expect(queuedIds()).toEqual([b.id, a.id, c.id]);
+  expect(toAgentPayload(manager.getAgent(agentId)!).queuedMessages?.map((item) => item.id)).toEqual(
+    [b.id, a.id, c.id],
+  );
+
+  await expect(manager.moveQueuedMessage(agentId, "missing", 0)).rejects.toThrow(
+    `Queued message 'missing' not found on agent '${agentId}'`,
+  );
+
+  await storage.flush();
+  expect((await storage.get(agentId))?.queuedMessages?.map((item) => item.id)).toEqual([
+    b.id,
+    a.id,
+    c.id,
+  ]);
+});
+
+test("clear empties the queue and returns the removed count", async () => {
+  const { agentId } = await createRunningAgent();
+  await manager.addQueuedMessage(agentId, { text: "one" });
+  await manager.addQueuedMessage(agentId, { text: "two" });
+
+  expect(await manager.clearQueuedMessages(agentId)).toBe(2);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([]);
+  expect(await manager.clearQueuedMessages(agentId)).toBe(0);
+
+  await storage.flush();
+  expect((await storage.get(agentId))?.queuedMessages).toEqual([]);
+});
+
+test("a paused queue does not drain on idle, send_now still works, and resuming drains the head", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const first = await manager.addQueuedMessage(agentId, { text: "first queued" });
+  const second = await manager.addQueuedMessage(agentId, { text: "second queued" });
+
+  expect(await manager.setQueuePaused(agentId, true)).toBe(true);
+  expect(toAgentPayload(manager.getAgent(agentId)!).queuePaused).toBe(true);
+  await storage.flush();
+  expect((await storage.get(agentId))?.queuePaused).toBe(true);
+
+  session.completeTurn(session.turns[0].turnId);
+  await waitForLifecycle(manager, agentId, "idle");
+  dispatcher.drainIfIdle(agentId);
+  // Queue mutations share the agent's lifecycle lane, so this runs after any
+  // dispatch the idle state could have started.
+  await manager.setQueuePaused(agentId, true);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([first, second]);
+  expect(session.turns).toHaveLength(1);
+
+  const sentNow = session.waitForNextTurn();
+  await dispatcher.sendNow(agentId, second.id, "steer");
+  expect((await sentNow).prompt).toBe("second queued");
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([first]);
+
+  session.completeTurn(session.turns[1].turnId);
+  await waitForLifecycle(manager, agentId, "idle");
+  await manager.setQueuePaused(agentId, true);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([first]);
+  expect(session.turns).toHaveLength(2);
+
+  const resumedTurn = session.waitForNextTurn();
+  expect(await manager.setQueuePaused(agentId, false)).toBe(false);
+  dispatcher.drainIfIdle(agentId);
+  expect((await resumedTurn).prompt).toBe("first queued");
+  await waitForLifecycle(manager, agentId, "running");
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([]);
+  expect(toAgentPayload(manager.getAgent(agentId)!)).not.toHaveProperty("queuePaused");
+});
+
 test("the queue survives a daemon restart and drains once the agent is resumed", async () => {
   const { agentId, session } = await createRunningAgent();
   const queued = await manager.addQueuedMessage(agentId, { text: "after restart" });
@@ -424,4 +507,220 @@ test("the queue survives a daemon restart and drains once the agent is resumed",
       await restarted.closeAgent(agent.id).catch(() => undefined);
     }
   }
+});
+
+test("a paused queue stays paused across a daemon restart", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const queued = await manager.addQueuedMessage(agentId, { text: "held over restart" });
+  await manager.setQueuePaused(agentId, true);
+  dispatcher.detach();
+  session.completeTurn(session.turns[0].turnId);
+  await manager.closeAgent(agentId);
+  await storage.flush();
+
+  const restartedClient = new HeldTurnClient();
+  const restarted = new AgentManager({
+    clients: { codex: restartedClient },
+    registry: storage,
+    logger,
+  });
+  const restartedDispatcher = new AgentMessageQueueDispatcher({
+    agentManager: restarted,
+    agentStorage: storage,
+    logger,
+  });
+  restartedDispatcher.attach();
+  try {
+    const record = await storage.get(agentId);
+    expect(record?.queuePaused).toBe(true);
+    const resumed = await restarted.resumeAgentFromPersistence(
+      { provider: "codex", sessionId: session.id },
+      { cwd: workdir, provider: "codex" },
+      agentId,
+      { queuedMessages: record?.queuedMessages ?? [], queuePaused: record?.queuePaused ?? false },
+    );
+    expect(resumed.queuePaused).toBe(true);
+    await waitForLifecycle(restarted, agentId, "idle");
+    restartedDispatcher.drainIfIdle(agentId);
+    await restarted.setQueuePaused(agentId, true);
+    expect(restarted.getAgent(agentId)?.queuedMessages).toEqual([queued]);
+    expect(restartedClient.latest.turns).toHaveLength(0);
+
+    const resumedTurn = restartedClient.latest.waitForNextTurn();
+    await restarted.setQueuePaused(agentId, false);
+    restartedDispatcher.drainIfIdle(agentId);
+    expect((await resumedTurn).prompt).toBe("held over restart");
+  } finally {
+    restartedDispatcher.detach();
+    for (const agent of restarted.listAgents()) {
+      await restarted.closeAgent(agent.id).catch(() => undefined);
+    }
+  }
+});
+
+/** Makes the provider refuse every prompt before admitting it, until `restore` runs. */
+function refusePrompts(session: HeldTurnSession, message: string): { restore: () => void } {
+  const refusing = session as HeldTurnSession & Pick<AgentSession, "tryHandleOutOfBand">;
+  refusing.tryHandleOutOfBand = () => {
+    throw new Error(message);
+  };
+  return {
+    restore: () => {
+      refusing.tryHandleOutOfBand = undefined;
+    },
+  };
+}
+
+test("an automatic drain that cannot send puts the same entry back at the head, pauses with the reason, and flags the agent", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const first = await manager.addQueuedMessage(agentId, {
+    text: "refused at the door",
+    images: [{ data: "aGVsbG8=", mimeType: "image/png" }],
+  });
+  const second = await manager.addQueuedMessage(agentId, { text: "behind it" });
+  const refusal = refusePrompts(session, "provider is offline");
+
+  session.completeTurn(session.turns[0].turnId);
+  await vi.waitFor(() => expect(manager.getAgent(agentId)?.queuePaused).toBe(true));
+
+  const live = manager.getAgent(agentId)!;
+  expect(live.queuedMessages).toEqual([first, second]);
+  expect(toAgentPayload(live)).toMatchObject({
+    queuePaused: true,
+    queuePauseReason: "provider is offline",
+    requiresAttention: true,
+    attentionReason: "error",
+  });
+  expect(
+    manager
+      .getTimeline(agentId)
+      .some(
+        (item) =>
+          item.type === "assistant_message" &&
+          item.text.includes("Couldn't send a queued message") &&
+          item.text.includes("provider is offline"),
+      ),
+  ).toBe(true);
+  // Paused, so later idle states do not retry in a loop. The no-op move runs in
+  // the agent's lifecycle lane, after any dispatch the drain could have started.
+  dispatcher.drainIfIdle(agentId);
+  await manager.moveQueuedMessage(agentId, first.id, 0);
+  expect(session.turns).toHaveLength(1);
+  await storage.flush();
+  expect(await storage.get(agentId)).toMatchObject({
+    queuedMessages: [first, second],
+    queuePaused: true,
+    queuePauseReason: "provider is offline",
+    requiresAttention: true,
+    attentionReason: "error",
+  });
+
+  // Resuming clears the reason and sends the same entry, image included.
+  refusal.restore();
+  const nextTurn = session.waitForNextTurn();
+  await manager.setQueuePaused(agentId, false);
+  expect(toAgentPayload(manager.getAgent(agentId)!)).not.toHaveProperty("queuePauseReason");
+  dispatcher.drainIfIdle(agentId);
+  const started = await nextTurn;
+  expect(promptText(started.prompt)).toBe("refused at the door");
+  expect(started.prompt).toContainEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
+  await waitForLifecycle(manager, agentId, "running");
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([second]);
+});
+
+test("the pause reason is persisted and comes back after a daemon restart", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const queued = await manager.addQueuedMessage(agentId, { text: "refused" });
+  refusePrompts(session, "provider is offline");
+  session.completeTurn(session.turns[0].turnId);
+  await vi.waitFor(() => expect(manager.getAgent(agentId)?.queuePaused).toBe(true));
+  dispatcher.detach();
+  await manager.closeAgent(agentId);
+  await storage.flush();
+
+  const record = await storage.get(agentId);
+  expect(record).toMatchObject({
+    queuedMessages: [queued],
+    queuePaused: true,
+    queuePauseReason: "provider is offline",
+  });
+  const restarted = new AgentManager({
+    clients: { codex: new HeldTurnClient() },
+    registry: storage,
+    logger,
+  });
+  try {
+    const resumed = await restarted.resumeAgentFromPersistence(
+      { provider: "codex", sessionId: session.id },
+      { cwd: workdir, provider: "codex" },
+      agentId,
+      {
+        queuedMessages: record?.queuedMessages ?? [],
+        queuePaused: record?.queuePaused ?? false,
+        queuePauseReason: record?.queuePauseReason,
+      },
+    );
+    expect(toAgentPayload(resumed).queuePauseReason).toBe("provider is offline");
+  } finally {
+    for (const agent of restarted.listAgents()) {
+      await restarted.closeAgent(agent.id).catch(() => undefined);
+    }
+  }
+});
+
+test("a send_now that cannot send puts the entry back at the head without pausing", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const first = await manager.addQueuedMessage(agentId, { text: "first queued" });
+  const second = await manager.addQueuedMessage(agentId, { text: "jump the line" });
+  const steerable = session as HeldTurnSession & Pick<AgentSession, "steerActiveTurn">;
+  steerable.steerActiveTurn = async () => {
+    throw new Error("steer refused");
+  };
+
+  await expect(dispatcher.sendNow(agentId, second.id, "steer")).rejects.toThrow("steer refused");
+
+  const live = manager.getAgent(agentId)!;
+  expect(live.queuedMessages).toEqual([second, first]);
+  expect(live.queuePaused).toBe(false);
+  expect(toAgentPayload(live)).not.toHaveProperty("queuePauseReason");
+  expect(session.turns).toHaveLength(1);
+});
+
+test("a prompt the provider admitted is not requeued when its run start times out", async () => {
+  const { agentId, session } = await createRunningAgent();
+  const first = await manager.addQueuedMessage(agentId, { text: "slow to start" });
+  const second = await manager.addQueuedMessage(agentId, { text: "still waiting" });
+  // The provider takes the prompt but does not report the turn started in time.
+  const admitted: AgentPromptInput[] = [];
+  const lateStart = Promise.withResolvers<{ turnId: string }>();
+  session.startTurn = (prompt) => {
+    admitted.push(prompt);
+    return lateStart.promise;
+  };
+  const errors = vi.spyOn(logger, "error");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    session.completeTurn(session.turns[0].turnId);
+    await vi.waitFor(() => expect(admitted).toHaveLength(1));
+    expect(manager.getAgent(agentId)?.queuedMessages).toEqual([second]);
+    // Past the dispatcher's 60s run-start bound.
+    await vi.advanceTimersByTimeAsync(61_000);
+  } finally {
+    vi.useRealTimers();
+  }
+  await vi.waitFor(() =>
+    expect(errors).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId, messageId: first.id, admitted: true }),
+      "Failed to dispatch queued agent message",
+    ),
+  );
+  errors.mockRestore();
+  // Runs in the lifecycle lane after any requeue the failure could have issued,
+  // and pauses so the state it emits cannot drain the next entry.
+  await manager.setQueuePaused(agentId, true);
+
+  expect(promptText(admitted[0])).toBe(first.text);
+  expect(admitted).toHaveLength(1);
+  expect(manager.getAgent(agentId)?.queuedMessages).toEqual([second]);
+  lateStart.resolve({ turnId: "late-turn" });
 });

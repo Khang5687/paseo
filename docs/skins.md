@@ -11,15 +11,18 @@ lives in `packages/app/src/screens/settings/appearance/background/`.
 user reads sits above it. Bottom to top:
 
 1. The root fill: opaque `surface0`.
-2. The art. Its opacity follows the route (`home`, `workspace`, `utility`) and crossfades.
-3. One scrim in `canvasScrim`: `surface0` at the alpha the contrast gate picks.
-4. The app. Page backgrounds use **canvas tokens** (`canvas`, `canvasSidebar`, `canvasWorkspace`).
-   They equal `surface0`, `surfaceSidebar`, and `surfaceWorkspace` until a skin is active, then
+2. The art, at one opacity: `min(skin intensity for the route, contrast limit × Art visibility)`.
+   Art at opacity `o` over `surface0` is the same picture as a `surface0` scrim at `1 - o` over
+   the art, so there is no separate scrim layer and the dimming is applied once. Catalog skins
+   ship route intensities (home, workspace, utility) that were designed as the only dimming;
+   multiplying them by a scrim hid workspace art almost completely.
+3. The app. Page backgrounds use **canvas tokens** (`canvas`, `canvasSidebar`, `canvasWorkspace`).
+   They equal `surface0`, `surfaceSidebar`, and `surfaceWorkspace` until a skin is drawn, then
    turn `transparent` for every area the user shows art behind.
 
 Page backgrounds nest: stack screen, screen root, pane, panel. Translucent page tokens would
-compound into an opaque stack, so readability comes from the single scrim and nested pages are
-clear. `ThemedStack` also gives React Navigation a transparent `colors.background`, because the
+compound into an opaque stack, so nested pages are clear and the art's own opacity carries the
+contrast. `ThemedStack` also gives React Navigation a transparent `colors.background`, because the
 navigator paints its own container under every screen.
 
 - Use a canvas token only for a page background: a screen, pane, sidebar, or header root that art
@@ -31,23 +34,32 @@ navigator paints its own container under every screen.
 
 Skin parameters such as the image, blur, and visibility live in the skins store, not in the
 Unistyles theme. `AppearanceStyleBoundary` remounts screens when its key tokens change, so a value
-that changes while previewing or dragging a control must not be in that key. Only the canvas
-tokens change, through `skins/apply-surfaces.ts`, which patches every registered theme the way
-`appearance/apply.ts` does.
+that changes while previewing or dragging a control must not be in that key. The canvas tokens
+change only when a skin starts or stops being drawn, through `skins/apply-surfaces.ts`, which
+patches every registered theme the way `appearance/apply.ts` does.
 
-## Contrast gate
+The skins store is persisted, and zustand's `persist` writes storage on every change. While the
+Art visibility or Blur slider is dragged, its value goes to a second, unpersisted store
+(`previewSkinVisibility`, `previewSkinBlur`), which the backdrop reads first; the slider writes the
+persisted store once, on release. Route new live controls the same way.
 
-Paseo sizes the scrim, so a skin cannot make text unreadable. `skins/contrast.ts` finds the
-smallest scrim alpha at which `foregroundMuted` keeps 4.5:1 over `surface0` (7:1 when the OS asks
-for more contrast). It measures against the worst pixel of the art: the brightest 1% on dark themes
-and the darkest 1% on light themes. Pure white or pure black is assumed when the image was not
+## Contrast limit
+
+Paseo caps the art's opacity, so a skin cannot make text unreadable. `computeArtLimit` in
+`skins/contrast.ts` finds the largest opacity at which `foreground` keeps 4.5:1 and
+`foregroundMuted` keeps 3:1 against `surface0` blended with the worst pixel of the art (7:1 and
+4.5:1 when the OS asks for more contrast). The worst pixel is the brightest 1% on dark themes and
+the darkest 1% on light themes; pure white or pure black is assumed when the image was not
 measured. Blending is gamma-encoded sRGB, which is how Chromium composites; a linear-light model
 would let too much art through.
 
-The user's **Art visibility** control only moves toward opaque from that floor. Measured luminance
+Muted text sits at the 3:1 tier on purpose. Paseo's light muted grey is only 4.83:1 on plain
+white, so holding it at 4.5:1 over art left 3–5% of any image visible in light themes. Users who
+need more get it from the OS More Contrast setting.
+
+The user's **Art visibility** control scales the limit down, never past it. Measured luminance
 matters: web clients and plugins that ship `luminance` let much more art show than the unmeasured
-worst case. Dark art under a light theme (or bright art under a dark theme) gets a near-opaque
-scrim, which is why the gallery can apply a skin to the light or dark scheme separately.
+worst case.
 
 ## Cache and offline
 
@@ -58,12 +70,17 @@ and thumbnails). The cache is IndexedDB with `blob:` URLs on web and Electron, a
 document directory on native. When a connected plugin contributes a new `version` of a selected
 skin, the backdrop re-fetches it. The selection is per device and per color scheme.
 
+On Electron the open dialog returns a filesystem path, and the renderer cannot `fetch` it: the
+packaged app serves pages from the `paseo://` scheme, so the path resolves inside the app bundle.
+Import desktop files through the desktop bridge, as
+`screens/settings/appearance/background/picked-image.ts` does.
+
 `skins/plugin-cache.ts` implements `client.applySkin` and must not import the plugin registry:
 `plugins/evaluate.ts` imports it, and the registry imports `evaluate.ts`.
 
-Blur renders the `small` variant with `blurRadius`. It does not use `backdrop-filter`: live
-backdrop blur behind scrolling content costs GPU readback on every frame and lags with hardware
-acceleration off.
+Blur is a radius from 0 to 32 px; 0 draws the `display` variant sharp, anything above renders the
+`small` variant with `blurRadius`. It does not use `backdrop-filter`: live backdrop blur behind
+scrolling content costs GPU readback on every frame and lags with hardware acceleration off.
 
 ## Accessibility
 

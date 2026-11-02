@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { projectAgentMessages } from "./agent-messages/envelope.js";
 import {
   buildAgentBranchNameSeed,
   buildAgentPrompt,
@@ -37,6 +38,87 @@ describe("prompt attachments", () => {
     ]);
   });
 
+  it("introduces each referenced attachment with its inline label after the text", () => {
+    const file = {
+      type: "uploaded_file" as const,
+      id: "f1",
+      fileName: "notes.pdf",
+      mimeType: "application/pdf",
+      size: 10,
+      path: "/tmp/uploads/notes.pdf",
+    };
+    const unreferenced = {
+      type: "uploaded_file" as const,
+      id: "f2",
+      fileName: "other.txt",
+      mimeType: "text/plain",
+      size: 3,
+      path: "/tmp/uploads/other.txt",
+    };
+
+    expect(
+      buildAgentPrompt(
+        "Compare [Image #1] with [File #2]",
+        [
+          { data: "first", mimeType: "image/png" },
+          { data: "second", mimeType: "image/png" },
+        ],
+        [unreferenced, file],
+        [
+          { label: "Image #1", imageIndex: 0 },
+          { label: "File #2", attachmentIndex: 1 },
+          { label: "Image #9", imageIndex: 7 },
+        ],
+      ),
+    ).toEqual([
+      {
+        type: "text",
+        text: "Compare [Image #1] with [File #2]",
+        placeholders: ["[Image #1]", "[File #2]"],
+      },
+      { type: "text", mimeType: "text/plain", text: "[Image #1]:" },
+      { type: "image", data: "first", mimeType: "image/png" },
+      { type: "image", data: "second", mimeType: "image/png" },
+      unreferenced,
+      { type: "text", mimeType: "text/plain", text: "[File #2]: /tmp/uploads/notes.pdf" },
+    ]);
+  });
+
+  it("replays a labeled prompt as the text the user typed", () => {
+    const typed = "Compare [Image #1] with [File #2]\n[Image #1]: the left side";
+    const prompt = buildAgentPrompt(
+      typed,
+      [{ data: "first", mimeType: "image/png" }],
+      [
+        {
+          type: "uploaded_file",
+          id: "f1",
+          fileName: "notes.pdf",
+          mimeType: "application/pdf",
+          size: 10,
+          path: "/tmp/uploads/notes.pdf",
+        },
+      ],
+      [
+        { label: "Image #1", imageIndex: 0 },
+        { label: "File #2", attachmentIndex: 0 },
+      ],
+    );
+    if (!Array.isArray(prompt)) throw new Error("expected content blocks");
+    // Provider history returns every text part of the turn, as Claude and OMP transcripts do.
+    const replayed = prompt
+      .flatMap((block) =>
+        block.type === "image"
+          ? []
+          : [block.type === "text" ? block.text : renderPromptAttachmentAsText(block)],
+      )
+      .join("\n\n");
+
+    expect(projectAgentMessages({ type: "user_message", text: replayed })).toEqual([
+      { type: "user_message", text: typed },
+    ]);
+  });
+
   it("renders github_pr attachments as readable text", () => {
     expect(
       renderPromptAttachmentAsText({
@@ -69,13 +151,13 @@ describe("prompt attachments", () => {
     ).toContain("GitLab MR !123: Fix race in worktree setup");
   });
 
-  it("renders review attachments with compact file, line, comment, and context details", () => {
+  it.each(["base", "uncommitted", "all"] as const)("renders %s reviews", (mode) => {
     expect(
       renderPromptAttachmentAsText({
         type: "review",
         mimeType: "application/paseo-review",
         cwd: "/tmp/repo",
-        mode: "base",
+        mode,
         baseRef: "main",
         comments: [
           {
@@ -111,7 +193,7 @@ describe("prompt attachments", () => {
       }),
     ).toBe(
       [
-        "Paseo review attachment (base)",
+        `Paseo review attachment (${mode})`,
         "CWD: /tmp/repo",
         "Base: main",
         "",

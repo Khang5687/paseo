@@ -1,3 +1,4 @@
+import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import { SessionDelivery } from "./session/owned-subscriptions/index.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
@@ -71,6 +72,18 @@ const sessionMock = vi.hoisted(() => {
     wantsSourceEvent = (source: object) => !this.delivery.isModern(source);
     getSessionId = vi.fn(() => "mock-session-id");
     getPermissions = vi.fn(() => this.args.permissions as string[]);
+    setPermissions = (permissions: string[]) => {
+      this.args.permissions = permissions;
+    };
+    private routed = false;
+    setRouted = (routed: boolean) => {
+      this.routed = routed;
+    };
+    isRouted = () => this.routed;
+    setHostSource = (sourceId: string) => {
+      this.args.sourceId = sourceId;
+    };
+    getHostSourceId = () => this.args.sourceId as string;
     allowsInbound = vi.fn(() => true);
     allowsPermission = vi.fn(() => true);
     publish = vi.fn((message: unknown) => {
@@ -116,7 +129,10 @@ vi.mock("./push/index.js", () => ({
 }));
 
 import { z } from "zod";
-import { VoiceAssistantWebSocketServer } from "./websocket-server";
+import {
+  RELAY_HELLO_REJECTION_CLOSE_DELAY_MS,
+  VoiceAssistantWebSocketServer,
+} from "./websocket-server";
 import { DAEMON_PERMISSIONS, parseServerInfoStatusPayload } from "./messages.js";
 import type { SpeechReadinessSnapshot } from "./speech/speech-runtime.js";
 
@@ -219,6 +235,30 @@ class MockSocket {
   }
 }
 
+/**
+ * Models the hosted relay: a daemon frame reaches the client a moment after the
+ * daemon sends it, and a daemon close drops every frame still in flight.
+ */
+class InFlightDroppingRelaySocket extends MockSocket {
+  delivered: unknown[] = [];
+  private inFlight = new Set<NodeJS.Timeout>();
+
+  override send(data: unknown): void {
+    super.send(data);
+    const timer = setTimeout(() => {
+      this.inFlight.delete(timer);
+      this.delivered.push(data);
+    }, 20);
+    this.inFlight.add(timer);
+  }
+
+  override close(code?: number, reason?: string): void {
+    for (const timer of this.inFlight) clearTimeout(timer);
+    this.inFlight.clear();
+    super.close(code, reason);
+  }
+}
+
 function createLogger() {
   const logger = {
     child: vi.fn(() => logger),
@@ -273,6 +313,7 @@ function createServer(options?: {
     null,
     { allowedOrigins: new Set(), startPaused: options?.startPaused },
     createWorkspaceAutoNameStub(),
+    createWorkspaceRuntimeStore(),
     options?.auth,
     speechReadiness
       ? {
@@ -473,19 +514,30 @@ function holdNextSessionMessage(session: (typeof sessionMock.instances)[number])
 function holdSessionCleanup(session: (typeof sessionMock.instances)[number]): {
   finish: () => void;
 } {
-  let finish = () => {};
-  session.cleanup.mockImplementationOnce(
-    () =>
-      new Promise<void>((resolve) => {
-        finish = resolve;
-      }),
-  );
-  return {
-    finish: () => finish(),
-  };
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  session.cleanup.mockImplementationOnce(() => pending);
+  return { finish };
 }
 
 describe("relay external socket reconnect behavior", () => {
+  test("only a direct loopback socket counts as the host's own app for account sign-in", async () => {
+    const server = createServer();
+    const direct = new MockSocket();
+    const relay = new MockSocket();
+    await attachDirectAndHello({ server, socket: direct, clientId: "host-app" });
+    await attachRelayAndHello({ server, socket: relay, clientId: "phone" });
+    const [hostSession, phoneSession] = sessionMock.instances.slice(-2);
+    const hostLocal = (session: typeof hostSession, source: object | undefined) =>
+      (session.args.isHostLocalSource as (source: object | undefined) => boolean)(source);
+    expect(hostLocal(hostSession, direct)).toBe(true);
+    expect(hostLocal(phoneSession, relay)).toBe(false);
+    expect(hostLocal(hostSession, undefined)).toBe(false);
+    expect(hostLocal(hostSession, {})).toBe(false);
+  });
+
   test("closes only a hello socket when post-admission setup throws", async () => {
     const server = createServer();
     class ThrowOnceSocket extends MockSocket {
@@ -531,7 +583,7 @@ describe("relay external socket reconnect behavior", () => {
       await server.close();
     }
   });
-  test("admits a hello password and an old relay hello, but rejects a wrong password", async () => {
+  test("admits a relay hello password, but rejects a wrong or missing password", async () => {
     const server = createServer({
       auth: {
         password: "$2b$12$OLxyuuP9uLK30Uzc4wQX0O6liuU/Q1t5P2b0Ebf36mULvpVK3DRZW",
@@ -553,7 +605,8 @@ describe("relay external socket reconnect behavior", () => {
       const legacySocket = new MockSocket();
       await server.attachExternalSocket(legacySocket, { transport: "relay" });
       legacySocket.emit("message", JSON.stringify(createHelloMessage("relay-legacy")));
-      await vi.waitFor(() => expect(sentServerInfoEnvelopes(legacySocket)).toHaveLength(1));
+      await vi.waitFor(() => expect(legacySocket.readyState).toBe(3));
+      expect(sentServerInfoEnvelopes(legacySocket)).toHaveLength(0);
 
       const wrongSocket = new MockSocket();
       await server.attachExternalSocket(wrongSocket, { transport: "relay" });
@@ -564,14 +617,46 @@ describe("relay external socket reconnect behavior", () => {
           auth: { kind: "password", password: "wrong" },
         }),
       );
-      await vi.waitFor(() => expect(wrongSocket.readyState).toBe(3));
-      expect(wrongSocket.sent).toContain(
-        JSON.stringify({
-          type: "hello.rejected",
-          reason: "incorrect_password",
-          accepts: ["password"],
-        }),
+      const incorrectPasswordRejection = JSON.stringify({
+        type: "hello.rejected",
+        reason: "incorrect_password",
+        accepts: ["password"],
+      });
+      await vi.waitFor(() => expect(wrongSocket.sent).toContain(incorrectPasswordRejection));
+      await vi.advanceTimersByTimeAsync(RELAY_HELLO_REJECTION_CLOSE_DELAY_MS);
+      expect(wrongSocket.readyState).toBe(3);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("delivers a relay hello rejection to the client before closing", async () => {
+    const server = createServer({
+      auth: {
+        password: "$2b$12$OLxyuuP9uLK30Uzc4wQX0O6liuU/Q1t5P2b0Ebf36mULvpVK3DRZW",
+        localCredential: () => "local-token",
+      },
+    });
+    try {
+      const socket = new InFlightDroppingRelaySocket();
+      await server.attachExternalSocket(socket, { transport: "relay" });
+      socket.emit(
+        "message",
+        JSON.stringify(
+          createHelloMessage("relay-no-password", {
+            capabilities: { [CLIENT_CAPS.helloRejection]: true },
+          }),
+        ),
       );
+      const passwordRequired = JSON.stringify({
+        type: "hello.rejected",
+        reason: "password_required",
+        accepts: ["password"],
+      });
+      await vi.waitFor(() => expect(socket.sent).toContain(passwordRequired));
+      await vi.advanceTimersByTimeAsync(RELAY_HELLO_REJECTION_CLOSE_DELAY_MS);
+      expect(socket.readyState).toBe(3);
+      expect(socket.delivered).toContain(passwordRequired);
     } finally {
       await server.close();
     }
@@ -1141,10 +1226,12 @@ describe("relay external socket reconnect behavior", () => {
     expect(serverInfo.features?.stableProjectIdentity).toBe(true);
     expect(serverInfo.features?.canonicalSubmittedPrompts).toBe(true);
     expect(serverInfo.features?.providersSnapshotCwd).toBe(true);
+    expect(serverInfo.features?.hopliteProvider).toBe(false);
     expect(serverInfo.features?.pluginLogs).toBe(true);
     expect(serverInfo.features?.workspaceMarkUnread).toBe(true);
     expect(serverInfo.features?.["terminal-input-mode-replay"]).toBe(true);
     expect(serverInfo.features?.["terminal-size-ownership"]).toBe(true);
+    expect(serverInfo.features?.["terminal-grapheme-widths"]).toBe(true);
     expect(serverInfo.features?.agentTurnIdentity).toBeUndefined();
     expect(serverInfo.permissions).toEqual(DAEMON_PERMISSIONS);
     await server.close();

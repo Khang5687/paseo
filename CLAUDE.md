@@ -37,30 +37,39 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/floating-panels.md](docs/floating-panels.md)                   | Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash      |
 | [docs/menus.md](docs/menus.md)                                       | The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu                               |
 | [docs/expo-router.md](docs/expo-router.md)                           | Expo Router route ownership, startup restore, and native blank-screen gotchas                                                  |
+| [docs/notifications.md](docs/notifications.md)                       | Notification tap ownership, native replay and acknowledgement, startup handoff, and payload QA                                 |
+| [docs/notes.md](docs/notes.md)                                       | Notes on chat/terminal selections: host ownership, waiting-on events, shell integration coverage, the one-alert rule           |
 | [docs/file-icons.md](docs/file-icons.md)                             | Material icon theme integration for the file explorer                                                                          |
 | [docs/providers.md](docs/providers.md)                               | Adding a new agent provider end-to-end                                                                                         |
 | [docs/forge-providers.md](docs/forge-providers.md)                   | Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers                                  |
 | [docs/custom-providers.md](docs/custom-providers.md)                 | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries                                              |
 | [docs/plugins.md](docs/plugins.md)                                   | Local plugin manifest, directory source config, RPCs, native surfaces, and attachment sources                                  |
+| [docs/website-i18n.md](docs/website-i18n.md)                         | Website languages: locale URLs, translated Markdown pairs, `{#id}` anchors, Chinese style                                      |
 | [docs/service-proxy.md](docs/service-proxy.md)                       | Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config                                      |
+| [docs/relay-endpoint-security.md](docs/relay-endpoint-security.md)   | Relay E2EE modes: Noise NK mapping, record framing, negotiation, the `requireProtectedSecurity` flag, close codes              |
 | [docs/development.md](docs/development.md)                           | Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP                                                     |
 | [docs/rpc-namespacing.md](docs/rpc-namespacing.md)                   | WebSocket RPC naming convention — dotted namespaces and `.request`/`.response` pairs                                           |
 | [docs/protocol-compatibility.md](docs/protocol-compatibility.md)     | Why app/daemon versions drift, protocol vs feature contract, capability gating, COMPAT tagging                                 |
 | [docs/protocol-validation.md](docs/protocol-validation.md)           | zod-aot generated inbound WebSocket validation, patched compiler regressions, schema-purity rules                              |
+| [docs/connected-hosts.md](docs/connected-hosts.md)                   | Daemon-owned host registrations, routed SDK scopes, identity and authority boundaries                                          |
 | [docs/permissions.md](docs/permissions.md)                           | Semantic daemon permissions, principals, credentials, pairing invitations, and Hub authority                                   |
 | [docs/terminal-performance.md](docs/terminal-performance.md)         | Terminal latency pipeline, coalescing/backpressure invariants, benchmark + perf spec usage                                     |
+| [docs/terminal-rendering.md](docs/terminal-rendering.md)             | Native terminal view: xterm owns the grid, cluster placement, emoji widths, mixed-direction limits, render regression          |
 | [docs/agent-stream-performance.md](docs/agent-stream-performance.md) | Assistant text pipeline — coalescing window, paced reveal, why arrival lumps are smoothed at render                            |
+| [docs/markdown-renderer.md](docs/markdown-renderer.md)               | Shared Markdown engine, native selection, links, images and library constraints                                                |
+| [docs/native-text-selection.md](docs/native-text-selection.md)       | Native diagram grouping, selection boundaries and leading inline image limitations                                             |
 | [docs/file-observation.md](docs/file-observation.md)                 | Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison                                     |
 | [docs/testing.md](docs/testing.md)                                   | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
 | [docs/qa.md](docs/qa.md)                                             | QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof                                      |
 | [docs/mobile-testing.md](docs/mobile-testing.md)                     | Maestro and mobile test workflows                                                                                              |
 | [docs/mobile-panels.md](docs/mobile-panels.md)                       | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
-| [docs/explorer-sidebar.md](docs/explorer-sidebar.md)                 | Explorer sidebar and ordinary side-pane host contracts, lifecycle, placement, and routing preferences                          |
+| [docs/explorer-sidebar.md](docs/explorer-sidebar.md)                 | Explorer sidebar, side-pane, and compact workspace sheet host contracts, lifecycle, placement, routing preferences             |
 | [docs/ad-hoc-daemon-testing.md](docs/ad-hoc-daemon-testing.md)       | Isolated in-process daemon test harness                                                                                        |
 | [docs/browser-capture-harness.md](docs/browser-capture-harness.md)   | Real-Electron browser screenshot harness and compositor-surface gotcha                                                         |
 | [docs/android.md](docs/android.md)                                   | App variants, local/cloud builds, EAS workflows, version codes, F-Droid source builds and store metadata                       |
 | [docs/docker.md](docs/docker.md)                                     | Running the daemon and bundled web UI in Docker, volumes, agent images, security                                               |
 | [docs/release.md](docs/release.md)                                   | Release playbook, draft releases, completion checklist                                                                         |
+| [docs/terminal-worker.md](docs/terminal-worker.md)                   | Terminal worker process model, socket/record/secret, protocol-bump rule and draining, the worker's file copy, Windows desktop  |
 | [docs/terminal-activity.md](docs/terminal-activity.md)               | Terminal activity indicators — source-agnostic tracker, agent hook reporting, adding a new hook provider                       |
 | [SECURITY.md](SECURITY.md)                                           | Relay threat model, E2E encryption, DNS rebinding, agent auth                                                                  |
 | [public-docs/hub/security.md](public-docs/hub/security.md)           | Public Hub guide — trust boundaries, untrusted triggers, provider controls, and output authority                               |
@@ -104,6 +113,8 @@ npm run format:check                 # Check formatting without writing
 ```
 
 Repo dev commands use checkout-local state by default. In this checkout, `PASEO_HOME` resolves to `.dev/paseo-home`, and `npm run cli -- ...` targets that same dev home automatically. The packaged desktop app and production-style daemon keep using `~/.paseo` on port `6767`.
+
+When Mo requests an APK, use `npm run build:apk:arm64` for an ARM64 build: writes `artifacts/paseo-dogfood-arm64.apk` with diagnostics without starting a device; `npm run build:apk` builds all four Android architectures.
 
 See [docs/development.md](docs/development.md) for full setup, build sync requirements, and debugging.
 
@@ -149,10 +160,12 @@ Everything else is a short-lived work branch.
 - Do not rebase or force-push a branch that another agent's branch is stacked on. Add commits instead.
 - Never edit fork `main`, `CLAUDE.md`'s process sections, or another agent's branch to make your change work. The integrator's merges under Build it are the only writes to `main`. If the only way forward is a change to shared ground, stop and ask.
 - Shared surfaces that break parallel work when touched casually: `packages/protocol` (see protocol compatibility rules above), `OMP_HANDLED_BUILTIN_SLASH_COMMANDS`, event-mapper switch statements, `docs/` tables. If you must add to one, add; do not reorder or rename.
+- Design for the phone. Every app change ships to iOS and Android, where the compact layout and touch are the normal case. Hover, right-click, and keyboard shortcuts do not exist on a phone, so a feature reachable only through them needs a touch path (a menu item, long-press, or visible control) or a "desktop only, because …" line in the PR body. The code rules are in Platform gating below.
 
 ### Finishing a change
 
-1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body.
+1. Typecheck, lint, format, and run the specific test files you touched. Say what you ran in the PR body. For any change under `packages/app`, also fill in the platform table from [docs/qa.md](docs/qa.md#every-platform-it-affects). The owner's Mac has no iOS simulator or Android emulator, so the mobile check is the web app at phone width (390×844): `useIsCompactFormFactor()` is breakpoint-based, so that renders the compact layout phones get. Reach the change by tapping, not hovering or right-clicking, and attach the screenshot. The iOS and Android rows then read `Not run (no device); phone-width web checked`, plus anything native-only you could not check: `.native` files, the soft keyboard, safe areas.
+   Then register the change in `scripts/fork-features.json` under its PR number (see "Fork features and fork-check") and run `node scripts/fork-check.mjs --pr <N>`.
 2. Open the PR against fork `main`. Write it upstream-ready from the first draft: what was broken, why, what changed, how it was verified. The same branch is later opened against upstream with the body unchanged, so do not mention fork-only details in it.
 3. Mark the PR ready for review, set your handoff entry to `ready`, and stop. The agent's job ends here. It does not merge, does not touch fork `main`, and does not fold its work into any other branch.
 4. The integrator merges on "build it" (see Build it), with a merge commit, never squash or rebase:
@@ -190,19 +203,22 @@ The file has three sections: `## Open`, `## Merged`, `## Builds`. When you open 
 
 When the owner says "build it", one agent integrates. That agent is the only one that merges, and only then. "Build it except #N" leaves #N out.
 
-1. Read `~/git/paseo-HANDOFF.md`. Take every `## Open` entry with `status: ready`. Check each with `gh pr view <N> --json isDraft,state,mergeable`; skip drafts, closed PRs, and `CONFLICTING`.
-2. In the main checkout, merge in stack order, otherwise by PR number:
+1. Check disk first: `df -h /` needs at least 8 GB free. Below that, stop and ask the owner to free space; agents do not delete the owner's files to make room. Then read `~/git/paseo-HANDOFF.md`. Take every `## Open` entry with `status: ready`. Read each entry's `note:` line: it carries integration instructions (merge order, tests to register in `scripts/fork-features.json`, checks to run after the build).
+2. In the main checkout, on `main` with a clean tree, run the build with the PRs in stack order, otherwise by PR number. `--dry-run` first shows what it would do and changes nothing.
    ```bash
-   git checkout main && git pull --no-rebase origin main
-   git merge --no-ff <branch> -m "Merge #N: <PR title>"
+   git checkout main
+   node scripts/fork-build.mjs --pr <N> --pr <M>
    ```
-   If a merge conflicts, abort it (`git merge --abort`), set that entry to `blocked: conflicts with main after #M`, and continue with the rest. Conflicts are fixed on the branch, never on `main`.
-3. Sync upstream into `main` as in "Syncing with upstream" (`git fetch upstream && git merge --no-ff --no-edit upstream/main`), resolving any conflict on `main`.
-4. Run `npm ci`, `npm run build:server`, `npm run typecheck`, and `npm run lint`. If a check fails, revert the merge that broke it (`git revert -m 1 <merge>`), mark that entry blocked, and rerun.
-5. `git push origin main`, then `scripts/fork-update.sh --no-sync`. It builds and smoke-launches, then stops before install while Paseo runs. Never run the full script or `--install` (see Running the fork).
-6. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result.
-7. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays.
-8. Report to the owner what merged, what was skipped and why, and the install commands.
+   It pulls `origin/main`; merges upstream through `fork-sync --no-check` unless `main` already contains `upstream/main` (the nightly schedule usually applied it); merges each PR as `Merge #N: <PR title>`; runs `scripts/fork-prepare.mjs` (`npm ci` and the workspace builds, each only when its inputs changed) and one `fork-check --e2e` on the merged result; and pushes `main` only when that check passes. Then it runs the desktop build (`fork-update.sh --build-only`, smoke launch included), every remote host's `build`, and the APK (`scripts/fork-android-apk.mjs`) at the same time. It never installs or restarts anything. The summary, with per-step times and log paths, prints at the end and stays in `~/.paseo-fork-build/<time>/summary.md`.
+3. Act on the summary:
+   - **Skipped PRs.** Drafts, closed PRs and PRs that conflict are skipped and listed; set a conflicting entry to `blocked: conflicts with main after #M` (the summary names M). Conflicts are fixed on the branch, never on `main`.
+   - **Upstream sync conflicts.** The build goes on without the sync; report it. The owner, or an agent the owner asks, resolves it with `fork-sync --apply` (see "Syncing with upstream").
+   - **Check failed.** Nothing was pushed, and local `main` still has the merges. Find the PR that broke it in the report, run `git reset --hard origin/main`, set that entry to `blocked: <reason>`, and rerun without it.
+   - **Remote daemons.** For each host, `scripts/fork-remote-daemon.sh <host> restart`. It returns at once and the host switches to the new build by itself once nothing there is working; never pass `--now`. Report each host as switched or pending (`scripts/fork-remote-daemon.sh <host> status`).
+   - **Android APK.** The script builds the fork app ("Paseo Debug", `sh.paseo.debug`, arm64) to `~/Downloads/paseo-fork-main.apk`, refuses without `packages/app/.secrets/google-services.debug.json` and `packages/app/.secrets/eas.json` (without them the APK installs but never receives a push; see Running the fork), and checks package and version with `aapt2`. `npm run build:apk` builds the production variant (`sh.paseo`), which is the wrong app here. It needs 12 GB free (its JS bundle step once took the disk from 9.7 GB to 122 MB) and runs beside the desktop build only with 20 GB free; otherwise it waits for the desktop build or is skipped. If it was skipped, report it; once the owner frees space, run `node scripts/fork-android-apk.mjs` alone. It reruns `expo prebuild --clean` only when the native config changed and keeps `packages/app/android` between builds; agents may not delete it, so put the build dir size it prints in the report.
+4. Move each merged entry to `## Merged` as one line (`#N branch: merge <sha>, <date>`) and keep the last 10. Add one line under `## Builds`: date, `main` sha, PRs included, smoke result, each remote host's result, APK path.
+5. Remove the worktree of each merged entry: `git worktree remove ../paseo-<slug>`. Each worktree holds its own ~2.4 GB `node_modules`, so worktrees live only as long as their PR is open. Skip one that has uncommitted changes, unpushed commits, or an agent still working in it (`list_agents` cwd), and say so in the report. The branch stays. `../paseo-sync` is not a PR worktree; it stays.
+6. Report to the owner what merged, what was skipped and why, the upstream sync result, which remote hosts switched or why not, the timing table, and the install steps: the Mac app (`scripts/fork-update.sh --install`, any time; the window restarts on the new build and the daemon switches once nothing is working) and the phone (send `~/Downloads/paseo-fork-main.apk` to the phone and tap it; it updates Paseo Debug in place).
 
 ### Upstream PRs
 
@@ -225,47 +241,66 @@ Task: <one sentence: what is broken or missing, and what done looks like>.
 Branch: <type>/<area>-<what>, cut from upstream/main (or "stacked on <branch>").
 Worktree: already created if you were launched as a Paseo worktree workspace; otherwise `git worktree add ../paseo-<slug> <branch>`.
 Scope: only this. Note anything else you find in the PR body under "Seen but not fixed".
+Mobile: check the change in the web app at phone width (390×844), reached by tapping, and fill in the docs/qa.md platform table in the PR body.
 Done: draft PR against Khang5687/paseo main, body upstream-ready, marked ready for review. Do not merge.
 Handoff: add your entry to ~/git/paseo-HANDOFF.md when the draft PR opens; set it to ready when done.
+Fork check: add your entry to scripts/fork-features.json with the tests that prove the change.
 Read CLAUDE.md "Fork workflow" first.
 ```
 
 When launching from Paseo, use a worktree workspace (`create_workspace` with `isolation: worktree`, `baseBranch: upstream/main`, `branchName: <type>/<area>-<what>`) so the branch and worktree exist before the agent starts; the brief then only names them. Five agents with five such briefs produce five independent PRs and five handoff entries. The integrator merges the ready ones on "build it", and the owner opens upstream PRs from the same branches later.
 
+### Fork features and fork-check
+
+`scripts/fork-features.json` lists every fork PR merged on `main` with the test files and Playwright specs that prove it works (`tests`, `e2e`). `node scripts/fork-check.mjs` runs typecheck, lint, and those tests, and reports pass or fail per PR. Add `--e2e` for the specs (it starts its own Metro and daemon), `--pr <N>` to check one feature, `--no-static` to skip typecheck and lint. Build the workspace packages first (`node scripts/fork-prepare.mjs` installs and builds only what changed).
+
+- Name tests that fail when the feature breaks. A file you only touched in passing does not prove anything.
+- A PR with nothing to test (docs, build scripts) gets an `"untested": "<reason>"` instead.
+- When upstream ships its own version of a fork feature and you delete ours, keep the entry and add `"retired": "<reason>"`. The check skips it.
+- fork-check fails when a merged fork PR has no entry or a listed test no longer exists. A missing test usually means upstream moved or deleted it, so find where the coverage went before you edit the list.
+
 ### Syncing with upstream
 
-Only the owner or an agent the owner asked does this. `scripts/fork-update.sh` does it as its first step (see below); by hand:
+Never merge upstream straight into `main`. `node scripts/fork-sync.mjs` practice-merges `upstream/main` into fork `main` in a separate worktree, `../paseo-sync`, and writes a report to `~/.paseo-fork-sync/last-report.md`:
 
-```bash
-git fetch upstream
-git checkout main && git merge upstream/main && git push origin main
-```
+- upstream commits that change lines within 3 lines of code a fork PR wrote, grouped by PR. `git blame` on fork `main` names the PR, so this needs no upkeep. This is where upstream replaces or breaks fork work, so read it first. It cannot see a change in a file the fork never edited; the tests catch those.
+- merge conflicts, each with the fork PR that wrote our side.
+- the fork-check result on the merged tree, e2e included.
 
-Resolve conflicts on `main`. Open work branches do not need rebasing; they are still based on an older `upstream/main`, which is fine until their PR conflicts.
+Without `--apply` it only rehearses. A Paseo schedule runs `--apply-if-green` every night: when upstream merges cleanly and every check passes it pushes the merge, so `main` is usually level with upstream before "build it"; on conflicts it aborts the merge, on failures it leaves `main` alone, and it reports either way. `--apply` pushes the merge to `main` when every check passes; on conflicts it leaves the merge in `../paseo-sync`. Resolve conflicts and fix anything upstream broke there, as commits on top of the merge, then run `node scripts/fork-sync.mjs --apply --resume`. `--no-check` only merges and reports; `fork-build.mjs` uses it so one check covers the sync and the PRs together. With nothing to merge, no mode installs or checks anything. Exit codes: 0 up to date or green, 1 checks failed, 2 conflicts, 3 another fork-sync is already running (they share `../paseo-sync`; wait for it).
+
+Only the owner, the nightly schedule, or an agent the owner asked syncs. `../paseo-sync` is long-lived: it keeps its `node_modules` between runs, and `fork-prepare` reinstalls and rebuilds there only what changed. Open work branches do not need rebasing; they are still based on an older `upstream/main`, which is fine until their PR conflicts.
 
 ### Running the fork
 
-The owner runs a desktop app built from fork `main` in place of the published Paseo.app. After merging PRs, run `scripts/fork-update.sh` on `main`: it syncs upstream, builds the macOS app, and installs it to `/Applications/Paseo.app`. While any Paseo process runs (the daemon can outlive the window) it stops after the build; quit Paseo, run `paseo daemon stop`, then `scripts/fork-update.sh --install`. Stopping the daemon stops every running agent, so the owner picks the moment; agents never run `--install`.
+The owner runs a desktop app built from fork `main` in place of the published Paseo.app. After merging PRs, run `scripts/fork-update.sh` on `main`: it syncs upstream through `fork-sync --apply` (stopping if a check fails or a merge conflicts), builds the macOS app, and installs it to `/Applications/Paseo.app`; `--install` installs the last build.
+
+Install anytime, even while agents work. The daemon runs from its own copy of a build in `~/.paseo/fork-daemon/` (`scripts/fork-daemon.sh`), not from the app bundle, so installing restarts only the window. The daemon keeps running and switches to the new build by itself once nothing is working: no agent running or initializing, no running provider subagent, no pending permission, no queued message about to send, no schedule run in progress. It checks every 30 s and stops with `--keep-terminals`, so terminals survive. `scripts/fork-update.sh --restart-now` switches at once; restart recovery resumes the agents it interrupts. The wait logs to `~/.paseo/fork-daemon/swap.log`; `scripts/fork-daemon.sh status` shows the releases and a waiting switch, and `scripts/fork-daemon.sh rollback [--now]` goes back one release. A release whose daemon does not come up healthy is marked failed and the previous release starts again.
+
+The app starts its daemon through `~/.paseo/fork-daemon/launch` when that file exists (`packages/desktop/src/daemon/external-daemon-launcher.ts`). It never captures a daemon started that way, so quitting the window leaves the daemon running whatever "Keep daemon running after quit" says, and an older daemon is attached to, not restarted. A daemon the app started from its own bundle, as every fork build before this flow did, cannot have the bundle replaced under it: the first `--install` stages the build, moves that daemon into its own copy once nothing is working, and leaves the window alone. Run `--install` again after that to update the window.
 
 Fork builds have no update feed (`--dir` builds write no `app-update.yml`), so the app never auto-updates back to stock Paseo. The `[auto-updater] … app-update.yml` ENOENT lines in its log are expected. Builds are ad-hoc signed and not notarized.
+
+The fork Android app ("Paseo Debug") gets push notifications through the owner's own Firebase project (`paseo-fork-98618`) and Expo project (`khangworks-team/voice-mobile`), since upstream's credentials cannot deliver to a fork build. Two gitignored files in the main checkout turn it on: `packages/app/.secrets/google-services.debug.json` and `packages/app/.secrets/eas.json` (`projectId`, `owner`, read by `app.config.js`). Without them an APK builds fine but never receives a push. The FCM private key is uploaded to the Expo project's credentials; a private copy lives in `~/.paseo-fork-secrets/`.
 
 The owner's Paseo.app is their only way to reach their agents. These rules come from a fork build that was installed under a running daemon and then could not open:
 
 - **Build and install the desktop app only through `scripts/fork-update.sh`.** Do not run `electron-builder`, `npm run build:desktop`, `codesign`, or `ditto` against `/Applications/Paseo.app` by hand. Change the script instead, in its own PR.
 - **Ad-hoc signing needs `hardenedRuntime=false`.** With hardened runtime on, every ad-hoc binary has no Team ID, library validation refuses to load `Electron Framework`, and the app dies at launch with a `dyld … different Team IDs` error. The upstream `electron-builder.yml` turns hardened runtime on for notarized releases; the script overrides it.
 - **Every build runs the packaged smoke launch (`PASEO_DESKTOP_SMOKE=1`)**, which starts the built app in an isolated home and port. A build that fails it is never installed. Do not skip it to save time.
-- **Never install while any Paseo process runs.** The daemon runs as `Paseo Helper` and outlives the window; checking only for the window misses it. Replacing the bundle under a running daemon leaves it running deleted code.
-- **Agents never install.** An agent may build (`--no-sync`) and report; only the owner runs `--install` or the full script, after quitting Paseo and `paseo daemon stop`.
-- **Keep the rollback.** Install moves the old app to `/Applications/Paseo.previous.app`. If the new app does not open: `rm -rf /Applications/Paseo.app && mv /Applications/Paseo.previous.app /Applications/Paseo.app`. To diagnose, run `/Applications/Paseo.app/Contents/MacOS/Paseo` from a terminal; launch errors print there, not in a dialog.
+- **Never replace the bundle under a process running from it.** Replacing the bundle under a running daemon leaves it running deleted code, which is why the daemon runs from `~/.paseo/fork-daemon/`. `--install` quits the window first and refuses while anything else but a terminal worker still runs from `/Applications/Paseo.app`. A daemon runs as `Paseo Helper`, so check its executable path, not its name.
+- **Agents never install.** An agent may build (`--build-only`, which `fork-build.mjs` runs) and report; only the owner runs `--install`, `--restart-now`, or the full script.
+- **Keep the rollback.** Install moves the old app to `/Applications/Paseo.previous.app`. If the new app does not open: quit it, then `rm -rf /Applications/Paseo.app && mv /Applications/Paseo.previous.app /Applications/Paseo.app`; the daemon is not involved. `scripts/fork-daemon.sh rollback --now` rolls back the daemon. To diagnose, run `/Applications/Paseo.app/Contents/MacOS/Paseo` from a terminal; launch errors print there, not in a dialog.
+
+Remote daemons the owner reaches over SSH (Omen) run fork `main` too, or their agents lose fork daemon features such as the daemon-owned queue: against a stock daemon the app falls back to a queue held in the app, which stops when that device sleeps. `scripts/fork-remote-daemon.sh <ssh-host> build|restart|rollback|npm` builds fork `main` in its own directory on the host and points the host's `paseo.service` at it through a systemd drop-in, leaving the owner's unit file alone; `npm` removes the drop-in and returns to the npm-installed daemon. `fork-update.sh` builds every host listed in `~/.paseo-fork-remotes` (one SSH alias per line) and switches them on install. `restart`, `rollback` and `npm` return at once and leave a waiter on the host that switches once nothing there is working, by the same rule as the Mac (log: `~/paseo-fork/swap.log` on the host). The switch stops the daemon with `--keep-terminals`; the drop-in sets `KillMode=process`, since systemd otherwise kills the terminal worker with the rest of the unit. `--now` switches at once and is the owner's call; agents never pass it. Pair the phone with each remote host directly (`paseo daemon pair --relay` on the host), not through the Mac: a route through the Mac goes away when the Mac sleeps.
 
 Daemon-only changes work with the store mobile app. App changes (composer, timeline UI) show only in fork-built clients.
 
 ## Release branches
 
-When the user says "this goes to next", create or
-retarget the PR to `next` and preserve that destination through delivery. Follow
-[release branch discipline](docs/release.md#release-branch-discipline) for creating
-and updating `next`, integrating it after a release, and releasing a hotfix from a tag.
+Merge normal PRs into `main`, including while a beta soaks or a release is being finalized. Each
+release builds in a short-lived release workspace from `origin/main` or a release tag; see
+[release base and source](docs/release.md#release-base-and-source).
 
 ## Critical rules
 

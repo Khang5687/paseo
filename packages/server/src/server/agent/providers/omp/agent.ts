@@ -1,7 +1,9 @@
 import { mapCustomMessageToToolCall } from "../custom-message.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
+import path from "node:path";
 import { setImmediate as waitForImmediate, setTimeout as delay } from "node:timers/promises";
 import type { Logger } from "pino";
 import stripAnsi from "strip-ansi";
@@ -30,6 +32,7 @@ import {
   type AgentStreamEvent,
   type AgentTimelineItem,
   type FetchCatalogOptions,
+  type ForkedNativeSession,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
   type ImportProviderSessionInput,
@@ -53,6 +56,18 @@ import {
 import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
 import { composeSystemPromptParts } from "../../system-prompt.js";
 import {
+  APPENDED_BUILTIN_OUTPUT_STYLES,
+  buildOutputStyleFeature,
+  DEFAULT_OUTPUT_STYLE,
+  discoverOutputStyleFiles,
+  mergeOutputStyles,
+  OUTPUT_STYLE_FEATURE_ID,
+  readOutputStyleValue,
+  renderOutputStylePrompt,
+  type DiscoverOutputStyles,
+  type OutputStyle,
+} from "../../output-styles.js";
+import {
   buildBinaryDiagnosticRows,
   buildCommandResolutionDiagnosticRows,
   formatProviderDiagnostic,
@@ -69,11 +84,13 @@ import {
   type OmpRuntimeOptions,
 } from "./provider-config.js";
 export { formatOmpVersionSupport, resolveOmpDiagnosticPaths } from "./provider-config.js";
-import { OmpSubagentCardTracker, type OmpSubagentCardScheduler } from "./subagent-card-tracker.js";
+import { OmpSubagentCardTracker } from "./subagent-card-tracker.js";
 import { ompSkillPromptUserText, shouldDisplayOmpCustomMessage } from "./custom-message.js";
 import { getUserMessageText } from "./message-history.js";
 import { mapOmpSystemNoticeToNotification } from "./system-notice.js";
 import { materializeProviderImage } from "../provider-image-output.js";
+import type { AccountRoutingAuthority } from "../../../account-routing/authority.js";
+import type { OmpHostRouting, OmpRoutingAuthority } from "./account-routing-bridge.js";
 import { OmpCliRuntime } from "./cli-runtime.js";
 import { listOmpImportableSessions, readOmpImportSessionConfig } from "./session-descriptor.js";
 import type { OmpRuntime, OmpRuntimeSession, OmpStartSessionInput } from "./runtime.js";
@@ -115,6 +132,9 @@ import {
 import { DEFAULT_OMP_THINKING_LEVEL, mapOmpModel } from "./map-omp-model.js";
 
 const OMP_PROVIDER = "omp";
+// "Always Ask": every write and exec tool asks for approval, so a copy answering questions reads freely
+// while the approvals it raises are denied.
+const OMP_READ_ONLY_MODE_ID = "ask";
 const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
@@ -132,11 +152,13 @@ export interface OmpAgentClientOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
   runtime?: OmpRuntime;
-  subagentCardScheduler?: OmpSubagentCardScheduler;
   providerIdleScheduler?: OmpProviderIdleScheduler;
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
+  discoverOutputStyles?: DiscoverOutputStyles;
+  /** Host routing authority. Absent means every launch is an independent OMP. */
+  accountRouting?: OmpRoutingAuthority & Partial<Pick<AccountRoutingAuthority, "snapshotForAgent">>;
 }
 
 export interface OmpProviderIdleScheduler {
@@ -210,17 +232,20 @@ interface OmpAgentSessionOptions {
   initialState: OmpSessionState;
   currentModeId?: string | null;
   logger: Logger;
-  subagentCardScheduler?: OmpSubagentCardScheduler;
   providerIdleScheduler?: OmpProviderIdleScheduler;
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
+  /** "default" plus the custom styles; OMP has no copy of Claude Code's built-in style text. */
+  outputStyles: readonly OutputStyle[];
   /**
    * When false (resumed sessions), replayed session events are dropped until
    * the first prompt or agent_start so history is not re-emitted as live
    * timeline items.
    */
   live?: boolean;
+  /** Owned routing for this launch; `agentId` is the trusted host agent. */
+  usageRouting?: { agentId: string; snapshotForAgent: AccountRoutingAuthority["snapshotForAgent"] };
 }
 
 function createOmpProviderIdleScheduler(): OmpProviderIdleScheduler {
@@ -322,9 +347,9 @@ function ompModelSupportsImageInput(model: OmpModel | null | undefined): boolean
   return model?.input?.includes("image") === true;
 }
 
-function renderTextOnlyImageHint(image: { data: string; mimeType: string }): string {
+async function renderTextOnlyImageHint(image: { data: string; mimeType: string }): Promise<string> {
   try {
-    const materialized = materializeProviderImage({
+    const materialized = await materializeProviderImage({
       data: image.data,
       mimeType: image.mimeType,
     });
@@ -334,10 +359,10 @@ function renderTextOnlyImageHint(image: { data: string; mimeType: string }): str
   }
 }
 
-function convertPromptInput(
+async function convertPromptInput(
   prompt: AgentPromptInput,
   options: { model: OmpModel | null | undefined },
-): OmpPromptPayload {
+): Promise<OmpPromptPayload> {
   if (typeof prompt === "string") {
     return { text: prompt };
   }
@@ -360,7 +385,7 @@ function convertPromptInput(
           mimeType: block.mimeType,
         });
       } else {
-        textParts.push(renderTextOnlyImageHint(block));
+        textParts.push(await renderTextOnlyImageHint(block));
       }
       continue;
     }
@@ -456,6 +481,7 @@ function buildResumeStartInput(input: {
   sessionFile: string;
   launchContext: AgentLaunchContext | undefined;
   launchMode: { modeId: string | null; extraArgs?: string[] };
+  outputStyles: readonly OutputStyle[];
 }): OmpStartSessionInput {
   return {
     cwd: input.resumeConfig.cwd,
@@ -465,11 +491,33 @@ function buildResumeStartInput(input: {
     thinkingOptionId: normalizeOmpThinkingOption(input.resumeConfig.thinkingOptionId) ?? undefined,
     ...(input.launchMode.modeId ? { modeId: input.launchMode.modeId } : {}),
     ...(input.launchMode.extraArgs ? { extraArgs: input.launchMode.extraArgs } : {}),
-    systemPrompt: composeSystemPromptParts(
-      input.resumeConfig.config.systemPrompt,
-      input.resumeConfig.config.daemonAppendSystemPrompt,
-    ),
+    systemPrompt: composeOmpSystemPrompt(input.resumeConfig.config, input.outputStyles),
   };
+}
+
+function buildOmpOutputStyleFeatures(
+  outputStyles: readonly OutputStyle[],
+  config: AgentSessionConfig,
+): AgentFeature[] {
+  return [
+    buildOutputStyleFeature({
+      styles: outputStyles,
+      value: readOutputStyleValue(config.featureValues) ?? DEFAULT_OUTPUT_STYLE,
+    }),
+  ];
+}
+
+// OMP has no output-style setting, so the selected style's text rides on --append-system-prompt.
+function composeOmpSystemPrompt(
+  config: AgentSessionConfig,
+  outputStyles: readonly OutputStyle[],
+): string | undefined {
+  const selected = readOutputStyleValue(config.featureValues);
+  return composeSystemPromptParts(
+    config.systemPrompt,
+    config.daemonAppendSystemPrompt,
+    renderOutputStylePrompt(outputStyles.find((style) => style.name === selected)),
+  );
 }
 
 function readNativeMessageId(
@@ -617,6 +665,21 @@ function createRuntime(
   });
 }
 
+// Mirrors OMP's own session delete: the journal, its artifacts directory (subagent sessions and
+// spilled tool output), and the publish lock files OMP keeps beside the journal.
+async function removeOmpSessionFiles(sessionFile: string): Promise<void> {
+  const directory = path.dirname(sessionFile);
+  const name = path.basename(sessionFile);
+  await Promise.all([
+    rm(sessionFile, { force: true }),
+    ...(name.endsWith(".jsonl")
+      ? [rm(sessionFile.slice(0, -".jsonl".length), { recursive: true, force: true })]
+      : []),
+    rm(path.join(directory, `.${name}.lock`), { force: true }),
+    rm(path.join(directory, `.${name}.lock.os`), { force: true }),
+  ]);
+}
+
 class OmpHistorySession implements AgentSession {
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags = withOmpCapabilities();
@@ -713,6 +776,7 @@ export class OmpAgentSession implements AgentSession {
   // Bumped by every run start and yield: a wait for provider idle belongs to the latest
   // yield, and a goal continuation's run ends with its own yield and its own wait.
   private providerIdleWait = 0;
+  private outOfBandTurnStartAnnounced = false;
   private activeTurnHasUserMessage = false;
   private activeNoTurnPromptText: string | null = null;
   private readonly pendingNoTurnOutputs: Array<{ turnId: string; message: string }> = [];
@@ -722,9 +786,7 @@ export class OmpAgentSession implements AgentSession {
   private readonly pendingPromptResults = new Map<string, OmpPromptResult>();
   private pendingNoTurnCompletionAbort: AbortController | null = null;
   private lastKnownThinkingOptionId: string | null;
-  private outOfBandCompactionEmit: ((event: AgentStreamEvent) => void) | null = null;
-  private outOfBandCompactionStarted = false;
-  private outOfBandCompactionCompleted = false;
+  private manualCompactionRunning = false;
   private commandCache: AgentSlashCommand[] | null = null;
   private commandRefresh: Promise<AgentSlashCommand[]> | null = null;
   private lastCommandRefreshAt: number | null = null;
@@ -745,22 +807,37 @@ export class OmpAgentSession implements AgentSession {
   // A resumed session already has context usage, but OMP only reports it during turns.
   private usageRefreshPending: boolean;
   private readonly emittedUserMessageIds = new Set<string>();
+  // User entries that existed before the current turn's prompt; a live echo never resolves to one.
+  private userEntriesBeforeTurn: Promise<ReadonlySet<string>> = Promise.resolve(new Set());
+  // Native ID lookups resolve in message_end order so each echo takes its own client message.
+  private userMessageEchoTail: Promise<void> = Promise.resolve();
 
   private readonly usageSessionKey = randomUUID();
+  private readonly usageRouting?: OmpAgentSessionOptions["usageRouting"];
 
   usageSession() {
     const env = this.runtimeSession.environment;
     if (this.closed) return null;
+    const routing = this.usageRouting;
     return {
       provider: "omp",
       model: modelToId(this.state.model) ?? undefined,
       env,
       sessionKey: this.usageSessionKey,
+      ...(routing
+        ? {
+            managedRouting: {
+              agentId: routing.agentId,
+              ...routing.snapshotForAgent(routing.agentId),
+            },
+          }
+        : {}),
     };
   }
 
   constructor(options: OmpAgentSessionOptions) {
     this.runtimeSession = options.runtimeSession;
+    this.usageRouting = options.usageRouting;
     this.hostTools = options.hostTools;
     this.restartRuntime = options.restartRuntime;
     this.config = options.config;
@@ -768,6 +845,7 @@ export class OmpAgentSession implements AgentSession {
     this.currentModeId = options.currentModeId ?? null;
     this.logger = options.logger;
     this.live = options.live ?? true;
+    this.outputStyles = options.outputStyles;
     this.usageRefreshPending = !this.live;
     this.providerIdleScheduler = options.providerIdleScheduler ?? createOmpProviderIdleScheduler();
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs ?? OMP_PROVIDER_IDLE_DEADLINE_MS;
@@ -787,9 +865,7 @@ export class OmpAgentSession implements AgentSession {
         this.logger.debug({ err: error }, "OMP context usage poll failed");
       },
     });
-    this.subagentCardTracker = new OmpSubagentCardTracker({
-      scheduler: options.subagentCardScheduler,
-    });
+    this.subagentCardTracker = new OmpSubagentCardTracker();
     this.lastKnownThinkingOptionId =
       normalizeOmpThinkingOption(options.config.thinkingOptionId) ??
       this.state.thinkingLevel ??
@@ -817,13 +893,15 @@ export class OmpAgentSession implements AgentSession {
   private readonly restartRuntime: OmpAgentSessionOptions["restartRuntime"];
   private readonly config: AgentSessionConfig;
   private readonly logger: Logger;
+  private readonly outputStyles: readonly OutputStyle[];
 
   get id(): string | null {
     return this.state.sessionId;
   }
 
   get features(): AgentFeature[] {
-    if (!hasOmpFastMode(this.state)) return [];
+    const outputStyleFeatures = buildOmpOutputStyleFeatures(this.outputStyles, this.config);
+    if (!hasOmpFastMode(this.state)) return outputStyleFeatures;
     return [
       {
         type: "toggle",
@@ -835,10 +913,15 @@ export class OmpAgentSession implements AgentSession {
           ? { description: OMP_FAST_INACTIVE_MESSAGE, tooltip: OMP_FAST_INACTIVE_MESSAGE }
           : {}),
       },
+      ...outputStyleFeatures,
     ];
   }
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
+    if (featureId === OUTPUT_STYLE_FEATURE_ID) {
+      await this.setOutputStyle(value);
+      return;
+    }
     if (featureId !== "fast_mode") throw new Error(`Unknown OMP feature: ${featureId}`);
     if (typeof value !== "boolean") throw new Error("OMP fast mode requires a boolean");
     if (!hasOmpFastMode(this.state)) throw new Error("OMP fast mode is unavailable");
@@ -849,6 +932,27 @@ export class OmpAgentSession implements AgentSession {
       fastModeActive: result.active,
     };
     this.config.featureValues = { ...this.config.featureValues, fast_mode: result.enabled };
+  }
+
+  // The style is part of the launch-time system prompt, so changing it restarts OMP on the same
+  // session file, as an approval-mode change does.
+  private async setOutputStyle(value: unknown): Promise<void> {
+    if (typeof value !== "string" || !this.outputStyles.some((style) => style.name === value)) {
+      throw new Error(`OMP output style '${String(value)}' is not available`);
+    }
+    if (value === (readOutputStyleValue(this.config.featureValues) ?? DEFAULT_OUTPUT_STYLE)) return;
+    if (this.activeTurnId || this.state.isStreaming || this.state.isCompacting) {
+      throw new Error("Change the output style once the current turn ends");
+    }
+    if (!this.currentModeId) throw new Error("OMP session has no approval mode to relaunch with");
+    const previous = this.config.featureValues;
+    this.config.featureValues = { ...previous, [OUTPUT_STYLE_FEATURE_ID]: value };
+    try {
+      await this.replaceRuntime(this.currentModeId);
+    } catch (error) {
+      this.config.featureValues = previous;
+      throw error;
+    }
   }
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
@@ -864,29 +968,59 @@ export class OmpAgentSession implements AgentSession {
   }
 
   async startTurn(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<StartTurnResult> {
+    return this.startPrompt({ prompt, options });
+  }
+
+  private async startPrompt({
+    prompt,
+    options,
+    streamingBehavior,
+    announceTurn = false,
+  }: {
+    prompt: AgentPromptInput;
+    options?: AgentRunOptions;
+    streamingBehavior?: "steer" | "followUp";
+    announceTurn?: boolean;
+  }): Promise<StartTurnResult> {
     if (this.activeTurnId) {
       throw new Error("An OMP turn is already active");
     }
 
-    const payload = convertPromptInput(prompt, { model: this.state.model });
     const turnId = randomUUID();
     this.live = true;
     this.activeTurnId = turnId;
-    this.rememberClientMessage(options?.clientMessageId ?? null, payload.text);
     this.activeAssistantMessageId = null;
     this.activeTurnTerminalAssistantMessage = null;
     this.activeTurnStarted = false;
+    this.outOfBandTurnStartAnnounced = false;
     this.activeTurnHasUserMessage = false;
     this.activePromptRequestId = null;
     this.clearNoTurnBuffers();
+    const payload = await convertPromptInput(prompt, { model: this.state.model });
+    if (this.closed) throw new Error("OMP session is closed");
+    if (this.activeTurnId !== turnId) return { turnId };
+    this.rememberClientMessage(options?.clientMessageId ?? null, payload.text);
     this.activeNoTurnPromptText = payload.text;
     this.usagePoller.startTurn();
+    if (announceTurn) {
+      this.outOfBandTurnStartAnnounced = true;
+      this.emit({ type: "turn_started", provider: this.provider, turnId });
+    }
 
     void (async () => {
       try {
         if (this.runtimeDead) await this.replaceRuntime(this.currentModeId ?? "full");
         if (this.closed) throw new Error("OMP session is closed");
-        const ack = await this.runtimeSession.prompt(payload.text, payload.images);
+        // Sent ahead of the prompt on the same RPC stream, so it reads the entries before it.
+        this.userEntriesBeforeTurn = this.runtimeSession.getBranchMessages().then(
+          (messages) => new Set(messages.map((message) => message.entryId)),
+          () => new Set(),
+        );
+        const ack = await this.runtimeSession.prompt({
+          message: payload.text,
+          images: payload.images,
+          streamingBehavior,
+        });
         this.activePromptRequestId = ack.requestId ?? null;
         const correlatedResult = ack.requestId
           ? this.pendingPromptResults.get(ack.requestId)
@@ -937,7 +1071,9 @@ export class OmpAgentSession implements AgentSession {
   ): Promise<SteerResult> {
     if (this.closed || this.activeTurnId !== options.expectedTurnId)
       return { status: "unavailable" };
-    const payload = convertPromptInput(prompt, { model: this.state.model });
+    const payload = await convertPromptInput(prompt, { model: this.state.model });
+    if (this.closed || this.activeTurnId !== options.expectedTurnId)
+      return { status: "unavailable" };
     if (this.parseSlashCommandInput(payload.text)) return { status: "unavailable" };
     const submission = this.rememberClientMessage(options.clientMessageId ?? null, payload.text);
     try {
@@ -1167,6 +1303,27 @@ export class OmpAgentSession implements AgentSession {
     this.activeToolCalls.clear();
   }
 
+  async canStopRuntime(): Promise<boolean> {
+    if (
+      this.closed ||
+      this.activeTurnId ||
+      this.activeToolCalls.size ||
+      this.pendingExtensionUiRequests.size ||
+      this.pendingClientMessages.length ||
+      this.pendingNoTurnOutputs.length ||
+      this.pendingNoTurnCompletionAbort
+    )
+      return false;
+    const state = await this.runtimeSession.getState();
+    return (
+      state.isSettled === true &&
+      state.hasPendingAsyncWork === false &&
+      !state.isStreaming &&
+      !state.isCompacting &&
+      state.queuedMessageCount === 0
+    );
+  }
+
   async close(): Promise<void> {
     if (this.closed) {
       return;
@@ -1210,6 +1367,7 @@ export class OmpAgentSession implements AgentSession {
     this.activeAssistantMessageId = null;
     this.activeTurnTerminalAssistantMessage = null;
     this.activeTurnStarted = false;
+    this.outOfBandTurnStartAnnounced = false;
     this.activeTurnHasUserMessage = false;
     this.pendingClientMessages.length = 0;
     this.clearNoTurnBuffers();
@@ -1272,12 +1430,13 @@ export class OmpAgentSession implements AgentSession {
       if (!message) {
         return null;
       }
+      const streamingBehavior = commandName === "steer" ? "steer" : "followUp";
       return {
         run: async () => {
-          if (commandName === "steer") {
-            this.runtimeSession.steer(message);
+          if (!this.activeTurnId && !this.activeTurnStarted) {
+            await this.startPrompt({ prompt: message, streamingBehavior, announceTurn: true });
           } else {
-            this.runtimeSession.followUp(message);
+            await this.runtimeSession.prompt({ message, streamingBehavior });
           }
         },
       };
@@ -1449,26 +1608,24 @@ export class OmpAgentSession implements AgentSession {
     customInstructions: string | undefined,
     emit: (event: AgentStreamEvent) => void,
   ): Promise<void> {
-    if (this.outOfBandCompactionEmit) {
+    if (this.manualCompactionRunning) {
       throw new Error("An OMP compact command is already running");
     }
-    this.outOfBandCompactionEmit = emit;
-    this.outOfBandCompactionStarted = false;
-    this.outOfBandCompactionCompleted = false;
-    // OMP's RPC mode answers `compact` with a plain response and never streams
-    // `compaction_start`/`compaction_end` for manual compaction (those only
-    // reach the TUI). Paseo owns the loading/completed pair for this command;
-    // `emitCompactionTimeline` dedupes if OMP does stream them.
-    this.emitCompactionTimeline({
-      turnId: undefined,
-      item: { type: "compaction", status: "loading", trigger: "manual" },
-    });
+    // OMP answers a manual compact with its RPC response alone, without
+    // compaction_start or compaction_end, so the request owns both rows.
+    this.manualCompactionRunning = true;
+    const emitCompaction = (status: "loading" | "completed") =>
+      emit({
+        type: "timeline",
+        provider: this.provider,
+        item: { type: "compaction", status, trigger: "manual" },
+      });
+    emitCompaction("loading");
     try {
       await this.runtimeSession.compact(customInstructions);
-      this.completeOutOfBandCompaction(emit);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.completeOutOfBandCompaction(emit);
+      emitCompaction("completed");
       emit({
         type: "timeline",
         provider: this.provider,
@@ -1477,23 +1634,12 @@ export class OmpAgentSession implements AgentSession {
           text: `[Error] Failed to compact context: ${message}`,
         },
       });
-    } finally {
-      if (this.outOfBandCompactionEmit === emit) {
-        this.outOfBandCompactionEmit = null;
-        this.outOfBandCompactionStarted = false;
-        this.outOfBandCompactionCompleted = false;
-      }
-    }
-  }
-
-  private completeOutOfBandCompaction(emit: (event: AgentStreamEvent) => void): void {
-    if (this.outOfBandCompactionEmit !== emit || this.outOfBandCompactionCompleted) {
       return;
+    } finally {
+      this.manualCompactionRunning = false;
     }
-    this.emitCompactionTimeline({
-      turnId: undefined,
-      item: { type: "compaction", status: "completed", trigger: "manual" },
-    });
+    emitCompaction("completed");
+    await this.usagePoller.refresh();
   }
 
   private async executeGoalCommand(
@@ -1891,11 +2037,11 @@ export class OmpAgentSession implements AgentSession {
         this.activeTurnStarted = true;
         this.providerIdleWait += 1;
         this.clearNoTurnBuffers();
-        this.emit({
-          type: "turn_started",
-          provider: this.provider,
-          turnId,
-        });
+        if (this.outOfBandTurnStartAnnounced) {
+          this.outOfBandTurnStartAnnounced = false;
+        } else {
+          this.emit({ type: "turn_started", provider: this.provider, turnId });
+        }
         return;
       case "message_start":
         this.handleMessageStart(event);
@@ -1931,24 +2077,8 @@ export class OmpAgentSession implements AgentSession {
         return;
       }
       case "compaction_start":
-        this.emitCompactionTimeline({
-          turnId,
-          item: {
-            type: "compaction",
-            status: "loading",
-            trigger: event.reason === "manual" ? "manual" : "auto",
-          },
-        });
-        return;
       case "compaction_end":
-        this.emitCompactionTimeline({
-          turnId,
-          item: {
-            type: "compaction",
-            status: "completed",
-            trigger: event.reason === "manual" ? "manual" : "auto",
-          },
-        });
+        this.handleCompactionEvent(event, turnId);
         return;
       case "agent_end": {
         const messages = event.messages ?? [];
@@ -2002,41 +2132,24 @@ export class OmpAgentSession implements AgentSession {
     }
   }
 
-  private emitCompactionTimeline(input: {
-    turnId: string | undefined;
-    item: Extract<AgentStreamEvent, { type: "timeline" }>["item"];
-  }): void {
-    const emitOutOfBand = this.outOfBandCompactionEmit;
-    if (emitOutOfBand && input.item.type === "compaction") {
-      if (input.item.status === "loading") {
-        if (this.outOfBandCompactionStarted) {
-          return;
-        }
-        this.outOfBandCompactionStarted = true;
-      }
-      if (input.item.status === "completed") {
-        if (this.outOfBandCompactionCompleted) {
-          return;
-        }
-        this.outOfBandCompactionCompleted = true;
-      }
-    }
-    const event: AgentStreamEvent = {
-      type: "timeline",
-      provider: this.provider,
-      ...(emitOutOfBand ? {} : { turnId: input.turnId }),
-      item: input.item,
-    };
-    if (emitOutOfBand) {
-      emitOutOfBand(event);
-      if (input.item.type === "compaction" && input.item.status === "completed") {
-        this.outOfBandCompactionEmit = null;
-        this.outOfBandCompactionStarted = false;
-        this.outOfBandCompactionCompleted = false;
-      }
+  private handleCompactionEvent(
+    event: Extract<OmpAgentSessionEvent, { type: "compaction_start" | "compaction_end" }>,
+    turnId: string | undefined,
+  ): void {
+    // A manual compact emits its own rows around the request.
+    if (this.manualCompactionRunning) {
       return;
     }
-    this.emit(event);
+    this.emit({
+      type: "timeline",
+      provider: this.provider,
+      turnId,
+      item: {
+        type: "compaction",
+        status: event.type === "compaction_start" ? "loading" : "completed",
+        trigger: event.reason === "manual" ? "manual" : "auto",
+      },
+    });
   }
 
   private handleMessageUpdate(
@@ -2154,18 +2267,38 @@ export class OmpAgentSession implements AgentSession {
       emitUserMessage(messageId);
       return;
     }
-    void this.runtimeSession
-      .getBranchMessages()
-      .then((messages) =>
-        emitUserMessage(messages.toReversed().find((message) => message.text === text)?.entryId),
-      )
-      .catch((error: unknown) => {
+    const branchText = getUserMessageText(event.message.content, "");
+    const echo = this.userMessageEchoTail
+      .then(() => this.findUserEntryId(branchText))
+      .then(emitUserMessage, (error: unknown) => {
         this.logger.debug(
           { err: error, sessionFile: this.state.sessionFile },
           "OMP native user message ID lookup failed",
         );
         emitUserMessage();
       });
+    this.userMessageEchoTail = echo.catch(() => undefined);
+  }
+
+  // OMP's user message_end carries no entry ID, and it persists the entry after notifying
+  // listeners, so the entry can be missing from get_branch_messages on the first read.
+  private async findUserEntryId(text: string): Promise<string | undefined> {
+    const before = await this.userEntriesBeforeTurn;
+    let messages: Array<{ entryId: string; text: string }> = [];
+    for (const waitMs of [0, 50, 150, 400]) {
+      if (waitMs) await delay(waitMs);
+      messages = (await this.runtimeSession.getBranchMessages()).filter(
+        (message) => message.text === text,
+      );
+      const fresh = messages.findLast(
+        (message) =>
+          !before.has(message.entryId) && !this.emittedUserMessageIds.has(message.entryId),
+      );
+      if (fresh) return fresh.entryId;
+    }
+    // A re-emitted frame for an entry already surfaced; emitUserMessage drops it. Otherwise
+    // emit without an ID: an older entry with the same text would rewind to the wrong place.
+    return messages.findLast((message) => this.emittedUserMessageIds.has(message.entryId))?.entryId;
   }
 
   private emitSkillPromptEcho(turnId: string | undefined): void {
@@ -2224,8 +2357,7 @@ export class OmpAgentSession implements AgentSession {
     return mapOmpToolDetail(toolCall, result, {
       toolCallId,
       bridgedTool: this.hostTools?.bridge?.tool(toolCall.toolName),
-      mapSubagentDetail: (detail) =>
-        this.subagentCardTracker.detailFor(toolCallId, detail) ?? detail,
+      mapSubagentDetail: (detail) => this.subagentCardTracker.detailFor(toolCallId, detail),
     });
   }
 
@@ -2335,12 +2467,14 @@ export class OmpAgentClient implements AgentClient {
 
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;
-  private readonly subagentCardScheduler?: OmpSubagentCardScheduler;
   private readonly providerIdleScheduler?: OmpProviderIdleScheduler;
   private readonly noTurnScheduler?: OmpNoTurnScheduler;
   private readonly usagePollScheduler?: OmpUsagePollScheduler;
   private readonly providerIdleDeadlineMs?: number;
   private readonly runtime?: OmpRuntime;
+  private readonly discoverOutputStyles: DiscoverOutputStyles;
+  private readonly accountRouting?: OmpRoutingAuthority &
+    Partial<Pick<AccountRoutingAuthority, "snapshotForAgent">>;
 
   constructor(options: OmpAgentClientOptions) {
     const runtimeSettings = mergeOmpRuntimeSettings(
@@ -2354,12 +2488,47 @@ export class OmpAgentClient implements AgentClient {
     );
     this.logger = options.logger;
     this.runtimeSettings = runtimeSettings;
-    this.subagentCardScheduler = options.subagentCardScheduler;
     this.providerIdleScheduler = options.providerIdleScheduler;
     this.noTurnScheduler = options.noTurnScheduler;
     this.usagePollScheduler = options.usagePollScheduler;
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs;
     this.runtime = options.runtime;
+    this.discoverOutputStyles = options.discoverOutputStyles ?? discoverOutputStyleFiles;
+    this.accountRouting = options.accountRouting;
+  }
+
+  private async listOutputStyles(
+    cwd: string,
+    launchEnv?: Record<string, string>,
+  ): Promise<OutputStyle[]> {
+    const custom = await this.discoverOutputStyles({
+      cwd,
+      env: { ...process.env, ...this.runtimeSettings?.env, ...launchEnv },
+    });
+    return mergeOutputStyles(
+      [
+        {
+          name: DEFAULT_OUTPUT_STYLE,
+          description: "OMP's own voice, no style appended",
+          body: null,
+        },
+        ...APPENDED_BUILTIN_OUTPUT_STYLES,
+      ],
+      custom.filter((style) => style.name !== DEFAULT_OUTPUT_STYLE),
+    );
+  }
+
+  /** Managed launch request. `agentId` comes only from the trusted launch context. */
+  private routingFor(launchContext: AgentLaunchContext | undefined): OmpHostRouting | undefined {
+    if (!this.accountRouting) return undefined;
+    return { authority: this.accountRouting, agentId: launchContext?.agentId };
+  }
+
+  private usageRoutingFor(launchContext: AgentLaunchContext | undefined) {
+    const agentId = launchContext?.agentId;
+    const snapshotForAgent = this.accountRouting?.snapshotForAgent?.bind(this.accountRouting);
+    if (!snapshotForAgent || !agentId) return undefined;
+    return { agentId, snapshotForAgent };
   }
 
   private async configureNativePaseoTools(
@@ -2403,6 +2572,7 @@ export class OmpAgentClient implements AgentClient {
     launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
     const launchMode = this.resolveLaunchMode(config.modeId, config.providerOptions);
+    const outputStyles = await this.listOutputStyles(config.cwd, launchContext?.env);
     const startInput: OmpStartSessionInput = {
       cwd: config.cwd,
       protocolMode: "rpc-ui",
@@ -2411,8 +2581,9 @@ export class OmpAgentClient implements AgentClient {
       noSession: config.internal === true,
       modeId: launchMode.modeId,
       extraArgs: launchMode.extraArgs,
-      systemPrompt: composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
+      systemPrompt: composeOmpSystemPrompt(config, outputStyles),
       env: launchContext?.env,
+      routing: this.routingFor(launchContext),
     };
     const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession(
       startInput,
@@ -2433,16 +2604,17 @@ export class OmpAgentClient implements AgentClient {
       return new OmpAgentSession({
         runtimeSession,
         hostTools,
-        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext),
+        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext, outputStyles),
         config,
         initialState,
         currentModeId: launchMode.modeId,
         logger: this.logger,
-        subagentCardScheduler: this.subagentCardScheduler,
         providerIdleScheduler: this.providerIdleScheduler,
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
+        outputStyles,
+        usageRouting: this.usageRoutingFor(launchContext),
       });
     } catch (error) {
       await hostTools?.close();
@@ -2479,12 +2651,15 @@ export class OmpAgentClient implements AgentClient {
       resumeConfig.modeId,
       resumeConfig.config.providerOptions,
     );
+    const outputStyles = await this.listOutputStyles(resumeConfig.cwd, launchContext?.env);
     const startInput = buildResumeStartInput({
       resumeConfig,
       sessionFile,
       launchContext,
       launchMode,
+      outputStyles,
     });
+    startInput.routing = this.routingFor(launchContext);
     const runtimeSession = await this.resolveRuntime(
       resumeConfig.config.providerOptions,
     ).startSession(startInput);
@@ -2505,16 +2680,17 @@ export class OmpAgentClient implements AgentClient {
       return new OmpAgentSession({
         runtimeSession,
         hostTools,
-        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext),
+        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext, outputStyles),
         config,
         initialState,
         currentModeId: launchMode.modeId,
         logger: this.logger,
-        subagentCardScheduler: this.subagentCardScheduler,
         providerIdleScheduler: this.providerIdleScheduler,
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
+        outputStyles,
+        usageRouting: this.usageRoutingFor(launchContext),
         live: false,
       });
     } catch (error) {
@@ -2522,6 +2698,54 @@ export class OmpAgentClient implements AgentClient {
       await runtimeSession.close().catch(() => undefined);
       throw error;
     }
+  }
+
+  // OMP's `branch` rewrites the source journal in place, so the copy comes from `--fork`: it only
+  // reads the source and writes a new session beside it with a fresh id, the source's prompt-cache
+  // key, a copy of its artifacts, and results for tool calls a mid-turn source left unresolved.
+  async forkNativeSession(handle: AgentPersistenceHandle): Promise<ForkedNativeSession> {
+    const sourceFile = handle.nativeHandle;
+    if (!sourceFile) {
+      throw new Error("OMP fork requires a native session file handle");
+    }
+    const { cwd, config } = buildResumeConfig(
+      parsePersistenceMetadata(handle.metadata),
+      undefined,
+      this.provider,
+    );
+    const launchMode = this.resolveLaunchMode(OMP_READ_ONLY_MODE_ID, config.providerOptions);
+    const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession({
+      cwd,
+      protocolMode: "rpc-ui",
+      modeId: launchMode.modeId,
+      extraArgs: [
+        ...launchMode.extraArgs,
+        "--fork",
+        sourceFile,
+        "--session-dir",
+        path.dirname(sourceFile),
+      ],
+    });
+    let state: OmpSessionState;
+    try {
+      state = await runtimeSession.getState();
+    } finally {
+      await runtimeSession.close();
+    }
+    const forkFile = state.sessionFile;
+    if (!forkFile || path.resolve(forkFile) === path.resolve(sourceFile)) {
+      throw new Error("OMP did not fork the session into a new file");
+    }
+    return {
+      handle: {
+        provider: this.provider,
+        sessionId: state.sessionId,
+        nativeHandle: forkFile,
+        metadata: handle.metadata,
+      },
+      readOnlyModeId: OMP_READ_ONLY_MODE_ID,
+      discard: () => removeOmpSessionFiles(forkFile),
+    };
   }
 
   // OMP resumes a session on the model it recorded, or on its default when that model
@@ -2556,7 +2780,8 @@ export class OmpAgentClient implements AgentClient {
   private buildRestartRuntime(
     startInput: OmpStartSessionInput,
     config: AgentSessionConfig,
-    launchContext?: AgentLaunchContext,
+    launchContext: AgentLaunchContext | undefined,
+    outputStyles: readonly OutputStyle[],
   ): OmpAgentSessionOptions["restartRuntime"] {
     return async (sessionFile, modeId) => {
       const launchMode = this.resolveLaunchMode(modeId, config.providerOptions);
@@ -2566,6 +2791,7 @@ export class OmpAgentClient implements AgentClient {
         thinkingOptionId: normalizeOmpThinkingOption(config.thinkingOptionId) ?? undefined,
         modeId: launchMode.modeId,
         extraArgs: launchMode.extraArgs,
+        systemPrompt: composeOmpSystemPrompt(config, outputStyles),
         ...(!startInput.noSession && sessionFile ? { session: sessionFile } : {}),
       });
       let hostTools: OmpHostToolRouter | undefined;
@@ -2609,6 +2835,8 @@ export class OmpAgentClient implements AgentClient {
           modeId: launchMode.modeId,
           extraArgs: launchMode.extraArgs,
           signal: context?.signal,
+          // Agentless: the helper lists models and cannot dispatch one.
+          routing: this.routingFor(undefined),
         });
         if (context?.signal.aborted) await closeSession();
       });
@@ -2628,8 +2856,8 @@ export class OmpAgentClient implements AgentClient {
     }
   }
 
-  async listFeatures(_config: AgentSessionConfig): Promise<AgentFeature[]> {
-    return [];
+  async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
+    return buildOmpOutputStyleFeatures(await this.listOutputStyles(config.cwd), config);
   }
 
   async listImportableSessions(

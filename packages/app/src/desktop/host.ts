@@ -80,7 +80,7 @@ export interface DesktopEditorOpenTargetInput {
 }
 
 export interface DesktopEditorBridge {
-  listTargets?: () => Promise<DesktopEditorTargetDescriptor[]>;
+  listTargets?: (input?: { workspacePath?: string }) => Promise<DesktopEditorTargetDescriptor[]>;
   openTarget?: (input: DesktopEditorOpenTargetInput) => Promise<void>;
 }
 
@@ -88,8 +88,23 @@ export interface DesktopWebUtilsBridge {
   getPathForFile?: (file: File) => string;
 }
 
+export interface DesktopTerminalContextMenuInput {
+  kind?: "terminal";
+  hasSelection?: boolean;
+  /** Adds an "Add note" item; desktops that predate notes ignore it. */
+  addNoteLabel?: string;
+  /** Echoed in the `terminal-context-menu-action` event so the right terminal handles it. */
+  requestId?: string;
+}
+
+/** Payload of the desktop `terminal-context-menu-action` event. */
+export interface DesktopTerminalContextMenuActionEvent {
+  action: "add-note";
+  requestId?: string;
+}
+
 export interface DesktopMenuBridge {
-  showContextMenu?: (input?: { kind?: "terminal"; hasSelection?: boolean }) => Promise<void>;
+  showContextMenu?: (input?: DesktopTerminalContextMenuInput) => Promise<void>;
   setCapturingShortcut?: (capturing: boolean) => Promise<void>;
 }
 

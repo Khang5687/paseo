@@ -5,7 +5,7 @@ import { EditorTargetIcon } from "@/components/icons/editor-target-icon";
 import { SettingsRow } from "@/components/settings";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
-import { resolvePreferredEditorId, usePreferredEditor } from "@/hooks/use-preferred-editor";
+import { resolvePreferredEditorId, useDefaultEditor } from "@/hooks/use-preferred-editor";
 import type { Theme } from "@/styles/theme";
 import { useDesktopOpenTargets, type DesktopOpenTarget } from "@/workspace/desktop-open-targets";
 
@@ -20,12 +20,12 @@ export interface DefaultEditorSetting {
 }
 
 /**
- * The editor "Open in …" uses for workspaces and folders. Reads and writes the same
- * preference as the workspace button's "Choose editor" menu. Null while the desktop
- * reports no installed editors, so the row is hidden rather than empty.
+ * The editor "Open in …" uses for projects without their own choice and for file links in chat.
+ * Projects remember a choice from the workspace button's "Choose editor" menu. Null while the
+ * desktop reports no installed editors, so the row is hidden rather than empty.
  */
 export function useDefaultEditorSetting(): DefaultEditorSetting | null {
-  const { preferredEditorId, updatePreferredEditor } = usePreferredEditor();
+  const { preferredEditorId, updatePreferredEditor } = useDefaultEditor();
   // Settings is not tied to a host; the options are the editors installed on this desktop.
   const { targets } = useDesktopOpenTargets({ isLocalExecution: true });
   const editors = useMemo(() => targets.filter((target) => target.kind === "editor"), [targets]);

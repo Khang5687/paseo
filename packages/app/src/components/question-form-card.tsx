@@ -1,6 +1,15 @@
+import { Alert } from "@/components/ui/alert";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Button } from "@/components/ui/button";
+import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { useState, useCallback, useMemo, useRef, type RefObject } from "react";
-import { View, Text, Pressable, type PressableStateCallbackType } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  type GestureResponderEvent,
+  type PressableStateCallbackType,
+} from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { Check, X } from "lucide-react-native";
@@ -10,9 +19,12 @@ import type { AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
 import { isWeb } from "@/constants/platform";
 import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
+import { ScrollableCodeSurface } from "@/components/ui/scrollable-code-surface";
 import {
   areQuestionsAnswered,
+  buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
+  isOneTapQuestion,
   isQuestionAnswered,
   parseQuestionFormQuestions,
   questionShowsTextInput,
@@ -26,9 +38,23 @@ interface QuestionFormCardProps {
   permission: PendingPermission;
   onRespond: (response: AgentPermissionResponse) => void;
   isResponding: boolean;
+  responseError: string | null;
 }
 
 const IS_WEB = isWeb;
+// Native previews are uncapped: inside the option's Pressable, Android never hands a
+// drag to the preview's nested scroll, so lines past a cap would be unreachable.
+const OPTION_PREVIEW_MAX_HEIGHT = IS_WEB ? 240 : undefined;
+
+// Links are independent actions. Ignore repeat clicks so double-click text selection
+// toggles an option only once.
+function isNonAnsweringClick(event: GestureResponderEvent): boolean {
+  if (!IS_WEB) return false;
+  const click = event.nativeEvent as unknown as MouseEvent;
+  if (click.detail > 1) return true;
+  const target = click.target as Element | null;
+  return Boolean(target?.closest("a"));
+}
 
 function getQuestionInputPlaceholder({
   question,
@@ -65,9 +91,13 @@ function QuestionOptionRow({
 }: QuestionOptionRowProps) {
   const { theme } = useUnistyles();
 
-  const handlePress = useCallback(() => {
-    onToggle(qIndex, optIndex, multiSelect);
-  }, [onToggle, qIndex, optIndex, multiSelect]);
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      if (isNonAnsweringClick(event)) return;
+      onToggle(qIndex, optIndex, multiSelect);
+    },
+    [onToggle, qIndex, optIndex, multiSelect],
+  );
 
   const pressableStyle = useCallback(
     ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -80,17 +110,6 @@ function QuestionOptionRow({
     [isSelected, theme.colors.surface2],
   );
 
-  const optionLabelStyle = useMemo(
-    () => [
-      styles.optionLabel,
-      { color: isSelected ? theme.colors.foreground : theme.colors.foregroundMuted },
-    ],
-    [isSelected, theme.colors.foreground, theme.colors.foregroundMuted],
-  );
-  const optionDescriptionStyle = useMemo(
-    () => [styles.optionDescription, { color: theme.colors.foregroundMuted }],
-    [theme.colors.foregroundMuted],
-  );
   const accessibilityState = useMemo(() => ({ checked: isSelected }), [isSelected]);
 
   // Static left-side control: square for multi-select, circle for single-select.
@@ -129,9 +148,25 @@ function QuestionOptionRow({
           {isSelected && !multiSelect ? <View style={radioDotStyle} /> : null}
         </View>
         <View style={styles.optionTextBlock}>
-          <Text style={optionLabelStyle}>{option.label}</Text>
+          <MarkdownRenderer text={option.label} compact muted={!isSelected} selectable={false} />
           {option.description ? (
-            <Text style={optionDescriptionStyle}>{option.description}</Text>
+            <View testID="question-form-option-description">
+              <MarkdownRenderer text={option.description} compact muted />
+            </View>
+          ) : null}
+          {option.preview ? (
+            // Shown for every option at once so they can be compared before picking.
+            // Long lines wrap, as in Claude Code, since most previews are prose.
+            <ScrollableCodeSurface
+              tone="surface0"
+              maxHeight={OPTION_PREVIEW_MAX_HEIGHT}
+              horizontal={false}
+              selectable={false}
+              textStyle={styles.optionPreviewText}
+              testID="question-form-option-preview"
+            >
+              {option.preview}
+            </ScrollableCodeSurface>
           ) : null}
         </View>
       </View>
@@ -321,14 +356,152 @@ function QuestionOtherInput({
   );
 }
 
-export function QuestionFormCard({ permission, onRespond, isResponding }: QuestionFormCardProps) {
+interface OneTapOptionButtonProps {
+  optIndex: number;
+  label: string;
+  size: "sm" | "md";
+  isResponding: boolean;
+  isRespondingOption: boolean;
+  onAnswer: (optIndex: number) => void;
+}
+
+function OneTapOptionButton({
+  optIndex,
+  label,
+  size,
+  isResponding,
+  isRespondingOption,
+  onAnswer,
+}: OneTapOptionButtonProps) {
+  const handlePress = useCallback(() => onAnswer(optIndex), [onAnswer, optIndex]);
+  return (
+    <Button
+      variant="secondary"
+      size={size}
+      onPress={handlePress}
+      disabled={isResponding}
+      loading={isRespondingOption}
+      accessibilityLabel={label}
+      testID={`question-form-answer-${optIndex + 1}`}
+    >
+      {label}
+    </Button>
+  );
+}
+
+function QuestionText({ text }: { text: string }) {
+  return (
+    <View style={styles.questionHeader}>
+      <View testID="question-form-current-question" style={styles.questionText}>
+        <MarkdownRenderer text={text} compact />
+      </View>
+    </View>
+  );
+}
+
+interface QuestionCardBodyProps extends QuestionFormCardProps {
+  questions: QuestionFormQuestion[];
+}
+
+// Each option is its own button, so one tap answers. Phones stack them full width.
+function OneTapQuestionCard({
+  permission,
+  questions,
+  onRespond,
+  isResponding,
+  responseError,
+}: QuestionCardBodyProps) {
+  const { t } = useTranslation();
+  const isMobile = useIsCompactFormFactor();
+  const [respondingOption, setRespondingOption] = useState<number | null>(null);
+  const [isDismissing, setIsDismissing] = useState(false);
+  const [question] = questions;
+  const size = isMobile ? "md" : "sm";
+  const dismissLabel = resolveDismissLabel(questions, t("common.actions.dismiss"));
+  const actionsStyle = useMemo(
+    () => [styles.oneTapActions, !isMobile && styles.oneTapActionsDesktop],
+    [isMobile],
+  );
+
+  const handleAnswer = useCallback(
+    (optIndex: number) => {
+      if (isResponding) return;
+      setRespondingOption(optIndex);
+      setIsDismissing(false);
+      onRespond({
+        behavior: "allow",
+        updatedInput: {
+          ...permission.request.input,
+          answers: buildQuestionFormAnswers(questions, { 0: new Set([optIndex]) }, {}),
+          answerLists: buildQuestionFormAnswerLists(questions, { 0: new Set([optIndex]) }, {}),
+        },
+      });
+    },
+    [isResponding, onRespond, permission.request.input, questions],
+  );
+  const handleDismiss = useCallback(() => {
+    if (isResponding) return;
+    setRespondingOption(null);
+    setIsDismissing(true);
+    onRespond({ behavior: "deny", message: "Dismissed by user" });
+  }, [isResponding, onRespond]);
+
+  return (
+    <View style={styles.container} testID="question-form-card">
+      <QuestionText text={question.question} />
+      <View style={actionsStyle} accessibilityLabel={question.question}>
+        {question.options.map((option, optIndex) => (
+          <OneTapOptionButton
+            key={option.label}
+            optIndex={optIndex}
+            label={option.label}
+            size={size}
+            isResponding={isResponding}
+            isRespondingOption={isResponding && respondingOption === optIndex}
+            onAnswer={handleAnswer}
+          />
+        ))}
+        <Button
+          variant="ghost"
+          size={size}
+          leftIcon={X}
+          onPress={handleDismiss}
+          disabled={isResponding}
+          loading={isResponding && isDismissing}
+          accessibilityLabel={dismissLabel}
+          testID="question-form-dismiss"
+        >
+          {dismissLabel}
+        </Button>
+      </View>
+      {responseError ? <Alert variant="error" description={responseError} size="sm" /> : null}
+    </View>
+  );
+}
+
+export function QuestionFormCard(props: QuestionFormCardProps) {
+  const questions = useMemo(
+    () => parseQuestionFormQuestions(props.permission.request.input),
+    [props.permission.request.input],
+  );
+  if (!questions) return null;
+  return isOneTapQuestion(questions) ? (
+    <OneTapQuestionCard {...props} questions={questions} />
+  ) : (
+    <QuestionForm {...props} questions={questions} />
+  );
+}
+
+function QuestionForm({
+  permission,
+  questions,
+  onRespond,
+  isResponding,
+  responseError,
+}: QuestionCardBodyProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
-  const questions = useMemo(
-    () => parseQuestionFormQuestions(permission.request.input),
-    [permission.request.input],
-  );
 
   const [selections, setSelections] = useState<Record<number, Set<number>>>({});
   const [otherTexts, setOtherTexts] = useState<Record<number, string>>({});
@@ -367,18 +540,14 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
         });
         otherInputRef.current?.replaceText("");
       }
-
-      if (!multiSelect && next.size > 0 && qIndex === activeQuestionIndex && questions) {
-        setActiveQuestionIndex(Math.min(qIndex + 1, questions.length - 1));
-      }
     },
-    [activeQuestionIndex, otherTexts, questions, selections],
+    [otherTexts, selections],
   );
 
   const setOtherText = useCallback(
     (qIndex: number, text: string) => {
       setOtherTexts((prev) => ({ ...prev, [qIndex]: text }));
-      const multiSelect = questions?.[qIndex]?.multiSelect ?? false;
+      const multiSelect = questions[qIndex]?.multiSelect ?? false;
       if (!multiSelect && text.length > 0) {
         setSelections((prev) => {
           if (!prev[qIndex] || prev[qIndex].size === 0) return prev;
@@ -390,23 +559,25 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
   );
 
   const allAnswered = areQuestionsAnswered(questions, selections, otherTexts);
-  const resolvedActiveQuestionIndex = questions
-    ? Math.min(activeQuestionIndex, questions.length - 1)
-    : 0;
-  const activeQuestion = questions?.[resolvedActiveQuestionIndex];
-  const activeQuestionAnswered = activeQuestion
-    ? isQuestionAnswered(activeQuestion, resolvedActiveQuestionIndex, selections, otherTexts)
-    : false;
-  const isLastQuestion = questions ? resolvedActiveQuestionIndex === questions.length - 1 : true;
+  const resolvedActiveQuestionIndex = Math.min(activeQuestionIndex, questions.length - 1);
+  const activeQuestion = questions[resolvedActiveQuestionIndex];
+  const activeQuestionAnswered = isQuestionAnswered(
+    activeQuestion,
+    resolvedActiveQuestionIndex,
+    selections,
+    otherTexts,
+  );
+  const isLastQuestion = resolvedActiveQuestionIndex === questions.length - 1;
 
   const handleSubmit = useCallback(() => {
-    if (!questions || !allAnswered || isResponding) return;
+    if (!allAnswered || isResponding) return;
     setRespondingAction("submit");
     onRespond({
       behavior: "allow",
       updatedInput: {
         ...permission.request.input,
         answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
       },
     });
   }, [
@@ -420,7 +591,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
   ]);
 
   const handleDeny = useCallback(() => {
-    if (!questions) return;
+    if (!questions || isResponding) return;
     setRespondingAction("dismiss");
     if (shouldSubmitEmptyOnDismiss(questions)) {
       onRespond({
@@ -428,6 +599,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
         updatedInput: {
           ...permission.request.input,
           answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+          answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
         },
       });
       return;
@@ -436,26 +608,25 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
       behavior: "deny",
       message: "Dismissed by user",
     });
-  }, [questions, onRespond, otherTexts, permission.request.input, selections]);
+  }, [questions, isResponding, onRespond, otherTexts, permission.request.input, selections]);
 
   const handleSelectQuestion = useCallback((index: number) => {
     setActiveQuestionIndex(index);
   }, []);
 
   const navIsAnswered = useCallback(
-    (qIndex: number) =>
-      questions ? isQuestionAnswered(questions[qIndex], qIndex, selections, otherTexts) : false,
+    (qIndex: number) => isQuestionAnswered(questions[qIndex], qIndex, selections, otherTexts),
     [questions, selections, otherTexts],
   );
 
   const handlePrimaryAction = useCallback(() => {
     if (!isLastQuestion) {
       if (!activeQuestionAnswered || isResponding) return;
-      setActiveQuestionIndex((index) => Math.min(index + 1, (questions?.length ?? 1) - 1));
+      setActiveQuestionIndex((index) => Math.min(index + 1, questions.length - 1));
       return;
     }
     handleSubmit();
-  }, [activeQuestionAnswered, handleSubmit, isLastQuestion, isResponding, questions?.length]);
+  }, [activeQuestionAnswered, handleSubmit, isLastQuestion, isResponding, questions.length]);
 
   const dismissButtonStyle = useCallback(
     ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -469,6 +640,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
     [theme.colors.surface2, theme.colors.surface1, theme.colors.borderAccent],
   );
 
+  const pendingAction = isResponding ? respondingAction : null;
   const primaryDisabled = isResponding || (isLastQuestion ? !allAnswered : !activeQuestionAnswered);
   const primaryActionLabel = isLastQuestion
     ? t("message.question.submit")
@@ -486,24 +658,10 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
     [primaryDisabled, theme.colors.accent],
   );
 
-  const containerStyle = useMemo(
-    () => [
-      styles.container,
-      {
-        backgroundColor: theme.colors.surface1,
-        borderColor: theme.colors.border,
-      },
-    ],
-    [theme.colors.surface1, theme.colors.border],
-  );
-  const questionTextStyle = useMemo(
-    () => [styles.questionText, { color: theme.colors.foreground }],
-    [theme.colors.foreground],
-  );
   // Single-select radios need a group; checkboxes are valid standalone.
   const optionsGroupAccessibility = useMemo(
     () =>
-      activeQuestion && !activeQuestion.multiSelect
+      !activeQuestion.multiSelect
         ? ({
             accessibilityRole: "radiogroup",
             accessibilityLabel: activeQuestion.question,
@@ -525,17 +683,13 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
     [submitActionTextColor],
   );
 
-  if (!questions) {
-    return null;
-  }
-
   const dismissLabel = resolveDismissLabel(questions, t("common.actions.dismiss"));
   const selected = selections[resolvedActiveQuestionIndex] ?? new Set<number>();
   const otherText = otherTexts[resolvedActiveQuestionIndex] ?? "";
-  const showTextInput = activeQuestion ? questionShowsTextInput(activeQuestion) : false;
+  const showTextInput = questionShowsTextInput(activeQuestion);
 
   return (
-    <View style={containerStyle} testID="question-form-card">
+    <View style={styles.container} testID="question-form-card">
       <QuestionNav
         questions={questions}
         activeIndex={resolvedActiveQuestionIndex}
@@ -543,48 +697,44 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
         isResponding={isResponding}
         onSelect={handleSelectQuestion}
       />
-      <View style={styles.questionHeader}>
-        <Text testID="question-form-current-question" style={questionTextStyle}>
-          {activeQuestion?.question}
-        </Text>
+      <QuestionText text={activeQuestion.question} />
+
+      <View key={activeQuestion.question} style={styles.questionBlock}>
+        {activeQuestion.options.length > 0 ? (
+          <View style={styles.optionsWrap} {...optionsGroupAccessibility}>
+            {activeQuestion.options.map((opt, optIndex) => (
+              <QuestionOptionRow
+                key={opt.label}
+                qIndex={resolvedActiveQuestionIndex}
+                optIndex={optIndex}
+                option={opt}
+                isSelected={selected.has(optIndex)}
+                multiSelect={activeQuestion.multiSelect}
+                isResponding={isResponding}
+                onToggle={toggleOption}
+              />
+            ))}
+          </View>
+        ) : null}
+        {showTextInput ? (
+          <QuestionOtherInput
+            qIndex={resolvedActiveQuestionIndex}
+            inputRef={otherInputRef}
+            accessibilityLabel={activeQuestion.question}
+            value={otherText}
+            placeholder={getQuestionInputPlaceholder({
+              question: activeQuestion,
+              answerPlaceholder: t("message.question.answerPlaceholder"),
+              otherPlaceholder: t("message.question.otherPlaceholder"),
+            })}
+            isResponding={isResponding}
+            onChange={setOtherText}
+            onSubmit={handlePrimaryAction}
+          />
+        ) : null}
       </View>
 
-      {activeQuestion ? (
-        <View key={activeQuestion.question} style={styles.questionBlock}>
-          {activeQuestion.options.length > 0 ? (
-            <View style={styles.optionsWrap} {...optionsGroupAccessibility}>
-              {activeQuestion.options.map((opt, optIndex) => (
-                <QuestionOptionRow
-                  key={opt.label}
-                  qIndex={resolvedActiveQuestionIndex}
-                  optIndex={optIndex}
-                  option={opt}
-                  isSelected={selected.has(optIndex)}
-                  multiSelect={activeQuestion.multiSelect}
-                  isResponding={isResponding}
-                  onToggle={toggleOption}
-                />
-              ))}
-            </View>
-          ) : null}
-          {showTextInput ? (
-            <QuestionOtherInput
-              qIndex={resolvedActiveQuestionIndex}
-              inputRef={otherInputRef}
-              accessibilityLabel={activeQuestion.question}
-              value={otherText}
-              placeholder={getQuestionInputPlaceholder({
-                question: activeQuestion,
-                answerPlaceholder: t("message.question.answerPlaceholder"),
-                otherPlaceholder: t("message.question.otherPlaceholder"),
-              })}
-              isResponding={isResponding}
-              onChange={setOtherText}
-              onSubmit={handlePrimaryAction}
-            />
-          ) : null}
-        </View>
-      ) : null}
+      {responseError ? <Alert variant="error" description={responseError} size="sm" /> : null}
 
       <View style={actionsContainerStyle}>
         <Pressable
@@ -595,7 +745,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
           accessibilityLabel={dismissLabel}
           testID="question-form-dismiss"
         >
-          {respondingAction === "dismiss" ? (
+          {pendingAction === "dismiss" ? (
             <LoadingSpinner size="small" color={theme.colors.foregroundMuted} />
           ) : (
             <View style={styles.actionContent}>
@@ -613,7 +763,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
           accessibilityLabel={primaryActionLabel}
           testID="question-form-primary-action"
         >
-          {respondingAction === "submit" ? (
+          {pendingAction === "submit" ? (
             <LoadingSpinner size="small" color={theme.colors.accentForeground} />
           ) : (
             <View style={styles.actionContent}>
@@ -633,6 +783,8 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.spacing[2],
     borderWidth: 1,
     gap: theme.spacing[3],
+    backgroundColor: theme.colors.surface1,
+    borderColor: theme.colors.border,
   },
   questionBlock: {
     gap: theme.spacing[2],
@@ -647,9 +799,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   questionText: {
     flex: 1,
-    fontSize: theme.fontSize.base,
-    fontWeight: theme.fontWeight.normal,
-    lineHeight: 22,
+    minWidth: 0,
   },
   optionsWrap: {
     gap: theme.spacing[1],
@@ -695,14 +845,9 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     gap: theme.spacing[1],
   },
-  optionLabel: {
-    fontSize: theme.fontSize.base,
-    fontWeight: theme.fontWeight.normal,
-    lineHeight: 22,
-  },
-  optionDescription: {
-    fontSize: theme.fontSize.base,
+  optionPreviewText: {
     lineHeight: 20,
+    ...(isWeb ? { whiteSpace: "pre-wrap", overflowWrap: "break-word" } : null),
   },
   selectionControl: {
     width: 18,
@@ -736,6 +881,16 @@ const styles = StyleSheet.create((theme) => ({
   actionsContainerDesktop: {
     flexDirection: "row",
     justifyContent: "flex-start",
+    alignItems: "center",
+  },
+  // Same inset as the question, so the buttons line up with the command's code block.
+  oneTapActions: {
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+  },
+  oneTapActionsDesktop: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
   },
   actionButton: {

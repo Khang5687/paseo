@@ -1,90 +1,87 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
-import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
+import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
+  previewSkinBlur,
+  previewSkinVisibility,
   setSkinBlur,
   setSkinShowBehindContent,
   setSkinShowBehindSidebar,
   setSkinVisibility,
+  SKIN_BLUR_MAX,
+  useSkinBlur,
   useSkinPreferences,
-  type SkinBlur,
+  useSkinVisibility,
 } from "@/skins";
 import { settingsStyles } from "@/styles/settings";
-import {
-  nearestVisibilityPercent,
-  VISIBILITY_PERCENT_OPTIONS,
-  type VisibilityPercent,
-} from "./selection";
 
-const VISIBILITY_OPTIONS: SegmentedControlOption<`${VisibilityPercent}`>[] =
-  VISIBILITY_PERCENT_OPTIONS.map((percent) => ({
-    value: `${percent}` as const,
-    label: `${percent}%`,
-  }));
+function formatPercent(percent: number): string {
+  return `${percent}%`;
+}
+
+function previewVisibilityPercent(percent: number): void {
+  previewSkinVisibility(percent / 100);
+}
+
+function commitVisibilityPercent(percent: number): void {
+  setSkinVisibility(percent / 100);
+}
 
 export function BackgroundControls() {
   const { t } = useTranslation();
   const preferences = useSkinPreferences();
+  const visibilityPercent = Math.round(useSkinVisibility() * 100);
+  const blur = Math.round(useSkinBlur());
 
-  const blurOptions = useMemo<SegmentedControlOption<SkinBlur>[]>(
-    () => [
-      {
-        value: "off",
-        label: t("settings.appearance.background.blur.options.off"),
-      },
-      {
-        value: "low",
-        label: t("settings.appearance.background.blur.options.low"),
-      },
-      {
-        value: "medium",
-        label: t("settings.appearance.background.blur.options.medium"),
-      },
-      {
-        value: "high",
-        label: t("settings.appearance.background.blur.options.high"),
-      },
-    ],
+  const formatBlur = useCallback(
+    (radius: number) =>
+      radius === 0
+        ? t("settings.appearance.background.blur.off")
+        : t("settings.appearance.background.blur.value", { radius }),
     [t],
   );
 
-  const handleVisibilityChange = useCallback((value: `${VisibilityPercent}`) => {
-    setSkinVisibility(Number(value) / 100);
-  }, []);
-
   return (
     <View style={settingsStyles.card}>
-      <View style={styles.stackedRow}>
-        <View style={styles.rowText}>
+      <View style={styles.sliderRow}>
+        <View style={styles.sliderHeader}>
           <Text style={settingsStyles.rowTitle}>
             {t("settings.appearance.background.visibility.title")}
           </Text>
-          <Text style={settingsStyles.rowHint}>
-            {t("settings.appearance.background.visibility.hint")}
-          </Text>
+          <Text style={styles.sliderValue}>{formatPercent(visibilityPercent)}</Text>
         </View>
-        <SegmentedControl
-          size="sm"
-          options={VISIBILITY_OPTIONS}
-          value={`${nearestVisibilityPercent(preferences.visibility)}`}
-          onValueChange={handleVisibilityChange}
+        <Text style={settingsStyles.rowHint}>
+          {t("settings.appearance.background.visibility.hint")}
+        </Text>
+        <Slider
+          value={visibilityPercent}
+          min={0}
+          max={100}
+          onValueChange={previewVisibilityPercent}
+          onSlidingComplete={commitVisibilityPercent}
+          formatValue={formatPercent}
+          accessibilityLabel={t("settings.appearance.background.visibility.title")}
           testID="settings-background-visibility"
         />
       </View>
-      <View style={[styles.stackedRow, settingsStyles.rowBorder]}>
-        <View style={styles.rowText}>
+      <View style={[styles.sliderRow, settingsStyles.rowBorder]}>
+        <View style={styles.sliderHeader}>
           <Text style={settingsStyles.rowTitle}>
             {t("settings.appearance.background.blur.title")}
           </Text>
+          <Text style={styles.sliderValue}>{formatBlur(blur)}</Text>
         </View>
-        <SegmentedControl
-          size="sm"
-          options={blurOptions}
-          value={preferences.blur}
-          onValueChange={setSkinBlur}
+        <Slider
+          value={blur}
+          min={0}
+          max={SKIN_BLUR_MAX}
+          onValueChange={previewSkinBlur}
+          onSlidingComplete={setSkinBlur}
+          formatValue={formatBlur}
+          accessibilityLabel={t("settings.appearance.background.blur.title")}
           testID="settings-background-blur"
         />
       </View>
@@ -119,18 +116,20 @@ export function BackgroundControls() {
 }
 
 const styles = StyleSheet.create((theme) => ({
-  stackedRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing[3],
-    paddingVertical: theme.spacing[4],
+  sliderRow: {
+    paddingTop: theme.spacing[4],
+    paddingBottom: theme.spacing[2],
     paddingHorizontal: theme.spacing[4],
   },
-  rowText: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 200,
+  sliderHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: theme.spacing[3],
+  },
+  sliderValue: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontVariant: ["tabular-nums"],
   },
 }));

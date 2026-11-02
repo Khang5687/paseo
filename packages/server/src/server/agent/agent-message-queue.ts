@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { ActiveTurnBehavior, AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentManager } from "./agent-manager.js";
+import { ensureAgentLoaded } from "./agent-loading.js";
 import { sendPromptToAgent, waitForAgentRunStartWithTimeout } from "./agent-prompt.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { buildAgentPrompt } from "./prompt-attachments.js";
@@ -13,10 +14,15 @@ export interface AgentMessageQueueDispatcherOptions {
 
 /**
  * Drains the daemon-owned message queue: whenever an agent settles idle with
- * nothing blocking it and messages queued, the head is sent through the same
- * path `send_agent_message` uses. One dispatch per agent is in flight at a
- * time, and the dispatch holds the slot until the run has actually started so
- * the idle state preceding a run start cannot drain a second entry.
+ * nothing blocking it, messages queued, and the queue not paused, the head is
+ * sent through the same path `send_agent_message` uses. One dispatch per agent
+ * is in flight at a time, and the dispatch holds the slot until the run has
+ * actually started so the idle state preceding a run start cannot drain a
+ * second entry. Pausing only stops the automatic drain; send-now still works.
+ *
+ * An entry is never dropped. If the send fails before the provider admitted
+ * the prompt, the entry goes back to the head; an automatic drain also pauses
+ * the queue with the error as its reason, so the failure cannot loop.
  */
 export class AgentMessageQueueDispatcher {
   private readonly agentManager: AgentManager;
@@ -40,6 +46,7 @@ export class AgentMessageQueueDispatcher {
         if (agent.lifecycle !== "idle") return;
         if (agent.pendingPermissions.size > 0) return;
         if (agent.queuedMessages.length === 0) return;
+        if (agent.queuePaused) return;
         this.dispatch(agent.id, { reason: "idle" });
       },
       { replayState: false },
@@ -67,9 +74,9 @@ export class AgentMessageQueueDispatcher {
   }
 
   /**
-   * Drains the head if the agent is currently idle. Called after an add so a
-   * message queued against an agent that already finished does not sit until
-   * the next state event.
+   * Drains the head if the agent is currently idle and its queue is not paused.
+   * Called after an add, so a message queued against an agent that already
+   * finished does not sit until the next state event, and after unpausing.
    */
   drainIfIdle(agentId: string): void {
     const agent = this.agentManager.getAgent(agentId);
@@ -77,7 +84,35 @@ export class AgentMessageQueueDispatcher {
     if (agent.lifecycle !== "idle") return;
     if (agent.pendingPermissions.size > 0) return;
     if (agent.queuedMessages.length === 0) return;
+    if (agent.queuePaused) return;
     this.dispatch(agentId, { reason: "idle" });
+  }
+
+  /**
+   * Loads every stored agent whose queue would drain (non-empty, not paused,
+   * not archived) so it drains without a client opening it. Called once after
+   * daemon start; loads one agent at a time so a long list cannot stampede
+   * the providers. A failed load leaves the queue in the record.
+   */
+  async drainStoredQueues(): Promise<void> {
+    const records = await this.agentStorage.list();
+    for (const record of records) {
+      if (record.archivedAt || record.internal || record.queuePaused) continue;
+      if (!record.queuedMessages?.length) continue;
+      try {
+        await ensureAgentLoaded(record.id, {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          logger: this.logger,
+        });
+        this.drainIfIdle(record.id);
+      } catch (error) {
+        this.logger.error(
+          { err: error, agentId: record.id },
+          "Failed to load agent to drain its stored queue",
+        );
+      }
+    }
   }
 
   private dispatch(
@@ -108,6 +143,7 @@ export class AgentMessageQueueDispatcher {
     },
   ): Promise<void> {
     let message: AgentQueuedMessagePayload | null = null;
+    let admitted = false;
     try {
       message = await this.agentManager.takeQueuedMessage(agentId, options.messageId);
       if (!message) {
@@ -134,25 +170,59 @@ export class AgentMessageQueueDispatcher {
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         agentId,
-        prompt: buildAgentPrompt(message.text, message.images, message.attachments),
+        prompt: buildAgentPrompt(
+          message.text,
+          message.images,
+          message.attachments,
+          message.attachmentRefs,
+        ),
         messageId: message.id,
         activeTurnBehavior: options.activeTurnBehavior ?? "steer",
         clearPendingPermissions: true,
         logger: this.logger,
       });
+      // From here the prompt belongs to the provider. A run-start wait that
+      // times out or fails does not un-send it (a rejected start is already in
+      // the timeline as a rejected message), so requeueing would duplicate it.
+      admitted = true;
       if (result.disposition === "turn_started") {
         await waitForAgentRunStartWithTimeout(this.agentManager, agentId);
       }
     } catch (error) {
       this.logger.error(
-        { err: error, agentId, messageId: message?.id ?? options.messageId ?? null },
+        { err: error, agentId, messageId: message?.id ?? options.messageId ?? null, admitted },
         "Failed to dispatch queued agent message",
       );
-      // The entry is already popped; it stays dropped so a persistent failure
-      // cannot loop on every idle transition. Send-now callers get the error.
+      if (message && !admitted) {
+        await this.requeue(agentId, message, options.reason, error);
+      }
       if (options.reason === "send_now") {
         throw error;
       }
+    }
+  }
+
+  private async requeue(
+    agentId: string,
+    message: AgentQueuedMessagePayload,
+    reason: "idle" | "send_now",
+    error: unknown,
+  ): Promise<void> {
+    try {
+      // Send-now has a caller to show the error to, so it only restores the
+      // entry. An automatic drain has no one watching: pause and say why.
+      await this.agentManager.requeueQueuedMessage(
+        agentId,
+        message,
+        reason === "idle"
+          ? { pauseReason: error instanceof Error ? error.message : String(error) }
+          : undefined,
+      );
+    } catch (requeueError) {
+      this.logger.error(
+        { err: requeueError, agentId, messageId: message.id },
+        "Failed to requeue undelivered queued agent message",
+      );
     }
   }
 }

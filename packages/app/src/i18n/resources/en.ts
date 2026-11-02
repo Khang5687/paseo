@@ -26,6 +26,7 @@ export const en = {
     back: "Back",
     loading: "Loading...",
     actions: {
+      save: "Save",
       back: "Back",
       cancel: "Cancel",
       close: "Close",
@@ -62,6 +63,7 @@ export const en = {
       daemonClientUnavailable: "Daemon client unavailable",
       daemonClientDisconnected: "Daemon client is disconnected",
       noFileFound: "No file found for {{token}}",
+      folderOutsideWorkspace: "{{path}} is outside this workspace",
       unexpectedDictationError: "An unexpected error occurred while handling dictation.",
     },
     connectionStatus: {
@@ -110,6 +112,12 @@ export const en = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restore draft",
+      attachmentsOnly: "(attachments only)",
+      attachments_one: "{{count}} attachment",
+      attachments_other: "{{count}} attachments",
+    },
     placeholders: {
       desktop: "Message the agent, tag @files, or use /commands and /skills",
       mobile: "Message, @files, /commands",
@@ -119,6 +127,8 @@ export const en = {
     input: {
       accessibilityLabel: "Message agent...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "Fullscreen",
+      exitFullscreen: "Exit fullscreen",
       focusHint: "{{shortcut}} to focus",
       addAttachment: "Add attachment",
       interruptAgent: "Interrupt agent",
@@ -126,6 +136,9 @@ export const en = {
       sendAndInterrupt: "Send and interrupt",
       sendAndSteer: "Send and steer",
       sendMessage: "Send message",
+      longPressToQueue: "Long press to queue",
+      longPressToInterrupt: "Long press to interrupt",
+      longPressToSteer: "Long press to steer",
       queue: "Queue",
       send: "Send",
     },
@@ -156,6 +169,25 @@ export const en = {
       dropFilesHere: "Drop files here",
       editQueuedMessage: "Edit queued message",
       sendQueuedMessageNow: "Send queued message now",
+      queueHeader: "Queue · {{count}}",
+      queuePausedHeader: "Queue paused · {{count}}",
+      queuePauseReason: "Couldn't send: {{reason}}",
+      pauseQueue: "Pause queue",
+      resumeQueue: "Resume queue",
+      clearQueue: "Clear queue",
+      clearQueueTitle: "Clear queue",
+      clearQueueMessage: "Every queued message for this agent will be removed.",
+      clearQueueConfirm: "Clear",
+      queuedMessageActions: "Queued message actions",
+      editQueuedMessageAction: "Edit",
+      moveQueuedMessageToTop: "Move to top",
+      moveQueuedMessageUp: "Move up",
+      moveQueuedMessageDown: "Move down",
+      deleteQueuedMessage: "Delete",
+      reorderQueuedMessage: "Drag to reorder",
+      showMoreQueuedMessages: "Show {{count}} more",
+      showFewerQueuedMessages: "Show less",
+      queueUpdateFailed: "Unable to update queue",
       openImage: "Open image attachment",
       removeImage: "Remove image attachment",
       removeFile: "Remove file attachment",
@@ -310,6 +342,57 @@ export const en = {
       archive: "Archive",
     },
   },
+  codeRun: {
+    run: "Run",
+    runCommand: "Run command",
+    cancel: "Cancel",
+    commandLabel: "Command",
+    where: "Runs on {{host}} · {{folder}}",
+    running: "Running",
+    done: "Done · exit {{code}}",
+    failed: "Failed · exit {{code}}",
+    stopped: "Stopped",
+    terminalClosed: "Terminal closed",
+    close: "Close",
+    expand: "Show output",
+    collapse: "Hide output",
+    openTerminal: "Open in Terminal tab",
+    answerPlaceholder: "Send input",
+    send: "Send",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
+    sendToAgent: "Send output to agent",
+    rerun: "Re-run",
+    copyOutput: "Copy output",
+    copied: "Copied",
+    noOutput: "No output yet",
+    noOutputFinished: "No output",
+    startFailed: "Unable to start the command",
+    closeFailed: "Unable to close the terminal",
+    hostOffline: "Host offline. Reconnect to run this command.",
+    prompt: {
+      sudoPassword: "sudo password",
+      password: "Password",
+    },
+    chips: {
+      yes: "Yes",
+      no: "No",
+    },
+    keys: {
+      enter: "Enter",
+      tab: "Tab",
+      interrupt: "Ctrl-C",
+    },
+    risk: {
+      admin: "Runs as admin",
+      deletes: "Deletes files",
+    },
+    report: {
+      exitStatus: "Exit status",
+      stopped: "Stopped before it finished",
+      truncated: "[earlier output cut]",
+    },
+  },
   message: {
     diagram: {
       diagram: "Diagram",
@@ -354,6 +437,7 @@ export const en = {
       details: "Details",
     },
     dictation: {
+      paused: "Microphone interrupted. Waiting to resume…",
       start: "Start voice dictation",
       cancel: "Cancel dictation",
       retry: "Retry dictation",
@@ -363,6 +447,7 @@ export const en = {
       failedRetry: "Dictation failed. Tap retry.",
     },
     question: {
+      responseFailed: "Could not send your response. Try again.",
       submit: "Submit",
       next: "Next",
       answerPlaceholder: "Type your answer...",
@@ -465,6 +550,7 @@ export const en = {
       copyPath: "Copy path",
       copyRelativePath: "Copy relative path",
       copyFullPath: "Copy full path",
+      copyFileName: "Copy file name",
       revealIn: "Reveal in {{target}}",
       download: "Download",
       addToChat: "Add to chat",
@@ -531,6 +617,7 @@ export const en = {
       },
     },
     setup: {
+      updateHost: "Update the host to view workspace setup details",
       descriptor: {
         label: "Setup",
         completed: "Setup completed",
@@ -606,7 +693,14 @@ export const en = {
     terminal: {
       hostDisconnected: "Host is not connected",
       updateHost: "Update the host to use the native terminal renderer.",
+      restoreRequiresUpdate: "Update the host to view terminals.",
       unableToSubscribe: "Unable to subscribe to terminal",
+      fileUploaded: "File uploaded",
+      pasteFileFailed: "Failed to paste file: {{reason}}",
+      uploadingFile: "Uploading file…",
+    },
+    sheet: {
+      openAsTab: "Open as tab",
     },
     tabs: {
       loading: "Loading...",
@@ -623,7 +717,7 @@ export const en = {
       },
       switcher: {
         trigger: "Switch tabs ({{count}} open)",
-        title: "Switch tab",
+        title: "Workspace tabs",
         searchPlaceholder: "Search tabs",
       },
       menu: {
@@ -677,6 +771,7 @@ export const en = {
         terminalIdCopiedLabel: "Terminal ID",
         resumeCommandCopiedLabel: "resume command",
         filePathCopiedLabel: "File path",
+        fileNameCopiedLabel: "File name",
         resumeIdUnavailable: "Resume ID not available",
         resumeCommandUnavailable: "Resume command not available",
         reloadingAgent: "Reloading agent...",
@@ -719,6 +814,7 @@ export const en = {
     header: {
       actions: {
         workspaceActions: "Workspace actions",
+        workspaceActionsUnhealthy: "Workspace actions, a service is unhealthy",
         newAgent: "New agent",
         newTerminal: "New terminal",
         newBrowser: "New browser tab",
@@ -766,6 +862,8 @@ export const en = {
         exitCode: "exit {{code}}",
         startFailed: "Failed to start {{scriptName}}",
         stopFailed: "Failed to stop {{scriptName}}",
+        running: "Running",
+        runningCount: "{{count}} running",
       },
     },
     tree: {
@@ -953,6 +1051,7 @@ export const en = {
         checkingRepository: "Checking repository...",
         notRepository: "Not a git repository",
         diffMode: "Diff mode",
+        all: "All changes",
         uncommitted: "Uncommitted",
         committed: "Committed",
         branchUnknown: "Unknown",
@@ -1157,8 +1256,16 @@ export const en = {
       done: "Done",
     },
     display: {
+      showBackground: "Show background",
       trigger: "Display preferences",
       heading: "Display",
+      sort: {
+        label: "Sort",
+        created: "Created",
+        manual: "Manual",
+        lastPrompt: "Last prompt",
+        updateHost: "Update hosts to sort workspaces",
+      },
       grouping: {
         label: "Grouping",
         project: "Project",
@@ -1234,6 +1341,7 @@ export const en = {
       sessions: "History",
       search: "Search",
       schedules: "Schedules",
+      notes: "Notes",
     },
     worktreeSetup: {
       title: "Set up worktree scripts",
@@ -1270,6 +1378,9 @@ export const en = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} sub-agents working",
+      workingSubagents_one: "{{count}} sub-agent working",
+      workingSubagents_other: "{{count}} sub-agents working",
       status: {
         serviceRunning: "Service {{name}} running",
         serviceUnhealthy: "Service {{name}} unhealthy",
@@ -1332,8 +1443,9 @@ export const en = {
     },
     fields: {
       project: "Project",
-      base: "Base",
+      branch: "Branch",
       baseNotApplicable: "Not applicable",
+      host: "Host",
     },
     titlePlaceholder: "Title (optional)",
     errors: {
@@ -1680,13 +1792,18 @@ export const en = {
     title: "Add provider",
     search: "Search providers",
     noProviders: "No providers found",
+    clearSearch: "Clear search",
     actions: {
       add: "Add",
+      addProvider: "Add {{provider}}",
       adding: "Adding",
       installed: "Installed",
       cancel: "Cancel",
       installInstructions: "Install instructions",
       installInstructionsFor: "{{provider}} install instructions",
+    },
+    types: {
+      acp: "ACP",
     },
     errors: {
       unableToInstall: "Unable to install provider",
@@ -1904,10 +2021,50 @@ export const en = {
     shareFile: "Share file",
     shareFileNamed: "Share {{fileName}}",
   },
+  offlineFiles: {
+    title: "Offline files",
+    autoSave: {
+      label: "Save chat files automatically",
+      description:
+        "Save files mentioned in chats you open, on Wi-Fi only, so they open while the host is offline.",
+    },
+    retentionDays: {
+      label: "Keep for (days)",
+      description: "Saved files older than this are removed.",
+    },
+    maxTotalMb: {
+      label: "Storage limit (MB)",
+      description: "The oldest saved files are removed past this size.",
+    },
+    maxFileMb: {
+      label: "Largest file (MB)",
+      description: "Larger files are not saved.",
+    },
+    saved: {
+      label: "Saved: {{count}} files, {{size}}",
+      description: "The newest saved files are listed below.",
+    },
+    clearAll: "Clear all",
+    clearConfirmTitle: "Clear offline files?",
+    clearConfirmMessage:
+      "Saved copies are deleted from this device. Files on the host are not touched.",
+    saveOffline: "Save offline",
+    savedToast: "Saved for offline use",
+    tooLarge: "The file is over the {{size}} MB limit for offline files.",
+    readOnly: "This is a saved copy. Connect to the host to edit it.",
+    savedAgo: "Offline copy, saved {{time}}",
+    share: "Share",
+  },
   menu: {
     backdrop: "Menu backdrop",
   },
   subagents: {
+    parent: {
+      backToParent: "Back to parent",
+      backTo: "Back to {{label}}",
+      parentAgent: "Parent agent",
+      openParent: "Open parent",
+    },
     title: "Subagents",
     pillLabelOne: "1 subagent",
     pillLabelMany: "{{count}} subagents",
@@ -1929,14 +2086,35 @@ export const en = {
       creatingAgent: "Creating agent",
     },
     file: {
+      filePanels: {
+        pickerTitleExtension: "Open .{{extension}} files with",
+        pickerTitleFilename: "Open {{filename}} with",
+        dontAskAgain: "Don't ask me again",
+        use: "Use",
+        openWith: "Open with…",
+        alwaysUseExtension: "Always use for .{{extension}}",
+        alwaysUseFilename: "Always use for {{filename}}",
+        option: "{{title}} — {{owner}}",
+        builtin: {
+          owner: "Paseo",
+          markdown: "Markdown",
+          html: "HTML",
+          image: "Image",
+          source: "Source",
+        },
+      },
       directoryMissing: "Workspace directory not found.",
       loading: "Loading file...",
       noPreview: "No preview available",
       binaryPreviewUnavailable: "Binary preview unavailable",
       tooLargeToDisplay: "This file is too large to display",
+      documentUnsupported: "{{type}} files can't be shown on this device",
       failedToLoad: "Failed to load file",
+      notFound: "File not found",
       failedToLoadPreview: "Failed to load file preview",
       editor: {
+        preview: "Preview",
+        source: "Source",
         fileSize: "File size {{size}}",
         lines: "{{count}} lines",
         editorStatus: "Editor status {{status}}",
@@ -1946,10 +2124,7 @@ export const en = {
         changedOnDisk: "Changed on disk",
         vimMode: "Vim mode {{mode}}",
         cursor: "Line {{line}}, column {{column}}",
-        preview: "Preview",
-        source: "Source",
         deletedTitle: "File deleted on disk",
-        checkFailedTitle: "Couldn't check file on disk",
         preservedDescription: "The open copy is preserved.",
         conflictDescription: "The local buffer was preserved. Choose which version to keep.",
         overwrite: "Overwrite",
@@ -1986,11 +2161,17 @@ export const en = {
   toolCallDetails: {
     error: "Error",
     empty: "No additional details available",
-    subAgentActivity: "Sub-agent activity",
     input: "Input",
     output: "Output",
   },
+  turnSummary: {
+    details: "View turn details",
+    sentBy: "Sent by {{name}}",
+    showMore: "Show more",
+    showLess: "Show less",
+  },
   toolCallGroup: {
+    thought: "Thought",
     editedFiles: {
       one: "edited {{count}} file",
       other: "edited {{count}} files",
@@ -2034,6 +2215,17 @@ export const en = {
     accessibility: "Context window {{percentage}}% used",
   },
   review: {
+    feedback: {
+      send: "Send feedback ({{count}})",
+      sending: "Sending feedback ({{count}})",
+      chooseAgent: "Choose an agent",
+      sent: "Feedback sent to {{recipient}}",
+      "no-agents": "Open an agent tab in this workspace to send feedback.",
+      disconnected: "Connect to the host to send feedback.",
+      "no-context": "Saved comments no longer match this diff.",
+      failed: "Failed to send feedback. Try again.",
+      prompt: "Please address this code review.",
+    },
     comment: {
       add: "Add review comment",
       edit: "Edit review comment",
@@ -2044,6 +2236,399 @@ export const en = {
       cancelAccessibility: "Cancel review comment",
       save: "Comment",
       saveAccessibility: "Save review comment",
+    },
+  },
+  ompAccountRouting: {
+    login: {
+      start: "Add Claude account",
+      elsewhere: "Open Paseo on the host computer to add an account.",
+      update: "Update Paseo and Oh My Pi on the host to add accounts here.",
+      inProgress: "Sign-in in progress",
+      continue: "Continue",
+      cancel: "Cancel",
+      cancelSignIn: "Cancel sign-in",
+      done: "Done",
+      details: "Details",
+      tryAgain: "Try again",
+      close: "Close",
+      justAdded: "Just added",
+      warning: {
+        body: "Paseo saves one sign-in per Claude account. Sign in to claude.ai as the account you want to add.",
+        existing: "Already added: {{accounts}}",
+        alertTitle: "Check which account your browser uses",
+        alertDescription:
+          "If claude.ai is still signed in as an account that is already added, sign out or switch accounts first. A private window always starts signed out.",
+        guard:
+          "If you sign in as an account that is already added, Paseo stops and changes nothing.",
+      },
+      preparing: "Preparing sign-in link...",
+      link: {
+        title: "Sign in to Claude",
+        step: "Open the link and sign in as the account you want to add",
+        open: "Open sign-in page",
+        copy: "Copy link",
+        copied: "Copied",
+        label: "Sign-in link",
+        hint: "To use a private window or another device, copy the link instead",
+        waiting: "Waiting for the browser...",
+        pasteInstead: "Paste address instead",
+      },
+      paste: {
+        label: "Address or code",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "After you approve, the browser may land on a page that does not load. Copy the full address from the address bar, or the code Claude shows, and paste it here.",
+        submit: "Submit",
+        checking: "Checking...",
+        error: {
+          invalid_input: "That is not a sign-in address or code",
+          wrong_login: "That address belongs to an older sign-in link. Use the link shown here.",
+          not_waiting: "This sign-in already finished",
+          not_allowed: "Only Paseo on the host computer can send this",
+          unreachable: "Could not reach the host. Try again.",
+        },
+      },
+      verifying: "Checking the sign-in...",
+      result: {
+        added: {
+          title: "Added {{account}}",
+          titleUnnamed: "Account added",
+          description: "{{organization}}. Auto-routing can use it now.",
+          descriptionUnnamed: "Auto-routing can use it now.",
+          billingEnabled:
+            "Paid extra usage is on for this account. Auto-routing skips it until you turn that off in Claude settings.",
+          billingUnknown:
+            "Make sure paid extra usage is off for this account in Claude settings. Auto-routing skips accounts that have it on.",
+        },
+        alreadyListed: {
+          title: "{{account}} is already added",
+          titleUnnamed: "That account is already added",
+          description:
+            "Nothing changed. Your browser signed in as an account Paseo already has. Sign out of claude.ai or use a private window, then try again.",
+        },
+        replaced: {
+          title: "Replaced the sign-in for {{account}}",
+          titleUnnamed: "Replaced a saved sign-in",
+          description: "No account was added. The new sign-in is in use.",
+        },
+        failed: "Sign-in failed",
+        cancelled: "Sign-in cancelled",
+      },
+      failure: {
+        timeout: "The sign-in link expired after 10 minutes. Nothing changed.",
+        omp_failed:
+          "Oh My Pi could not finish signing in. Nothing changed. Try again, or run omp in a terminal and type /login.",
+        spawn_failed: "Paseo could not start Oh My Pi on this computer.",
+        unreachable:
+          "Lost contact with the host. When it reconnects, check the account list before you try again.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Applies to all Paseo-managed OMP agents on this host. Other hosts and standalone terminals are unchanged.",
+      account: "Account",
+      automatic: "Automatic",
+      useForAuto: "Use for auto-routing",
+      auto: "Auto-routing",
+      priority: "Fallback priority",
+      priorityHelp:
+        "When the current account runs out, Paseo switches to the included account with the most usage left. This order breaks ties.",
+      addAccountHint:
+        "To add an account, run omp in a terminal and type /login, then sign in with a different Claude account.",
+      current: "Selected",
+      serving: "Serving",
+      lastServed: "Last served",
+      excluded: "Excluded from auto-routing",
+      missing: "Saved account unavailable",
+      fiveHour: "5-hour",
+      weekly: "Weekly",
+      tier: "Subscription tier",
+      unknownTier: "Subscription tier unknown",
+      unknownBudget: "Absolute allowance unknown",
+      consumed: "Consumed",
+      remaining: "Remaining",
+      stale: "Stale observation",
+      unknownOrganization: "Organization unknown",
+      detailsPending: "Details appear when an Oh My Pi agent is running",
+      search: "Search accounts",
+    },
+    actions: {
+      moveUp: "Move up",
+      moveDown: "Move down",
+    },
+    status: {
+      loading: "Loading account routing",
+      empty: "No Claude accounts observed",
+      noRuntime: "Accounts appear when an Oh My Pi agent is running.",
+      unsupported: "This host has not verified OMP account-routing support",
+      offline: "Host offline; showing last confirmed settings",
+      readOnly: "You can view these settings but cannot change them",
+      pending: "Saving settings",
+      conflict: "Settings changed elsewhere; showing the latest confirmed state",
+      paused: "Waiting for an available included account",
+      recovered: "Included account available",
+      unknownUsage: "Usage unknown",
+      summaryPaused: "Paused: no included account has usage left.",
+      summaryPausedResumes: "Paused: no included account has usage left. Resumes {{time}}",
+      summaryUsing: "Using {{account}}",
+      summaryAuto: "Auto picks the account with the most usage left",
+    },
+    reason: {
+      no_account: "No account is selected",
+      source_changed: "The selected native credential source changed",
+      source_inaccessible: "This runtime cannot access the selected native account",
+      billing_enabled:
+        "Paid usage credits are enabled; included-only routing cannot use this account",
+      billing_unknown: "Paid usage-credit settings are not freshly verified",
+      quota_blocked: "Included usage is unavailable for this request",
+      entitlement_unavailable: "Model access is unavailable or not verified for this account",
+      auth_unavailable: "Native account authentication is unavailable",
+      unsupported_transport: "This provider transport does not support included-only routing",
+      unsupported_runtime: "This OMP runtime does not support managed routing",
+      persistence_failed: "Routing settings could not be saved",
+      host_unavailable: "Routing host unavailable",
+      cancelled: "Request cancelled",
+      metadata_pending: "Verifying account availability",
+      all_unavailable: "No included account is currently available",
+      auto_disabled: "Auto-routing is off; select an account or enable it to continue",
+      provider_failed: "Account availability could not be verified",
+    },
+    mutationError: {
+      conflict: "Settings changed elsewhere; review the latest state before trying again",
+      invalid_account: "That native account is no longer in the catalog",
+      unsupported: "Account-routing controls are unavailable on this host",
+      persistence_failed: "Settings were not saved; the previous confirmed settings remain",
+    },
+    values: {
+      used: "{{percent}}% used",
+      reset: "resets {{time}}",
+      observed: "observed {{time}}",
+      limitReached: "{{window}} limit reached",
+      limitReachedReset: "{{window}} limit reached · resets {{time}}",
+      account: "Account {{row}}",
+      serving: "{{account}} is serving {{agent}}",
+      priority: "Priority {{position}}",
+    },
+  },
+  providerUsage: {
+    checkUsage: "Check usage",
+    checkUsageHint: "Applies to {{host}} on every device",
+    off: "Usage is off on {{host}}.",
+    turnOn: "Turn on",
+
+    options: "Settings",
+    refreshFailed: "Unable to refresh usage",
+    noHosts: "No connected hosts",
+    agentError: "Unable to load usage: {{reason}}",
+    pin: "Pin",
+    unpin: "Unpin",
+    displayAs: "Percentages",
+    displayUsed: "Used",
+    displayRemaining: "Remaining",
+    showInSidebar: "Summary in sidebar",
+    showInSidebarHint: "Pinned windows show in the sidebar footer",
+    runToRefresh: "Run {{command}} to refresh it.",
+    signInAgain: "Sign in again.",
+    loginRejected: "Login rejected (HTTP {{status}}). {{remedy}}",
+    loginExpired: "Login expired {{relativeTime}}. {{remedy}}",
+    title: "Plan usage",
+    refresh: "Refresh",
+    refreshAll: "Refresh all",
+    refreshing: "Refreshing...",
+    loading: "Loading usage...",
+    empty: "No usage data",
+    errorTitle: "Unable to load usage",
+    hostUnavailable: "Connect to {{host}} to see usage",
+    hostUpgradeRequired: "Update {{host}} to see usage",
+    clientUnavailable: "Host connection is not ready",
+    retry: "Try again",
+    tooltipLoading: "Loading plan usage...",
+    status: {
+      error: "Error",
+      unavailable: "Unavailable",
+    },
+    values: {
+      used: "{{percentage}} used",
+      remaining: "{{amount}} left",
+    },
+    labels: {
+      session: "Session",
+      weekly: "Weekly",
+      monthly: "Monthly",
+      codeReview: "Code review",
+      credits: "Credits",
+      monthlyCredits: "Monthly credits",
+    },
+    duration: {
+      days: "{{value}}d",
+      hours: "{{value}}h",
+      minutes: "{{value}}m",
+      pair: "{{first}} {{second}}",
+    },
+    timing: {
+      lastUpdated: "Last updated {{relativeTime}}",
+      noSuccessfulUpdate: "No successful update",
+      resetTimePassed: "Reset time passed",
+      resettingNow: "resetting now",
+      resetsIn: "resets in {{duration}}",
+      resetsAtWeekday: "{{weekday}} {{time}}",
+      resetsAtDate: "{{date}}, {{time}}",
+      runsOutNow: "runs out now",
+      runsOutIn: "runs out in {{duration}}",
+      justNow: "just now",
+      daysAgo: "{{value}}d ago",
+      hoursAgo: "{{value}}h ago",
+      minutesAgo: "{{value}}m ago",
+      updated: "Updated {{relativeTime}}",
+    },
+  },
+  notes: {
+    addNote: "Add note",
+    offline: "This host is offline.",
+    unsupported: "Update this host to use notes.",
+    composer: {
+      titleNew: "New note",
+      titleEdit: "Edit note",
+      quoteLabel: "Highlighted text",
+      showMore: "Show more",
+      showLess: "Show less",
+      textLabel: "Note",
+      textPlaceholder: "What do you want to remember?",
+      kind: {
+        label: "Type",
+        note: "Note",
+        waiting: "Waiting on",
+      },
+      event: {
+        label: "Waiting on",
+        agent: "Agent",
+        command: "Command",
+        time: "Time",
+      },
+      agent: {
+        label: "Agent finishes or needs input",
+        placeholder: "Choose an agent",
+        empty: "No agents on this host",
+        search: "Search agents",
+        untitled: "Untitled agent",
+      },
+      command: {
+        terminalLabel: "Command finishes in",
+        placeholder: "Choose a terminal",
+        empty: "No terminals on this host",
+        search: "Search terminals",
+        untitled: "Terminal",
+        binding:
+          "Binds to the command running now or the next one. Needs a Paseo terminal running zsh or bash.",
+        conditionLabel: "Notify when it",
+        any: "Any",
+        success: "Succeeds",
+        failure: "Fails",
+        commandLabel: "Command",
+        commandPlaceholder: "Optional label",
+      },
+      time: {
+        label: "Remind me",
+        presets: {
+          in30m: "In 30 min",
+          in1h: "In 1 hour",
+          in2h: "In 2 hours",
+          tomorrow9: "Tomorrow 9:00",
+        },
+        inputLabel: "Or type a time",
+        inputPlaceholder: "3pm, in 45 min, tomorrow 9am",
+        invalid: "Couldn't read that time",
+        resolvedToday: "Today at {{time}}",
+        resolvedTomorrow: "Tomorrow at {{time}}",
+        resolvedOther: "{{date}} at {{time}}",
+      },
+      actions: {
+        cancel: "Cancel",
+        add: "Add note",
+        save: "Save",
+        resolve: "Resolve",
+        reopen: "Reopen",
+        delete: "Delete",
+      },
+      deleteConfirm: {
+        title: "Delete note",
+        message: "Delete this note? This cannot be undone.",
+        confirm: "Delete",
+      },
+      errors: {
+        save: "Couldn't save the note: {{message}}",
+        update: "Couldn't update the note: {{message}}",
+        delete: "Couldn't delete the note: {{message}}",
+      },
+    },
+    screen: {
+      title: "Notes",
+      loadError: "{{host}}: Could not load notes",
+      unsupportedHosts_one: "{{hosts}} needs an update to show notes",
+      unsupportedHosts_other: "{{hosts}} need an update to show notes",
+      filters: {
+        all: "All",
+        waiting: "Waiting",
+        open: "Open",
+        resolved: "Resolved",
+      },
+      empty: {
+        all: "No notes yet",
+        allHint: "Highlight text in a chat or terminal to add a note",
+        waiting: "Nothing waiting",
+        open: "No open notes",
+        resolved: "No resolved notes",
+      },
+      source: {
+        agent: "Agent",
+        terminal: "Terminal",
+      },
+      wait: {
+        agent: "Waiting for {{agent}} to finish",
+        agentUnnamed: "Waiting for the agent to finish",
+        commandAny: "Waiting for command to finish",
+        commandSuccess: "Waiting for command to succeed",
+        commandFailure: "Waiting for command to fail",
+        namedCommandAny: "Waiting for {{command}} to finish",
+        namedCommandSuccess: "Waiting for {{command}} to succeed",
+        namedCommandFailure: "Waiting for {{command}} to fail",
+        timeToday: "Reminder at {{time}}",
+        timeTomorrow: "Reminder tomorrow at {{time}}",
+        timeOther: "Reminder {{date}} at {{time}}",
+        inMinutes: "in {{count}}m",
+        inHours: "in {{count}}h",
+        inDays: "in {{count}}d",
+      },
+      status: {
+        waiting: "Waiting",
+        done: "Done",
+        resolved: "Resolved",
+        unmatched: "Not matched",
+      },
+      actions: {
+        menu: "Note actions",
+        edit: "Edit note",
+        resolve: "Resolve",
+        reopen: "Reopen",
+        resolving: "Resolving...",
+        reopening: "Reopening...",
+        delete: "Delete note",
+        deleting: "Deleting...",
+      },
+      deleteConfirm: {
+        title: "Delete note",
+        message: "Delete this note? This cannot be undone.",
+        confirm: "Delete",
+      },
+      openFailed: "This terminal is no longer open",
+    },
+    chat: {},
+    terminal: {
+      quoteNotFound: "This note's text is no longer in the terminal's scrollback.",
+    },
+    alerts: {
+      reminderTitle: "Done: {{text}}",
+      reminderBody: "Reminder",
     },
   },
   settings: {
@@ -2072,6 +2657,7 @@ export const en = {
       appearance: "Appearance",
       sidebar: "Sidebar",
       editor: "Editor",
+      files: "Files",
       terminal: "Terminal",
       browser: "Browser",
       shortcuts: "Shortcuts",
@@ -2125,6 +2711,14 @@ export const en = {
       vimKeybindings: "Vim keybindings",
       vimHint: "Applies to source files on web and desktop.",
     },
+    files: {
+      title: "Files",
+      askEveryTime: "Ask every time",
+      askAgain: "Ask again",
+      askAgainFor: "Ask again for {{label}}",
+      unavailable: "Not on a connected host",
+      empty: "File panels appear here when a plugin adds one",
+    },
     notifications: {
       title: "Notifications",
       permission: "Notification permission",
@@ -2145,6 +2739,7 @@ export const en = {
       connections: "Connections",
       agents: "Agents",
       metadata: "Metadata",
+      voice: "Voice",
       workspaces: "Workspaces",
       providers: "Providers",
       usage: "Usage",
@@ -2225,9 +2820,72 @@ export const en = {
       automaticHint: "Paseo picks a fast available model",
       preferredHint: "Choose the model Paseo uses",
       model: "Model",
-      fallbackHint: "If it is unavailable, Paseo falls back to another available model",
+      modelHint: "Only this model is used. If it fails, Paseo does not try another model",
       docs: "Docs",
       saveError: "Unable to update metadata generation",
+    },
+    voice: {
+      offline: "Connect to this host to configure voice.",
+      updateHost: "Update the host to configure voice.",
+      saveError: "Unable to update voice settings",
+      provider: "Provider",
+      providers: {
+        local: "Local",
+        openai: "OpenAI",
+      },
+      voice: "Voice",
+      save: "Save",
+      retry: "Retry",
+      cancel: "Cancel",
+      model: "Model",
+      language: "Language",
+      languagePlaceholder: "Auto-detect",
+      setBy: "Set by {{name}}",
+      unknownProvider: "Update the app to configure {{provider}}",
+      sites: {
+        dictationStt: "Speech-to-text",
+        voiceModeStt: "Listening",
+        voiceModeTts: "Speaking",
+      },
+      dictation: {
+        title: "Dictation",
+        enabled: "Dictation",
+        enabledHint: "Speak into the message box instead of typing",
+      },
+      voiceMode: {
+        title: "Voice mode",
+        info: "Voice mode transcribes what you say and reads agent replies aloud.",
+        enabled: "Voice mode",
+        enabledHint: "Talk with your agents hands-free",
+      },
+      openai: {
+        apiKey: "API key",
+        apiKeyHint: "Saved on the host and never shown again.",
+        keyPlaceholder: "sk-...",
+        savedKeyPlaceholder: "Saved",
+        missingKey: "API key missing",
+        baseUrl: "Base URL",
+        baseUrlHint: "For OpenAI-compatible servers. Leave empty to use OpenAI.",
+      },
+      models: {
+        loading: "Loading models...",
+        loadError: "Couldn't load local models",
+        none: "No models available",
+        downloaded: "Downloaded",
+        inUse: "In use",
+        recommended: "Recommended",
+        download: "Download",
+        downloadAction: "Download {{label}}",
+        downloading: "Downloading...",
+        downloadingPercent: "Downloading {{percent}}%",
+        extracting: "Extracting...",
+        delete: "Delete",
+        deleteAction: "Delete {{label}}",
+        deleteTitle: "Delete {{label}}?",
+        deleteMessage: "This frees {{size}}. You can download it again later.",
+        languages: "{{label}} languages",
+        moreLanguages: "{{languages}} and {{count}} more",
+      },
     },
     general: {
       title: "General",
@@ -2246,10 +2904,21 @@ export const en = {
       defaultSend: {
         label: "Default send",
         descriptions: {
-          interrupt: "When the agent is running, Enter interrupts. Command/Ctrl+Enter queues.",
+          interrupt: "When the agent is running, Enter interrupts.",
+          steer: "When the agent is running, Enter steers the active turn.",
+          queue: "When the agent is running, Enter queues.",
+        },
+        touchDescriptions: {
+          interrupt: "When the agent is running, tapping Send interrupts.",
+          steer: "When the agent is running, tapping Send steers the active turn.",
+          queue: "When the agent is running, tapping Send queues.",
+        },
+        commandEnterDescriptions: {
+          interrupt:
+            "When the agent is running, {{modifier}}+Enter interrupts. Enter inserts a new line.",
           steer:
-            "When the agent is running, Enter steers the active turn. Command/Ctrl+Enter queues.",
-          queue: "When the agent is running, Enter queues. Command/Ctrl+Enter submits.",
+            "When the agent is running, {{modifier}}+Enter steers the active turn. Enter inserts a new line.",
+          queue: "When the agent is running, {{modifier}}+Enter queues. Enter inserts a new line.",
         },
         options: {
           interrupt: "Interrupt",
@@ -2257,7 +2926,29 @@ export const en = {
           queue: "Queue",
         },
       },
+      alternateSend: {
+        label: "Alternate send",
+        descriptions: {
+          interrupt:
+            "When the agent is running, {{modifier}}+Enter or a long press on Send interrupts.",
+          steer:
+            "When the agent is running, {{modifier}}+Enter or a long press on Send steers the active turn.",
+          queue: "When the agent is running, {{modifier}}+Enter or a long press on Send queues.",
+        },
+        longPressDescriptions: {
+          interrupt: "When the agent is running, a long press on Send interrupts.",
+          steer: "When the agent is running, a long press on Send steers the active turn.",
+          queue: "When the agent is running, a long press on Send queues.",
+        },
+      },
       defaultEditor: "Default editor",
+      sendShortcut: {
+        label: "Send shortcut",
+        options: {
+          enter: "Enter",
+          "mod-enter": "{{modifier}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Ask",
@@ -2274,12 +2965,13 @@ export const en = {
         label: "Always expand reasoning",
         description: "Show agent thinking and chain-of-thought blocks fully expanded by default",
       },
-      toolCallDetail: {
-        label: "Tool call display",
-        description: "How tool calls appear in the timeline",
+      chatDisplay: {
+        label: "Chat display",
+        description: "How much of an agent's work the chat shows",
         options: {
-          overview: "Summary",
-          detailed: "Full detail",
+          full: "Full",
+          collapseToolCalls: "Collapse tool calls",
+          collapseTurns: "Collapse turns",
         },
       },
       language: {
@@ -2301,11 +2993,6 @@ export const en = {
     },
     diagnostics: {
       title: "Diagnostics",
-      legacyTerminalRenderer: {
-        label: "Use legacy terminal renderer",
-        description: "Use the previous WebView terminal after reopening a terminal",
-        accessibilityLabel: "Use legacy terminal renderer",
-      },
       testAudio: "Test audio",
       playTest: "Play test",
       playing: "Playing...",
@@ -2423,16 +3110,12 @@ export const en = {
         },
         visibility: {
           title: "Art visibility",
-          hint: "Paseo keeps text readable automatically, so bright images may show less art.",
+          hint: "Even at 100%, Paseo caps the art so text stays readable. Bright images show less.",
         },
         blur: {
           title: "Blur",
-          options: {
-            off: "Off",
-            low: "Low",
-            medium: "Medium",
-            high: "High",
-          },
+          off: "Off",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "Show behind sidebar",
         showBehindContent: "Show behind content",
@@ -2511,6 +3194,7 @@ export const en = {
       searchPlaceholder: "Search shortcuts",
       unavailableOnMobile: "Keyboard shortcuts are only available on desktop",
       capturePrompt: "Press shortcut...",
+      captureIndexPrompt: "End with a number from 1 to 9.",
       unassigned: "Not set",
       actions: {
         menu: "Actions for {{name}}",
@@ -2730,7 +3414,33 @@ export const en = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Default style",
+          hint: "Providers can override it",
+        },
         unavailable: "Connect to this host to manage agents",
+        resumeOnStartup: {
+          title: "Resume agents after restart",
+          info: "Reopen agents that were working when the host stopped and send the resume prompt. Applies after graceful restarts and crashes.",
+          hint: "Continue interrupted work automatically.",
+          prompt: "Resume prompt",
+          edit: "Edit",
+          editAccessibilityLabel: "Edit prompt",
+        },
+        draftHistory: {
+          title: "Draft history",
+          hint_one:
+            "Deleted or overwritten drafts are kept for {{count}} day so you can restore them from the composer.",
+          hint_other:
+            "Deleted or overwritten drafts are kept for {{count}} days so you can restore them from the composer.",
+          days_one: "{{count}}d",
+          days_other: "{{count}}d",
+        },
+        idleRuntimeCleanup: {
+          title: "Release idle agents",
+          hint: "Free up memory after an hour of inactivity.",
+          info: "Stops the agent's process while keeping its conversation. Send a message to resume.\n\nActive work, pending notifications, and provider safety checks prevent cleanup.",
+        },
       },
       workspaces: {
         unavailable: "Connect to this host to manage workspaces",
@@ -2822,6 +3532,10 @@ export const en = {
           requestFailedTitle: "Error",
           requestFailedMessage:
             "Failed to send the restart request. Paseo reconnects automatically-try again once the host shows as online.",
+          closeTerminals: "Restart and close terminals",
+          closeTerminalsHint: "Restart and also close every terminal running on this host.",
+          closeTerminalsConfirmMessage:
+            "This will restart the daemon and close every terminal on it, ending the programs running in them. The app will reconnect automatically.",
           dialogFailedMessage: "Unable to open the restart confirmation dialog.",
         },
         update: {
@@ -2913,6 +3627,9 @@ export const en = {
         discovered: "Discovered",
         custom: "Custom models",
         updated: "Updated {{time}}",
+        disabledCount: "{{count}} disabled",
+        toggleModel: "Enable {{model}}",
+        failedToToggle: "Failed to update {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",
@@ -2928,6 +3645,12 @@ export const en = {
         none: "No diagnostic available",
         failedToFetch: "Failed to fetch diagnostic",
         unknownError: "Unknown error",
+      },
+      featureDefaults: {
+        title: "Defaults for new agents",
+        providerDefault: "Provider default",
+        on: "On",
+        off: "Off",
       },
     },
     project: {
@@ -3026,4 +3749,23 @@ type WidenStringLeaves<T> = {
   [K in keyof T]: T[K] extends string ? string : WidenStringLeaves<T[K]>;
 };
 
-export type TranslationResources = WidenStringLeaves<typeof en>;
+type TranslationResourcesBase = WidenStringLeaves<typeof en>;
+type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
+type DurationPluralKey = `${"days" | "hours" | "minutes"}_${PluralCategory}`;
+type AgoPluralKey = `${"daysAgo" | "hoursAgo" | "minutesAgo"}_${PluralCategory}`;
+type WorkingSubagentsPluralKey = `workingSubagents_${PluralCategory}`;
+
+// i18next plural categories differ by locale, so locale catalogs may add the
+// explicit v4 suffixes they need while retaining the canonical fallback keys.
+export type TranslationResources = TranslationResourcesBase & {
+  providerUsage: TranslationResourcesBase["providerUsage"] & {
+    duration: TranslationResourcesBase["providerUsage"]["duration"] &
+      Partial<Record<DurationPluralKey, string>>;
+    timing: TranslationResourcesBase["providerUsage"]["timing"] &
+      Partial<Record<AgoPluralKey, string>>;
+  };
+  sidebar: TranslationResourcesBase["sidebar"] & {
+    workspace: TranslationResourcesBase["sidebar"]["workspace"] &
+      Partial<Record<WorkingSubagentsPluralKey, string>>;
+  };
+};

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   blendOver,
+  computeArtLimit,
   computeGateAlpha,
   contrastRatio,
   grayForLuminance,
   parseColor,
   relativeLuminance,
 } from "./contrast";
+import { THEME_OPTIONS } from "@/styles/theme";
 
 const DARK_MUTED = parseColor("#A1A5A4");
 const DARK_BASE = parseColor("#181B1A");
@@ -139,5 +141,92 @@ describe("computeGateAlpha", () => {
         target: 7,
       }),
     ).toBe(1);
+  });
+});
+
+describe("computeArtLimit", () => {
+  const LIGHT = {
+    surface: "#ffffff",
+    foreground: "#1a1a1e",
+    foregroundMuted: "#71717a",
+    colorScheme: "light" as const,
+  };
+  const DARK = {
+    surface: "#181B1A",
+    foreground: "#fafafa",
+    foregroundMuted: "#A1A5A4",
+    colorScheme: "dark" as const,
+  };
+
+  function worstCaseContrast(
+    theme: typeof LIGHT | typeof DARK,
+    text: string,
+    limit: number,
+    luminance: number,
+  ) {
+    const shown = blendOver(parseColor(theme.surface), grayForLuminance(luminance), 1 - limit);
+    return contrastRatio(parseColor(text), shown);
+  }
+
+  it("keeps art visible on light themes with unmeasured art", () => {
+    // Light muted grey is only 4.83:1 on white; a 4.5:1 floor for it would leave ~3% art.
+    const limit = computeArtLimit({ ...LIGHT, luminance: null, moreContrast: false });
+    expect(limit).toBeGreaterThan(0.15);
+  });
+
+  it("holds primary text at 4.5:1 and muted text at 3:1 at the limit", () => {
+    for (const theme of [LIGHT, DARK]) {
+      const worst = theme.colorScheme === "dark" ? 1 : 0;
+      const limit = computeArtLimit({ ...theme, luminance: null, moreContrast: false });
+      expect(worstCaseContrast(theme, theme.foreground, limit, worst)).toBeGreaterThanOrEqual(4.5);
+      expect(worstCaseContrast(theme, theme.foregroundMuted, limit, worst)).toBeGreaterThanOrEqual(
+        3,
+      );
+    }
+  });
+
+  it("holds 7:1 and 4.5:1 when the OS asks for more contrast", () => {
+    for (const theme of [LIGHT, DARK]) {
+      const worst = theme.colorScheme === "dark" ? 1 : 0;
+      const standard = computeArtLimit({ ...theme, luminance: null, moreContrast: false });
+      const more = computeArtLimit({ ...theme, luminance: null, moreContrast: true });
+      expect(more).toBeLessThan(standard);
+      expect(worstCaseContrast(theme, theme.foreground, more, worst)).toBeGreaterThanOrEqual(7);
+      expect(worstCaseContrast(theme, theme.foregroundMuted, more, worst)).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
+  });
+
+  it("gates dark themes on the brightest art and light themes on the darkest", () => {
+    const luminance = { low: 0.4, high: 0.2 };
+    const measuredDark = computeArtLimit({ ...DARK, luminance, moreContrast: false });
+    const measuredLight = computeArtLimit({ ...LIGHT, luminance, moreContrast: false });
+    expect(measuredDark).toBeGreaterThan(
+      computeArtLimit({ ...DARK, luminance: null, moreContrast: false }),
+    );
+    expect(measuredLight).toBeGreaterThan(
+      computeArtLimit({ ...LIGHT, luminance: null, moreContrast: false }),
+    );
+  });
+});
+
+describe("built-in themes", () => {
+  // The backdrop dims art to this limit over each theme's real tokens. Before the light-theme fix
+  // the light theme showed ~3% art, which reads as no skin at all.
+  const themes = THEME_OPTIONS.flatMap((option) =>
+    "theme" in option ? [{ name: option.name, theme: option.theme }] : [],
+  );
+
+  it.each(themes)("$name leaves unmeasured skin art clearly visible", ({ theme }) => {
+    const limit = computeArtLimit({
+      surface: theme.colors.surface0,
+      foreground: theme.colors.foreground,
+      foregroundMuted: theme.colors.foregroundMuted,
+      colorScheme: theme.colorScheme,
+      luminance: null,
+      moreContrast: false,
+    });
+    expect(limit).toBeGreaterThan(0.15);
   });
 });

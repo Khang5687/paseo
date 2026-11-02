@@ -1,3 +1,12 @@
+import { createRestartRecovery } from "./agent/restart-recovery/index.js";
+import { sendPromptToAgent } from "./agent/agent-prompt.js";
+import { createIdleRuntimeCleanup } from "./agent/idle-runtime-cleanup/index.js";
+import {
+  createFinishSubscriptions,
+  createFinishObservation,
+  createJsonFinishSubscriptionStore,
+} from "./agent/finish-subscriptions/index.js";
+import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { PluginRegistries } from "@getpaseo/protocol/plugin-registry";
 import { describeHookWorkspace } from "./plugins/lifecycle/index.js";
 import express from "express";
@@ -131,16 +140,31 @@ import type { OpenAiSpeechProviderConfig } from "./speech/providers/openai/confi
 import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.js";
 import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
+import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { AgentDraftService } from "./agent-draft/agent-draft-service.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
   createPaseoToolCatalog,
+  createPaseoAgentToolManifest,
   type PaseoToolHostDependencies,
 } from "./agent/tools/paseo-tools.js";
 import type { PaseoToolRuntimeContext } from "./agent/tools/types.js";
 import { createAgentProviderRuntime } from "./agent/provider-runtime.js";
+import {
+  bindOmpAccountRouting,
+  mergeRuntimeSettings,
+  toRuntimeSettings,
+} from "./agent/provider-registry.js";
+import type { OmpRuntime } from "./agent/providers/omp/runtime.js";
+import { AccountRoutingAuthority } from "./account-routing/authority.js";
+import { AccountRoutingStore } from "./account-routing/store.js";
+import { createMacAccountLogin, type OmpAccountLogin } from "./account-routing/login.js";
+import { createConfiguredOmpRuntime, createOmpAccountLister } from "./account-routing/listing.js";
+import { createOmpCapabilityProber } from "./account-routing/probe.js";
+import type { OmpAccountLister } from "./account-routing/listing.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import {
@@ -150,9 +174,18 @@ import {
 } from "./workspace-registry.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
-import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
+import { NotesService } from "./notes/notes-service.js";
+import {
+  DaemonConfigStore,
+  resolveFeatureDefaults,
+  type MutableDaemonConfig,
+} from "./daemon-config-store.js";
 import { createOrchestrationSkills } from "./orchestration-skills/index.js";
-import { resolveConfigFromPersisted, type CliConfigOverrides } from "./config.js";
+import {
+  resolveReloadableConfig,
+  type ResolvedDaemonSettings,
+  type CliConfigOverrides,
+} from "./config.js";
 import { resolvePaseoToolPolicy } from "./agent/paseo-tool-policy.js";
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { DaemonConfigBrowserToolsPolicy } from "./browser-tools/policy.js";
@@ -167,10 +200,11 @@ import {
 import { setupAutoArchiveOnMerge } from "./auto-archive-on-merge/index.js";
 import { wrapSessionMessage, type SessionOutboundMessage } from "./messages.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
-import { createConfiguredTerminalManager } from "../terminal/terminal-manager-factory.js";
+import { startWorkerTerminalManager } from "../terminal/worker-terminal-manager.js";
 import { applyTerminalAgentHookSetting } from "../terminal/agent-hooks/terminal-agent-hook-setting.js";
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { createRelayRuntime, type RelayRuntime } from "./relay-runtime.js";
+import { admitSecuredRelaySocket } from "./websocket/secure-relay-ingress.js";
 import type { PushNotificationSender } from "./push/index.js";
 import { getOrCreateServerId } from "./server-id.js";
 import { resolveDaemonVersion } from "./daemon-version.js";
@@ -185,8 +219,10 @@ import type {
 import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
+  ProviderRuntimeSettings,
 } from "./agent/provider-launch-config.js";
-import { loadPersistedConfig, type PersistedConfig } from "./persisted-config.js";
+import type { OmpCapabilityProbe } from "./agent/providers/omp/account-routing-bridge.js";
+import { type PersistedConfig } from "./persisted-config.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
@@ -240,6 +276,49 @@ const MCP_DEBUG_BATCH_LIMIT = 10;
 const MCP_DEBUG_SECRET = "[redacted]";
 const DOWNLOAD_OPEN_FLAGS =
   process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
+
+/**
+ * One host routing authority per daemon. An unreadable policy file disables host routing rather than
+ * the daemon: OMP then launches independent, and the file is left for the owner to repair.
+ */
+function openAccountRoutingAuthority(
+  paseoHome: string,
+  logger: Logger,
+): AccountRoutingAuthority | undefined {
+  try {
+    const store = AccountRoutingStore.open(path.join(paseoHome, "account-routing.json"));
+    return new AccountRoutingAuthority({ store });
+  } catch (error) {
+    logger.error({ err: error }, "Account routing policy is unreadable; host routing is disabled");
+    return undefined;
+  }
+}
+
+/**
+ * Closing or archiving an agent ends its transient routing work. The authority is told once per
+ * close; the agent can be reopened under the same id and closed again.
+ */
+function disposeRoutingOnAgentClose(
+  agentManager: AgentManager,
+  authority: Pick<AccountRoutingAuthority, "disposeAgent"> | undefined,
+): () => void {
+  if (!authority) return () => undefined;
+  const disposed = new Set<string>();
+  return agentManager.subscribe(
+    (event) => {
+      if (event.type !== "agent_state") return;
+      const { id, lifecycle } = event.agent;
+      if (lifecycle !== "closed") {
+        disposed.delete(id);
+        return;
+      }
+      if (disposed.has(id)) return;
+      disposed.add(id);
+      authority.disposeAgent(id);
+    },
+    { replayState: false },
+  );
+}
 
 function formatHostForHttpUrl(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
@@ -370,6 +449,8 @@ export interface PaseoSpeechSttLanguages {
 
 export interface PaseoSpeechConfig {
   providers: RequestedSpeechProviders;
+  // Where local models live, whether or not a feature currently uses the local provider.
+  localModelsDir: string;
   sttLanguages?: PaseoSpeechSttLanguages;
   local?: PaseoLocalSpeechConfig;
 }
@@ -380,12 +461,14 @@ export type DaemonLifecycleIntent =
       clientId: string;
       requestId: string;
       reason: string;
+      keepTerminals: boolean;
     }
   | {
       type: "restart";
       clientId: string;
       requestId: string;
       reason: string;
+      keepTerminals: boolean;
     };
 
 export interface PaseoDaemonConfig {
@@ -400,6 +483,7 @@ export interface PaseoDaemonConfig {
   trustedProxies?: true | string[];
   mcpEnabled?: boolean;
   mcpInjectIntoAgents?: boolean;
+  usageEnabled?: boolean;
   browserToolsEnabled?: boolean;
   git?: {
     maxProcessesPerSecond: number;
@@ -422,6 +506,7 @@ export interface PaseoDaemonConfig {
   agentStoragePath: string;
   relayEnabled?: boolean;
   relayEnabledMutable?: boolean;
+  relayRequireProtectedSecurity?: boolean;
   relayEndpoint?: string;
   relayPublicEndpoint?: string;
   relayUseTls?: boolean;
@@ -444,6 +529,10 @@ export interface PaseoDaemonConfig {
   dictationFinalTimeoutMs?: number;
   downloadTokenTtlMs?: number;
   agentProviderSettings?: AgentProviderRuntimeSettingsMap;
+  idleRuntimeCleanup?: boolean;
+  draftHistoryRetentionDays?: number;
+  resumeOnStartup?: boolean;
+  resumePrompt?: string;
   providerCatalogRefreshTimeoutMs?: number;
   metadataGeneration?: {
     providers?: Array<{
@@ -452,6 +541,7 @@ export interface PaseoDaemonConfig {
       thinkingOptionId?: string;
     }>;
   };
+  featureDefaults?: Record<string, boolean | string>;
   providerOverrides?: Record<string, ProviderOverride>;
   log?: PersistedConfig["log"];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
@@ -474,8 +564,11 @@ export interface PaseoDaemon {
   serviceProxy: ServiceProxySubsystem;
   scriptRuntimeStore: WorkspaceScriptRuntimeStore;
   browserToolsBroker: BrowserToolsBroker;
+  /** Host routing authority; absent when its policy file was unreadable. Test fixtures bind runtimes to it. */
+  accountRouting?: AccountRoutingAuthority;
   start(): Promise<void>;
-  stop(): Promise<void>;
+  /** Stops the daemon. Terminals keep running for the next daemon only with keepTerminals. */
+  stop(options?: { keepTerminals?: boolean }): Promise<void>;
   getListenTarget(): ListenTarget | null;
   getServerId(): string;
 }
@@ -486,9 +579,99 @@ export interface PaseoDaemonDependencies {
   hubRelationshipClock?: HubRelationshipClock;
   hubRelationshipRetryPolicy?: HubRelationshipRetryPolicy;
   createHubDaemonId?: () => string;
+  /** Test seam: replaces the macOS-only host sign-in. */
+  accountLogin?: OmpAccountLogin;
+  /** Test seam: the plain OMP runtime the account listing reads through (never spawned in tests otherwise). */
+  ompRuntime?: OmpRuntime;
+  /** Test seam: replaces the startup `omp account-routing-capabilities` probe. */
+  ompCapabilityProbe?: (
+    settings: ProviderRuntimeSettings | undefined,
+  ) => Promise<OmpCapabilityProbe>;
   serverFeatureOverrides?: {
     daemonStatusRpc?: boolean;
     relayConfig?: boolean;
+  };
+}
+
+function resolveAccountLogin(
+  dependencies: PaseoDaemonDependencies,
+  accountRouting: AccountRoutingAuthority | undefined,
+  logger: Logger,
+  ompSettings: () => ProviderRuntimeSettings | undefined,
+): OmpAccountLogin | undefined {
+  if (dependencies.accountLogin) return dependencies.accountLogin;
+  if (!accountRouting) return undefined;
+  return createMacAccountLogin({
+    logger,
+    runtimeSettings: ompSettings,
+    accounts: accountRouting,
+  });
+}
+
+/**
+ * One OMP launch for the sign-in child, the listing child and the probe: base settings merged with
+ * the current provider override, the same way agents launch it.
+ */
+function createOmpLaunch(input: {
+  config: PaseoDaemonConfig;
+  store: DaemonConfigStore;
+  logger: Logger;
+  dependencies: PaseoDaemonDependencies;
+  accountRouting: AccountRoutingAuthority | undefined;
+}): {
+  settings: () => ProviderRuntimeSettings | undefined;
+  lister?: OmpAccountLister;
+  stop(): void;
+} {
+  let override = input.config.providerOverrides?.omp;
+  const stop = input.store.onChange((next) => {
+    override = next.providers?.omp;
+  });
+  const settings = () =>
+    mergeRuntimeSettings(input.config.agentProviderSettings?.omp, toRuntimeSettings(override));
+  // Tests never spawn a real omp: they inject a runtime or get no listing.
+  const runtime =
+    input.dependencies.ompRuntime ??
+    (process.env["VITEST"] || input.dependencies.ompCapabilityProbe
+      ? undefined
+      : createConfiguredOmpRuntime(input.logger, settings));
+  const lister =
+    input.accountRouting && runtime
+      ? createOmpAccountLister({
+          authority: input.accountRouting,
+          runtime,
+          logger: input.logger.child({ module: "omp-account-listing" }),
+        })
+      : undefined;
+  return { settings, lister, stop };
+}
+
+/** Learns OMP routing support without waiting for an agent, now and whenever the OMP config changes. */
+function startOmpCapabilityProbing(input: {
+  authority: AccountRoutingAuthority | undefined;
+  store: DaemonConfigStore;
+  config: PaseoDaemonConfig;
+  logger: Logger;
+  probe: PaseoDaemonDependencies["ompCapabilityProbe"];
+  accountLogin: OmpAccountLogin | undefined;
+  /** Reads the store's accounts once the probe finds routing supported. */
+  lister: OmpAccountLister | undefined;
+}): () => void {
+  // Tests never spawn a real omp: they inject a probe or get none.
+  if (!input.authority || !(input.probe || !process.env["VITEST"])) return () => undefined;
+  const prober = createOmpCapabilityProber({
+    authority: input.authority,
+    baseSettings: input.config.agentProviderSettings?.omp,
+    logger: input.logger,
+    probe: input.probe,
+    onLoginGuard: (supported) => input.accountLogin?.setLinkSupported(supported),
+    onSupported: () => void input.lister?.refresh("listing"),
+  });
+  prober.update(input.config.providerOverrides?.omp);
+  const unsubscribe = input.store.onChange((next) => prober.update(next.providers?.omp));
+  return () => {
+    unsubscribe();
+    prober.dispose();
   };
 }
 
@@ -537,11 +720,22 @@ function resolveExpressTrustProxySetting(config: PaseoDaemonConfig): true | stri
   return config.trustedProxies ?? ["loopback"];
 }
 
-function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDaemonConfig {
+function createInitialRelayConfig(config: ResolvedDaemonSettings): MutableDaemonConfig["relay"] {
+  return {
+    enabled: config.relayEnabled ?? true,
+    requireProtectedSecurity: config.relayRequireProtectedSecurity ?? false,
+  };
+}
+
+function resolveReloadEnv(config: PaseoDaemonConfig): NodeJS.ProcessEnv {
+  return config.configReload?.env ?? process.env;
+}
+
+function createInitialMutableDaemonConfig(config: ResolvedDaemonSettings): MutableDaemonConfig {
   const providers = config.providerOverrides ?? {};
 
   const initialConfig: MutableDaemonConfig = {
-    relay: { enabled: config.relayEnabled ?? true },
+    relay: createInitialRelayConfig(config),
     mcp: {
       enabled: config.mcpEnabled ?? true,
       injectIntoAgents: config.mcpInjectIntoAgents ?? true,
@@ -554,13 +748,19 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
     ...(config.providerCatalogRefreshTimeoutMs !== undefined
       ? { catalogRefreshTimeoutMs: config.providerCatalogRefreshTimeoutMs }
       : {}),
+    usage: { enabled: config.usageEnabled !== false },
     browserTools: { enabled: config.browserToolsEnabled ?? false },
     providers,
     metadataGeneration: {
       providers: config.metadataGeneration?.providers ?? [],
     },
+    featureDefaults: config.featureDefaults,
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
+    idleRuntimeCleanup: config.idleRuntimeCleanup !== false,
+    draftHistoryRetentionDays: config.draftHistoryRetentionDays,
+    resumeOnStartup: config.resumeOnStartup !== false,
+    resumePrompt: config.resumePrompt ?? "Resume working.",
     appendSystemPrompt: config.appendSystemPrompt ?? "",
     pluginsEnabled: config.pluginsEnabled ?? false,
     plugins: config.plugins ?? {},
@@ -596,19 +796,30 @@ export async function createPaseoDaemon(
   const elapsed = () => `${(performance.now() - bootstrapStart).toFixed(0)}ms`;
   const daemonVersion = config.daemonVersion ?? resolveDaemonVersion(import.meta.url);
   const initialMutableConfig = createInitialMutableDaemonConfig(config);
+  const speechService = createSpeechService({
+    logger,
+    openaiConfig: config.openai,
+    speechConfig: config.speech,
+  });
+  logger.info({ elapsed: elapsed() }, "Speech service created");
   const daemonConfigStore = new DaemonConfigStore(config.paseoHome, initialMutableConfig, logger, {
     relayEnabledMutable: config.relayEnabledMutable ?? true,
     startupPersisted: config.configReload?.startupPersisted,
+    speech: createSpeechSettingsOwner({
+      paseoHome: config.paseoHome,
+      env: resolveReloadEnv(config),
+      speechService,
+    }),
     reloadSource: {
       resolve: (persisted) => {
-        const reloaded = resolveConfigFromPersisted(config.paseoHome, persisted, {
-          env: config.configReload?.env ?? process.env,
+        const reloaded = resolveReloadableConfig(persisted, {
+          env: resolveReloadEnv(config),
           cli: config.configReload?.cli,
           relayEnabledFallback: config.configReload?.relayEnabledFallback,
         });
         return {
           mutable: createInitialMutableDaemonConfig(reloaded),
-          overrideControlledPaths: reloaded.configReload?.overrideControlledPaths ?? [],
+          overrideControlledPaths: reloaded.overrideControlledPaths,
         };
       },
     },
@@ -668,7 +879,10 @@ export async function createPaseoDaemon(
   });
   let boundListenTarget: ListenTarget | null = null;
   let workspaceRegistry: FileBackedWorkspaceRegistry | null = null;
-  const terminalManager = createConfiguredTerminalManager({
+  const terminalManager = await startWorkerTerminalManager({
+    paseoHome: config.paseoHome,
+    paseoVersion: daemonVersion,
+    logger,
     getTerminalActivityUrl: () => createTerminalActivityUrl(boundListenTarget),
   });
   applyTerminalAgentHookSetting({ store: daemonConfigStore, logger });
@@ -832,6 +1046,9 @@ export async function createPaseoDaemon(
     try {
       fileHandle = await open(entry.absolutePath, DOWNLOAD_OPEN_FLAGS);
       const fileStats = await fileHandle.stat();
+      if (res.destroyed) {
+        return;
+      }
       if (!fileStats.isFile()) {
         res.status(404).json({ error: "File not found" });
         return;
@@ -843,6 +1060,7 @@ export async function createPaseoDaemon(
 
       const stream = fileHandle.createReadStream();
       fileHandle = null;
+      res.once("close", () => stream.destroy());
       stream.on("error", (err) => {
         logger.error({ err }, "Failed to stream download");
         if (!res.headersSent) {
@@ -900,9 +1118,19 @@ export async function createPaseoDaemon(
       forgeOverrides: { github },
     },
   });
-  workspaceRegistry.subscribeToMutations((mutation) => {
+  const workspaceRuntimeStore = createWorkspaceRuntimeStore();
+  workspaceGitService.onSnapshotUpdated((snapshot) => workspaceRuntimeStore.set(snapshot));
+  workspaceRegistry.subscribeToMutations(async (mutation) => {
+    if (mutation.kind === "remove" && mutation.workspace) {
+      const cwd = path.resolve(mutation.workspace.cwd);
+      const workspaces = await workspaceRegistry.list();
+      const hasActiveWorkspace = workspaces.some(
+        (workspace) => !workspace.archivedAt && path.resolve(workspace.cwd) === cwd,
+      );
+      if (!hasActiveWorkspace) workspaceRuntimeStore.remove(cwd);
+    }
     if (mutation.kind === "archive" && mutation.workspace) {
-      pluginRuntime.emit("workspace.archived", {
+      pluginRuntime.emit("workspace.archive.after", {
         workspace: describeHookWorkspace(mutation.workspace),
       });
     }
@@ -916,6 +1144,35 @@ export async function createPaseoDaemon(
     isDirectory: async (target) => (await stat(target).catch(() => null))?.isDirectory() ?? false,
     logger,
   });
+  const accountRouting = openAccountRoutingAuthority(config.paseoHome, logger);
+  const unbindAccountRouting = accountRouting
+    ? bindOmpAccountRouting(accountRouting)
+    : () => undefined;
+  // Mac-only: the host's own app opens the sign-in link, and OMP's loopback callback or a pasted
+  // redirect address finishes the login.
+  const omp = createOmpLaunch({
+    config,
+    store: daemonConfigStore,
+    logger,
+    dependencies,
+    accountRouting,
+  });
+  const accountLogin = resolveAccountLogin(dependencies, accountRouting, logger, omp.settings);
+  const stopCapabilityProbing = startOmpCapabilityProbing({
+    authority: accountRouting,
+    store: daemonConfigStore,
+    config,
+    logger,
+    probe: dependencies.ompCapabilityProbe,
+    accountLogin,
+    lister: omp.lister,
+  });
+  const disposeAccountRouting = () => {
+    stopCapabilityProbing();
+    omp.stop();
+    accountLogin?.dispose();
+    accountRouting?.dispose();
+  };
   const agentProviderRuntime = await createAgentProviderRuntime({
     paseoHome: config.paseoHome,
     logger,
@@ -944,6 +1201,7 @@ export async function createPaseoDaemon(
   const initialAgentManagerState = providerSnapshotManager.getAgentManagerProviderState();
   const agentManager = new AgentManager({
     pluginLifecycle: pluginRuntime,
+    pluginAgentTools: pluginRuntime,
     clients: initialAgentManagerState.clients,
     providerDefinitions: initialAgentManagerState.providerDefinitions,
     registry: agentStorage,
@@ -954,6 +1212,7 @@ export async function createPaseoDaemon(
     mcpAuthToken: agentMcpAuthToken,
     resolvePaseoToolPolicy: (provider) =>
       resolvePaseoToolPolicy(provider, daemonConfigStore.get().providers),
+    resolveFeatureDefaults: (provider) => resolveFeatureDefaults(daemonConfigStore.get(), provider),
     logger,
   });
   const syncPluginProviders = () => {
@@ -964,13 +1223,40 @@ export async function createPaseoDaemon(
   const unsubscribePluginProviders =
     pluginRuntime.subscribeProviderRegistrations(syncPluginProviders);
 
+  const unsubscribePluginSessionChanges = pluginRuntime.subscribeSessionOpenChanges(() => {
+    agentManager.invalidatePluginSessions();
+  });
+
   const detachAgentStoragePersistence = attachAgentStoragePersistence(
     logger,
     agentManager,
     agentStorage,
   );
   await agentStorage.initialize();
+  const agentDrafts = new AgentDraftService({
+    storage: agentStorage,
+    paseoHome: config.paseoHome,
+    logger,
+    retentionDays: () => daemonConfigStore.get().draftHistoryRetentionDays,
+  });
+  const restartRecovery = createRestartRecovery({
+    storage: agentStorage,
+    settings: () => ({
+      enabled: daemonConfigStore.get().resumeOnStartup !== false,
+      prompt: daemonConfigStore.get().resumePrompt ?? "Resume working.",
+    }),
+    eligible: async (record) =>
+      !record.workspaceId || !(await workspaceRegistry?.get(record.workspaceId))?.archivedAt,
+    dispatch: (agentId, prompt) =>
+      sendPromptToAgent({ agentId, prompt, agentManager, agentStorage, logger, unarchive: false }),
+    report: (agentId, err) => logger.error({ agentId, err }, "Agent restart recovery failed"),
+  });
+  await restartRecovery.prepareStartup();
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
+  const unsubscribeAccountRoutingDisposal = disposeRoutingOnAgentClose(
+    agentManager,
+    accountRouting,
+  );
   await bootstrapWorkspaceRegistries({
     serverId,
     paseoHome: config.paseoHome,
@@ -1010,6 +1296,7 @@ export async function createPaseoDaemon(
     logger,
     paseoHome: config.paseoHome,
     workspaceGitService,
+    workspaceRuntimeStore,
   });
   const archiveWorkspaceRecordExternal = async (
     workspaceId: string,
@@ -1031,10 +1318,13 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
+    context?: { callerWorkspaceId?: string },
   ): Promise<string> => {
     const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
       cwd,
       resolveFirstAgentPromptTitle(firstAgentContext),
+      undefined,
+      context,
     );
     if (firstAgentContext) {
       workspaceAutoName.scheduleForDirectory({
@@ -1081,8 +1371,9 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateAndBroadcastExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
+    context?: { callerWorkspaceId?: string },
   ): Promise<string> => {
-    const workspaceId = await ensureWorkspaceForCreateExternal(cwd, firstAgentContext);
+    const workspaceId = await ensureWorkspaceForCreateExternal(cwd, firstAgentContext, context);
     await emitWorkspaceUpdatesExternal([workspaceId]);
     return workspaceId;
   };
@@ -1140,6 +1431,7 @@ export async function createPaseoDaemon(
         worktreesRoot: config.worktreesRoot,
         createPaseoWorktree: async (workflowInput, workflowOptions) => {
           return createRegisteredPaseoWorktree(workflowInput, {
+            lifecycle: pluginRuntime,
             github,
             ...(workflowOptions?.resolveDefaultBranch
               ? {
@@ -1362,11 +1654,22 @@ export async function createPaseoDaemon(
     archiveWorkspace: archiveScheduleWorkspaceExternal,
   });
   await scheduleService.start();
+  const notesService = new NotesService({ paseoHome: config.paseoHome, logger });
+  await notesService.start();
+  const unsubscribeNoteCommandFinished = terminalManager.subscribeTerminalCommandFinished((event) =>
+    notesService.handleCommandFinished(event),
+  );
+
   agentManager.setAgentArchivedCallback(async (agentId) => {
     try {
       await scheduleService.completeForAgent(agentId);
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to complete schedules for archived agent");
+    }
+    try {
+      await agentDrafts.clearForArchive(agentId);
+    } catch (error) {
+      logger.warn({ err: error, agentId }, "Failed to clear the archived agent's draft");
     }
   });
   logger.info({ elapsed: elapsed() }, "Schedule service initialized");
@@ -1381,9 +1684,62 @@ export async function createPaseoDaemon(
   );
   logger.info({ elapsed: elapsed() }, "Preparing voice and MCP runtime");
 
+  const finishSubscriptions = createFinishSubscriptions({
+    store: createJsonFinishSubscriptionStore(config.paseoHome),
+    serverId,
+    logger,
+    messages: () => {
+      if (!wsServer) throw new Error("Daemon is not accepting agent messages");
+      return wsServer.agentMessages;
+    },
+    callerIsActive: async (agentId) => {
+      const record = await agentStorage.get(agentId);
+      return record ? !record.archivedAt : Boolean(agentManager.getAgent(agentId));
+    },
+    ...createFinishObservation({
+      agentManager,
+      agentStorage,
+      waitForResume: restartRecovery.waitForResume,
+      serverId,
+      logger,
+      messages: () => {
+        if (!wsServer) throw new Error("Daemon is not accepting agent messages");
+        return wsServer.agentMessages;
+      },
+      hosts: () => {
+        if (!wsServer) throw new Error("Daemon is not accepting host operations");
+        return wsServer.toolHosts();
+      },
+    }),
+  });
+
+  const idleRuntimeCleanup = createIdleRuntimeCleanup({
+    enabled: daemonConfigStore.get().idleRuntimeCleanup !== false,
+    runtimes: () => agentManager.getRuntimeCleanupCandidates(),
+    isProtected: (agentId) =>
+      finishSubscriptions.hasPendingForCaller(agentId) ||
+      (wsServer?.agentMessages.hasPending(agentId) ?? false),
+    logger,
+  });
+
+  const unsubscribeIdleRuntimeCleanup = connectIdleRuntimeCleanupConfig(
+    daemonConfigStore,
+    idleRuntimeCleanup,
+  );
+
   const createAgentToolHostDependencies = (
     runtime: PaseoToolRuntimeContext,
   ): PaseoToolHostDependencies => ({
+    finishSubscriptions: () => finishSubscriptions,
+    agentMessages: () => {
+      if (!wsServer) throw new Error("Daemon is not accepting agent messages");
+      return wsServer.agentMessages;
+    },
+    serverId,
+    hosts: () => {
+      if (!wsServer) throw new Error("Daemon is not accepting host operations");
+      return wsServer.toolHosts();
+    },
     agentManager,
     agentStorage,
     terminalManager,
@@ -1399,11 +1755,12 @@ export async function createPaseoDaemon(
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
     projectRegistry,
-    createDirectoryWorkspace: async (cwd, title, projectId) => {
+    createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
         cwd,
         title,
         projectId,
+        context,
       );
       await emitWorkspaceUpdatesExternal([workspace.workspaceId]);
       return workspace;
@@ -1414,7 +1771,7 @@ export async function createPaseoDaemon(
       terminalManager,
       workspaceRegistry,
       projectRegistry,
-      workspaceGitService,
+      workspaceRuntimeStore,
       getDaemonTcpPort: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.port : null),
       getDaemonTcpHost: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.host : null),
       serviceProxyPublicBaseUrl,
@@ -1425,7 +1782,7 @@ export async function createPaseoDaemon(
       spawnWorkspaceScript,
       assertAutomationAllowed: (workspaceId) =>
         assertWorkspaceAutomationAllowedForWorkspace(workspaceRegistry, workspaceId),
-      globalServicePorts: loadPersistedConfig(config.paseoHome).worktrees?.servicePorts,
+      getGlobalServicePorts: () => daemonConfigStore.readServicePorts(),
     }),
     markWorkspaceArchiving: markWorkspaceArchivingExternal,
     clearWorkspaceArchiving: clearWorkspaceArchivingExternal,
@@ -1448,7 +1805,9 @@ export async function createPaseoDaemon(
   const createAgentToolCatalog = (runtime: PaseoToolRuntimeContext) =>
     createPaseoToolCatalog(createAgentToolHostDependencies(runtime));
   const setAgentProviderToolsEnabled = (enabled: boolean) => {
-    agentProviderRuntime.setPaseoToolCatalog(enabled ? createAgentToolCatalog({}) : null);
+    agentProviderRuntime.setPaseoToolCatalog(
+      enabled ? createPaseoAgentToolManifest(createAgentToolHostDependencies({})) : null,
+    );
   };
   agentManager.setPaseoToolCatalogFactory(createAgentToolCatalog);
   agentManager.setPaseoToolsEnabled(config.mcpInjectIntoAgents !== false);
@@ -1582,13 +1941,6 @@ export async function createPaseoDaemon(
     logger.info({ route: agentMcpRoute, enabled: mcpEnabled }, "Agent MCP route mounted");
   }
 
-  const speechService = createSpeechService({
-    logger,
-    openaiConfig: config.openai,
-    speechConfig: config.speech,
-  });
-  logger.info({ elapsed: elapsed() }, "Speech service created");
-
   logger.info({ elapsed: elapsed() }, "Bootstrap complete, ready to start listening");
 
   const start = async () => {
@@ -1688,6 +2040,7 @@ export async function createPaseoDaemon(
                 startPaused: true,
               },
               workspaceAutoName,
+              workspaceRuntimeStore,
               daemonAuth,
               speechService,
               terminalManager,
@@ -1723,14 +2076,17 @@ export async function createPaseoDaemon(
                   return appBaseUrl;
                 },
                 desktopManaged: config.desktopManaged === true,
-                getRelayConfig: () =>
-                  relayRuntime?.getConfig() ?? {
+                getRelayConfig: () => ({
+                  ...(relayRuntime?.getConfig() ?? {
                     enabled: daemonConfigStore.get().relay?.enabled ?? relayEnabled,
                     endpoint: relayEndpoint,
                     publicEndpoint: relayPublicEndpoint,
                     useTls: relayUseTls,
                     publicUseTls: relayPublicUseTls,
-                  },
+                  }),
+                  requireProtectedSecurity:
+                    daemonConfigStore.get().relay?.requireProtectedSecurity === true,
+                }),
               },
               serviceProxyPublicBaseUrl,
               browserToolsBroker,
@@ -1739,11 +2095,23 @@ export async function createPaseoDaemon(
               pluginRuntime,
               orchestrationSkills,
               workspaceLabelService,
+              accountRouting,
+              accountLogin,
+              notesService,
+              agentDrafts,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
             providerSnapshotManager.settlePluginProviders();
+            restartRecovery.resumePending();
+            await finishSubscriptions.start();
             wsServer.beginAcceptingConnections();
+            // Queues stored with work in them drain without waiting for a client
+            // to open their agent. Runs in the background so startup does not wait.
+            void wsServer.drainStoredAgentQueues().catch((error: unknown) => {
+              logger.error({ err: error }, "Failed to drain stored agent queues");
+            });
+            const relaySecurityLogger = logger.child({ module: "relay-security" });
             relayRuntime = createRelayRuntime({
               config: {
                 enabled: relayEnabled,
@@ -1753,12 +2121,25 @@ export async function createPaseoDaemon(
                 publicUseTls: relayPublicUseTls,
               },
               logger,
-              attachSocket: async (ws, metadata) => {
-                if (!wsServer) throw new Error("WebSocket server is not ready");
-                await wsServer.attachExternalSocket(ws, metadata);
-              },
+              attachSocket: (ws, metadata) =>
+                admitSecuredRelaySocket(
+                  ws,
+                  {
+                    daemonKeyPair: daemonKeyPair.keyPair,
+                    logger: relaySecurityLogger,
+                    requireProtectedMode: () =>
+                      daemonConfigStore.get().relay?.requireProtectedSecurity === true,
+                  },
+                  async (secured) => {
+                    if (!wsServer) throw new Error("WebSocket server is not ready");
+                    await wsServer.attachExternalSocket(secured.socket, {
+                      ...metadata,
+                      transport: "relay",
+                      securityMode: secured.securityMode,
+                    });
+                  },
+                ),
               serverId,
-              daemonKeyPair: daemonKeyPair.keyPair,
             });
             daemonConfigStore.onFieldChange("relay.enabled", (value) => {
               relayRuntime?.setEnabled(value === true);
@@ -1789,9 +2170,13 @@ export async function createPaseoDaemon(
       localCredential = null;
       await deleteLocalCredential(config.paseoHome);
       unsubscribePluginProviders();
+      unsubscribePluginSessionChanges();
       await pluginRuntime.stopAllPlugins().catch(() => undefined);
       await serviceProxy.stopStandalone().catch(() => undefined);
       await agentProviderRuntime.shutdown().catch(() => undefined);
+      unsubscribeAccountRoutingDisposal();
+      unbindAccountRouting();
+      disposeAccountRouting();
       if (mainStarted) {
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
@@ -1800,7 +2185,9 @@ export async function createPaseoDaemon(
     }
   };
 
-  const stop = async () => {
+  const stop = async (options?: { keepTerminals?: boolean }) => {
+    const keepTerminals = options?.keepTerminals === true;
+    let terminalShutdownError: unknown = null;
     localCredential = null;
     await deleteLocalCredential(config.paseoHome);
     // Stop tracking plugin provider registrations before anything tears plugins
@@ -1808,12 +2195,18 @@ export async function createPaseoDaemon(
     // that is still open. Plugins themselves are stopped once every session
     // they serve has been closed, further down.
     unsubscribePluginProviders();
+    unsubscribePluginSessionChanges();
     await hubRelationships.stop();
     workspaceReconciliation.dispose();
     scriptHealthMonitor.stop();
+    unsubscribeIdleRuntimeCleanup();
+    await idleRuntimeCleanup.close();
     // Freeze both ingress and registration before taking the agent closure snapshot.
     wsServer?.prepareForShutdown();
+    await finishSubscriptions.close();
+    await wsServer?.agentMessages.close();
     agentManager.prepareForShutdown();
+    await restartRecovery.captureRunningAgents();
     await closeAllAgents(logger, agentManager);
     await withTimeout({
       promise: pluginRuntime.drainEvents(),
@@ -1824,10 +2217,27 @@ export async function createPaseoDaemon(
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
     await agentProviderRuntime.shutdown();
+    unsubscribeAccountRoutingDisposal();
+    unbindAccountRouting();
+    disposeAccountRouting();
     await pluginRuntime.stopAllPlugins();
-    terminalManager.killAll();
+    try {
+      if (keepTerminals) {
+        await terminalManager.detach();
+        logger.info("Terminals left running for the next daemon");
+      } else {
+        await terminalManager.closeTerminals();
+      }
+    } catch (error) {
+      // Finish the rest of the shutdown, then report it: the supervisor and `daemon stop`
+      // retry the cleanup from the record the reaper kept.
+      terminalShutdownError = error;
+      logger.error({ err: error }, "Terminal shutdown failed");
+    }
     await speechService.stop();
     await scheduleService.stop().catch(() => undefined);
+    unsubscribeNoteCommandFinished();
+    await notesService.stop().catch(() => undefined);
     await relayRuntime?.stop().catch(() => undefined);
     if (wsServer) {
       await wsServer.close();
@@ -1848,6 +2258,9 @@ export async function createPaseoDaemon(
     if (listenTarget.type === "socket" && existsSync(listenTarget.path)) {
       unlinkSync(listenTarget.path);
     }
+    if (terminalShutdownError) {
+      throw terminalShutdownError;
+    }
   };
 
   return {
@@ -1858,6 +2271,7 @@ export async function createPaseoDaemon(
     serviceProxy,
     scriptRuntimeStore,
     browserToolsBroker,
+    accountRouting,
     start,
     stop,
     getListenTarget: () => boundListenTarget,
@@ -1874,7 +2288,7 @@ export async function createPaseoDaemon(
 const AGENT_CLOSE_TIMEOUT_MS = 5_000;
 
 async function closeAllAgents(logger: Logger, agentManager: AgentManager): Promise<void> {
-  const agents = agentManager.listAgents();
+  const agents = agentManager.listAgents({ includeInternal: true });
   await Promise.all(
     agents.map(async (agent) => {
       try {
@@ -1888,4 +2302,12 @@ async function closeAllAgents(logger: Logger, agentManager: AgentManager): Promi
       }
     }),
   );
+}
+
+export function connectIdleRuntimeCleanupConfig(
+  store: DaemonConfigStore,
+  cleanup: Pick<ReturnType<typeof createIdleRuntimeCleanup>, "setEnabled">,
+): () => void {
+  cleanup.setEnabled(store.get().idleRuntimeCleanup !== false);
+  return store.onFieldChange("idleRuntimeCleanup", (value) => cleanup.setEnabled(value !== false));
 }

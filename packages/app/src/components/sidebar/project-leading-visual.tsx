@@ -5,7 +5,8 @@ import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, CircleAlert, PencilLine } from "lucide-react-native";
 import { ProjectIconView } from "@/components/project-icon-view";
 import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
-import { ICON_SIZE, type Theme } from "@/styles/theme";
+import { densityIconBox, densityIconProps } from "@/styles/density";
+import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import {
   getProjectStatusBadgeContent,
@@ -24,6 +25,9 @@ import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 
 // Every surfaced status shares one badge shell, so the badge never changes size or position
 // between states. Only the thing inside it changes.
+// Matches the workspace title's lineHeight (sidebar-workspace-row-content's
+// workspaceBranchText) so the icon centers on the title rather than floating above it.
+const LEADING_SLOT_HEIGHT = 20;
 const STATUS_BADGE_SIZE = 12;
 // How far the badge overhangs the icon's bottom-right corner. Well short of half the badge:
 // centered on the corner it reads as hanging off the icon rather than sitting on it, and the
@@ -38,9 +42,8 @@ const STATUS_BADGE_OFFSET = -4;
 // The filled alert occupies the full badge shell so needs-input remains more prominent than
 // the passive status dots. The draft pencil leaves a margin so it reads as a mark, not a fill.
 const DRAFT_GLYPH_SIZE = 8;
-// Matches the workspace title's lineHeight (sidebar-workspace-row-content's
-// workspaceBranchText) so the icon centers on the title rather than floating above it.
-const LEADING_SLOT_HEIGHT = 20;
+const DensityProjectIconView = withUnistyles(ProjectIconView);
+const projectIconProps = densityIconProps("md", () => ({}));
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
@@ -253,12 +256,12 @@ function ProjectIcon({
   projectViewKey: string;
 }) {
   return (
-    <ProjectIconView
+    <DensityProjectIconView
       iconDataUri={iconDataUri}
       initial={placeholderInitial}
       projectViewKey={projectViewKey}
-      size={ICON_SIZE.md}
       textStyle={styles.projectIconFallbackText}
+      uniProps={projectIconProps}
     />
   );
 }
@@ -294,11 +297,11 @@ const styles = StyleSheet.create((theme) => {
 
   return {
     // The slot is as tall as the title's line box, not as tall as the icon, and centers the
-    // icon inside it. Rows lay their leading visual out with alignItems:flex-start, so a
-    // 16pt slot next to a 20pt line box puts the icon 2pt above the title and the kebab —
-    // which is why the workspace status indicator is also 20 tall. Keep the two in step.
+    // icon inside it. Rows lay their leading visual out with alignItems:flex-start, so a slot
+    // only as tall as the icon puts it above the title and the kebab — which is why the
+    // workspace status indicator is as tall as `LEADING_SLOT_HEIGHT`.
     projectLeadingVisualSlot: {
-      width: theme.iconSize.md,
+      width: densityIconBox("md"),
       height: LEADING_SLOT_HEIGHT,
       flexShrink: 0,
       alignItems: "center",
@@ -307,8 +310,8 @@ const styles = StyleSheet.create((theme) => {
     // Anchors the corner badge to the icon rather than to the taller slot.
     projectIconBox: {
       position: "relative",
-      width: theme.iconSize.md,
-      height: theme.iconSize.md,
+      width: densityIconBox("md"),
+      height: densityIconBox("md"),
     },
     projectIconFallbackText: {
       fontSize: 9,

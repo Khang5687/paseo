@@ -3,11 +3,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
-import { Terminal, type ITheme, type IMarker } from "@xterm/xterm";
-import type { TerminalState } from "@getpaseo/protocol/messages";
+import { Terminal, type IBufferRange, type ITheme, type IMarker } from "@xterm/xterm";
+import type { TerminalCharacterWidths } from "../character-widths";
 import {
   type TerminalInputModeState,
   TerminalInputModeTracker,
@@ -24,15 +25,28 @@ import {
   resolveMacTerminalEditingShortcut,
   shouldInterceptDomTerminalKey,
 } from "@/utils/terminal-keys";
-import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import {
   createTerminalLocalFileLinkProvider,
+  isBufferCellInRange,
   type TerminalLocalFileLinkSource,
   type TerminalLocalFileLinkTarget,
 } from "../local-links/terminal-local-link-provider";
 import { isFindShortcut, type FindShortcutPlatform } from "@/pane-find/find-shortcut";
 import { isMacUserAgent } from "@/utils/mac-user-agent";
 import { resolveTerminalFontFamily, resolveTerminalFontSize } from "./terminal-font";
+import { imageExtension, readTerminalFile, type TerminalFile } from "../file-paste";
+import {
+  XtermNoteHighlights,
+  revealXtermNote,
+  xtermSelectionAnchor,
+  xtermSelectionNoteContext,
+} from "../notes/xterm-notes";
+import type {
+  TerminalNoteHighlight,
+  TerminalNoteReveal,
+  TerminalSelectionAnchor,
+  TerminalSelectionNoteContext,
+} from "../notes/terminal-note-types";
 
 export type TerminalOutputData = Uint8Array;
 
@@ -54,7 +68,6 @@ const FIND_HIGHLIGHT_LIMIT = 20_000;
 export interface TerminalEmulatorRuntimeMountInput {
   root: HTMLDivElement;
   host: HTMLDivElement;
-  initialSnapshot: TerminalState | null;
   scrollback: number;
   theme: ITheme;
   fontFamily?: string;
@@ -82,7 +95,21 @@ export interface TerminalEmulatorRuntimeCallbacks {
     target: TerminalLocalFileLinkTarget,
     disposition: "main" | "side",
   ) => Promise<void> | void;
+  /** A right click on a local file link, at the pointer's viewport position. */
+  onLocalFileLinkContextMenu?: (
+    target: TerminalLocalFileLinkTarget,
+    point: { x: number; y: number },
+  ) => Promise<void> | void;
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
+  /** A paste gesture that can carry a file; resolves to null when it carried none. */
+  onFilePaste?: (file: Promise<TerminalFile | null>) => void;
+  /** The selection changed, or the viewport scrolled under it. */
+  onSelectionChange?: (selection: TerminalSelectionState) => void;
+}
+
+export interface TerminalSelectionState {
+  hasSelection: boolean;
+  anchor: TerminalSelectionAnchor | null;
 }
 
 export interface TerminalResizeEvent {
@@ -122,6 +149,8 @@ interface TerminalEmulatorRuntimeDisposables {
   clearFitTimeouts: () => void;
   removeFontListeners: () => void;
   removeTouchListeners: () => void;
+  removeFilePasteListener: () => void;
+  removeFileLinkContextMenuListener: () => void;
   restoreDocumentStyles: () => void;
   restoreViewportStyles: () => void;
   disposeFitAddon: () => void;
@@ -130,7 +159,7 @@ interface TerminalEmulatorRuntimeDisposables {
 }
 
 interface TerminalOutputOperation {
-  type: "write" | "clear" | "snapshot";
+  type: "write" | "clear" | "snapshot" | "fit";
   data: TerminalOutputData;
   rows?: number;
   cols?: number;
@@ -180,8 +209,83 @@ function withOverviewRulerBorderHidden(theme: ITheme): ITheme {
   };
 }
 
+export interface TerminalClipboard {
+  /** Whether the async Clipboard API is usable. Browsers omit it outside secure contexts. */
+  isAvailable?(): boolean;
+  readText(): Promise<string>;
+  read(): Promise<readonly Pick<ClipboardItem, "types" | "getType">[]>;
+  writeText(text: string): Promise<void>;
+}
+
+function getBrowserClipboard(): Clipboard | undefined {
+  return typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+}
+
+function rejectUnavailableClipboard(): Promise<never> {
+  return Promise.reject(new Error("Clipboard API is unavailable"));
+}
+
+const browserClipboard: TerminalClipboard = {
+  isAvailable: () => !!getBrowserClipboard(),
+  readText: () => getBrowserClipboard()?.readText() ?? rejectUnavailableClipboard(),
+  read: () => getBrowserClipboard()?.read() ?? rejectUnavailableClipboard(),
+  writeText: (text) => getBrowserClipboard()?.writeText(text) ?? rejectUnavailableClipboard(),
+};
+
+async function readClipboardImage(clipboard: TerminalClipboard): Promise<TerminalFile | null> {
+  for (const item of await clipboard.read()) {
+    const mimeType = item.types.find((type) => type.startsWith("image/"));
+    if (mimeType) {
+      const blob = await item.getType(mimeType);
+      return {
+        fileName: `clipboard.${imageExtension(mimeType)}`,
+        mimeType,
+        bytes: new Uint8Array(await blob.arrayBuffer()),
+      };
+    }
+  }
+  return null;
+}
+
+/** The file of a paste that carries no text. xterm would paste it as empty text. */
+function findFileOnlyPaste(transfer: DataTransfer | null): File | null {
+  if (!transfer || transfer.getData("text/plain").length > 0) {
+    return null;
+  }
+  for (const item of Array.from(transfer.items)) {
+    if (item.kind === "file") {
+      return item.getAsFile();
+    }
+  }
+  return null;
+}
+
+/** The 1-based buffer cell under a pointer event, in the coordinates xterm link ranges use. */
+function bufferCellAtPoint(terminal: Terminal, event: MouseEvent): { x: number; y: number } | null {
+  const screen = terminal.element?.querySelector(".xterm-screen");
+  if (!screen || terminal.cols === 0 || terminal.rows === 0) {
+    return null;
+  }
+  const rect = screen.getBoundingClientRect();
+  const column = Math.floor(((event.clientX - rect.left) * terminal.cols) / rect.width);
+  const row = Math.floor(((event.clientY - rect.top) * terminal.rows) / rect.height);
+  if (column < 0 || column >= terminal.cols || row < 0 || row >= terminal.rows) {
+    return null;
+  }
+  return { x: column + 1, y: terminal.buffer.active.viewportY + row + 1 };
+}
+
+// Grapheme widths match the daemon and native buffers. Legacy hosts keep the
+// Unicode 11 table web used before. See docs/terminal-rendering.md.
+function applyCharacterWidths(terminal: Terminal, widths: TerminalCharacterWidths): void {
+  terminal.unicode.activeVersion = widths === "graphemes" ? "15-graphemes" : "11";
+}
+
 export class TerminalEmulatorRuntime {
-  constructor(private readonly options: FindShortcutPlatform = { isMac: isMacUserAgent() }) {}
+  constructor(
+    private readonly options: FindShortcutPlatform = { isMac: isMacUserAgent() },
+    private readonly clipboard: TerminalClipboard = browserClipboard,
+  ) {}
 
   private callbacks: TerminalEmulatorRuntimeCallbacks = {};
   private pendingModifiers: PendingTerminalModifiers = {
@@ -189,6 +293,7 @@ export class TerminalEmulatorRuntime {
     shift: false,
     alt: false,
   };
+  private characterWidths: TerminalCharacterWidths = "graphemes";
   private terminal: Terminal | null = null;
   private fitAddon: FitAddon | null = null;
   private searchAddon: SearchAddon | null = null;
@@ -233,6 +338,7 @@ export class TerminalEmulatorRuntime {
     },
   };
 
+  private replayResize: TerminalResizeRequest | null = null;
   private fitAndEmitResize: ((input?: TerminalResizeRequest) => void) | null = null;
   private lastSize: { rows: number; cols: number } | null = null;
   private cleanup: (() => void) | null = null;
@@ -253,6 +359,8 @@ export class TerminalEmulatorRuntime {
   private readonly inputModeTracker = new TerminalInputModeTracker();
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
+  private noteHighlights: XtermNoteHighlights | null = null;
+  private noteHighlightList: readonly TerminalNoteHighlight[] = [];
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -273,6 +381,16 @@ export class TerminalEmulatorRuntime {
 
   setPendingModifiers(input: { pendingModifiers: PendingTerminalModifiers }): void {
     this.pendingModifiers = input.pendingModifiers;
+  }
+
+  setCharacterWidths(input: { widths: TerminalCharacterWidths }): void {
+    this.characterWidths = input.widths;
+    const terminal = this.terminal;
+    if (!terminal) {
+      return;
+    }
+    applyCharacterWidths(terminal, input.widths);
+    this.refreshVisibleRows();
   }
 
   private loadSearchAddon(terminal: Terminal): void {
@@ -323,27 +441,7 @@ export class TerminalEmulatorRuntime {
         !event.altKey &&
         !event.metaKey
       ) {
-        const key = event.key.toLowerCase();
-
-        // Ctrl+C: copy selection to clipboard if text is selected, otherwise let xterm send SIGINT
-        if (key === "c" && terminal.hasSelection()) {
-          void navigator.clipboard.writeText(terminal.getSelection());
-          return false;
-        }
-
-        // Ctrl+V: paste from clipboard into terminal
-        if (key === "v") {
-          event.preventDefault();
-          void navigator.clipboard.readText().then((text) => {
-            if (text) {
-              terminal.paste(text);
-            }
-            return;
-          });
-          return false;
-        }
-
-        return true;
+        return !this.handleCtrlClipboardShortcut(terminal, event);
       }
 
       if (this.maybeSendMacEditingShortcut(terminal, event)) {
@@ -390,6 +488,36 @@ export class TerminalEmulatorRuntime {
       event.stopPropagation();
       return false;
     });
+  }
+
+  /** Returns true when a non-Mac Ctrl+C / Ctrl+V clipboard shortcut was handled. */
+  private handleCtrlClipboardShortcut(
+    terminal: Pick<Terminal, "hasSelection" | "getSelection" | "paste">,
+    event: KeyboardEvent,
+  ): boolean {
+    const key = event.key.toLowerCase();
+    // Without the Clipboard API (e.g. plain http on a LAN address), the browser's native
+    // copy/paste events still fire and xterm handles them, so leave the default action.
+    const clipboardAvailable = this.clipboard.isAvailable?.() ?? true;
+
+    // Ctrl+C: copy selection to clipboard if text is selected, otherwise let xterm send SIGINT
+    if (key === "c" && terminal.hasSelection()) {
+      if (clipboardAvailable) {
+        void this.clipboard.writeText(terminal.getSelection());
+      }
+      return true;
+    }
+
+    // Ctrl+V: paste clipboard text, or the clipboard image when there is no text
+    if (key === "v") {
+      if (clipboardAvailable) {
+        event.preventDefault();
+        this.pasteClipboard(terminal);
+      }
+      return true;
+    }
+
+    return false;
   }
 
   private handleFindShortcut(event: KeyboardEvent): boolean {
@@ -489,12 +617,15 @@ export class TerminalEmulatorRuntime {
       theme: withOverviewRulerBorderHidden(input.theme),
     });
     const fitAddon = new FitAddon();
-    const unicode11Addon = new Unicode11Addon();
     let webglAddon: WebglAddon | null = null;
     let imageAddon: ImageAddon | null = null;
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(unicode11Addon);
+    terminal.loadAddon(new Unicode11Addon());
+    terminal.loadAddon(new UnicodeGraphemesAddon());
+    applyCharacterWidths(terminal, this.characterWidths);
     terminal.loadAddon(new WebLinksAddon(openExternalLink));
+    let hoveredLocalFileLink: { target: TerminalLocalFileLinkTarget; range: IBufferRange } | null =
+      null;
     const localFileLinkProvider = terminal.registerLinkProvider(
       createTerminalLocalFileLinkProvider(terminal, {
         resolveLink: async (source) => {
@@ -504,9 +635,20 @@ export class TerminalEmulatorRuntime {
         openLink: (target, disposition) => {
           void this.callbacks.onOpenLocalFileLink?.(target, disposition);
         },
+        hoverLink: (link) => {
+          hoveredLocalFileLink = link;
+        },
       }),
     );
     this.loadSearchAddon(terminal);
+    const noteHighlights = new XtermNoteHighlights(terminal, input.theme.background);
+    const emitSelection = (): void => {
+      const hasSelection = terminal.hasSelection();
+      this.callbacks.onSelectionChange?.({
+        hasSelection,
+        anchor: hasSelection ? xtermSelectionAnchor(terminal, input.root) : null,
+      });
+    };
     terminal.onWriteParsed(() => {
       // Even a bottom viewport is an inspected location while searching. A
       // marker follows buffer trimming; output writes remain batched normally.
@@ -515,10 +657,14 @@ export class TerminalEmulatorRuntime {
       // A parser turn may yield with submitted writes still queued. Commit
       // callbacks identify completion; plain writes still submit back-to-back.
       if (this.pendingWriteCommits.size === 0) this.releaseFindOutputAnchor();
+      noteHighlights.schedule();
     });
     terminal.onScroll(() => {
       if (this.findQuery) this.emitFindResult();
+      noteHighlights.schedule();
+      if (terminal.hasSelection()) emitSelection();
     });
+    terminal.onSelectionChange(emitSelection);
     terminal.loadAddon(new ClipboardAddon());
     try {
       terminal.loadAddon(new LigaturesAddon());
@@ -527,12 +673,9 @@ export class TerminalEmulatorRuntime {
     }
     terminal.open(input.host);
     this.themeBackgroundElements = this.collectThemeBackgroundElements(input);
+    this.noteHighlights = noteHighlights;
+    noteHighlights.set(this.noteHighlightList);
     this.applyThemeBackground(input.theme);
-    try {
-      terminal.unicode.activeVersion = "11";
-    } catch {
-      // Ignore if unicode API isn't available in this build/runtime.
-    }
 
     const disposeImageAddon = (): void => {
       try {
@@ -566,6 +709,7 @@ export class TerminalEmulatorRuntime {
       terminal.parser.registerCsiHandler({ final: "c" }, () => true);
       terminal.parser.registerCsiHandler({ prefix: ">", final: "c" }, () => true);
       terminal.parser.registerCsiHandler({ prefix: "=", final: "c" }, () => true);
+      terminal.parser.registerCsiHandler({ prefix: ">", final: "q" }, () => true);
       terminal.parser.registerCsiHandler({ final: "n" }, () => true);
       terminal.parser.registerCsiHandler({ prefix: "?", final: "n" }, () => true);
       terminal.parser.registerCsiHandler({ final: "R" }, () => true);
@@ -574,6 +718,7 @@ export class TerminalEmulatorRuntime {
         { prefix: "?", intermediates: "$", final: "p" },
         () => true,
       );
+      terminal.parser.registerDcsHandler({ intermediates: "$", final: "q" }, () => true);
       for (const code of [10, 11, 12]) {
         terminal.parser.registerOscHandler(code, (data) => data.trim() === "?");
       }
@@ -610,6 +755,7 @@ export class TerminalEmulatorRuntime {
     window.__paseoTerminal = terminal;
 
     const fitAndEmitResize = (resizeInput?: TerminalResizeRequest): void => {
+      if (this.deferReplayResize(resizeInput)) return;
       const forceRefresh = resizeInput?.forceRefresh ?? false;
       const shouldClaim = resizeInput?.shouldClaim ?? true;
       const forceClaim = resizeInput?.forceClaim ?? false;
@@ -666,6 +812,37 @@ export class TerminalEmulatorRuntime {
 
     this.attachKeyEventHandler(terminal);
 
+    // Cmd+V and context-menu paste arrive as DOM paste events. Take file-only
+    // pastes before xterm's own listener consumes them as empty text.
+    const filePasteHandler = (event: ClipboardEvent): void => {
+      const onFilePaste = this.callbacks.onFilePaste;
+      const file = findFileOnlyPaste(event.clipboardData);
+      if (!onFilePaste || !file) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onFilePaste(readTerminalFile(file));
+    };
+    input.host.addEventListener("paste", filePasteHandler, true);
+
+    // A right click on a file link opens the file menu instead of the browser's text menu.
+    const fileLinkContextMenuHandler = (event: MouseEvent): void => {
+      const onLocalFileLinkContextMenu = this.callbacks.onLocalFileLinkContextMenu;
+      const link = hoveredLocalFileLink;
+      if (!onLocalFileLinkContextMenu || !link) {
+        return;
+      }
+      const cell = bufferCellAtPoint(terminal, event);
+      if (!cell || !isBufferCellInRange(cell, link.range)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void onLocalFileLinkContextMenu(link.target, { x: event.clientX, y: event.clientY });
+    };
+    input.host.addEventListener("contextmenu", fileLinkContextMenuHandler, true);
+
     const removeTouchListeners = this.setupTouchScrollHandlers({
       root: input.root,
       host: input.host,
@@ -721,10 +898,6 @@ export class TerminalEmulatorRuntime {
       fitAndEmitResize({ forceRefresh: true, shouldClaim: false });
     }, 0);
 
-    if (input.initialSnapshot) {
-      this.renderSnapshot({ state: input.initialSnapshot });
-    }
-
     this.processOutputQueue();
 
     const disposables: TerminalEmulatorRuntimeDisposables = {
@@ -755,6 +928,12 @@ export class TerminalEmulatorRuntime {
         fontSet?.removeEventListener?.("loadingdone", fontReadyHandler);
       },
       removeTouchListeners,
+      removeFilePasteListener: () => {
+        input.host.removeEventListener("paste", filePasteHandler, true);
+      },
+      removeFileLinkContextMenuListener: () => {
+        input.host.removeEventListener("contextmenu", fileLinkContextMenuHandler, true);
+      },
       restoreDocumentStyles,
       restoreViewportStyles,
       disposeFitAddon: () => {
@@ -769,6 +948,7 @@ export class TerminalEmulatorRuntime {
         disposeImageAddon();
       },
       disposeTerminal: () => {
+        noteHighlights.dispose();
         localFileLinkProvider.dispose();
         terminal.dispose();
       },
@@ -784,6 +964,8 @@ export class TerminalEmulatorRuntime {
       disposables.clearFitTimeouts();
       disposables.removeFontListeners();
       disposables.removeTouchListeners();
+      disposables.removeFilePasteListener();
+      disposables.removeFileLinkContextMenuListener();
       disposables.disposeFitAddon();
       disposables.disposeWebglAddon();
       disposables.disposeTerminal();
@@ -824,20 +1006,33 @@ export class TerminalEmulatorRuntime {
     this.terminal?.paste(text);
   }
 
-  renderSnapshot(input: { state: TerminalState | null; onCommitted?: () => void }): void {
-    if (!input.state) {
-      this.clear(input);
-      return;
-    }
-    this.restoreOutput({
-      data: encodeTerminalOutput(renderTerminalSnapshotToAnsi(input.state)),
-      rows: input.state.rows,
-      cols: input.state.cols,
-      ...(input.onCommitted ? { onCommitted: input.onCommitted } : {}),
+  private pasteClipboard(terminal: Pick<Terminal, "paste">): void {
+    const text = this.clipboard.readText().catch(() => "");
+    const onFilePaste = this.callbacks.onFilePaste;
+    // Report the gesture now so it keeps its place among earlier file pastes.
+    const file = text.then((value) => {
+      if (value) {
+        terminal.paste(value);
+        return null;
+      }
+      return onFilePaste ? readClipboardImage(this.clipboard).catch(() => null) : null;
     });
+    onFilePaste?.(file);
   }
 
-  restoreOutput(input: {
+  replay(event: import("@getpaseo/client").TerminalReplayEvent): void {
+    if (event.type === "begin") {
+      this.replayResize ??= { shouldClaim: false };
+      this.restoreOutput({ data: EMPTY_TERMINAL_OUTPUT, rows: event.rows, cols: event.cols });
+    } else if (event.type === "data") {
+      this.write({ data: event.data, suppressInput: true });
+    } else {
+      this.outputOperations.push({ type: "fit", data: EMPTY_TERMINAL_OUTPUT });
+      this.processOutputQueue();
+    }
+  }
+
+  private restoreOutput(input: {
     data: TerminalOutputData;
     rows?: number;
     cols?: number;
@@ -852,6 +1047,16 @@ export class TerminalEmulatorRuntime {
       ...(input.onCommitted ? { onCommitted: input.onCommitted } : {}),
     });
     this.processOutputQueue();
+  }
+
+  private deferReplayResize(input?: TerminalResizeRequest): boolean {
+    if (!this.replayResize) return false;
+    this.replayResize = {
+      forceRefresh: this.replayResize.forceRefresh || input?.forceRefresh,
+      shouldClaim: this.replayResize.shouldClaim || (input?.shouldClaim ?? true),
+      forceClaim: this.replayResize.forceClaim || input?.forceClaim,
+    };
+    return true;
   }
 
   resize(input?: TerminalResizeRequest): void {
@@ -872,6 +1077,7 @@ export class TerminalEmulatorRuntime {
     }
 
     this.applyThemeBackground(input.theme);
+    this.noteHighlights?.setBackground(input.theme.background);
     this.refreshVisibleRows();
   }
 
@@ -924,6 +1130,21 @@ export class TerminalEmulatorRuntime {
     this.terminal?.blur();
   }
 
+  getSelectionNoteContext(): TerminalSelectionNoteContext | null {
+    return this.terminal ? xtermSelectionNoteContext(this.terminal) : null;
+  }
+
+  /** Notes to draw over their quotes; kept across remounts of the same runtime. */
+  setNoteHighlights(highlights: readonly TerminalNoteHighlight[]): void {
+    this.noteHighlightList = highlights;
+    this.noteHighlights?.set(highlights);
+  }
+
+  /** Scroll to a note's quote and select it; false when the buffer no longer holds it. */
+  revealNote(input: TerminalNoteReveal): boolean {
+    return this.terminal ? revealXtermNote(this.terminal, input) : false;
+  }
+
   private refreshVisibleRows(): void {
     const terminal = this.terminal;
     if (!terminal || terminal.rows <= 0) {
@@ -973,6 +1194,7 @@ export class TerminalEmulatorRuntime {
       commit();
     }
     this.hasUngatedWrites = false;
+    this.replayResize = null;
 
     this.cleanup?.();
     this.cleanup = null;
@@ -980,6 +1202,7 @@ export class TerminalEmulatorRuntime {
       window.__paseoTerminal = undefined;
     }
     this.terminal = null;
+    this.noteHighlights = null;
     this.searchAddon = null;
     this.findQuery = "";
     this.findResult = { resultIndex: -1, resultCount: 0 };
@@ -1102,16 +1325,40 @@ export class TerminalEmulatorRuntime {
       this.processOutputQueue();
     };
 
+    if (operation.type === "fit") {
+      // xterm resize flushes its write buffer synchronously. Leave the parser's
+      // commit callback before fitting, or that flush consumes the next write.
+      queueMicrotask(() => {
+        if (this.inFlightOutputOperation !== operation || this.terminal !== terminal) return;
+        const resize = this.replayResize ?? { shouldClaim: false };
+        this.replayResize = null;
+        this.fitAndEmitResize?.(resize);
+        finalizeOperation(operation);
+      });
+      return;
+    }
+
     if (operation.type === "clear") {
       this.inputModeDecoder.decode();
       this.inputModeTracker.reset();
       this.emitInputModeChange();
       terminal.reset();
-      finalizeOperation(operation);
+      if (!this.replayResize) {
+        finalizeOperation(operation);
+        return;
+      }
+      queueMicrotask(() => {
+        if (this.inFlightOutputOperation !== operation || this.terminal !== terminal) return;
+        const resize = this.replayResize ?? { shouldClaim: false };
+        this.replayResize = null;
+        this.fitAndEmitResize?.(resize);
+        finalizeOperation(operation);
+      });
       return;
     }
 
     if (operation.type === "snapshot") {
+      this.replayResize ??= { shouldClaim: false };
       this.inputModeDecoder.decode();
       this.inputModeTracker.reset();
       this.emitInputModeChange();
