@@ -5,6 +5,7 @@ import {
   updateCachedSkinMetadata,
   writeCachedSkin,
 } from "./cache";
+import type { SkinOriginal } from "./cache-core";
 import { findLivePluginSkin, summarizeCachedSkin } from "./catalog";
 import {
   cachePluginSkin,
@@ -67,9 +68,8 @@ function inferAppearance(meta: SkinMetadata): SkinScheme {
 }
 
 export async function importLocalSkin(file: {
-  uri: string;
+  original: SkinOriginal;
   name: string;
-  mimeType?: string;
 }): Promise<SkinSummary> {
   const draft: SkinMetadata = {
     // `polyfillCrypto` installs `crypto.randomUUID` on native at startup; browsers ship it.
@@ -84,11 +84,7 @@ export async function importLocalSkin(file: {
     attribution: null,
     createdAt: Date.now(),
   };
-  const stored = await writeCachedSkin(draft, {
-    kind: "uri",
-    uri: file.uri,
-    mimeType: file.mimeType,
-  });
+  const stored = await writeCachedSkin(draft, file.original);
   const appearance = inferAppearance(stored);
   const final =
     appearance === stored.appearance
