@@ -128,6 +128,7 @@ import {
   useHostRuntimeClient,
   useHostRuntimeIsConnected,
 } from "@/runtime/host-runtime";
+import { useHostFeature } from "@/runtime/host-features";
 import {
   deleteAttachments,
   persistAttachmentFromBlob,
@@ -1244,6 +1245,7 @@ function ComposerContentImpl({
   const buttonIconSize = resolveComposerButtonIconSize();
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const supportsAgentFork = useHostFeature(serverId, "agentFork");
   const agentDirectoryStatus = useHostRuntimeAgentDirectoryStatus(serverId);
   const toast = useToast();
   const toastErrorRef = useRef(toast.error);
@@ -1859,6 +1861,7 @@ function ComposerContentImpl({
       const clientSlashCommand = resolveClientSlashCommand({
         text: payload.text,
         hasAttachments: outgoingAttachments.length > 0,
+        supportsAgentFork,
       });
       if (clientSlashCommand && runClientSlashCommand(clientSlashCommand)) {
         return;
@@ -1885,6 +1888,7 @@ function ComposerContentImpl({
       blurOnSubmit,
       buildOutgoingAttachments,
       runClientSlashCommand,
+      supportsAgentFork,
       pluginClientSlashCommands,
       runPluginClientSlashCommand,
       sendMessageWithContent,
@@ -2296,6 +2300,7 @@ function ComposerContentImpl({
       const clientSlashCommand = resolveClientSlashCommand({
         text: payload.text,
         hasAttachments: outgoingAttachments.length > 0,
+        supportsAgentFork,
       });
       if (clientSlashCommand && runClientSlashCommand(clientSlashCommand)) {
         return;
@@ -2312,6 +2317,7 @@ function ComposerContentImpl({
       attachments,
       buildOutgoingAttachments,
       pluginClientSlashCommands,
+      supportsAgentFork,
       queueMessage,
       runClientSlashCommand,
       runPluginClientSlashCommand,

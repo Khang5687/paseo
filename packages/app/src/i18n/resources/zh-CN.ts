@@ -217,6 +217,7 @@ export const zhCN: TranslationResources = {
     clientCommands: {
       archiveAgent: "归档当前 Agent",
       freshDraft: "归档此 Agent 并开始新的草稿",
+      forkAgent: "在新标签页中分叉此对话",
     },
     github: {
       searching: "正在搜索...",
