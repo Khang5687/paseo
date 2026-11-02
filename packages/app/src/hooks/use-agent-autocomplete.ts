@@ -303,7 +303,7 @@ function resolveAutocompleteIsLoading(args: {
   optionsLength: number;
 }): boolean {
   if (args.mode === "command") {
-    return args.isCommandsLoading && args.optionsLength === 0;
+    return args.isCommandsLoading;
   }
   if (args.mode === "file") {
     return (
@@ -425,7 +425,10 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   const isConnected = useHostRuntimeIsConnected(serverId);
 
   const mode = resolveAutocompleteMode({ showFileAutocomplete, showCommandAutocomplete });
-  const canShowAutocomplete = resolveAutocompleteIsVisible({
+  // The command menu does not wait for provider commands: built-in and plugin commands
+  // show at once and provider commands join when they arrive. Listing them can take
+  // seconds when the daemon has to resume an idle agent first.
+  const isVisible = resolveAutocompleteIsVisible({
     mode,
     canLoadCommands,
     serverId,
@@ -440,8 +443,6 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   });
   const { commands, isError, error } = commandsQuery;
   const isCommandsLoading = canListCommands && commandsQuery.isLoading;
-
-  const isVisible = canShowAutocomplete && !(mode === "command" && isCommandsLoading);
 
   const fileSuggestionsQuery = useQuery({
     queryKey: [
