@@ -18,8 +18,8 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getOverlayRoot, useOverlayLayer } from "@/lib/overlay-root";
 import { useNoteFocusStore } from "@/notes/focus-store";
-import type { Note } from "@/notes/model";
-import { chatNoteHighlightKind, noteFindQuery, type ChatNoteHighlightKind } from "./anchor";
+import { noteHighlightKind, type Note, type NoteHighlightKind } from "@/notes/model";
+import { noteFindQuery } from "./anchor";
 import {
   openChatNoteComposer,
   useChatNoteFocusTarget,
@@ -32,7 +32,7 @@ import { ChatRowIndex, findNoteRange, noteRangeRow, readChatSelection } from "./
 import type { ChatNotesSurfaceProps } from "./types";
 
 const DISPLAY_CONTENTS: CSSProperties = { display: "contents" };
-const HIGHLIGHT_KINDS: readonly ChatNoteHighlightKind[] = ["open", "fired", "resolved"];
+const HIGHLIGHT_KINDS: readonly NoteHighlightKind[] = ["open", "waiting", "fired", "resolved"];
 /** How long a jump may wait for its message to mount and render before giving up on it. */
 const JUMP_TIMEOUT_MS = 5000;
 const FLASH_MS = 1600;
@@ -47,12 +47,7 @@ const CHAT_SCROLL_SELECTOR = '[data-testid="agent-chat-scroll"]';
 
 let nextSurfaceId = 0;
 
-interface HighlightNames {
-  open: string;
-  fired: string;
-  resolved: string;
-  flash: string;
-}
+type HighlightNames = Record<NoteHighlightKind | "flash", string>;
 
 function supportsHighlights(): boolean {
   return typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined";
@@ -78,6 +73,7 @@ export function ChatNotesSurface({
     const id = ++nextSurfaceId;
     return {
       open: `paseo-chat-note-open-${id}`,
+      waiting: `paseo-chat-note-waiting-${id}`,
       fired: `paseo-chat-note-fired-${id}`,
       resolved: `paseo-chat-note-resolved-${id}`,
       flash: `paseo-chat-note-flash-${id}`,
@@ -97,10 +93,16 @@ export function ChatNotesSurface({
   );
 }
 
+/**
+ * A plain note is a quiet neutral wash, like a bookmark. A note waiting on its event is amber and
+ * underlined, since it still blocks something; a fired one turns green; one resolved by hand keeps
+ * only a dotted underline.
+ */
 function highlightCss(names: HighlightNames): string {
-  const { open, fired, resolved, flash } = styles;
+  const { open, waiting, fired, resolved, flash } = styles;
   return [
-    `::highlight(${names.open}) { background-color: color-mix(in srgb, ${open.color} 28%, transparent); text-decoration: underline ${open.color}; }`,
+    `::highlight(${names.open}) { background-color: color-mix(in srgb, ${open.color} 22%, transparent); }`,
+    `::highlight(${names.waiting}) { background-color: color-mix(in srgb, ${waiting.color} 28%, transparent); text-decoration: underline ${waiting.color}; }`,
     `::highlight(${names.fired}) { background-color: color-mix(in srgb, ${fired.color} 28%, transparent); text-decoration: underline ${fired.color}; }`,
     `::highlight(${names.resolved}) { text-decoration: underline dotted ${resolved.color}; }`,
     `::highlight(${names.flash}) { background-color: ${flash.backgroundColor}; color: ${flash.color}; }`,
@@ -131,10 +133,15 @@ function useNoteHighlights(
     const paint = () => {
       frame = 0;
       const index = new ChatRowIndex(root);
-      const ranges: Record<ChatNoteHighlightKind, Range[]> = { open: [], fired: [], resolved: [] };
+      const ranges: Record<NoteHighlightKind, Range[]> = {
+        open: [],
+        waiting: [],
+        fired: [],
+        resolved: [],
+      };
       for (const note of notes) {
         const range = findNoteRange(index, note);
-        if (range) ranges[chatNoteHighlightKind(note)].push(range);
+        if (range) ranges[noteHighlightKind(note)].push(range);
       }
       for (const kind of HIGHLIGHT_KINDS) {
         if (ranges[kind].length > 0)
@@ -410,7 +417,8 @@ const styles = StyleSheet.create((theme) => ({
   pill: {
     ...theme.shadow.md,
   },
-  open: { color: theme.colors.statusWarning },
+  open: { color: theme.colors.foregroundMuted },
+  waiting: { color: theme.colors.statusWarning },
   fired: { color: theme.colors.statusSuccess },
   resolved: { color: theme.colors.foregroundMuted },
   flash: { backgroundColor: theme.colors.statusWarning, color: theme.colors.surface0 },

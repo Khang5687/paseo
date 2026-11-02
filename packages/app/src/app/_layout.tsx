@@ -134,6 +134,7 @@ import {
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
 import { NoteRemindersHost } from "@/notes/reminders-host";
+import { ChatNoteBadgesHost } from "@/notes/chat-badges-store";
 import { ensureOsNotificationPermission } from "@/utils/os-notifications";
 
 polyfillCrypto();
@@ -865,6 +866,7 @@ function RuntimeProviders({ children }: { children: ReactNode }) {
     <HostRuntimeBootstrapProvider>
       <NotificationOpenBridge />
       <NoteRemindersHost />
+      <ChatNoteBadgesHost />
       <SidebarCalloutProvider>
         <ProvidersWrapper>{children}</ProvidersWrapper>
       </SidebarCalloutProvider>

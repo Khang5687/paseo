@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Note } from "@/notes/model";
-import {
-  chatNoteHighlightKind,
-  joinedOffset,
-  locateQuote,
-  nodeAtOffset,
-  noteFindQuery,
-} from "./anchor";
+import { joinedOffset, locateQuote, nodeAtOffset, noteFindQuery } from "./anchor";
 
 describe("locateQuote", () => {
   const text = "alpha beta gamma beta delta";
@@ -76,52 +69,5 @@ describe("noteFindQuery", () => {
     const query = noteFindQuery(quote, 20);
     expect(query.length).toBeLessThanOrEqual(20);
     expect(query.endsWith("word")).toBe(true);
-  });
-});
-
-describe("chatNoteHighlightKind", () => {
-  const base: Note = {
-    id: "note-1",
-    text: "check",
-    quote: "quoted",
-    anchor: { kind: "agent", agentId: "agent-1" },
-    createdAt: "2026-11-01T10:00:00.000Z",
-    updatedAt: "2026-11-01T10:00:00.000Z",
-  };
-
-  it("draws open and waiting notes alike", () => {
-    expect(chatNoteHighlightKind(base)).toBe("open");
-    expect(
-      chatNoteHighlightKind({
-        ...base,
-        wait: { type: "time", at: "2026-11-01T12:00:00.000Z" },
-      }),
-    ).toBe("open");
-  });
-
-  it("draws a note resolved by hand as resolved", () => {
-    expect(chatNoteHighlightKind({ ...base, resolvedAt: "2026-11-01T11:00:00.000Z" })).toBe(
-      "resolved",
-    );
-  });
-
-  it("draws a note resolved by its event green, and one whose event missed as resolved", () => {
-    const resolved: Note = {
-      ...base,
-      wait: { type: "time", at: "2026-11-01T12:00:00.000Z" },
-      resolvedAt: "2026-11-01T12:00:00.000Z",
-    };
-    expect(
-      chatNoteHighlightKind({
-        ...resolved,
-        waitResult: { at: "2026-11-01T12:00:00.000Z", matched: true },
-      }),
-    ).toBe("fired");
-    expect(
-      chatNoteHighlightKind({
-        ...resolved,
-        waitResult: { at: "2026-11-01T12:00:00.000Z", matched: false },
-      }),
-    ).toBe("resolved");
   });
 });

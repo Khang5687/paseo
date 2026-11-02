@@ -28,7 +28,22 @@ A phone that creates a time note also schedules a local notification, so the rem
 
 ## Clients
 
-Clients subscribe to `notes.list.request` with `subscribe`, only while a screen shows that host's notes (`useNotesDemand` in `packages/app/src/notes/store.ts`). Changes arrive as `notes.changed`; there is no polling. Hosts without `server_info.features.notes` show no notes UI.
+Clients subscribe to `notes.list.request` with `subscribe`; changes arrive as `notes.changed` and nothing polls. The sidebar's note badges need every host's notes, so `ChatNoteBadgesHost` (`packages/app/src/notes/chat-badges-store.ts`) holds one subscription per host while the app is on screen and releases them when it goes to the background. Other screens add demand through `useNotesDemand` in `packages/app/src/notes/store.ts`. Hosts without `server_info.features.notes` show no notes UI.
+
+## How notes are drawn
+
+A note has one of four kinds (`noteHighlightKind` in `packages/app/src/notes/model.ts`), and every surface draws the same kind the same way:
+
+| Kind     | Note                                     | Highlight                                                           | Marker                 |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------- | ---------------------- |
+| open     | Plain note, or a wait whose event missed | Neutral wash                                                        | Sticky note            |
+| waiting  | Waiting on its event                     | Amber wash, underlined                                              | Clock, `statusWarning` |
+| fired    | Resolved by its event                    | Green wash, underlined                                              | Check, `statusSuccess` |
+| resolved | Resolved by hand                         | Dotted underline (faint wash in terminals, which draw no underline) | Muted sticky note      |
+
+CSS highlights cannot draw icons, so web chat puts the waiting clock in the message's toolbar and keeps that toolbar visible while the note waits. Native chat draws no highlights; the message's "Add note" button takes the marker icon instead.
+
+A sidebar row shows a clock while any chat in it has a waiting note, and a green check when a note fired after the owner last had that chat open. "Seen" is per device (`chat-notes-seen` in AsyncStorage) and is recorded while the chat is the focused agent; notes that fired before the device started tracking never badge.
 
 ## Where you can add a note
 

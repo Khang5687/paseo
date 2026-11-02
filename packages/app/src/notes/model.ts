@@ -37,6 +37,37 @@ export function noteFired(note: Note): boolean {
   return note.resolvedAt != null && note.waitResult?.matched === true;
 }
 
+/**
+ * How a note is drawn over its text and marked on its message: a plain note, a note waiting on
+ * its event, one its event resolved (green), or one the owner resolved by hand.
+ */
+export type NoteHighlightKind = "open" | "waiting" | "fired" | "resolved";
+
+export function noteHighlightKind(note: Note): NoteHighlightKind {
+  const state = noteState(note);
+  if (state !== "resolved") return state;
+  return noteFired(note) ? "fired" : "resolved";
+}
+
+const HIGHLIGHT_KIND_ORDER: Record<NoteHighlightKind, number> = {
+  waiting: 0,
+  fired: 1,
+  open: 2,
+  resolved: 3,
+};
+
+/** The kind one marker shows for several notes on the same message: blockers win. */
+export function strongestNoteHighlightKind(notes: readonly Note[]): NoteHighlightKind | null {
+  let strongest: NoteHighlightKind | null = null;
+  for (const note of notes) {
+    const kind = noteHighlightKind(note);
+    if (strongest === null || HIGHLIGHT_KIND_ORDER[kind] < HIGHLIGHT_KIND_ORDER[strongest]) {
+      strongest = kind;
+    }
+  }
+  return strongest;
+}
+
 const STATE_ORDER: Record<NoteState, number> = { waiting: 0, open: 1, resolved: 2 };
 
 /** Blockers first, then open notes, then resolved ones; newest first inside each group. */

@@ -25,6 +25,8 @@ import { density } from "@/styles/density";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { prepareWorkspaceTab } from "@/utils/workspace-navigation";
+import { useChatNoteBadge } from "@/notes/chat-badges-store";
+import { chatNoteBadgeLabels, SidebarNoteBadge } from "@/components/sidebar/sidebar-note-badge";
 
 const EMPTY_AGENT_IDS: string[] = [];
 
@@ -127,6 +129,14 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
   const presentation = useSubagentRowPresentation(row, serverId);
   const label =
     presentation.titleState === "loading" ? t("common.states.loading") : presentation.label;
+  // Only a Paseo sub-agent is a chat notes can be made on; a provider sub-agent is a transcript.
+  const noteAgentId = row.kind === "paseo" ? row.address.agentId : null;
+  const noteAgentIds = useMemo(
+    () => (noteAgentId ? [noteAgentId] : EMPTY_AGENT_IDS),
+    [noteAgentId],
+  );
+  const noteBadge = useChatNoteBadge(serverId, noteAgentIds);
+  const accessibilityLabel = [label, ...chatNoteBadgeLabels(noteBadge, t)].join(", ");
   const handlePress = useCallback(() => {
     if (row.kind === "paseo") {
       navigateToAgent(row.address);
@@ -153,7 +163,7 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
   return (
     <PressHighlight
       accessibilityRole={isWeb ? undefined : "button"}
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel}
       onPress={handlePress}
       style={rowStyle}
       highlightStyle={styles.rowPressed}
@@ -165,6 +175,7 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
           <Text style={styles.label} numberOfLines={1}>
             {label}
           </Text>
+          <SidebarNoteBadge badge={noteBadge} />
         </>
       )}
     </PressHighlight>
