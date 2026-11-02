@@ -3403,6 +3403,27 @@ export class DaemonClient {
     }
   }
 
+  /** Requires `server_info.features.agentUnarchive`. */
+  async unarchiveAgent(agentId: string): Promise<{
+    wasArchived: boolean;
+    workspaceId: string | null;
+    workspaceRestored: boolean;
+    warning: string | null;
+  }> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.unarchive.response">({
+      message: { type: "agent.unarchive.request", agentId },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "unarchiveAgent rejected");
+    }
+    return {
+      wasArchived: payload.wasArchived ?? false,
+      workspaceId: payload.workspaceId ?? null,
+      workspaceRestored: payload.workspaceRestored ?? false,
+      warning: payload.warning ?? null,
+    };
+  }
+
   async updateAgent(
     agentId: string,
     updates: { name?: string; labels?: Record<string, string> },

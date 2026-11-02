@@ -132,6 +132,19 @@ describe("SessionAuthorization", () => {
     expect(authorization.allowsOutbound(outboundMessage("rpc_error"))).toBe(true);
   });
 
+  test("unarchiving an agent needs the same authority as archiving it", () => {
+    for (const permissions of [["workspace.write"], ["hub.execute"]] as const) {
+      const authorization = new SessionAuthorization(permissions);
+      expect(authorization.allowsInbound(inboundMessage("agent.unarchive.request"))).toBe(true);
+      expect(authorization.allowsInbound(inboundMessage("archive_agent_request"))).toBe(true);
+    }
+    for (const permissions of [["workspace.read"], ["workspace.manage"], []] as const) {
+      const authorization = new SessionAuthorization(permissions);
+      expect(authorization.allowsInbound(inboundMessage("agent.unarchive.request"))).toBe(false);
+      expect(authorization.allowsInbound(inboundMessage("archive_agent_request"))).toBe(false);
+    }
+  });
+
   test("legacy Hub authority is translated at one compatibility boundary", () => {
     expect(permissionsForLegacyHubScopes(["hub.execution.*"])).toEqual(["hub.execute"]);
     expect(permissionsForLegacyHubScopes(["*"])).toEqual([]);

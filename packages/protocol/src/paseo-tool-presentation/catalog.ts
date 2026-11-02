@@ -176,6 +176,22 @@ export const PASEO_TOOL_CATALOG = {
     completedLabel: "Listed agents",
     detail: { inputOrder: ["cwd", "statuses", "sinceHours", "limit", "includeArchived"] },
   },
+  search_agents: {
+    label: "Search agents",
+    completedLabel: "Searched agents",
+    context: field("query"),
+    detail: {
+      inputOrder: [
+        "query",
+        "includeArchived",
+        "cwd",
+        "workspaceId",
+        "provider",
+        "sinceHours",
+        "limit",
+      ],
+    },
+  },
   update_agent: {
     label: "Update agent",
     completedLabel: "Updated agent",
@@ -199,6 +215,15 @@ export const PASEO_TOOL_CATALOG = {
     completedLabel: "Archived agent",
     context: targetAgent(),
     detail: { inputOrder: ["agentId"] },
+  },
+  unarchive_agent: {
+    label: "Unarchive agent",
+    completedLabel: "Unarchived agent",
+    context: targetAgent(),
+    detail: {
+      inputOrder: ["agentId"],
+      outputFields: ["wasArchived", "workspaceRestored", "warning"],
+    },
   },
   kill_agent: {
     label: "Kill agent",

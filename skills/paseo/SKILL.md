@@ -92,6 +92,10 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
 
+**`search_agents`** — `{ query, includeArchived?, cwd?, workspaceId?, provider?, sinceHours?, limit? }`. Finds old threads, archived or not, whose title, labels, first user message, or latest assistant message contain every query word. Returns matches with a snippet, best first. Follow up with `get_agent_activity`, `send_agent_prompt`, or `unarchive_agent`.
+
+**`unarchive_agent`** — `{ agentId }`. Returns an archived agent to the active list and restores its archived workspace. Starts no turn. Read `warning`: when set, the agent's directory is gone and it cannot run yet.
+
 ## Agent profiles and provider discovery
 
 **`list_profiles`** — named launch bundles configured by the human. Before choosing how to launch a delegated agent, call this tool and read every profile's `notes`. Pick a named profile the user requested, or the profile whose notes best match the work.

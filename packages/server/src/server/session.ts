@@ -126,6 +126,7 @@ import {
   closeAgentCommand,
   detachAgentCommand,
   setAgentModeCommand,
+  unarchiveAgentCommand,
   updateAgentCommand,
 } from "./agent/lifecycle-command.js";
 import { buildStoredAgentPayload, toAgentPayload } from "./agent/agent-projections.js";
@@ -2895,6 +2896,8 @@ export class Session {
     switch (msg.type) {
       case "agent.detach.request":
         return this.handleDetachAgentRequest(msg.agentId, msg.requestId);
+      case "agent.unarchive.request":
+        return this.handleUnarchiveAgentRequest(msg.agentId, msg.requestId);
       default:
         return undefined;
     }
@@ -3594,6 +3597,37 @@ export class Session {
           accepted: false,
           error: message,
         },
+      });
+    }
+  }
+
+  private async handleUnarchiveAgentRequest(agentId: string, requestId: string): Promise<void> {
+    this.sessionLogger.info({ agentId, requestId }, "Unarchiving agent");
+    try {
+      const result = await unarchiveAgentCommand(
+        {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          getWorkspace: (workspaceId) => this.workspaceRegistry.get(workspaceId),
+          restoreWorkspace: async (workspace) => {
+            const restored =
+              await this.workspaceProvisioning.ensureWorkspaceRecordUnarchived(workspace);
+            await this.publishRecoveredWorkspace(restored);
+          },
+          isDirectory: (path) => this.filesystem.isDirectory(path),
+        },
+        agentId,
+      );
+      this.emit({
+        type: "agent.unarchive.response",
+        payload: { requestId, accepted: true, error: null, ...result },
+      });
+    } catch (error) {
+      const message = getErrorMessageOr(error, "Failed to unarchive agent");
+      this.sessionLogger.error({ err: error, agentId, requestId }, "Failed to unarchive agent");
+      this.emit({
+        type: "agent.unarchive.response",
+        payload: { requestId, agentId, accepted: false, error: message },
       });
     }
   }
@@ -6105,13 +6139,17 @@ export class Session {
     if (!workspace) {
       throw new Error(`Recovered workspace record not found: ${workspaceId}`);
     }
+    await this.publishRecoveredWorkspace(workspace);
+  }
+
+  private async publishRecoveredWorkspace(workspace: PersistedWorkspaceRecord): Promise<void> {
     if (this.onWorkspaceRecovered) {
       try {
         await this.onWorkspaceRecovered(workspace);
         return;
       } catch (error) {
         this.sessionLogger.warn(
-          { err: error, workspaceId },
+          { err: error, workspaceId: workspace.workspaceId },
           "Failed to publish workspace recovery to active sessions",
         );
       }

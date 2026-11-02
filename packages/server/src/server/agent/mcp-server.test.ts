@@ -6933,3 +6933,243 @@ describe("local durable finish subscription MCP wiring", () => {
     }
   });
 });
+
+describe("agent history MCP tools", () => {
+  const logger = createTestLogger();
+
+  async function createHarness(options?: { workspaces?: PersistedWorkspaceRecord[] }) {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-agent-history-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const manager = new AgentManager({
+      clients: createTestAgentClients(),
+      registry: storage,
+      logger,
+    });
+    const workspaces = new Map(
+      (options?.workspaces ?? []).map((workspace) => [workspace.workspaceId, workspace]),
+    );
+    const restored: string[] = [];
+    const server = await createAgentMcpServer({
+      agentManager: manager,
+      agentStorage: storage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      workspaceRegistry: {
+        get: async (workspaceId) => workspaces.get(workspaceId) ?? null,
+        list: async () => [...workspaces.values()],
+        upsert: async (record) => {
+          workspaces.set(record.workspaceId, record);
+        },
+      },
+      restoreArchivedWorkspace: async (workspace) => {
+        restored.push(workspace.workspaceId);
+        workspaces.set(workspace.workspaceId, { ...workspace, archivedAt: null });
+      },
+      logger,
+    });
+    return { workdir, storage, manager, server, workspaces, restored };
+  }
+
+  function archivedWorkspace(workspaceId: string, cwd: string): PersistedWorkspaceRecord {
+    return {
+      ...createPersistedWorkspaceRecord({
+        workspaceId,
+        projectId: "prj_history",
+        cwd,
+        kind: "local_checkout",
+        displayName: "main",
+        createdAt: "2026-11-01T00:00:00.000Z",
+        updatedAt: "2026-11-01T00:00:00.000Z",
+      }),
+      archivedAt: "2026-11-01T01:00:00.000Z",
+    };
+  }
+
+  it("unarchives an agent and its archived workspace, publishing the agent again", async () => {
+    const cwd = process.cwd();
+    const harness = await createHarness({
+      workspaces: [archivedWorkspace("wks_history", cwd)],
+    });
+    try {
+      const agent = await harness.manager.createAgent({ provider: "codex", cwd }, undefined, {
+        workspaceId: "wks_history",
+      });
+      await harness.manager.archiveAgent(agent.id);
+      const published: string[] = [];
+      const unsubscribe = harness.manager.subscribe(
+        (event) => {
+          if (event.type === "agent_state") published.push(event.agent.id);
+        },
+        { replayState: false },
+      );
+
+      const response = await invokeToolWithParsedInput(
+        registeredTool(harness.server, "unarchive_agent"),
+        { agentId: agent.id },
+      );
+      unsubscribe();
+
+      expect(response.structuredContent).toEqual({
+        agentId: agent.id,
+        wasArchived: true,
+        workspaceId: "wks_history",
+        workspaceRestored: true,
+        warning: null,
+      });
+      expect((await harness.storage.get(agent.id))?.archivedAt).toBeNull();
+      expect(harness.restored).toEqual(["wks_history"]);
+      expect(published).toContain(agent.id);
+      expect(harness.manager.getAgent(agent.id)).toBeNull();
+    } finally {
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("is a no-op for an agent that is not archived", async () => {
+    const harness = await createHarness();
+    try {
+      const agent = await harness.manager.createAgent(
+        { provider: "codex", cwd: process.cwd() },
+        undefined,
+        { workspaceId: "wks_none" },
+      );
+
+      const tool = registeredTool(harness.server, "unarchive_agent");
+      const response = await invokeToolWithParsedInput(tool, { agentId: agent.id });
+
+      expect(response.structuredContent).toMatchObject({
+        wasArchived: false,
+        workspaceRestored: false,
+        warning: null,
+      });
+      expect(harness.manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+    } finally {
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("unarchives the agent but warns and leaves the workspace archived when its directory is gone", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "mcp-agent-history-gone-"));
+    const harness = await createHarness({ workspaces: [archivedWorkspace("wks_gone", cwd)] });
+    try {
+      const agent = await harness.manager.createAgent({ provider: "codex", cwd }, undefined, {
+        workspaceId: "wks_gone",
+      });
+      await harness.manager.archiveAgent(agent.id);
+      await rm(cwd, { recursive: true, force: true });
+
+      const response = await invokeToolWithParsedInput(
+        registeredTool(harness.server, "unarchive_agent"),
+        { agentId: agent.id },
+      );
+
+      expect(response.structuredContent).toMatchObject({
+        wasArchived: true,
+        workspaceId: "wks_gone",
+        workspaceRestored: false,
+        warning: expect.stringContaining(cwd),
+      });
+      expect((await harness.storage.get(agent.id))?.archivedAt).toBeNull();
+      expect(harness.restored).toEqual([]);
+      expect(harness.workspaces.get("wks_gone")?.archivedAt).not.toBeNull();
+    } finally {
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("rejects an unknown agent as tool input", async () => {
+    const harness = await createHarness();
+    const mcp = await connectInMemoryMcpClient(harness.server);
+    try {
+      const result = await mcp.callTool({
+        name: "unarchive_agent",
+        arguments: { agentId: "00000000-0000-4000-8000-000000000000" },
+      });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain("Agent not found");
+    } finally {
+      await mcp.close();
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("finds an archived agent by its conversation after a restart without loading its runtime", async () => {
+    const cwd = process.cwd();
+    const first = await createHarness();
+    let agentId: string;
+    try {
+      const agent = await first.manager.createAgent({ provider: "codex", cwd }, undefined, {
+        workspaceId: "wks_search",
+      });
+      agentId = agent.id;
+      await first.manager.runAgent(
+        agent.id,
+        // The fake provider answers this prompt with a sentence ending "the fox ran away."
+        "Investigate the flaky payment webhook retry, then tell me about the quick brown fox and the lazy dog",
+        { clientMessageId: randomUUID() },
+      );
+      await first.manager.archiveAgent(agent.id);
+      await first.manager.flush();
+      await first.storage.flush();
+    } catch (error) {
+      await removeAgentStateDir(first.manager, first.storage, first.workdir);
+      throw error;
+    }
+
+    // A fresh manager over the same storage: the archived agent exists only on disk.
+    const storage = new AgentStorage(join(first.workdir, "agents"), logger);
+    const clients = createTestAgentClients();
+    const createSession = vi.spyOn(clients.codex!, "createSession");
+    const resumeSession = vi.spyOn(clients.codex!, "resumeSession");
+    const manager = new AgentManager({ clients, registry: storage, logger });
+    const server = await createAgentMcpServer({
+      agentManager: manager,
+      agentStorage: storage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+    try {
+      const tool = registeredTool(server, "search_agents");
+      const byPrompt = await invokeToolWithParsedInput(tool, { query: "Payment WEBHOOK" });
+      const byReply = await invokeToolWithParsedInput(tool, { query: "ran away" });
+      const activeOnly = await invokeToolWithParsedInput(tool, {
+        query: "payment webhook",
+        includeArchived: false,
+      });
+
+      expect(byPrompt.structuredContent).toMatchObject({
+        results: [
+          {
+            agentId,
+            archivedAt: expect.any(String),
+            workspaceId: "wks_search",
+            cwd,
+            provider: "codex",
+            matchedFields: ["firstUserMessage"],
+            snippet: {
+              field: "firstUserMessage",
+              text: expect.stringContaining("flaky payment webhook retry"),
+            },
+          },
+        ],
+        truncated: false,
+      });
+      expect(byReply.structuredContent).toMatchObject({
+        results: [
+          {
+            agentId,
+            snippet: {
+              field: "lastAssistantMessage",
+              text: "The quick brown fox jumps over the lazy dog. Then the fox ran away.",
+            },
+          },
+        ],
+      });
+      expect(activeOnly.structuredContent).toMatchObject({ results: [] });
+      expect(manager.listAgents()).toEqual([]);
+      expect(createSession).not.toHaveBeenCalled();
+      expect(resumeSession).not.toHaveBeenCalled();
+    } finally {
+      await removeAgentStateDir(manager, storage, first.workdir);
+    }
+  });
+});
