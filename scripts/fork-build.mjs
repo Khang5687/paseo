@@ -331,7 +331,7 @@ for (const result of results) {
 }
 summary.push(
   "",
-  `Next: update ~/git/paseo-HANDOFF.md, restart each remote host with \`scripts/fork-remote-daemon.sh <host> restart\`` +
-    " (refuses while agents work), and give the owner the install steps.",
+  `Next: update ~/git/paseo-HANDOFF.md, switch each remote host with \`scripts/fork-remote-daemon.sh <host> restart\`` +
+    " (it switches once nothing on the host is working), and give the owner the install steps.",
 );
 finish(results.every((result) => result.ok) && plan.android !== "no-disk" ? 0 : 1);
