@@ -57,8 +57,10 @@ import {
   SidebarWorkspaceTrailingActionBase,
   SidebarWorkspaceTrailingActionOverlay,
   SidebarWorkspaceTrailingActionSlot,
+  type SidebarWorkspaceTrailingSlotReservation,
   sidebarWorkspaceRowStyles,
 } from "@/components/sidebar/sidebar-workspace-row-content";
+import { SidebarThreadChildren } from "@/components/sidebar/sidebar-thread-children";
 import { useOpenKebabMenuVisibility } from "@/components/sidebar/use-open-kebab-menu-visibility";
 import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop";
 import { getStatusDotColor } from "@/utils/status-dot-color";
@@ -73,6 +75,7 @@ import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceArchiveButton } from "@/components/sidebar/sidebar-workspace-archive-button";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
@@ -117,6 +120,8 @@ interface StatusWorkspaceListProps {
   pinnedWorkspaces: SidebarWorkspaceEntry[];
   projectIconByProjectViewKey: ReadonlyMap<string, string | null>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
+  /** Indent level of each subagent workspace row nested under its parent; top-level rows absent. */
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
   showShortcutBadges: boolean;
   onWorkspacePress?: () => void;
   hostBadgeByServerId: ReadonlyMap<string, HostBadgeModel>;
@@ -135,6 +140,7 @@ export function SidebarStatusWorkspaceList({
   pinnedWorkspaces,
   projectIconByProjectViewKey,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   showShortcutBadges,
   onWorkspacePress,
   hostBadgeByServerId,
@@ -184,6 +190,7 @@ export function SidebarStatusWorkspaceList({
           hostBadgeByServerId,
         })}
         inStatusGroup={false}
+        nestingDepth={nestingDepthByWorkspaceKey.get(workspace.workspaceKey) ?? 0}
         shortcutNumber={statusShortcutIndex.get(workspace.workspaceKey) ?? null}
         showShortcutBadge={showShortcutBadges}
         canPin={supportsPinningByServerId.get(workspace.serverId) === true}
@@ -199,6 +206,7 @@ export function SidebarStatusWorkspaceList({
       onToggleWorkspacePin,
       onWorkspacePress,
       projectIconByProjectViewKey,
+      nestingDepthByWorkspaceKey,
       showShortcutBadges,
       statusShortcutIndex,
       supportsPinningByServerId,
@@ -263,6 +271,7 @@ export function SidebarStatusWorkspaceList({
           collapsedWorkspaceGroupKeys={collapsedWorkspaceGroupKeys}
           projectIconByProjectViewKey={projectIconByProjectViewKey}
           shortcutIndex={statusShortcutIndex}
+          nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
           showShortcutBadges={showShortcutBadges}
           onWorkspacePress={onWorkspacePress}
           hostBadgeByServerId={hostBadgeByServerId}
@@ -303,6 +312,7 @@ function StatusGroupList({
   collapsedWorkspaceGroupKeys,
   projectIconByProjectViewKey,
   shortcutIndex,
+  nestingDepthByWorkspaceKey,
   showShortcutBadges,
   onWorkspacePress,
   hostBadgeByServerId,
@@ -313,6 +323,7 @@ function StatusGroupList({
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
   projectIconByProjectViewKey: ReadonlyMap<string, string | null>;
   shortcutIndex: Map<string, number>;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
   showShortcutBadges: boolean;
   onWorkspacePress?: () => void;
   hostBadgeByServerId: ReadonlyMap<string, HostBadgeModel>;
@@ -328,6 +339,7 @@ function StatusGroupList({
           collapsed={collapsedWorkspaceGroupKeys.has(group.key)}
           projectIconByProjectViewKey={projectIconByProjectViewKey}
           shortcutIndex={shortcutIndex}
+          nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
           showShortcutBadges={showShortcutBadges}
           onWorkspacePress={onWorkspacePress}
           hostBadgeByServerId={hostBadgeByServerId}
@@ -349,6 +361,7 @@ function StatusGroupRows({
   collapsed,
   projectIconByProjectViewKey,
   shortcutIndex,
+  nestingDepthByWorkspaceKey,
   showShortcutBadges,
   onWorkspacePress,
   hostBadgeByServerId,
@@ -359,6 +372,7 @@ function StatusGroupRows({
   collapsed: boolean;
   projectIconByProjectViewKey: ReadonlyMap<string, string | null>;
   shortcutIndex: Map<string, number>;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
   showShortcutBadges: boolean;
   onWorkspacePress?: () => void;
   hostBadgeByServerId: ReadonlyMap<string, HostBadgeModel>;
@@ -389,6 +403,7 @@ function StatusGroupRows({
           hostBadgeByServerId,
         })}
         shortcutNumber={shortcutIndex.get(workspace.workspaceKey) ?? null}
+        nestingDepth={nestingDepthByWorkspaceKey.get(workspace.workspaceKey) ?? 0}
         showShortcutBadge={showShortcutBadges}
         canPin={supportsPinningByServerId.get(workspace.serverId) === true}
         onToggleWorkspacePin={onToggleWorkspacePin}
@@ -543,6 +558,7 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
   onToggleWorkspacePin,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
+  nestingDepth,
   drag,
   isDragging = false,
   dragHandleProps,
@@ -561,6 +577,8 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
    * are a flat list under their own header and sit flush.
    */
   inStatusGroup?: boolean;
+  /** How many parent rows this subagent workspace row sits under; 0 for a top-level row. */
+  nestingDepth: number;
   onWorkspacePress?: () => void;
   drag?: () => void;
   isDragging?: boolean;
@@ -577,23 +595,32 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
   }, [workspace.serverId, workspace.workspaceId]);
 
   return (
-    <StatusWorkspaceRowWithMenu
-      workspace={workspace}
-      hostBadge={hostBadge}
-      projectName={projectName}
-      projectIconDataUri={projectIconDataUri}
-      selected={selected}
-      shortcutNumber={shortcutNumber}
-      showShortcutBadge={showShortcutBadge}
-      canPin={canPin}
-      onToggleWorkspacePin={onToggleWorkspacePin}
-      reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
-      inStatusGroup={inStatusGroup}
-      onPress={handlePress}
-      drag={drag}
-      isDragging={isDragging}
-      dragHandleProps={dragHandleProps}
-    />
+    <>
+      <StatusWorkspaceRowWithMenu
+        workspace={workspace}
+        hostBadge={hostBadge}
+        projectName={projectName}
+        projectIconDataUri={projectIconDataUri}
+        selected={selected}
+        shortcutNumber={shortcutNumber}
+        showShortcutBadge={showShortcutBadge}
+        canPin={canPin}
+        onToggleWorkspacePin={onToggleWorkspacePin}
+        reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+        inStatusGroup={inStatusGroup}
+        nestingDepth={nestingDepth}
+        onPress={handlePress}
+        drag={drag}
+        isDragging={isDragging}
+        dragHandleProps={dragHandleProps}
+      />
+      <SidebarThreadChildren
+        serverId={workspace.serverId}
+        workspaceId={workspace.workspaceId}
+        workspaceKey={workspace.workspaceKey}
+        indentLevel={(inStatusGroup ? 1 : 0) + nestingDepth + 1}
+      />
+    </>
   );
 });
 
@@ -609,6 +636,7 @@ function StatusWorkspaceRowWithMenu({
   onToggleWorkspacePin,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
+  nestingDepth,
   onPress,
   drag,
   isDragging = false,
@@ -629,6 +657,7 @@ function StatusWorkspaceRowWithMenu({
    * are a flat list under their own header and sit flush.
    */
   inStatusGroup?: boolean;
+  nestingDepth: number;
   onPress: () => void;
   drag?: () => void;
   isDragging?: boolean;
@@ -736,6 +765,7 @@ function StatusWorkspaceRowWithMenu({
         onTogglePin={onTogglePin}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
         inStatusGroup={inStatusGroup}
+        nestingDepth={nestingDepth}
         drag={drag}
         isDragging={isDragging}
         dragHandleProps={dragHandleProps}
@@ -775,6 +805,7 @@ interface StatusWorkspaceRowInnerProps {
   reserveIdleStatusIndicatorSpace?: boolean;
   /** Pinned rows are flat under their own header; status-group rows indent from theirs. */
   inStatusGroup?: boolean;
+  nestingDepth: number;
   drag?: () => void;
   isDragging?: boolean;
   dragHandleProps?: DraggableListDragHandleProps;
@@ -821,6 +852,7 @@ function StatusWorkspaceRowInnerContent({
   onTogglePin,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
+  nestingDepth,
   isDragging = false,
   dragHandleProps,
   dragInteraction,
@@ -888,6 +920,7 @@ function StatusWorkspaceRowInnerContent({
           selected,
           isHovered,
           inStatusGroup,
+          nestingDepth,
           isDragging,
         });
         const backdrop = getSidebarRowBackdrop({ isDragging, isPressed, selected, isHovered });
@@ -921,6 +954,7 @@ function StatusWorkspaceRowInnerContent({
               onTogglePin={onTogglePin}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
+              draggable={Boolean(dragInteraction)}
               accessibilityRole="button"
               accessibilityState={accessibilityState}
               style={workspaceRowStyle}
@@ -1003,7 +1037,7 @@ function StatusWorkspaceActionSlot({
   trailingPresentation: SidebarWorkspaceTrailingPresentation;
   showKebab: boolean;
   showScrim: boolean;
-  reserveSlotWidth: boolean;
+  reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation;
   isPinned?: boolean;
   onTogglePin?: () => void;
   onCopyPath?: () => void;
@@ -1028,25 +1062,32 @@ function StatusWorkspaceActionSlot({
         scrimBackdrop={showScrim ? backdrop : undefined}
       >
         {kebab.showKebab && onArchive ? (
-          <SidebarWorkspaceMenu
-            {...kebab.menuProps}
-            workspaceKey={workspace.workspaceKey}
-            serverId={workspace.serverId}
-            workspaceId={workspace.workspaceId}
-            workspaceLabels={workspace.labels}
-            onCopyPath={onCopyPath}
-            onCopyBranchName={onCopyBranchName}
-            onRename={onRename}
-            onMarkAsRead={onMarkAsRead}
-            onMarkAsUnread={onMarkAsUnread}
-            onArchive={onArchive}
-            archiveLabel={archiveLabel}
-            archiveStatus={archiveStatus}
-            archivePendingLabel={archivePendingLabel}
-            archiveShortcutKeys={archiveShortcutKeys}
-            isPinned={isPinned}
-            onTogglePin={onTogglePin}
-          />
+          <>
+            <SidebarWorkspaceArchiveButton
+              workspaceKey={workspace.workspaceKey}
+              pending={archiveStatus === "pending"}
+              onArchive={onArchive}
+            />
+            <SidebarWorkspaceMenu
+              {...kebab.menuProps}
+              workspaceKey={workspace.workspaceKey}
+              serverId={workspace.serverId}
+              workspaceId={workspace.workspaceId}
+              workspaceLabels={workspace.labels}
+              onCopyPath={onCopyPath}
+              onCopyBranchName={onCopyBranchName}
+              onRename={onRename}
+              onMarkAsRead={onMarkAsRead}
+              onMarkAsUnread={onMarkAsUnread}
+              onArchive={onArchive}
+              archiveLabel={archiveLabel}
+              archiveStatus={archiveStatus}
+              archivePendingLabel={archivePendingLabel}
+              archiveShortcutKeys={archiveShortcutKeys}
+              isPinned={isPinned}
+              onTogglePin={onTogglePin}
+            />
+          </>
         ) : null}
       </SidebarWorkspaceTrailingActionOverlay>
     </SidebarWorkspaceTrailingActionSlot>
@@ -1058,17 +1099,21 @@ function getStatusWorkspaceRowStyle({
   selected,
   isHovered,
   inStatusGroup,
+  nestingDepth,
   isDragging,
 }: {
   isPressed: boolean;
   selected: boolean;
   isHovered: boolean;
   inStatusGroup: boolean;
+  nestingDepth: number;
   isDragging: boolean;
 }) {
+  const groupIndentLevel = inStatusGroup ? 1 : 0;
   return [
     styles.workspaceRow,
     inStatusGroup && sidebarWorkspaceRowStyles.rowIndented,
+    nestingDepth > 0 && sidebarWorkspaceRowStyles.rowNested(groupIndentLevel + nestingDepth),
     isHovered && styles.workspaceRowHovered,
     selected && styles.sidebarRowSelected,
     isDragging && styles.workspaceRowDragging,

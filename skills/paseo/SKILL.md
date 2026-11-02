@@ -1,6 +1,6 @@
 ---
 name: paseo
-description: Paseo reference for managing hosts, projects, workspaces, workspace scripts, agents, schedules, and heartbeats.
+description: Paseo reference for managing hosts, projects, workspaces, workspace scripts, agents, schedules, and heartbeats. Use whenever the user mentions another agent, another chat, or a workspace by name — to ask it something, read what it did, hand it work, or answer its questions.
 ---
 
 Paseo is a remote daemon that manages coding agents, terminals. Control it through MCP tools or the CLI.
@@ -9,7 +9,7 @@ Paseo is a remote daemon that manages coding agents, terminals. Control it throu
 
 Call `list_hosts` to discover the calling daemon (`self`) and its registered destinations (`hosts`). Use a destination's `serverId` for tool calls; labels are display names.
 
-`create_workspace`, `list_workspaces`, `create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, and `list_agents` accept `serverId`. Omit it for the calling daemon. Other MCP tools operate on the calling daemon.
+`create_workspace`, `list_workspaces`, `create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, `ask_agent`, `list_pending_permissions`, `respond_to_permission`, and `list_agents` accept `serverId`. Omit it for the calling daemon. Other MCP tools operate on the calling daemon.
 
 Keep an agent's `{ serverId, agentId }` together. For example, call `send_agent_prompt` with:
 
@@ -48,7 +48,7 @@ For a local daemon, `project create` defaults to the current directory and resol
 
 Choose `baseBranch` explicitly: `origin/main` selects the remote-tracking branch; `refs/heads/main` selects local main. Bare `main` prefers local main when it exists, otherwise origin/main. Paseo retains the resolved ref for workspace comparisons, even after rebasing the branch or changing its PR target.
 
-**`list_workspaces`** — list active workspaces, excluding background workspaces unless `includeBackground: true`.
+**`list_workspaces`** — list active workspaces newest first, excluding background workspaces unless `includeBackground: true`. Filter with `query` (title or cwd substring), `projectId`, or `cwd`; `limit` defaults to 20 and the result carries `more` when truncated.
 
 **`archive_workspace`** — `{ workspaceId }`. Archives the workspace, its agents, and its terminals. Local directories remain; Paseo removes an owned worktree only after its final active workspace reference is archived.
 
@@ -74,7 +74,7 @@ paseo script stop <name> [--cwd <path> | --workspace <workspace-id>]
 
 ## Agents
 
-**`create_agent`** — required: `title`, `provider` (`claude/opus`, `codex/gpt-5.4`, …), `initialPrompt`. Optional: `workspaceId`, `notifyOnFinish`, `settings`, `labels`. Returns `{ agentId, workspaceId, … }`.
+**`create_agent`** — required: `title`, `provider` (`claude/opus`, `codex/gpt-5.4`, …), `initialPrompt`. Optional: `workspaceId`, `notifyOnFinish`, `settings`, `labels`. Returns `{ agentId, workspaceId, … }` without the mode catalog; use `inspect_provider` for modes, or `detail: "full"` to echo `availableModes`.
 
 Initial runtime settings live under `settings`: `modeId`, `thinkingOptionId`, and provider-specific `features`. Agent profiles are the preferred source for these values. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }` when creating the agent.
 
@@ -88,9 +88,43 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 **`update_agent`** — `{ agentId, name?, labels?, settings? }`. Use `settings` for runtime changes on an existing agent: `modeId`, `model`, `thinkingOptionId`, and provider-specific `features`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }`.
 
-**`list_agents`** — filter by `cwd`, `statuses`, `sinceHours`, `includeArchived`; set `includeBackground: true` to include agents in background workspaces.
+**`list_agents`** — filter by `query` (title substring), `cwd`, `statuses`, `sinceHours`, `includeArchived`; set `includeBackground: true` to include agents in background workspaces. `limit` defaults to 20 and the result carries `more` when truncated.
+
+List and status tools (`list_agents`, `get_agent_status`, `list_workspaces`, `list_terminals`, `list_schedules`, `list_providers`, `list_models`, `inspect_provider`, `create_agent`, `create_workspace`) return compact items by default: empty fields are omitted, labels collapse to `parentId` and `labelCount`. Pass `detail: "full"` for the complete payload.
+
+**`ask_agent`** — `{ agentId, question }`. Ask another agent something only it knows (its progress, decisions, or context) without interrupting it. A hidden copy of its whole conversation answers in a read-only mode and is deleted afterward; the agent never sees the question. Prefer it over `send_agent_prompt` when you only need information. To find an agent by the workspace name the user sees, match `list_workspaces` titles to the `workspaceId` in `list_agents`. Works for Claude, Codex, OpenCode, and OMP agents.
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
+
+**`search_agents`** — `{ query, includeArchived?, cwd?, workspaceId?, provider?, sinceHours?, limit? }`. Finds old threads, archived or not, whose title, labels, first user message, or latest assistant message contain every query word. Returns matches with a snippet, best first. Follow up with `get_agent_activity`, `send_agent_prompt`, or `unarchive_agent`.
+
+**`unarchive_agent`** — `{ agentId }`. Returns an archived agent to the active list and restores its archived workspace. Starts no turn. Read `warning`: when set, the agent's directory is gone and it cannot run yet.
+
+## Working with other agents
+
+The user runs several agents at once and refers to them by the workspace name in the sidebar ("the git backup agent", "the 6tb one"). They want you to do the talking between agents instead of copying text from one chat to another.
+
+**Find the agent.** Call `list_workspaces` and match the user's words to a `title`, then `list_agents` and take the agent whose `workspaceId` matches. If nothing matches, call `list_hosts` and repeat both calls with each host's `serverId`: the agent may be on another computer. Ask the user only when two agents fit equally well.
+
+**Choose the verb.**
+
+| The user wants to…                        | Use                                                      | The other agent…                                             |
+| ----------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------ |
+| know what it decided, is doing, or found  | `ask_agent`                                              | is not interrupted and never sees the question               |
+| see what happened recently, word for word | `get_agent_activity`                                     | is not touched                                               |
+| make it do something                      | `send_agent_prompt`                                      | receives your message in its chat; a running turn is steered |
+| unblock it                                | `list_pending_permissions`, then `respond_to_permission` | continues as if the user tapped                              |
+
+Prefer `ask_agent` over `send_agent_prompt` for questions: a message lands in the middle of the user's own conversation with that agent.
+
+**Answer its questions.** `list_pending_permissions` with its `agentId` shows what it waits on. For `kind: "question"`, read `request.input.questions` and reply with `respond_to_permission` `answers`, keyed by each question's `header`, each a list of option labels (or your own text when the question allows it). For approvals (`kind: "tool"` or `"plan"`) reply with `response: { "behavior": "allow" }` or `{ "behavior": "deny", "message": "…" }`. Answer only what the user told you to decide or what follows plainly from the conversation; when unsure, ask the user and show them the options. Never approve a command the user has not asked for.
+
+**Example.** "Ask the 6tb agent what it's doing and answer its questions":
+
+1. `list_workspaces` → `"set up 2 6tb drives"` is `wks_6f10…`; `list_agents` → agent `186e…` has that `workspaceId`.
+2. `ask_agent { agentId: "186e…", question: "What are you doing, and what are you waiting on?" }`.
+3. `list_pending_permissions { agentId: "186e…" }` → one question, header `"Pool layout"`.
+4. `respond_to_permission { agentId: "186e…", requestId: "…", answers: { "Pool layout": ["mirror"] } }`, after confirming with the user if the choice isn't obvious.
 
 ## Agent profiles and provider discovery
 
@@ -107,9 +141,9 @@ Omit absent values. Do not remember a selected profile or infer drift later; a p
 
 If no profile fits, or no profiles are configured, use the provider discovery tools below rather than guessing. Tell the user when you fall back because no configured profile fits.
 
-**`list_providers`** — compact provider availability and modes.
+**`list_providers`** — compact provider availability and mode ids.
 
-**`list_models`** — full model list for one provider. Use only when you need model IDs or thinking options; the list can be large.
+**`list_models`** — model ids and labels for one provider. Pass `model` to get one model with its thinking options, or `detail: "full"` for every model with thinking options.
 
 **`inspect_provider`** — compact provider capability and feature inspection. Required: `provider`; pass `cwd` when you are not in an agent-scoped session. Optional: `settings` with draft `model`, `modeId`, `thinkingOptionId`, and `features`.
 

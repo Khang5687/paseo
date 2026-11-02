@@ -213,7 +213,7 @@ export function Autocomplete({
   const selectedOption = options[selectedIndex];
   const containerStyle = useMemo(() => [styles.container, { maxHeight }], [maxHeight]);
 
-  if (isLoading) {
+  if (isLoading && options.length === 0) {
     return (
       <View style={containerStyle}>
         <View style={styles.emptyItem}>
@@ -246,7 +246,7 @@ export function Autocomplete({
   return (
     <View style={styles.outerWrapper}>
       {selectedOption?.kind === "command" && selectedOption.description ? (
-        <View style={styles.detailCard}>
+        <View style={styles.detailCard} testID="autocomplete-selected-detail">
           <Text style={styles.detailLabel} numberOfLines={1}>
             {removeBoltGlyphs(selectedOption.label) ?? selectedOption.label}
           </Text>
@@ -271,6 +271,13 @@ export function Autocomplete({
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="always"
         >
+          {isLoading ? (
+            // Options already shown while more are loading: keep them usable and mark the
+            // end of the list, where the remaining options appear.
+            <View style={styles.loadingItem}>
+              <Text style={styles.emptyText}>{resolvedLoadingText}</Text>
+            </View>
+          ) : null}
           {options.map((option, index) => (
             <AutocompleteRow
               key={option.id}
@@ -393,6 +400,12 @@ const styles = StyleSheet.create((theme: Theme) => ({
   emptyItem: {
     paddingHorizontal: theme.spacing[3],
     paddingVertical: theme.spacing[3],
+  },
+  loadingItem: {
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
   },
   emptyText: {
     color: theme.colors.foregroundMuted,

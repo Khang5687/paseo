@@ -36,6 +36,7 @@ import type {
 import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
+  AgentQueuedMessageSummaryPayload,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
@@ -53,6 +54,8 @@ import {
   buildWorkspaceAgentActivityIndex,
   type WorkspaceAgentActivity,
 } from "@/utils/workspace-agent-activity";
+import { buildThreadAgentIndex, buildWorkspaceParentIndex } from "@/subagents/policies";
+import type { ThreadAgents } from "@/subagents/thread-children";
 import {
   resolveTurnPresentation,
   TURN_LIVENESS_IDLE,
@@ -100,6 +103,12 @@ export interface Agent {
   parentAgentId: string | null;
   labels: Record<string, string>;
   projectPlacement?: ProjectPlacementPayload | null;
+  /** Daemon-owned queue summaries. Absent or empty on hosts without `features.messageQueue`. */
+  queuedMessages?: AgentQueuedMessageSummaryPayload[];
+  /** Whether the host holds the queue instead of draining it. Absent on older hosts. */
+  queuePaused?: boolean;
+  /** Why the host paused the queue itself (a send it could not complete); null otherwise. */
+  queuePauseReason?: string | null;
 }
 
 export interface WorkspaceDescriptor {
@@ -123,6 +132,8 @@ export interface WorkspaceDescriptor {
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
+  // Absent when no subagent runs, or when the daemon predates the count.
+  runningSubagentCount?: number;
   archivingAt: string | null;
   diffStat: { additions: number; deletions: number } | null;
   scripts: WorkspaceDescriptorPayload["scripts"];
@@ -167,6 +178,7 @@ export function normalizeWorkspaceDescriptor(
     labels: payload.labels ?? [],
     status: payload.status,
     statusEnteredAt,
+    runningSubagentCount: payload.runningSubagentCount,
     archivingAt: payload.archivingAt ?? null,
     diffStat: payload.diffStat ?? null,
     scripts: (payload.scripts ?? []).map((s) => Object.assign({}, s)),
@@ -274,6 +286,7 @@ export interface DaemonServerInfo {
   serverId: string;
   hostname: string | null;
   version: string | null;
+  homeDirectory?: string;
   desktopManaged?: boolean;
   capabilities?: ServerCapabilities;
   features?: ServerInfoStatusPayload["features"];
@@ -284,6 +297,7 @@ export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonS
     serverId: serverInfo.serverId,
     hostname: serverInfo.hostname ?? null,
     version: serverInfo.version ?? null,
+    ...(serverInfo.homeDirectory ? { homeDirectory: serverInfo.homeDirectory } : {}),
     ...(serverInfo.desktopManaged !== undefined
       ? { desktopManaged: serverInfo.desktopManaged }
       : {}),
@@ -429,6 +443,10 @@ export interface SessionState {
   // Agents
   agents: Map<string, Agent>;
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
+  // Subagent workspace id -> the workspace id it nests under in the sidebar.
+  workspaceParents: Map<string, string>;
+  // Workspace id -> its agents, and the same-workspace subagents that show as its child rows.
+  threadAgents: Map<string, ThreadAgents>;
   agentDetails: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   // All active project descriptors, keyed by host-local projectId.
@@ -673,6 +691,8 @@ function createInitialSessionState(
     initializingAgents: new Map(),
     agents: new Map(),
     workspaceAgentActivity: new Map(),
+    workspaceParents: new Map(),
+    threadAgents: new Map(),
     agentDetails: new Map(),
     workspaces: new Map(),
     projects: new Map(),
@@ -701,6 +721,7 @@ function isSessionServerInfoUnchanged(input: {
   currentServerInfo: SessionState["serverInfo"] | undefined;
   nextHostname: string | null;
   nextVersion: string | null;
+  nextHomeDirectory: string | undefined;
   nextDesktopManaged: boolean | undefined;
   nextCapabilities: ServerCapabilities | undefined;
   nextFeatures: ServerInfoStatusPayload["features"] | undefined;
@@ -710,6 +731,7 @@ function isSessionServerInfoUnchanged(input: {
     currentServerInfo,
     nextHostname,
     nextVersion,
+    nextHomeDirectory,
     nextDesktopManaged,
     nextCapabilities,
     nextFeatures,
@@ -720,6 +742,7 @@ function isSessionServerInfoUnchanged(input: {
     currentServerInfo?.serverId === input.nextServerId &&
     prevHostname === nextHostname &&
     prevVersion === nextVersion &&
+    currentServerInfo?.homeDirectory === nextHomeDirectory &&
     currentServerInfo?.desktopManaged === nextDesktopManaged &&
     areServerCapabilitiesEqual(currentServerInfo?.capabilities, nextCapabilities) &&
     areServerInfoFeaturesEqual(currentServerInfo?.features, nextFeatures)
@@ -857,6 +880,7 @@ export const useSessionStore = create<SessionStore>()(
 
           const nextHostname = info.hostname?.trim() || null;
           const nextVersion = info.version?.trim() || null;
+          const nextHomeDirectory = info.homeDirectory?.trim() || undefined;
           const nextDesktopManaged = info.desktopManaged;
           const nextCapabilities = info.capabilities;
           const nextFeatures = info.features;
@@ -866,6 +890,7 @@ export const useSessionStore = create<SessionStore>()(
               currentServerInfo: session.serverInfo,
               nextHostname,
               nextVersion,
+              nextHomeDirectory,
               nextDesktopManaged,
               nextCapabilities,
               nextFeatures,
@@ -885,6 +910,7 @@ export const useSessionStore = create<SessionStore>()(
                   serverId: info.serverId,
                   hostname: nextHostname,
                   version: nextVersion,
+                  ...(nextHomeDirectory ? { homeDirectory: nextHomeDirectory } : {}),
                   ...(nextDesktopManaged !== undefined
                     ? { desktopManaged: nextDesktopManaged }
                     : {}),
@@ -1514,6 +1540,8 @@ export const useSessionStore = create<SessionStore>()(
                   nextAgents,
                   session.workspaceAgentActivity,
                 ),
+                workspaceParents: buildWorkspaceParentIndex(nextAgents, session.workspaceParents),
+                threadAgents: buildThreadAgentIndex(nextAgents, session.threadAgents),
               },
             },
           };

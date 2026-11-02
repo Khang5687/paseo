@@ -1800,7 +1800,7 @@ test(
     expect(task.content).toEqual([
       expect.objectContaining({
         type: "text",
-        text: expect.stringContaining('"deliveryStatus": "queued"'),
+        text: expect.stringContaining('"deliveryStatus":"queued"'),
       }),
     ]);
     expect(task.structuredContent).toMatchObject({

@@ -18,7 +18,11 @@ import {
 import type { WorkspaceGitService } from "../../workspace-git-service.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../../worktree-session.js";
 import { deriveProjectKey } from "../../project-key.js";
-import { areEquivalentPaths, createRealpathAwarePathMatcher } from "../../../utils/path.js";
+import {
+  areEquivalentPaths,
+  createRealpathAwarePathMatcher,
+  getRealpathAwareRelativePath,
+} from "../../../utils/path.js";
 import type { UntrustedWorkspaceSource } from "../../workspace-automation-gate.js";
 
 export interface ResolveOrCreateWorkspaceIdInput {
@@ -199,8 +203,13 @@ export function createWorkspaceProvisioningService(deps: {
   }
 
   async function findOrCreateProjectForDirectory(cwd: string): Promise<PersistedProjectRecord> {
-    const rootPath = resolve(cwd);
-    const checkout = await workspaceGitService.getCheckout(rootPath);
+    const selectedPath = resolve(cwd);
+    const checkout = await workspaceGitService.getCheckout(selectedPath);
+    // A linked worktree belongs to the project of the repo it was added from, so
+    // key it by the main checkout (plus the selected subdirectory), not its own path.
+    const rootPath = resolveProjectRootPath(selectedPath, checkout);
+    const worktreeRoot =
+      rootPath === selectedPath ? checkout.worktreeRoot : (checkout.mainRepoRoot ?? null);
     const timestamp = new Date().toISOString();
     return projectRegistry.getOrCreateActiveByRoot({
       rootPath,
@@ -209,12 +218,24 @@ export function createWorkspaceProvisioningService(deps: {
       projectKey: deriveProjectKey({
         rootPath,
         remoteUrl: checkout.remoteUrl,
-        worktreeRoot: checkout.worktreeRoot,
+        worktreeRoot,
         mainRepoRoot: checkout.mainRepoRoot,
         serverId,
       }),
       timestamp,
     });
+  }
+
+  function resolveProjectRootPath(
+    selectedPath: string,
+    checkout: ProjectCheckoutLitePayload,
+  ): string {
+    if (!checkout.isGit || !checkout.mainRepoRoot || !checkout.worktreeRoot) return selectedPath;
+    const mainRepoRoot = resolve(checkout.mainRepoRoot);
+    if (areEquivalentPaths(mainRepoRoot, checkout.worktreeRoot)) return selectedPath;
+    const subPath = getRealpathAwareRelativePath(checkout.worktreeRoot, selectedPath);
+    if (subPath === null) return selectedPath;
+    return subPath ? resolve(mainRepoRoot, subPath) : mainRepoRoot;
   }
 
   async function requireActiveProject(projectId: string): Promise<PersistedProjectRecord> {

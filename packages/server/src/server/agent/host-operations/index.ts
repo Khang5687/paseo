@@ -14,10 +14,13 @@ import type { HostDirectory } from "@getpaseo/protocol/hosts";
 import { OWNER_PERMISSIONS } from "../../authorization/index.js";
 import type { ConnectedHosts } from "../../connected-hosts/index.js";
 import { resolveRequiredProviderModel } from "../mcp-shared.js";
-import { selectAgentListItems } from "../agent-projections.js";
+import { selectAgentListPage } from "../agent-projections.js";
+import { moreNote, selectWorkspaceSummaries } from "../tools/paseo-tool-compaction.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
 import { expandUserPath } from "../../path-utils.js";
 import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
+import type { AgentPermissionResponse } from "../agent-sdk-types.js";
+import { resolvePermissionResponse } from "../permission-answers.js";
 
 export class HostOperationRejectedError extends Error {
   readonly code: unknown;
@@ -43,6 +46,9 @@ export interface HostOperations {
   getStatus: HostOperation;
   getActivity: HostOperation;
   listAgents: HostOperation;
+  askAgent: HostOperation;
+  listPermissions: HostOperation;
+  respondToPermission: HostOperation;
 }
 /** Connection authority at the host boundary, independent of child lifecycle. */
 export class HostObservationError extends Error {
@@ -198,6 +204,8 @@ export function createHostResolver(input: {
   hosts: () => ToolHosts;
   callerAgentId?: string;
   lockedCwd?: string;
+  /** Title of the calling agent, shown to an agent it asks. */
+  callerTitle?: () => string | undefined;
 }) {
   return {
     directory: () => input.hosts().directory(),
@@ -312,30 +320,91 @@ export function createHostResolver(input: {
               currentModeId: agent.currentModeId,
             });
           },
+          async askAgent(args) {
+            const agentId = args.agentId as string;
+            const answer = await client.askAgent(agentId, args.question as string, {
+              askedBy: input.callerTitle?.(),
+            });
+            return result({ agentId, answer });
+          },
+          async listPermissions(args) {
+            const agentId = args.agentId as string | undefined;
+            const agents = agentId
+              ? [(await client.fetchAgent(agentId))?.agent].filter((agent) => agent !== undefined)
+              : (await client.fetchAgents({ includeBackground: true })).entries.map(
+                  (entry) => entry.agent,
+                );
+            return result({
+              permissions: agents.flatMap((agent) =>
+                agent.pendingPermissions.map((request) => ({
+                  agentId: agent.id,
+                  status: agent.status,
+                  request,
+                })),
+              ),
+            });
+          },
+          async respondToPermission(args) {
+            const agentId = args.agentId as string;
+            const requestId = args.requestId as string;
+            const response = await resolvePermissionResponse({
+              agentId,
+              requestId,
+              response: args.response as AgentPermissionResponse | undefined,
+              answers: args.answers as Record<string, string[]> | undefined,
+              loadRequest: async () =>
+                (await client.fetchAgent(agentId))?.agent.pendingPermissions.find(
+                  (pending) => pending.id === requestId,
+                ),
+            });
+            await client.respondToPermissionAndWait(agentId, requestId, response);
+            return result({ success: true });
+          },
           async listAgents(args) {
             const { entries } = await client.fetchAgents({
               includeBackground: args.includeBackground === true,
               filter: { includeArchived: args.includeArchived === true },
             });
+            const page = selectAgentListPage(
+              entries.map((entry) => entry.agent),
+              {
+                cwd: (args.cwd as string | undefined)?.trim()
+                  ? expandUserPath(args.cwd as string)
+                  : undefined,
+                statuses: args.statuses as AgentSnapshotPayload["status"][] | undefined,
+                sinceHours: args.sinceHours as number | undefined,
+                limit: args.limit as number | undefined,
+                query: args.query as string | undefined,
+              },
+            );
             return result({
-              agents: selectAgentListItems(
-                entries.map((entry) => entry.agent),
-                {
-                  cwd: (args.cwd as string | undefined)?.trim()
-                    ? expandUserPath(args.cwd as string)
-                    : undefined,
-                  statuses: args.statuses as AgentSnapshotPayload["status"][] | undefined,
-                  sinceHours: args.sinceHours as number | undefined,
-                  limit: args.limit as number | undefined,
-                },
-              ),
+              agents: page.agents,
+              ...(page.more > 0
+                ? moreNote(page.more, "narrow with query, cwd, or statuses, or raise limit")
+                : {}),
             });
           },
           async listWorkspaces(args) {
             const { entries } = await client.fetchWorkspaces({
               includeBackground: args.includeBackground === true,
             });
-            return result({ workspaces: entries.map(workspaceSummary) });
+            const newestFirst = entries.toSorted(
+              (a, b) =>
+                Date.parse(b.activityAt ?? b.createdAt ?? "") -
+                Date.parse(a.activityAt ?? a.createdAt ?? ""),
+            );
+            const page = selectWorkspaceSummaries(newestFirst.map(workspaceSummary), {
+              query: args.query as string | undefined,
+              projectId: args.projectId as string | undefined,
+              cwd: args.cwd as string | undefined,
+              limit: args.limit as number | undefined,
+            });
+            return result({
+              workspaces: page.items,
+              ...(page.more > 0
+                ? moreNote(page.more, "narrow with query, projectId, or cwd, or raise limit")
+                : {}),
+            });
           },
           async createWorkspace(args) {
             const isolation = z.enum(["local", "worktree"]).parse(args.isolation);

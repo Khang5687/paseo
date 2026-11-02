@@ -11,6 +11,7 @@ import type {
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { PaseoToolCatalog } from "./tools/types.js";
+import type { ManagedRoutingSnapshot } from "../account-routing/usage-projection.js";
 
 export type {
   AgentFeature,
@@ -131,6 +132,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;
@@ -191,8 +194,22 @@ export interface AgentPersistenceHandle {
   metadata?: AgentMetadata;
 }
 
+/** A provider-side copy of a durable session. The source session is never modified. */
+export interface ForkedNativeSession {
+  /** Resume this handle to continue the copy. */
+  handle: AgentPersistenceHandle;
+  /**
+   * Mode for a copy that answers questions: it may read the workspace but must not change
+   * it or run commands without approval. The source shares its working directory.
+   */
+  readOnlyModeId: string;
+  /** Delete the copy's durable provider state. Idempotent; never touches the source. */
+  discard(): Promise<void>;
+}
+
 export type AgentPromptContentBlock =
-  | { type: "text"; text: string }
+  // `placeholders` lists the `[Image #1]`-style tokens in `text` that name a labeled attachment.
+  | { type: "text"; text: string; placeholders?: string[] }
   | { type: "image"; data: string; mimeType: string }
   | AgentAttachment;
 
@@ -535,6 +552,14 @@ export interface AgentRuntimeInfo {
 
 export type AgentSlashCommandKind = "command" | "skill";
 
+/** A fixed choice for a slash command's first argument. */
+export interface AgentSlashCommandSubcommand {
+  name: string;
+  description?: string;
+  /** Arguments the choice takes after its name, e.g. `[focus]`. */
+  usage?: string;
+}
+
 /**
  * Represents a slash command available in an agent session.
  * Commands are executed by sending them as prompts with / prefix.
@@ -544,6 +569,8 @@ export interface AgentSlashCommand {
   description: string;
   argumentHint: string;
   kind?: AgentSlashCommandKind;
+  aliases?: string[];
+  subcommands?: AgentSlashCommandSubcommand[];
 }
 
 export interface ListImportableSessionsOptions {
@@ -674,6 +701,11 @@ export interface AgentUsageSession {
   model?: string;
   env: Record<string, string>;
   sessionKey: string;
+  /**
+   * Present only for OMP launches whose accounts the host routes. Usage then comes from this
+   * authority snapshot, never from `env`. Other providers leave it unset.
+   */
+  managedRouting?: ManagedRoutingSnapshot;
 }
 
 export interface AgentSession {
@@ -848,6 +880,11 @@ export interface AgentClient {
    * Called before Paseo clears its archived flag so provider resume can succeed.
    */
   unarchiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
+   * Copy a durable native session with its full history. The source may be mid-turn and
+   * keeps running unchanged; the copy is resumed through resumeSession(fork.handle).
+   */
+  forkNativeSession?(handle: AgentPersistenceHandle): Promise<ForkedNativeSession>;
   /**
    * Release any provider-owned resources held by this client (background
    * processes, sockets, cached subprocesses, etc.). Called when the daemon

@@ -91,6 +91,7 @@ const NestedDraftRecordSchema = z.strictObject({
   lifecycle: DraftLifecycleSchema.optional(),
   updatedAt: z.number().optional(),
   version: z.number().int().positive().optional(),
+  syncedVersion: z.number().int().positive().optional(),
 });
 const FlatDraftRecordSchema = RawDraftInputSchema.extend({
   lifecycle: DraftLifecycleSchema.optional(),

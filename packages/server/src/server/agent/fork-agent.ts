@@ -95,7 +95,7 @@ export async function forkAgent(input: ForkAgentInput): Promise<ForkAgentResult>
     cursorBoundary,
     boundaryMessageId: input.boundaryMessageId,
   });
-  const forked = await input.agentManager.forkAgentSession(input.agentId, {
+  const forked = await input.agentManager.forkAgentIntoNew(input.agentId, {
     cutBeforeMessageId: cut.cutBeforeMessageId,
     title,
   });

@@ -135,6 +135,17 @@ describe("shared tool-call display mapping", () => {
     });
   });
 
+  it("labels MCP server rows MCP with the server summary", () => {
+    const display = buildToolCallDisplayModel({
+      name: "mcp_servers",
+      status: "completed",
+      error: null,
+      detail: { type: "plain_text", label: "Gmail Usa connected (8 tools)", icon: "wrench" },
+    });
+
+    expect(display).toEqual({ displayName: "MCP", summary: "Gmail Usa connected (8 tools)" });
+  });
+
   it("humanizes Paseo MCP tool names (Claude Code format)", () => {
     const display = buildToolCallDisplayModel({
       name: "mcp__paseo__create_agent",

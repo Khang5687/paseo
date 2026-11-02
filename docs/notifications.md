@@ -11,6 +11,14 @@ the agent can move after a notification is sent. Use `navigateToAgent`, which
 uses the current store record or the agent route to resolve the workspace from
 the host. Terminal payloads name their workspace and use `navigateToWorkspace`.
 
+Note payloads add `noteId` to an agent or terminal payload (built by
+`noteNotificationData`). The router resolves the note from the notes store,
+else fetches it from its host (`findNote`), and opens it with `openNote`. A
+missing note or unreachable host falls back to the agent or terminal fields.
+Fired notes reach web and desktop on a separate `notes.fired` event feed,
+subscribed only on hosts advertising `features.notes`; older hosts reject the
+unknown event name. The daemon marks one recipient with `shouldNotify`.
+
 See [agent targets and deferred opens](expo-router.md#agent-targets) for route
 ownership and workspace recovery. Notification generation, presence, and push
 eligibility remain daemon concerns.
@@ -52,6 +60,14 @@ An arbitrary Activity launch with data extras does not exercise Expo's FCM path.
 
 Foreground pushes remain in Notification Center without a banner or sound.
 This preserves notifications sent with stale presence information.
+
+A phone schedules its own time-note reminder, on the push Android channel and
+with the push payload shape, identified by `localReminderId`. Creating the note
+records `localReminder: {deviceId, at}`; while that claim matches `wait.at` the
+daemon resolves the note without pushing, so the owner gets one alert.
+`NoteRemindersHost` reschedules or cancels reminders from note snapshots while
+the app is in the foreground; a note missing from an online snapshot is
+cancelled. Web has no local reminders.
 
 ## Startup and verification
 

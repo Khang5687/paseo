@@ -124,6 +124,14 @@ export async function encodeAttachmentsForSend(
   return valid.length > 0 ? valid : undefined;
 }
 
+export async function readAttachmentBytes(attachment: AttachmentMetadata): Promise<Uint8Array> {
+  const store = await getAttachmentStore();
+  const binary = atob(await store.encodeBase64({ attachment }));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
 export async function resolveAttachmentPreviewUrl(attachment: AttachmentMetadata): Promise<string> {
   const store = await getAttachmentStore();
   return await store.resolvePreviewUrl({ attachment });
