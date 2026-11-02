@@ -34,6 +34,7 @@ import {
 import { summarizeAgentActivity } from "../activity-curator.js";
 import type { AgentStorage } from "../agent-storage.js";
 import { AgentNotFoundError, ensureAgentLoaded } from "../agent-loading.js";
+import { buildForkTaskPrompt, forkAgent } from "../fork-agent.js";
 import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
 import {
   archiveByScope,
@@ -714,6 +715,7 @@ function createToolCatalog(
     ["get_agent_status", "getStatus"],
     ["get_agent_activity", "getActivity"],
     ["list_agents", "listAgents"],
+    ["fork_agent", "forkAgent"],
   ] as const satisfies ReadonlyArray<readonly [string, keyof HostOperations]>);
   const hostResolver = createHostResolver({
     serverId: options.serverId ?? "self",
@@ -732,6 +734,7 @@ function createToolCatalog(
       getStatus: (args, context) => localHostOperations.get("get_agent_status")!(args, context),
       getActivity: (args, context) => localHostOperations.get("get_agent_activity")!(args, context),
       listAgents: (args, context) => localHostOperations.get("list_agents")!(args, context),
+      forkAgent: (args, context) => localHostOperations.get("fork_agent")!(args, context),
     },
   });
   const registerTool = (
@@ -2071,6 +2074,87 @@ function createToolCatalog(
         structuredContent: validJson,
       };
       return response;
+    },
+  );
+
+  registerTool(
+    "fork_agent",
+    {
+      title: "Fork agent",
+      description:
+        "Fork an agent (default: yourself) into a NEW main agent that inherits the conversation so far and starts on `prompt`. Use it to offload a second task to a fresh agent with the same context while you keep working on the first, instead of mixing two tasks in one context. The fork is a normal top-level agent in the sidebar, not your subagent: you are not notified when it finishes. The source keeps running untouched; a running source is forked at its last completed turn. The source and the fork live on the same host: with serverId, pass an agentId that lives on that host. The fork stays in the source's workspace.",
+      inputSchema: {
+        agentId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Agent to fork. Defaults to you; required for callers that are not agents."),
+        prompt: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "First message for the fork: the task it should work on instead of the source's task. Omit to leave the fork idle.",
+          ),
+        title: z.string().trim().min(1).max(60).optional().describe("Title for the fork."),
+        workspaceId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Must be the source's workspace; a fork cannot move workspaces."),
+      },
+      outputSchema: {
+        forkedAgentId: z.string(),
+        method: z.enum(["native", "native_with_summary", "summary"]),
+        sourceAgentId: z.string(),
+        workspaceId: z.string().optional(),
+      },
+    },
+    async ({ agentId, prompt, title, workspaceId }) => {
+      const sourceAgentId = agentId ?? callerAgentId;
+      if (!sourceAgentId) {
+        throw new PaseoToolInputError("agentId is required when the caller is not an agent");
+      }
+      const source = await ensureAgentLoaded(sourceAgentId, {
+        agentManager,
+        agentStorage,
+        logger: childLogger,
+      }).catch((error) => {
+        if (error instanceof AgentNotFoundError) throw new PaseoToolInputError(error.message);
+        throw error;
+      });
+      if (workspaceId && workspaceId !== source.workspaceId) {
+        throw new PaseoToolInputError(
+          `A fork stays in the source agent's workspace ${source.workspaceId}.`,
+        );
+      }
+      const forked = await forkAgent({
+        agentManager,
+        agentStorage,
+        logger: childLogger,
+        agentId: sourceAgentId,
+        agentTitle: (await agentStorage.get(sourceAgentId))?.title ?? source.config.title ?? null,
+      });
+      if (title) await agentManager.setTitle(forked.agent.id, title);
+      if (prompt) {
+        await sendPromptToAgent({
+          agentManager,
+          agentStorage,
+          agentId: forked.agent.id,
+          prompt: buildForkTaskPrompt(prompt),
+          activeTurnBehavior: "steer",
+          logger: childLogger,
+        });
+      }
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          forkedAgentId: forked.agent.id,
+          method: forked.method,
+          sourceAgentId,
+          workspaceId: forked.agent.workspaceId,
+        }),
+      };
     },
   );
 

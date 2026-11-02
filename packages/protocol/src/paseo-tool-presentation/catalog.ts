@@ -159,6 +159,16 @@ export const PASEO_TOOL_CATALOG = {
       outputFields: ["status", "lastMessage", "permission"],
     },
   },
+  fork_agent: {
+    label: "Fork agent",
+    completedLabel: "Forked agent",
+    context: field("prompt"),
+    detail: {
+      promptField: "prompt",
+      inputOrder: AGENT_FIELDS,
+      outputFields: ["forkedAgentId", "method"],
+    },
+  },
   get_agent_status: {
     label: "Check agent",
     completedLabel: "Checked agent",

@@ -8,6 +8,8 @@ import { createTestAgentClient } from "../test-utils/fake-agent-client.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
 import { forkAgent } from "./fork-agent.js";
+import { createPaseoToolCatalog } from "./tools/paseo-tools.js";
+import type { ToolHosts } from "./host-operations/index.js";
 import type {
   AgentClient,
   AgentForkSessionInput,
@@ -71,7 +73,11 @@ async function createHarness(options: {
   const manager = new AgentManager({ clients: { omp: client }, registry: storage, logger });
   const source = await manager.createAgent({ provider: "omp", cwd: root }, undefined, {
     workspaceId: "workspace-1",
-    labels: { keep: "yes", "paseo.open-agent-tab.client": "true" },
+    labels: {
+      keep: "yes",
+      "paseo.open-agent-tab.client": "true",
+      "paseo.parent-agent-id": "some-parent",
+    },
   });
   return { manager, storage, forkCalls, prompts, sourceId: source.id };
 }
@@ -212,5 +218,152 @@ describe("forkAgent", () => {
     expect(prompt).toContain("first answer");
     expect(prompt).not.toContain("second question");
     expect(prompt).not.toContain("second answer");
+  });
+});
+
+describe("fork_agent tool", () => {
+  function catalogFor(
+    harness: Harness,
+    extra: { callerAgentId?: string; serverId?: string; hosts?: () => ToolHosts } = {},
+  ) {
+    return createPaseoToolCatalog({
+      agentManager: harness.manager,
+      agentStorage: harness.storage,
+      // Only the fork path runs; the catalog never touches the provider snapshot manager here.
+      providerSnapshotManager: {} as never,
+      logger,
+      ...extra,
+    });
+  }
+
+  test("an agent forks itself into a top-level agent that works on the prompt while the source is untouched", async () => {
+    const harness = await createHarness({ nativeFork: true });
+    await seedConversation(harness, false);
+    const catalog = catalogFor(harness, { callerAgentId: harness.sourceId });
+
+    const response = await catalog.executeTool("fork_agent", {
+      prompt: "Investigate B",
+      title: "Task B",
+    });
+
+    const { forkedAgentId, method, sourceAgentId } = response.structuredContent as {
+      forkedAgentId: string;
+      method: string;
+      sourceAgentId: string;
+    };
+    expect(sourceAgentId).toBe(harness.sourceId);
+    expect(method).toBe("native");
+    const fork = harness.manager.getAgent(forkedAgentId)!;
+    expect(fork.labels).toEqual({ keep: "yes" });
+    expect((await harness.storage.get(forkedAgentId))?.title).toBe("Task B");
+    expect(fork.workspaceId).toBe("workspace-1");
+    await vi.waitFor(() => expect(harness.prompts).toHaveLength(1));
+    expect(harness.prompts[0]).toContain("Investigate B");
+    expect(harness.prompts[0]).toContain("Do not continue the task");
+    expect(harness.manager.getAgent(harness.sourceId)!.lifecycle).toBe("idle");
+    expect(harness.manager.getAgent(harness.sourceId)!.labels["paseo.parent-agent-id"]).toBe(
+      "some-parent",
+    );
+  });
+
+  test("without a prompt the fork stays idle", async () => {
+    const harness = await createHarness({ nativeFork: true });
+    await seedConversation(harness, false);
+    const catalog = catalogFor(harness, { callerAgentId: harness.sourceId });
+
+    await catalog.executeTool("fork_agent", {});
+
+    expect(harness.prompts).toEqual([]);
+  });
+
+  test("a caller that is not an agent must name the source", async () => {
+    const harness = await createHarness({ nativeFork: true });
+    const catalog = catalogFor(harness);
+
+    await expect(catalog.executeTool("fork_agent", {})).rejects.toThrow(/agentId is required/);
+  });
+
+  test("a fork cannot move to another workspace", async () => {
+    const harness = await createHarness({ nativeFork: true });
+    const catalog = catalogFor(harness, { callerAgentId: harness.sourceId });
+
+    await expect(catalog.executeTool("fork_agent", { workspaceId: "workspace-2" })).rejects.toThrow(
+      /stays in the source agent's workspace/,
+    );
+  });
+
+  describe("serverId routing", () => {
+    function remoteHarness() {
+      const calls: string[] = [];
+      const client = {
+        fetchAgent: async (id: string) => ({ agent: { id, workspaceId: "remote-ws" } }),
+        forkAgent: async (id: string) => {
+          calls.push(`fork:${id}`);
+          return { forkedAgentId: "remote-fork", method: "native" };
+        },
+        updateAgent: async (id: string, update: { name?: string }) => {
+          calls.push(`rename:${id}:${update.name}`);
+        },
+        sendMessage: async (id: string, text: string) => {
+          calls.push(`send:${id}:${text.includes("Do B") ? "task" : "other"}`);
+          return {};
+        },
+      };
+      const used: string[] = [];
+      const hosts = {
+        directory: () => [],
+        use: async (serverId: string, action: (c: unknown) => Promise<unknown>) => {
+          used.push(serverId);
+          return action(client);
+        },
+      } as unknown as ToolHosts;
+      return { calls, used, hosts };
+    }
+
+    test("forks on the destination host from a source that lives there", async () => {
+      const harness = await createHarness({ nativeFork: true });
+      const remote = remoteHarness();
+      const catalog = catalogFor(harness, {
+        callerAgentId: harness.sourceId,
+        serverId: "host-a",
+        hosts: () => remote.hosts,
+      });
+
+      const response = await catalog.executeTool("fork_agent", {
+        serverId: "host-b",
+        agentId: "remote-source",
+        prompt: "Do B",
+        title: "B",
+      });
+
+      expect(remote.used).toEqual(["host-b"]);
+      expect(response.structuredContent).toMatchObject({
+        forkedAgentId: "remote-fork",
+        method: "native",
+        serverId: "host-b",
+      });
+      expect(remote.calls).toEqual([
+        "fork:remote-source",
+        "rename:remote-fork:B",
+        "send:remote-fork:task",
+      ]);
+      expect(harness.manager.listAgents()).toHaveLength(1);
+    });
+
+    test("refuses to fork the caller's own session onto another host", async () => {
+      const harness = await createHarness({ nativeFork: true });
+      const remote = remoteHarness();
+      const catalog = catalogFor(harness, {
+        callerAgentId: harness.sourceId,
+        serverId: "host-a",
+        hosts: () => remote.hosts,
+      });
+
+      const response = await catalog.executeTool("fork_agent", { serverId: "host-b" });
+
+      expect(response.isError).toBe(true);
+      expect(JSON.stringify(response.structuredContent)).toContain("same host");
+      expect(remote.calls).toEqual([]);
+    });
   });
 });
