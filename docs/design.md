@@ -229,6 +229,8 @@ A row may carry both a chevron and a kebab when both navigation and row-level ac
 
 Switches and segmented controls also sit in the trailing slot. A row that both navigates and toggles is a `<Pressable>` with a `<Switch>` in the trailing slot — the switch calls `event.stopPropagation()` so the row press does not fire (`packages/app/src/screens/settings/providers-section.tsx:92-132`). Sidebar items that hold a status dot, a count, and a kebab follow the same rule (`packages/app/src/components/sidebar-workspace-list.tsx`).
 
+A continuous value is a `<Slider>` (`packages/app/src/components/ui/slider.tsx`), not a segmented control of presets. It does not fit the trailing slot: the row stacks the title with the current value right-aligned in `foregroundMuted`, the hint, then the full-width slider (`packages/app/src/screens/settings/appearance/background/background-controls.tsx`).
+
 Selected state on rows in a desktop list+detail uses `surfaceSidebarHover` as the background (`packages/app/src/screens/projects-screen.tsx`). Selected state on rows in the sidebar list uses `surface2` (`packages/app/src/components/agent-list.tsx:563-571`).
 
 ---

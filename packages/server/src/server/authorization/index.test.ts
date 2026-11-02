@@ -46,6 +46,92 @@ describe("SessionAuthorization", () => {
     ).toBe(true);
   });
 
+  test("account routing separates read and manage permissions", () => {
+    const readAuthorization = new SessionAuthorization(["daemon.read"]);
+    expect(
+      readAuthorization.allowsInbound(inboundMessage("account.routing.get_state.request")),
+    ).toBe(true);
+    expect(
+      readAuthorization.allowsOutbound(outboundMessage("account.routing.get_state.response")),
+    ).toBe(true);
+    expect(readAuthorization.allowsOutbound(outboundMessage("account.routing.state.update"))).toBe(
+      true,
+    );
+    expect(readAuthorization.allowsInbound(inboundMessage("account.routing.mutate.request"))).toBe(
+      false,
+    );
+    expect(
+      readAuthorization.allowsOutbound(outboundMessage("account.routing.mutate.response")),
+    ).toBe(false);
+
+    const manageAuthorization = new SessionAuthorization(["daemon.manage"]);
+    expect(
+      manageAuthorization.allowsInbound(inboundMessage("account.routing.mutate.request")),
+    ).toBe(true);
+    expect(
+      manageAuthorization.allowsOutbound(outboundMessage("account.routing.mutate.response")),
+    ).toBe(true);
+    expect(
+      manageAuthorization.allowsInbound(inboundMessage("account.routing.get_state.request")),
+    ).toBe(false);
+    expect(
+      manageAuthorization.allowsOutbound(outboundMessage("account.routing.get_state.response")),
+    ).toBe(false);
+    expect(
+      manageAuthorization.allowsOutbound(outboundMessage("account.routing.state.update")),
+    ).toBe(false);
+  });
+
+  test("account login needs daemon.manage; read-only and workspace authority are refused", () => {
+    const requests = [
+      "account.routing.login.start.request",
+      "account.routing.login.get_status.request",
+      "account.routing.login.cancel.request",
+      "account.routing.login.submit_code.request",
+    ] as const;
+    const responses = [
+      "account.routing.login.start.response",
+      "account.routing.login.get_status.response",
+      "account.routing.login.cancel.response",
+      "account.routing.login.submit_code.response",
+    ] as const;
+    const refused = [
+      new SessionAuthorization(["daemon.read"]),
+      new SessionAuthorization(["workspace.read", "workspace.write", "workspace.manage"]),
+    ];
+    const manage = new SessionAuthorization(["daemon.manage"]);
+    for (const type of requests) {
+      expect(manage.allowsInbound(inboundMessage(type))).toBe(true);
+      for (const authorization of refused) {
+        expect(authorization.allowsInbound(inboundMessage(type))).toBe(false);
+      }
+    }
+    for (const type of responses) {
+      expect(manage.allowsOutbound(outboundMessage(type))).toBe(true);
+      for (const authorization of refused) {
+        expect(authorization.allowsOutbound(outboundMessage(type))).toBe(false);
+      }
+    }
+  });
+
+  test("workspace and hub authority never reach account routing", () => {
+    const authorization = new SessionAuthorization([
+      "workspace.read",
+      "workspace.write",
+      "workspace.manage",
+      "hub.execute",
+    ]);
+    for (const type of [
+      "account.routing.get_state.request",
+      "account.routing.mutate.request",
+    ] as const) {
+      expect(authorization.allowsInbound(inboundMessage(type))).toBe(false);
+    }
+    expect(authorization.allowsOutbound(outboundMessage("account.routing.state.update"))).toBe(
+      false,
+    );
+  });
+
   test("semantic permissions authorize operations instead of RPC namespaces", () => {
     const authorization = new SessionAuthorization(["hub.execute"]);
 

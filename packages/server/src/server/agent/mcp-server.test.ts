@@ -39,7 +39,7 @@ import type {
   AgentStreamEvent,
   ProviderSnapshotEntry,
 } from "./agent-sdk-types.js";
-import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
+import { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import { createProviderSnapshotManagerStub } from "../test-utils/session-stubs.js";
 import {
   AgentListItemPayloadSchema,
@@ -560,6 +560,8 @@ function createManagedAgent(overrides: Partial<ManagedAgent> = {}): ManagedAgent
     availableModes: [],
     features: [],
     pendingPermissions: new Map(),
+    queuedMessages: [],
+    queuePaused: false,
     persistence: null,
     labels: {},
     attention: { requiresAttention: false },
@@ -3177,6 +3179,47 @@ describe("create_agent MCP tool", () => {
       const storedChild = await storage.get(childId);
       expect(storedChild?.workspaceId).toBe("wks_parent");
       expect(storedChild?.labels[PARENT_AGENT_ID_LABEL]).toBe(parent.id);
+    } finally {
+      await removeAgentStateDir(agentManager, storage, workdir);
+    }
+  });
+
+  it("rejects a child on a model disabled in Provider settings", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-disabled-model-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const agentManager = new AgentManager({
+      clients: createTestAgentClients(),
+      providerDefinitions: {
+        claude: { enabled: true, disabledModels: ["sonnet"] },
+        codex: { enabled: true },
+      },
+      registry: storage,
+      logger,
+    });
+
+    try {
+      const parent = await agentManager.createAgent(
+        { provider: "codex", cwd: existingCwd },
+        undefined,
+        { workspaceId: "wks_parent" },
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage: storage,
+        callerAgentId: parent.id,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        logger,
+      });
+
+      await expect(
+        registeredTool(server, "create_agent").handler({
+          ...subagentCurrentWorkspace(),
+          title: "Child",
+          provider: "claude/sonnet",
+          initialPrompt: "Do work",
+        }),
+      ).rejects.toThrow("Model 'sonnet' is disabled for provider 'claude' in Provider settings");
+      expect(agentManager.listAgents().map((agent) => agent.id)).toEqual([parent.id]);
     } finally {
       await removeAgentStateDir(agentManager, storage, workdir);
     }
@@ -6019,6 +6062,34 @@ describe("provider MCP tools", () => {
     );
   });
 
+  it("list_models omits models disabled in Provider settings", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const providerSnapshotManager = new ProviderSnapshotManager({
+      logger,
+      extraClients: { claude: createTestAgentClients().claude },
+      providerOverrides: { claude: { disabledModels: ["haiku"] } },
+    });
+    try {
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager,
+        logger,
+      });
+
+      const response = await registeredTool(server, "list_models").handler({
+        provider: "claude",
+      });
+
+      expect(response.structuredContent).toEqual({
+        provider: "claude",
+        models: [{ provider: "claude", id: "sonnet", label: "Sonnet", isDefault: false }],
+      });
+    } finally {
+      providerSnapshotManager.destroy();
+    }
+  });
+
   it("inspect_provider rejects disabled providers without fetching models", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const provStub = createProviderSnapshotManagerStub();
@@ -6668,6 +6739,81 @@ describe("agent snapshot MCP serialization", () => {
         },
       },
     ]);
+  });
+
+  describe("respond_to_permission answers", () => {
+    const questionRequest = {
+      id: "perm-question",
+      provider: "claude" as const,
+      name: "AskUserQuestion",
+      kind: "question" as const,
+      input: {
+        questions: [
+          {
+            header: "Database",
+            question: "Which database?",
+            options: [{ label: "Postgres" }, { label: "SQLite, embedded" }],
+            multiSelect: false,
+          },
+          {
+            header: "Extras",
+            question: "Which extras?",
+            options: [{ label: "Backups" }, { label: "Metrics" }],
+            multiSelect: true,
+          },
+        ],
+      },
+    };
+
+    async function respond(args: Record<string, unknown>) {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({
+          id: "asker",
+          provider: "claude",
+          pendingPermissions: new Map([[questionRequest.id, questionRequest]]),
+        }),
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        logger,
+        providerSnapshotManager: createClaudeOnlyManager(),
+      });
+      const response = await registeredTool(server, "respond_to_permission").handler({
+        agentId: "asker",
+        requestId: questionRequest.id,
+        ...args,
+      });
+      return { response, respondToPermission: spies.agentManager.respondToPermission };
+    }
+
+    it("answers a question box the way the app's question card does", async () => {
+      const { respondToPermission } = await respond({
+        answers: { Database: ["SQLite, embedded"], Extras: ["Backups", "Metrics"] },
+      });
+
+      expect(respondToPermission).toHaveBeenCalledWith("asker", "perm-question", {
+        behavior: "allow",
+        updatedInput: {
+          ...questionRequest.input,
+          answers: { Database: "SQLite, embedded", Extras: "Backups, Metrics" },
+          answerLists: { Database: ["SQLite, embedded"], Extras: ["Backups", "Metrics"] },
+        },
+      });
+    });
+
+    it("names the real headers when an answer uses an unknown one", async () => {
+      await expect(respond({ answers: { DB: ["Postgres"], Extras: [] } })).rejects.toThrow(
+        'Unknown question header "DB". Headers: "Database", "Extras".',
+      );
+    });
+
+    it("refuses a partial answer instead of submitting it", async () => {
+      await expect(respond({ answers: { Database: ["Postgres"] } })).rejects.toThrow(
+        'Answer every question. Missing: "Extras".',
+      );
+    });
   });
 
   it("loads archived agents before reading get_agent_activity", async () => {

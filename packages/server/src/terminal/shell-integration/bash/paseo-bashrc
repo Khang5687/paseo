@@ -1,0 +1,75 @@
+# Paseo shell integration for bash. Paseo starts interactive bash with `--rcfile <this file>`, so
+# load the user's ~/.bashrc first, as interactive bash would, then add the command hooks. The
+# user's dotfiles are never edited.
+if [ -f "$HOME/.bashrc" ]; then
+  . "$HOME/.bashrc"
+fi
+
+# Another DEBUG trap (bash-preexec, atuin) owns command hooks; leave it alone and skip integration.
+if [ -z "${_PASEO_BASH_INTEGRATION_LOADED-}" ] && [ -z "$(trap -p DEBUG)" ]; then
+  _PASEO_BASH_INTEGRATION_LOADED=1
+  _PASEO_BASH_COMMAND_ACTIVE=0
+  _PASEO_BASH_IN_PROMPT=0
+
+  _paseo_osc633() {
+    printf '\033]633;%s\007' "$1"
+  }
+
+  _paseo_precmd() {
+    local command_status=$?
+    if [ "$_PASEO_BASH_COMMAND_ACTIVE" = 1 ]; then
+      _paseo_osc633 "D;${command_status}"
+      _PASEO_BASH_COMMAND_ACTIVE=0
+    fi
+    local dir=$PWD
+    case "$dir" in
+      "$HOME" | "$HOME"/*) dir="~${dir#"$HOME"}" ;;
+    esac
+    printf '\033]2;%s\007' "$dir"
+    _paseo_osc633 "A"
+    # Keep $? for the rest of PROMPT_COMMAND and the prompt.
+    return "$command_status"
+  }
+
+  _paseo_prompt_end() {
+    _PASEO_BASH_IN_PROMPT=0
+  }
+
+  # The DEBUG trap runs before every top-level simple command, including the ones in
+  # PROMPT_COMMAND. `_paseo_precmd` opens the prompt phase and `_paseo_prompt_end` closes it, so
+  # only the first command the user runs after a prompt marks a command start.
+  _paseo_preexec() {
+    case "$BASH_COMMAND" in
+      _paseo_precmd*)
+        _PASEO_BASH_IN_PROMPT=1
+        return
+        ;;
+    esac
+    if [ "$_PASEO_BASH_IN_PROMPT" = 1 ] || [ "$_PASEO_BASH_COMMAND_ACTIVE" = 1 ]; then
+      return
+    fi
+    _PASEO_BASH_COMMAND_ACTIVE=1
+    _paseo_osc633 "B"
+    _paseo_osc633 "C"
+    printf '\033]2;%s\007' "$BASH_COMMAND"
+  }
+
+  case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+    "declare -a"*)
+      PROMPT_COMMAND=(_paseo_precmd "${PROMPT_COMMAND[@]}" _paseo_prompt_end)
+      ;;
+    *)
+      _paseo_user_prompt_command=${PROMPT_COMMAND-}
+      while :; do
+        case "$_paseo_user_prompt_command" in
+          *[\;[:space:]]) _paseo_user_prompt_command=${_paseo_user_prompt_command%?} ;;
+          *) break ;;
+        esac
+      done
+      PROMPT_COMMAND="_paseo_precmd${_paseo_user_prompt_command:+; $_paseo_user_prompt_command}; _paseo_prompt_end"
+      unset _paseo_user_prompt_command
+      ;;
+  esac
+
+  trap '_paseo_preexec' DEBUG
+fi

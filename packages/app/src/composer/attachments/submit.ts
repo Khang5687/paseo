@@ -4,7 +4,8 @@ import {
   isWorkspaceAttachment,
   workspaceAttachmentToSubmitAttachment,
 } from "@/attachments/workspace-attachment-utils";
-import type { AgentAttachment } from "@getpaseo/protocol/messages";
+import type { AgentAttachment, InlineAttachmentRef } from "@getpaseo/protocol/messages";
+import { inlineRefLabels } from "@/composer/attachments/inline-refs";
 import {
   buildForgeAttachmentFromSearchItem,
   buildLegacyGitHubAttachmentFromSearchItem,
@@ -33,9 +34,12 @@ export function splitComposerAttachmentsForSubmit(
 ): {
   images: ImageAttachment[];
   attachments: AgentAttachment[];
+  attachmentRefs: InlineAttachmentRef[];
 } {
   const images: ImageAttachment[] = [];
   const agentAttachments: AgentAttachment[] = [];
+  const attachmentRefs: InlineAttachmentRef[] = [];
+  const labels = inlineRefLabels(attachments);
   // COMPAT(githubAttachmentKinds): emit legacy GitHub attachments for daemons
   // predating forge-neutral attachments. Remove after 2027-01-17 once the
   // supported daemon floor is >= v0.2.0.
@@ -44,13 +48,15 @@ export function splitComposerAttachmentsForSubmit(
       ? buildLegacyGitHubAttachmentFromSearchItem
       : buildForgeAttachmentFromSearchItem;
 
-  for (const attachment of attachments) {
+  for (const [index, attachment] of attachments.entries()) {
     if (attachment.kind === "image") {
+      attachmentRefs.push({ label: labels.get(index)!, imageIndex: images.length });
       images.push(attachment.metadata);
       continue;
     }
 
     if (attachment.kind === "file") {
+      attachmentRefs.push({ label: labels.get(index)!, attachmentIndex: agentAttachments.length });
       agentAttachments.push(attachment.attachment);
       continue;
     }
@@ -85,5 +91,6 @@ export function splitComposerAttachmentsForSubmit(
   return {
     images,
     attachments: agentAttachments,
+    attachmentRefs,
   };
 }

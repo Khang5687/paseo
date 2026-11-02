@@ -370,25 +370,29 @@ export function createViewedTimelineOwner(input: {
   replica: TimelineReplica;
   replaceDemandedAgentIds: (agentIds: string[]) => void;
   drainQueuedAgentMessage: (agentId: string) => void;
+  liveScope: TimelineLiveScope;
   ports: ViewedTimelineOwnerPorts;
 }): ViewedTimelineOwner {
   const forcedTailReplacements = new Set<string>();
-  const sync = createViewedTimelineSync({
-    ...input.ports,
-    fetchLatestTail: async (agentId) => {
-      forcedTailReplacements.add(agentId);
-      try {
-        return await input.ports.fetchLatestTail(agentId);
-      } finally {
-        forcedTailReplacements.delete(agentId);
-      }
+  const sync = createViewedTimelineSync(
+    {
+      ...input.ports,
+      fetchLatestTail: async (agentId) => {
+        forcedTailReplacements.add(agentId);
+        try {
+          return await input.ports.fetchLatestTail(agentId);
+        } finally {
+          forcedTailReplacements.delete(agentId);
+        }
+      },
+      prepare: (agentId) => input.replica.prepare(agentId),
+      readCursor: (agentId) => input.replica.readCursor(agentId) ?? input.ports.readCursor(agentId),
+      replaceDemandedAgentIds: input.replaceDemandedAgentIds,
+      onCatchUpEnded: (agentId) =>
+        useCreateFlowStore.getState().clearByAgent({ serverId: input.serverId, agentId }),
     },
-    prepare: (agentId) => input.replica.prepare(agentId),
-    readCursor: (agentId) => input.replica.readCursor(agentId) ?? input.ports.readCursor(agentId),
-    replaceDemandedAgentIds: input.replaceDemandedAgentIds,
-    onCatchUpEnded: (agentId) =>
-      useCreateFlowStore.getState().clearByAgent({ serverId: input.serverId, agentId }),
-  });
+    { liveScope: input.liveScope },
+  );
   const streamQueue = createSessionAgentStreamReducerQueue({
     serverId: input.serverId,
     setAgentStreamState: (...args) => useSessionStore.getState().setAgentStreamState(...args),
@@ -470,7 +474,34 @@ function sameAgentIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((agentId, index) => agentId === right[index]);
 }
 
-export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): ViewedTimelineSync {
+/**
+ * Which chats hold a live timeline subscription.
+ *
+ * - `opened` (desktop and browser): every chat this session opened that still has a tab, so
+ *   switching tabs never waits on a catch-up.
+ * - `visible` (phones and tablets): only the chats on screen, and none while the app is not
+ *   active. Each live update costs decryption, parsing and a store commit, which a phone pays in
+ *   battery for chats nobody is looking at. A chat that leaves the set catches up from its cached
+ *   cursor when it is shown again.
+ */
+export type TimelineLiveScope = "opened" | "visible";
+
+export function resolveLiveTimelineAgentIds(input: {
+  scope: TimelineLiveScope;
+  active: boolean;
+  openedAgentIds: string[];
+  visibleAgentIds: string[];
+}): string[] {
+  if (input.scope === "opened") {
+    return normalizeAgentIds([...input.openedAgentIds, ...input.visibleAgentIds]);
+  }
+  return input.active ? normalizeAgentIds(input.visibleAgentIds) : [];
+}
+
+export function createViewedTimelineSync(
+  ports: ViewedTimelineSyncPorts,
+  policy: { liveScope: TimelineLiveScope } = { liveScope: "opened" },
+): ViewedTimelineSync {
   const sources = new Map<string, string[]>();
   const catchUps = new Map<string, CatchUpState>();
   const catchUpGenerations = new Map<string, number>();
@@ -497,8 +528,8 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   let membershipNeedsRetry = false;
   // Chats this session has opened. Visibility is the only way in, so an agent is never
   // subscribed — and never resumed on the daemon — until the user actually opens it.
-  // Membership then survives hiding, workspace switches, backgrounding and reconnect;
-  // only closing the tab or ending the session takes it out.
+  // Under the `opened` scope, membership then survives hiding, workspace switches,
+  // backgrounding and reconnect; only closing the tab or ending the session takes it out.
   let openedAgentIds: string[] = [];
 
   const visibleAgentIds = () => normalizeAgentIds([...sources.values()].flat());
@@ -731,7 +762,8 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
 
   const commitDesiredMembership = (
     nextDesired: string[],
-    options: { resetCatchUpStatus?: boolean } = {},
+    // A chat released because the app went inactive still owes its catch-up on return.
+    options: { resetCatchUpStatus?: boolean; inactive?: boolean } = {},
   ) => {
     let statusChanged = false;
     if (options.resetCatchUpStatus) {
@@ -770,13 +802,21 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     desired = nextDesired;
     ports.replaceDemandedAgentIds(desired);
     membershipGeneration += 1;
-    for (const agentId of released) ports.onCatchUpEnded(agentId);
+    if (!options.inactive) for (const agentId of released) ports.onCatchUpEnded(agentId);
     notifyListeners();
     void reconcileMembership();
   };
 
-  const publishVisibleMembership = () => {
-    commitDesiredMembership(normalizeAgentIds([...openedAgentIds, ...visibleAgentIds()]));
+  const publishVisibleMembership = (commit: { inactive?: boolean } = {}) => {
+    commitDesiredMembership(
+      resolveLiveTimelineAgentIds({
+        scope: policy.liveScope,
+        active,
+        openedAgentIds,
+        visibleAgentIds: visibleAgentIds(),
+      }),
+      commit,
+    );
   };
 
   return {
@@ -811,7 +851,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     setActive(nextActive) {
       if (active === nextActive) return;
       active = nextActive;
-      publishVisibleMembership();
+      publishVisibleMembership({ inactive: !active });
       if (!active) {
         startAcknowledgedCatchUps();
         return;
