@@ -182,6 +182,7 @@ const AgentCapabilitiesSchema = z.strictObject({
   supportsRewindConversation: z.boolean().optional(),
   supportsRewindFiles: z.boolean().optional(),
   supportsRewindBoth: z.boolean().optional(),
+  supportsNativeFork: z.boolean().optional(),
 });
 
 const StoredProjectCheckoutSchema = z.union([
@@ -650,6 +651,9 @@ function serializeAgent(agent: Agent): StoredAgent {
         : {}),
       ...(agent.capabilities.supportsRewindBoth !== undefined
         ? { supportsRewindBoth: agent.capabilities.supportsRewindBoth }
+        : {}),
+      ...(agent.capabilities.supportsNativeFork !== undefined
+        ? { supportsNativeFork: agent.capabilities.supportsNativeFork }
         : {}),
     },
     currentModeId: agent.currentModeId,

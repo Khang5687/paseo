@@ -23,6 +23,8 @@ export interface OmpRuntimeLaunch {
   thinkingOptionId?: string;
   modeId?: string;
   session?: string;
+  // Start on a copy of this session file under a new session id.
+  fork?: string;
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
@@ -37,6 +39,8 @@ export interface OmpStartSessionInput {
   thinkingOptionId?: string;
   modeId?: string;
   session?: string;
+  // Start on a copy of this session file under a new session id.
+  fork?: string;
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
@@ -119,6 +123,7 @@ export function buildOmpLaunch(input: {
     protocolMode,
     modeId: input.session.modeId,
     session: input.session.session,
+    fork: input.session.fork,
     noSession: input.session.noSession,
     systemPrompt,
     extraArgs: input.session.extraArgs,
@@ -143,7 +148,9 @@ function appendOmpLaunchArgs(
   if (session.thinkingOptionId) {
     argv.push("--thinking", session.thinkingOptionId);
   }
-  if (session.noSession) {
+  if (session.fork) {
+    argv.push("--fork", session.fork);
+  } else if (session.noSession) {
     argv.push("--no-session");
   } else if (session.session) {
     argv.push("--session", session.session);

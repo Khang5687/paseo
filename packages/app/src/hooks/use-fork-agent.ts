@@ -38,6 +38,7 @@ export type ForkAgentSource = Pick<
   | "runtimeInfo"
   | "features"
   | "projectPlacement"
+  | "capabilities"
 >;
 
 /**
@@ -131,9 +132,29 @@ export function useForkAgent(
   const router = useRouter();
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const supportsAgentForkContext = useHostFeature(serverId, "agentForkContext") && !readOnly;
+  // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03. Hosts without it fork
+  // through the chat-history draft below.
+  const supportsAgentFork = useHostFeature(serverId, "agentFork") && !readOnly;
 
   return useStableEvent(async ({ agentId, agent, workspaceId, target, boundary }) => {
     try {
+      // A provider with native session fork continues the conversation itself. Only the
+      // same-workspace target can host the new agent; a new workspace still starts from a draft.
+      if (
+        supportsAgentFork &&
+        target === "tab" &&
+        agent.capabilities?.supportsNativeFork === true &&
+        client &&
+        workspaceId
+      ) {
+        const forked = await client.forkAgent(agentId, boundary);
+        navigateToWorkspace({
+          serverId,
+          workspaceId,
+          target: { kind: "agent", agentId: forked.forkedAgentId },
+        });
+        return;
+      }
       if (!supportsAgentForkContext) {
         toast?.error(t("message.actions.forkUnavailable"));
         return;

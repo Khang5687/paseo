@@ -19,6 +19,7 @@ import {
   isDelegatedAgent,
   isOpenAgentTabLabel,
   PARENT_AGENT_ID_LABEL,
+  PARENT_SERVER_ID_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
@@ -744,6 +745,37 @@ const RETIRED_INTERNAL_AGENT_LIMIT = 500;
 export interface RetiredInternalAgent {
   record: ArchivedStoredAgentRecord;
   lastMessage: string | null;
+}
+
+function forkSessionConfig(
+  source: ManagedAgent,
+  title: string | null | undefined,
+): AgentSessionConfig {
+  return stripInternalPaseoMcpServer({
+    provider: source.provider,
+    cwd: source.cwd,
+    modeId: source.currentModeId ?? source.config.modeId,
+    model: source.config.model,
+    thinkingOptionId: source.config.thinkingOptionId,
+    featureValues: source.config.featureValues,
+    providerOptions: source.config.providerOptions,
+    toolPolicy: source.config.toolPolicy,
+    systemPrompt: source.config.systemPrompt,
+    mcpServers: source.config.mcpServers,
+    ...(title ? { title } : {}),
+  });
+}
+
+// The fork is a top-level agent: parent links and per-client open-tab state belong to the source.
+function forkLabels(labels: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(labels).filter(
+      ([key]) =>
+        key !== PARENT_AGENT_ID_LABEL &&
+        key !== PARENT_SERVER_ID_LABEL &&
+        !isOpenAgentTabLabel(key),
+    ),
+  );
 }
 
 export class AgentManager {
@@ -1533,6 +1565,69 @@ export class AgentManager {
       persistence: handle,
       restoring: true,
     });
+  }
+
+  supportsNativeFork(provider: AgentProvider): boolean {
+    const client = this.clients.get(provider);
+    return client?.capabilities.supportsNativeFork === true && client.forkSession !== undefined;
+  }
+
+  /**
+   * Fork without native provider support: a fresh agent with the source's configuration. The
+   * caller seeds it with the chat-history summary.
+   */
+  createForkSummaryAgent(agentId: string, input: { title?: string | null }): Promise<ManagedAgent> {
+    const source = this.requireSessionAgent(agentId);
+    return this.createAgent(
+      forkSessionConfig(source, input.title),
+      undefined,
+      {
+        workspaceId: source.workspaceId,
+        labels: forkLabels(source.labels),
+        ...(input.title ? { initialTitle: input.title } : {}),
+      },
+    );
+  }
+
+  /**
+   * Fork an agent's provider session into a new agent. The source keeps running untouched. Call
+   * supportsNativeFork first. Callers hydrate the new agent's timeline.
+   */
+  async forkAgentSession(
+    agentId: string,
+    input: { cutBeforeMessageId: string | null; title?: string | null },
+  ): Promise<{
+    agent: ManagedAgent;
+    contextWindowUsedTokens?: number;
+    contextWindowMaxTokens?: number;
+  }> {
+    const source = this.requireSessionAgent(agentId);
+    const client = this.requireClient(source.provider);
+    if (!this.supportsNativeFork(source.provider) || !client.forkSession) {
+      throw new Error(`Provider '${source.provider}' does not support native fork`);
+    }
+    if (!source.persistence) {
+      throw new Error("Agent has no durable session to fork yet");
+    }
+    const forked = await client.forkSession(source.persistence, {
+      cutBeforeMessageId: input.cutBeforeMessageId,
+      cwd: source.cwd,
+    });
+    const agent = await this.resumeAgentFromPersistence(
+      forked.persistence,
+      forkSessionConfig(source, input.title),
+      undefined,
+      { workspaceId: source.workspaceId, labels: forkLabels(source.labels) },
+    );
+    return {
+      agent,
+      ...(forked.contextWindowUsedTokens !== undefined
+        ? { contextWindowUsedTokens: forked.contextWindowUsedTokens }
+        : {}),
+      ...(forked.contextWindowMaxTokens !== undefined
+        ? { contextWindowMaxTokens: forked.contextWindowMaxTokens }
+        : {}),
+    };
   }
 
   importProviderSession(input: {

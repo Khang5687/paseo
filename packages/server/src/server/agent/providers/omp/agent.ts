@@ -1,6 +1,7 @@
 import { mapCustomMessageToToolCall } from "../custom-message.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { setImmediate as waitForImmediate, setTimeout as delay } from "node:timers/promises";
 import type { Logger } from "pino";
@@ -10,6 +11,8 @@ import {
   type AgentCapabilityFlags,
   type AgentClient,
   type AgentFeature,
+  type AgentForkSessionInput,
+  type AgentForkSessionResult,
   type AgentLaunchContext,
   type AgentMetadata,
   type AgentMode,
@@ -124,6 +127,7 @@ const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: false,
   supportsRewindBoth: false,
+  supportsNativeFork: true,
 };
 
 export interface OmpAgentClientOptions {
@@ -2423,6 +2427,57 @@ export class OmpAgentClient implements AgentClient {
       await hostTools?.close();
       await runtimeSession.close().catch(() => undefined);
       throw error;
+    }
+  }
+
+  // `omp --fork` copies the source session file under a new session id, so the live source
+  // session is never opened twice. A cut then branches the copy at the first message to drop;
+  // OMP writes the branch to yet another file, which is the fork. The intermediate copy is
+  // removed.
+  async forkSession(
+    handle: AgentPersistenceHandle,
+    input: AgentForkSessionInput,
+  ): Promise<AgentForkSessionResult> {
+    const sourceFile = handle.nativeHandle;
+    if (!sourceFile) {
+      throw new Error("OMP fork requires a native session file handle");
+    }
+    const runtimeSession = await this.resolveRuntime(undefined).startSession({
+      cwd: input.cwd,
+      protocolMode: "rpc",
+      fork: sourceFile,
+    });
+    try {
+      const copied = await runtimeSession.getState();
+      if (!copied.sessionFile) {
+        throw new Error("OMP fork did not report a session file");
+      }
+      let state = copied;
+      if (input.cutBeforeMessageId) {
+        await runtimeSession.branch(input.cutBeforeMessageId);
+        state = await runtimeSession.getState();
+        if (!state.sessionFile) {
+          throw new Error("OMP fork did not report a session file after the cut");
+        }
+        if (state.sessionFile !== copied.sessionFile) {
+          await rm(copied.sessionFile, { force: true });
+        }
+      }
+      const stats = await runtimeSession.getSessionStats().catch(() => null);
+      const usedTokens = stats?.contextUsage?.tokens;
+      const windowTokens = stats?.contextUsage?.contextWindow;
+      return {
+        persistence: {
+          provider: this.provider,
+          sessionId: state.sessionId,
+          nativeHandle: state.sessionFile,
+          metadata: handle.metadata,
+        },
+        ...(typeof usedTokens === "number" ? { contextWindowUsedTokens: usedTokens } : {}),
+        ...(typeof windowTokens === "number" ? { contextWindowMaxTokens: windowTokens } : {}),
+      };
+    } finally {
+      await runtimeSession.close().catch(() => undefined);
     }
   }
 
