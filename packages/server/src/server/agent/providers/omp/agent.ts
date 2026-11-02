@@ -100,6 +100,7 @@ import { mapOmpAvailableCommandsUpdate, mapOmpRuntimeSlashCommands } from "./com
 import { readOmpHistoryTodoState, streamOmpHistory } from "./history.js";
 import { mapOmpTodoReminderEvent, mapOmpTodoState, mapOmpTodoToolResult } from "./todo-mapper.js";
 import { mapOmpRuntimeEventToTimelineItem } from "./event-mapper.js";
+import { OmpXdevMountNotices } from "./xdev-mount-notice.js";
 import { mapOmpAdvisorMessageToToolCall } from "./advisor-message.js";
 import { handleOmpHostToolRuntimeEvent, OmpHostToolRouter } from "./host-tools.js";
 import { OmpSubagentIndex } from "./subagent-index.js";
@@ -718,6 +719,7 @@ export class OmpAgentSession implements AgentSession {
   private readonly subagentIndex = new OmpSubagentIndex();
   private readonly subagentCardTracker: OmpSubagentCardTracker;
   private lastTodoItem: Extract<AgentTimelineItem, { type: "todo" }> | null = null;
+  private readonly xdevMountNotices = new OmpXdevMountNotices();
   private state: OmpSessionState;
   private currentModeId: string | null;
   private runtimeDead = false;
@@ -1718,7 +1720,7 @@ export class OmpAgentSession implements AgentSession {
       }
       return true;
     }
-    const mappedEvent = mapOmpRuntimeEventToTimelineItem(event);
+    const mappedEvent = mapOmpRuntimeEventToTimelineItem(event, this.xdevMountNotices);
     if (!mappedEvent.handled) {
       return false;
     }

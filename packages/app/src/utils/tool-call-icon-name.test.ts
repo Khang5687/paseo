@@ -54,6 +54,16 @@ describe("resolveToolCallIconName", () => {
     expect(icon).toBe("wrench");
   });
 
+  it("uses the plug icon for MCP server rows despite the legacy wrench detail icon", () => {
+    const icon = resolveToolCallIconName("mcp_servers", {
+      type: "plain_text",
+      label: "Gmail Usa connected (8 tools)",
+      icon: "wrench",
+    });
+
+    expect(icon).toBe("plug");
+  });
+
   it("uses the Paseo icon for agent messages despite the legacy bot detail icon", () => {
     const icon = resolveToolCallIconName(
       "agent_message",
