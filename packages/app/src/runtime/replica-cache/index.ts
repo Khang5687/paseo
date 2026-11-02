@@ -315,12 +315,16 @@ const StoredWorkspaceSchema = z.strictObject({
   name: z.string(),
   title: z.string().nullable(),
   pinnedAt: z.string().nullable(),
+  // Optional because entries written before settling existed have none.
+  settledAt: z.string().nullable().optional(),
   // Optional because entries written before labels existed have none. A cached workspace that
   // dropped them painted its row without its chips and stayed that way: the directory cursor is
   // current on reconnect, so the daemon has nothing newer to send back.
   labels: z.array(z.string()).optional(),
   status: z.enum(["needs_input", "failed", "running", "attention", "done"]),
   statusEnteredAt: IsoDateSchema.nullable(),
+  // Optional because entries written before the count existed have none.
+  runningSubagentCount: z.number().optional(),
   activityAt: z.null(),
   archivingAt: z.string().nullable(),
   diffStat: z.strictObject({ additions: z.number(), deletions: z.number() }).nullable(),
@@ -714,9 +718,11 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     name: workspace.name,
     title: workspace.title ?? null,
     pinnedAt: workspace.pinnedAt ?? null,
+    settledAt: workspace.settledAt ?? null,
     labels: workspace.labels,
     status: workspace.status,
     statusEnteredAt: workspace.statusEnteredAt?.toISOString() ?? null,
+    runningSubagentCount: workspace.runningSubagentCount,
     activityAt: null,
     archivingAt: workspace.archivingAt,
     diffStat: workspace.diffStat,

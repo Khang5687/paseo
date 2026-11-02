@@ -11,11 +11,11 @@ whether those requests should move the viewport. Native tests must apply the
 list's transform through React Native's view manager; assigning `scaleY` directly
 misses that decomposition.
 
-## Diagrams in lists and quotes
+## Extracted fences in lists and quotes
 
-Selection stops at a Mermaid diagram. Native extracts Mermaid fences into separate views because the library exposes no native block renderer override. A diagram inside a list or quote therefore appears outside that container, and its following prose starts a separate Markdown fragment.
+Selection stops at a Mermaid diagram and, in an agent's chat, at a runnable shell fence. Native extracts those fences into separate views because the library exposes no native block renderer override. A fence inside a list or quote therefore appears outside that container, and its following prose starts a separate Markdown fragment.
 
-Reopening a list marker or quote prefix on the following fragment cannot place the diagram inside the original container or continue its quote rule. Preserving the group requires a native block renderer hook or a host that owns the whole group. Keep native diagrams at the top level until that exists; nested grouping remains a known limitation.
+Reopening a list marker or quote prefix on the following fragment cannot place the fence inside the original container or continue its quote rule. Preserving the group requires a native block renderer hook or a host that owns the whole group. Keep extracted fences at the top level until that exists; nested grouping remains a known limitation.
 
 ## Leading inline images
 

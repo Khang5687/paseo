@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Pressable, Text, type PressableStateCallbackType } from "react-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
 
 export interface TerminalPasteActionProps {
@@ -40,6 +41,34 @@ export function TerminalFloatingCopyAction({
       accessibilityLabel="Copy"
       testID="terminal-copy"
       onPress={onCopy}
+      variant="floating"
+    />
+  );
+}
+
+export interface TerminalFloatingAddNoteActionProps {
+  onAddNote: () => void;
+  /** The host supports notes. */
+  enabled?: boolean;
+  hasSelection?: boolean;
+}
+
+export function TerminalFloatingAddNoteAction({
+  onAddNote,
+  enabled = true,
+  hasSelection = true,
+}: TerminalFloatingAddNoteActionProps) {
+  const { t } = useTranslation();
+  if (!enabled || !hasSelection) {
+    return null;
+  }
+  const label = t("notes.addNote");
+  return (
+    <TerminalActionButton
+      label={label}
+      accessibilityLabel={label}
+      testID="terminal-add-note"
+      onPress={onAddNote}
       variant="floating"
     />
   );

@@ -1,4 +1,4 @@
-import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
+import { renderPromptAttachmentAsText, stripInlineRefNotes } from "../prompt-attachments.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type {
@@ -157,7 +157,9 @@ export function prepareAgentMessage(
 }
 
 /** The same projection owns provider echoes, acceptance, import, and replay. */
-export function projectAgentMessages(item: AgentTimelineItem): AgentTimelineItem[] {
+export function projectAgentMessages(input: AgentTimelineItem): AgentTimelineItem[] {
+  const item =
+    input.type === "user_message" ? { ...input, text: stripInlineRefNotes(input.text) } : input;
   if (item.type === "user_message") {
     const messages = parseAgentMessages(item.text);
     if (messages) {

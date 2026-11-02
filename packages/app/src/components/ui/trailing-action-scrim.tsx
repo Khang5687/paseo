@@ -39,15 +39,18 @@ const backdropColorMappings: Record<SurfaceBackdrop, (theme: Theme) => { color: 
 /** Fades trailing content into the surface beneath an absolutely overlaid action. */
 export function TrailingActionScrim({
   backdrop,
+  width = SCRIM_WIDTH,
   testID,
 }: {
   backdrop: SurfaceBackdrop;
+  /** Widen past the default when the overlaid action holds more than one control. */
+  width?: number;
   testID?: string;
 }) {
   // React-generated ids contain characters that are invalid inside SVG fragment references.
   const gradientId = `trailing-action-scrim-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
-    <View style={styles.scrim} pointerEvents="none" testID={testID}>
+    <View style={[styles.scrim, { width }]} pointerEvents="none" testID={testID}>
       <ThemedTrailingActionScrimSvg
         gradientId={gradientId}
         uniProps={backdropColorMappings[backdrop]}
@@ -62,6 +65,5 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     right: 0,
-    width: SCRIM_WIDTH,
   },
 });

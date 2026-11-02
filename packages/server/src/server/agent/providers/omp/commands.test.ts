@@ -111,6 +111,7 @@ describe("OMP slash command mapper", () => {
     expect(mapOmpSlashCommands([]).map((command) => command.name)).toEqual([
       "compact",
       "autocompact",
+      "goal",
       "handoff",
       "steer",
       "follow-up",

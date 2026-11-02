@@ -32,6 +32,8 @@ import {
   toAgentPayload,
 } from "../agent-projections.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
+import { askAgent } from "../ask-agent.js";
+import { resolvePermissionResponse } from "../permission-answers.js";
 import type { AgentStorage } from "../agent-storage.js";
 import { AgentNotFoundError, ensureAgentLoaded } from "../agent-loading.js";
 import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
@@ -714,10 +716,16 @@ function createToolCatalog(
     ["get_agent_status", "getStatus"],
     ["get_agent_activity", "getActivity"],
     ["list_agents", "listAgents"],
+    ["ask_agent", "askAgent"],
+    ["list_pending_permissions", "listPermissions"],
+    ["respond_to_permission", "respondToPermission"],
   ] as const satisfies ReadonlyArray<readonly [string, keyof HostOperations]>);
+  const callerTitle = () =>
+    (callerAgentId ? agentManager.getAgent(callerAgentId)?.config.title : undefined) ?? undefined;
   const hostResolver = createHostResolver({
     serverId: options.serverId ?? "self",
     callerAgentId,
+    callerTitle,
     lockedCwd: callerContext?.lockedCwd,
     hosts: () => {
       if (!options.hosts) throw new Error("Connected hosts are not configured");
@@ -732,6 +740,11 @@ function createToolCatalog(
       getStatus: (args, context) => localHostOperations.get("get_agent_status")!(args, context),
       getActivity: (args, context) => localHostOperations.get("get_agent_activity")!(args, context),
       listAgents: (args, context) => localHostOperations.get("list_agents")!(args, context),
+      askAgent: (args, context) => localHostOperations.get("ask_agent")!(args, context),
+      listPermissions: (args, context) =>
+        localHostOperations.get("list_pending_permissions")!(args, context),
+      respondToPermission: (args, context) =>
+        localHostOperations.get("respond_to_permission")!(args, context),
     },
   });
   const registerTool = (
@@ -3188,6 +3201,43 @@ function createToolCatalog(
   );
 
   registerTool(
+    "ask_agent",
+    {
+      title: "Ask agent",
+      description:
+        "Ask another agent a question without interrupting it. A hidden copy of its whole conversation answers, then is deleted; the agent keeps working and never sees the question. The copy can read files but cannot change anything. Use it for context, progress, or decisions another agent holds, instead of asking the user to relay them. To find an agent by the workspace name the user sees, match list_workspaces titles to the workspaceId in list_agents.",
+      inputSchema: {
+        agentId: z.string(),
+        question: z
+          .string()
+          .min(1)
+          .describe("The copy remembers its whole conversation, so you can refer to it directly."),
+      },
+      outputSchema: {
+        agentId: z.string(),
+        answer: z.string(),
+      },
+    },
+    async ({ agentId, question }, context) => {
+      if (agentId === callerAgentId) {
+        throw new PaseoToolInputError(
+          "ask_agent asks another agent; you already have your own context",
+        );
+      }
+      const { answer } = await askAgent(agentManager, childLogger, {
+        agentId,
+        question,
+        askedBy: callerTitle(),
+        signal: context.signal,
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ agentId, answer }),
+      };
+    },
+  );
+
+  registerTool(
     "set_agent_mode",
     {
       title: "Set agent session mode",
@@ -3216,8 +3266,10 @@ function createToolCatalog(
     {
       title: "List pending permissions",
       description:
-        "Return all pending permission requests across all agents with the normalized payloads.",
-      inputSchema: {},
+        'List the question boxes and approval prompts agents are waiting on, the ones the user would otherwise tap in the app. Pass agentId for one agent. Each entry has agentId, request.id (the requestId to answer with) and request.kind: "question" lists its questions in request.input.questions (each with header, question, options, multiSelect); "tool" asks to run an action shown in request.input/detail; "plan" asks to accept a plan. request.actions, when present, are the buttons the user would see. Answer with respond_to_permission.',
+      inputSchema: {
+        agentId: z.string().optional().describe("Only this agent's open requests."),
+      },
       outputSchema: {
         permissions: z.array(
           z.object({
@@ -3228,8 +3280,11 @@ function createToolCatalog(
         ),
       },
     },
-    async () => {
-      const permissions = agentManager.listAgents().flatMap((agent) => {
+    async ({ agentId }) => {
+      const agents = agentId
+        ? [agentManager.getAgent(agentId)].filter((agent) => agent !== null)
+        : agentManager.listAgents();
+      const permissions = agents.flatMap((agent) => {
         const payload = toAgentPayload(agent);
         return payload.pendingPermissions.map((request) => ({
           agentId: agent.id,
@@ -3250,22 +3305,35 @@ function createToolCatalog(
     {
       title: "Respond to permission",
       description:
-        "Approve or deny a pending permission request with an AgentManager-compatible response payload.",
+        'Answer an agent\'s open question box or approval prompt, exactly as the user\'s tap would. Get agentId and requestId from list_pending_permissions or a <permission-request> notification. For a question box pass answers: one entry per question, keyed by its header, each a list of chosen option labels (or your own text when the question allows it). For approvals pass response: { behavior: "allow" } or { behavior: "deny", message }, and add selectedActionId to press one of request.actions. Approving runs real actions: only decide what the user asked you to decide, and ask the user when unsure.',
       inputSchema: {
         agentId: z.string(),
         requestId: z.string(),
-        response: AgentPermissionResponseSchema,
+        answers: z
+          .record(z.string(), z.array(z.string()))
+          .optional()
+          .describe('Question answers by header, e.g. { "Database": ["Postgres"] }.'),
+        response: AgentPermissionResponseSchema.optional(),
       },
       outputSchema: {
         success: z.boolean(),
       },
     },
-    async ({ agentId, requestId, response }) => {
+    async ({ agentId, requestId, response, answers }) => {
+      const resolved = await resolvePermissionResponse({
+        agentId,
+        requestId,
+        response,
+        answers,
+        loadRequest: async () => agentManager.getAgent(agentId)?.pendingPermissions.get(requestId),
+      }).catch((error: unknown) => {
+        throw new PaseoToolInputError(error instanceof Error ? error.message : String(error));
+      });
       await respondToAgentPermission({
         agentManager,
         agentId,
         requestId,
-        response,
+        response: resolved,
         logger: childLogger,
       });
       return {

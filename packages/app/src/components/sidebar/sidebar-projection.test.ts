@@ -5,7 +5,19 @@ import type {
   SidebarWorkspaceEntry,
   SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
-import { buildSidebarProjection } from "./sidebar-projection";
+import {
+  buildSidebarProjection,
+  type SidebarProjection,
+  type SidebarProjectionInput,
+} from "./sidebar-projection";
+
+function workspaceIds(rows: readonly { workspaceId: string }[]): string[] {
+  return rows.map((row) => row.workspaceId);
+}
+
+function groupRows(group: { rows: SidebarWorkspaceEntry[] }): SidebarWorkspaceEntry[] {
+  return group.rows;
+}
 
 function makeWorkspace(
   id: string,
@@ -38,6 +50,7 @@ function makeWorkspace(
     archiveUnpushedCommitCount: null,
     scripts: [],
     hasRunningScripts: false,
+    workingSubagentCount: 0,
     labels,
   };
   return { placement, entry };
@@ -67,7 +80,7 @@ function makeProject(
 function projectionInput(options?: {
   groupMode?: "project" | "status";
   pinnedCollapsed?: boolean;
-}) {
+}): SidebarProjectionInput {
   const pinned = makeWorkspace("pinned", "running");
   const unpinned = makeWorkspace("unpinned", "needs_input");
   return {
@@ -76,6 +89,7 @@ function projectionInput(options?: {
       pinnedWorkspaceKeys: [pinned.placement.workspaceKey],
       pinnedAtByKey: { [pinned.placement.workspaceKey]: "2026-07-12T12:00:00.000Z" },
     },
+    settledKeys: { settledWorkspaceKeys: [], settledAtByKey: {} },
     pinnedWorkspaceOrder: [],
     workspaceEntriesByKey: new Map([
       [pinned.entry.workspaceKey, pinned.entry],
@@ -86,6 +100,8 @@ function projectionInput(options?: {
     pinnedCollapsed: options?.pinnedCollapsed ?? false,
     collapsedProjectKeys: new Set<string>(),
     collapsedWorkspaceGroupKeys: new Set<string>(),
+    parentKeyByWorkspaceKey: new Map<string, string>(),
+    expandedThreadKeys: new Set<string>(),
     t: i18n.t,
   };
 }
@@ -112,6 +128,53 @@ function twoProjectInput(groupMode: "project" | "status") {
   };
 }
 
+/** An orchestrator workspace with one subagent workspace and an unrelated sibling. */
+function nestedInput(options: {
+  groupMode: "project" | "status";
+  pinnedIds?: string[];
+  settledIds?: string[];
+  childStatus?: SidebarWorkspaceEntry["statusBucket"];
+  /** Whether the user unfolded the parent thread. Defaults to unfolded. */
+  expanded?: boolean;
+}) {
+  const parent = makeWorkspace("parent", "running");
+  const sibling = makeWorkspace("sibling", "running");
+  const child = makeWorkspace("child", options.childStatus ?? "running");
+  const pinnedIds = options.pinnedIds ?? [];
+  const settledIds = options.settledIds ?? [];
+  return {
+    ...projectionInput({ groupMode: options.groupMode }),
+    // Stored order puts the child first, the way a newly created workspace lands in a project.
+    projects: [makeProject([child.placement, parent.placement, sibling.placement])],
+    pinnedKeys: {
+      pinnedWorkspaceKeys: pinnedIds.map((id) => `srv:${id}`),
+      pinnedAtByKey: Object.fromEntries(
+        pinnedIds.map((id) => [`srv:${id}`, "2026-07-12T12:00:00.000Z"]),
+      ),
+    },
+    settledKeys: {
+      settledWorkspaceKeys: settledIds.map((id) => `srv:${id}`),
+      settledAtByKey: Object.fromEntries(
+        settledIds.map((id) => [`srv:${id}`, "2026-07-12T12:00:00.000Z"]),
+      ),
+    },
+    workspaceEntriesByKey: new Map([
+      [child.entry.workspaceKey, child.entry],
+      [parent.entry.workspaceKey, parent.entry],
+      [sibling.entry.workspaceKey, sibling.entry],
+    ]),
+    parentKeyByWorkspaceKey: new Map([["srv:child", "srv:parent"]]),
+    expandedThreadKeys: new Set(options.expanded === false ? [] : ["srv:parent"]),
+  };
+}
+
+function statusGroupRows(projection: SidebarProjection) {
+  return projection.workspaceGroups.map((group) => [
+    group.key,
+    group.rows.map((entry) => entry.workspaceId),
+  ]);
+}
+
 describe("buildSidebarProjection", () => {
   // The rule that outlived the bug it was written for: a project icon is fetched per project, so
   // whatever a mode groups by, the rows it produces can only reference projects already covered.
@@ -120,10 +183,13 @@ describe("buildSidebarProjection", () => {
       const projection = buildSidebarProjection(twoProjectInput(groupMode));
       const covered = new Set(projection.projectIconTargets.map((target) => target.projectViewKey));
 
-      // Every leading visual the sidebar can paint from this projection: pinned rows, grouped
-      // rows, project headers and the rows under them.
+      // Every leading visual the sidebar can paint from this projection: pinned rows, settled
+      // rows, grouped rows, project headers and the rows under them.
       const renderedProjectViewKeys = new Set<string>();
       for (const entry of projection.pinnedGroups.pinnedChats) {
+        renderedProjectViewKeys.add(entry.projectViewKey);
+      }
+      for (const entry of projection.settledRows) {
         renderedProjectViewKeys.add(entry.projectViewKey);
       }
       for (const group of projection.workspaceGroups) {
@@ -166,6 +232,110 @@ describe("buildSidebarProjection", () => {
     ]);
   });
 
+  describe("settled workspaces", () => {
+    /**
+     * One project holding a pinned row, an active row, and three settled rows — one of which is
+     * also pinned, which only a daemon race can produce but the list must still resolve.
+     */
+    function settledInput(groupMode: "project" | "status"): SidebarProjectionInput {
+      const pinned = makeWorkspace("pinned", "running");
+      const active = makeWorkspace("active", "needs_input");
+      const settledOld = makeWorkspace("settled-old", "done");
+      const settledNew = makeWorkspace("settled-new", "running");
+      const settledTieB = makeWorkspace("settled-tie-b", "done");
+      const settledTieA = makeWorkspace("settled-tie-a", "done");
+      const workspaces = [pinned, active, settledOld, settledNew, settledTieB, settledTieA];
+      return {
+        ...projectionInput({ groupMode }),
+        projects: [makeProject(workspaces.map((workspace) => workspace.placement))],
+        pinnedKeys: {
+          pinnedWorkspaceKeys: [pinned.placement.workspaceKey],
+          pinnedAtByKey: { [pinned.placement.workspaceKey]: "2026-07-12T12:00:00.000Z" },
+        },
+        settledKeys: {
+          settledWorkspaceKeys: [
+            pinned.placement.workspaceKey,
+            settledOld.placement.workspaceKey,
+            settledNew.placement.workspaceKey,
+            settledTieB.placement.workspaceKey,
+            settledTieA.placement.workspaceKey,
+          ],
+          settledAtByKey: {
+            [pinned.placement.workspaceKey]: "2026-07-14T12:00:00.000Z",
+            [settledOld.placement.workspaceKey]: "2026-07-10T12:00:00.000Z",
+            [settledNew.placement.workspaceKey]: "2026-07-13T12:00:00.000Z",
+            [settledTieB.placement.workspaceKey]: "2026-07-11T12:00:00.000Z",
+            [settledTieA.placement.workspaceKey]: "2026-07-11T12:00:00.000Z",
+          },
+        },
+        workspaceEntriesByKey: new Map(
+          workspaces.map((workspace) => [workspace.entry.workspaceKey, workspace.entry]),
+        ),
+      };
+    }
+
+    it("moves settled rows out of their project, most recently settled first", () => {
+      const projection = buildSidebarProjection(settledInput("project"));
+
+      expect(workspaceIds(projection.settledRows)).toEqual([
+        "settled-new",
+        "settled-tie-a",
+        "settled-tie-b",
+        "settled-old",
+      ]);
+      expect(projection.pinnedGroups.unpinnedProjects).toHaveLength(1);
+      expect(workspaceIds(projection.pinnedGroups.unpinnedProjects[0]?.workspaces ?? [])).toEqual([
+        "active",
+      ]);
+    });
+
+    it("keeps the project when every one of its workspaces is settled", () => {
+      const settled = makeWorkspace("settled", "done");
+      const projection = buildSidebarProjection({
+        ...projectionInput(),
+        projects: [makeProject([settled.placement])],
+        pinnedKeys: { pinnedWorkspaceKeys: [], pinnedAtByKey: {} },
+        settledKeys: {
+          settledWorkspaceKeys: [settled.placement.workspaceKey],
+          settledAtByKey: { [settled.placement.workspaceKey]: "2026-07-12T12:00:00.000Z" },
+        },
+        workspaceEntriesByKey: new Map([[settled.entry.workspaceKey, settled.entry]]),
+      });
+
+      const [project] = projection.pinnedGroups.unpinnedProjects;
+      expect(projection.pinnedGroups.unpinnedProjects).toHaveLength(1);
+      expect(project?.viewKey).toBe("project");
+      expect(projection.pinnedGroups.unpinnedProjects[0]?.workspaces).toEqual([]);
+    });
+
+    it("keeps a pinned workspace in Pinned even when it is also settled", () => {
+      for (const groupMode of ["project", "status"] as const) {
+        const projection = buildSidebarProjection(settledInput(groupMode));
+
+        expect(workspaceIds(projection.pinnedGroups.pinnedChats)).toEqual(["pinned"]);
+        expect(workspaceIds(projection.settledRows)).not.toContain("pinned");
+      }
+    });
+
+    it("removes settled rows from the status groups", () => {
+      const projection = buildSidebarProjection(settledInput("status"));
+
+      expect(workspaceIds(projection.workspaceGroups.flatMap(groupRows))).toEqual(["active"]);
+      expect(projection.settledRows).toHaveLength(4);
+    });
+
+    it("does not number settled rows", () => {
+      for (const groupMode of ["project", "status"] as const) {
+        const projection = buildSidebarProjection(settledInput(groupMode));
+
+        expect(projection.shortcutModel.shortcutTargets).toEqual([
+          { serverId: "srv", workspaceId: "pinned" },
+          { serverId: "srv", workspaceId: "active" },
+        ]);
+      }
+    });
+  });
+
   it("does not number pinned chats while the pinned section is collapsed", () => {
     const projection = buildSidebarProjection(
       projectionInput({ groupMode: "status", pinnedCollapsed: true }),
@@ -175,4 +345,89 @@ describe("buildSidebarProjection", () => {
       { serverId: "srv", workspaceId: "unpinned" },
     ]);
   });
+
+  it("lists a subagent workspace under its parent row in project mode", () => {
+    const projection = buildSidebarProjection(nestedInput({ groupMode: "project" }));
+
+    expect(
+      projection.pinnedGroups.unpinnedProjects[0]?.workspaces.map((entry) => entry.workspaceId),
+    ).toEqual(["parent", "child", "sibling"]);
+    expect([...projection.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
+    expect(projection.shortcutModel.shortcutTargets.map((target) => target.workspaceId)).toEqual([
+      "parent",
+      "child",
+      "sibling",
+    ]);
+  });
+
+  it("moves a subagent workspace into Settled with its settled parent", () => {
+    const projection = buildSidebarProjection(
+      nestedInput({ groupMode: "project", settledIds: ["parent"] }),
+    );
+
+    expect(workspaceIds(projection.settledRows)).toEqual(["parent", "child"]);
+    expect(workspaceIds(projection.pinnedGroups.unpinnedProjects[0]?.workspaces ?? [])).toEqual([
+      "sibling",
+    ]);
+    expect(projection.nestingDepthByWorkspaceKey.get("srv:child")).toBe(1);
+  });
+
+  it("moves a subagent workspace into Pinned with its pinned parent", () => {
+    const projection = buildSidebarProjection(
+      nestedInput({ groupMode: "project", pinnedIds: ["parent"] }),
+    );
+
+    expect(projection.pinnedGroups.pinnedChats.map((entry) => entry.workspaceId)).toEqual([
+      "parent",
+      "child",
+    ]);
+    expect(
+      projection.pinnedGroups.unpinnedProjects[0]?.workspaces.map((entry) => entry.workspaceId),
+    ).toEqual(["sibling"]);
+    expect(projection.nestingDepthByWorkspaceKey.get("srv:child")).toBe(1);
+  });
+
+  it("keeps a pinned subagent workspace as a top-level pinned row when its parent is not pinned", () => {
+    const projection = buildSidebarProjection(
+      nestedInput({ groupMode: "project", pinnedIds: ["child"] }),
+    );
+
+    expect(projection.pinnedGroups.pinnedChats.map((entry) => entry.workspaceId)).toEqual([
+      "child",
+    ]);
+    expect(
+      projection.pinnedGroups.unpinnedProjects[0]?.workspaces.map((entry) => entry.workspaceId),
+    ).toEqual(["parent", "sibling"]);
+    expect(projection.nestingDepthByWorkspaceKey.size).toBe(0);
+  });
+
+  it("keeps a subagent workspace under its parent in status mode, whatever its own status", () => {
+    const sameGroup = buildSidebarProjection(nestedInput({ groupMode: "status" }));
+    expect(statusGroupRows(sameGroup)).toEqual([["running", ["parent", "child", "sibling"]]]);
+    expect([...sameGroup.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
+
+    const otherStatus = buildSidebarProjection(
+      nestedInput({ groupMode: "status", childStatus: "needs_input" }),
+    );
+    expect(statusGroupRows(otherStatus)).toEqual([["running", ["parent", "child", "sibling"]]]);
+    expect([...otherStatus.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
+  });
+
+  for (const groupMode of ["project", "status"] as const) {
+    it(`folds a thread's subagent workspaces until it is unfolded in ${groupMode} mode`, () => {
+      const projection = buildSidebarProjection(nestedInput({ groupMode, expanded: false }));
+      const rows =
+        groupMode === "project"
+          ? projection.pinnedGroups.unpinnedProjects[0]?.workspaces
+          : projection.workspaceGroups.flatMap((group) => group.rows);
+
+      expect(rows?.map((entry) => entry.workspaceId)).toEqual(["parent", "sibling"]);
+      expect([...projection.childWorkspaceCountByWorkspaceKey]).toEqual([["srv:parent", 1]]);
+      expect(projection.nestingDepthByWorkspaceKey.size).toBe(0);
+      expect(projection.shortcutModel.shortcutTargets.map((target) => target.workspaceId)).toEqual([
+        "parent",
+        "sibling",
+      ]);
+    });
+  }
 });

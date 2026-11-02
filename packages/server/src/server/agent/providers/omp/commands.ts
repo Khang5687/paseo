@@ -24,6 +24,12 @@ export const OMP_HANDLED_BUILTIN_SLASH_COMMANDS: readonly AgentSlashCommand[] = 
     ],
   },
   {
+    name: "goal",
+    description: "Set, pause, resume, drop, or show the OMP goal",
+    argumentHint: "[set <objective> [--budget N] | pause | resume | drop | show]",
+    kind: "command",
+  },
+  {
     name: "handoff",
     description: "Hand off from planning to implementation",
     argumentHint: "[instructions]",

@@ -20,6 +20,7 @@ import { AgentProfileSchema, AgentSkillSelectionSchema } from "@getpaseo/protoco
 import { PluginIdSchema, PluginSourceSchema } from "@getpaseo/protocol/plugin-config";
 import { TerminalProfileSchema } from "@getpaseo/protocol/terminal-profile";
 import { PaseoServicePortAllocationSchema } from "@getpaseo/protocol/paseo-config-schema";
+import { ProviderFeatureDefaultsSchema } from "@getpaseo/protocol/provider-config";
 
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
@@ -349,10 +350,14 @@ export const PersistedConfigSchema = z
       .object({
         providers: z.preprocess(normalizeAgentProviders, ProviderOverridesSchema).optional(),
         idleRuntimeCleanup: z.boolean().optional(),
+        draftHistoryRetentionDays: z.number().int().positive().max(3650).optional(),
         resumeOnStartup: z.boolean().optional(),
         resumePrompt: z.string().optional(),
         catalogRefreshTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
         metadataGeneration: AgentMetadataGenerationSchema.optional(),
+        featureDefaults: ProviderFeatureDefaultsSchema.optional().describe(
+          'Feature values every new agent starts with, e.g. { "output_style": "Concise" }. A provider\'s own featureDefaults win.',
+        ),
         skills: z.object({ selection: AgentSkillSelectionSchema.optional() }).strict().optional(),
       })
       .strict()

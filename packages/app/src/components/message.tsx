@@ -1,21 +1,24 @@
+import { findInlineRefTokens } from "@/composer/attachments/inline-refs";
 import { MessagePreview, MessageSender } from "@/components/user-message";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
+import { AddNoteButton } from "@/chat-notes/add-note-button";
+import { useAddMessageNote } from "@/chat-notes/context";
 import {
   AttachmentFrame,
   AttachmentLabel,
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
-import { useRetainedPanelActive } from "@/components/retained-panel";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
 import { TaskListRow } from "@/components/task-list-row";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
+import { FilePathMenu, useFilePathMenuPaths } from "@/file-path-menu/menu";
 import { useRevealedText, type MarkdownPhase } from "@/hooks/use-revealed-text";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
@@ -33,7 +36,6 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { AgentCapabilityFlags, ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
-import MaskedView from "@react-native-masked-view/masked-view";
 import {
   Check,
   CheckSquare,
@@ -71,15 +73,6 @@ import {
   type LayoutChangeEvent,
   type TextStyle,
 } from "react-native";
-import Animated, {
-  Easing,
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
-import Svg, { Defs, Rect, Stop, LinearGradient as SvgLinearGradient } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { capAssistantMessageForRender, getUtf8ByteLength } from "./assistant-message-render-limit";
 import { getTurnDurationLabel } from "./assistant-turn-footer-label";
@@ -320,6 +313,11 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     minWidth: 0,
     flexShrink: 1,
   },
+  inlineRef: {
+    color: theme.colors.accent,
+    backgroundColor: theme.colors.surface1,
+    borderRadius: theme.borderRadius.sm,
+  },
   text: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.content,
@@ -389,6 +387,25 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
 
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
 
+/** `[Image #1]`-style attachment tokens render as chips where the user typed them. */
+function renderInlineRefChips(text: string): ReactNode {
+  const tokens = findInlineRefTokens(text);
+  if (tokens.length === 0) return text;
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const token of tokens) {
+    if (token.start > at) parts.push(text.slice(at, token.start));
+    parts.push(
+      <Text key={token.start} style={userMessageStylesheet.inlineRef}>
+        {text.slice(token.start, token.end)}
+      </Text>,
+    );
+    at = token.end;
+  }
+  if (at < text.length) parts.push(text.slice(at));
+  return parts;
+}
+
 export const UserMessage = memo(function UserMessage({
   sender,
   serverId,
@@ -428,6 +445,8 @@ export const UserMessage = memo(function UserMessage({
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
   const getMessageContent = useCallback(() => message, [message]);
+  // Native text has no custom selection menu; the message offers "Add note" instead.
+  const addNote = useAddMessageNote(getMessageContent);
   const handleRewind = useCallback(
     (input: { mode: RewindMode; rewoundText: string }) => {
       return rewindMutation.rewindAgent(input);
@@ -512,7 +531,7 @@ export const UserMessage = memo(function UserMessage({
             ) : null}
             {hasText ? (
               <Text selectable style={userMessageStylesheet.text} dataSet={MESSAGE_TEXT_DATASET}>
-                {message}
+                {renderInlineRefChips(message)}
               </Text>
             ) : null}
           </MessagePreview>
@@ -532,6 +551,13 @@ export const UserMessage = memo(function UserMessage({
                 isPending={rewindMutation.isPending}
                 rewoundText={message}
                 onRewind={handleRewind}
+              />
+            ) : null}
+            {isNative && addNote ? (
+              <AddNoteButton
+                onPress={addNote.onPress}
+                marked={addNote.marked}
+                accessibilityLabel={t("notes.addNote")}
               />
             ) : null}
             <TurnCopyButton
@@ -585,6 +611,8 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
 }));
 
 const TIMESTAMP_REVEAL_MS = 3000;
+/** A turn without assistant text quotes nothing; a stable identity keeps the footer memoized. */
+const EMPTY_TURN_CONTENT = () => "";
 
 /**
  * Footer rendered next to the copy button at the end of an assistant turn.
@@ -598,6 +626,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
   onFork,
 }: AssistantTurnFooterProps) {
   const { t } = useTranslation();
+  const addNote = useAddMessageNote(getContent ?? EMPTY_TURN_CONTENT);
   const [hovered, setHovered] = useState(false);
   const [pressedReveal, setPressedReveal] = useState(false);
   const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -655,6 +684,13 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
         />
       ) : null}
       {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
+      {isNative && getContent && addNote ? (
+        <AddNoteButton
+          onPress={addNote.onPress}
+          marked={addNote.marked}
+          accessibilityLabel={t("notes.addNote")}
+        />
+      ) : null}
       {primaryLabel ? (
         <Pressable
           onPress={handlePress}
@@ -997,149 +1033,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     alignItems: "center",
     overflow: "hidden",
   },
-  shimmerMaskRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: "100%",
-    height: "100%",
-  },
-  nativeShimmerTrack: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    overflow: "hidden",
-  },
-  nativeShimmerPeak: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-  },
 }));
-
-interface NativeExpandableBadgeShimmerProps {
-  label: string;
-  secondaryLabel?: string;
-  rowWidth: number;
-  rowHeight: number;
-  peakWidth: number;
-  durationSeconds: number;
-  gradientId: string;
-}
-
-const NativeExpandableBadgeShimmer = memo(function NativeExpandableBadgeShimmer({
-  label,
-  secondaryLabel,
-  rowWidth,
-  rowHeight,
-  peakWidth,
-  durationSeconds,
-  gradientId,
-}: NativeExpandableBadgeShimmerProps) {
-  const isPanelActive = useRetainedPanelActive();
-  const shimmerTranslateX = useSharedValue(0);
-
-  useEffect(() => {
-    if (!isPanelActive) {
-      cancelAnimation(shimmerTranslateX);
-      return;
-    }
-    const startPosition = -peakWidth;
-    const endPosition = rowWidth + peakWidth;
-    shimmerTranslateX.value = startPosition;
-    shimmerTranslateX.value = withRepeat(
-      withTiming(endPosition, {
-        duration: durationSeconds * 1000,
-        easing: Easing.linear,
-      }),
-      -1,
-      false,
-    );
-    return () => {
-      cancelAnimation(shimmerTranslateX);
-    };
-  }, [durationSeconds, isPanelActive, peakWidth, rowWidth, shimmerTranslateX]);
-
-  const nativeShimmerPeakStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimmerTranslateX.value }],
-  }));
-
-  const nativeShimmerTrackStyle = useMemo(
-    () => [expandableBadgeStylesheet.nativeShimmerTrack, { width: rowWidth, height: rowHeight }],
-    [rowHeight, rowWidth],
-  );
-
-  const nativeShimmerMaskStyle = useMemo(
-    () => [expandableBadgeStylesheet.shimmerMaskRow, { width: rowWidth, height: rowHeight }],
-    [rowHeight, rowWidth],
-  );
-
-  const nativeLabelMaskStyle = useMemo(
-    () => [expandableBadgeStylesheet.label, { color: "#000000", opacity: 1 }],
-    [],
-  );
-
-  const nativeSecondaryMaskStyle = useMemo(
-    () => [expandableBadgeStylesheet.secondaryLabel, { color: "#000000", opacity: 1 }],
-    [],
-  );
-
-  const nativeShimmerPeakCombinedStyle = useMemo(
-    () => [
-      expandableBadgeStylesheet.nativeShimmerPeak,
-      nativeShimmerPeakStyle,
-      { width: peakWidth, height: rowHeight },
-    ],
-    [nativeShimmerPeakStyle, peakWidth, rowHeight],
-  );
-
-  const maskElement = useMemo(
-    () => (
-      <View pointerEvents="none" style={nativeShimmerMaskStyle}>
-        <Text style={nativeLabelMaskStyle} numberOfLines={1}>
-          {label}
-        </Text>
-        {secondaryLabel ? (
-          <Text style={nativeSecondaryMaskStyle} numberOfLines={1}>
-            {secondaryLabel}
-          </Text>
-        ) : (
-          <View style={expandableBadgeStylesheet.spacer} />
-        )}
-      </View>
-    ),
-    [nativeShimmerMaskStyle, nativeLabelMaskStyle, nativeSecondaryMaskStyle, label, secondaryLabel],
-  );
-
-  return (
-    <View style={expandableBadgeStylesheet.shimmerOverlay} pointerEvents="none">
-      <MaskedView pointerEvents="none" style={nativeShimmerTrackStyle} maskElement={maskElement}>
-        <View pointerEvents="none" style={nativeShimmerTrackStyle}>
-          <Animated.View pointerEvents="none" style={nativeShimmerPeakCombinedStyle}>
-            <NativeShimmerPeakSvg gradientId={gradientId} />
-          </Animated.View>
-        </View>
-      </MaskedView>
-    </View>
-  );
-});
-
-function NativeShimmerPeakSvg({ gradientId }: { gradientId: string }) {
-  return (
-    <Svg width="100%" height="100%" preserveAspectRatio="none">
-      <Defs>
-        <SvgLinearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <Stop offset="0%" stopColor="#ffffff" stopOpacity={0} />
-          <Stop offset="50%" stopColor="#ffffff" stopOpacity={1} />
-          <Stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
-        </SvgLinearGradient>
-      </Defs>
-      <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradientId})`} />
-    </Svg>
-  );
-}
 
 export const AssistantMessage = memo(function AssistantMessage({
   renderFullContent = false,
@@ -1522,6 +1416,8 @@ interface ExpandableBadgeProps {
   style?: StyleProp<ViewStyle>;
   onToggle?: () => void;
   onOpenFile?: () => void;
+  /** Right click (web) or long press (native) on the header, at the gesture's page point. */
+  onFileContextMenu?: (point: { x: number; y: number }) => void;
   onDetailHoverChange?: (hovered: boolean) => void;
   renderDetails?: () => ReactNode;
   isLoading?: boolean;
@@ -1602,17 +1498,9 @@ interface ExpandableBadgeLabelRowProps {
   secondaryLabel?: string;
   secondaryLabelStyle: StyleProp<TextStyle>;
   shouldMeasureWebShimmer: boolean;
-  shouldMeasureNativeShimmer: boolean;
   isWebShimmer: boolean;
-  isNativeShimmer: boolean;
   shimmerLabelTextStyle: StyleProp<TextStyle>;
   shimmerSecondaryTextStyle: StyleProp<TextStyle>;
-  labelRowWidth: number;
-  labelRowHeight: number;
-  nativeShimmerPeakWidth: number;
-  shimmerDuration: number;
-  nativeGradientId: string;
-  onLabelRowLayout: (event: LayoutChangeEvent) => void;
   onLabelLayout: (event: LayoutChangeEvent) => void;
   onSecondaryLayout: (event: LayoutChangeEvent) => void;
   showOpenFileButton: boolean;
@@ -1628,17 +1516,9 @@ function ExpandableBadgeLabelRow({
   secondaryLabel,
   secondaryLabelStyle,
   shouldMeasureWebShimmer,
-  shouldMeasureNativeShimmer,
   isWebShimmer,
-  isNativeShimmer,
   shimmerLabelTextStyle,
   shimmerSecondaryTextStyle,
-  labelRowWidth,
-  labelRowHeight,
-  nativeShimmerPeakWidth,
-  shimmerDuration,
-  nativeGradientId,
-  onLabelRowLayout,
   onLabelLayout,
   onSecondaryLayout,
   showOpenFileButton,
@@ -1649,10 +1529,7 @@ function ExpandableBadgeLabelRow({
 }: ExpandableBadgeLabelRowProps) {
   const { t } = useTranslation();
   return (
-    <View
-      style={expandableBadgeStylesheet.labelRow}
-      onLayout={shouldMeasureNativeShimmer ? onLabelRowLayout : undefined}
-    >
+    <View style={expandableBadgeStylesheet.labelRow}>
       <Text
         style={labelStyle}
         numberOfLines={1}
@@ -1690,17 +1567,6 @@ function ExpandableBadgeLabelRow({
           shimmerLabelTextStyle={shimmerLabelTextStyle}
           shimmerSecondaryTextStyle={shimmerSecondaryTextStyle}
           showOpenFileButton={showOpenFileButton}
-        />
-      ) : null}
-      {isNativeShimmer ? (
-        <NativeExpandableBadgeShimmer
-          label={label}
-          secondaryLabel={secondaryLabel}
-          rowWidth={labelRowWidth}
-          rowHeight={labelRowHeight}
-          peakWidth={nativeShimmerPeakWidth}
-          durationSeconds={shimmerDuration}
-          gradientId={nativeGradientId}
         />
       ) : null}
     </View>
@@ -1775,12 +1641,12 @@ function renderExpandableBadgeIconSlot({
   return iconNode;
 }
 
+// Tool-call shimmer is web-only. On native it ran a looping masked gradient for every running
+// tool call; the dimmed loading label and the turn's working indicator carry that state instead.
 function computeShimmerMetrics(input: {
   label: string;
   secondaryLabel: string | undefined;
   isLoading: boolean;
-  labelRowWidth: number;
-  labelRowHeight: number;
   labelOffsetX: number;
   labelWidth: number;
   secondaryOffsetX: number;
@@ -1792,17 +1658,10 @@ function computeShimmerMetrics(input: {
     1,
     Math.min(2.3, 1.25 + totalShimmerChars * 0.008 - shortTextDurationAdjustment),
   );
-  const nativeShimmerPeakWidth = Math.max(
-    32,
-    Math.min(120, input.labelRowWidth > 0 ? input.labelRowWidth * 0.28 : 0),
-  );
   const isWebShimmer = input.isLoading && isWeb;
   // React Native Web only observes a node when onLayout exists at mount. Keep
   // measuring while idle so a retained badge has dimensions when it starts loading.
   const shouldMeasureWebShimmer = isWeb;
-  const shouldMeasureNativeShimmer = input.isLoading && isNative;
-  const isNativeShimmer =
-    shouldMeasureNativeShimmer && input.labelRowWidth > 0 && input.labelRowHeight > 0;
   const webShimmerSpanStartX = input.labelOffsetX;
   const webShimmerSpanEndX = input.secondaryLabel
     ? input.secondaryOffsetX + input.secondaryWidth
@@ -1813,11 +1672,8 @@ function computeShimmerMetrics(input: {
   const webShimmerTrackEnd = webShimmerSpanEndX;
   return {
     shimmerDuration,
-    nativeShimmerPeakWidth,
     isWebShimmer,
     shouldMeasureWebShimmer,
-    shouldMeasureNativeShimmer,
-    isNativeShimmer,
     webShimmerPeakWidth,
     webShimmerTrackStart,
     webShimmerTrackEnd,
@@ -1885,6 +1741,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   isExpanded,
   onToggle,
   onOpenFile,
+  onFileContextMenu,
   onDetailHoverChange,
   renderDetails,
   isLoading = false,
@@ -1924,12 +1781,26 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   );
   const handleOpenFileHoverIn = useCallback(() => setIsOpenFileHovered(true), []);
   const handleOpenFileHoverOut = useCallback(() => setIsOpenFileHovered(false), []);
-
-  const nativeGradientIdRef = useRef(
-    `shimmer-gradient-${Math.random().toString(36).substring(2, 9)}`,
+  const handleFileContextMenu = useCallback(
+    (event: {
+      preventDefault: () => void;
+      stopPropagation: () => void;
+      pageX: number;
+      pageY: number;
+    }) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onFileContextMenu?.({ x: event.pageX, y: event.pageY });
+    },
+    [onFileContextMenu],
   );
-  const [labelRowWidth, setLabelRowWidth] = useState(0);
-  const [labelRowHeight, setLabelRowHeight] = useState(0);
+  const handleFileLongPress = useCallback(
+    (event: GestureResponderEvent) => {
+      onFileContextMenu?.({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+    },
+    [onFileContextMenu],
+  );
+
   const [labelOffsetX, setLabelOffsetX] = useState(0);
   const [labelWidth, setLabelWidth] = useState(0);
   const [secondaryOffsetX, setSecondaryOffsetX] = useState(0);
@@ -1937,11 +1808,8 @@ export const ExpandableBadge = memo(function ExpandableBadge({
 
   const {
     shimmerDuration,
-    nativeShimmerPeakWidth,
     isWebShimmer,
     shouldMeasureWebShimmer,
-    shouldMeasureNativeShimmer,
-    isNativeShimmer,
     webShimmerPeakWidth,
     webShimmerTrackStart,
     webShimmerTrackEnd,
@@ -1949,25 +1817,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     label,
     secondaryLabel,
     isLoading,
-    labelRowWidth,
-    labelRowHeight,
     labelOffsetX,
     labelWidth,
     secondaryOffsetX,
     secondaryWidth,
   });
-
-  const handleLabelRowLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      if (!shouldMeasureNativeShimmer) {
-        return;
-      }
-      const { width, height } = event.nativeEvent.layout;
-      setLabelRowWidth((previous) => (Math.abs(previous - width) > 0.5 ? width : previous));
-      setLabelRowHeight((previous) => (Math.abs(previous - height) > 0.5 ? height : previous));
-    },
-    [shouldMeasureNativeShimmer],
-  );
 
   const handleLabelLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -2158,6 +2012,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     >
       <Pressable
         {...pressHandlers}
+        {...buildFileContextMenuProps({
+          onFileContextMenu,
+          onLongPress: handleFileLongPress,
+          onContextMenu: handleFileContextMenu,
+        })}
         disabled={!isInteractive}
         accessibilityState={accessibilityState}
         style={pressableStyle}
@@ -2170,17 +2029,9 @@ export const ExpandableBadge = memo(function ExpandableBadge({
             secondaryLabel={secondaryLabel}
             secondaryLabelStyle={secondaryLabelStyle}
             shouldMeasureWebShimmer={shouldMeasureWebShimmer}
-            shouldMeasureNativeShimmer={shouldMeasureNativeShimmer}
             isWebShimmer={isWebShimmer}
-            isNativeShimmer={isNativeShimmer}
             shimmerLabelTextStyle={shimmerLabelTextStyle}
             shimmerSecondaryTextStyle={shimmerSecondaryTextStyle}
-            labelRowWidth={labelRowWidth}
-            labelRowHeight={labelRowHeight}
-            nativeShimmerPeakWidth={nativeShimmerPeakWidth}
-            shimmerDuration={shimmerDuration}
-            nativeGradientId={nativeGradientIdRef.current}
-            onLabelRowLayout={handleLabelRowLayout}
             onLabelLayout={handleLabelLayout}
             onSecondaryLayout={handleSecondaryLayout}
             showOpenFileButton={Boolean(onOpenFile && isHovered)}
@@ -2205,6 +2056,18 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   );
 }, areExpandableBadgePropsEqual);
 
+// Long press on native; right click, or a phone browser's long press, on web.
+function buildFileContextMenuProps<TLongPress, TContextMenu>(input: {
+  onFileContextMenu: ExpandableBadgeProps["onFileContextMenu"];
+  onLongPress: TLongPress;
+  onContextMenu: TContextMenu;
+}): { onLongPress?: TLongPress; onContextMenu?: TContextMenu } {
+  if (!input.onFileContextMenu) {
+    return {};
+  }
+  return isNative ? { onLongPress: input.onLongPress } : { onContextMenu: input.onContextMenu };
+}
+
 function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: ExpandableBadgeProps) {
   if (previous.label !== next.label) return false;
   if (previous.secondaryLabel !== next.secondaryLabel) return false;
@@ -2219,6 +2082,7 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
+  if (previous.onFileContextMenu !== next.onFileContextMenu) return false;
   if (previous.onDetailHoverChange !== next.onDetailHoverChange) return false;
   if (previous.renderDetails !== next.renderDetails) return false;
   return true;
@@ -2317,6 +2181,11 @@ export const ToolCall = memo(function ToolCall({
     }
     return () => onOpenFilePath(openFilePath);
   }, [presentation.openFilePath, onOpenFilePath]);
+  const filePathMenuPaths = useFilePathMenuPaths({
+    serverId: serverId ?? "",
+    workspaceRoot: cwd ?? "",
+    path: presentation.openFilePath,
+  });
 
   const handleToggle = useCallback(() => {
     if (!shouldRenderInline) {
@@ -2404,7 +2273,7 @@ export const ToolCall = memo(function ToolCall({
     );
   }
 
-  return (
+  const renderBadge = (onFileContextMenu?: (point: { x: number; y: number }) => void) => (
     <ExpandableBadge
       testID="tool-call-badge"
       label={presentation.displayName}
@@ -2413,6 +2282,7 @@ export const ToolCall = memo(function ToolCall({
       isExpanded={shouldRenderInline && isExpanded}
       onToggle={presentation.canOpenDetails ? handleToggle : undefined}
       onOpenFile={handleOpenFile}
+      onFileContextMenu={onFileContextMenu}
       renderDetails={presentation.canOpenDetails && shouldRenderInline ? renderDetails : undefined}
       isLoading={status === "running" || status === "executing"}
       isError={status === "failed"}
@@ -2421,6 +2291,15 @@ export const ToolCall = memo(function ToolCall({
       onDetailHoverChange={onInlineDetailsHoverChange}
     />
   );
+
+  if (serverId && filePathMenuPaths) {
+    return (
+      <FilePathMenu serverId={serverId} workspaceRoot={cwd ?? ""} paths={filePathMenuPaths}>
+        {renderBadge}
+      </FilePathMenu>
+    );
+  }
+  return renderBadge();
 }, areToolCallPropsEqual);
 
 function areToolCallPropsEqual(previous: ToolCallProps, next: ToolCallProps) {

@@ -118,6 +118,7 @@ export class PluginRegistry {
           clientSlashCommands: [],
           attachmentSources: [],
           themes: [],
+          skins: [],
           timelineTransformers: [],
           timelineRenderers: [],
         };
