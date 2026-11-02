@@ -31,6 +31,7 @@ export const fr: TranslationResources = {
     back: "Retour",
     loading: "Chargement…",
     actions: {
+      save: "Enregistrer",
       back: "Retour",
       cancel: "Annuler",
       close: "Fermer",
@@ -67,6 +68,7 @@ export const fr: TranslationResources = {
       daemonClientUnavailable: "Client du daemon indisponible",
       daemonClientDisconnected: "Le client du daemon est déconnecté",
       noFileFound: "Aucun fichier trouvé pour {{token}}",
+      folderOutsideWorkspace: "{{path}} se trouve en dehors de cet espace de travail",
       unexpectedDictationError: "Une erreur inattendue s’est produite pendant la dictée.",
     },
     connectionStatus: {
@@ -116,6 +118,12 @@ export const fr: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restaurer le brouillon",
+      attachmentsOnly: "(pièces jointes uniquement)",
+      attachments_one: "{{count}} pièce jointe",
+      attachments_other: "{{count}} pièces jointes",
+    },
     placeholders: {
       desktop: "Écrivez à l’agent, mentionnez des @fichiers ou utilisez les /commandes et /skills",
       mobile: "Message, @fichiers, /commandes",
@@ -125,6 +133,8 @@ export const fr: TranslationResources = {
     input: {
       accessibilityLabel: "Écrire à l’agent…",
       terminalAccessibilityLabel: "Prompt du terminal",
+      fullscreen: "Plein écran",
+      exitFullscreen: "Quitter le plein écran",
       focusHint: "{{shortcut}} pour saisir",
       addAttachment: "Ajouter une pièce jointe",
       interruptAgent: "Interrompre l’agent",
@@ -132,6 +142,9 @@ export const fr: TranslationResources = {
       sendAndInterrupt: "Envoyer et interrompre",
       sendAndSteer: "Envoyer et réorienter",
       sendMessage: "Envoyer le message",
+      longPressToQueue: "Appui long pour mettre en file d’attente",
+      longPressToInterrupt: "Appui long pour interrompre",
+      longPressToSteer: "Appui long pour réorienter",
       queue: "Mettre en file d’attente",
       send: "Envoyer",
     },
@@ -162,6 +175,25 @@ export const fr: TranslationResources = {
       dropFilesHere: "Déposez des fichiers ici",
       editQueuedMessage: "Modifier le message en file d’attente",
       sendQueuedMessageNow: "Envoyer maintenant le message en file d’attente",
+      queueHeader: "File d’attente · {{count}}",
+      queuePausedHeader: "File d’attente en pause · {{count}}",
+      queuePauseReason: "Envoi impossible : {{reason}}",
+      pauseQueue: "Mettre la file d’attente en pause",
+      resumeQueue: "Reprendre la file d’attente",
+      clearQueue: "Vider la file d’attente",
+      clearQueueTitle: "Vider la file d’attente",
+      clearQueueMessage: "Tous les messages en file d’attente de cet agent seront supprimés.",
+      clearQueueConfirm: "Vider",
+      queuedMessageActions: "Actions du message en file d’attente",
+      editQueuedMessageAction: "Modifier",
+      moveQueuedMessageToTop: "Placer en premier",
+      moveQueuedMessageUp: "Monter",
+      moveQueuedMessageDown: "Descendre",
+      deleteQueuedMessage: "Supprimer",
+      reorderQueuedMessage: "Faire glisser pour réorganiser",
+      showMoreQueuedMessages: "Afficher {{count}} de plus",
+      showFewerQueuedMessages: "Afficher moins",
+      queueUpdateFailed: "Impossible de mettre à jour la file d’attente",
       openImage: "Ouvrir l’image jointe",
       removeImage: "Retirer l’image jointe",
       removeFile: "Retirer le fichier joint",
@@ -318,6 +350,57 @@ export const fr: TranslationResources = {
       archive: "Archiver",
     },
   },
+  codeRun: {
+    run: "Exécuter",
+    runCommand: "Exécuter la commande",
+    cancel: "Annuler",
+    commandLabel: "Commande",
+    where: "S’exécute sur {{host}} · {{folder}}",
+    running: "En cours",
+    done: "Terminé · code {{code}}",
+    failed: "Échec · code {{code}}",
+    stopped: "Arrêté",
+    terminalClosed: "Terminal fermé",
+    close: "Fermer",
+    expand: "Afficher la sortie",
+    collapse: "Masquer la sortie",
+    openTerminal: "Ouvrir dans l’onglet Terminal",
+    answerPlaceholder: "Envoyer une saisie",
+    send: "Envoyer",
+    showPassword: "Afficher le mot de passe",
+    hidePassword: "Masquer le mot de passe",
+    sendToAgent: "Envoyer la sortie à l’agent",
+    rerun: "Relancer",
+    copyOutput: "Copier la sortie",
+    copied: "Copié",
+    noOutput: "Aucune sortie pour l’instant",
+    noOutputFinished: "Aucune sortie",
+    startFailed: "Impossible de lancer la commande",
+    closeFailed: "Impossible de fermer le terminal",
+    hostOffline: "Hôte hors ligne. Reconnectez-vous pour exécuter cette commande.",
+    prompt: {
+      sudoPassword: "Mot de passe sudo",
+      password: "Mot de passe",
+    },
+    chips: {
+      yes: "Oui",
+      no: "Non",
+    },
+    keys: {
+      enter: "Entrée",
+      tab: "Tab",
+      interrupt: "Ctrl-C",
+    },
+    risk: {
+      admin: "S’exécute en administrateur",
+      deletes: "Supprime des fichiers",
+    },
+    report: {
+      exitStatus: "Code de sortie",
+      stopped: "Arrêtée avant la fin",
+      truncated: "[sortie précédente coupée]",
+    },
+  },
   message: {
     diagram: {
       diagram: "Diagramme",
@@ -362,6 +445,7 @@ export const fr: TranslationResources = {
       details: "Détails",
     },
     dictation: {
+      paused: "Microphone interrompu. En attente de reprise…",
       start: "Démarrer la dictée vocale",
       cancel: "Annuler la dictée",
       retry: "Relancer la dictée",
@@ -371,6 +455,7 @@ export const fr: TranslationResources = {
       failedRetry: "La dictée a échoué. Appuyez sur Réessayer.",
     },
     question: {
+      responseFailed: "Impossible d’envoyer votre réponse. Réessayez.",
       submit: "Envoyer",
       next: "Suivant",
       answerPlaceholder: "Saisissez votre réponse…",
@@ -472,6 +557,8 @@ export const fr: TranslationResources = {
       openToSide: "Ouvrir sur le côté",
       copyPath: "Copier le chemin",
       copyRelativePath: "Copier le chemin relatif",
+      copyFullPath: "Copier le chemin complet",
+      copyFileName: "Copier le nom du fichier",
       revealIn: "Afficher dans {{target}}",
       download: "Télécharger",
       addToChat: "Ajouter à la conversation",
@@ -538,6 +625,8 @@ export const fr: TranslationResources = {
       },
     },
     setup: {
+      updateHost:
+        "Mettez à jour l’hôte pour afficher les détails de configuration de l’espace de travail",
       descriptor: {
         label: "Configuration",
         completed: "Configuration terminée",
@@ -613,7 +702,14 @@ export const fr: TranslationResources = {
     terminal: {
       hostDisconnected: "L’hôte n’est pas connecté",
       updateHost: "Mettez à jour l’hôte pour utiliser le rendu natif du terminal.",
+      restoreRequiresUpdate: "Mettez à jour l’hôte pour afficher les terminaux.",
       unableToSubscribe: "Impossible de s’abonner au terminal",
+      fileUploaded: "Fichier envoyé",
+      pasteFileFailed: "Impossible de coller le fichier : {{reason}}",
+      uploadingFile: "Envoi du fichier…",
+    },
+    sheet: {
+      openAsTab: "Ouvrir dans un onglet",
     },
     tabs: {
       loading: "Chargement…",
@@ -630,7 +726,7 @@ export const fr: TranslationResources = {
       },
       switcher: {
         trigger: "Changer d’onglet ({{count}} ouverts)",
-        title: "Changer d’onglet",
+        title: "Onglets de l’espace de travail",
         searchPlaceholder: "Rechercher des onglets",
       },
       menu: {
@@ -685,6 +781,7 @@ export const fr: TranslationResources = {
         terminalIdCopiedLabel: "ID du terminal",
         resumeCommandCopiedLabel: "Commande de reprise",
         filePathCopiedLabel: "Chemin du fichier",
+        fileNameCopiedLabel: "Nom du fichier",
         resumeIdUnavailable: "ID de reprise indisponible",
         resumeCommandUnavailable: "Commande de reprise indisponible",
         reloadingAgent: "Rechargement de l’agent…",
@@ -729,6 +826,8 @@ export const fr: TranslationResources = {
     header: {
       actions: {
         workspaceActions: "Actions de l’espace de travail",
+        workspaceActionsUnhealthy:
+          "Actions de l’espace de travail, un service est en mauvaise santé",
         newAgent: "Nouvel agent",
         newTerminal: "Nouveau terminal",
         newBrowser: "Nouvel onglet de navigateur",
@@ -777,6 +876,8 @@ export const fr: TranslationResources = {
         exitCode: "sortie {{code}}",
         startFailed: "Impossible de démarrer {{scriptName}}",
         stopFailed: "Impossible d’arrêter {{scriptName}}",
+        running: "En cours",
+        runningCount: "{{count}} en cours",
       },
     },
     tree: {
@@ -968,6 +1069,7 @@ export const fr: TranslationResources = {
         checkingRepository: "Vérification du dépôt…",
         notRepository: "Ce n’est pas un dépôt git",
         diffMode: "Mode de diff",
+        all: "Toutes les modifications",
         uncommitted: "Non commité",
         committed: "Commité",
         branchUnknown: "Inconnue",
@@ -1166,6 +1268,7 @@ export const fr: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Groupe {{label}}",
+    unsentDraft: "Brouillon non envoyé",
     statusBucket: {
       needsInput: "Attend une réponse",
       failed: "Échec",
@@ -1174,8 +1277,16 @@ export const fr: TranslationResources = {
       done: "Terminé",
     },
     display: {
+      showBackground: "Afficher les espaces en arrière-plan",
       trigger: "Préférences d’affichage",
       heading: "Affichage",
+      sort: {
+        label: "Tri",
+        created: "Création",
+        manual: "Manuel",
+        lastPrompt: "Dernier prompt",
+        updateHost: "Mettez les hôtes à jour pour trier les espaces de travail",
+      },
       grouping: {
         label: "Regroupement",
         project: "Projet",
@@ -1252,6 +1363,7 @@ export const fr: TranslationResources = {
       sessions: "Historique",
       search: "Recherche",
       schedules: "Planifications",
+      notes: "Notes",
     },
     worktreeSetup: {
       title: "Configurer les scripts de worktree",
@@ -1288,6 +1400,9 @@ export const fr: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} sous-agents au travail",
+      workingSubagents_one: "{{count}} sous-agent au travail",
+      workingSubagents_other: "{{count}} sous-agents au travail",
       status: {
         serviceRunning: "Service {{name}} en cours d’exécution",
         serviceUnhealthy: "Service {{name}} en échec",
@@ -1350,8 +1465,9 @@ export const fr: TranslationResources = {
     },
     fields: {
       project: "Projet",
-      base: "Base",
+      branch: "Branche",
       baseNotApplicable: "Non applicable",
+      host: "Hôte",
     },
     titlePlaceholder: "Titre (facultatif)",
     errors: {
@@ -1395,6 +1511,9 @@ export const fr: TranslationResources = {
     quitting: {
       title: "Fermeture de Paseo…",
       detail: "Arrêt du daemon local.",
+    },
+    quitConfirm: {
+      hint: "Maintenez ⌘Q ou appuyez deux fois pour quitter",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -1692,13 +1811,18 @@ export const fr: TranslationResources = {
     title: "Ajouter un fournisseur",
     search: "Rechercher des fournisseurs",
     noProviders: "Aucun fournisseur trouvé",
+    clearSearch: "Effacer la recherche",
     actions: {
       add: "Ajouter",
+      addProvider: "Ajouter {{provider}}",
       adding: "Ajout…",
       installed: "Installé",
       cancel: "Annuler",
       installInstructions: "Instructions d’installation",
       installInstructionsFor: "Instructions d’installation de {{provider}}",
+    },
+    types: {
+      acp: "ACP",
     },
     errors: {
       unableToInstall: "Impossible d’installer le fournisseur",
@@ -1918,10 +2042,50 @@ export const fr: TranslationResources = {
     shareFile: "Partager le fichier",
     shareFileNamed: "Partager {{fileName}}",
   },
+  offlineFiles: {
+    title: "Fichiers hors ligne",
+    autoSave: {
+      label: "Enregistrer automatiquement les fichiers du chat",
+      description:
+        "Enregistre les fichiers cités dans les chats que vous ouvrez, en Wi-Fi uniquement, pour les ouvrir quand l'hôte est hors ligne.",
+    },
+    retentionDays: {
+      label: "Conserver (jours)",
+      description: "Les fichiers enregistrés plus anciens sont supprimés.",
+    },
+    maxTotalMb: {
+      label: "Limite de stockage (Mo)",
+      description: "Au-delà de cette taille, les fichiers les plus anciens sont supprimés.",
+    },
+    maxFileMb: {
+      label: "Fichier le plus gros (Mo)",
+      description: "Les fichiers plus gros ne sont pas enregistrés.",
+    },
+    saved: {
+      label: "Enregistrés : {{count}} fichiers, {{size}}",
+      description: "Les fichiers enregistrés les plus récents sont listés ci-dessous.",
+    },
+    clearAll: "Tout effacer",
+    clearConfirmTitle: "Effacer les fichiers hors ligne ?",
+    clearConfirmMessage:
+      "Les copies enregistrées sont supprimées de cet appareil. Les fichiers de l'hôte ne changent pas.",
+    saveOffline: "Enregistrer hors ligne",
+    savedToast: "Enregistré pour un usage hors ligne",
+    tooLarge: "Le fichier dépasse la limite de {{size}} Mo pour les fichiers hors ligne.",
+    readOnly: "Ceci est une copie enregistrée. Connectez-vous à l'hôte pour la modifier.",
+    savedAgo: "Copie hors ligne, enregistrée {{time}}",
+    share: "Partager",
+  },
   menu: {
     backdrop: "Arrière-plan du menu",
   },
   subagents: {
+    parent: {
+      backToParent: "Retour au parent",
+      backTo: "Retour à {{label}}",
+      parentAgent: "Agent parent",
+      openParent: "Ouvrir le parent",
+    },
     title: "Sous-agents",
     pillLabelOne: "1 sous-agent",
     pillLabelMany: "{{count}} sous-agents",
@@ -1943,14 +2107,35 @@ export const fr: TranslationResources = {
       creatingAgent: "Création de l’agent",
     },
     file: {
+      filePanels: {
+        pickerTitleExtension: "Ouvrir les fichiers .{{extension}} avec",
+        pickerTitleFilename: "Ouvrir {{filename}} avec",
+        dontAskAgain: "Ne plus demander",
+        use: "Utiliser",
+        openWith: "Ouvrir avec…",
+        alwaysUseExtension: "Toujours utiliser pour .{{extension}}",
+        alwaysUseFilename: "Toujours utiliser pour {{filename}}",
+        option: "{{title}} — {{owner}}",
+        builtin: {
+          owner: "Paseo",
+          markdown: "Markdown",
+          html: "HTML",
+          image: "Image",
+          source: "Source",
+        },
+      },
       directoryMissing: "Répertoire de l’espace de travail introuvable.",
       loading: "Chargement du fichier…",
       noPreview: "Aucun aperçu disponible",
       binaryPreviewUnavailable: "Aperçu indisponible pour un fichier binaire",
       tooLargeToDisplay: "Ce fichier est trop volumineux pour être affiché",
+      documentUnsupported: "Les fichiers {{type}} ne peuvent pas être affichés sur cet appareil",
       failedToLoad: "Impossible de charger le fichier",
+      notFound: "Fichier introuvable",
       failedToLoadPreview: "Impossible de charger l’aperçu du fichier",
       editor: {
+        preview: "Aperçu",
+        source: "Source",
         fileSize: "Taille du fichier : {{size}}",
         lines: "{{count}} lignes",
         editorStatus: "État de l’éditeur : {{status}}",
@@ -1960,10 +2145,7 @@ export const fr: TranslationResources = {
         changedOnDisk: "Modifié sur le disque",
         vimMode: "Mode Vim {{mode}}",
         cursor: "Ligne {{line}}, colonne {{column}}",
-        preview: "Aperçu",
-        source: "Source",
         deletedTitle: "Fichier supprimé du disque",
-        checkFailedTitle: "Impossible de vérifier le fichier sur le disque",
         preservedDescription: "La copie ouverte est conservée.",
         conflictDescription: "Le contenu local a été conservé. Choisissez la version à garder.",
         overwrite: "Écraser",
@@ -2001,11 +2183,17 @@ export const fr: TranslationResources = {
   toolCallDetails: {
     error: "Erreur",
     empty: "Aucun détail supplémentaire disponible",
-    subAgentActivity: "Activité du sous-agent",
     input: "Entrée",
     output: "Sortie",
   },
+  turnSummary: {
+    details: "Voir les détails du tour",
+    sentBy: "Envoyé par {{name}}",
+    showMore: "Afficher plus",
+    showLess: "Afficher moins",
+  },
   toolCallGroup: {
+    thought: "Réfléchi",
     editedFiles: {
       one: "{{count}} fichier modifié",
       other: "{{count}} fichiers modifiés",
@@ -2049,6 +2237,18 @@ export const fr: TranslationResources = {
     accessibility: "Fenêtre de contexte : {{percentage}} % utilisés",
   },
   review: {
+    feedback: {
+      send: "Envoyer les commentaires ({{count}})",
+      sending: "Envoi des commentaires ({{count}})",
+      chooseAgent: "Choisir un agent",
+      sent: "Commentaires envoyés à {{recipient}}",
+      "no-agents":
+        "Ouvrez un onglet d’agent dans cet espace de travail pour envoyer les commentaires.",
+      disconnected: "Connectez-vous à l’hôte pour envoyer les commentaires.",
+      "no-context": "Les commentaires enregistrés ne correspondent plus à ce diff.",
+      failed: "Échec de l’envoi des commentaires. Réessayez.",
+      prompt: "Veuillez traiter cette revue de code.",
+    },
     comment: {
       add: "Ajouter un commentaire de revue",
       edit: "Modifier le commentaire de revue",
@@ -2059,6 +2259,407 @@ export const fr: TranslationResources = {
       cancelAccessibility: "Annuler le commentaire de revue",
       save: "Commenter",
       saveAccessibility: "Enregistrer le commentaire de revue",
+    },
+  },
+  ompAccountRouting: {
+    login: {
+      start: "Ajouter un compte Claude",
+      elsewhere: "Ouvrez Paseo sur l'ordinateur hôte pour ajouter un compte.",
+      update: "Mettez à jour Paseo et Oh My Pi sur l'hôte pour ajouter des comptes ici.",
+      inProgress: "Connexion en cours",
+      continue: "Continuer",
+      cancel: "Annuler",
+      cancelSignIn: "Annuler la connexion",
+      done: "Terminé",
+      details: "Détails",
+      tryAgain: "Réessayer",
+      close: "Fermer",
+      justAdded: "Vient d'être ajouté",
+      warning: {
+        body: "Paseo enregistre une connexion par compte Claude. Connectez-vous à claude.ai avec le compte que vous voulez ajouter.",
+        existing: "Déjà ajoutés : {{accounts}}",
+        alertTitle: "Vérifiez quel compte votre navigateur utilise",
+        alertDescription:
+          "Si claude.ai est encore connecté avec un compte déjà ajouté, déconnectez-vous ou changez de compte d'abord. Une fenêtre privée démarre toujours déconnectée.",
+        guard:
+          "Si vous vous connectez avec un compte déjà ajouté, Paseo s'arrête et ne change rien.",
+      },
+      preparing: "Préparation du lien de connexion...",
+      link: {
+        title: "Se connecter à Claude",
+        step: "Ouvrez le lien et connectez-vous avec le compte que vous voulez ajouter",
+        open: "Ouvrir la page de connexion",
+        copy: "Copier le lien",
+        copied: "Copié",
+        label: "Lien de connexion",
+        hint: "Pour utiliser une fenêtre privée ou un autre appareil, copiez le lien",
+        waiting: "En attente du navigateur...",
+        pasteInstead: "Coller l'adresse à la place",
+      },
+      paste: {
+        label: "Adresse ou code",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Après votre accord, le navigateur peut afficher une page qui ne se charge pas. Copiez l'adresse complète de la barre d'adresse, ou le code affiché par Claude, et collez-la ici.",
+        submit: "Envoyer",
+        checking: "Vérification...",
+        error: {
+          invalid_input: "Ce n'est ni une adresse ni un code de connexion",
+          wrong_login:
+            "Cette adresse correspond à un ancien lien de connexion. Utilisez le lien affiché ici.",
+          not_waiting: "Cette connexion est déjà terminée",
+          not_allowed: "Seul Paseo sur l'ordinateur hôte peut envoyer ceci",
+          unreachable: "Impossible de joindre l'hôte. Réessayez.",
+        },
+      },
+      verifying: "Vérification de la connexion...",
+      result: {
+        added: {
+          title: "{{account}} ajouté",
+          titleUnnamed: "Compte ajouté",
+          description: "{{organization}}. Le routage automatique peut l'utiliser maintenant.",
+          descriptionUnnamed: "Le routage automatique peut l'utiliser maintenant.",
+          billingEnabled:
+            "L'usage supplémentaire payant est activé pour ce compte. Le routage automatique l'ignore tant que vous ne le désactivez pas dans les réglages de Claude.",
+          billingUnknown:
+            "Vérifiez que l'usage supplémentaire payant est désactivé pour ce compte dans les réglages de Claude. Le routage automatique ignore les comptes pour lesquels il est activé.",
+        },
+        alreadyListed: {
+          title: "{{account}} est déjà ajouté",
+          titleUnnamed: "Ce compte est déjà ajouté",
+          description:
+            "Rien n'a changé. Votre navigateur s'est connecté avec un compte que Paseo a déjà. Déconnectez-vous de claude.ai ou utilisez une fenêtre privée, puis réessayez.",
+        },
+        replaced: {
+          title: "Connexion remplacée pour {{account}}",
+          titleUnnamed: "Connexion enregistrée remplacée",
+          description: "Aucun compte n'a été ajouté. La nouvelle connexion est utilisée.",
+        },
+        failed: "Échec de la connexion",
+        cancelled: "Connexion annulée",
+      },
+      failure: {
+        timeout: "Le lien de connexion a expiré après 10 minutes. Rien n'a changé.",
+        omp_failed:
+          "Oh My Pi n'a pas pu terminer la connexion. Rien n'a changé. Réessayez, ou lancez omp dans un terminal et tapez /login.",
+        spawn_failed: "Paseo n'a pas pu démarrer Oh My Pi sur cet ordinateur.",
+        unreachable:
+          "Contact perdu avec l'hôte. À sa reconnexion, vérifiez la liste des comptes avant de réessayer.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "S'applique à tous les agents OMP gérés par Paseo sur cet hôte. Les autres hôtes et les terminaux autonomes ne changent pas.",
+      account: "Compte",
+      automatic: "Automatique",
+      useForAuto: "Utiliser pour le routage automatique",
+      auto: "Routage automatique",
+      priority: "Priorité de repli",
+      priorityHelp:
+        "Quand le compte actuel est épuisé, Paseo bascule vers le compte inclus qui a le plus d'utilisation restante. Cet ordre départage les égalités.",
+      addAccountHint:
+        "Pour ajouter un compte, exécutez omp dans un terminal, tapez /login, puis connectez-vous avec un autre compte Claude.",
+      current: "Sélectionné",
+      serving: "En service",
+      lastServed: "Dernière utilisation",
+      excluded: "Exclu du routage automatique",
+      missing: "Compte enregistré indisponible",
+      fiveHour: "5 heures",
+      weekly: "Hebdomadaire",
+      tier: "Niveau d'abonnement",
+      unknownTier: "Niveau d'abonnement inconnu",
+      unknownBudget: "Quota absolu inconnu",
+      consumed: "Consommé",
+      remaining: "Restant",
+      stale: "Observation périmée",
+      unknownOrganization: "Organisation inconnue",
+      detailsPending: "Les détails apparaissent lorsqu’un agent Oh My Pi est en cours d’exécution",
+      search: "Rechercher des comptes",
+    },
+    actions: {
+      moveUp: "Monter",
+      moveDown: "Descendre",
+    },
+    status: {
+      loading: "Chargement du routage des comptes",
+      empty: "Aucun compte Claude observé",
+      noRuntime: "Les comptes apparaissent quand un agent Oh My Pi est en cours d'exécution.",
+      unsupported: "Cet hôte n'a pas vérifié la prise en charge du routage de comptes OMP",
+      offline: "Hôte hors ligne ; derniers réglages confirmés affichés",
+      readOnly: "Vous pouvez consulter ces réglages, mais pas les modifier",
+      pending: "Enregistrement des réglages",
+      conflict: "Les réglages ont changé ailleurs ; dernier état confirmé affiché",
+      paused: "En attente d'un compte inclus disponible",
+      recovered: "Compte inclus disponible",
+      unknownUsage: "Utilisation inconnue",
+      summaryPaused: "En pause : aucun compte inclus n'a d'utilisation restante.",
+      summaryPausedResumes:
+        "En pause : aucun compte inclus n'a d'utilisation restante. Reprise {{time}}",
+      summaryUsing: "Compte utilisé : {{account}}",
+      summaryAuto: "Le mode automatique choisit le compte avec le plus d'utilisation restante",
+    },
+    reason: {
+      no_account: "Aucun compte n'est sélectionné",
+      source_changed: "La source d'identifiants native sélectionnée a changé",
+      source_inaccessible:
+        "Cet environnement d'exécution ne peut pas accéder au compte natif sélectionné",
+      billing_enabled:
+        "Les crédits d'utilisation payants sont activés ; le routage limité à l'usage inclus ne peut pas utiliser ce compte",
+      billing_unknown:
+        "Les réglages des crédits d'utilisation payants n'ont pas été vérifiés récemment",
+      quota_blocked: "L'usage inclus n'est pas disponible pour cette requête",
+      entitlement_unavailable: "L'accès au modèle est indisponible ou non vérifié pour ce compte",
+      auth_unavailable: "L'authentification du compte natif est indisponible",
+      unsupported_transport:
+        "Ce transport du fournisseur ne prend pas en charge le routage limité à l'usage inclus",
+      unsupported_runtime:
+        "Cet environnement d'exécution OMP ne prend pas en charge le routage géré",
+      persistence_failed: "Les réglages de routage n'ont pas pu être enregistrés",
+      host_unavailable: "Hôte de routage indisponible",
+      cancelled: "Requête annulée",
+      metadata_pending: "Vérification de la disponibilité du compte",
+      all_unavailable: "Aucun compte inclus n'est disponible actuellement",
+      auto_disabled:
+        "Le routage automatique est désactivé ; sélectionnez un compte ou activez-le pour continuer",
+      provider_failed: "La disponibilité du compte n'a pas pu être vérifiée",
+    },
+    mutationError: {
+      conflict: "Les réglages ont changé ailleurs ; consultez le dernier état avant de réessayer",
+      invalid_account: "Ce compte natif n'est plus dans le catalogue",
+      unsupported: "Les commandes de routage de comptes sont indisponibles sur cet hôte",
+      persistence_failed:
+        "Les réglages n'ont pas été enregistrés ; les derniers réglages confirmés restent en place",
+    },
+    values: {
+      used: "{{percent}} % utilisé",
+      reset: "réinitialisation {{time}}",
+      observed: "observé {{time}}",
+      limitReached: "Limite {{window}} atteinte",
+      limitReachedReset: "Limite {{window}} atteinte · réinitialisation {{time}}",
+      account: "Compte {{row}}",
+      serving: "{{account}} sert {{agent}}",
+      priority: "Priorité {{position}}",
+    },
+  },
+  providerUsage: {
+    checkUsage: "Vérifier l’utilisation",
+    checkUsageHint: "S’applique à {{host}} sur tous les appareils",
+    off: "L’utilisation est désactivée sur {{host}}.",
+    turnOn: "Activer",
+
+    options: "Paramètres",
+    refreshFailed: "Impossible d’actualiser l’utilisation",
+    noHosts: "Aucun hôte connecté",
+    agentError: "Impossible de charger l’utilisation : {{reason}}",
+    pin: "Épingler",
+    unpin: "Désépingler",
+    displayAs: "Pourcentages",
+    displayUsed: "Utilisé",
+    displayRemaining: "Restant",
+    showInSidebar: "Résumé dans la barre latérale",
+    showInSidebarHint: "Les périodes épinglées apparaissent en bas de la barre latérale",
+    runToRefresh: "Exécutez {{command}} pour actualiser.",
+    signInAgain: "Reconnectez-vous.",
+    loginRejected: "Connexion refusée (HTTP {{status}}). {{remedy}}",
+    loginExpired: "Connexion expirée {{relativeTime}}. {{remedy}}",
+    title: "Utilisation du forfait",
+    refresh: "Actualiser",
+    refreshAll: "Tout actualiser",
+    refreshing: "Actualisation...",
+    loading: "Chargement de l’utilisation...",
+    empty: "Aucune donnée d’utilisation",
+    errorTitle: "Impossible de charger l’utilisation",
+    hostUnavailable: "Connectez-vous à {{host}} pour voir l’utilisation du fournisseur",
+    hostUpgradeRequired: "Mettez à jour {{host}} pour voir l’utilisation du fournisseur",
+    clientUnavailable: "La connexion à l’hôte n’est pas prête",
+    retry: "Réessayer",
+    tooltipLoading: "Chargement de l’utilisation du forfait...",
+    status: {
+      error: "Erreur",
+      unavailable: "Indisponible",
+    },
+    values: {
+      used: "Utilisé : {{percentage}}",
+      remaining: "Il reste {{amount}}",
+    },
+    labels: {
+      session: "Session",
+      weekly: "Hebdomadaire",
+      monthly: "Mensuel",
+      codeReview: "Révision de code",
+      credits: "Crédits",
+      monthlyCredits: "Crédits mensuels",
+    },
+    duration: {
+      days: "{{value}} j",
+      hours: "{{value}} h",
+      minutes: "{{value}} min",
+      pair: "{{first}} {{second}}",
+    },
+    timing: {
+      lastUpdated: "Dernière mise à jour {{relativeTime}}",
+      noSuccessfulUpdate: "Aucune mise à jour réussie",
+      resetTimePassed: "Heure de réinitialisation dépassée",
+      resettingNow: "réinitialisation en cours",
+      resetsIn: "se réinitialise dans {{duration}}",
+      resetsAtWeekday: "{{weekday}} {{time}}",
+      resetsAtDate: "{{date}}, {{time}}",
+      runsOutNow: "s’épuise maintenant",
+      runsOutIn: "s’épuise dans {{duration}}",
+      justNow: "à l’instant",
+      daysAgo: "il y a {{value}} j",
+      hoursAgo: "il y a {{value}} h",
+      minutesAgo: "il y a {{value}} min",
+      updated: "Mis à jour {{relativeTime}}",
+    },
+  },
+  notes: {
+    addNote: "Ajouter une note",
+    offline: "Cet hôte est hors ligne.",
+    unsupported: "Mettez à jour cet hôte pour utiliser les notes.",
+    composer: {
+      titleNew: "Nouvelle note",
+      titleEdit: "Modifier la note",
+      quoteLabel: "Texte surligné",
+      showMore: "Afficher plus",
+      showLess: "Afficher moins",
+      textLabel: "Note",
+      textPlaceholder: "Que voulez-vous retenir ?",
+      kind: {
+        label: "Type",
+        note: "Note",
+        waiting: "En attente de",
+      },
+      event: {
+        label: "En attente de",
+        agent: "Agent",
+        command: "Commande",
+        time: "Heure",
+      },
+      agent: {
+        label: "L'agent termine ou a besoin d'une réponse",
+        placeholder: "Choisir un agent",
+        empty: "Aucun agent sur cet hôte",
+        search: "Rechercher des agents",
+        untitled: "Agent sans titre",
+      },
+      command: {
+        terminalLabel: "La commande se termine dans",
+        placeholder: "Choisir un terminal",
+        empty: "Aucun terminal sur cet hôte",
+        search: "Rechercher des terminaux",
+        untitled: "Terminal",
+        binding:
+          "Se lie à la commande en cours ou à la suivante. Nécessite un terminal Paseo exécutant zsh ou bash.",
+        conditionLabel: "Notifier quand elle",
+        any: "N'importe",
+        success: "Réussit",
+        failure: "Échoue",
+        commandLabel: "Commande",
+        commandPlaceholder: "Libellé facultatif",
+      },
+      time: {
+        label: "Me rappeler",
+        presets: {
+          in30m: "Dans 30 min",
+          in1h: "Dans 1 heure",
+          in2h: "Dans 2 heures",
+          tomorrow9: "Demain 9:00",
+        },
+        inputLabel: "Ou saisissez une heure",
+        inputPlaceholder: "15h, dans 45 min, demain 9h",
+        invalid: "Impossible de lire cette heure",
+        resolvedToday: "Aujourd'hui à {{time}}",
+        resolvedTomorrow: "Demain à {{time}}",
+        resolvedOther: "{{date}} à {{time}}",
+      },
+      actions: {
+        cancel: "Annuler",
+        add: "Ajouter une note",
+        save: "Enregistrer",
+        resolve: "Résoudre",
+        reopen: "Rouvrir",
+        delete: "Supprimer",
+      },
+      deleteConfirm: {
+        title: "Supprimer la note",
+        message: "Supprimer cette note ? Cette action est irréversible.",
+        confirm: "Supprimer",
+      },
+      errors: {
+        save: "Impossible d'enregistrer la note : {{message}}",
+        update: "Impossible de mettre à jour la note : {{message}}",
+        delete: "Impossible de supprimer la note : {{message}}",
+      },
+    },
+    screen: {
+      title: "Notes",
+      loadError: "{{host}} : impossible de charger les notes",
+      unsupportedHosts_one: "{{hosts}} doit être mis à jour pour afficher les notes",
+      unsupportedHosts_other: "{{hosts}} doivent être mis à jour pour afficher les notes",
+      filters: {
+        all: "Toutes",
+        waiting: "En attente",
+        open: "Ouvertes",
+        resolved: "Résolues",
+      },
+      empty: {
+        all: "Aucune note pour l'instant",
+        allHint: "Surlignez du texte dans un chat ou un terminal pour ajouter une note",
+        waiting: "Rien en attente",
+        open: "Aucune note ouverte",
+        resolved: "Aucune note résolue",
+      },
+      source: {
+        agent: "Agent",
+        terminal: "Terminal",
+      },
+      wait: {
+        agent: "En attente de la fin de {{agent}}",
+        agentUnnamed: "En attente de la fin de l'agent",
+        commandAny: "En attente de la fin de la commande",
+        commandSuccess: "En attente de la réussite de la commande",
+        commandFailure: "En attente de l'échec de la commande",
+        namedCommandAny: "En attente de la fin de {{command}}",
+        namedCommandSuccess: "En attente de la réussite de {{command}}",
+        namedCommandFailure: "En attente de l'échec de {{command}}",
+        timeToday: "Rappel à {{time}}",
+        timeTomorrow: "Rappel demain à {{time}}",
+        timeOther: "Rappel le {{date}} à {{time}}",
+        inMinutes: "dans {{count}} min",
+        inHours: "dans {{count}} h",
+        inDays: "dans {{count}} j",
+      },
+      status: {
+        waiting: "En attente",
+        done: "Terminé",
+        resolved: "Résolue",
+        unmatched: "Non correspondant",
+      },
+      actions: {
+        menu: "Actions de la note",
+        edit: "Modifier la note",
+        resolve: "Résoudre",
+        reopen: "Rouvrir",
+        resolving: "Résolution...",
+        reopening: "Réouverture...",
+        delete: "Supprimer la note",
+        deleting: "Suppression...",
+      },
+      deleteConfirm: {
+        title: "Supprimer la note",
+        message: "Supprimer cette note ? Cette action est irréversible.",
+        confirm: "Supprimer",
+      },
+      openFailed: "Ce terminal n'est plus ouvert",
+    },
+    chat: {},
+    terminal: {
+      quoteNotFound: "Le texte de cette note n'est plus dans l'historique du terminal.",
+    },
+    alerts: {
+      reminderTitle: "Terminé : {{text}}",
+      reminderBody: "Rappel",
     },
   },
   settings: {
@@ -2089,6 +2690,7 @@ export const fr: TranslationResources = {
       terminal: "Terminal",
       browser: "Navigateur",
       editor: "Éditeur",
+      files: "Fichiers",
       shortcuts: "Raccourcis",
       integrations: "Intégrations",
       notifications: "Notifications",
@@ -2101,6 +2703,14 @@ export const fr: TranslationResources = {
       title: "Éditeur",
       vimKeybindings: "Raccourcis Vim",
       vimHint: "S’applique aux fichiers source dans l’app web et l’app de bureau.",
+    },
+    files: {
+      title: "Fichiers",
+      askEveryTime: "Toujours demander",
+      askAgain: "Redemander",
+      askAgainFor: "Redemander pour {{label}}",
+      unavailable: "Absent des hôtes connectés",
+      empty: "Les panneaux de fichier apparaissent ici quand un plugin en ajoute un",
     },
     notifications: {
       title: "Notifications",
@@ -2122,6 +2732,7 @@ export const fr: TranslationResources = {
       connections: "Connexions",
       agents: "Agents",
       metadata: "Métadonnées",
+      voice: "Voix",
       workspaces: "Espaces de travail",
       providers: "Fournisseurs",
       usage: "Utilisation",
@@ -2140,9 +2751,72 @@ export const fr: TranslationResources = {
       automaticHint: "Paseo choisit un modèle rapide disponible",
       preferredHint: "Choisissez le modèle utilisé par Paseo",
       model: "Modèle",
-      fallbackHint: "S’il est indisponible, Paseo utilise un autre modèle disponible",
+      modelHint: "Seul ce modèle est utilisé. S’il échoue, Paseo n’essaie pas d’autre modèle",
       docs: "Documentation",
       saveError: "Impossible de mettre à jour la génération de métadonnées",
+    },
+    voice: {
+      offline: "Connectez-vous à cet hôte pour configurer la voix.",
+      updateHost: "Mettez à jour l'hôte pour configurer la voix.",
+      saveError: "Impossible de mettre à jour les réglages vocaux",
+      provider: "Fournisseur",
+      providers: {
+        local: "Local",
+        openai: "OpenAI",
+      },
+      voice: "Voix",
+      save: "Enregistrer",
+      retry: "Réessayer",
+      cancel: "Annuler",
+      model: "Modèle",
+      language: "Langue",
+      languagePlaceholder: "Détection automatique",
+      setBy: "Défini par {{name}}",
+      unknownProvider: "Mettez à jour l'app pour configurer {{provider}}",
+      sites: {
+        dictationStt: "Transcription",
+        voiceModeStt: "Écoute",
+        voiceModeTts: "Parole",
+      },
+      dictation: {
+        title: "Dictée",
+        enabled: "Dictée",
+        enabledHint: "Parlez dans la zone de message au lieu de taper",
+      },
+      voiceMode: {
+        title: "Mode vocal",
+        info: "Le mode vocal transcrit ce que vous dites et lit à voix haute les réponses de l'agent.",
+        enabled: "Mode vocal",
+        enabledHint: "Parlez à vos agents sans les mains",
+      },
+      openai: {
+        apiKey: "Clé d'API",
+        apiKeyHint: "Enregistrée sur l'hôte, jamais réaffichée.",
+        keyPlaceholder: "sk-...",
+        savedKeyPlaceholder: "Enregistrée",
+        missingKey: "Clé d'API manquante",
+        baseUrl: "URL de base",
+        baseUrlHint: "Pour les serveurs compatibles OpenAI. Laissez vide pour utiliser OpenAI.",
+      },
+      models: {
+        loading: "Chargement des modèles...",
+        loadError: "Impossible de charger les modèles locaux",
+        none: "Aucun modèle disponible",
+        downloaded: "Téléchargé",
+        inUse: "Utilisé",
+        recommended: "Recommandé",
+        download: "Télécharger",
+        downloadAction: "Télécharger {{label}}",
+        downloading: "Téléchargement...",
+        downloadingPercent: "Téléchargement {{percent}} %",
+        extracting: "Extraction...",
+        delete: "Supprimer",
+        deleteAction: "Supprimer {{label}}",
+        deleteTitle: "Supprimer {{label}} ?",
+        deleteMessage: "Cela libère {{size}}. Vous pourrez le retélécharger plus tard.",
+        languages: "Langues de {{label}}",
+        moreLanguages: "{{languages}} et {{count}} autres",
+      },
     },
     general: {
       title: "Général",
@@ -2162,17 +2836,55 @@ export const fr: TranslationResources = {
       defaultSend: {
         label: "Envoi par défaut",
         descriptions: {
-          interrupt:
-            "Quand l’agent est en cours d’exécution, Entrée l’interrompt. Cmd/Ctrl+Entrée met en file d’attente.",
+          interrupt: "Quand l’agent est en cours d’exécution, Entrée l’interrompt.",
+          steer: "Quand l’agent est en cours d’exécution, Entrée réoriente le tour en cours.",
+          queue: "Quand l’agent est en cours d’exécution, Entrée met en file d’attente.",
+        },
+        touchDescriptions: {
+          interrupt: "Quand l’agent est en cours d’exécution, toucher Envoyer l’interrompt.",
           steer:
-            "Quand l’agent est en cours d’exécution, Entrée réoriente le tour en cours. Cmd/Ctrl+Entrée met en file d’attente.",
+            "Quand l’agent est en cours d’exécution, toucher Envoyer réoriente le tour en cours.",
+          queue: "Quand l’agent est en cours d’exécution, toucher Envoyer met en file d’attente.",
+        },
+        commandEnterDescriptions: {
+          interrupt:
+            "Lorsque l'agent est en cours d'exécution, {{modifier}}+Entrée interrompt. Entrée insère une nouvelle ligne.",
+          steer:
+            "Lorsque l'agent est en cours d'exécution, {{modifier}}+Entrée oriente le tour actif. Entrée insère une nouvelle ligne.",
           queue:
-            "Quand l’agent est en cours d’exécution, Entrée met en file d’attente. Cmd/Ctrl+Entrée envoie.",
+            "Lorsque l'agent est en cours d'exécution, {{modifier}}+Entrée met en file d'attente. Entrée insère une nouvelle ligne.",
         },
         options: {
           interrupt: "Interrompre",
           steer: "Réorienter",
           queue: "File d’attente",
+        },
+      },
+      alternateSend: {
+        label: "Envoi alternatif",
+        descriptions: {
+          interrupt:
+            "Quand l’agent est en cours d’exécution, {{modifier}}+Entrée ou un appui long sur Envoyer l’interrompt.",
+          steer:
+            "Quand l’agent est en cours d’exécution, {{modifier}}+Entrée ou un appui long sur Envoyer réoriente le tour en cours.",
+          queue:
+            "Quand l’agent est en cours d’exécution, {{modifier}}+Entrée ou un appui long sur Envoyer met en file d’attente.",
+        },
+        longPressDescriptions: {
+          interrupt:
+            "Quand l’agent est en cours d’exécution, un appui long sur Envoyer l’interrompt.",
+          steer:
+            "Quand l’agent est en cours d’exécution, un appui long sur Envoyer réoriente le tour en cours.",
+          queue:
+            "Quand l’agent est en cours d’exécution, un appui long sur Envoyer met en file d’attente.",
+        },
+      },
+      defaultEditor: "Éditeur par défaut",
+      sendShortcut: {
+        label: "Raccourci d’envoi",
+        options: {
+          enter: "Enter",
+          "mod-enter": "{{modifier}}+Enter",
         },
       },
       serviceUrls: {
@@ -2191,12 +2903,13 @@ export const fr: TranslationResources = {
         label: "Toujours afficher le raisonnement",
         description: "Afficher par défaut le raisonnement de l’agent entièrement déplié",
       },
-      toolCallDetail: {
-        label: "Affichage des appels d’outils",
-        description: "Comment les appels d’outils apparaissent dans la chronologie",
+      chatDisplay: {
+        label: "Affichage du chat",
+        description: "La part du travail de l’agent affichée dans le chat",
         options: {
-          overview: "Résumé",
-          detailed: "Détails complets",
+          full: "Complet",
+          collapseToolCalls: "Réduire les appels d’outils",
+          collapseTurns: "Réduire les tours",
         },
       },
       language: {
@@ -2218,11 +2931,6 @@ export const fr: TranslationResources = {
     },
     diagnostics: {
       title: "Diagnostic",
-      legacyTerminalRenderer: {
-        label: "Utiliser l’ancien rendu du terminal",
-        description: "Utilise l’ancien terminal WebView après la réouverture d’un terminal",
-        accessibilityLabel: "Utiliser l’ancien rendu du terminal",
-      },
       testAudio: "Tester le son",
       playTest: "Lancer le test",
       playing: "Lecture…",
@@ -2311,6 +3019,81 @@ export const fr: TranslationResources = {
         moveUp: "Monter",
         moveDown: "Descendre",
       },
+      background: {
+        title: "Arrière-plan",
+        applyTo: {
+          title: "Appliquer à",
+          options: {
+            both: "Les deux",
+            light: "Clair",
+            dark: "Sombre",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Images d’arrière-plan",
+          none: "Aucun",
+          addImage: "Ajouter une image…",
+          importDefaultName: "Image",
+        },
+        menu: {
+          actions: "Actions pour {{name}}",
+          edit: "Modifier…",
+          delete: "Supprimer",
+          details: "Détails",
+        },
+        undo: {
+          action: "Annuler",
+          accessibilityLabel: "Annuler le changement d’arrière-plan",
+        },
+        catalog: {
+          browse: "Parcourir",
+          hint: "Installez d’autres arrière-plans depuis ce plugin",
+        },
+        visibility: {
+          title: "Visibilité de l’image",
+          hint: "Même à 100 %, Paseo limite l’image pour que le texte reste lisible, donc les images claires s’affichent moins.",
+        },
+        blur: {
+          title: "Flou",
+          off: "Désactivé",
+          value: "{{radius}} px",
+        },
+        showBehindSidebar: "Afficher derrière la barre latérale",
+        showBehindContent: "Afficher derrière le contenu",
+        status: {
+          reducedTransparency:
+            "Masqué car Réduire la transparence est activé dans les réglages du système",
+          forcedColors: "Masqué tant que le mode contraste élevé est activé",
+          error: "L’arrière-plan n’a pas pu être affiché",
+        },
+        errors: {
+          select: "Impossible d’appliquer l’arrière-plan : {{message}}",
+          import: "Impossible d’importer l’image : {{message}}",
+          update: "Impossible d’enregistrer les modifications : {{message}}",
+          remove: "Impossible de supprimer l’arrière-plan : {{message}}",
+        },
+        edit: {
+          title: "Modifier l’arrière-plan",
+          name: "Nom",
+          focal: "Point focal",
+          focalHint: "Touchez la partie de l’image qui doit rester visible.",
+          focalAccessibility: "Choisir le point focal",
+          save: "Enregistrer",
+          saving: "Enregistrement…",
+        },
+        delete: {
+          title: "Supprimer « {{name}} » ?",
+          message: "Cela supprime l’image de cet appareil.",
+          confirm: "Supprimer",
+        },
+        details: {
+          title: "Détails",
+          author: "Auteur",
+          license: "Licence",
+          source: "Source",
+          openSource: "Ouvrir la source",
+        },
+      },
       fonts: {
         title: "Polices",
         systemDefault: "Police par défaut du système",
@@ -2356,6 +3139,7 @@ export const fr: TranslationResources = {
       searchPlaceholder: "Rechercher des raccourcis",
       unavailableOnMobile: "Les raccourcis clavier ne sont disponibles que sur l’app de bureau",
       capturePrompt: "Appuyez sur le raccourci…",
+      captureIndexPrompt: "Terminez par un chiffre de 1 à 9.",
       unassigned: "Non attribué",
       actions: {
         menu: "Actions pour {{name}}",
@@ -2575,7 +3359,33 @@ export const fr: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Style par défaut",
+          hint: "Modifiable par fournisseur",
+        },
         unavailable: "Connectez-vous à cet hôte pour gérer les agents",
+        resumeOnStartup: {
+          title: "Reprendre les agents après un redémarrage",
+          info: "Rouvre les agents qui travaillaient lorsque l’hôte s’est arrêté et envoie le message de reprise. S’applique après un redémarrage normal ou un plantage.",
+          hint: "Continuer automatiquement le travail interrompu.",
+          prompt: "Message de reprise",
+          edit: "Modifier",
+          editAccessibilityLabel: "Modifier le message",
+        },
+        draftHistory: {
+          title: "Historique des brouillons",
+          hint_one:
+            "Les brouillons supprimés ou remplacés sont conservés {{count}} jour pour que vous puissiez les restaurer depuis le compositeur.",
+          hint_other:
+            "Les brouillons supprimés ou remplacés sont conservés {{count}} jours pour que vous puissiez les restaurer depuis le compositeur.",
+          days_one: "{{count}} j",
+          days_other: "{{count}} j",
+        },
+        idleRuntimeCleanup: {
+          title: "Libérer les agents inactifs",
+          hint: "Libère de la mémoire après une heure d’inactivité.",
+          info: "Arrête le processus de l’agent tout en conservant sa conversation. Envoyez un message pour la reprendre.\n\nLe travail en cours, les notifications en attente et les vérifications de sécurité du fournisseur empêchent le nettoyage.",
+        },
       },
       workspaces: {
         unavailable: "Connectez-vous à cet hôte pour gérer les espaces de travail",
@@ -2670,6 +3480,10 @@ export const fr: TranslationResources = {
           requestFailedTitle: "Erreur",
           requestFailedMessage:
             "Impossible d’envoyer la demande de redémarrage. Paseo se reconnecte automatiquement : réessayez quand l’hôte apparaît en ligne.",
+          closeTerminals: "Redémarrer et fermer les terminaux",
+          closeTerminalsHint: "Redémarre et ferme aussi tous les terminaux ouverts sur cet hôte.",
+          closeTerminalsConfirmMessage:
+            "Le daemon va redémarrer et fermer tous ses terminaux, ce qui arrêtera les programmes qui y tournent. L'app se reconnectera automatiquement.",
           dialogFailedMessage:
             "Impossible d’ouvrir la boîte de dialogue de confirmation du redémarrage.",
         },
@@ -2765,6 +3579,9 @@ export const fr: TranslationResources = {
         discovered: "Détectés",
         custom: "Modèles personnalisés",
         updated: "Mis à jour {{time}}",
+        disabledCount: "{{count}} désactivés",
+        toggleModel: "Activer {{model}}",
+        failedToToggle: "Impossible de mettre à jour {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",
@@ -2780,6 +3597,12 @@ export const fr: TranslationResources = {
         none: "Aucun diagnostic disponible",
         failedToFetch: "Impossible de récupérer le diagnostic",
         unknownError: "Erreur inconnue",
+      },
+      featureDefaults: {
+        title: "Valeurs par défaut des nouveaux agents",
+        providerDefault: "Valeur par défaut du fournisseur",
+        on: "Activé",
+        off: "Désactivé",
       },
     },
     project: {

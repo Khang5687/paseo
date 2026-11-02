@@ -87,27 +87,30 @@ MCP does not expose an agent-detach tool. Detaching is a manual user action in t
 
 ### Agents
 
-| Tool                 | Function                                                                                |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| `create_agent`       | Create an agent, optionally placing it in an existing workspace with `workspaceId`.     |
-| `send_agent_prompt`  | Send a prompt to an existing agent using its `agentId` and a `prompt`.                  |
-| `get_agent_status`   | Return the latest snapshot for an agent.                                                |
-| `list_agents`        | List recent agents as compact metadata.                                                 |
-| `cancel_agent`       | Abort an agent's current run but keep the agent alive.                                  |
-| `archive_agent`      | Soft-delete an agent and remove it from the active list.                                |
-| `kill_agent`         | Terminate an agent session permanently.                                                 |
-| `update_agent`       | Update an agent name, labels, or runtime settings such as mode/model/thinking/features. |
-| `get_agent_activity` | Return recent agent timeline entries as a curated summary.                              |
-| `set_agent_mode`     | Switch an agent's session mode.                                                         |
+| Tool                 | Function                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_agent`       | Create an agent, optionally placing it in an existing workspace with `workspaceId`. Use `initialPrompt` to start work; returns without waiting for completion.  |
+| `send_agent_prompt`  | Send a prompt using `agentId` and `prompt`; returns without waiting for completion.                                                                             |
+| `get_agent_status`   | Return the latest snapshot for an agent.                                                                                                                        |
+| `list_agents`        | List recent agents as compact metadata; `includeBackground: true` includes background work.                                                                     |
+| `cancel_agent`       | Abort an agent's current run but keep the agent alive.                                                                                                          |
+| `archive_agent`      | Soft-delete an agent and remove it from the active list.                                                                                                        |
+| `kill_agent`         | Terminate an agent session permanently.                                                                                                                         |
+| `update_agent`       | Update an agent name, labels, or runtime settings such as mode/model/thinking/features.                                                                         |
+| `get_agent_activity` | Return recent agent timeline entries as a curated summary.                                                                                                      |
+| `ask_agent`          | Ask an agent a question without interrupting it. A hidden read-only copy of its conversation answers, then is deleted. Claude, Codex, OpenCode, and OMP agents. |
+| `set_agent_mode`     | Switch an agent's session mode.                                                                                                                                 |
+
+Paseo agents receive finish, error, and permission notifications by default; set `notifyOnFinish: false` to disable them. External MCP clients use `get_agent_status` and `get_agent_activity` to check results.
 
 ### Workspaces
 
-| Tool                | Function                                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------------------------- |
-| `create_workspace`  | Create a local or worktree-isolated workspace. Worktrees can branch off, check out a branch, or a PR. |
-| `list_workspaces`   | List active workspaces and their directories and isolation.                                           |
-| `rename_workspace`  | Change the user-visible name of the current or specified workspace.                                   |
-| `archive_workspace` | Archive a workspace and the sessions it owns.                                                         |
+| Tool                | Function                                                                                                                                                                                                                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_workspace`  | Create a local or worktree-isolated workspace. Worktrees can branch off, check out a branch, or a PR. `background: true` hides it from default lists and the sidebar while preserving history and access by ID. Omission inherits the calling agent’s workspace setting, or defaults to false without a caller. |
+| `list_workspaces`   | List active workspaces and their directories and isolation. Use `includeBackground: true` to include background workspaces.                                                                                                                                                                                     |
+| `rename_workspace`  | Change the user-visible name of the current or specified workspace.                                                                                                                                                                                                                                             |
+| `archive_workspace` | Archive a workspace and the sessions it owns.                                                                                                                                                                                                                                                                   |
 
 For worktree isolation, `create_workspace` accepts the same useful choices as the app: branch off from a base, check out an existing branch, or check out a pull request. The worktree remains an implementation detail of the workspace lifecycle.
 
@@ -153,6 +156,8 @@ Both use the same cron engine, but they have deliberately different interfaces.
 
 MCP heartbeats are ephemeral: create or delete them. To change one, delete it and create a replacement. Pause, resume, update, inspect, logs, and run-once apply to new-agent schedules only.
 
+New-agent run workspaces are archived when each run ends by default. `create_schedule` and `update_schedule` do not expose **Archive on finish** (`archiveOnFinish`); [change the option in the app](/docs/schedules#keep-run-workspaces) to keep subsequent run workspaces active.
+
 ### Agent profiles
 
 | Tool            | Function                                                                                                                           |
@@ -183,10 +188,10 @@ Omit absent optional settings. If no profile fits, use provider discovery to cho
 
 ### Permissions
 
-| Tool                       | Function                                          |
-| -------------------------- | ------------------------------------------------- |
-| `list_pending_permissions` | Return pending permission requests across agents. |
-| `respond_to_permission`    | Approve or deny a pending permission request.     |
+| Tool                       | Function                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `list_pending_permissions` | List the question boxes and approval prompts agents wait on; `agentId` filters to one agent.         |
+| `respond_to_permission`    | Answer one as the user's tap would: `answers` keyed by question header, or an allow/deny `response`. |
 
 ### Browser
 

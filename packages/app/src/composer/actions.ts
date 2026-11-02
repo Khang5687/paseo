@@ -1,4 +1,5 @@
 import type { SelectedFile } from "@/attachments/selected-file";
+import { FILE_UPLOAD_MAX_BYTES } from "@/attachments/upload-limit";
 import type { ForgeSearchItem } from "@getpaseo/protocol/messages";
 import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type {
@@ -18,11 +19,17 @@ import { createUserMessage, generateMessageId, type UserMessageItem } from "@/ty
 import type { MessageSubmissionRejectionOutcome } from "@/composer/submission/model";
 import type { PickedImageAttachmentInput } from "@/hooks/image-attachment-picker";
 import { i18n } from "@/i18n/i18next";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 
 export interface QueuedComposerMessage {
   id: string;
   text: string;
   attachments: ComposerAttachment[];
+  /**
+   * Daemon-owned queue only: when the daemon stopped listing this entry. The mirror keeps it
+   * until the dispatched user message reaches the timeline, so its images can join that row.
+   */
+  leftDaemonQueueAt?: number;
 }
 
 export interface AttachmentPersister {
@@ -53,8 +60,9 @@ export interface ComposerSendClient {
       activeTurnBehavior?: ActiveTurnBehavior;
       images: Array<{ data: string; mimeType: string }>;
       attachments: ReturnType<typeof splitComposerAttachmentsForSubmit>["attachments"];
+      attachmentRefs?: ReturnType<typeof splitComposerAttachmentsForSubmit>["attachmentRefs"];
     },
-  ) => Promise<void>;
+  ) => Promise<unknown>;
   uploadFile: (input: { fileName: string; mimeType: string; bytes: Uint8Array }) => Promise<{
     requestId: string;
     file: {
@@ -131,7 +139,7 @@ export async function uploadFileAttachments(input: {
 
   for (const file of input.files) {
     const bytes = await file.readBytes();
-    if (bytes.byteLength > 50 * 1024 * 1024) {
+    if (bytes.byteLength > FILE_UPLOAD_MAX_BYTES) {
       throw new Error(
         i18n.t("composer.errors.fileTooLarge", { size: "50MB", fileName: file.fileName }),
       );
@@ -223,6 +231,11 @@ export async function dispatchComposerAgentMessage(
       ...(input.activeTurnBehavior ? { activeTurnBehavior: input.activeTurnBehavior } : {}),
       images: imagesData ?? [],
       attachments: wirePayload.attachments,
+      attachmentRefs: matchEncodedImageRefs(
+        wirePayload.attachmentRefs,
+        imagesData,
+        wirePayload.images,
+      ),
     });
     input.submission.accept(input.agentId, clientMessageId);
   } catch (error) {

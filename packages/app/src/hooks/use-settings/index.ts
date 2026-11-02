@@ -31,6 +31,7 @@ import {
   MIN_CONTENT_MAX_WIDTH,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_BASE_FONT_SIZE,
+  OFFLINE_FILE_LIMITS,
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   normalizeAppSettings,
@@ -42,12 +43,14 @@ import {
   saveAppSettings as saveAppSettingsPure,
   type AppSettings,
   type AppSettingsUpdate,
+  type ChatDisplay,
   type OpenInSidePanePreferences,
   type PullRequestOpenLocation,
   type DesktopSettingsBridge,
   type KeyValueStorage,
   type ReleaseChannel,
   type SendBehavior,
+  type SendShortcut,
   type ServiceUrlBehavior,
   type Settings,
   type SidebarWorkspaceTrailing,
@@ -75,6 +78,7 @@ export {
   MIN_CONTENT_MAX_WIDTH,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_BASE_FONT_SIZE,
+  OFFLINE_FILE_LIMITS,
   parseClampedFontSize,
   parseContentMaxWidth,
   parseTerminalScrollbackLines,
@@ -84,6 +88,7 @@ export {
 export type {
   AppSettings,
   AppSettingsUpdate,
+  ChatDisplay,
   AppLanguage,
   OpenInSidePanePreferences,
   PullRequestOpenLocation,
@@ -91,6 +96,7 @@ export type {
   KeyValueStorage,
   ReleaseChannel,
   SendBehavior,
+  SendShortcut,
   ServiceUrlBehavior,
   Settings,
   SettingsDeps,
@@ -270,4 +276,16 @@ export async function loadAppSettingsFromStorage(deps?: SettingsDeps): Promise<A
 
 export async function loadSettingsFromStorage(deps?: SettingsDeps): Promise<Settings> {
   return loadSettingsFromStoragePure(deps ?? productionDeps);
+}
+
+/** The current app settings outside React, from the shared query cache. */
+export async function getAppSettings(): Promise<AppSettings> {
+  return normalizeAppSettings(
+    await appQueryClient.ensureQueryData({
+      queryKey: APP_SETTINGS_QUERY_KEY,
+      queryFn: () => loadAppSettingsFromStorage(),
+      staleTime: Infinity,
+      gcTime: Infinity,
+    }),
+  );
 }

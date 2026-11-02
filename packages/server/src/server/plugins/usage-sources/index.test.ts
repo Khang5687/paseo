@@ -1,5 +1,90 @@
 import { expect, test } from "vitest";
+import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { UsageSourceRegistry } from "./index.js";
+import {
+  decodeRoutingReportId,
+  enrichRoutingTier,
+  projectManagedUsage,
+  routingReportId,
+} from "../../account-routing/usage-projection.js";
+import type { AccountRoutingAuthority } from "../../account-routing/authority.js";
+import type { RoutingMetadataAdapter } from "../../account-routing/types.js";
+import {
+  ROUTING_MODEL,
+  ROUTING_NAMESPACE,
+  ROUTING_T0,
+  routingAccount,
+  routingCatalog,
+  routingHost,
+  routingRef,
+} from "../../agent/providers/omp/test-utils/fake-omp.js";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  discoverSession as discoverCursorSession,
+  fetchUsage as fetchCursorUsage,
+} from "../../../../../../plugins/cursor-usage-source/server/usage.js";
+import { inputSchema as cursorInputSchema } from "../../../../../../plugins/cursor-usage-source/shared/input.js";
+
+test("#7142: host usage retains distinct Cursor accounts after their individual details are read", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cursor-accounts-"));
+  try {
+    const sessions = new Map<
+      string,
+      { provider: string; sessionKey: string; env: Record<string, string> }
+    >();
+    const spends = new Map<string, number>();
+    for (const [agentId, account, spend] of [
+      ["a", "user-a", 100],
+      ["b", "user-b", 200],
+      ["a-copy", "user-a", 100],
+    ] as const) {
+      const configHome = join(root, agentId);
+      const token = `e30.${Buffer.from(JSON.stringify({ sub: account, nonce: agentId })).toString("base64url")}.signature`;
+      await mkdir(join(configHome, "cursor"), { recursive: true });
+      await writeFile(
+        join(configHome, "cursor", "auth.json"),
+        JSON.stringify({ accessToken: token }),
+      );
+      spends.set(`Bearer ${token}`, spend);
+      sessions.set(agentId, {
+        provider: "cursor",
+        sessionKey: agentId,
+        env: { XDG_CONFIG_HOME: configHome },
+      });
+    }
+    const registry = new UsageSourceRegistry(Date.now, 300_000, undefined, {
+      hasAgent: (id) => sessions.has(id),
+      usageSession: (id) => sessions.get(id) ?? null,
+    });
+    const fetchApi: typeof fetch = async (_url, init) => {
+      const authorization = new Headers(init?.headers).get("Authorization") ?? "";
+      const spend = spends.get(authorization);
+      if (spend === undefined) throw new Error("Unexpected fixture login");
+      return new Response(JSON.stringify({ planUsage: { totalSpend: spend, limit: 1000 } }));
+    };
+    registry.register({
+      id: "cursor",
+      label: "Cursor",
+      discover: (scope) =>
+        scope.kind === "session" ? discoverCursorSession(scope, "linux") : Promise.resolve([]),
+      fetch: (input) => fetchCursorUsage(cursorInputSchema.parse(input), fetchApi),
+    });
+    const spent = (reports: Awaited<ReturnType<typeof registry.listReports>>) =>
+      reports.map((entry) => {
+        if (entry.report.status !== "available")
+          throw new Error("Expected available fixture usage");
+        return entry.report.balances?.[0]?.used;
+      });
+    expect(spent(await registry.listReports({ agentId: "a" }))).toEqual([1]);
+    expect(spent(await registry.listReports({ agentId: "b" }))).toEqual([2]);
+    expect(spent(await registry.listReports({ agentId: "a-copy" }))).toEqual([1]);
+    expect(spent(await registry.listReports())).toEqual([1, 2]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function source(input: {
   id: string;
@@ -555,4 +640,632 @@ test("a hung login records its own timeout and still tries the next login", asyn
     { harness: "Codex", report: { status: "error", error: "Usage fetch timed out" } },
     { harness: "OpenCode", report: { status: "error", error: "Login rejected" } },
   ]);
+});
+
+// ---- managed OMP routing -------------------------------------------------------------------
+
+const RUNTIME = "rt-usage";
+const AGENT = "agent-1";
+
+function managedHost(accounts = [routingAccount(1), routingAccount(2)]) {
+  const host = routingHost();
+  const adapter: RoutingMetadataAdapter = {
+    catalogSnapshot: () => [],
+    refreshMetadata: async () => {
+      throw new Error("no refresh");
+    },
+    rankCandidates: async (input) => ({
+      method: "claude-native-window-pressure-v1",
+      version: 1,
+      catalogRevision: input.catalogRevision,
+      anchorRef: input.candidateRefs[0] ?? null,
+      bestCloseRefs: input.candidateRefs,
+    }),
+    send: () => undefined,
+  };
+  host.authority.attachRuntime(
+    {
+      runtimeInstanceId: RUNTIME,
+      agentId: AGENT,
+      accessibleNamespaces: [ROUTING_NAMESPACE],
+      capabilityVersion: 1,
+      completeCoverage: true,
+    },
+    adapter,
+  );
+  const publish = (rows = accounts, revision = 1) =>
+    host.authority.publishCatalog(
+      RUNTIME,
+      routingCatalog(RUNTIME, rows, { catalogRevision: revision }),
+    );
+  publish();
+  let n = 0;
+  /** Select `row`, admit one request on it and report it started at `startedAt`. */
+  async function serve(row: number, startedAt: number) {
+    const a = host.authority;
+    await a.mutate({
+      expectedPolicyRevision: a.snapshot().policy.policyRevision,
+      command: { kind: "select", account: routingRef(row) },
+    });
+    n += 1;
+    const decision = await a.admit({
+      runtimeInstanceId: RUNTIME,
+      operationId: `op-${n}`,
+      attemptId: `at-${n}`,
+      sessionId: "s1",
+      modelId: ROUTING_MODEL,
+      purpose: "main",
+      requestGeneration: n,
+    });
+    if (decision.kind !== "admit") throw new Error(`not admitted: ${decision.kind}`);
+    a.started({ runtimeInstanceId: RUNTIME, admissionId: decision.admissionId, startedAt });
+    return decision;
+  }
+  return { ...host, publish, serve };
+}
+
+function managedRegistry(
+  authority: AccountRoutingAuthority,
+  extra: { discover?: () => void; now?: () => number } = {},
+) {
+  const registry = new UsageSourceRegistry(
+    extra.now ?? (() => ROUTING_T0 + 1_000),
+    300_000,
+    undefined,
+    {
+      hasAgent: (id) => id === AGENT,
+      usageSession: () => ({
+        provider: "omp",
+        env: { CLAUDE_CONFIG_DIR: "/launch/login-A" },
+        sessionKey: "k",
+        managedRouting: { agentId: AGENT, ...authority.snapshotForAgent(AGENT) },
+      }),
+    },
+  );
+  registry.register(
+    source({
+      id: "claude",
+      discover: async () => {
+        extra.discover?.();
+        return [{ key: "login-a", label: "launch-A", input: {} }];
+      },
+    }),
+  );
+  return registry;
+}
+
+const refOf = (entry: UsageReportEntry) => entry.routing?.accountRef;
+
+test("before the first dispatch there is one unknown agent report and no launch-login fallback", async () => {
+  const host = managedHost();
+  let discovered = 0;
+  const registry = managedRegistry(host.authority, { discover: () => discovered++ });
+  const reports = await registry.listReports({ agentId: AGENT });
+  expect(reports).toHaveLength(1);
+  expect(reports[0]).toMatchObject({
+    id: `omp-managed:${AGENT}`,
+    routing: { accountRef: null, state: "unknown", hostEpoch: host.authority.hostEpoch },
+    report: { status: "unavailable" },
+  });
+  expect(discovered).toBe(0);
+});
+
+test("launch A, selected B and concurrent serving A and B stay distinct", async () => {
+  const host = managedHost();
+  const registry = managedRegistry(host.authority);
+  await host.serve(2, ROUTING_T0 + 10);
+  await host.serve(1, ROUTING_T0 + 20);
+  // B is selected last... now select B again without dispatching.
+  await host.authority.mutate({
+    expectedPolicyRevision: host.authority.snapshot().policy.policyRevision,
+    command: { kind: "select", account: routingRef(2) },
+  });
+  const reports = await registry.listReports({ agentId: AGENT });
+  expect(reports.map(refOf)).toEqual([routingRef(1), routingRef(2)]);
+  expect(reports.map((r) => r.routing?.state)).toEqual(["serving", "serving"]);
+  expect(reports.map((r) => r.account.label)).toEqual(["user1@example.test", "user2@example.test"]);
+  expect(reports.every((r) => r.id !== "claude:login-a")).toBe(true);
+  expect(reports.map((r) => decodeRoutingReportId(r.id))).toEqual([routingRef(1), routingRef(2)]);
+});
+
+test("an admitted request is not serving; after it settles the last-served account remains", async () => {
+  const host = managedHost();
+  const registry = managedRegistry(host.authority);
+  const first = await host.serve(1, ROUTING_T0 + 10);
+  const second = await host.serve(2, ROUTING_T0 + 20);
+  for (const d of [first, second]) {
+    host.authority.outcome({
+      runtimeInstanceId: RUNTIME,
+      admissionId: d.admissionId,
+      hostEpoch: host.authority.hostEpoch,
+      accountRef: d.accountRef,
+      selectionGeneration: d.selectionGeneration,
+      quotaBlocks: [],
+    });
+  }
+  const reports = await registry.listReports({ agentId: AGENT });
+  expect(reports).toHaveLength(1);
+  expect(refOf(reports[0]!)).toEqual(routingRef(2));
+  expect(reports[0]?.routing?.state).toBe("last_served");
+});
+
+test("native windows map to display windows; unknown and expired readings are never zero", async () => {
+  const win = (patch: object) => ({
+    id: "5h",
+    label: "5h",
+    scope: { kind: "shared" as const },
+    usedFraction: 0.25,
+    resetAt: ROUTING_T0 + 3_600_000,
+    observedAt: ROUTING_T0 + 500,
+    validUntil: ROUTING_T0 + 600_000,
+    source: "usage-full" as const,
+    ...patch,
+  });
+  const host = managedHost([
+    routingAccount(1, {
+      windows: [
+        win({}),
+        win({ id: "7d", usedFraction: 0.5, observedAt: ROUTING_T0 + 900 }),
+        win({ id: "7d", scope: { kind: "model", modelId: "opus" }, usedFraction: null }),
+        win({ id: "x", label: "gone", validUntil: ROUTING_T0 }),
+      ],
+    }),
+    routingAccount(2),
+  ]);
+  const registry = managedRegistry(host.authority);
+  await host.serve(1, ROUTING_T0 + 10);
+  const [entry] = await registry.listReports({ agentId: AGENT });
+  const report = entry!.report;
+  if (report.status !== "available") throw new Error("expected available");
+  expect(report.windows.map((w) => [w.id, w.usedPct])).toEqual([
+    ["five-hour", 25],
+    ["weekly", 50],
+    ["weekly-opus", null],
+    ["x", null],
+  ]);
+  // Latest original window observation, not the projection time.
+  expect(entry!.fetchedAt).toBe(new Date(ROUTING_T0 + 900).toISOString());
+  expect(report.details ?? []).toEqual([]);
+
+  // A served account with no windows is unavailable, and its freshness is the authority's, marked stale.
+  const other = managedHost();
+  const reg2 = managedRegistry(other.authority);
+  await other.serve(2, ROUTING_T0 + 10);
+  const [bare] = await reg2.listReports({ agentId: AGENT });
+  expect(bare!.report.status).toBe("unavailable");
+});
+
+test("a report with no observation times carries the authority time marked stale", () => {
+  const host = managedHost([
+    routingAccount(1, {
+      billing: {
+        state: "unknown",
+        observedAt: null,
+        validUntil: null,
+        source: null,
+        sourceRevision: null,
+        reason: null,
+      },
+      windows: [
+        {
+          id: "5h",
+          label: "5h",
+          scope: { kind: "shared" },
+          usedFraction: 0.1,
+          resetAt: null,
+          observedAt: null,
+          validUntil: null,
+          source: "unknown",
+        },
+      ],
+    }),
+  ]);
+  const base = host.authority.snapshotForAgent(AGENT);
+  const [entry] = projectManagedUsage(
+    {
+      agentId: AGENT,
+      ...base,
+      lastServed: [
+        {
+          agentId: AGENT,
+          accountRef: routingRef(1),
+          model: ROUTING_MODEL,
+          servedAt: ROUTING_T0 + 10,
+        },
+      ],
+    },
+    ROUTING_T0 + 1_000,
+  );
+  expect(entry!.fetchedAt).toBe(new Date(ROUTING_T0 + 10).toISOString());
+  expect(entry!.report.status === "available" && entry!.report.details).toContainEqual({
+    id: "stale",
+    label: "Stale",
+    value: "true",
+  });
+});
+
+test("an older asynchronous snapshot cannot overwrite newer serving metadata; a new epoch replaces it", async () => {
+  const host = managedHost();
+  await host.serve(1, ROUTING_T0 + 10);
+  const older = host.authority.snapshotForAgent(AGENT);
+  await host.serve(2, ROUTING_T0 + 20);
+  const newer = host.authority.snapshotForAgent(AGENT);
+  let current: ReturnType<AccountRoutingAuthority["snapshotForAgent"]> = newer;
+  const registry = new UsageSourceRegistry(() => ROUTING_T0 + 1_000, 300_000, undefined, {
+    hasAgent: () => true,
+    usageSession: () => ({
+      provider: "omp",
+      env: {},
+      sessionKey: "k",
+      managedRouting: { agentId: AGENT, ...current },
+    }),
+  });
+  const first = await registry.listReports({ agentId: AGENT });
+  expect(first.map(refOf)).toEqual([routingRef(1), routingRef(2)]);
+  current = older;
+  expect(await registry.listReports({ agentId: AGENT })).toEqual(first);
+  current = { ...older, hostEpoch: "epoch-2", stateSequence: 1 };
+  const replaced = await registry.listReports({ agentId: AGENT });
+  expect(replaced.map((r) => r.routing?.hostEpoch)).toEqual(
+    ["epoch-2", "epoch-2"].slice(0, replaced.length),
+  );
+  expect(replaced.map(refOf)).toEqual([routingRef(1)]);
+});
+
+test("routing IDs resolve only through the agent-scoped list", async () => {
+  const host = managedHost();
+  const registry = managedRegistry(host.authority);
+  await host.serve(1, ROUTING_T0 + 10);
+  const [entry] = await registry.listReports({ agentId: AGENT });
+  expect(await registry.listReports({ reportIds: [entry!.id, `omp-managed:${AGENT}`] })).toEqual(
+    [],
+  );
+  expect(decodeRoutingReportId(entry!.id)).toEqual(routingRef(1));
+  expect(
+    decodeRoutingReportId("omp-routing:" + Buffer.from('["not-a-uuid",1]').toString("base64url")),
+  ).toBeNull();
+  expect(
+    decodeRoutingReportId(
+      "omp-routing:" + Buffer.from(JSON.stringify([ROUTING_NAMESPACE, 0])).toString("base64url"),
+    ),
+  ).toBeNull();
+  expect(
+    decodeRoutingReportId(
+      "omp-routing:" + Buffer.from(JSON.stringify([ROUTING_NAMESPACE, 1, 2])).toString("base64url"),
+    ),
+  ).toBeNull();
+  expect(routingReportId(routingRef(7))).toMatch(/^omp-routing:[A-Za-z0-9_-]+$/);
+});
+
+function usageEntry(
+  quota: { accountUuid: string; organizationUuid: string },
+  subscription: {
+    subscriptionType: string | null;
+    rateLimitTier: string | null;
+    observedAt: number | null;
+  },
+  id = "claude:hashed-route",
+): UsageReportEntry {
+  return {
+    id,
+    sourceId: "claude",
+    sourceLabel: "claude",
+    account: {},
+    fetchedAt: new Date(ROUTING_T0).toISOString(),
+    report: {
+      status: "available",
+      windows: [],
+      quotaIdentity: quota,
+      subscription: { ...subscription, source: "claude-supported-login" },
+    },
+  };
+}
+
+test("tier enrichment joins on exact account and organization only and never overrides newer data", () => {
+  const native = (patch = {}) => {
+    const row = routingAccount(1, patch);
+    return {
+      ref: row.ref,
+      label: "user1",
+      organizationLabel: null,
+      identityLabel: "u",
+      organizationIdentityLabel: "o",
+      available: true,
+      missing: false,
+      authoritativeObservedAt: ROUTING_T0,
+      quotaIdentity: row.quotaIdentity,
+      subscriptionTier: row.subscriptionTier,
+      absoluteAllowance: null,
+      windows: [],
+      billing: row.billing,
+      rank: row.rank,
+      quotaBlocks: [],
+      rankingCoverage: "complete" as const,
+    };
+  };
+  const match = usageEntry(
+    { accountUuid: "acct-1", organizationUuid: "org-1" },
+    { subscriptionType: "max", rateLimitTier: "default_claude_max_5x", observedAt: 500 },
+  );
+  expect(enrichRoutingTier(native(), [match]).subscriptionTier).toEqual({
+    kind: "max5",
+    observedAt: 500,
+    source: "claude-supported-login",
+  });
+  // Same account, different organization: rejected even though the route key matches by id.
+  const wrongOrg = usageEntry(
+    { accountUuid: "acct-1", organizationUuid: "org-9" },
+    { subscriptionType: "pro", rateLimitTier: null, observedAt: 900 },
+  );
+  expect(enrichRoutingTier(native(), [wrongOrg]).subscriptionTier.kind).toBe("unknown");
+  // Strictly older than a known native tier: ignored. Newer: wins. Unknown strings stay unknown.
+  const known = native({
+    subscriptionTier: { kind: "pro", observedAt: 700, source: "native-usage" },
+  });
+  expect(enrichRoutingTier(known, [match]).subscriptionTier.kind).toBe("pro");
+  const newer = usageEntry(
+    { accountUuid: "acct-1", organizationUuid: "org-1" },
+    { subscriptionType: "max", rateLimitTier: "default_claude_max_20x", observedAt: 800 },
+  );
+  expect(enrichRoutingTier(known, [match, newer]).subscriptionTier.kind).toBe("max20");
+  const nulls = usageEntry(
+    { accountUuid: "acct-1", organizationUuid: "org-1" },
+    { subscriptionType: null, rateLimitTier: null, observedAt: null },
+  );
+  expect(enrichRoutingTier(native(), [nulls])).toEqual(native());
+  expect(enrichRoutingTier(native({ quotaIdentity: null }), [match]).subscriptionTier.kind).toBe(
+    "unknown",
+  );
+});
+
+test("a served projection carries the tier joined from a cached usage report", async () => {
+  const win = {
+    id: "5h",
+    label: "5h",
+    scope: { kind: "shared" as const },
+    usedFraction: 0.1,
+    resetAt: null,
+    observedAt: ROUTING_T0 + 5,
+    validUntil: ROUTING_T0 + 600_000,
+    source: "usage-full" as const,
+  };
+  const host = managedHost([routingAccount(1, { windows: [win] }), routingAccount(2)]);
+  const registry = managedRegistry(host.authority);
+  registry.register(
+    source({
+      id: "claude-plugin",
+      discover: async () => [{ key: "route-hash", input: {} }],
+      fetch: async () => ({
+        status: "available",
+        windows: [],
+        quotaIdentity: { accountUuid: "acct-1", organizationUuid: "org-1" },
+        subscription: {
+          subscriptionType: "pro",
+          rateLimitTier: null,
+          observedAt: 1234,
+          source: "claude-supported-login",
+        },
+      }),
+    }),
+  );
+  await host.serve(1, ROUTING_T0 + 10);
+  // Nothing cached yet: tier unknown, so no subscription is invented.
+  const [before] = await registry.listReports({ agentId: AGENT });
+  expect(before!.report.status === "available" && before!.report.subscription).toBeUndefined();
+  await registry.listReports();
+  host.authority.publishCatalog(
+    RUNTIME,
+    routingCatalog(RUNTIME, [routingAccount(1, { windows: [win] })], { catalogRevision: 2 }),
+  );
+  const [after] = await registry.listReports({ agentId: AGENT });
+  expect(after!.report.status === "available" && after!.report.subscription).toMatchObject({
+    subscriptionType: "pro",
+    observedAt: 1234,
+    source: "native-usage",
+  });
+});
+
+test("retains the last successful poll across failures, cache expiry, and recovery", async () => {
+  let now = 0;
+  let report: unknown = {
+    status: "available",
+    windows: [{ id: "week", label: "Weekly", usedPct: 42 }],
+  };
+  const registry = new UsageSourceRegistry(() => now);
+  registry.register(
+    source({
+      id: "quota",
+      discover: async () => [{ key: "account", input: {} }],
+      fetch: async () => report,
+    }),
+  );
+  registry.register(source({ id: "other", discover: async () => [{ key: "account", input: {} }] }));
+  const [success] = await registry.listReports();
+  now = 360_000;
+  // An unrelated write evicts the expired fetch result, but must not discard its snapshot.
+  await registry.listReports({ reportIds: ["other:account"], forceRefresh: true });
+  report = { status: "error", error: "Rate limited" };
+  const [failure] = await registry.listReports({ reportIds: ["quota:account"] });
+  expect(failure).toMatchObject({
+    fetchedAt: new Date(now).toISOString(),
+    report,
+    lastSuccessful: { fetchedAt: success!.fetchedAt, report: success!.report },
+  });
+  now += 360_000;
+  const [repeated] = await registry.listReports({ reportIds: ["quota:account"] });
+  expect(repeated?.lastSuccessful).toEqual(failure?.lastSuccessful);
+  report = { status: "unavailable", problem: { kind: "no_quota", detail: "No quota" } };
+  const [unavailable] = await registry.listReports({
+    reportIds: ["quota:account"],
+    forceRefresh: true,
+  });
+  expect(unavailable?.lastSuccessful).toEqual(failure?.lastSuccessful);
+  now += 1000;
+  report = { status: "available", windows: [{ id: "week", label: "Weekly", usedPct: 43 }] };
+  const [recovered] = await registry.listReports({
+    reportIds: ["quota:account"],
+    forceRefresh: true,
+  });
+  expect(recovered?.report).toEqual(report);
+  expect(recovered?.lastSuccessful).toBeUndefined();
+  expect(recovered?.fetchedAt).toBe(new Date(now).toISOString());
+});
+
+test("successful history is isolated by login set and pruned when identities retire", async () => {
+  let login = "old";
+  let present = true;
+  let available = true;
+  const registry = new UsageSourceRegistry();
+  const fixture = source({
+    id: "source",
+    discover: async () => (present ? [{ key: "same", input: login }] : []),
+    fetch: async () =>
+      available ? { status: "available", windows: [] } : { status: "error", error: "failed" },
+  });
+  registry.register(fixture);
+  await registry.listReports();
+  available = false;
+  login = "new";
+  expect((await registry.listReports({ forceRefresh: true }))[0]?.lastSuccessful).toBeUndefined();
+  login = "old";
+  expect((await registry.listReports({ forceRefresh: true }))[0]?.lastSuccessful).toBeUndefined();
+  available = true;
+  await registry.listReports({ forceRefresh: true });
+  present = false;
+  expect(await registry.listReports()).toEqual([]);
+  present = true;
+  available = false;
+  expect((await registry.listReports())[0]?.lastSuccessful).toBeUndefined();
+  available = true;
+  await registry.listReports({ forceRefresh: true });
+  registry.unregister("source");
+  registry.register(fixture);
+  available = false;
+  expect((await registry.listReports())[0]?.lastSuccessful).toBeUndefined();
+});
+
+test("host fallback history never supplies an agent's failed login, and removed agents lose history", async () => {
+  const sessions = new Map([["agent", { provider: "codex", env: {}, sessionKey: "one" }]]);
+  let available = true;
+  const registry = new UsageSourceRegistry(Date.now, 300_000, undefined, {
+    hasAgent: (id) => sessions.has(id),
+    usageSession: (id) => sessions.get(id) ?? null,
+  });
+  registry.register({
+    id: "source",
+    label: "Source",
+    discover: async (scope) =>
+      (scope.kind === "global" ? ["host", "agent"] : ["agent"]).map((input) => ({
+        key: "same",
+        input,
+      })),
+    fetch: async () =>
+      available ? { status: "available", windows: [] } : { status: "error", error: "failed" },
+  });
+  await registry.listReports();
+  available = false;
+  expect((await registry.listReports({ agentId: "agent" }))[0]?.lastSuccessful).toBeUndefined();
+  available = true;
+  const [success] = await registry.listReports({ agentId: "agent", forceRefresh: true });
+  available = false;
+  expect(
+    (await registry.listReports({ agentId: "agent", forceRefresh: true }))[0]?.lastSuccessful
+      ?.report,
+  ).toEqual(success?.report);
+  sessions.delete("agent");
+  await registry.listReports();
+  sessions.set("agent", { provider: "codex", env: {}, sessionKey: "two" });
+  expect((await registry.listReports({ agentId: "agent" }))[0]?.lastSuccessful).toBeUndefined();
+});
+
+test("a timed out poll retains successful values and late completion cannot replace the failure", async () => {
+  let now = 1000;
+  let finish!: (value: unknown) => void;
+  let slow = false;
+  const registry = new UsageSourceRegistry(() => now, 300_000, undefined, undefined, 10);
+  registry.register(
+    source({
+      id: "source",
+      discover: async () => [{ key: "same", input: {} }],
+      fetch: async () =>
+        slow
+          ? new Promise((resolve) => {
+              finish = resolve;
+            })
+          : { status: "available", windows: [] },
+    }),
+  );
+  const [success] = await registry.listReports();
+  now = 2000;
+  slow = true;
+  const [failure] = await registry.listReports({ forceRefresh: true });
+  expect(failure?.report).toEqual({ status: "error", error: "Usage fetch timed out" });
+  expect(failure?.lastSuccessful).toEqual({
+    fetchedAt: success?.fetchedAt,
+    report: success?.report,
+  });
+  finish({ status: "available", windows: [{ id: "late", label: "Late" }] });
+  expect((await registry.listReports())[0]).toEqual(failure);
+});
+
+test("attempt ordering keeps its timestamp while retained freshness records successful completion", async () => {
+  let now = 1000;
+  let available = true;
+  const registry = new UsageSourceRegistry(() => now);
+  registry.register(
+    source({
+      id: "source",
+      discover: async () => [{ key: "same", input: {} }],
+      fetch: async () => {
+        if (available) now = 2000;
+        return available
+          ? { status: "available", windows: [] }
+          : { status: "error", error: "failed" };
+      },
+    }),
+  );
+  const [success] = await registry.listReports();
+  expect(success?.fetchedAt).toBe(new Date(1000).toISOString());
+  expect(success?.successfulAt).toBe(new Date(2000).toISOString());
+  available = false;
+  now = 3000;
+  const [failure] = await registry.listReports({ forceRefresh: true });
+  expect(failure?.fetchedAt).toBe(new Date(3000).toISOString());
+  expect(failure?.lastSuccessful?.fetchedAt).toBe(success?.successfulAt);
+});
+
+test("failed discovery preserves history until discovery confirms account removal", async () => {
+  let discoveryFails = false;
+  let present = true;
+  let available = true;
+  const registry = new UsageSourceRegistry(() => 1000, 300_000, { warn: () => {} });
+  registry.register(
+    source({
+      id: "source",
+      discover: async () => {
+        if (discoveryFails) throw new Error("Login store temporarily unavailable");
+        return present ? [{ key: "account", input: {} }] : [];
+      },
+      fetch: async () =>
+        available
+          ? { status: "available", windows: [{ id: "weekly", label: "Weekly", usedPct: 42 }] }
+          : { status: "error", error: "Rate limited" },
+    }),
+  );
+  const [success] = await registry.listReports();
+  available = false;
+  discoveryFails = true;
+  const [duringDiscoveryFailure] = await registry.listReports({ forceRefresh: true });
+  expect(duringDiscoveryFailure?.lastSuccessful).toEqual({
+    fetchedAt: success?.successfulAt,
+    report: success?.report,
+  });
+  discoveryFails = false;
+  const [afterDiscoveryRecovery] = await registry.listReports({ forceRefresh: true });
+  expect(afterDiscoveryRecovery?.lastSuccessful).toEqual(duringDiscoveryFailure?.lastSuccessful);
+  expect(afterDiscoveryRecovery?.report).toEqual({ status: "error", error: "Rate limited" });
+  present = false;
+  expect(await registry.listReports()).toEqual([]);
+  present = true;
+  expect((await registry.listReports())[0]?.lastSuccessful).toBeUndefined();
 });

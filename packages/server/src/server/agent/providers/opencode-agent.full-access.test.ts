@@ -400,3 +400,55 @@ describe("OpenCode auto_accept feature", () => {
     await session.close();
   });
 });
+
+describe("OpenCode question answers", () => {
+  async function replyTo(
+    questionOverrides: Record<string, unknown>,
+    updatedInput: Record<string, unknown>,
+  ): Promise<unknown> {
+    const { openCodeClient, runtime } = mockOpenCodeClient({
+      events: [questionEvent(questionOverrides), idleEvent()],
+    });
+    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const session = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
+    try {
+      await session.run("Ask a question");
+      await session.respondToPermission("question-1", { behavior: "allow", updatedInput });
+      return openCodeClient.calls.questionReply[0]?.answers;
+    } finally {
+      await session.close();
+    }
+  }
+
+  const colors = {
+    multiple: true,
+    options: [
+      { label: "Red, warm", description: "Warm" },
+      { label: "Blue", description: "Cool" },
+    ],
+  };
+
+  test("sends every listed answer intact, commas included", async () => {
+    await expect(
+      replyTo(colors, {
+        answers: { Decision: "Red, warm, Blue, teal, or cyan" },
+        answerLists: { Decision: ["Red, warm", "Blue", "teal, or cyan"] },
+      }),
+    ).resolves.toEqual([["Red, warm", "Blue", "teal, or cyan"]]);
+  });
+
+  test("never splits a single-select answer from an app that sends only joined answers", async () => {
+    await expect(
+      replyTo({}, { answers: { Decision: "Proceed, but think about the tests first" } }),
+    ).resolves.toEqual([["Proceed, but think about the tests first"]]);
+  });
+
+  test("splits a multi-select answer from an app that sends only joined answers", async () => {
+    await expect(replyTo(colors, { answers: { Decision: "Blue, teal" } })).resolves.toEqual([
+      ["Blue", "teal"],
+    ]);
+  });
+});

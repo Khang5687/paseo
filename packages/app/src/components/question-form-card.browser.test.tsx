@@ -10,8 +10,20 @@ import { QuestionFormCard } from "./question-form-card";
 // Load translations so controls expose their real accessible names.
 void testI18n;
 
+// The Markdown engine does not load in this harness; question and option text are covered by
+// e2e/browser/question-prompt-pagination.spec.ts. Plain text keeps these tests on the answers.
+vi.mock("@/components/markdown/renderer", () => ({
+  MarkdownRenderer: ({ text }: { text: string }) => <span>{text}</span>,
+}));
+
 // App sources compile against the classic JSX runtime, which expects React on the global.
 beforeEach(() => vi.stubGlobal("React", React));
+
+// The Markdown stack (syntax themes, clipboard, diagram icons) does not load under the browser
+// test stubs. These tests cover answering, so the question renders as its raw text.
+vi.mock("@/components/markdown/renderer", () => ({
+  MarkdownRenderer: ({ text }: { text: string }) => text,
+}));
 
 /**
  * A real browser with the real web `EditingTextInput`, because the bug under test lives in the
@@ -33,7 +45,10 @@ afterEach(() => {
   }
 });
 
-function buildPermission(question: Record<string, unknown>): PendingPermission {
+function buildPermission(
+  question: Record<string, unknown>,
+  following: Record<string, unknown>[] = [],
+): PendingPermission {
   return {
     key: "perm-1",
     agentId: "agent-1",
@@ -42,12 +57,12 @@ function buildPermission(question: Record<string, unknown>): PendingPermission {
       provider: "claude",
       name: "AskUserQuestion",
       kind: "question",
-      input: { questions: [question] },
+      input: { questions: [question, ...following] },
     },
   };
 }
 
-function mountCard(question: Record<string, unknown>) {
+function mountCard(question: Record<string, unknown>, following: Record<string, unknown>[] = []) {
   const onRespond = vi.fn<(response: AgentPermissionResponse) => void>();
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -55,19 +70,24 @@ function mountCard(question: Record<string, unknown>) {
   act(() =>
     root.render(
       <QuestionFormCard
-        permission={buildPermission(question)}
+        permission={buildPermission(question, following)}
         onRespond={onRespond}
         isResponding={false}
+        responseError={null}
       />,
     ),
   );
   mounted.push({ root, container });
 
   const view = within(container);
-  const optionRole = question.multiSelect ? "checkbox" : "radio";
   const otherInput = () =>
     view.getByRole<HTMLInputElement>("textbox", { name: String(question.question) });
-  const check = (label: string) => act(() => view.getByRole(optionRole, { name: label }).click());
+  const check = (label: string) =>
+    act(() =>
+      (
+        view.queryByRole("radio", { name: label }) ?? view.getByRole("checkbox", { name: label })
+      ).click(),
+    );
   const type = (text: string) => {
     const input = otherInput();
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -78,12 +98,16 @@ function mountCard(question: Record<string, unknown>) {
     });
   };
   const submit = () => act(() => view.getByRole("button", { name: "Submit" }).click());
-  const submittedAnswers = (): Record<string, string> => {
+  const submittedInput = () => {
     const response = onRespond.mock.calls[0]?.[0];
     if (!response || response.behavior !== "allow") throw new Error("card did not submit");
-    return (response.updatedInput as { answers: Record<string, string> }).answers;
+    return response.updatedInput as {
+      answers: Record<string, string>;
+      answerLists: Record<string, string[]>;
+    };
   };
-  return { check, type, otherInput, submit, submittedAnswers };
+  const submittedAnswers = () => submittedInput().answers;
+  return { view, onRespond, check, type, otherInput, submit, submittedAnswers, submittedInput };
 }
 
 const multiSelectQuestion = {
@@ -145,5 +169,87 @@ describe("QuestionFormCard other answers", () => {
     expect(card.otherInput().value).toBe("");
     card.submit();
     expect(card.submittedAnswers()).toEqual({ Provider: "Codex" });
+  });
+
+  it("submits per-question answer lists that keep commas in labels and other answers", () => {
+    const card = mountCard({
+      ...multiSelectQuestion,
+      options: [{ label: "Apple" }, { label: "Banana, ripe" }, { label: "Cherry" }],
+    });
+
+    card.check("Cherry");
+    card.check("Banana, ripe");
+    card.type("durian, if it is in season");
+    card.submit();
+
+    expect(card.submittedInput()).toMatchObject({
+      answers: { Fruits: "Banana, ripe, Cherry, durian, if it is in season" },
+      answerLists: { Fruits: ["Banana, ripe", "Cherry", "durian, if it is in season"] },
+    });
+  });
+});
+
+describe("QuestionFormCard one-tap answers", () => {
+  const approvalQuestion = {
+    question: "Dangerous command: recursive force delete\n\n```sh\nrm -rf build\n```",
+    header: "Answer",
+    options: [
+      { label: "Allow once" },
+      { label: "Allow for session" },
+      { label: "Deny" },
+      { label: "Decline and stop" },
+    ],
+    multiSelect: false,
+  };
+
+  it("submits the tapped option without a separate Submit step", () => {
+    const card = mountCard(approvalQuestion);
+
+    expect(card.view.queryByRole("radio")).toBeNull();
+    expect(card.view.queryByRole("button", { name: "Submit" })).toBeNull();
+    act(() => card.view.getByRole("button", { name: "Allow for session" }).click());
+
+    expect(card.onRespond).toHaveBeenCalledTimes(1);
+    expect(card.submittedAnswers()).toEqual({ Answer: "Allow for session" });
+    expect(card.submittedInput().answerLists).toEqual({ Answer: ["Allow for session"] });
+  });
+
+  it("dismisses without answering", () => {
+    const card = mountCard(approvalQuestion);
+
+    act(() => card.view.getByRole("button", { name: "Dismiss" }).click());
+
+    expect(card.onRespond).toHaveBeenCalledWith({
+      behavior: "deny",
+      message: "Dismissed by user",
+    });
+  });
+});
+
+describe("QuestionFormCard explicit navigation", () => {
+  it("keeps a picked option visible until Next and submits only on Submit", () => {
+    const card = mountCard(singleSelectQuestion, [multiSelectQuestion]);
+    card.check("Codex");
+    expect(card.view.getByRole("radio", { name: "Codex" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(card.onRespond).not.toHaveBeenCalled();
+    act(() => card.view.getByRole("button", { name: "Next" }).click());
+    card.check("Apple");
+    expect(card.onRespond).not.toHaveBeenCalled();
+    card.submit();
+    expect(card.submittedAnswers()).toEqual({ Provider: "Codex", Fruits: "Apple" });
+  });
+
+  it("selects an option when its description is clicked without submitting", () => {
+    const card = mountCard({
+      ...singleSelectQuestion,
+      options: [{ label: "Codex", description: "Use this provider" }],
+    });
+    act(() => card.view.getByText("Use this provider").click());
+    expect(card.view.getByRole("radio", { name: "Codex" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(card.onRespond).not.toHaveBeenCalled();
   });
 });

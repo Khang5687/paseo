@@ -1,3 +1,4 @@
+import { createAgentMessageDelivery } from "../agent/agent-messages/index.js";
 import pino from "pino";
 import { randomUUID } from "node:crypto";
 import { afterEach, vi } from "vitest";
@@ -35,6 +36,7 @@ export function asAgentManager(stub: {
 }): SessionOptions["agentManager"] {
   return createStub<SessionOptions["agentManager"]>({
     listProviderSubagentActivity: () => [],
+    getRetiredInternalAgent: () => null,
     ...stub,
   });
 }
@@ -239,6 +241,7 @@ export function createProviderSnapshotManagerStub(): {
   const off = vi.fn();
   const destroy = vi.fn<ProviderSnapshotManager["destroy"]>();
   const stub = {
+    supportsConfigRequiredProvider: () => false,
     getSnapshot,
     refreshSnapshotForCwd,
     refreshSettingsSnapshot,
@@ -292,6 +295,13 @@ export function createMessageReceiptsStub(): SessionOptions["messageReceipts"] {
   };
 }
 
+export function createAgentMessageQueueStub(): SessionOptions["agentMessageQueue"] {
+  return {
+    sendNow: async () => {},
+    drainIfIdle: () => {},
+  };
+}
+
 export function createProviderSnapshot(
   entries: ProviderSnapshotEntry[],
   cwd = GLOBAL_PROVIDER_SNAPSHOT_KEY,
@@ -317,4 +327,16 @@ export function createTestCreationService(): SessionOptions["creationService"] {
   const directory = join(tmpdir(), `session-creation-${randomUUID()}`);
   creationDirectories.push(directory);
   return new CreationService(directory, pino({ level: "silent" }));
+}
+
+/** Session fixtures without agent-originated sends still own the delivery lifetime. */
+export function createAgentMessageDeliveryStub(): SessionOptions["agentMessages"] {
+  return createAgentMessageDelivery({
+    dispatch: async () => {
+      throw new Error("Unexpected agent message in session fixture");
+    },
+    onError: (error) => {
+      throw error;
+    },
+  });
 }

@@ -1,58 +1,76 @@
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useState } from "react";
 import { makeMutable, type SharedValue, useSharedValue } from "react-native-reanimated";
 import { scheduleOnUI } from "react-native-worklets";
-import { getStatusRingRotation } from "@/components/status-ring/geometry";
+import { useRetainedPanelActive } from "@/components/retained-panel";
+import { createSteppedClock } from "@/components/stepped-clock";
+import { useAppVisible } from "@/hooks/use-app-visible";
+import { STATUS_RING_PERIOD_MS } from "@/components/status-ring/geometry";
 
-const sharedRotation = makeMutable(getStatusRingRotation(Date.now()));
-const activeRingCount = makeMutable(0);
-const clockRunning = makeMutable(false);
+// Nine positions per turn, 40 degrees apart, ten updates a second. The ring reads as a ticking
+// spinner rather than a smooth one; that is the trade for not rendering every display frame on a
+// phone for as long as an agent runs.
+const STATUS_RING_STEPS = 9;
+const STATUS_RING_STEP_MS = STATUS_RING_PERIOD_MS / STATUS_RING_STEPS;
 
-function advanceSharedRotation(): void {
-  "worklet";
-  if (activeRingCount.value === 0) {
-    clockRunning.value = false;
-    return;
-  }
-
-  sharedRotation.value = getStatusRingRotation(Date.now());
-  requestAnimationFrame(advanceSharedRotation);
+function getSteppedStatusRingRotation(nowMs: number): number {
+  const step = Math.floor((nowMs % STATUS_RING_PERIOD_MS) / STATUS_RING_STEP_MS);
+  return step * (360 / STATUS_RING_STEPS);
 }
 
-function registerStatusRing(registered: SharedValue<boolean>): void {
+const sharedRotation = makeMutable(getSteppedStatusRingRotation(Date.now()));
+const statusRingClock = createSteppedClock({
+  stepMs: STATUS_RING_STEP_MS,
+  onStep: (nowMs) => {
+    sharedRotation.value = getSteppedStatusRingRotation(nowMs);
+  },
+});
+let nextListenerId = 1;
+
+function registerStatusRing(
+  rotation: SharedValue<number>,
+  registered: SharedValue<boolean>,
+  listenerId: number,
+): void {
   "worklet";
   if (registered.value) {
     return;
   }
 
   registered.value = true;
-  activeRingCount.value += 1;
-
-  if (!clockRunning.value) {
-    clockRunning.value = true;
-    sharedRotation.value = getStatusRingRotation(Date.now());
-    requestAnimationFrame(advanceSharedRotation);
-  }
+  rotation.value = sharedRotation.value;
+  sharedRotation.addListener(listenerId, (value) => {
+    rotation.value = value;
+  });
 }
 
-function unregisterStatusRing(registered: SharedValue<boolean>): void {
+function unregisterStatusRing(registered: SharedValue<boolean>, listenerId: number): void {
   "worklet";
   if (!registered.value) {
     return;
   }
 
   registered.value = false;
-  activeRingCount.value -= 1;
+  sharedRotation.removeListener(listenerId);
 }
 
 export function useStatusRingRotation(): SharedValue<number> {
+  // Hidden retained views and a backgrounded app must not keep the shared clock running.
+  const panelActive = useRetainedPanelActive();
+  const appVisible = useAppVisible();
+  const active = panelActive && appVisible;
+  const rotation = useSharedValue(getSteppedStatusRingRotation(Date.now()));
   const registered = useSharedValue(false);
+  const [listenerId] = useState(() => nextListenerId++);
 
   useLayoutEffect(() => {
-    scheduleOnUI(registerStatusRing, registered);
+    if (!active) return;
+    const release = statusRingClock.retain();
+    scheduleOnUI(registerStatusRing, rotation, registered, listenerId);
     return () => {
-      scheduleOnUI(unregisterStatusRing, registered);
+      release();
+      scheduleOnUI(unregisterStatusRing, registered, listenerId);
     };
-  }, [registered]);
+  }, [active, listenerId, registered, rotation]);
 
-  return sharedRotation;
+  return rotation;
 }

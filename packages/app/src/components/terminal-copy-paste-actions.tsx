@@ -1,19 +1,21 @@
 import { useCallback, useMemo } from "react";
 import { Pressable, Text, type PressableStateCallbackType } from "react-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
 
 export interface TerminalPasteActionProps {
-  hasClipboardText: boolean;
+  /** Clipboard holds text or an image, so a paste attempt can do something. */
+  hasClipboardContent: boolean;
   onPaste: () => void;
 }
 
-export function TerminalPasteAction({ hasClipboardText, onPaste }: TerminalPasteActionProps) {
+export function TerminalPasteAction({ hasClipboardContent, onPaste }: TerminalPasteActionProps) {
   return (
     <TerminalActionButton
       label="Paste"
       accessibilityLabel="Paste"
       testID="terminal-paste"
-      disabled={!hasClipboardText}
+      disabled={!hasClipboardContent}
       onPress={onPaste}
       variant="key"
     />
@@ -39,6 +41,34 @@ export function TerminalFloatingCopyAction({
       accessibilityLabel="Copy"
       testID="terminal-copy"
       onPress={onCopy}
+      variant="floating"
+    />
+  );
+}
+
+export interface TerminalFloatingAddNoteActionProps {
+  onAddNote: () => void;
+  /** The host supports notes. */
+  enabled?: boolean;
+  hasSelection?: boolean;
+}
+
+export function TerminalFloatingAddNoteAction({
+  onAddNote,
+  enabled = true,
+  hasSelection = true,
+}: TerminalFloatingAddNoteActionProps) {
+  const { t } = useTranslation();
+  if (!enabled || !hasSelection) {
+    return null;
+  }
+  const label = t("notes.addNote");
+  return (
+    <TerminalActionButton
+      label={label}
+      accessibilityLabel={label}
+      testID="terminal-add-note"
+      onPress={onAddNote}
       variant="floating"
     />
   );

@@ -77,7 +77,8 @@ import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-dra
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { useToast } from "@/contexts/toast-context";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
-import { useOpenDirectoryInEditor } from "@/workspace/open-in-editor/directory";
+import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import { useOpenInPreferredEditor } from "@/workspace/open-in-editor/preferred";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
   { value: "name" },
@@ -450,9 +451,15 @@ export function FileExplorerPane({
     isLocalExecution: isLocalDaemon,
   });
   const fileManagerTarget = desktopOpenTargets.find((target) => target.kind === "file-manager");
-  const openDirectoryInEditor = useOpenDirectoryInEditor({
+  const projectId = useWorkspaceFields(
+    serverId,
+    workspaceId ?? null,
+    (workspace) => workspace.projectId,
+  );
+  const preferredEditor = useOpenInPreferredEditor({
     serverId,
     workspaceDirectory: normalizedWorkspaceRoot,
+    projectId,
   });
   // COMPAT(fsEntryOps): added in v0.3.0, remove gate after 2027-02-08.
   const fsEntryOpsEnabled = useSessionStore(
@@ -624,8 +631,8 @@ export function FileExplorerPane({
   );
 
   const handleOpenDirectoryInEditor = useCallback(
-    (entry: ExplorerEntry) => openDirectoryInEditor?.open(entry.path),
-    [openDirectoryInEditor],
+    (entry: ExplorerEntry) => preferredEditor?.openDirectory(entry.path),
+    [preferredEditor],
   );
 
   const handleDownloadEntry = useCallback(
@@ -979,8 +986,8 @@ export function FileExplorerPane({
           onSelectEntry={handleSelectEntry}
           onCopyPath={handleCopyPath}
           onCopyRelativePath={handleCopyRelativePath}
-          onOpenInEditor={openDirectoryInEditor ? handleOpenDirectoryInEditor : undefined}
-          editorTargetName={openDirectoryInEditor?.targetName}
+          onOpenInEditor={preferredEditor ? handleOpenDirectoryInEditor : undefined}
+          editorTargetName={preferredEditor?.targetName}
           onRevealEntry={fileManagerTarget ? handleRevealEntry : undefined}
           revealTargetName={fileManagerTarget?.label}
           onDownloadEntry={handleDownloadEntry}
@@ -1015,7 +1022,7 @@ export function FileExplorerPane({
       handleSelectEntry,
       isDirectoryLoading,
       fileManagerTarget,
-      openDirectoryInEditor,
+      preferredEditor,
       selectedEntryPath,
       onAddToChat,
       onOpenFileToSide,
@@ -1683,7 +1690,7 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   },
   sortTrigger: {
     flexDirection: "row",

@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { UsageSourceRegistry } from "../../../packages/server/src/server/plugins/usage-sources/index.js";
+import type { MspConnection } from "../server/connection.js";
+import { Questions } from "../server/questions.js";
 import { Usage as MuseUsage } from "../server/usage.js";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -73,7 +75,8 @@ async function harness(
     predicate: (event: ProviderEvent) => boolean,
     from = 0,
   ): Promise<ProviderEvent> {
-    for (let count = 0; count < 200; count++) {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
       const event = events.slice(from).find(predicate);
       if (event) return event;
       await delay(10);
@@ -1152,6 +1155,61 @@ for (const mode of ["answer", "cancel"] as const) {
     );
   });
 }
+test("question answer lists keep commas inside option labels and free text", async () => {
+  const sent: { method: string; params: { answers?: unknown } }[] = [];
+  const host = {
+    async command(method: string, params: { answers?: unknown }) {
+      sent.push({ method, params });
+      return {};
+    },
+  };
+  const questions = new Questions(
+    host as unknown as MspConnection,
+    "muse-session",
+    "paseo-session",
+    () => {},
+  );
+  const multiple = { mode: "multiple" as const };
+  const colors = [{ label: "Red, warm" }, { label: "Blue" }];
+  questions.requested({
+    userInputId: "colors-input",
+    toolName: "ask_user",
+    questions: [
+      { id: "picked", header: "Picked", question: "Colors?", options: colors, selection: multiple },
+      { id: "mixed", header: "Mixed", question: "More?", options: colors, selection: multiple },
+      {
+        id: "name",
+        header: "Name",
+        question: "Name?",
+        options: [{ label: "Atlas" }],
+        selection: { mode: "single" },
+      },
+    ],
+  });
+  await questions.answer("colors-input", {
+    behavior: "allow",
+    updatedInput: {
+      answers: { Picked: "Red, warm, Blue", Mixed: "Blue, teal, or cyan", Name: "Nebula, v2" },
+      answerLists: {
+        Picked: ["Red, warm", "Blue"],
+        Mixed: ["Blue", "teal, or cyan"],
+        Name: ["Nebula, v2"],
+      },
+    },
+  });
+  expect(sent).toEqual([
+    {
+      method: "userInput/answer",
+      params: expect.objectContaining({
+        answers: [
+          { questionId: "picked", selectedLabels: ["Red, warm", "Blue"] },
+          { questionId: "mixed", freeText: "Blue, teal, or cyan" },
+          { questionId: "name", freeText: "Nebula, v2" },
+        ],
+      }),
+    },
+  ]);
+});
 for (const variant of ["tool", "dedicated", "workflow"]) {
   test(`${variant} subagent opens only the supplied child and pages its real transcript`, async () => {
     const h = await harness("subagent", { MUSE_TEST_CHILD: variant });
@@ -1219,6 +1277,18 @@ test("silent active turns page after two minutes and stop polling on recovered t
   await vi.advanceTimersByTimeAsync(240000);
   expect((await h.recorded()).filter((f) => f.method === "view/page")).toHaveLength(1);
 });
+test("session readiness accepts initialization beyond the old event polling window", async () => {
+  const h = await harness("text-reasoning", { MUSE_TEST_INITIALIZE_DELAY_MS: "3500" });
+  expect(await h.open()).toMatchObject({ type: "session.ready" });
+  expect((await h.recorded()).find((frame) => frame.event === "hostStarted").args).toEqual([
+    "serve",
+    "--sandbox-network",
+    "proxy-only",
+    "--disable-sandbox",
+    "--trust-workspace",
+  ]);
+}, 10000);
+
 test("default launch disables sandbox and trusts workspace", async () => {
   const h = await harness();
   await h.open();

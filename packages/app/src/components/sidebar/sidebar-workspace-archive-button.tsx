@@ -1,20 +1,20 @@
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Pressable,
-  Text,
-  type GestureResponderEvent,
-  type PressableStateCallbackType,
-} from "react-native";
+import { Text, type GestureResponderEvent, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Check } from "lucide-react-native";
 import { isWeb } from "@/constants/platform";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { densityIconProps } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 
 const ThemedCheck = withUnistyles(Check);
-const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
-const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const iconProps = densityIconProps("sm", (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const iconActiveProps = densityIconProps("sm", (theme: Theme) => ({
+  color: theme.colors.foreground,
+}));
 
 /**
  * One-press Archive beside the row's kebab. It runs the same action as the menu's Archive item,
@@ -45,29 +45,26 @@ export function SidebarWorkspaceArchiveButton({
 
   return (
     <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
-      <TooltipTrigger asChild>
-        <Pressable
-          hitSlop={4}
-          style={buttonStyle}
-          disabled={pending}
-          onPress={handlePress}
-          accessibilityRole={isWeb ? undefined : "button"}
-          accessibilityLabel={label}
-          testID={`sidebar-workspace-archive-${workspaceKey}`}
-        >
-          {({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => (
-            <ThemedCheck
-              size={14}
-              uniProps={hovered || pressed ? foregroundColorMapping : foregroundMutedColorMapping}
-            />
-          )}
-        </Pressable>
+      <TooltipTrigger
+        hitSlop={4}
+        style={buttonStyle}
+        disabled={pending}
+        onPress={handlePress}
+        accessibilityRole={isWeb ? undefined : "button"}
+        accessibilityLabel={label}
+        testID={`sidebar-workspace-archive-${workspaceKey}`}
+      >
+        {renderIcon}
       </TooltipTrigger>
       <TooltipContent side="bottom" align="center" offset={8}>
         <Text style={styles.tooltipText}>{label}</Text>
       </TooltipContent>
     </Tooltip>
   );
+}
+
+function renderIcon({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) {
+  return <ThemedCheck uniProps={hovered || pressed ? iconActiveProps : iconProps} />;
 }
 
 function buttonStyle({
@@ -78,10 +75,17 @@ function buttonStyle({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  // Same box as the kebab trigger beside it, so the two icons share one rail and hover chip.
+  // The kebab trigger's box, so the two icons share one rail, one hover chip, and one compact
+  // tap size. The negative trailing margin on compact pulls the kebab's padded hit box back
+  // under this one, so the two glyphs sit as close as they do on desktop.
   button: {
-    padding: 2,
+    width: { xs: 32, md: 18 },
+    height: { xs: 32, md: 18 },
+    alignItems: "center",
+    justifyContent: "center",
     borderRadius: 4,
+    marginTop: { xs: -6, md: 0 },
+    marginRight: { xs: -12, md: 0 },
   },
   buttonActive: {
     backgroundColor: theme.colors.surface2,

@@ -2,9 +2,9 @@
  * @vitest-environment jsdom
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import React, { useCallback, useMemo, useState, type ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToastApi } from "@/components/toast-host";
 import type { InlinePathTarget } from "./parse";
 import { AssistantFileLinkResolverProvider } from "./provider";
@@ -49,7 +49,7 @@ interface TestClient {
     query: string;
     cwd: string;
     includeFiles: true;
-    includeDirectories: false;
+    includeDirectories: boolean;
     matchMode: "suffix";
     limit: number;
   }) => Promise<DirectorySuggestionResult>;
@@ -99,6 +99,12 @@ function createWrapper(input: { client: TestClient; openedFiles: OpenedFile[]; t
 }
 
 describe("useFileLink", () => {
+  // Lookups resolve after a test's last assertion; an unmounted hook cannot re-render
+  // once jsdom is torn down.
+  afterEach(() => {
+    cleanup();
+  });
+
   it("returns the same object across no-op parent rerenders", () => {
     const getDirectorySuggestions = vi.fn(async () => resolvedSuggestions([]));
     const queryClient = createQueryClient();
@@ -181,6 +187,25 @@ describe("useFileLink", () => {
       ]);
     });
     expect(getDirectorySuggestions).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolveFile returns the daemon-resolved path for an ambiguous token, keeping its line", async () => {
+    const getDirectorySuggestions = vi.fn(async () =>
+      resolvedSuggestions([{ path: "src/app.ts", kind: "file" }]),
+    );
+    const { result } = renderHook(
+      () => useFileLink({ href: "app.ts:42", text: "app.ts:42", sourceType: "inline-code" }),
+      { wrapper: createWrapper({ client: { getDirectorySuggestions }, openedFiles: [] }) },
+    );
+
+    expect(result.current.fileCandidate?.path).toBe("/Users/test/project/app.ts");
+    await expect(result.current.resolveFile()).resolves.toMatchObject({
+      path: "/Users/test/project/src/app.ts",
+      lineStart: 42,
+    });
+    expect(getDirectorySuggestions).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "app.ts", cwd: "/Users/test/project" }),
+    );
   });
 
   it("click retries after hover prefetch fails", async () => {

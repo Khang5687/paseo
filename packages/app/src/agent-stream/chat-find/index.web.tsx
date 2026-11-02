@@ -24,6 +24,7 @@ import { createFindViewport } from "./viewport.web";
 import type { ChatFindProps, ChatFindExpansionProps } from "./types";
 
 const SelectedMessage = createContext<string | null>(null);
+const Search = createContext<((query: string) => void) | null>(null);
 const FAILURE_TEXT: Record<ChatFindFailure, string> = {
   connection: "paneFind.connectionFailure",
   historyChanged: "paneFind.historyChangedFailure",
@@ -46,6 +47,14 @@ let nextHighlightId = 0;
  */
 export function useChatFindSelectedMessageId(): string | null {
   return useContext(SelectedMessage);
+}
+
+/**
+ * Opens chat find on a query, for a jump to text whose message is not loaded: the host search
+ * locates it in the whole history and find loads and reveals it.
+ */
+export function useChatFindSearch(): ((query: string) => void) | null {
+  return useContext(Search);
 }
 
 export function ChatFindExpansion({ messageId, children }: ChatFindExpansionProps) {
@@ -94,6 +103,13 @@ export function ChatFind({
     [agentId, serverId, highlightName],
   );
   const state = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
+  const search = useCallback(
+    (query: string) => {
+      model.open();
+      model.setQuery(query);
+    },
+    [model],
+  );
   useEffect(() => {
     model.updateHistory(epoch, items);
   }, [model, epoch, items]);
@@ -118,8 +134,8 @@ export function ChatFind({
   }, [active, isInteractive, model]);
   const close = useCallback(() => {
     model.close();
-    root.current?.focus({ preventScroll: true });
-  }, [model]);
+    viewportRef.current?.focus?.();
+  }, [model, viewportRef]);
   let status = "";
   if (state.phase === "searching") status = t("paneFind.searching");
   else if (state.phase === "loading") status = t("paneFind.loading");
@@ -131,7 +147,9 @@ export function ChatFind({
   return (
     <div ref={root} tabIndex={-1} style={ROOT_STYLE}>
       <style>{`::highlight(${highlightName}) { background-color: ${styles.highlight.backgroundColor}; color: ${styles.highlight.color}; }`}</style>
-      <SelectedMessage.Provider value={state.selectedItemId}>{children}</SelectedMessage.Provider>
+      <Search.Provider value={search}>
+        <SelectedMessage.Provider value={state.selectedItemId}>{children}</SelectedMessage.Provider>
+      </Search.Provider>
       {state.open && (
         <View style={styles.overlay} dataSet={WIDGET_DATASET}>
           <PaneFind

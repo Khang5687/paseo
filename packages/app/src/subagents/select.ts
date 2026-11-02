@@ -1,5 +1,7 @@
+import type { AgentAddress } from "@getpaseo/protocol/addresses";
+import { getParentAddressFromLabels } from "@getpaseo/protocol/agent-labels";
 import { useEffect, useMemo } from "react";
-import { usePendingArchiveAgentIds } from "@/hooks/use-archive-agent";
+import { usePendingArchiveAgentKeys } from "@/hooks/use-archive-agent";
 import equal from "fast-deep-equal";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useSessionStore, type Agent } from "@/stores/session-store";
@@ -8,6 +10,7 @@ import type { ProviderSubagentDescriptorPayload } from "@getpaseo/protocol/messa
 
 export interface PaseoSubagentRow {
   kind: "paseo";
+  address: AgentAddress;
   id: Agent["id"];
   provider: Agent["provider"];
   title: Agent["title"];
@@ -52,9 +55,10 @@ interface SelectSubagentsParams {
 const EMPTY_SUBAGENT_ROWS: SubagentRow[] = [];
 const EMPTY_PROVIDER_SUBAGENT_ROWS: ProviderSubagentRow[] = [];
 
-function toSubagentRow(agent: Agent): SubagentRow {
+export function toSubagentRow(agent: Agent): SubagentRow {
   return {
     kind: "paseo",
+    address: { serverId: agent.serverId, agentId: agent.id },
     id: agent.id,
     provider: agent.provider,
     title: agent.title,
@@ -72,21 +76,19 @@ export function selectSubagentsForParent(
   params: SelectSubagentsParams,
   pendingArchiveIds: ReadonlySet<string>,
 ): SubagentRow[] {
-  const agents = state.sessions[params.serverId]?.agents;
-  if (!agents || agents.size === 0) {
-    return EMPTY_SUBAGENT_ROWS;
-  }
-
   const rows: SubagentRow[] = [];
-  for (const agent of agents.values()) {
-    if (
-      agent.archivedAt ||
-      pendingArchiveIds.has(agent.id) ||
-      agent.parentAgentId !== params.parentAgentId
-    ) {
-      continue;
+  for (const [serverId, session] of Object.entries(state.sessions)) {
+    for (const agent of session.agents.values()) {
+      const parent = getParentAddressFromLabels(agent.labels, serverId);
+      if (
+        agent.archivedAt ||
+        pendingArchiveIds.has(`${serverId}:${agent.id}`) ||
+        parent?.serverId !== params.serverId ||
+        parent.agentId !== params.parentAgentId
+      )
+        continue;
+      rows.push(toSubagentRow(agent));
     }
-    rows.push(toSubagentRow(agent));
   }
 
   if (rows.length === 0) {
@@ -95,6 +97,40 @@ export function selectSubagentsForParent(
 
   rows.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
   return rows;
+}
+
+// Session-store selectors run on every store update, including every stream tick, which
+// leaves the agent map untouched. Reuse the previous rows until the map changes, and keep
+// them when a recompute yields equal rows so the hook's equality check stays O(1).
+export function createSubagentsForParentSelector(
+  params: SelectSubagentsParams,
+  pendingArchiveIds: ReadonlySet<string>,
+): (state: SessionStoreSnapshot) => SubagentRow[] {
+  let previousAgents: Array<[string, Map<string, Agent>]> = [];
+  let previousRows: SubagentRow[] | null = null;
+
+  return (state) => {
+    const agents = Object.entries(state.sessions).map(
+      ([serverId, session]) => [serverId, session.agents] as [string, Map<string, Agent>],
+    );
+    if (
+      previousRows &&
+      agents.length === previousAgents.length &&
+      agents.every(
+        ([serverId, map], index) =>
+          previousAgents[index]?.[0] === serverId && previousAgents[index]?.[1] === map,
+      )
+    ) {
+      return previousRows;
+    }
+
+    const rows = selectSubagentsForParent(state, params, pendingArchiveIds);
+    previousAgents = agents;
+    if (!previousRows || !equal(previousRows, rows)) {
+      previousRows = rows;
+    }
+    return previousRows;
+  };
 }
 
 export function selectProviderSubagentsForParent(
@@ -132,13 +168,47 @@ export function selectProviderSubagentsForParent(
   return rows;
 }
 
+/**
+ * The provider subagents of every agent in one sidebar thread, read from descriptors the client
+ * already holds. The provider store changes on every subagent timeline item, which leaves the
+ * descriptors untouched, so rows are recomputed only when the descriptors or the hidden set change.
+ */
+export function createThreadProviderRowsSelector(input: {
+  serverId: string;
+  agentIds: readonly string[];
+  supported: boolean;
+  nestingSupported: boolean;
+}): (state: ProviderSubagentStoreSnapshot) => ProviderSubagentRow[] {
+  let previousDescriptors: ProviderSubagentStoreSnapshot["descriptors"] | null = null;
+  let previousHidden: ProviderSubagentStoreSnapshot["hiddenFromTrack"] | null = null;
+  let previousRows = EMPTY_PROVIDER_SUBAGENT_ROWS;
+  return (state) => {
+    if (state.descriptors === previousDescriptors && state.hiddenFromTrack === previousHidden) {
+      return previousRows;
+    }
+    previousDescriptors = state.descriptors;
+    previousHidden = state.hiddenFromTrack;
+    const rows = input.agentIds.flatMap((parentAgentId) =>
+      selectProviderSubagentsForParent(
+        state,
+        { serverId: input.serverId, parentAgentId },
+        input.supported,
+        input.nestingSupported,
+      ),
+    );
+    previousRows = rows.length === 0 ? EMPTY_PROVIDER_SUBAGENT_ROWS : rows;
+    return previousRows;
+  };
+}
+
 export function useSubagentsForParent(params: SelectSubagentsParams): SubagentRow[] {
-  const pendingArchiveIds = usePendingArchiveAgentIds(params.serverId);
-  const paseoRows = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => selectSubagentsForParent(state, params, pendingArchiveIds),
-    equal,
+  const { serverId, parentAgentId } = params;
+  const pendingArchiveIds = usePendingArchiveAgentKeys();
+  const selectPaseoRows = useMemo(
+    () => createSubagentsForParentSelector({ serverId, parentAgentId }, pendingArchiveIds),
+    [serverId, parentAgentId, pendingArchiveIds],
   );
+  const paseoRows = useStoreWithEqualityFn(useSessionStore, selectPaseoRows, equal);
   const supported = useSessionStore(
     (state) => state.sessions[params.serverId]?.serverInfo?.features?.providerSubagents === true,
   );

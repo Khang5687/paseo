@@ -7,7 +7,7 @@ import {
   type ReactElement,
 } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { useIsFocused } from "@react-navigation/native";
+import { useIsFocused } from "expo-router/react-navigation";
 import { CalendarClock, Plus } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { MenuHeader } from "@/components/headers/menu-header";
@@ -358,7 +358,7 @@ function ScheduleHostErrorsBanner({ errors }: { errors: ScheduleHostError[] }): 
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   body: {
     flex: 1,

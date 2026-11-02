@@ -61,6 +61,20 @@ describe("provider snapshot codec", () => {
     );
   });
 
+  it("round-trips disabled models separately from the selectable list", () => {
+    const [enabled, disabled] = providerEntry().models ?? [];
+    if (!enabled || !disabled) throw new Error("fixture models missing");
+    const original: ProviderSnapshotEntry[] = [
+      { ...providerEntry(), models: [enabled], disabledModels: [disabled] },
+    ];
+    const compact = compactProviderSnapshot(original);
+
+    expect(compact.thinkingSets).toHaveLength(1);
+    expect(compact.entries[0]?.disabledModels?.map((model) => model.id)).toEqual(["openai/gpt-b"]);
+    expect(CompactProviderSnapshotSchema.parse(compact)).toEqual(compact);
+    expect(expandProviderSnapshot(compact)).toEqual(original);
+  });
+
   it("shrinks catalogs dominated by one repeated thinking set", () => {
     const model = providerEntry().models?.[0];
     if (!model) throw new Error("fixture model missing");
