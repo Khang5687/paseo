@@ -221,7 +221,7 @@ export const PASEO_TOOL_CATALOG = {
     label: "Respond to permission",
     completedLabel: "Responded to permission",
     context: targetAgent(),
-    detail: { inputOrder: ["agentId", "requestId", "response"] },
+    detail: { inputOrder: ["agentId", "requestId", "answers", "response"] },
   },
 
   // Workspaces and scripts

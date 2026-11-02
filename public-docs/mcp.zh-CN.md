@@ -180,10 +180,10 @@ MCP heartbeat 是临时的：只能创建或删除。要修改一个 heartbeat�
 
 ### 权限 {#permissions}
 
-| 工具                       | 功能                                |
-| -------------------------- | ----------------------------------- |
-| `list_pending_permissions` | 返回所有 Agent 中待处理的权限请求。 |
-| `respond_to_permission`    | 批准或拒绝一个待处理的权限请求。    |
+| 工具                       | 功能                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------- |
+| `list_pending_permissions` | 列出 Agent 正在等待的提问框和批准请求；`agentId` 只看某一个 Agent。          |
+| `respond_to_permission`    | 像用户点按一样回答：按问题 header 传 `answers`，或传允许/拒绝的 `response`。 |
 
 ### 浏览器 {#browser}
 

@@ -7,6 +7,7 @@
 - 在 setup 和 Agent 启动前，使用内置的 `worktree-include` 插件将 `.worktreeinclude` 选中的被 gitignore 忽略的文件复制到新工作树 ([#8100](https://github.com/getpaseo/paseo/pull/8100))
 - 插件可通过 `worktree.create.before` 选择工作树路径和创建选项，自定义位置的工作树支持列出、归档、删除和恢复；附带同级目录放置示例 ([#8117](https://github.com/getpaseo/paseo/pull/8117))
 - Agent 可用 `ask_agent` 向另一个 Agent 提问而不打断它：由它对话的一个隐藏只读副本回答，回答后即删除，支持同一主机或已连接的主机。适用于 Claude、Codex、OpenCode 和 OMP Agent；`list_agents` 现在会返回每个 Agent 的 `workspaceId`
+- Agent 可用 `respond_to_permission` 的 `answers`（按问题 header）回答另一个 Agent 的提问框；`list_pending_permissions` 可按 `agentId` 过滤，两者都可通过 `serverId` 用于已连接主机上的 Agent。`paseo` 技能新增查找、询问、发消息和解除其他 Agent 阻塞的说明
 
 改进：
 

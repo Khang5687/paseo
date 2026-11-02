@@ -18,6 +18,8 @@ import { selectAgentListItems } from "../agent-projections.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
 import { expandUserPath } from "../../path-utils.js";
 import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
+import type { AgentPermissionResponse } from "../agent-sdk-types.js";
+import { resolvePermissionResponse } from "../permission-answers.js";
 
 export class HostOperationRejectedError extends Error {
   readonly code: unknown;
@@ -44,6 +46,8 @@ export interface HostOperations {
   getActivity: HostOperation;
   listAgents: HostOperation;
   askAgent: HostOperation;
+  listPermissions: HostOperation;
+  respondToPermission: HostOperation;
 }
 /** Connection authority at the host boundary, independent of child lifecycle. */
 export class HostObservationError extends Error {
@@ -321,6 +325,39 @@ export function createHostResolver(input: {
               askedBy: input.callerTitle?.(),
             });
             return result({ agentId, answer });
+          },
+          async listPermissions(args) {
+            const agentId = args.agentId as string | undefined;
+            const agents = agentId
+              ? [(await client.fetchAgent(agentId))?.agent].filter((agent) => agent !== undefined)
+              : (await client.fetchAgents({ includeBackground: true })).entries.map(
+                  (entry) => entry.agent,
+                );
+            return result({
+              permissions: agents.flatMap((agent) =>
+                agent.pendingPermissions.map((request) => ({
+                  agentId: agent.id,
+                  status: agent.status,
+                  request,
+                })),
+              ),
+            });
+          },
+          async respondToPermission(args) {
+            const agentId = args.agentId as string;
+            const requestId = args.requestId as string;
+            const response = await resolvePermissionResponse({
+              agentId,
+              requestId,
+              response: args.response as AgentPermissionResponse | undefined,
+              answers: args.answers as Record<string, string[]> | undefined,
+              loadRequest: async () =>
+                (await client.fetchAgent(agentId))?.agent.pendingPermissions.find(
+                  (pending) => pending.id === requestId,
+                ),
+            });
+            await client.respondToPermissionAndWait(agentId, requestId, response);
+            return result({ success: true });
           },
           async listAgents(args) {
             const { entries } = await client.fetchAgents({
