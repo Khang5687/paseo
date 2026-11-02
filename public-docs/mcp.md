@@ -188,10 +188,10 @@ Omit absent optional settings. If no profile fits, use provider discovery to cho
 
 ### Permissions
 
-| Tool                       | Function                                          |
-| -------------------------- | ------------------------------------------------- |
-| `list_pending_permissions` | Return pending permission requests across agents. |
-| `respond_to_permission`    | Approve or deny a pending permission request.     |
+| Tool                       | Function                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `list_pending_permissions` | List the question boxes and approval prompts agents wait on; `agentId` filters to one agent.         |
+| `respond_to_permission`    | Answer one as the user's tap would: `answers` keyed by question header, or an allow/deny `response`. |
 
 ### Browser
 

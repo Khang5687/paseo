@@ -6741,6 +6741,81 @@ describe("agent snapshot MCP serialization", () => {
     ]);
   });
 
+  describe("respond_to_permission answers", () => {
+    const questionRequest = {
+      id: "perm-question",
+      provider: "claude" as const,
+      name: "AskUserQuestion",
+      kind: "question" as const,
+      input: {
+        questions: [
+          {
+            header: "Database",
+            question: "Which database?",
+            options: [{ label: "Postgres" }, { label: "SQLite, embedded" }],
+            multiSelect: false,
+          },
+          {
+            header: "Extras",
+            question: "Which extras?",
+            options: [{ label: "Backups" }, { label: "Metrics" }],
+            multiSelect: true,
+          },
+        ],
+      },
+    };
+
+    async function respond(args: Record<string, unknown>) {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({
+          id: "asker",
+          provider: "claude",
+          pendingPermissions: new Map([[questionRequest.id, questionRequest]]),
+        }),
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        logger,
+        providerSnapshotManager: createClaudeOnlyManager(),
+      });
+      const response = await registeredTool(server, "respond_to_permission").handler({
+        agentId: "asker",
+        requestId: questionRequest.id,
+        ...args,
+      });
+      return { response, respondToPermission: spies.agentManager.respondToPermission };
+    }
+
+    it("answers a question box the way the app's question card does", async () => {
+      const { respondToPermission } = await respond({
+        answers: { Database: ["SQLite, embedded"], Extras: ["Backups", "Metrics"] },
+      });
+
+      expect(respondToPermission).toHaveBeenCalledWith("asker", "perm-question", {
+        behavior: "allow",
+        updatedInput: {
+          ...questionRequest.input,
+          answers: { Database: "SQLite, embedded", Extras: "Backups, Metrics" },
+          answerLists: { Database: ["SQLite, embedded"], Extras: ["Backups", "Metrics"] },
+        },
+      });
+    });
+
+    it("names the real headers when an answer uses an unknown one", async () => {
+      await expect(respond({ answers: { DB: ["Postgres"], Extras: [] } })).rejects.toThrow(
+        'Unknown question header "DB". Headers: "Database", "Extras".',
+      );
+    });
+
+    it("refuses a partial answer instead of submitting it", async () => {
+      await expect(respond({ answers: { Database: ["Postgres"] } })).rejects.toThrow(
+        'Answer every question. Missing: "Extras".',
+      );
+    });
+  });
+
   it("loads archived agents before reading get_agent_activity", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const record = createStoredRecord({ id: "archived-activity-agent" });
