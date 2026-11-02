@@ -2955,16 +2955,12 @@ export const zhCN: TranslationResources = {
         },
         visibility: {
           title: "图片可见度",
-          hint: "Paseo 会自动保持文字清晰可读，因此明亮的图片可能显示得较淡。",
+          hint: "即使设为 100%，Paseo 也会限制图片显示以保持文字清晰可读，因此明亮的图片会显示得更淡。",
         },
         blur: {
           title: "模糊",
-          options: {
-            off: "关闭",
-            low: "低",
-            medium: "中",
-            high: "高",
-          },
+          off: "关闭",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "显示在侧边栏后方",
         showBehindContent: "显示在内容后方",

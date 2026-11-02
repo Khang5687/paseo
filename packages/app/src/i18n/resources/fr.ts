@@ -3059,16 +3059,12 @@ export const fr: TranslationResources = {
         },
         visibility: {
           title: "Visibilité de l’image",
-          hint: "Paseo garde automatiquement le texte lisible, donc les images claires peuvent s’afficher moins.",
+          hint: "Même à 100 %, Paseo limite l’image pour que le texte reste lisible, donc les images claires s’affichent moins.",
         },
         blur: {
           title: "Flou",
-          options: {
-            off: "Désactivé",
-            low: "Faible",
-            medium: "Moyen",
-            high: "Élevé",
-          },
+          off: "Désactivé",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "Afficher derrière la barre latérale",
         showBehindContent: "Afficher derrière le contenu",

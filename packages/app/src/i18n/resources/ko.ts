@@ -3004,16 +3004,12 @@ export const ko: TranslationResources = {
         },
         visibility: {
           title: "이미지 표시 정도",
-          hint: "Paseo가 텍스트 가독성을 자동으로 유지하므로 밝은 이미지는 덜 표시될 수 있습니다.",
+          hint: "100%에서도 Paseo가 텍스트를 읽을 수 있도록 이미지 표시를 제한하므로 밝은 이미지는 덜 표시됩니다.",
         },
         blur: {
           title: "흐림",
-          options: {
-            off: "끔",
-            low: "낮음",
-            medium: "보통",
-            high: "높음",
-          },
+          off: "끔",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "사이드바 뒤에 표시",
         showBehindContent: "콘텐츠 뒤에 표시",

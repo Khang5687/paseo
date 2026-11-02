@@ -3037,16 +3037,12 @@ export const ptBR: TranslationResources = {
         },
         visibility: {
           title: "Visibilidade da imagem",
-          hint: "O Paseo mantém o texto legível automaticamente, então imagens claras podem mostrar menos da arte.",
+          hint: "Mesmo em 100%, o Paseo limita a imagem para manter o texto legível, então imagens claras aparecem menos.",
         },
         blur: {
           title: "Desfoque",
-          options: {
-            off: "Desligado",
-            low: "Baixo",
-            medium: "Médio",
-            high: "Alto",
-          },
+          off: "Desligado",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "Mostrar atrás da barra lateral",
         showBehindContent: "Mostrar atrás do conteúdo",

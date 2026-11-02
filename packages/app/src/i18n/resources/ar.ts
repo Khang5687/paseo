@@ -3028,16 +3028,12 @@ export const ar: TranslationResources = {
         },
         visibility: {
           title: "وضوح الصورة",
-          hint: "يحافظ Paseo على وضوح النص تلقائيًا، لذا قد تظهر الصور الساطعة بشكل أخف.",
+          hint: "حتى عند 100%، يحدّ Paseo من ظهور الصورة ليبقى النص مقروءًا، لذا تظهر الصور الساطعة بشكل أخف.",
         },
         blur: {
           title: "التمويه",
-          options: {
-            off: "إيقاف",
-            low: "منخفض",
-            medium: "متوسط",
-            high: "مرتفع",
-          },
+          off: "إيقاف",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "إظهار خلف الشريط الجانبي",
         showBehindContent: "إظهار خلف المحتوى",

@@ -3118,16 +3118,12 @@ export const en = {
         },
         visibility: {
           title: "Art visibility",
-          hint: "Paseo keeps text readable automatically, so bright images may show less art.",
+          hint: "Even at 100%, Paseo caps the art so text stays readable. Bright images show less.",
         },
         blur: {
           title: "Blur",
-          options: {
-            off: "Off",
-            low: "Low",
-            medium: "Medium",
-            high: "High",
-          },
+          off: "Off",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "Show behind sidebar",
         showBehindContent: "Show behind content",
