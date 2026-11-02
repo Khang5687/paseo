@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "@/contexts/toast-context";
 import { useImageAttachmentPicker } from "@/hooks/use-image-attachment-picker";
-import type { PickedImageAttachmentInput } from "@/hooks/image-attachment-picker";
 import {
   importLocalSkin,
   previewSkin,
@@ -11,6 +10,7 @@ import {
   type SkinScheme,
   type SkinSchemeTarget,
 } from "@/skins";
+import { resolvePickedSkinOriginal } from "./picked-image";
 import { isSkinSelected, skinNameFromFileName, type SkinSelection } from "./selection";
 
 const PREVIEW_DEBOUNCE_MS = 120;
@@ -25,24 +25,6 @@ const SCHEMES: readonly SkinScheme[] = ["light", "dark"];
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
-}
-
-interface ImageSourceUri {
-  uri: string;
-  release: () => void;
-}
-
-function resolvePickedImageUri(picked: PickedImageAttachmentInput): ImageSourceUri {
-  switch (picked.source.kind) {
-    case "file_uri":
-      return { uri: picked.source.uri, release: () => undefined };
-    case "data_url":
-      return { uri: picked.source.dataUrl, release: () => undefined };
-    case "blob": {
-      const uri = URL.createObjectURL(picked.source.blob);
-      return { uri, release: () => URL.revokeObjectURL(uri) };
-    }
-  }
 }
 
 export interface BackgroundGallery {
@@ -191,15 +173,14 @@ export function useBackgroundGallery(): BackgroundGallery {
         const picked = await pickImages();
         const first = picked?.[0];
         if (!first) return;
-        const source = resolvePickedImageUri(first);
+        const source = await resolvePickedSkinOriginal(first);
         try {
           const skin = await importLocalSkin({
-            uri: source.uri,
+            original: source.original,
             name: skinNameFromFileName(
               first.fileName,
               t("settings.appearance.background.gallery.importDefaultName"),
             ),
-            mimeType: first.mimeType,
           });
           await selectSkin(skin.id, target);
           previewSkin(null);

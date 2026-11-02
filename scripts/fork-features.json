@@ -660,5 +660,11 @@
       "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
       "packages/app/src/composer/daemon-queue.test.ts"
     ]
+  },
+  {
+    "pr": 84,
+    "title": "fix(app): import skin images picked in the desktop dialog",
+    "tests": ["packages/app/src/screens/settings/appearance/background/picked-image.test.ts"],
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   }
 ]
