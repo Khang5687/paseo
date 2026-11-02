@@ -1,6 +1,15 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 
 import { afterEach, beforeEach, expect, test } from "vitest";
 
@@ -978,4 +987,61 @@ test("a directory that goes away while the git read is in flight keeps its place
     kind: "local_checkout",
     branch: "feature/vanishing",
   });
+});
+
+test("a linked worktree outside the repo joins the main checkout's project", async () => {
+  const repo = realpathSync(mkdtempSync(path.join(tmpDir, "main-")));
+  const worktree = path.join(realpathSync(mkdtempSync(path.join(tmpDir, "wt-"))), "feature");
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", args, { cwd, stdio: "ignore" });
+  git(repo, "init", "-b", "main");
+  git(repo, "config", "user.email", "t@example.com");
+  git(repo, "config", "user.name", "T");
+  writeFileSync(path.join(repo, "a.txt"), "a");
+  git(repo, "add", ".");
+  git(repo, "commit", "-m", "init");
+  git(repo, "worktree", "add", "-b", "feature", worktree);
+  const realGit = createWorkspaceProvisioningService({
+    workspaceRegistry,
+    projectRegistry,
+    logger,
+    isDirectory,
+    workspaceGitService: createNoopWorkspaceGitService({
+      getCheckout: async (cwd: string) => {
+        const status = await getCheckoutStatus(cwd, { logger });
+        return checkoutLiteFromGitSnapshot(
+          cwd,
+          status.isGit
+            ? {
+                isGit: true,
+                currentBranch: status.currentBranch,
+                remoteUrl: status.remoteUrl,
+                repoRoot: status.repoRoot,
+                isPaseoOwnedWorktree: status.isPaseoOwnedWorktree,
+                mainRepoRoot: status.mainRepoRoot,
+              }
+            : {
+                isGit: false,
+                currentBranch: null,
+                remoteUrl: null,
+                repoRoot: null,
+                isPaseoOwnedWorktree: false,
+                mainRepoRoot: null,
+              },
+        );
+      },
+    }),
+  });
+
+  const main = await realGit.findOrCreateWorkspaceForDirectory(repo);
+  const linked = await realGit.findOrCreateWorkspaceForDirectory(worktree);
+
+  expect(linked.workspaceId).not.toBe(main.workspaceId);
+  expect(linked.projectId).toBe(main.projectId);
+  expect(await projectRegistry.list()).toHaveLength(1);
+
+  const worktreeFirst = path.join(realpathSync(mkdtempSync(path.join(tmpDir, "wt2-"))), "other");
+  git(repo, "worktree", "add", "-b", "other", worktreeFirst);
+  const other = await realGit.findOrCreateWorkspaceForDirectory(worktreeFirst);
+  expect(other.projectId).toBe(main.projectId);
 });

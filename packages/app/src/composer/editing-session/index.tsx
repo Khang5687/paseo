@@ -53,6 +53,15 @@ export class ComposerEditingSession {
     editor.replaceText(nextText, { start: nextText.length, end: nextText.length });
     editor.focus();
   }
+  /** Appends a block of text as its own paragraph and focuses the editor at its end. */
+  insertText(block: string) {
+    const editor = this.editor;
+    if (!editor) return;
+    const text = editor.getText().replace(/\s+$/, "");
+    const nextText = text ? `${text}\n\n${block}\n` : `${block}\n`;
+    editor.replaceText(nextText, { start: nextText.length, end: nextText.length });
+    editor.focus();
+  }
   /** Called by the unmounting editor; the next mount of this session takes it. */
   retainEditor(retained: ComposerRetainedEditor) {
     this.retained = retained;

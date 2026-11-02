@@ -1,4 +1,4 @@
-import { buildDraftStoreKey } from "@/stores/draft-keys";
+import { buildTabDraftStoreKey } from "@/stores/draft-keys";
 import {
   collectAllPanes,
   collectAllTabs,
@@ -15,23 +15,11 @@ function resolveChatTab(
   serverId: string,
   tab: ReturnType<typeof collectAllTabs>[number] | undefined,
 ): FocusedChatTarget | null {
-  if (tab?.target.kind === "agent") {
-    return {
-      tabId: tab.tabId,
-      draftKey: buildDraftStoreKey({ serverId, agentId: tab.target.agentId }),
-    };
+  if (!tab) {
+    return null;
   }
-  if (tab?.target.kind === "draft") {
-    return {
-      tabId: tab.tabId,
-      draftKey: buildDraftStoreKey({
-        serverId,
-        agentId: tab.tabId,
-        draftId: tab.target.draftId,
-      }),
-    };
-  }
-  return null;
+  const draftKey = buildTabDraftStoreKey({ serverId, tabId: tab.tabId, target: tab.target });
+  return draftKey ? { tabId: tab.tabId, draftKey } : null;
 }
 
 /**

@@ -527,6 +527,13 @@ export class TimelineProjection {
     return row?.item.type === "assistant_message" ? row.item.text : null;
   }
 
+  getFirstUserMessage(): string | null {
+    for (const row of this.rows) {
+      if (row.item.type === "user_message") return row.item.text;
+    }
+    return null;
+  }
+
   enrichSubmittedUserMessage(
     clientMessageId: string,
     providerMessageId: string,

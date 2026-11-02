@@ -28,10 +28,13 @@ import {
 } from "../../messages.js";
 import {
   buildStoredAgentPayload,
-  selectAgentListItems,
+  DEFAULT_AGENT_LIST_LIMIT,
+  selectAgentListPage,
   toAgentPayload,
 } from "../agent-projections.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
+import { askAgent } from "../ask-agent.js";
+import { resolvePermissionResponse } from "../permission-answers.js";
 import type { AgentStorage } from "../agent-storage.js";
 import { AgentNotFoundError, ensureAgentLoaded } from "../agent-loading.js";
 import { buildForkTaskPrompt, forkAgent } from "../fork-agent.js";
@@ -88,8 +91,10 @@ import {
   cancelAgentRunCommand,
   closeAgentCommand,
   setAgentModeCommand,
+  unarchiveAgentCommand,
   updateAgentCommand,
 } from "../lifecycle-command.js";
+import { AGENT_SEARCH_SCAN_LIMIT, searchAgents } from "../agent-search.js";
 import type { ForgeService } from "../../../services/forge-service.js";
 import type { WorkspaceGitService } from "../../workspace-git-service.js";
 import type {
@@ -116,6 +121,15 @@ import {
 } from "./types.js";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
+import {
+  DEFAULT_LIST_LIMIT,
+  MAX_LIST_LIMIT,
+  TOOL_COMPACTORS,
+  ToolDetailInputSchema,
+  isFullDetail,
+  moreNote,
+  selectWorkspaceSummaries,
+} from "./paseo-tool-compaction.js";
 
 export interface PaseoToolHostDependencies {
   agentMessages?: () => AgentMessageDelivery;
@@ -139,6 +153,8 @@ export interface PaseoToolHostDependencies {
   archiveWorkspaceRecord?: ArchiveDependencies["archiveWorkspaceRecord"];
   emitWorkspaceUpdatesForWorkspaceIds?: ArchiveDependencies["emitWorkspaceUpdatesForWorkspaceIds"];
   workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "list" | "upsert">;
+  /** Clears an archived workspace's archivedAt and publishes it to every client. */
+  restoreArchivedWorkspace?: (workspace: PersistedWorkspaceRecord) => Promise<void>;
   projectRegistry?: Pick<ProjectRegistry, "get" | "list">;
   createDirectoryWorkspace?: (
     cwd: string,
@@ -716,10 +732,16 @@ function createToolCatalog(
     ["get_agent_activity", "getActivity"],
     ["list_agents", "listAgents"],
     ["fork_agent", "forkAgent"],
+    ["ask_agent", "askAgent"],
+    ["list_pending_permissions", "listPermissions"],
+    ["respond_to_permission", "respondToPermission"],
   ] as const satisfies ReadonlyArray<readonly [string, keyof HostOperations]>);
+  const callerTitle = () =>
+    (callerAgentId ? agentManager.getAgent(callerAgentId)?.config.title : undefined) ?? undefined;
   const hostResolver = createHostResolver({
     serverId: options.serverId ?? "self",
     callerAgentId,
+    callerTitle,
     lockedCwd: callerContext?.lockedCwd,
     hosts: () => {
       if (!options.hosts) throw new Error("Connected hosts are not configured");
@@ -735,6 +757,11 @@ function createToolCatalog(
       getActivity: (args, context) => localHostOperations.get("get_agent_activity")!(args, context),
       listAgents: (args, context) => localHostOperations.get("list_agents")!(args, context),
       forkAgent: (args, context) => localHostOperations.get("fork_agent")!(args, context),
+      askAgent: (args, context) => localHostOperations.get("ask_agent")!(args, context),
+      listPermissions: (args, context) =>
+        localHostOperations.get("list_pending_permissions")!(args, context),
+      respondToPermission: (args, context) =>
+        localHostOperations.get("respond_to_permission")!(args, context),
     },
   });
   const registerTool = (
@@ -765,7 +792,7 @@ function createToolCatalog(
             ? original.extend(selector)
             : { ...(original as z.ZodRawShape), ...selector },
       };
-      handler = async ({ serverId, ...input }, context) => {
+      handler = async ({ serverId, detail: _detail, ...input }, context) => {
         const destination = serverId ?? options.serverId;
         const remoteNotification = await prepareRemoteNotification(name, destination, input);
         try {
@@ -801,6 +828,27 @@ function createToolCatalog(
             structuredContent: failure,
           };
         }
+      };
+    }
+    const compactor = TOOL_COMPACTORS[name];
+    if (compactor) {
+      const detailed = handler;
+      handler = async (input, context) => {
+        const result = await detailed(input, context);
+        const structured = result.structuredContent;
+        if (
+          result.isError ||
+          isFullDetail(input) ||
+          typeof structured !== "object" ||
+          structured === null ||
+          Array.isArray(structured)
+        ) {
+          return result;
+        }
+        return {
+          ...result,
+          structuredContent: compactor(structured as Record<string, unknown>, input),
+        };
       };
     }
     tools.set(name, {
@@ -1258,7 +1306,10 @@ function createToolCatalog(
       .describe("Legacy feature values. Prefer settings.features."),
   };
   const createAgentInputSchema = z
-    .object(scope === "agent" ? agentToAgentInputSchema : canonicalTopLevelInputSchema)
+    .object({
+      ...(scope === "agent" ? agentToAgentInputSchema : canonicalTopLevelInputSchema),
+      detail: ToolDetailInputSchema,
+    })
     .passthrough();
   const agentToAgentCreateAgentArgsSchema = z.object(agentToAgentInputSchema).strict();
   const legacyAgentToAgentCreateAgentArgsSchema = z.object(legacyAgentToAgentInputSchema).strict();
@@ -1307,6 +1358,7 @@ function createToolCatalog(
     settings: InspectProviderSettingsInputSchema.optional().describe(
       "Draft provider settings used to compute available features.",
     ),
+    detail: ToolDetailInputSchema,
   };
   type AgentToAgentCreateAgentArgs = z.infer<typeof agentToAgentCreateAgentArgsSchema>;
   type LegacyAgentToAgentCreateAgentArgs = z.infer<typeof legacyAgentToAgentCreateAgentArgsSchema>;
@@ -1385,7 +1437,7 @@ function createToolCatalog(
     {
       title: "Create workspace",
       description:
-        "Create a workspace using an existing local checkout or a new Paseo-managed worktree.",
+        'Create a workspace using an existing local checkout or a new Paseo-managed worktree. Returns workspaceId, title, cwd, and projectId; detail "full" adds kind and isolation.',
       inputSchema: {
         isolation: z.enum(["local", "worktree"]),
         path: z
@@ -1432,6 +1484,7 @@ function createToolCatalog(
           .min(1)
           .optional()
           .describe("Forge for checkout-pr mode. Defaults to the source checkout."),
+        detail: ToolDetailInputSchema,
       },
       outputSchema: WorkspaceAutomationSummarySchema.shape,
     },
@@ -1525,22 +1578,49 @@ function createToolCatalog(
     "list_workspaces",
     {
       title: "List workspaces",
-      description: "List active workspaces.",
-      inputSchema: { includeBackground: z.boolean().optional().default(false) },
+      description: `List active workspaces, newest first. Returns at most limit items (default ${DEFAULT_LIST_LIMIT}) and reports "more" when truncated; narrow with query (title or cwd substring), projectId, or cwd. Items are compact by default; detail "full" returns every field.`,
+      inputSchema: {
+        includeBackground: z.boolean().optional().default(false),
+        query: z
+          .string()
+          .optional()
+          .describe("Case-insensitive substring of workspace title or cwd."),
+        projectId: z.string().optional().describe("Only workspaces of this project."),
+        cwd: z.string().optional().describe("Only workspaces at or under this path."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_LIST_LIMIT)
+          .optional()
+          .default(DEFAULT_LIST_LIMIT),
+        detail: ToolDetailInputSchema,
+      },
       outputSchema: { workspaces: z.array(WorkspaceAutomationSummarySchema) },
     },
-    async ({ includeBackground = false }) => {
+    async ({ includeBackground = false, query, projectId, cwd, limit = DEFAULT_LIST_LIMIT }) => {
       if (!options.workspaceRegistry) {
         throw new Error("Workspace registry is not configured");
       }
-      const workspaces = (await options.workspaceRegistry.list())
+      const records = (await options.workspaceRegistry.list())
         .filter(
           (workspace) => !workspace.archivedAt && (includeBackground || !workspace.background),
         )
-        .map(toWorkspaceAutomationSummary);
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+      const page = selectWorkspaceSummaries(records.map(toWorkspaceAutomationSummary), {
+        query,
+        projectId,
+        cwd,
+        limit,
+      });
       return {
         content: [],
-        structuredContent: ensureValidJson({ workspaces }),
+        structuredContent: ensureValidJson({
+          workspaces: page.items,
+          ...(page.more > 0
+            ? moreNote(page.more, "narrow with query, projectId, or cwd, or raise limit")
+            : {}),
+        }),
       };
     },
   );
@@ -1593,7 +1673,7 @@ function createToolCatalog(
     {
       title: "Create agent",
       description:
-        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain.",
+        'Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain. Returns agentId, status, cwd, workspaceId, and currentModeId; detail "full" also returns availableModes.',
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -2163,9 +2243,10 @@ function createToolCatalog(
     {
       title: "Get agent status",
       description:
-        "Return the latest snapshot for an agent, including lifecycle state, capabilities, and pending permissions.",
+        'Return the latest snapshot for an agent: lifecycle state, title, provider/model, cwd, attention, parent, and pending permissions. detail "full" adds capabilities, available modes, features, usage, persistence, and all labels.',
       inputSchema: {
         agentId: z.string(),
+        detail: ToolDetailInputSchema,
       },
       outputSchema: {
         status: AgentStatusEnum,
@@ -2212,11 +2293,12 @@ function createToolCatalog(
     "list_agents",
     {
       title: "List agents",
-      description: "List recent agents as compact metadata.",
+      description: `List recent agents, most urgent first. Returns at most limit items (default ${DEFAULT_AGENT_LIST_LIMIT}) and reports "more" when truncated; narrow with query (title substring), cwd, statuses, or sinceHours. Items are compact by default; detail "full" returns every field.`,
       inputSchema: {
         includeBackground: z.boolean().optional().default(false),
         includeArchived: z.boolean().optional().default(false),
         cwd: z.string().optional(),
+        query: z.string().optional().describe("Case-insensitive substring of the agent title."),
         sinceHours: z
           .number()
           .int()
@@ -2225,7 +2307,14 @@ function createToolCatalog(
           .optional()
           .default(48),
         statuses: z.array(AgentStatusEnum).optional(),
-        limit: z.number().int().positive().max(200).optional().default(50),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(MAX_LIST_LIMIT)
+          .optional()
+          .default(DEFAULT_AGENT_LIST_LIMIT),
+        detail: ToolDetailInputSchema,
       },
       outputSchema: {
         agents: z.array(AgentListItemPayloadSchema),
@@ -2235,9 +2324,10 @@ function createToolCatalog(
       includeBackground = false,
       includeArchived = false,
       cwd,
+      query,
       sinceHours = 48,
       statuses,
-      limit = 50,
+      limit = DEFAULT_AGENT_LIST_LIMIT,
     }) => {
       const callerCwd = callerAgentId ? resolveCallerAgent()?.cwd : undefined;
       const requestedCwd = cwd?.trim() ? expandUserPath(cwd) : callerCwd;
@@ -2260,14 +2350,19 @@ function createToolCatalog(
             new Set(providerSnapshotManager.listRegisteredProviderIds()),
           ),
       });
-      const agents = selectAgentListItems(
+      const page = selectAgentListPage(
         await directory.list({ includeBackground, includeArchived }),
-        { cwd: requestedCwd, statuses, sinceHours, limit },
+        { cwd: requestedCwd, statuses, sinceHours, limit, query },
       );
 
       return {
         content: [],
-        structuredContent: ensureValidJson({ agents }),
+        structuredContent: ensureValidJson({
+          agents: page.agents,
+          ...(page.more > 0
+            ? moreNote(page.more, "narrow with query, cwd, or statuses, or raise limit")
+            : {}),
+        }),
       };
     },
   );
@@ -2321,6 +2416,145 @@ function createToolCatalog(
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
+      };
+    },
+  );
+
+  registerTool(
+    "unarchive_agent",
+    {
+      title: "Unarchive agent",
+      description:
+        "Restore an archived agent so it shows in agent lists and the sidebar again and can be prompted. Restores its archived workspace too when the workspace directory still exists. Does not start a turn. Safe to call on an agent that is not archived.",
+      inputSchema: {
+        agentId: z.string().min(1),
+      },
+      outputSchema: {
+        agentId: z.string(),
+        wasArchived: z.boolean(),
+        workspaceId: z.string().nullable(),
+        workspaceRestored: z.boolean(),
+        warning: z.string().nullable(),
+      },
+    },
+    async ({ agentId }) => {
+      const workspaceRegistry = options.workspaceRegistry;
+      const restoreArchivedWorkspace = options.restoreArchivedWorkspace;
+      if (!workspaceRegistry || !restoreArchivedWorkspace) {
+        throw new Error("Workspace restore is not configured");
+      }
+      const result = await unarchiveAgentCommand(
+        {
+          agentManager,
+          agentStorage,
+          getWorkspace: (workspaceId) => workspaceRegistry.get(workspaceId),
+          restoreWorkspace: restoreArchivedWorkspace,
+          isDirectory: isExistingDirectory,
+        },
+        agentId,
+      ).catch((error) => {
+        if (error instanceof AgentNotFoundError) throw new PaseoToolInputError(error.message);
+        throw error;
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson(result),
+      };
+    },
+  );
+
+  registerTool(
+    "search_agents",
+    {
+      title: "Search agents",
+      description: `Find agents, archived or not, by what they were about. Every query word must appear (case-insensitive) in the agent's title, labels, first user message, or latest assistant message. Results rank by match quality, then recency, and include a snippet. Searches every directory unless cwd is given. Reads stored data only, so agents last saved before message text was recorded match on title and labels. Scans the newest ${AGENT_SEARCH_SCAN_LIMIT} agents that pass the filters; truncated is true when older ones were skipped. Follow up with get_agent_activity, send_agent_prompt, or unarchive_agent.`,
+      inputSchema: {
+        query: z.string().trim().min(1, "query is required"),
+        includeArchived: z.boolean().optional().default(true),
+        cwd: z.string().optional().describe("Only agents in this directory or below it."),
+        workspaceId: z.string().optional(),
+        provider: z.string().optional().describe("Provider ID, for example codex."),
+        sinceHours: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Only agents active within this many hours."),
+        limit: z.number().int().positive().max(50).optional().default(10),
+      },
+      outputSchema: {
+        results: z.array(
+          z.object({
+            agentId: z.string(),
+            title: z.string().nullable(),
+            status: AgentStatusEnum,
+            archivedAt: z.string().nullable(),
+            workspaceId: z.string().nullable(),
+            cwd: z.string(),
+            provider: z.string(),
+            model: z.string().nullable(),
+            createdAt: z.string(),
+            updatedAt: z.string(),
+            matchedFields: z.array(
+              z.enum(["title", "labels", "firstUserMessage", "lastAssistantMessage"]),
+            ),
+            snippet: z.object({
+              field: z.enum(["title", "labels", "firstUserMessage", "lastAssistantMessage"]),
+              text: z.string(),
+            }),
+          }),
+        ),
+        scanned: z.number(),
+        truncated: z.boolean(),
+      },
+    },
+    async ({
+      query,
+      includeArchived = true,
+      cwd,
+      workspaceId,
+      provider,
+      sinceHours,
+      limit = 10,
+    }) => {
+      const registeredProviderIds = new Set(providerSnapshotManager.listRegisteredProviderIds());
+      const result = await searchAgents(
+        {
+          manager: agentManager,
+          storage: agentStorage,
+          projectLive: (snapshot) =>
+            serializeSnapshotWithMetadata(agentStorage, snapshot, childLogger),
+          projectStored: (record) => buildStoredAgentPayload(record, registeredProviderIds),
+        },
+        {
+          query,
+          includeArchived,
+          ...(cwd?.trim() ? { cwd: expandUserPath(cwd.trim()) } : {}),
+          ...(workspaceId ? { workspaceId } : {}),
+          ...(provider ? { provider } : {}),
+          ...(sinceHours !== undefined ? { sinceHours } : {}),
+          limit,
+        },
+      );
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          results: result.matches.map(({ agent, matchedFields, snippet }) => ({
+            agentId: agent.id,
+            title: agent.title,
+            status: agent.status,
+            archivedAt: agent.archivedAt ?? null,
+            workspaceId: agent.workspaceId ?? null,
+            cwd: agent.cwd,
+            provider: agent.provider,
+            model: agent.model,
+            createdAt: agent.createdAt,
+            updatedAt: agent.updatedAt,
+            matchedFields,
+            snippet,
+          })),
+          scanned: result.scanned,
+          truncated: result.truncated,
+        }),
       };
     },
   );
@@ -2529,13 +2763,15 @@ function createToolCatalog(
     "list_terminals",
     {
       title: "List terminals",
-      description: "List terminals for a working directory or across all working directories.",
+      description:
+        'List terminals for a working directory or across all working directories. Returns id and name per terminal (cwd once when all share it); detail "full" repeats cwd on every item.',
       inputSchema: {
         cwd: z
           .string()
           .optional()
           .describe("Optional working directory. Defaults to your current working directory."),
         all: z.boolean().optional().describe("List terminals across all working directories."),
+        detail: ToolDetailInputSchema,
       },
       outputSchema: {
         terminals: z.array(TerminalSummarySchema),
@@ -2856,8 +3092,9 @@ function createToolCatalog(
     "list_schedules",
     {
       title: "List schedules",
-      description: "List all schedules managed by the daemon.",
-      inputSchema: {},
+      description:
+        'List schedules managed by the daemon. Returns id, name, status, cadence, a prompt preview, target provider/model/cwd, and run times; detail "full" returns every field except run history (use inspect_schedule or schedule_logs).',
+      inputSchema: { detail: ToolDetailInputSchema },
       outputSchema: {
         schedules: z.array(ScheduleSummarySchema),
       },
@@ -3101,8 +3338,9 @@ function createToolCatalog(
     "list_providers",
     {
       title: "List providers",
-      description: "List configured agent providers, availability, and their modes.",
-      inputSchema: {},
+      description:
+        'List configured agent providers, availability, and mode ids/labels. detail "full" adds descriptions and full mode metadata.',
+      inputSchema: { detail: ToolDetailInputSchema },
       outputSchema: {
         providers: z.array(ProviderSummarySchema),
       },
@@ -3122,20 +3360,27 @@ function createToolCatalog(
     "list_models",
     {
       title: "List models",
-      description: "List models for an agent provider.",
+      description:
+        'List models for an agent provider as id/label (isDefault marks the default). Pass model to get that one model with its thinking options; detail "full" returns every model with thinking options and metadata.',
       inputSchema: {
         provider: AgentProviderEnum,
+        model: z.string().optional().describe("Return only this model id, with full details."),
+        detail: ToolDetailInputSchema,
       },
       outputSchema: {
         provider: z.string(),
         models: z.array(AgentModelSchema),
       },
     },
-    async ({ provider }) => {
-      const models = await providerSnapshotManager.listModels({
+    async ({ provider, model }) => {
+      const allModels = await providerSnapshotManager.listModels({
         provider,
         wait: true,
       });
+      const models = model ? allModels.filter((candidate) => candidate.id === model) : allModels;
+      if (model && models.length === 0) {
+        throw new PaseoToolInputError(`Model '${model}' not found for provider '${provider}'`);
+      }
       return {
         content: [],
         structuredContent: ensureValidJson({
@@ -3175,7 +3420,7 @@ function createToolCatalog(
     {
       title: "Inspect provider",
       description:
-        "Inspect compact provider capabilities for orchestration, including modes and draft feature settings. Use list_models for the full model list.",
+        'Inspect compact provider capabilities for orchestration, including modes (id/label) and draft feature settings. Use list_models for models; detail "full" returns full mode metadata and the provider description.',
       inputSchema: inspectProviderInputSchema,
       outputSchema: {
         provider: AgentProviderEnum,
@@ -3272,6 +3517,43 @@ function createToolCatalog(
   );
 
   registerTool(
+    "ask_agent",
+    {
+      title: "Ask agent",
+      description:
+        "Ask another agent a question without interrupting it. A hidden copy of its whole conversation answers, then is deleted; the agent keeps working and never sees the question. The copy can read files but cannot change anything. Use it for context, progress, or decisions another agent holds, instead of asking the user to relay them. To find an agent by the workspace name the user sees, match list_workspaces titles to the workspaceId in list_agents.",
+      inputSchema: {
+        agentId: z.string(),
+        question: z
+          .string()
+          .min(1)
+          .describe("The copy remembers its whole conversation, so you can refer to it directly."),
+      },
+      outputSchema: {
+        agentId: z.string(),
+        answer: z.string(),
+      },
+    },
+    async ({ agentId, question }, context) => {
+      if (agentId === callerAgentId) {
+        throw new PaseoToolInputError(
+          "ask_agent asks another agent; you already have your own context",
+        );
+      }
+      const { answer } = await askAgent(agentManager, childLogger, {
+        agentId,
+        question,
+        askedBy: callerTitle(),
+        signal: context.signal,
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ agentId, answer }),
+      };
+    },
+  );
+
+  registerTool(
     "set_agent_mode",
     {
       title: "Set agent session mode",
@@ -3300,8 +3582,10 @@ function createToolCatalog(
     {
       title: "List pending permissions",
       description:
-        "Return all pending permission requests across all agents with the normalized payloads.",
-      inputSchema: {},
+        'List the question boxes and approval prompts agents are waiting on, the ones the user would otherwise tap in the app. Pass agentId for one agent. Each entry has agentId, request.id (the requestId to answer with) and request.kind: "question" lists its questions in request.input.questions (each with header, question, options, multiSelect); "tool" asks to run an action shown in request.input/detail; "plan" asks to accept a plan. request.actions, when present, are the buttons the user would see. Answer with respond_to_permission.',
+      inputSchema: {
+        agentId: z.string().optional().describe("Only this agent's open requests."),
+      },
       outputSchema: {
         permissions: z.array(
           z.object({
@@ -3312,8 +3596,11 @@ function createToolCatalog(
         ),
       },
     },
-    async () => {
-      const permissions = agentManager.listAgents().flatMap((agent) => {
+    async ({ agentId }) => {
+      const agents = agentId
+        ? [agentManager.getAgent(agentId)].filter((agent) => agent !== null)
+        : agentManager.listAgents();
+      const permissions = agents.flatMap((agent) => {
         const payload = toAgentPayload(agent);
         return payload.pendingPermissions.map((request) => ({
           agentId: agent.id,
@@ -3334,22 +3621,35 @@ function createToolCatalog(
     {
       title: "Respond to permission",
       description:
-        "Approve or deny a pending permission request with an AgentManager-compatible response payload.",
+        'Answer an agent\'s open question box or approval prompt, exactly as the user\'s tap would. Get agentId and requestId from list_pending_permissions or a <permission-request> notification. For a question box pass answers: one entry per question, keyed by its header, each a list of chosen option labels (or your own text when the question allows it). For approvals pass response: { behavior: "allow" } or { behavior: "deny", message }, and add selectedActionId to press one of request.actions. Approving runs real actions: only decide what the user asked you to decide, and ask the user when unsure.',
       inputSchema: {
         agentId: z.string(),
         requestId: z.string(),
-        response: AgentPermissionResponseSchema,
+        answers: z
+          .record(z.string(), z.array(z.string()))
+          .optional()
+          .describe('Question answers by header, e.g. { "Database": ["Postgres"] }.'),
+        response: AgentPermissionResponseSchema.optional(),
       },
       outputSchema: {
         success: z.boolean(),
       },
     },
-    async ({ agentId, requestId, response }) => {
+    async ({ agentId, requestId, response, answers }) => {
+      const resolved = await resolvePermissionResponse({
+        agentId,
+        requestId,
+        response,
+        answers,
+        loadRequest: async () => agentManager.getAgent(agentId)?.pendingPermissions.get(requestId),
+      }).catch((error: unknown) => {
+        throw new PaseoToolInputError(error instanceof Error ? error.message : String(error));
+      });
       await respondToAgentPermission({
         agentManager,
         agentId,
         requestId,
-        response,
+        response: resolved,
         logger: childLogger,
       });
       return {

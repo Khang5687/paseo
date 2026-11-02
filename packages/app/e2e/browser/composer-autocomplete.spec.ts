@@ -87,6 +87,27 @@ const TEST_COMMANDS = [
     description: "Inspect host connection metadata",
     argumentHint: "",
   },
+  {
+    name: "compact",
+    description: "Compact the conversation",
+    argumentHint: "[soft|remote|snapcompact] [focus]",
+    subcommands: [
+      {
+        name: "soft",
+        description: "Summarize locally with the active model",
+        usage: "[focus]",
+      },
+      {
+        name: "remote",
+        description: "Summarize via server compaction",
+        usage: "[focus]",
+      },
+      {
+        name: "snapcompact",
+        description: "Archive history onto dense bitmap images",
+      },
+    ],
+  },
 ] as const;
 
 interface PopoverFrame {
@@ -105,7 +126,21 @@ interface PopoverFrameRecorderWindow extends Window {
   __stopComposerAutocompleteFrameRecorder?: () => void;
 }
 
-async function installListCommandsStub(page: Page): Promise<void> {
+interface ListCommandsStub {
+  deliveredCount(): number;
+  heldCount(): number;
+  release(): void;
+}
+
+// With `hold`, list_commands responses are kept back until `release()`, the way a
+// daemon that has to resume an idle agent first answers late.
+async function installListCommandsStub(
+  page: Page,
+  options?: { hold?: boolean },
+): Promise<ListCommandsStub> {
+  let hold = options?.hold ?? false;
+  let delivered = 0;
+  const held: Array<() => void> = [];
   await page.routeWebSocket(daemonWsRoutePattern(), (ws) => {
     const server = ws.connectToServer();
 
@@ -137,7 +172,15 @@ async function installListCommandsStub(page: Page): Promise<void> {
         ) {
           parsed.message.payload.commands = TEST_COMMANDS;
           parsed.message.payload.error = null;
-          ws.send(JSON.stringify(parsed));
+          const deliver = () => {
+            ws.send(JSON.stringify(parsed));
+            delivered += 1;
+          };
+          if (hold) {
+            held.push(deliver);
+          } else {
+            deliver();
+          }
           return;
         }
       } catch {
@@ -147,6 +190,15 @@ async function installListCommandsStub(page: Page): Promise<void> {
       ws.send(message);
     });
   });
+
+  return {
+    deliveredCount: () => delivered,
+    heldCount: () => held.length,
+    release() {
+      hold = false;
+      for (const deliver of held.splice(0)) deliver();
+    },
+  };
 }
 
 async function openAppWideNewWorkspace(page: Page): Promise<void> {
@@ -390,13 +442,14 @@ test.describe("Composer autocomplete", () => {
       });
       await expect(page.getByTestId("composer-file-attachment-pill")).toContainText("note.txt");
       await message.getByRole("link", { name: "/mock", exact: true }).click();
-      await expect(composerLocator(page)).toHaveValue("/mock ");
+      await expect(composerLocator(page)).toHaveValue("[File #1] /mock ");
+      // A command behind the inline file ref is not at the start, so no command or argument menu opens.
       await expect(
         page.getByTestId("composer-autocomplete-popover").filter({ visible: true }),
       ).toHaveCount(0);
       await expect(composerLocator(page)).toBeFocused();
       await message.getByRole("link", { name: "Run mock" }).click();
-      await expect(composerLocator(page)).toHaveValue("/mock /mock ");
+      await expect(composerLocator(page)).toHaveValue("[File #1] /mock /mock ");
       await expect(
         page.getByTestId("composer-autocomplete-popover").filter({ visible: true }),
       ).toHaveCount(0);
@@ -517,13 +570,15 @@ test.describe("Composer autocomplete", () => {
   test("does not flash at the wrong position on the first slash command paint", async ({
     page,
   }) => {
-    await installListCommandsStub(page);
+    const stub = await installListCommandsStub(page);
     const agent = await openReadyMockAgent(page);
 
     try {
       const input = composerLocator(page);
       await expect(input).toBeEditable({ timeout: 30_000 });
       await input.click();
+      // Measure the first paint of a loaded list; the loading state has its own test.
+      await expect.poll(() => stub.deliveredCount(), { timeout: 30_000 }).toBeGreaterThan(0);
 
       await startPopoverFrameRecorder(page);
       await page.keyboard.type("/");
@@ -532,6 +587,52 @@ test.describe("Composer autocomplete", () => {
       const frames = await stopPopoverFrameRecorder(page);
 
       expectPopoverFramesStable(frames);
+    } finally {
+      await agent.cleanup();
+    }
+  });
+
+  test("shows built-in commands while provider commands are still loading", async ({ page }) => {
+    const stub = await installListCommandsStub(page, { hold: true });
+    const agent = await openReadyMockAgent(page);
+
+    try {
+      const input = composerLocator(page);
+      await expect(input).toBeEditable({ timeout: 30_000 });
+      await input.click();
+      // The agent panel asks for commands when it opens; the answer is held back.
+      await expect.poll(() => stub.heldCount(), { timeout: 30_000 }).toBeGreaterThan(0);
+
+      await page.keyboard.type("/");
+      const popover = page.getByTestId("composer-autocomplete-popover");
+      // Provider commands are held indefinitely, so a visible menu proves it does not wait
+      // for them. The bound leaves room for a slow CI paint.
+      await expect(popover.getByText("/exit", { exact: true }).first()).toBeVisible({
+        timeout: 1_000,
+      });
+      await expect(popover.getByText("/clear", { exact: true }).first()).toBeVisible();
+      await expect(popover.getByText("Loading commands...")).toBeVisible();
+      await expect(popover.getByText("/help", { exact: true })).toHaveCount(0);
+
+      await input.press("ArrowUp");
+      const selectedDetail = page.getByTestId("autocomplete-selected-detail");
+      await expect(selectedDetail).toContainText("Archive this agent and start a fresh draft");
+      const beforeRelease = await visiblePopoverBox(page);
+
+      await startPopoverFrameRecorder(page);
+      stub.release();
+      await expect(popover.getByText("/help", { exact: true }).first()).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(popover.getByText("Loading commands...")).toHaveCount(0);
+      await page.waitForTimeout(250);
+      const frames = await stopPopoverFrameRecorder(page);
+
+      expectPopoverDoesNotDisappearAfterFirstVisible(frames);
+      const afterRelease = await visiblePopoverBox(page);
+      expect(Math.abs(afterRelease.bottom - beforeRelease.bottom)).toBeLessThanOrEqual(4);
+      // The highlight stays on the command the user picked while the list grew.
+      await expect(selectedDetail).toContainText("Archive this agent and start a fresh draft");
     } finally {
       await agent.cleanup();
     }
@@ -733,6 +834,40 @@ test.describe("Composer autocomplete", () => {
     }
   });
 
+  test("picks a command choice with Tab and leaves Enter to send the bare command", async ({
+    page,
+  }) => {
+    await installListCommandsStub(page);
+    const agent = await openReadyMockAgent(page);
+
+    try {
+      const input = composerLocator(page);
+      await expect(input).toBeEditable({ timeout: 30_000 });
+      const popover = page.getByTestId("composer-autocomplete-popover").filter({ visible: true });
+
+      await input.fill("/compact s");
+      // The selected choice is also named in the detail card above the rows; the row is last.
+      await expect(popover.getByText("snapcompact", { exact: true }).last()).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(popover.getByText("soft", { exact: true }).last()).toBeVisible();
+      await expect(popover.getByText("remote", { exact: true })).toHaveCount(0);
+
+      await input.fill("/compact sn");
+      await expect(popover.getByText("soft", { exact: true })).toHaveCount(0);
+      await input.press("Tab");
+      await expect(input).toHaveValue("/compact snapcompact ");
+      await expect(popover).toHaveCount(0);
+
+      await input.fill("/compact ");
+      await expect(popover.getByText("remote", { exact: true }).last()).toBeVisible();
+      await input.press("Enter");
+      await expect(input).toHaveValue("");
+    } finally {
+      await agent.cleanup();
+    }
+  });
+
   test.describe("compact sidebar layering", () => {
     test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
@@ -759,6 +894,36 @@ test.describe("Composer autocomplete", () => {
         await closeMobileAgentSidebar(page);
         await expectMobileAgentSidebarHidden(page);
         await expect(popover.getByText("/help", { exact: true }).first()).toBeVisible();
+      } finally {
+        await agent.cleanup();
+      }
+    });
+  });
+
+  test.describe("slash command arguments on a phone", () => {
+    test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+    test("offers a command's choices after its name and fills in the tapped one", async ({
+      page,
+    }) => {
+      await installListCommandsStub(page);
+      const agent = await openReadyMockAgent(page, { expectWorkspaceTab: false });
+
+      try {
+        const input = composerLocator(page);
+        await expect(input).toBeEditable({ timeout: 30_000 });
+        await input.fill("/compact ");
+
+        const popover = page.getByTestId("composer-autocomplete-popover").filter({ visible: true });
+        const snapcompact = popover.getByText("snapcompact", { exact: true }).last();
+        await expect(snapcompact).toBeVisible({ timeout: 30_000 });
+        await expect(popover.getByText("soft", { exact: true }).last()).toBeVisible();
+        await expect(popover).toContainText("Archive history onto dense bitmap images");
+        await expect(popover).not.toContainText("/help");
+
+        await snapcompact.tap();
+        await expect(input).toHaveValue("/compact snapcompact ");
+        await expect(popover).toHaveCount(0);
       } finally {
         await agent.cleanup();
       }

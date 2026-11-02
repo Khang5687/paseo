@@ -17,6 +17,9 @@ import { isWeb } from "@/constants/platform";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { useAppSettings } from "@/hooks/use-settings";
+import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
+import { useWorkspaceNoteBadge } from "@/notes/chat-badges-store";
+import { chatNoteBadgeLabels } from "@/components/sidebar/sidebar-note-badge";
 import { densityIconProps } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
@@ -347,6 +350,7 @@ export function SidebarWorkspaceContextMenu({
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
+  draggable,
   ...triggerProps
 }: PropsWithChildren<
   SidebarWorkspaceMenuItemsProps &
@@ -358,12 +362,17 @@ export function SidebarWorkspaceContextMenu({
       hostBadgeLabel?: string | null;
       serviceSummary?: WorkspaceServiceSummary | null;
       highlightStyle: ComponentProps<typeof ContextMenuTrigger>["highlightStyle"];
+      // Long-press on native starts a drag on draggable rows, so only rows that can't be dragged
+      // open this menu on long-press. Draggable rows keep the kebab.
+      draggable: boolean;
     }
 >) {
   const {
     settings: { workspaceTitleSource },
   } = useAppSettings();
   const { t } = useTranslation();
+  const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
+  const noteBadge = useWorkspaceNoteBadge(workspace.serverId, workspace.workspaceId);
   const pullRequestLabel = workspace.prHint
     ? t("workspace.git.pr.accessibility.pullRequest", {
         number: workspace.prHint.number,
@@ -379,6 +388,8 @@ export function SidebarWorkspaceContextMenu({
     serviceLabel: serviceSummary
       ? t(workspaceServiceLabelKey(serviceSummary), { name: serviceSummary.name })
       : null,
+    hasUnsentDraft,
+    noteLabels: chatNoteBadgeLabels(noteBadge, t),
     t,
   });
   const workspaceTarget = useMemo<WorkspaceLabelTarget>(
@@ -395,7 +406,7 @@ export function SidebarWorkspaceContextMenu({
     <ContextMenu open={contextMenuOpen} onOpenChange={onContextMenuOpenChange}>
       <ContextMenuTrigger
         {...triggerProps}
-        enabledOnMobile={false}
+        enabledOnMobile={!draggable}
         accessibilityLabel={accessibilityLabel ?? rowAccessibilityLabel}
         highlightStyle={highlightStyle}
       >

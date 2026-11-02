@@ -228,7 +228,10 @@ export const questionSchema = z.object({
   ),
 });
 export const settledQuestionSchema = z.object({ userInputId: z.string() });
-export const questionAnswersSchema = z.object({ answers: z.record(z.string(), z.string()) });
+export const questionAnswersSchema = z.object({
+  answers: z.record(z.string(), z.string()),
+  answerLists: z.record(z.string(), z.array(z.string())).optional(),
+});
 export const todoSchema = z.object({
   viewCursor: z.string(),
   items: z.array(

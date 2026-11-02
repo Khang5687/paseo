@@ -99,6 +99,7 @@ MCP does not expose an agent-detach tool. Detaching is a manual user action in t
 | `kill_agent`         | Terminate an agent session permanently.                                                                                                                                  |
 | `update_agent`       | Update an agent name, labels, or runtime settings such as mode/model/thinking/features.                                                                                  |
 | `get_agent_activity` | Return recent agent timeline entries as a curated summary.                                                                                                               |
+| `ask_agent`          | Ask an agent a question without interrupting it. A hidden read-only copy of its conversation answers, then is deleted. Claude, Codex, OpenCode, and OMP agents.          |
 | `set_agent_mode`     | Switch an agent's session mode.                                                                                                                                          |
 
 Paseo agents receive finish, error, and permission notifications by default; set `notifyOnFinish: false` to disable them. External MCP clients use `get_agent_status` and `get_agent_activity` to check results.
@@ -188,10 +189,10 @@ Omit absent optional settings. If no profile fits, use provider discovery to cho
 
 ### Permissions
 
-| Tool                       | Function                                          |
-| -------------------------- | ------------------------------------------------- |
-| `list_pending_permissions` | Return pending permission requests across agents. |
-| `respond_to_permission`    | Approve or deny a pending permission request.     |
+| Tool                       | Function                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `list_pending_permissions` | List the question boxes and approval prompts agents wait on; `agentId` filters to one agent.         |
+| `respond_to_permission`    | Answer one as the user's tap would: `answers` keyed by question header, or an allow/deny `response`. |
 
 ### Browser
 

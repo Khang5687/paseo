@@ -1,5 +1,12 @@
 # Changelog
 
+尚未发布。以下变更已合入 `main`，但不包含在 0.15.0-beta.1 中；下一个版本的条目会包含它们。
+
+新增：
+
+- Agent 可用 `ask_agent` 向另一个 Agent 提问而不打断它：由它对话的一个隐藏只读副本回答，回答后即删除，支持同一主机或已连接的主机。适用于 Claude、Codex、OpenCode 和 OMP Agent；`list_agents` 现在会返回每个 Agent 的 `workspaceId`
+- Agent 可用 `respond_to_permission` 的 `answers`（按问题 header）回答另一个 Agent 的提问框；`list_pending_permissions` 可按 `agentId` 过滤，两者都可通过 `serverId` 用于已连接主机上的 Agent。`paseo` 技能新增查找、询问、发消息和解除其他 Agent 阻塞的说明
+
 ## 0.15.0-beta.1 - 2026-11-01
 
 daemon 重启后，终端中的程序继续运行，被中断的 Agent 会自动在原有会话中恢复工作。

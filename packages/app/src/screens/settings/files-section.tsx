@@ -15,6 +15,7 @@ import {
   type FilePanel,
   type FilePanelSettingsRow,
 } from "@/file-panels";
+import { OfflineFilesSection } from "@/offline-files/settings-section";
 import { PluginIconView } from "@/plugins/icons";
 import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
@@ -24,8 +25,18 @@ const MENU_ICON_SIZE = 16;
 const ThemedPanelIcon = withUnistyles(PluginIconView);
 const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-/** Which panel opens each file type, for the types more than one panel claims. */
+/** The Files page: which panel opens each file type, and saved copies for offline use. */
 export function FilesSection() {
+  return (
+    <View>
+      <FilePanelsSection />
+      <OfflineFilesSection />
+    </View>
+  );
+}
+
+/** Which panel opens each file type, for the types more than one panel claims. */
+function FilePanelsSection() {
   const { t } = useTranslation();
   const { rows, choose, askAgain } = useFilePanelSettings();
   return (

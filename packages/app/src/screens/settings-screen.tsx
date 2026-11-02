@@ -1405,7 +1405,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
 const styles = StyleSheet.create((theme) => ({
   loadingContainer: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1415,7 +1415,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   scrollView: {
     flex: 1,
@@ -1469,7 +1469,7 @@ const sidebarStyles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   },
   scrollBody: {
     flex: 1,

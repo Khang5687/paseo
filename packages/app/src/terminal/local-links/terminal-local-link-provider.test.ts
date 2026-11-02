@@ -1,6 +1,9 @@
 import type { IBufferCell, Terminal } from "@xterm/xterm";
 import { describe, expect, it, vi } from "vitest";
-import { createTerminalLocalFileLinkProvider } from "./terminal-local-link-provider";
+import {
+  createTerminalLocalFileLinkProvider,
+  isBufferCellInRange,
+} from "./terminal-local-link-provider";
 
 describe("createTerminalLocalFileLinkProvider", () => {
   it("resolves before exposing a local file link", async () => {
@@ -45,9 +48,26 @@ describe("createTerminalLocalFileLinkProvider", () => {
     });
 
     const [link] = (await provideLinks(provider, 1)) ?? [];
-    link?.activate({ preventDefault: vi.fn(), ctrlKey: true } as unknown as MouseEvent, link.text);
+    link?.activate(
+      { preventDefault: vi.fn(), button: 0, ctrlKey: true } as unknown as MouseEvent,
+      link.text,
+    );
 
     expect(openLink).toHaveBeenCalledWith(target, "side", expect.anything());
+  });
+
+  it("leaves a right click to the file menu instead of opening the file", async () => {
+    const terminal = createTerminal(["src/file.ts:42"]);
+    const openLink = vi.fn();
+    const provider = createTerminalLocalFileLinkProvider(terminal, {
+      resolveLink: vi.fn(async () => ({ path: "/repo/src/file.ts", lineStart: 42 })),
+      openLink,
+    });
+
+    const [link] = (await provideLinks(provider, 1)) ?? [];
+    link?.activate({ preventDefault: vi.fn(), button: 2 } as unknown as MouseEvent, link.text);
+
+    expect(openLink).not.toHaveBeenCalled();
   });
 
   it("does not expose unresolved candidates as links", async () => {
@@ -58,6 +78,17 @@ describe("createTerminalLocalFileLinkProvider", () => {
     });
 
     await expect(provideLinks(provider, 1)).resolves.toBeUndefined();
+  });
+
+  it("places a cell inside a link range, including a range that wraps onto the next row", () => {
+    const range = { start: { x: 70, y: 4 }, end: { x: 6, y: 5 } };
+
+    expect(isBufferCellInRange({ x: 70, y: 4 }, range)).toBe(true);
+    expect(isBufferCellInRange({ x: 1, y: 5 }, range)).toBe(true);
+    expect(isBufferCellInRange({ x: 6, y: 5 }, range)).toBe(true);
+    expect(isBufferCellInRange({ x: 69, y: 4 }, range)).toBe(false);
+    expect(isBufferCellInRange({ x: 7, y: 5 }, range)).toBe(false);
+    expect(isBufferCellInRange({ x: 1, y: 6 }, range)).toBe(false);
   });
 });
 

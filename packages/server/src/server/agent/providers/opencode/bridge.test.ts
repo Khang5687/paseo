@@ -203,7 +203,7 @@ describe("OpenCodeBridge", () => {
             sessionID: "bound",
             ask: async () => undefined,
           }),
-        ).resolves.toMatchObject({ output: expect.stringContaining('"deliveryStatus": "queued"') });
+        ).resolves.toMatchObject({ output: expect.stringContaining('"deliveryStatus":"queued"') });
         await agentMessages.waitForDispatch(child.id, new AbortController().signal);
       } finally {
         await dispose();
