@@ -30,7 +30,7 @@ import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
-import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 
 const needsInputColorMapping = (theme: Theme) => ({
@@ -41,6 +41,10 @@ const needsInputColorMapping = (theme: Theme) => ({
 const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedPencilLine = withUnistyles(PencilLine);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+
+// The overlay holds the archive button beside the kebab: one 18px control plus its gap more
+// than the default scrim was sized for.
+const ARCHIVE_AND_KEBAB_SCRIM_WIDTH = SCRIM_WIDTH + 20;
 
 export function SidebarWorkspaceRowFrame({
   workspace,
@@ -352,10 +356,23 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     alignItems: "flex-end",
     justifyContent: "flex-start",
   },
+  // Touch shows the archive button and the kebab permanently, so the slot holds both: their
+  // compact boxes net of the margins that pull them onto the trailing rail.
+  trailingActionSlotReservedForActions: {
+    position: "relative",
+    minWidth: { xs: 42, md: 36 },
+    minHeight: 20,
+    flexShrink: 0,
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+  },
   trailingActionOverlay: {
     position: "absolute",
     top: 0,
     right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
   },
 }));
 
@@ -368,6 +385,9 @@ export function SidebarWorkspaceShortcutBadge({ number }: { number: number }) {
 }
 
 export type SidebarWorkspaceTrailingPresentation = "visible" | "hidden" | "absent";
+
+/** What the trailing slot holds width for: nothing, its trailing content, or the touch actions. */
+export type SidebarWorkspaceTrailingSlotReservation = "none" | "content" | "actions";
 
 /**
  * What the trailing slot shows for a row. Derived in one place because three row renderers
@@ -398,7 +418,7 @@ export function resolveTrailingActionVisibility({
   showKebab: boolean;
   showScrim: boolean;
   renderSlot: boolean;
-  reserveSlotWidth: boolean;
+  reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation;
 } {
   const hasTrailing = hasSidebarWorkspaceTrailing({ workspace, trailing });
   const showKebab = Boolean(hasArchiveAction && (isHovered || isTouchPlatform)) && !showShortcut;
@@ -407,6 +427,13 @@ export function resolveTrailingActionVisibility({
   const hasContent = hasTrailing && !(hasArchiveAction && isTouchPlatform);
   let trailingPresentation: SidebarWorkspaceTrailingPresentation = "absent";
   if (hasContent) trailingPresentation = showShortcut ? "hidden" : "visible";
+  // The slot only holds width for something that permanently sits in it. Trailing content
+  // does; the archive button and kebab only do on touch, where there is no hover for them to
+  // appear on and so no scrim to let them overlay the title. Everywhere else the width goes
+  // back to the title and the actions fade in over its tail.
+  let reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation = "none";
+  if (hasContent) reserveSlotWidth = "content";
+  if (hasArchiveAction && isTouchPlatform) reserveSlotWidth = "actions";
   return {
     trailingPresentation,
     showKebab,
@@ -415,11 +442,7 @@ export function resolveTrailingActionVisibility({
     // touch, which shows the kebab without ever hovering, never gets one.
     showScrim: showKebab && isHovered,
     renderSlot: hasArchiveAction || hasTrailing,
-    // The slot only holds width for something that permanently sits in it. Trailing content
-    // does; the kebab only does on touch, where there is no hover for it to appear on and so
-    // no scrim to let it overlay the title. Everywhere else the width goes back to the title
-    // and the kebab fades in over its tail.
-    reserveSlotWidth: hasContent || (hasArchiveAction && isTouchPlatform),
+    reserveSlotWidth,
   };
 }
 
@@ -427,20 +450,15 @@ export function SidebarWorkspaceTrailingActionSlot({
   reserveWidth,
   children,
 }: {
-  reserveWidth: boolean;
+  reserveWidth: SidebarWorkspaceTrailingSlotReservation;
   children: ReactNode;
 }) {
-  return (
-    <View
-      style={
-        reserveWidth
-          ? sidebarWorkspaceRowStyles.trailingActionSlotReserved
-          : sidebarWorkspaceRowStyles.trailingActionSlot
-      }
-    >
-      {children}
-    </View>
-  );
+  let style = sidebarWorkspaceRowStyles.trailingActionSlot;
+  if (reserveWidth === "content") style = sidebarWorkspaceRowStyles.trailingActionSlotReserved;
+  if (reserveWidth === "actions") {
+    style = sidebarWorkspaceRowStyles.trailingActionSlotReservedForActions;
+  }
+  return <View style={style}>{children}</View>;
 }
 
 export function SidebarWorkspaceTrailingActionBase({
@@ -464,7 +482,7 @@ export function SidebarWorkspaceTrailingActionOverlay({
   children,
 }: {
   visible: boolean;
-  /** Fade the row into the kebab when something (the diff stat) is still rendered behind it. */
+  /** Fade the row into the actions when something (the diff stat) is still rendered behind it. */
   scrimBackdrop?: SidebarSurfaceBackdrop;
   children: ReactNode;
 }) {
@@ -472,7 +490,11 @@ export function SidebarWorkspaceTrailingActionOverlay({
   return (
     <>
       {scrimBackdrop ? (
-        <TrailingActionScrim backdrop={scrimBackdrop} testID="sidebar-workspace-trailing-scrim" />
+        <TrailingActionScrim
+          backdrop={scrimBackdrop}
+          width={ARCHIVE_AND_KEBAB_SCRIM_WIDTH}
+          testID="sidebar-workspace-trailing-scrim"
+        />
       ) : null}
       <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>{children}</View>
     </>
