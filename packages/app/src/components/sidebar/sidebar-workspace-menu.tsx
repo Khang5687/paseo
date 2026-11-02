@@ -20,6 +20,7 @@ import { useAppSettings } from "@/hooks/use-settings";
 import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
 import { useWorkspaceNoteBadge } from "@/notes/chat-badges-store";
 import { chatNoteBadgeLabels } from "@/components/sidebar/sidebar-note-badge";
+import { useCopyThreadAgentId } from "@/hooks/use-copy-agent-id";
 import { densityIconProps } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
@@ -149,6 +150,7 @@ function SidebarWorkspaceMenuItems({
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
+  const copyAgentId = useCopyThreadAgentId(serverId, workspaceId);
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
@@ -178,6 +180,16 @@ function SidebarWorkspaceMenuItems({
           onSelect={onCopyBranchName}
         >
           {t("sidebar.workspace.actions.copyBranchName")}
+        </WorkspaceMenuItem>
+      ) : null}
+      {copyAgentId ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-copy-agent-id-${workspaceKey}`}
+          leading={copyLeadingIcon}
+          onSelect={copyAgentId}
+        >
+          {t("sidebar.workspace.actions.copyAgentId")}
         </WorkspaceMenuItem>
       ) : null}
       {onRename ? (

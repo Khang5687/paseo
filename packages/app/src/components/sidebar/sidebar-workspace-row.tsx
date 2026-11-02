@@ -24,6 +24,7 @@ import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { SidebarWorkspaceArchiveButton } from "@/components/sidebar/sidebar-workspace-archive-button";
 import {
   SidebarWorkspaceRowFrame,
@@ -435,6 +436,11 @@ function WorkspaceRowTrailingActions({
           >
             {onArchive ? (
               <>
+                <SidebarWorkspaceCopyAgentIdButton
+                  workspaceKey={workspace.workspaceKey}
+                  serverId={workspace.serverId}
+                  workspaceId={workspace.workspaceId}
+                />
                 <SidebarWorkspaceArchiveButton
                   workspaceKey={workspace.workspaceKey}
                   pending={archiveStatus === "pending"}

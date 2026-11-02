@@ -1,14 +1,18 @@
 import equal from "fast-deep-equal";
 import { memo, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Text, type PressableStateCallbackType } from "react-native";
+import { Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useSidebarChildWorkspaceCount } from "@/components/sidebar/sidebar-model";
 import { sidebarWorkspaceRowStyles } from "@/components/sidebar/sidebar-workspace-row-content";
 import { PressHighlight } from "@/components/ui/press-highlight";
-import { isWeb } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { useCopyAgentId } from "@/hooks/use-copy-agent-id";
+import { SidebarWorkspaceIconButton } from "@/components/sidebar/sidebar-workspace-icon-button";
+import { renderCopyAgentIdIcon } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { WorkspaceTabIcon } from "@/screens/workspace/workspace-tab-presentation";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
@@ -136,6 +140,15 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
     [noteAgentId],
   );
   const noteBadge = useChatNoteBadge(serverId, noteAgentIds);
+  const copyAgentId = useCopyAgentId();
+  const isCompact = useIsCompactFormFactor();
+  const handleCopyAgentId = useCallback(() => {
+    if (!noteAgentId) return;
+    void copyAgentId(
+      noteAgentId,
+      t("sidebar.workspace.toasts.agentIdCopied", { id: noteAgentId.slice(0, 7) }),
+    );
+  }, [copyAgentId, noteAgentId, t]);
   const accessibilityLabel = [label, ...chatNoteBadgeLabels(noteBadge, t)].join(", ");
   const handlePress = useCallback(() => {
     if (row.kind === "paseo") {
@@ -176,6 +189,16 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
             {label}
           </Text>
           <SidebarNoteBadge badge={noteBadge} />
+          {noteAgentId && (hovered || isNative || isCompact) ? (
+            <View style={styles.rowAction}>
+              <SidebarWorkspaceIconButton
+                renderIcon={renderCopyAgentIdIcon}
+                label={t("sidebar.workspace.actions.copyAgentId")}
+                onPress={handleCopyAgentId}
+                testID={`sidebar-thread-child-copy-agent-id-${row.id}`}
+              />
+            </View>
+          ) : null}
         </>
       )}
     </PressHighlight>
@@ -206,6 +229,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   rowPressed: {
     backgroundColor: theme.colors.surface2,
+  },
+  rowAction: {
+    marginLeft: "auto",
   },
   label: {
     color: theme.colors.foreground,

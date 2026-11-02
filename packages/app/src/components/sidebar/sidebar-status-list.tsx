@@ -75,6 +75,7 @@ import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { SidebarWorkspaceArchiveButton } from "@/components/sidebar/sidebar-workspace-archive-button";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
@@ -1063,6 +1064,11 @@ function StatusWorkspaceActionSlot({
       >
         {kebab.showKebab && onArchive ? (
           <>
+            <SidebarWorkspaceCopyAgentIdButton
+              workspaceKey={workspace.workspaceKey}
+              serverId={workspace.serverId}
+              workspaceId={workspace.workspaceId}
+            />
             <SidebarWorkspaceArchiveButton
               workspaceKey={workspace.workspaceKey}
               pending={archiveStatus === "pending"}
