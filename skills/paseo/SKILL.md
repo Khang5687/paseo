@@ -1,6 +1,6 @@
 ---
 name: paseo
-description: Paseo reference for managing hosts, projects, workspaces, workspace scripts, agents, schedules, and heartbeats.
+description: Paseo reference for managing hosts, projects, workspaces, workspace scripts, agents, schedules, and heartbeats. Use whenever the user mentions another agent, another chat, or a workspace by name — to ask it something, read what it did, hand it work, or answer its questions.
 ---
 
 Paseo is a remote daemon that manages coding agents, terminals. Control it through MCP tools or the CLI.
@@ -9,7 +9,7 @@ Paseo is a remote daemon that manages coding agents, terminals. Control it throu
 
 Call `list_hosts` to discover the calling daemon (`self`) and its registered destinations (`hosts`). Use a destination's `serverId` for tool calls; labels are display names.
 
-`create_workspace`, `list_workspaces`, `create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, and `list_agents` accept `serverId`. Omit it for the calling daemon. Other MCP tools operate on the calling daemon.
+`create_workspace`, `list_workspaces`, `create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, `ask_agent`, `list_pending_permissions`, `respond_to_permission`, and `list_agents` accept `serverId`. Omit it for the calling daemon. Other MCP tools operate on the calling daemon.
 
 Keep an agent's `{ serverId, agentId }` together. For example, call `send_agent_prompt` with:
 
@@ -90,7 +90,35 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 **`list_agents`** — filter by `cwd`, `statuses`, `sinceHours`, `includeArchived`; set `includeBackground: true` to include agents in background workspaces.
 
+**`ask_agent`** — `{ agentId, question }`. Ask another agent something only it knows (its progress, decisions, or context) without interrupting it. A hidden copy of its whole conversation answers in a read-only mode and is deleted afterward; the agent never sees the question. Prefer it over `send_agent_prompt` when you only need information. To find an agent by the workspace name the user sees, match `list_workspaces` titles to the `workspaceId` in `list_agents`. Works for Claude, Codex, OpenCode, and OMP agents.
+
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
+
+## Working with other agents
+
+The user runs several agents at once and refers to them by the workspace name in the sidebar ("the git backup agent", "the 6tb one"). They want you to do the talking between agents instead of copying text from one chat to another.
+
+**Find the agent.** Call `list_workspaces` and match the user's words to a `title`, then `list_agents` and take the agent whose `workspaceId` matches. If nothing matches, call `list_hosts` and repeat both calls with each host's `serverId`: the agent may be on another computer. Ask the user only when two agents fit equally well.
+
+**Choose the verb.**
+
+| The user wants to…                        | Use                                                      | The other agent…                                             |
+| ----------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------ |
+| know what it decided, is doing, or found  | `ask_agent`                                              | is not interrupted and never sees the question               |
+| see what happened recently, word for word | `get_agent_activity`                                     | is not touched                                               |
+| make it do something                      | `send_agent_prompt`                                      | receives your message in its chat; a running turn is steered |
+| unblock it                                | `list_pending_permissions`, then `respond_to_permission` | continues as if the user tapped                              |
+
+Prefer `ask_agent` over `send_agent_prompt` for questions: a message lands in the middle of the user's own conversation with that agent.
+
+**Answer its questions.** `list_pending_permissions` with its `agentId` shows what it waits on. For `kind: "question"`, read `request.input.questions` and reply with `respond_to_permission` `answers`, keyed by each question's `header`, each a list of option labels (or your own text when the question allows it). For approvals (`kind: "tool"` or `"plan"`) reply with `response: { "behavior": "allow" }` or `{ "behavior": "deny", "message": "…" }`. Answer only what the user told you to decide or what follows plainly from the conversation; when unsure, ask the user and show them the options. Never approve a command the user has not asked for.
+
+**Example.** "Ask the 6tb agent what it's doing and answer its questions":
+
+1. `list_workspaces` → `"set up 2 6tb drives"` is `wks_6f10…`; `list_agents` → agent `186e…` has that `workspaceId`.
+2. `ask_agent { agentId: "186e…", question: "What are you doing, and what are you waiting on?" }`.
+3. `list_pending_permissions { agentId: "186e…" }` → one question, header `"Pool layout"`.
+4. `respond_to_permission { agentId: "186e…", requestId: "…", answers: { "Pool layout": ["mirror"] } }`, after confirming with the user if the choice isn't obvious.
 
 ## Agent profiles and provider discovery
 

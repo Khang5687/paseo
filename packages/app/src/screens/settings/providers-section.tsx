@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
+import { AccountRoutingSection } from "@/omp-account-routing/account-section";
 import { useProviderSettingsStore } from "@/stores/provider-settings-store";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { filterSelectableModels } from "@/provider-selection/model-catalog";
@@ -473,6 +474,8 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
           </View>
         ) : null}
       </SettingsSection>
+
+      {hasServer ? <AccountRoutingSection key={serverId} serverId={serverId} /> : null}
 
       {hasServer && isConnected ? (
         <SettingsSection

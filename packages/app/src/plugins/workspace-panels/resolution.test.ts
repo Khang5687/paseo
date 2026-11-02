@@ -38,6 +38,7 @@ function installed(): InstalledPlugin {
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
   };

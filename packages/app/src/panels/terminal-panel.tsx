@@ -109,6 +109,7 @@ function TerminalPanel() {
       serverId={serverId}
       cwd={workspaceDirectory}
       terminalId={target.terminalId}
+      workspaceId={workspaceId}
       isWorkspaceFocused={isWorkspaceFocused}
       isPaneFocused={isPaneFocused}
       onOpenFileExplorer={handleOpenFileExplorer}

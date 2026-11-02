@@ -117,6 +117,12 @@ export const ru: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Восстановить черновик",
+      attachmentsOnly: "(только вложения)",
+      attachments_one: "{{count}} вложение",
+      attachments_other: "{{count}} вложений",
+    },
     placeholders: {
       desktop: "Напишите агенту сообщение, отметьте @files или используйте /commands и /skills.",
       mobile: "Сообщение,@files,/commands",
@@ -136,7 +142,8 @@ export const ru: TranslationResources = {
       sendAndSteer: "Отправить и направить",
       sendMessage: "Отправить сообщение",
       longPressToQueue: "Удерживайте, чтобы поставить в очередь",
-      longPressToSendNow: "Удерживайте, чтобы отправить сейчас",
+      longPressToInterrupt: "Удерживайте, чтобы прервать",
+      longPressToSteer: "Удерживайте, чтобы направить",
       queue: "Очередь",
       send: "Отправить",
     },
@@ -167,6 +174,25 @@ export const ru: TranslationResources = {
       dropFilesHere: "Переместите файлы сюда",
       editQueuedMessage: "Изменить сообщение из очереди",
       sendQueuedMessageNow: "Отправить сообщение из очереди сейчас",
+      queueHeader: "Очередь · {{count}}",
+      queuePausedHeader: "Очередь приостановлена · {{count}}",
+      queuePauseReason: "Не удалось отправить: {{reason}}",
+      pauseQueue: "Приостановить очередь",
+      resumeQueue: "Возобновить очередь",
+      clearQueue: "Очистить очередь",
+      clearQueueTitle: "Очистить очередь",
+      clearQueueMessage: "Все сообщения в очереди этого агента будут удалены.",
+      clearQueueConfirm: "Очистить",
+      queuedMessageActions: "Действия с сообщением в очереди",
+      editQueuedMessageAction: "Изменить",
+      moveQueuedMessageToTop: "Переместить в начало",
+      moveQueuedMessageUp: "Переместить вверх",
+      moveQueuedMessageDown: "Переместить вниз",
+      deleteQueuedMessage: "Удалить",
+      reorderQueuedMessage: "Перетащите, чтобы изменить порядок",
+      showMoreQueuedMessages: "Показать ещё {{count}}",
+      showFewerQueuedMessages: "Свернуть",
+      queueUpdateFailed: "Не удалось обновить очередь",
       openImage: "Открыть прикрепленное изображение",
       removeImage: "Удалить прикрепленное изображение",
       removeFile: "Удалить прикрепленный файл",
@@ -321,6 +347,57 @@ export const ru: TranslationResources = {
       hostOffline: "Хост не в сети",
       runningAgent: "Этот агент всё ещё работает. Перемещение в архив остановит его.",
       archive: "Архивировать",
+    },
+  },
+  codeRun: {
+    run: "Запустить",
+    runCommand: "Запустить команду",
+    cancel: "Отмена",
+    commandLabel: "Команда",
+    where: "Запуск на {{host}} · {{folder}}",
+    running: "Выполняется",
+    done: "Готово · код {{code}}",
+    failed: "Ошибка · код {{code}}",
+    stopped: "Остановлено",
+    terminalClosed: "Терминал закрыт",
+    close: "Закрыть",
+    expand: "Показать вывод",
+    collapse: "Скрыть вывод",
+    openTerminal: "Открыть во вкладке терминала",
+    answerPlaceholder: "Отправить ввод",
+    send: "Отправить",
+    showPassword: "Показать пароль",
+    hidePassword: "Скрыть пароль",
+    sendToAgent: "Отправить вывод агенту",
+    rerun: "Запустить снова",
+    copyOutput: "Скопировать вывод",
+    copied: "Скопировано",
+    noOutput: "Вывода пока нет",
+    noOutputFinished: "Нет вывода",
+    startFailed: "Не удалось запустить команду",
+    closeFailed: "Не удалось закрыть терминал",
+    hostOffline: "Хост не в сети. Подключитесь снова, чтобы запустить эту команду.",
+    prompt: {
+      sudoPassword: "Пароль sudo",
+      password: "Пароль",
+    },
+    chips: {
+      yes: "Да",
+      no: "Нет",
+    },
+    keys: {
+      enter: "Enter",
+      tab: "Tab",
+      interrupt: "Ctrl-C",
+    },
+    risk: {
+      admin: "Запуск от имени администратора",
+      deletes: "Удаляет файлы",
+    },
+    report: {
+      exitStatus: "Код выхода",
+      stopped: "Остановлено до завершения",
+      truncated: "[начало вывода обрезано]",
     },
   },
   message: {
@@ -480,6 +557,8 @@ export const ru: TranslationResources = {
       openToSide: "Открыть сбоку",
       copyPath: "Копировать путь",
       copyRelativePath: "Копировать относительный путь",
+      copyFullPath: "Копировать полный путь",
+      copyFileName: "Копировать имя файла",
       revealIn: "Показать в {{target}}",
       download: "Скачать",
       addToChat: "Добавить в чат",
@@ -702,6 +781,7 @@ export const ru: TranslationResources = {
         terminalIdCopiedLabel: "Идентификатор терминала",
         resumeCommandCopiedLabel: "команда продолжения",
         filePathCopiedLabel: "Путь к файлу",
+        fileNameCopiedLabel: "Имя файла",
         resumeIdUnavailable: "ID возобновления недоступен",
         resumeCommandUnavailable: "Команда возобновления недоступна",
         reloadingAgent: "Перезагрузка агента...",
@@ -1176,6 +1256,7 @@ export const ru: TranslationResources = {
   },
   sidebar: {
     statusGroupAccessibility: "Группа «{{label}}»",
+    unsentDraft: "Неотправленный черновик",
     statusBucket: {
       needsInput: "Ожидает ввода",
       failed: "Ошибка",
@@ -1240,6 +1321,10 @@ export const ru: TranslationResources = {
     pinned: {
       title: "Закреплённые",
     },
+    settled: {
+      title: "Завершённые",
+      titleWithCount: "Завершённые ({{count}})",
+    },
     host: {
       noHost: "Нет хоста",
       switchTitle: "Сменить хост",
@@ -1270,6 +1355,7 @@ export const ru: TranslationResources = {
       sessions: "История",
       search: "Поиск",
       schedules: "Расписания",
+      notes: "Заметки",
     },
     worktreeSetup: {
       title: "Настроить скрипты worktree",
@@ -1306,6 +1392,11 @@ export const ru: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} субагента работают",
+      workingSubagents_one: "{{count}} субагент работает",
+      workingSubagents_few: "{{count}} субагента работают",
+      workingSubagents_many: "{{count}} субагентов работают",
+      workingSubagents_other: "{{count}} субагента работают",
       status: {
         serviceRunning: "Сервис {{name}} запущен",
         serviceUnhealthy: "Сервис {{name}} работает некорректно",
@@ -1330,6 +1421,10 @@ export const ru: TranslationResources = {
         rename: "Переименовать рабочее пространство",
         pin: "Закрепить вверху",
         unpin: "Открепить",
+        settle: "Завершить",
+        unsettle: "Вернуть",
+        settleWorkspace: "Отметить рабочее пространство завершённым",
+        unsettleWorkspace: "Вернуть рабочее пространство",
         archive: "Архивировать",
         archiveWorkspace: "Архивировать рабочее пространство",
         hideFromSidebar: "Скрыть на боковой панели",
@@ -1415,6 +1510,9 @@ export const ru: TranslationResources = {
     quitting: {
       title: "Завершение работы Paseo...",
       detail: "Остановка локального демона.",
+    },
+    quitConfirm: {
+      hint: "Удерживайте ⌘Q или нажмите дважды для выхода",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -1940,6 +2038,40 @@ export const ru: TranslationResources = {
     shareFile: "Поделиться файлом",
     shareFileNamed: "Поделиться {{fileName}}",
   },
+  offlineFiles: {
+    title: "Офлайн-файлы",
+    autoSave: {
+      label: "Сохранять файлы из чатов автоматически",
+      description:
+        "Сохраняет файлы, упомянутые в открытых чатах, только по Wi-Fi, чтобы их можно было открыть без связи с хостом.",
+    },
+    retentionDays: {
+      label: "Хранить (дней)",
+      description: "Более старые сохранённые файлы удаляются.",
+    },
+    maxTotalMb: {
+      label: "Лимит хранилища (МБ)",
+      description: "При превышении удаляются самые старые файлы.",
+    },
+    maxFileMb: {
+      label: "Максимальный файл (МБ)",
+      description: "Файлы крупнее не сохраняются.",
+    },
+    saved: {
+      label: "Сохранено: файлов {{count}}, {{size}}",
+      description: "Ниже показаны последние сохранённые файлы.",
+    },
+    clearAll: "Очистить всё",
+    clearConfirmTitle: "Очистить офлайн-файлы?",
+    clearConfirmMessage:
+      "Сохранённые копии удаляются с этого устройства. Файлы на хосте не меняются.",
+    saveOffline: "Сохранить офлайн",
+    savedToast: "Сохранено для офлайн-доступа",
+    tooLarge: "Файл больше лимита {{size}} МБ для офлайн-файлов.",
+    readOnly: "Это сохранённая копия. Подключитесь к хосту, чтобы изменить её.",
+    savedAgo: "Офлайн-копия, сохранена {{time}}",
+    share: "Поделиться",
+  },
   menu: {
     backdrop: "Фон меню",
   },
@@ -2124,6 +2256,182 @@ export const ru: TranslationResources = {
       saveAccessibility: "Сохранить комментарий к ревью",
     },
   },
+  ompAccountRouting: {
+    login: {
+      start: "Добавить аккаунт Claude",
+      elsewhere: "Откройте Paseo на компьютере-хосте, чтобы добавить аккаунт.",
+      update: "Обновите Paseo и Oh My Pi на хосте, чтобы добавлять аккаунты здесь.",
+      inProgress: "Идёт вход",
+      continue: "Продолжить",
+      cancel: "Отмена",
+      cancelSignIn: "Отменить вход",
+      done: "Готово",
+      details: "Подробнее",
+      tryAgain: "Повторить",
+      close: "Закрыть",
+      justAdded: "Только что добавлен",
+      warning: {
+        body: "Paseo хранит один вход на каждый аккаунт Claude. Войдите на claude.ai в тот аккаунт, который хотите добавить.",
+        existing: "Уже добавлены: {{accounts}}",
+        alertTitle: "Проверьте, какой аккаунт использует браузер",
+        alertDescription:
+          "Если на claude.ai всё ещё выполнен вход в уже добавленный аккаунт, сначала выйдите или смените аккаунт. Приватное окно всегда открывается без входа.",
+        guard: "Если вы войдёте в уже добавленный аккаунт, Paseo остановится и ничего не изменит.",
+      },
+      preparing: "Подготовка ссылки для входа...",
+      link: {
+        title: "Вход в Claude",
+        step: "Откройте ссылку и войдите в аккаунт, который хотите добавить",
+        open: "Открыть страницу входа",
+        copy: "Копировать ссылку",
+        copied: "Скопировано",
+        label: "Ссылка для входа",
+        hint: "Чтобы использовать приватное окно или другое устройство, скопируйте ссылку",
+        waiting: "Ожидание браузера...",
+        pasteInstead: "Вставить адрес вручную",
+      },
+      paste: {
+        label: "Адрес или код",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "После подтверждения браузер может открыть страницу, которая не загружается. Скопируйте полный адрес из адресной строки или код, который показывает Claude, и вставьте сюда.",
+        submit: "Отправить",
+        checking: "Проверка...",
+        error: {
+          invalid_input: "Это не адрес и не код для входа",
+          wrong_login:
+            "Этот адрес относится к более старой ссылке для входа. Используйте ссылку, показанную здесь.",
+          not_waiting: "Этот вход уже завершён",
+          not_allowed: "Отправить это может только Paseo на компьютере-хосте",
+          unreachable: "Не удалось связаться с хостом. Повторите попытку.",
+        },
+      },
+      verifying: "Проверка входа...",
+      result: {
+        added: {
+          title: "Добавлен {{account}}",
+          titleUnnamed: "Аккаунт добавлен",
+          description: "{{organization}}. Автомаршрутизация уже может его использовать.",
+          descriptionUnnamed: "Автомаршрутизация уже может его использовать.",
+          billingEnabled:
+            "Для этого аккаунта включено платное дополнительное использование. Автомаршрутизация пропускает его, пока вы не отключите это в настройках Claude.",
+          billingUnknown:
+            "Убедитесь, что платное дополнительное использование для этого аккаунта отключено в настройках Claude. Автомаршрутизация пропускает аккаунты, где оно включено.",
+        },
+        alreadyListed: {
+          title: "{{account}} уже добавлен",
+          titleUnnamed: "Этот аккаунт уже добавлен",
+          description:
+            "Ничего не изменилось. Браузер вошёл в аккаунт, который у Paseo уже есть. Выйдите из claude.ai или используйте приватное окно и повторите.",
+        },
+        replaced: {
+          title: "Вход заменён для {{account}}",
+          titleUnnamed: "Сохранённый вход заменён",
+          description: "Новый аккаунт не добавлен. Используется новый вход.",
+        },
+        failed: "Не удалось войти",
+        cancelled: "Вход отменён",
+      },
+      failure: {
+        timeout: "Ссылка для входа истекла через 10 минут. Ничего не изменилось.",
+        omp_failed:
+          "Oh My Pi не смог завершить вход. Ничего не изменилось. Повторите или запустите omp в терминале и введите /login.",
+        spawn_failed: "Paseo не смог запустить Oh My Pi на этом компьютере.",
+        unreachable:
+          "Связь с хостом потеряна. После переподключения проверьте список аккаунтов, прежде чем повторять.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Действует для всех агентов OMP под управлением Paseo на этом хосте. Другие хосты и отдельные терминалы не затрагиваются.",
+      account: "Аккаунт",
+      automatic: "Автоматически",
+      useForAuto: "Использовать для автомаршрутизации",
+      auto: "Автомаршрутизация",
+      priority: "Приоритет резерва",
+      priorityHelp:
+        "Когда текущий аккаунт исчерпан, Paseo переключается на включённый аккаунт с наибольшим остатком. Этот порядок решает при равенстве.",
+      addAccountHint:
+        "Чтобы добавить аккаунт, запустите omp в терминале, введите /login и войдите с другим аккаунтом Claude.",
+      current: "Выбран",
+      serving: "Обслуживает",
+      lastServed: "Последнее обслуживание",
+      excluded: "Исключен из автомаршрутизации",
+      missing: "Сохраненный аккаунт недоступен",
+      fiveHour: "5 часов",
+      weekly: "Неделя",
+      tier: "Уровень подписки",
+      unknownTier: "Уровень подписки неизвестен",
+      unknownBudget: "Абсолютный лимит неизвестен",
+      consumed: "Использовано",
+      remaining: "Осталось",
+      stale: "Устаревшее наблюдение",
+      unknownOrganization: "Организация неизвестна",
+      detailsPending: "Подробности появятся, когда запущен агент Oh My Pi",
+      search: "Поиск аккаунтов",
+    },
+    actions: {
+      moveUp: "Выше",
+      moveDown: "Ниже",
+    },
+    status: {
+      loading: "Загрузка маршрутизации аккаунтов",
+      empty: "Аккаунты Claude не обнаружены",
+      noRuntime: "Аккаунты появятся, когда запущен агент Oh My Pi.",
+      unsupported: "Этот хост не подтвердил поддержку маршрутизации аккаунтов OMP",
+      offline: "Хост не в сети; показаны последние подтвержденные настройки",
+      readOnly: "Вы можете просматривать эти настройки, но не изменять их",
+      pending: "Сохранение настроек",
+      conflict: "Настройки изменены в другом месте; показано последнее подтвержденное состояние",
+      paused: "Ожидание доступного включенного аккаунта",
+      recovered: "Включенный аккаунт доступен",
+      unknownUsage: "Использование неизвестно",
+      summaryPaused: "Пауза: у включённых аккаунтов не осталось лимита.",
+      summaryPausedResumes:
+        "Пауза: у включённых аккаунтов не осталось лимита. Возобновится {{time}}",
+      summaryUsing: "Используется {{account}}",
+      summaryAuto: "Авто выбирает аккаунт с наибольшим остатком",
+    },
+    reason: {
+      no_account: "Аккаунт не выбран",
+      source_changed: "Выбранный нативный источник учетных данных изменился",
+      source_inaccessible: "Эта среда выполнения не имеет доступа к выбранному нативному аккаунту",
+      billing_enabled:
+        "Платные кредиты использования включены; маршрутизация только по включенному лимиту не может использовать этот аккаунт",
+      billing_unknown: "Настройки платных кредитов использования давно не проверялись",
+      quota_blocked: "Включенный лимит недоступен для этого запроса",
+      entitlement_unavailable: "Доступ к модели недоступен или не проверен для этого аккаунта",
+      auth_unavailable: "Аутентификация нативного аккаунта недоступна",
+      unsupported_transport:
+        "Этот транспорт провайдера не поддерживает маршрутизацию только по включенному лимиту",
+      unsupported_runtime: "Эта среда выполнения OMP не поддерживает управляемую маршрутизацию",
+      persistence_failed: "Не удалось сохранить настройки маршрутизации",
+      host_unavailable: "Хост маршрутизации недоступен",
+      cancelled: "Запрос отменен",
+      metadata_pending: "Проверка доступности аккаунта",
+      all_unavailable: "Сейчас нет доступных включенных аккаунтов",
+      auto_disabled:
+        "Автомаршрутизация выключена; выберите аккаунт или включите ее, чтобы продолжить",
+      provider_failed: "Не удалось проверить доступность аккаунта",
+    },
+    mutationError: {
+      conflict:
+        "Настройки изменены в другом месте; посмотрите последнее состояние, прежде чем повторять",
+      invalid_account: "Этого нативного аккаунта больше нет в каталоге",
+      unsupported: "Элементы управления маршрутизацией аккаунтов недоступны на этом хосте",
+      persistence_failed: "Настройки не сохранены; остаются последние подтвержденные настройки",
+    },
+    values: {
+      used: "использовано {{percent}}%",
+      reset: "сброс {{time}}",
+      observed: "замер {{time}}",
+      limitReached: "Лимит ({{window}}) исчерпан",
+      limitReachedReset: "Лимит ({{window}}) исчерпан · сброс {{time}}",
+      account: "Аккаунт {{row}}",
+      serving: "{{account}} обслуживает {{agent}}",
+      priority: "Приоритет {{position}}",
+    },
+  },
   providerUsage: {
     checkUsage: "Проверять использование",
     checkUsageHint: "Применяется к {{host}} на всех устройствах",
@@ -2194,6 +2502,155 @@ export const ru: TranslationResources = {
       hoursAgo: "{{value}} ч назад",
       minutesAgo: "{{value}} мин назад",
       updated: "Обновлено {{relativeTime}}",
+    },
+  },
+  notes: {
+    addNote: "Добавить заметку",
+    offline: "Этот хост не в сети.",
+    unsupported: "Обновите этот хост, чтобы использовать заметки.",
+    composer: {
+      titleNew: "Новая заметка",
+      titleEdit: "Редактировать заметку",
+      quoteLabel: "Выделенный текст",
+      showMore: "Показать больше",
+      showLess: "Показать меньше",
+      textLabel: "Заметка",
+      textPlaceholder: "Что нужно запомнить?",
+      kind: {
+        label: "Тип",
+        note: "Заметка",
+        waiting: "Ожидание",
+      },
+      event: {
+        label: "Ожидание",
+        agent: "Агент",
+        command: "Команда",
+        time: "Время",
+      },
+      agent: {
+        label: "Агент завершит работу или запросит ввод",
+        placeholder: "Выберите агента",
+        empty: "На этом хосте нет агентов",
+        search: "Поиск агентов",
+        untitled: "Агент без названия",
+      },
+      command: {
+        terminalLabel: "Команда завершится в",
+        placeholder: "Выберите терминал",
+        empty: "На этом хосте нет терминалов",
+        search: "Поиск терминалов",
+        untitled: "Терминал",
+        binding:
+          "Привязывается к выполняемой сейчас или следующей команде. Нужен терминал Paseo с zsh или bash.",
+        conditionLabel: "Уведомить, когда она",
+        any: "Любой исход",
+        success: "Успешна",
+        failure: "Завершится ошибкой",
+        commandLabel: "Команда",
+        commandPlaceholder: "Необязательная метка",
+      },
+      time: {
+        label: "Напомнить",
+        presets: {
+          in30m: "Через 30 мин",
+          in1h: "Через 1 час",
+          in2h: "Через 2 часа",
+          tomorrow9: "Завтра в 9:00",
+        },
+        inputLabel: "Или введите время",
+        inputPlaceholder: "15:00, через 45 мин, завтра в 9",
+        invalid: "Не удалось распознать время",
+        resolvedToday: "Сегодня в {{time}}",
+        resolvedTomorrow: "Завтра в {{time}}",
+        resolvedOther: "{{date}} в {{time}}",
+      },
+      actions: {
+        cancel: "Отмена",
+        add: "Добавить заметку",
+        save: "Сохранить",
+        resolve: "Решить",
+        reopen: "Открыть снова",
+        delete: "Удалить",
+      },
+      deleteConfirm: {
+        title: "Удалить заметку",
+        message: "Удалить эту заметку? Это действие нельзя отменить.",
+        confirm: "Удалить",
+      },
+      errors: {
+        save: "Не удалось сохранить заметку: {{message}}",
+        update: "Не удалось обновить заметку: {{message}}",
+        delete: "Не удалось удалить заметку: {{message}}",
+      },
+    },
+    screen: {
+      title: "Заметки",
+      loadError: "{{host}}: не удалось загрузить заметки",
+      unsupportedHosts_one: "{{hosts}} требуется обновление для показа заметок",
+      unsupportedHosts_other: "{{hosts}} требуется обновление для показа заметок",
+      filters: {
+        all: "Все",
+        waiting: "Ожидают",
+        open: "Открытые",
+        resolved: "Решённые",
+      },
+      empty: {
+        all: "Заметок пока нет",
+        allHint: "Выделите текст в чате или терминале, чтобы добавить заметку",
+        waiting: "Ничего не ожидает",
+        open: "Нет открытых заметок",
+        resolved: "Нет решённых заметок",
+      },
+      source: {
+        agent: "Агент",
+        terminal: "Терминал",
+      },
+      wait: {
+        agent: "Ожидание завершения {{agent}}",
+        agentUnnamed: "Ожидание завершения агента",
+        commandAny: "Ожидание завершения команды",
+        commandSuccess: "Ожидание успешного завершения команды",
+        commandFailure: "Ожидание ошибки команды",
+        namedCommandAny: "Ожидание завершения {{command}}",
+        namedCommandSuccess: "Ожидание успешного завершения {{command}}",
+        namedCommandFailure: "Ожидание ошибки {{command}}",
+        timeToday: "Напоминание в {{time}}",
+        timeTomorrow: "Напоминание завтра в {{time}}",
+        timeOther: "Напоминание {{date}} в {{time}}",
+        inMinutes: "через {{count}} мин",
+        inHours: "через {{count}} ч",
+        inDays: "через {{count}} д",
+      },
+      status: {
+        waiting: "Ожидает",
+        done: "Готово",
+        resolved: "Решена",
+        unmatched: "Нет совпадения",
+      },
+      actions: {
+        menu: "Действия с заметкой",
+        edit: "Редактировать заметку",
+        resolve: "Решить",
+        reopen: "Открыть снова",
+        resolving: "Решение...",
+        reopening: "Повторное открытие...",
+        delete: "Удалить заметку",
+        deleting: "Удаление...",
+      },
+      deleteConfirm: {
+        title: "Удалить заметку",
+        message: "Удалить эту заметку? Это действие нельзя отменить.",
+        confirm: "Удалить",
+      },
+      openFailed: "Этот терминал больше не открыт",
+    },
+    chat: {},
+    terminal: {
+      quoteNotFound: "Текста этой заметки больше нет в истории терминала.",
+    },
+    alerts: {
+      reminderTitle: "Готово: {{text}}",
+      reminderBody: "Напоминание",
     },
   },
   settings: {
@@ -2372,12 +2829,15 @@ export const ru: TranslationResources = {
       defaultSend: {
         label: "Отправка по умолчанию",
         descriptions: {
-          interrupt:
-            "Когда агент работает, Enter прерывает его работу, а Command/Ctrl+Enter ставит сообщение в очередь.",
+          interrupt: "Когда агент работает, Enter прерывает его работу.",
+          steer: "Когда агент работает, Enter дополняет текущий ответ новым указанием.",
+          queue: "Когда агент работает, Enter ставит сообщение в очередь.",
+        },
+        touchDescriptions: {
+          interrupt: "Когда агент работает, нажатие «Отправить» прерывает его работу.",
           steer:
-            "Когда агент работает, Enter дополняет текущий ответ новым указанием, а Command/Ctrl+Enter ставит сообщение в очередь.",
-          queue:
-            "Когда агент работает, Enter ставит сообщение в очередь, а Command/Ctrl+Enter отправляет его.",
+            "Когда агент работает, нажатие «Отправить» дополняет текущий ответ новым указанием.",
+          queue: "Когда агент работает, нажатие «Отправить» ставит сообщение в очередь.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2393,6 +2853,24 @@ export const ru: TranslationResources = {
           queue: "Поставить в очередь",
         },
       },
+      alternateSend: {
+        label: "Альтернативная отправка",
+        descriptions: {
+          interrupt:
+            "Когда агент работает, {{modifier}}+Enter или удержание «Отправить» прерывает его работу.",
+          steer:
+            "Когда агент работает, {{modifier}}+Enter или удержание «Отправить» дополняет текущий ответ новым указанием.",
+          queue:
+            "Когда агент работает, {{modifier}}+Enter или удержание «Отправить» ставит сообщение в очередь.",
+        },
+        longPressDescriptions: {
+          interrupt: "Когда агент работает, удержание «Отправить» прерывает его работу.",
+          steer:
+            "Когда агент работает, удержание «Отправить» дополняет текущий ответ новым указанием.",
+          queue: "Когда агент работает, удержание «Отправить» ставит сообщение в очередь.",
+        },
+      },
+      defaultEditor: "Редактор по умолчанию",
       sendShortcut: {
         label: "Сочетание клавиш для отправки",
         options: {
@@ -2532,6 +3010,81 @@ export const ru: TranslationResources = {
         },
         moveUp: "Переместить вверх",
         moveDown: "Переместить вниз",
+      },
+      background: {
+        title: "Фон",
+        applyTo: {
+          title: "Применить к",
+          options: {
+            both: "Обеим",
+            light: "Светлой",
+            dark: "Тёмной",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Фоновые изображения",
+          none: "Нет",
+          addImage: "Добавить изображение…",
+          importDefaultName: "Изображение",
+        },
+        menu: {
+          actions: "Действия для {{name}}",
+          edit: "Изменить…",
+          delete: "Удалить",
+          details: "Подробности",
+        },
+        undo: {
+          action: "Отменить",
+          accessibilityLabel: "Отменить изменение фона",
+        },
+        catalog: {
+          browse: "Обзор",
+          hint: "Установите больше фонов из этого плагина",
+        },
+        visibility: {
+          title: "Видимость изображения",
+          hint: "Даже на 100% Paseo ограничивает изображение, чтобы текст оставался читаемым, поэтому яркие изображения видны слабее.",
+        },
+        blur: {
+          title: "Размытие",
+          off: "Выкл.",
+          value: "{{radius}} px",
+        },
+        showBehindSidebar: "Показывать за боковой панелью",
+        showBehindContent: "Показывать за содержимым",
+        status: {
+          reducedTransparency:
+            "Скрыто, так как в системных настройках включено «Уменьшить прозрачность»",
+          forcedColors: "Скрыто, пока включён режим высокой контрастности",
+          error: "Не удалось показать фон",
+        },
+        errors: {
+          select: "Не удалось применить фон: {{message}}",
+          import: "Не удалось импортировать изображение: {{message}}",
+          update: "Не удалось сохранить изменения: {{message}}",
+          remove: "Не удалось удалить фон: {{message}}",
+        },
+        edit: {
+          title: "Изменить фон",
+          name: "Название",
+          focal: "Фокусная точка",
+          focalHint: "Нажмите на часть изображения, которая должна остаться в кадре.",
+          focalAccessibility: "Выбрать фокусную точку",
+          save: "Сохранить",
+          saving: "Сохранение…",
+        },
+        delete: {
+          title: "Удалить «{{name}}»?",
+          message: "Изображение будет удалено с этого устройства.",
+          confirm: "Удалить",
+        },
+        details: {
+          title: "Подробности",
+          author: "Автор",
+          license: "Лицензия",
+          source: "Источник",
+          openSource: "Открыть источник",
+        },
       },
       fonts: {
         title: "Шрифты",
@@ -2799,6 +3352,10 @@ export const ru: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Стиль по умолчанию",
+          hint: "Провайдеры могут изменить его",
+        },
         unavailable: "Подключитесь к этому хосту, чтобы управлять агентами",
         resumeOnStartup: {
           title: "Возобновлять агентов после перезапуска",
@@ -2807,6 +3364,15 @@ export const ru: TranslationResources = {
           prompt: "Сообщение для продолжения",
           edit: "Редактировать",
           editAccessibilityLabel: "Изменить сообщение",
+        },
+        draftHistory: {
+          title: "История черновиков",
+          hint_one:
+            "Удалённые или перезаписанные черновики хранятся {{count}} день, чтобы их можно было восстановить из поля ввода.",
+          hint_other:
+            "Удалённые или перезаписанные черновики хранятся {{count}} дн., чтобы их можно было восстановить из поля ввода.",
+          days_one: "{{count}} дн.",
+          days_other: "{{count}} дн.",
         },
         idleRuntimeCleanup: {
           title: "Освобождать неактивных агентов",
@@ -3003,6 +3569,9 @@ export const ru: TranslationResources = {
         discovered: "Обнаруженные модели",
         custom: "Пользовательские модели",
         updated: "Обновлено {{time}}",
+        disabledCount: "Отключено: {{count}}",
+        toggleModel: "Включить {{model}}",
+        failedToToggle: "Не удалось обновить {{model}}",
       },
       diagnostic: {
         title: "Диагностика",
@@ -3018,6 +3587,12 @@ export const ru: TranslationResources = {
         none: "Диагностика недоступна",
         failedToFetch: "Не удалось получить диагностику.",
         unknownError: "Неизвестная ошибка",
+      },
+      featureDefaults: {
+        title: "Значения по умолчанию для новых агентов",
+        providerDefault: "По умолчанию у провайдера",
+        on: "Вкл.",
+        off: "Выкл.",
       },
     },
     project: {

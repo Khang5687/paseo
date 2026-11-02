@@ -43,6 +43,23 @@ export type UsageProblem =
   | { kind: "rejected"; status: number; refreshedBy?: string }
   | { kind: "no_quota"; detail: string };
 
+/** Set only after the producer validated account and organization; omit when either is unknown. */
+export interface UsageQuotaIdentity {
+  accountUuid: string;
+  organizationUuid: string;
+}
+
+/**
+ * Plan strings as a producer read them locally. `observedAt` (epoch ms) is when they were read,
+ * kept through cache re-emission; it is not provider entitlement verification time. Null is unknown.
+ */
+export interface UsageSubscription {
+  subscriptionType: string | null;
+  rateLimitTier: string | null;
+  observedAt: number | null;
+  source: "claude-supported-login" | "native-usage" | "unknown";
+}
+
 export type UsageReport =
   | {
       status: "available";
@@ -50,6 +67,8 @@ export type UsageReport =
       windows: UsageWindow[];
       balances?: UsageBalance[];
       details?: UsageDetail[];
+      quotaIdentity?: UsageQuotaIdentity;
+      subscription?: UsageSubscription;
     }
   | { status: "unavailable"; problem: UsageProblem }
   | { status: "error"; error: string };

@@ -51,6 +51,7 @@ function createOwner(storage: TimelineReplicaStorage): ViewedTimelineOwner {
     replica,
     replaceDemandedAgentIds: () => undefined,
     drainQueuedAgentMessage: () => undefined,
+    liveScope: "opened",
     ports: {
       observe: () => ({ ready: Promise.resolve(), release: async () => undefined }),
       readCursor: () => undefined,
@@ -606,6 +607,7 @@ describe("create handoff lifetime", () => {
       replica,
       replaceDemandedAgentIds: () => undefined,
       drainQueuedAgentMessage: () => undefined,
+      liveScope: "opened",
       ports: {
         observe: () => ({ ready: Promise.resolve(), release: async () => undefined }),
         readCursor: () => undefined,

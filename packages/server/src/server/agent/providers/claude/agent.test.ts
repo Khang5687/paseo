@@ -950,63 +950,87 @@ describe("ClaudeAgentSession features", () => {
   });
 
   test("lists fast mode only for supported Opus models", async () => {
-    const client = new ClaudeAgentClient({ logger, resolveBinary: async () => "/test/claude/bin" });
+    const client = new ClaudeAgentClient({
+      logger,
+      resolveBinary: async () => "/test/claude/bin",
+      discoverOutputStyles: async () => [],
+    });
+    const listFeatureIds = async (model: string) =>
+      (await client.listFeatures({ provider: "claude", cwd: process.cwd(), model })).map(
+        (feature) => feature.id,
+      );
 
-    await expect(
-      client.listFeatures({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-4-8",
-      }),
-    ).resolves.toEqual([expect.objectContaining({ id: "fast_mode", value: false })]);
+    for (const model of [
+      "claude-opus-4-8",
+      "claude-opus-4-8[1m]",
+      "claude-opus-4-8-20260101",
+      "claude-opus-5",
+    ]) {
+      await expect(listFeatureIds(model)).resolves.toEqual(["fast_mode", "output_style"]);
+    }
+    for (const model of [
+      "openrouter/anthropic/claude-opus-4-8",
+      "claude-sonnet-5",
+      "claude-sonnet-4-6",
+    ]) {
+      await expect(listFeatureIds(model)).resolves.toEqual(["output_style"]);
+    }
+  });
 
-    await expect(
-      client.listFeatures({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-4-8[1m]",
-      }),
-    ).resolves.toEqual([expect.objectContaining({ id: "fast_mode", value: false })]);
+  test("launches with the selected output style and switches it on the live query", async () => {
+    const { queryFactory, queryMock, launches } = createQueryMock();
+    const client = new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+      discoverOutputStyles: async () => [
+        { name: "ELI5", description: "keep it simple pls", body: "Small words." },
+      ],
+    });
+    const session = await client.createSession({
+      provider: "claude",
+      cwd: process.cwd(),
+      featureValues: { output_style: "ELI5" },
+    });
 
-    await expect(
-      client.listFeatures({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-4-8-20260101",
-      }),
-    ).resolves.toEqual([expect.objectContaining({ id: "fast_mode", value: false })]);
+    await session.startTurn("hello");
+    expect(launches[0]?.options.settings).toMatchObject({ outputStyle: "ELI5" });
+    expect(session.features.find((feature) => feature.id === "output_style")).toMatchObject({
+      value: "ELI5",
+      options: [
+        { id: "default", label: "Default" },
+        { id: "Proactive" },
+        { id: "Concise" },
+        { id: "Explanatory" },
+        { id: "Learning" },
+        { id: "ELI5", description: "keep it simple pls" },
+      ],
+    });
 
-    await expect(
-      client.listFeatures({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-5",
-      }),
-    ).resolves.toEqual([expect.objectContaining({ id: "fast_mode", value: false })]);
+    await session.setFeature?.("output_style", "Explanatory");
+    expect(queryMock.applyFlagSettings).toHaveBeenLastCalledWith({ outputStyle: "Explanatory" });
+    expect(queryFactory).toHaveBeenCalledTimes(1);
+    await expect(session.setFeature?.("output_style", "Missing")).rejects.toThrow(
+      "Claude output style 'Missing' is not available",
+    );
 
-    await expect(
-      client.listFeatures({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "openrouter/anthropic/claude-opus-4-8",
-      }),
-    ).resolves.toEqual([]);
+    await session.close();
+  });
 
-    await expect(
-      client.listFeatures({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-sonnet-5",
-      }),
-    ).resolves.toEqual([]);
+  test("leaves Claude's own output style setting alone when none is selected", async () => {
+    const { queryFactory, launches } = createQueryMock();
+    const session = await new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+      discoverOutputStyles: async () => [],
+    }).createSession({ provider: "claude", cwd: process.cwd() });
 
-    await expect(
-      client.listFeatures({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-sonnet-4-6",
-      }),
-    ).resolves.toEqual([]);
+    await session.startTurn("hello");
+    expect(launches[0]?.options.settings).toBeUndefined();
+    expect(session.features.find((feature) => feature.id === "output_style")?.value).toBeNull();
+
+    await session.close();
   });
 
   test("passes initial fast mode through Claude flag settings", async () => {
@@ -1535,7 +1559,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
     });
   });
 
-  test("maps frontend header-keyed answers to Claude question text keys", () => {
+  test("maps frontend header-keyed answers to Claude question text keys and drops answer lists", () => {
     expect(
       normalizeClaudeAskUserQuestionUpdatedInput(
         {
@@ -1548,6 +1572,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
             },
           ],
           answers: { Provider: "Claude" },
+          answerLists: { Provider: ["Claude"] },
         },
         undefined,
       ),
@@ -3078,6 +3103,39 @@ describe("ClaudeAgentSession context window usage", () => {
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
       });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("a queued task notification answered before the prompt does not end the prompt's turn", async () => {
+    // A resumed session with a finished background task: Claude runs the notification turn first.
+    const session = await createSessionForTurns([
+      [
+        createInitMessage(),
+        createSuccessResult({
+          num_turns: 0,
+          result: "",
+          usage: { input_tokens: 0, output_tokens: 0 },
+          origin: { kind: "task-notification" },
+          uuid: "result-notification",
+        }),
+        createInitMessage(),
+        {
+          type: "assistant",
+          message: { id: "msg-1", role: "assistant", content: [{ type: "text", text: "PONG" }] },
+          parent_tool_use_id: null,
+          uuid: "assistant-1",
+          session_id: "session-1",
+        },
+        createSuccessResult({ uuid: "result-prompt" }),
+      ],
+    ]);
+
+    try {
+      const result = await session.run("turn");
+
+      expect(result.finalText).toBe("PONG");
     } finally {
       await session.close();
     }

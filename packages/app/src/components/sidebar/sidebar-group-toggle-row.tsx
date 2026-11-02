@@ -8,6 +8,9 @@ import { sidebarWorkspaceRowStyles } from "@/components/sidebar/sidebar-workspac
 import { DensityIcon } from "@/components/ui/density-icon";
 import { density, densityIconBox } from "@/styles/density";
 
+const EXPANDED_STATE = { expanded: true } as const;
+const COLLAPSED_STATE = { expanded: false } as const;
+
 /**
  * The row that ends a truncated group. It is a workspace row that happens to say "Show more", so
  * it takes the workspace row's geometry — height, padding, radius, and both fills — rather than a
@@ -22,30 +25,38 @@ export function SidebarGroupToggleRow({
   expanded,
   onPress,
   indented = false,
+  indentLevel,
+  label: labelOverride,
   testID,
 }: {
   expanded: boolean;
   onPress: () => void;
   indented?: boolean;
+  /** Nesting steps, for a fold row under a thread row; overrides `indented`. */
+  indentLevel?: number;
+  /** What the row folds, instead of "Show more" / "Show less". */
+  label?: string;
   testID: string;
 }) {
   const { t } = useTranslation();
-  const label = t(
-    expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore",
-  );
+  const label =
+    labelOverride ??
+    t(expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore");
   const rowStyle = useCallback(
     ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.row,
       indented && sidebarWorkspaceRowStyles.rowIndented,
+      indentLevel !== undefined && sidebarWorkspaceRowStyles.rowNested(indentLevel),
       hovered && !pressed && styles.rowHovered,
       pressed && styles.rowPressed,
     ],
-    [indented],
+    [indented, indentLevel],
   );
 
   return (
     <Pressable
       accessibilityRole={isWeb ? undefined : "button"}
+      accessibilityState={expanded ? EXPANDED_STATE : COLLAPSED_STATE}
       accessibilityLabel={label}
       onPress={onPress}
       style={rowStyle}

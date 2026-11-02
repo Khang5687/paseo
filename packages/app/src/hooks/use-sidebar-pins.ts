@@ -6,7 +6,7 @@ import type {
   SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { applyStoredOrdering } from "@/hooks/sidebar-workspaces-view-model";
-import { useSessionStore } from "@/stores/session-store";
+import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
 
 export interface PinnedSidebarKeys {
   pinnedWorkspaceKeys: string[];
@@ -22,21 +22,21 @@ export interface PinnedSidebarGroups {
   unpinnedProjects: SidebarProjectEntry[];
 }
 
-function projectWithoutPinnedWorkspaces(
+export function projectWithoutWorkspaces(
   project: SidebarProjectEntry,
-  pinnedWorkspaceKeys: ReadonlySet<string>,
+  workspaceKeys: ReadonlySet<string>,
 ): SidebarProjectEntry {
   const workspaces = project.workspaces.filter(
-    (workspace) => !pinnedWorkspaceKeys.has(workspace.workspaceKey),
+    (workspace) => !workspaceKeys.has(workspace.workspaceKey),
   );
-  // Keep the project even when every chat moved to Pinned. The project row owns
+  // Keep the project even when every chat moved to Pinned or Settled. The project row owns
   // its settings and new-workspace actions; chats are not its ownership boundary.
   return workspaces.length === project.workspaces.length ? project : { ...project, workspaces };
 }
 
 function buildPinnedSidebarKeys(
   projects: SidebarProjectEntry[],
-  workspaceMaps: ReadonlyMap<string, ReadonlyMap<string, { pinnedAt?: string | null }>>,
+  workspaceMaps: SidebarWorkspaceMaps<{ pinnedAt?: string | null }>,
 ): PinnedSidebarKeys {
   const pinnedWorkspaceKeys: string[] = [];
   const pinnedAtByKey: Record<string, string> = {};
@@ -69,11 +69,14 @@ function arePinnedSidebarKeysEqual(left: PinnedSidebarKeys, right: PinnedSidebar
   return true;
 }
 
-export function usePinnedSidebarKeys(projects: SidebarProjectEntry[]): PinnedSidebarKeys {
-  const previousKeysRef = useRef<PinnedSidebarKeys>({
-    pinnedWorkspaceKeys: [],
-    pinnedAtByKey: {},
-  });
+export type SidebarWorkspaceMaps<T> = ReadonlyMap<string, ReadonlyMap<string, T>>;
+
+// The session-store workspace maps of every host the given projects draw from, keyed by serverId.
+// Pins and settles read their timestamps here rather than from the hydrated sidebar entries,
+// which a retained-but-inactive sidebar does not build in project mode.
+export function useSidebarWorkspaceMaps(
+  projects: SidebarProjectEntry[],
+): SidebarWorkspaceMaps<WorkspaceDescriptor> {
   const serverIds = useMemo(
     () =>
       Array.from(
@@ -89,10 +92,7 @@ export function usePinnedSidebarKeys(projects: SidebarProjectEntry[]): PinnedSid
     shallow,
   );
   return useMemo(() => {
-    const workspaceMapByServerId = new Map<
-      string,
-      ReadonlyMap<string, { pinnedAt?: string | null }>
-    >();
+    const workspaceMapByServerId = new Map<string, ReadonlyMap<string, WorkspaceDescriptor>>();
     for (let index = 0; index < serverIds.length; index += 1) {
       const serverId = serverIds[index];
       const workspaceMap = workspaceMaps[index];
@@ -100,13 +100,24 @@ export function usePinnedSidebarKeys(projects: SidebarProjectEntry[]): PinnedSid
         workspaceMapByServerId.set(serverId, workspaceMap);
       }
     }
-    const nextKeys = buildPinnedSidebarKeys(projects, workspaceMapByServerId);
+    return workspaceMapByServerId;
+  }, [serverIds, workspaceMaps]);
+}
+
+export function usePinnedSidebarKeys(projects: SidebarProjectEntry[]): PinnedSidebarKeys {
+  const previousKeysRef = useRef<PinnedSidebarKeys>({
+    pinnedWorkspaceKeys: [],
+    pinnedAtByKey: {},
+  });
+  const workspaceMaps = useSidebarWorkspaceMaps(projects);
+  return useMemo(() => {
+    const nextKeys = buildPinnedSidebarKeys(projects, workspaceMaps);
     if (arePinnedSidebarKeysEqual(previousKeysRef.current, nextKeys)) {
       return previousKeysRef.current;
     }
     previousKeysRef.current = nextKeys;
     return nextKeys;
-  }, [projects, serverIds, workspaceMaps]);
+  }, [projects, workspaceMaps]);
 }
 
 // Splits the sidebar into a dedicated Pinned section (chats) and the regular list below.
@@ -130,7 +141,7 @@ export function splitPinnedSidebarGroups(input: {
         pinnedChats.push(workspace);
       }
     }
-    unpinnedProjects.push(projectWithoutPinnedWorkspaces(project, pinnedWorkspaceKeySet));
+    unpinnedProjects.push(projectWithoutWorkspaces(project, pinnedWorkspaceKeySet));
   }
 
   pinnedChats.sort((a, b) =>
