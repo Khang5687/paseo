@@ -776,5 +776,11 @@
     "title": "feat(app): one-press archive button on sidebar workspace rows",
     "tests": [],
     "e2e": ["packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"]
+  },
+  {
+    "pr": 98,
+    "title": "feat(app): copy agent ID from sidebar thread rows",
+    "tests": ["packages/app/src/subagents/thread-children.test.ts"],
+    "e2e": ["packages/app/e2e/browser/sidebar-workspace-copy-agent-id.spec.ts"]
   }
 ]
