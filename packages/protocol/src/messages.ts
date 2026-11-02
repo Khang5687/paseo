@@ -2039,6 +2039,16 @@ export const AgentForkContextRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+// Forks an agent into a new agent. Providers with native session fork cut their own session at the
+// boundary; others get the curated chat-history summary as the new agent's first message.
+export const AgentForkRequestMessageSchema = z.object({
+  type: z.literal("agent.fork.request"),
+  agentId: z.string(),
+  boundaryCursor: AgentTimelineCursorSchema.optional(),
+  boundaryMessageId: z.string().optional(),
+  requestId: z.string(),
+});
+
 export const AGENT_ASK_DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
 /** Ask a forked copy of an agent's conversation; the agent itself is never interrupted. */
@@ -3970,6 +3980,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProviderSubagentTimelineRequestMessageSchema,
   SetAgentTimelineSubscriptionRequestMessageSchema,
   AgentForkContextRequestMessageSchema,
+  AgentForkRequestMessageSchema,
   AgentAskRequestMessageSchema,
   SetAgentModeRequestMessageSchema,
   SetAgentModelRequestMessageSchema,
@@ -4409,6 +4420,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentForkContext: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: z.boolean().optional(),
+        // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03.
+        agentFork: z.boolean().optional(),
         // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
         agentAsk: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
@@ -5674,6 +5687,20 @@ export const AgentForkContextResponseMessageSchema = z.object({
     itemCount: z.number().int().nonnegative(),
     boundaryMessageId: z.string().nullable(),
     boundaryCursor: AgentTimelineCursorSchema.nullable().optional(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentForkResponseMessageSchema = z.object({
+  type: z.literal("agent.fork.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    forkedAgentId: z.string().nullable(),
+    // native: provider session forked at the boundary.
+    // native_with_summary: native fork plus one summary message of history the source compacted away.
+    // summary: fresh agent seeded with the chat-history summary.
+    method: z.enum(["native", "native_with_summary", "summary"]).nullable(),
     error: z.string().nullable(),
   }),
 });
@@ -7948,6 +7975,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentTimelineSubscriptionResponseMessageSchema,
   AgentAttentionRequiredMessageSchema,
   AgentForkContextResponseMessageSchema,
+  AgentForkResponseMessageSchema,
   AgentAskResponseMessageSchema,
   CancelAgentResponseMessageSchema,
   ClearAgentAttentionResponseMessageSchema,
@@ -8187,6 +8215,7 @@ export type AgentTimelineListPromptsResponseMessage = z.infer<
   typeof AgentTimelineListPromptsResponseMessageSchema
 >;
 export type AgentForkContextResponseMessage = z.infer<typeof AgentForkContextResponseMessageSchema>;
+export type AgentForkResponseMessage = z.infer<typeof AgentForkResponseMessageSchema>;
 export type AgentAskResponseMessage = z.infer<typeof AgentAskResponseMessageSchema>;
 export type CancelAgentResponseMessage = z.infer<typeof CancelAgentResponseMessageSchema>;
 export type SendAgentMessageResponseMessage = z.infer<typeof SendAgentMessageResponseMessageSchema>;
@@ -8297,6 +8326,7 @@ export type FetchWorkspacesRequestMessage = z.infer<typeof FetchWorkspacesReques
 export type ProjectListRequestMessage = z.infer<typeof ProjectListRequestMessageSchema>;
 export type FetchAgentRequestMessage = z.infer<typeof FetchAgentRequestMessageSchema>;
 export type AgentForkContextRequestMessage = z.infer<typeof AgentForkContextRequestMessageSchema>;
+export type AgentForkRequestMessage = z.infer<typeof AgentForkRequestMessageSchema>;
 export type AgentAskRequestMessage = z.infer<typeof AgentAskRequestMessageSchema>;
 export type SendAgentMessageRequest = z.infer<typeof SendAgentMessageRequestSchema>;
 export type WaitForFinishRequest = z.infer<typeof WaitForFinishRequestSchema>;

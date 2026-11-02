@@ -59,6 +59,49 @@ test("an idle follow-up is submitted as a prompt so OMP can start a turn", async
   ]);
 });
 
+describe("OMP forkSession", () => {
+  const SOURCE = { provider: "omp", sessionId: "source", nativeHandle: "/sessions/source.jsonl" };
+
+  test("forks the source file without opening it and cuts the copy before the given message", async () => {
+    const runtime = new FakeOmp();
+    runtime.queueSessionSetup((session) => {
+      session.stats = { contextUsage: { tokens: 209_000, contextWindow: 100_000 } };
+    });
+    const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+    const forked = await client.forkSession(SOURCE, {
+      cutBeforeMessageId: "entry-u2",
+      cwd: process.cwd(),
+    });
+
+    expect(runtime.recordedLaunches).toHaveLength(1);
+    expect(runtime.recordedLaunches[0]?.fork).toBe("/sessions/source.jsonl");
+    expect(runtime.recordedLaunches[0]?.session).toBeUndefined();
+    expect(runtime.latestSession().branchRequests).toEqual(["entry-u2"]);
+    expect(forked.persistence.nativeHandle).toBe(
+      "/sessions/source.jsonl.forked.cut-before-entry-u2",
+    );
+    expect(forked.persistence.sessionId).not.toBe(SOURCE.sessionId);
+    expect(forked.contextWindowUsedTokens).toBe(209_000);
+    expect(forked.contextWindowMaxTokens).toBe(100_000);
+    expect(runtime.latestSession().closed).toBe(true);
+  });
+
+  test("without a cut it keeps the whole copied session", async () => {
+    const runtime = new FakeOmp();
+    const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+    const forked = await client.forkSession(SOURCE, {
+      cutBeforeMessageId: null,
+      cwd: process.cwd(),
+    });
+
+    expect(runtime.latestSession().branchRequests).toEqual([]);
+    expect(forked.persistence.nativeHandle).toBe("/sessions/source.jsonl.forked");
+    expect(forked.contextWindowUsedTokens).toBeUndefined();
+  });
+});
+
 test("forks a session into a discardable copy beside it without touching the source", async () => {
   const runtime = new FakeOmp();
   const client = new OmpAgentClient({ logger: createTestLogger(), runtime });

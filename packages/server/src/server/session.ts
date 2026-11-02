@@ -141,6 +141,7 @@ import {
 import { assertPluginTimelineDataSize } from "./agent/agent-timeline-content.js";
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import { forkAgent } from "./agent/fork-agent.js";
 import { askAgent } from "./agent/ask-agent.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
@@ -3012,6 +3013,8 @@ export class Session {
       }
       case "agent.fork_context.request":
         return this.handleAgentForkContextRequest(msg);
+      case "agent.fork.request":
+        return this.handleAgentForkRequest(msg);
       case "agent.ask.request":
         return this.handleAgentAskRequest(msg);
       default:
@@ -8603,6 +8606,54 @@ export class Session {
           itemCount: 0,
           boundaryCursor: msg.boundaryCursor ?? null,
           boundaryMessageId: msg.boundaryMessageId ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentForkRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.fork.request" }>,
+  ): Promise<void> {
+    try {
+      const snapshot = await ensureAgentLoaded(msg.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+      });
+      const agentPayload = await this.buildAgentPayload(snapshot);
+      const forked = await forkAgent({
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+        agentId: msg.agentId,
+        boundaryCursor: msg.boundaryCursor,
+        boundaryMessageId: msg.boundaryMessageId,
+        agentTitle: agentPayload.title,
+      });
+      await this.agentUpdates.forwardLiveAgent(forked.agent);
+      this.emit({
+        type: "agent.fork.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          forkedAgentId: forked.agent.id,
+          method: forked.method,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, agentId: msg.agentId },
+        "Failed to handle agent.fork.request",
+      );
+      this.emit({
+        type: "agent.fork.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          forkedAgentId: null,
+          method: null,
           error: error instanceof Error ? error.message : String(error),
         },
       });

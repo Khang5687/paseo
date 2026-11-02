@@ -282,7 +282,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
       autoCompactionEnabled: true,
       fastModeEnabled: false,
       fastModeActive: false,
-      sessionFile: launch.session ?? "/tmp/omp-session",
+      sessionFile: launch.session ?? (launch.fork ? `${launch.fork}.forked` : "/tmp/omp-session"),
       sessionId,
       messageCount: 0,
       queuedMessageCount: 0,
@@ -553,6 +553,11 @@ export class FakeOmpSession implements OmpRuntimeSession {
       throw new Error("FakeOmp branch response requires text");
     }
     this.activeBranchEntryId = entryId;
+    // Like OMP, a branch continues in a new session file and leaves the old one as it was.
+    this.state = {
+      ...this.state,
+      sessionFile: `${this.state.sessionFile}.cut-before-${entryId}`,
+    };
     return { text: this.branchResponse.text };
   }
 
