@@ -776,5 +776,24 @@
     "title": "feat(app): one-press archive button on sidebar workspace rows",
     "tests": [],
     "e2e": ["packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"]
+  },
+  {
+    "pr": 99,
+    "title": "feat(server): fork an agent with a native provider cut",
+    "tests": [
+      "packages/server/src/server/agent/fork-agent.test.ts",
+      "packages/server/src/server/agent/activity-curator.test.ts",
+      "packages/server/src/server/agent/providers/omp/agent.test.ts"
+    ]
+  },
+  {
+    "pr": 100,
+    "title": "feat(app): /fork slash command",
+    "tests": ["packages/app/src/client-slash-commands/index.test.ts"]
+  },
+  {
+    "pr": 101,
+    "title": "feat(server): fork_agent MCP tool",
+    "tests": ["packages/server/src/server/agent/fork-agent.test.ts"]
   }
 ]
