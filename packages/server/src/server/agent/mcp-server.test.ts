@@ -6215,7 +6215,7 @@ describe("provider MCP tools", () => {
 
       expect(response.structuredContent).toEqual({
         provider: "claude",
-        models: [{ provider: "claude", id: "sonnet", label: "Sonnet", isDefault: false }],
+        models: [{ id: "sonnet", label: "Sonnet" }],
       });
     } finally {
       providerSnapshotManager.destroy();
