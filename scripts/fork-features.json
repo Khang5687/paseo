@@ -795,5 +795,11 @@
     "pr": 101,
     "title": "feat(server): fork_agent MCP tool",
     "tests": ["packages/server/src/server/agent/fork-agent.test.ts"]
+  },
+  {
+    "pr": 98,
+    "title": "feat(app): copy agent ID from sidebar thread rows",
+    "tests": ["packages/app/src/subagents/thread-children.test.ts"],
+    "e2e": ["packages/app/e2e/browser/sidebar-workspace-copy-agent-id.spec.ts"]
   }
 ]

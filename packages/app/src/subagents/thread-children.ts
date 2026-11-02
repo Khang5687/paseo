@@ -70,6 +70,28 @@ function areThreadAgentsIdentical<A extends ThreadAgent>(
   );
 }
 
+/**
+ * The agent a thread row stands for when its id is copied: the most recently active root agent.
+ * Same-workspace subagents are the row's children, so they are never picked here. `rootCount`
+ * lets the caller say the pick was a choice among several.
+ */
+export function pickThreadRootAgent<A extends ThreadAgent>(
+  thread: ThreadAgents<A> | undefined,
+  agents: ReadonlyMap<string, { id: string; lastActivityAt: Date }>,
+): { agentId: string; rootCount: number } | null {
+  if (!thread) return null;
+  const childIds = new Set(thread.children.map((child) => child.id));
+  let picked: { id: string; lastActivityAt: Date } | null = null;
+  let rootCount = 0;
+  for (const id of thread.agentIds) {
+    const agent = agents.get(id);
+    if (!agent || childIds.has(id)) continue;
+    rootCount += 1;
+    if (!picked || agent.lastActivityAt.getTime() > picked.lastActivityAt.getTime()) picked = agent;
+  }
+  return picked ? { agentId: picked.id, rootCount } : null;
+}
+
 /** The child rows under one sidebar thread: its same-workspace agents and provider subagents. */
 export function buildThreadChildRows(input: {
   children: readonly SubagentRow[];

@@ -44,9 +44,9 @@ const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedPencilLine = withUnistyles(PencilLine);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-// The overlay holds the archive button beside the kebab: one 18px control plus its gap more
-// than the default scrim was sized for.
-const ARCHIVE_AND_KEBAB_SCRIM_WIDTH = SCRIM_WIDTH + 20;
+// The overlay holds the copy-agent-id and archive buttons beside the kebab: two 18px controls
+// plus their gaps more than the default scrim was sized for.
+const ARCHIVE_AND_KEBAB_SCRIM_WIDTH = SCRIM_WIDTH + 40;
 
 export function SidebarWorkspaceRowFrame({
   workspace,
@@ -365,11 +365,12 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     alignItems: "flex-end",
     justifyContent: "flex-start",
   },
-  // Touch shows the archive button and the kebab permanently, so the slot holds both: their
-  // compact boxes net of the margins that pull them onto the trailing rail.
+  // Touch shows the copy-agent-id button, the archive button and the kebab permanently, so the
+  // slot holds all three: their compact boxes net of the margins that pull them onto the
+  // trailing rail.
   trailingActionSlotReservedForActions: {
     position: "relative",
-    minWidth: { xs: 42, md: 36 },
+    minWidth: { xs: 62, md: 56 },
     minHeight: 20,
     flexShrink: 0,
     alignItems: "flex-end",

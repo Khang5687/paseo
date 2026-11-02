@@ -96,6 +96,7 @@ import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { SidebarWorkspaceArchiveButton } from "@/components/sidebar/sidebar-workspace-archive-button";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
@@ -686,6 +687,11 @@ function WorkspaceRowRightGroup({
           >
             {onArchive ? (
               <>
+                <SidebarWorkspaceCopyAgentIdButton
+                  workspaceKey={workspace.workspaceKey}
+                  serverId={workspace.serverId}
+                  workspaceId={workspace.workspaceId}
+                />
                 <SidebarWorkspaceArchiveButton
                   workspaceKey={workspace.workspaceKey}
                   pending={archiveStatus === "pending"}

@@ -6,7 +6,12 @@ import {
   type PaseoSubagentRow,
   type ProviderSubagentRow,
 } from "./select";
-import { buildThreadAgentIndex, buildThreadChildRows, type ThreadAgents } from "./thread-children";
+import {
+  buildThreadAgentIndex,
+  buildThreadChildRows,
+  pickThreadRootAgent,
+  type ThreadAgents,
+} from "./thread-children";
 
 afterEach(() => {
   useProviderSubagentStore.setState({
@@ -103,6 +108,38 @@ describe("buildThreadAgentIndex", () => {
     expect(next).not.toBe(previous);
     expect(next.get("ws-a")).toBe(previous.get("ws-a"));
     expect(next.get("ws-b")).not.toBe(previous.get("ws-b"));
+  });
+});
+
+describe("pickThreadRootAgent", () => {
+  const active = (id: string, lastActivityAt: number) => ({
+    id,
+    lastActivityAt: new Date(lastActivityAt),
+  });
+
+  it("picks the most recently active root agent and reports how many roots it chose among", () => {
+    const roots = [agent("old", "w", { createdAt: 1 }), agent("new", "w", { createdAt: 2 })];
+    const thread = buildThreadAgentIndex(agentMap(...roots)).get("w");
+    const picked = pickThreadRootAgent(
+      thread,
+      new Map([active("old", 500), active("new", 900)].map((entry) => [entry.id, entry])),
+    );
+    expect(picked).toEqual({ agentId: "new", rootCount: 2 });
+  });
+
+  it("never picks a same-workspace subagent, even when it is the most recently active", () => {
+    const thread = buildThreadAgentIndex(
+      agentMap(agent("root", "w"), agent("child", "w", { parent: "root", createdAt: 2 })),
+    ).get("w");
+    const picked = pickThreadRootAgent(
+      thread,
+      new Map([active("root", 100), active("child", 900)].map((entry) => [entry.id, entry])),
+    );
+    expect(picked).toEqual({ agentId: "root", rootCount: 1 });
+  });
+
+  it("returns null for a workspace with no agents", () => {
+    expect(pickThreadRootAgent(undefined, new Map())).toBeNull();
   });
 });
 
