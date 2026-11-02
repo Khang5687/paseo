@@ -122,22 +122,56 @@ export function parseOmpCapabilityProbe(stdout: string): OmpCapabilityProbe {
   };
 }
 
-// ponytail: per-binary memo with a TTL; a binary upgraded mid-run is re-probed within a minute.
-const PROBE_TTL_MS = 60_000;
-const probeMemo = new Map<string, { at: number; result: Promise<OmpCapabilityProbe> }>();
+// One answer per binary identity (the caller's key): an upgraded or re-linked binary is a new key,
+// so a definitive answer holds for as long as the binary does. An `unavailable` answer taught
+// nothing; later launches get it at once while one fresh probe runs to replace it, so a probe that
+// timed out never stalls every launch.
+interface HeldProbe {
+  result: Promise<OmpCapabilityProbe>;
+  retry: boolean;
+}
+const probeMemo = new Map<string, HeldProbe>();
 
 export function memoizeProbe(
   key: string,
   run: () => Promise<OmpCapabilityProbe>,
-  now: () => number = Date.now,
 ): Promise<OmpCapabilityProbe> {
   const held = probeMemo.get(key);
-  if (held && now() - held.at < PROBE_TTL_MS) return held.result;
-  const result = run();
-  probeMemo.set(key, { at: now(), result });
-  // A probe that threw is not remembered; the next launch asks again.
-  result.catch(() => probeMemo.delete(key));
-  return result;
+  if (!held) return holdProbe(key, run()).result;
+  if (held.retry) {
+    held.retry = false;
+    void replaceProbe(key, held, run);
+  }
+  return held.result;
+}
+
+async function replaceProbe(
+  key: string,
+  stale: HeldProbe,
+  run: () => Promise<OmpCapabilityProbe>,
+): Promise<void> {
+  try {
+    const fresh = await run();
+    if (probeMemo.get(key) === stale) holdProbe(key, Promise.resolve(fresh));
+  } catch {
+    stale.retry = true;
+  }
+}
+
+function holdProbe(key: string, result: Promise<OmpCapabilityProbe>): HeldProbe {
+  const held: HeldProbe = { result, retry: false };
+  probeMemo.set(key, held);
+  void settleProbe(key, held);
+  return held;
+}
+
+async function settleProbe(key: string, held: HeldProbe): Promise<void> {
+  try {
+    held.retry = (await held.result).unavailable === true;
+  } catch {
+    // A probe that threw is not remembered; the next launch asks again.
+    if (probeMemo.get(key) === held) probeMemo.delete(key);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
