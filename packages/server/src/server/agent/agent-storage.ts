@@ -109,6 +109,10 @@ const STORED_AGENT_SCHEMA = z.object({
   queuePauseReason: z.string().optional(),
   archivedAt: z.string().nullable().optional(),
   owner: AgentOwnerSchema.optional(),
+  // Truncated copies of the first user message and latest assistant message. The daemon
+  // does not persist timelines, so search_agents reads these once the agent is unloaded.
+  firstUserMessage: z.string().nullable().optional(),
+  lastAssistantMessage: z.string().nullable().optional(),
   // The unsent composer draft and its restore history. Only AgentDraftService
   // writes these (see mutateDraft); every other write keeps the stored value.
   draft: STORED_DRAFT_SCHEMA.optional(),
@@ -139,6 +143,35 @@ export type StoredAgentDraftFields = Pick<
 >;
 export function parseStoredAgentRecord(value: unknown): StoredAgentRecord {
   return STORED_AGENT_SCHEMA.parse(value);
+}
+
+const SEARCHABLE_MESSAGE_MAX_CHARS = 2000;
+
+/** The stored form of firstUserMessage/lastAssistantMessage. */
+export function toSearchableMessage(text: string | null | undefined): string | null {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  return trimmed.length > SEARCHABLE_MESSAGE_MAX_CHARS
+    ? trimmed.slice(0, SEARCHABLE_MESSAGE_MAX_CHARS)
+    : trimmed;
+}
+
+type SearchableMessages = Pick<StoredAgentRecord, "firstUserMessage" | "lastAssistantMessage">;
+
+/**
+ * The first user message is sticky: an agent reloaded without its history would otherwise
+ * replace it with the first prompt sent after the reload. The latest reply always wins.
+ */
+function mergeSearchableMessages(
+  existing: SearchableMessages | null,
+  next: SearchableMessages | undefined,
+): SearchableMessages {
+  const firstUserMessage = existing?.firstUserMessage ?? next?.firstUserMessage ?? null;
+  const lastAssistantMessage = next?.lastAssistantMessage ?? existing?.lastAssistantMessage ?? null;
+  return {
+    ...(firstUserMessage !== null ? { firstUserMessage } : {}),
+    ...(lastAssistantMessage !== null ? { lastAssistantMessage } : {}),
+  };
 }
 
 export class AgentStorage {
@@ -319,7 +352,11 @@ export class AgentStorage {
 
   async applySnapshot(
     agent: ManagedAgent,
-    options?: { title?: string | null; internal?: boolean },
+    options?: {
+      title?: string | null;
+      internal?: boolean;
+      messages?: { firstUserMessage: string | null; lastAssistantMessage: string | null };
+    },
   ): Promise<void> {
     await this.load();
     const hasTitleOverride =
@@ -339,6 +376,7 @@ export class AgentStorage {
       if (existing && existing.archivedAt !== undefined) {
         record.archivedAt = existing.archivedAt;
       }
+      Object.assign(record, mergeSearchableMessages(existing, options?.messages));
       record.resumeOnStartup =
         existing?.resumeOnStartup && agent.lifecycle !== "idle" && agent.lifecycle !== "error";
       return record;

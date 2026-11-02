@@ -89,8 +89,10 @@ import {
   cancelAgentRunCommand,
   closeAgentCommand,
   setAgentModeCommand,
+  unarchiveAgentCommand,
   updateAgentCommand,
 } from "../lifecycle-command.js";
+import { AGENT_SEARCH_SCAN_LIMIT, searchAgents } from "../agent-search.js";
 import type { ForgeService } from "../../../services/forge-service.js";
 import type { WorkspaceGitService } from "../../workspace-git-service.js";
 import type {
@@ -140,6 +142,8 @@ export interface PaseoToolHostDependencies {
   archiveWorkspaceRecord?: ArchiveDependencies["archiveWorkspaceRecord"];
   emitWorkspaceUpdatesForWorkspaceIds?: ArchiveDependencies["emitWorkspaceUpdatesForWorkspaceIds"];
   workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "list" | "upsert">;
+  /** Clears an archived workspace's archivedAt and publishes it to every client. */
+  restoreArchivedWorkspace?: (workspace: PersistedWorkspaceRecord) => Promise<void>;
   projectRegistry?: Pick<ProjectRegistry, "get" | "list">;
   createDirectoryWorkspace?: (
     cwd: string,
@@ -2250,6 +2254,145 @@ function createToolCatalog(
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
+      };
+    },
+  );
+
+  registerTool(
+    "unarchive_agent",
+    {
+      title: "Unarchive agent",
+      description:
+        "Restore an archived agent so it shows in agent lists and the sidebar again and can be prompted. Restores its archived workspace too when the workspace directory still exists. Does not start a turn. Safe to call on an agent that is not archived.",
+      inputSchema: {
+        agentId: z.string().min(1),
+      },
+      outputSchema: {
+        agentId: z.string(),
+        wasArchived: z.boolean(),
+        workspaceId: z.string().nullable(),
+        workspaceRestored: z.boolean(),
+        warning: z.string().nullable(),
+      },
+    },
+    async ({ agentId }) => {
+      const workspaceRegistry = options.workspaceRegistry;
+      const restoreArchivedWorkspace = options.restoreArchivedWorkspace;
+      if (!workspaceRegistry || !restoreArchivedWorkspace) {
+        throw new Error("Workspace restore is not configured");
+      }
+      const result = await unarchiveAgentCommand(
+        {
+          agentManager,
+          agentStorage,
+          getWorkspace: (workspaceId) => workspaceRegistry.get(workspaceId),
+          restoreWorkspace: restoreArchivedWorkspace,
+          isDirectory: isExistingDirectory,
+        },
+        agentId,
+      ).catch((error) => {
+        if (error instanceof AgentNotFoundError) throw new PaseoToolInputError(error.message);
+        throw error;
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson(result),
+      };
+    },
+  );
+
+  registerTool(
+    "search_agents",
+    {
+      title: "Search agents",
+      description: `Find agents, archived or not, by what they were about. Every query word must appear (case-insensitive) in the agent's title, labels, first user message, or latest assistant message. Results rank by match quality, then recency, and include a snippet. Searches every directory unless cwd is given. Reads stored data only, so agents last saved before message text was recorded match on title and labels. Scans the newest ${AGENT_SEARCH_SCAN_LIMIT} agents that pass the filters; truncated is true when older ones were skipped. Follow up with get_agent_activity, send_agent_prompt, or unarchive_agent.`,
+      inputSchema: {
+        query: z.string().trim().min(1, "query is required"),
+        includeArchived: z.boolean().optional().default(true),
+        cwd: z.string().optional().describe("Only agents in this directory or below it."),
+        workspaceId: z.string().optional(),
+        provider: z.string().optional().describe("Provider ID, for example codex."),
+        sinceHours: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Only agents active within this many hours."),
+        limit: z.number().int().positive().max(50).optional().default(10),
+      },
+      outputSchema: {
+        results: z.array(
+          z.object({
+            agentId: z.string(),
+            title: z.string().nullable(),
+            status: AgentStatusEnum,
+            archivedAt: z.string().nullable(),
+            workspaceId: z.string().nullable(),
+            cwd: z.string(),
+            provider: z.string(),
+            model: z.string().nullable(),
+            createdAt: z.string(),
+            updatedAt: z.string(),
+            matchedFields: z.array(
+              z.enum(["title", "labels", "firstUserMessage", "lastAssistantMessage"]),
+            ),
+            snippet: z.object({
+              field: z.enum(["title", "labels", "firstUserMessage", "lastAssistantMessage"]),
+              text: z.string(),
+            }),
+          }),
+        ),
+        scanned: z.number(),
+        truncated: z.boolean(),
+      },
+    },
+    async ({
+      query,
+      includeArchived = true,
+      cwd,
+      workspaceId,
+      provider,
+      sinceHours,
+      limit = 10,
+    }) => {
+      const registeredProviderIds = new Set(providerSnapshotManager.listRegisteredProviderIds());
+      const result = await searchAgents(
+        {
+          manager: agentManager,
+          storage: agentStorage,
+          projectLive: (snapshot) =>
+            serializeSnapshotWithMetadata(agentStorage, snapshot, childLogger),
+          projectStored: (record) => buildStoredAgentPayload(record, registeredProviderIds),
+        },
+        {
+          query,
+          includeArchived,
+          ...(cwd?.trim() ? { cwd: expandUserPath(cwd.trim()) } : {}),
+          ...(workspaceId ? { workspaceId } : {}),
+          ...(provider ? { provider } : {}),
+          ...(sinceHours !== undefined ? { sinceHours } : {}),
+          limit,
+        },
+      );
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          results: result.matches.map(({ agent, matchedFields, snippet }) => ({
+            agentId: agent.id,
+            title: agent.title,
+            status: agent.status,
+            archivedAt: agent.archivedAt ?? null,
+            workspaceId: agent.workspaceId ?? null,
+            cwd: agent.cwd,
+            provider: agent.provider,
+            model: agent.model,
+            createdAt: agent.createdAt,
+            updatedAt: agent.updatedAt,
+            matchedFields,
+            snippet,
+          })),
+          scanned: result.scanned,
+          truncated: result.truncated,
+        }),
       };
     },
   );

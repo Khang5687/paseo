@@ -67,7 +67,7 @@ import {
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import { assertModelEnabled, pickDefaultEnabledModel } from "./provider-disabled-models.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
-import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
 import type { AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
@@ -1355,6 +1355,22 @@ export class AgentManager {
     await this.inFlightAgentCloses?.get(agentId)?.catch(() => undefined);
   }
 
+  /**
+   * Truncated first user message and latest assistant message from the in-memory
+   * timeline, or null when the timeline is not loaded. Never loads a runtime.
+   */
+  getSearchableMessages(
+    agentId: string,
+  ): { firstUserMessage: string | null; lastAssistantMessage: string | null } | null {
+    if (!this.timelineStore.has(agentId)) return null;
+    return {
+      firstUserMessage: toSearchableMessage(this.timelineStore.getFirstUserMessage(agentId)),
+      lastAssistantMessage: toSearchableMessage(
+        this.timelineStore.getLastAssistantMessage(agentId),
+      ),
+    };
+  }
+
   getTimeline(id: string): AgentTimelineItem[] {
     this.requireAgent(id);
     return this.timelineStore.getItems(id);
@@ -2101,6 +2117,7 @@ export class AgentManager {
 
     await this.registry.applySnapshot(agent, {
       internal: agent.internal,
+      messages: this.getSearchableMessages(agentId) ?? undefined,
     });
     const stored = await this.registry.get(agentId);
     if (!stored) {
@@ -2819,16 +2836,20 @@ export class AgentManager {
     if (this.agents.has(agentId)) await this.closeAgentRuntime(agentId);
     await this.syncNativeArchiveState(record.provider, record.persistence, "restore");
 
-    await registry.upsert({
+    const nextRecord: StoredAgentRecord = {
       ...record,
       ...(updates?.workspaceId ? { workspaceId: updates.workspaceId } : {}),
       ...(updates?.labels ? { labels: applyLabelPatch(record.labels, updates.labels) } : {}),
       archivedAt: null,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    await registry.upsert(nextRecord);
 
     if (this.getAgent(agentId)) {
       this.notifyAgentState(agentId);
+    } else if (!nextRecord.internal) {
+      // Clients only learn that an unloaded agent left the archive from this update.
+      this.dispatchStoredAgentState(nextRecord);
     }
     return true;
   }
@@ -4618,7 +4639,10 @@ export class AgentManager {
     if (agent.internal) {
       return;
     }
-    await this.registry.applySnapshot(agent, options);
+    await this.registry.applySnapshot(agent, {
+      ...options,
+      messages: this.getSearchableMessages(agent.id) ?? undefined,
+    });
   }
 
   private requireRegistry(): AgentStorage {

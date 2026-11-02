@@ -295,6 +295,20 @@ History navigation opens the selected agent without changing either archive stat
 The agent's **Unarchive** runs the provider's native unarchive hook before interactive resume and
 history hydration. Other archived agents stay archived.
 
+Agents unarchive another agent with the `unarchive_agent` tool; `paseo agent unarchive` and the
+`agent.unarchive.request` RPC do the same. Unlike the app's Unarchive it starts no turn and loads
+no runtime: it runs the native unarchive hook, clears `archivedAt`, and publishes the stored record
+so the agent reappears in every client's lists. It restores the agent's archived workspace first
+when the workspace directory exists. When the directory is gone it leaves the workspace archived,
+since workspace **Restore** can recreate a removed worktree, and returns a warning: the agent cannot
+run until its directory exists again.
+
+`search_agents` finds archived and active agents by their title, labels, first user message, and
+latest assistant message. The daemon keeps timelines only in memory, so the agent record carries
+truncated copies of those two messages (`firstUserMessage`, `lastAssistantMessage`), refreshed on
+every snapshot write. Agents last written before those fields existed match on title and labels
+only. Search reads records and loaded timelines; it never resumes a provider session.
+
 Opening an agent is a navigation choice, independent of whether its details are cached. The
 layout retains that choice across reload while the panel fetches the agent from the daemon.
 Once the daemon reports the agent active, its tab follows normal archive propagation again.

@@ -94,6 +94,10 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
 
+**`search_agents`** — `{ query, includeArchived?, cwd?, workspaceId?, provider?, sinceHours?, limit? }`. Finds old threads, archived or not, whose title, labels, first user message, or latest assistant message contain every query word. Returns matches with a snippet, best first. Follow up with `get_agent_activity`, `send_agent_prompt`, or `unarchive_agent`.
+
+**`unarchive_agent`** — `{ agentId }`. Returns an archived agent to the active list and restores its archived workspace. Starts no turn. Read `warning`: when set, the agent's directory is gone and it cannot run yet.
+
 ## Working with other agents
 
 The user runs several agents at once and refers to them by the workspace name in the sidebar ("the git backup agent", "the 6tb one"). They want you to do the talking between agents instead of copying text from one chat to another.
