@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getAutocompleteFallbackIndex,
   getAutocompleteNextIndex,
+  resolveAutocompleteSelectedIndex,
   type AutocompleteOptionsPosition,
 } from "@/components/ui/autocomplete-utils";
 
@@ -11,7 +12,7 @@ interface AutocompleteKeyPressEvent {
 }
 
 interface UseAutocompleteInput<
-  TOption,
+  TOption extends { id: string },
   TKeyPressEvent extends AutocompleteKeyPressEvent = AutocompleteKeyPressEvent,
 > {
   isVisible: boolean;
@@ -33,12 +34,13 @@ interface UseAutocompleteResult<TKeyPressEvent extends AutocompleteKeyPressEvent
 }
 
 export function useAutocomplete<
-  TOption,
+  TOption extends { id: string },
   TKeyPressEvent extends AutocompleteKeyPressEvent = AutocompleteKeyPressEvent,
 >(input: UseAutocompleteInput<TOption, TKeyPressEvent>): UseAutocompleteResult<TKeyPressEvent> {
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const previousQueryRef = useRef("");
   const navigatedRef = useRef(false);
+  const previousOptionsRef = useRef<readonly TOption[]>([]);
 
   useEffect(() => {
     if (!input.isVisible) {
@@ -53,26 +55,19 @@ export function useAutocomplete<
     if (queryChanged) {
       navigatedRef.current = false;
     }
+    const previousOptions = previousOptionsRef.current;
+    previousOptionsRef.current = input.options;
 
-    setSelectedIndex((current) => {
-      if (input.options.length === 0) {
-        return -1;
-      }
-
-      const fallbackIndex = getAutocompleteFallbackIndex(
-        input.options.length,
-        input.optionsPosition,
-      );
-
-      if (queryChanged) {
-        return fallbackIndex;
-      }
-      if (current < 0 || current >= input.options.length) {
-        return fallbackIndex;
-      }
-      return current;
-    });
-  }, [input.isVisible, input.options.length, input.query, input.optionsPosition]);
+    setSelectedIndex((current) =>
+      resolveAutocompleteSelectedIndex({
+        previousOptions,
+        previousIndex: current,
+        options: input.options,
+        queryChanged,
+        position: input.optionsPosition,
+      }),
+    );
+  }, [input.isVisible, input.options, input.query, input.optionsPosition]);
 
   const onKeyPress = useCallback(
     (event: TKeyPressEvent) => {

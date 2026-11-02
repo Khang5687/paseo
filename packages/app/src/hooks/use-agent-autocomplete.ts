@@ -394,8 +394,9 @@ function resolveAutocompleteIsLoading(args: {
   optionsLength: number;
 }): boolean {
   if (args.mode === "command") {
-    // A refetch with nothing to show reads as loading, not as "no commands".
-    return (args.isCommandsLoading || args.isCommandsFetching) && args.optionsLength === 0;
+    // Provider commands still loading show a spinner next to the built-ins; a refetch with
+    // nothing to show reads as loading, not as "no commands".
+    return args.isCommandsLoading || (args.isCommandsFetching && args.optionsLength === 0);
   }
   if (args.mode === "file") {
     return (
@@ -595,7 +596,10 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     showCommandAutocomplete,
     showArgumentAutocomplete: activeSlashArgument !== null,
   });
-  const canShowAutocomplete = resolveAutocompleteIsVisible({
+  // The command menu does not wait for provider commands: built-in and plugin commands
+  // show at once and provider commands join when they arrive. Listing them can take
+  // seconds when the daemon has to resume an idle agent first.
+  const isVisible = resolveAutocompleteIsVisible({
     mode,
     canLoadCommands,
     serverId,
@@ -617,8 +621,6 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   } = commandsQuery;
   const isCommandsLoading = canListCommands && commandsQuery.isLoading;
 
-  const isVisible = canShowAutocomplete && !(mode === "command" && isCommandsLoading);
-
   const { argumentAutocomplete, isMenuVisible } = useArgumentAutocomplete({
     mode,
     isVisible,
@@ -627,7 +629,6 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     pluginCommands: pluginClientSlashCommands,
     isDraftContext,
   });
-
   const fileSuggestionsQuery = useQuery({
     queryKey: [
       "directorySuggestions",
