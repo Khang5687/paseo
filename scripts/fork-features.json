@@ -699,5 +699,11 @@
       "packages/server/src/server/workspace-registry.test.ts",
       "packages/server/src/server/session.workspaces.test.ts"
     ]
+  },
+  {
+    "pr": 26,
+    "title": "feat(app): one-press archive button on sidebar workspace rows",
+    "tests": [],
+    "e2e": ["packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"]
   }
 ]
