@@ -66,6 +66,7 @@ import type {
   FileWriteResult,
   FetchAgentTimelineResponseMessage,
   AgentForkContextResponseMessage,
+  AgentForkResponseMessage,
   GitSetupOptions,
   CheckoutStatusResponse,
   CheckoutCommit,
@@ -903,6 +904,7 @@ type ScheduleUpdatePayload = Extract<
 >["payload"];
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
+export type AgentForkPayload = AgentForkResponseMessage["payload"];
 
 export type FetchAgentTimelineDirection = FetchAgentTimelinePayload["direction"];
 export type FetchAgentTimelineProjection = FetchAgentTimelinePayload["projection"];
@@ -989,6 +991,8 @@ export interface AgentForkContextOptions {
   boundaryMessageId?: string;
   requestId?: string;
 }
+
+export type AgentForkOptions = AgentForkContextOptions;
 
 type AgentRefreshedStatusPayload = z.infer<typeof AgentRefreshedStatusPayloadSchema>;
 type RestartRequestedStatusPayload = z.infer<typeof RestartRequestedStatusPayloadSchema>;
@@ -4597,6 +4601,49 @@ export class DaemonClient {
     }
 
     return payload;
+  }
+
+  /**
+   * Fork an agent into a new agent. Gate on `server_info.features.agentFork`. Resolves with the
+   * new agent's id and how it was seeded.
+   */
+  async forkAgent(
+    agentId: string,
+    options: AgentForkOptions = {},
+  ): Promise<AgentForkPayload & { forkedAgentId: string }> {
+    // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03.
+    if (this.lastServerInfoMessage?.features?.agentFork !== true) {
+      throw new Error("Update the host to fork agents.");
+    }
+    const resolvedRequestId = this.createRequestId(options.requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.fork.request",
+      agentId,
+      requestId: resolvedRequestId,
+      ...(options.boundaryCursor ? { boundaryCursor: options.boundaryCursor } : {}),
+      ...(options.boundaryMessageId ? { boundaryMessageId: options.boundaryMessageId } : {}),
+    });
+
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      timeout: 120000,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.fork.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== resolvedRequestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+
+    if (payload.error || !payload.forkedAgentId) {
+      throw new Error(payload.error ?? "Fork did not return an agent");
+    }
+    return { ...payload, forkedAgentId: payload.forkedAgentId };
   }
 
   /** Ask a forked copy of an agent's conversation; the agent itself is never interrupted. */

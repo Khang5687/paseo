@@ -217,6 +217,7 @@ export const ar: TranslationResources = {
     clientCommands: {
       archiveAgent: "أرشفة الوكيل الحالي",
       freshDraft: "أرشفة هذا الوكيل وابدأ مسودة جديدة",
+      forkAgent: "انسخ هذه المحادثة في علامة تبويب جديدة",
     },
     github: {
       searching: "جارٍ البحث...",

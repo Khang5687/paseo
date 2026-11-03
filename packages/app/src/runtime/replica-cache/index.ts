@@ -182,6 +182,7 @@ const AgentCapabilitiesSchema = z.strictObject({
   supportsRewindConversation: z.boolean().optional(),
   supportsRewindFiles: z.boolean().optional(),
   supportsRewindBoth: z.boolean().optional(),
+  supportsNativeFork: z.boolean().optional(),
 });
 
 const StoredProjectCheckoutSchema = z.union([
@@ -422,6 +423,25 @@ function timelineBase(item: StreamItem) {
   };
 }
 
+const OPTIONAL_CAPABILITY_KEYS = [
+  "supportsSessionListing",
+  "supportsRewindConversation",
+  "supportsRewindFiles",
+  "supportsRewindBoth",
+  "supportsNativeFork",
+] as const;
+
+function pickDefinedCapabilities(
+  capabilities: Agent["capabilities"],
+): Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> {
+  const picked: Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> = {};
+  for (const key of OPTIONAL_CAPABILITY_KEYS) {
+    const value = capabilities[key];
+    if (value !== undefined) picked[key] = value;
+  }
+  return picked;
+}
+
 function serializeAgentToolCall(data: AgentToolCallData): StoredToolCall {
   const base = {
     type: "tool_call" as const,
@@ -637,22 +657,11 @@ function serializeAgent(agent: Agent): StoredAgent {
     capabilities: {
       supportsStreaming: agent.capabilities.supportsStreaming,
       supportsSessionPersistence: agent.capabilities.supportsSessionPersistence,
-      ...(agent.capabilities.supportsSessionListing !== undefined
-        ? { supportsSessionListing: agent.capabilities.supportsSessionListing }
-        : {}),
       supportsDynamicModes: agent.capabilities.supportsDynamicModes,
       supportsMcpServers: agent.capabilities.supportsMcpServers,
       supportsReasoningStream: agent.capabilities.supportsReasoningStream,
       supportsToolInvocations: agent.capabilities.supportsToolInvocations,
-      ...(agent.capabilities.supportsRewindConversation !== undefined
-        ? { supportsRewindConversation: agent.capabilities.supportsRewindConversation }
-        : {}),
-      ...(agent.capabilities.supportsRewindFiles !== undefined
-        ? { supportsRewindFiles: agent.capabilities.supportsRewindFiles }
-        : {}),
-      ...(agent.capabilities.supportsRewindBoth !== undefined
-        ? { supportsRewindBoth: agent.capabilities.supportsRewindBoth }
-        : {}),
+      ...pickDefinedCapabilities(agent.capabilities),
     },
     currentModeId: agent.currentModeId,
     availableModes: [],

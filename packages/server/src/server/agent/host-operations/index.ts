@@ -18,7 +18,12 @@ import { selectAgentListPage } from "../agent-projections.js";
 import { moreNote, selectWorkspaceSummaries } from "../tools/paseo-tool-compaction.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
 import { expandUserPath } from "../../path-utils.js";
-import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
+import {
+  PaseoToolInputError,
+  type PaseoToolExecutionContext,
+  type PaseoToolResult,
+} from "../tools/types.js";
+import { buildForkTaskPrompt } from "../fork-agent.js";
 import type { AgentPermissionResponse } from "../agent-sdk-types.js";
 import { resolvePermissionResponse } from "../permission-answers.js";
 
@@ -46,6 +51,7 @@ export interface HostOperations {
   getStatus: HostOperation;
   getActivity: HostOperation;
   listAgents: HostOperation;
+  forkAgent: HostOperation;
   askAgent: HostOperation;
   listPermissions: HostOperation;
   respondToPermission: HostOperation;
@@ -255,6 +261,39 @@ export function createHostResolver(input: {
               workspaceId: snapshot.workspaceId,
               currentModeId: snapshot.currentModeId,
               availableModes: snapshot.availableModes,
+            });
+          },
+          async forkAgent(args) {
+            const agentId = args.agentId as string | undefined;
+            if (!agentId) {
+              throw new PaseoToolInputError(
+                `A fork needs the source session on the same host. The calling agent runs on ${input.serverId}, not ${destination}; pass agentId of an agent on ${destination}.`,
+              );
+            }
+            const source = (await client.fetchAgent(agentId))?.agent;
+            if (!source) throw new PaseoToolInputError(`Agent ${agentId} not found`);
+            if (args.workspaceId && args.workspaceId !== source.workspaceId) {
+              throw new PaseoToolInputError(
+                `A fork stays in the source agent's workspace ${source.workspaceId}.`,
+              );
+            }
+            const forked = await client.forkAgent(agentId);
+            if (args.title)
+              await client.updateAgent(forked.forkedAgentId, { name: args.title as string });
+            if (args.prompt) {
+              await client.sendMessage(
+                forked.forkedAgentId,
+                buildForkTaskPrompt(args.prompt as string),
+                {
+                  activeTurnBehavior: "steer",
+                },
+              );
+            }
+            return result({
+              forkedAgentId: forked.forkedAgentId,
+              method: forked.method,
+              sourceAgentId: agentId,
+              workspaceId: source.workspaceId,
             });
           },
           async sendPrompt(args) {
@@ -468,14 +507,16 @@ function remoteObservation(client: DaemonClient): HostObservation {
           // A new turn may start between the snapshot and the current-response read.
           // Bound that wait and refresh state instead of attributing the old event to it.
           const current = await client.waitForFinish(agentId, 100);
-          if (current.status === "timeout")
-            snapshot = (await client.fetchAgent(agentId))?.agent ?? null;
-          else {
-            if (!current.final && current.error && current.error !== `Agent not found: ${agentId}`)
-              throw new Error(current.error);
-            snapshot = current.final;
-            lastMessage = current.lastMessage;
+          if (current.status === "timeout") {
+            // Queued delivery can leave a closed/error snapshot visible before the new turn.
+            // A timed-out wait has not established an outcome for that queued work.
+            if (event?.type === "permission_resolved") handler(snapshot, event);
+            return;
           }
+          if (!current.final && current.error && current.error !== `Agent not found: ${agentId}`)
+            throw new Error(current.error);
+          snapshot = current.final;
+          lastMessage = current.lastMessage;
         }
         handler(snapshot, event, lastMessage);
       };

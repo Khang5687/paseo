@@ -213,6 +213,7 @@ export const en = {
     clientCommands: {
       archiveAgent: "Archive the current agent",
       freshDraft: "Archive this agent and start a fresh draft",
+      forkAgent: "Fork this chat into a new tab",
     },
     github: {
       searching: "Searching...",

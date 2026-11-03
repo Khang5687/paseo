@@ -182,6 +182,8 @@ export interface AgentCapabilityFlags {
   supportsRewindConversation?: boolean;
   supportsRewindFiles?: boolean;
   supportsRewindBoth?: boolean;
+  /** The client implements forkSession: a new provider session cut from an existing one. */
+  supportsNativeFork?: boolean;
 }
 
 export interface AgentPersistenceHandle {
@@ -793,6 +795,23 @@ export interface ResolveAgentDefaultModeInput {
   signal?: AbortSignal;
 }
 
+export interface AgentForkSessionInput {
+  /**
+   * Provider message id of the first message to leave out of the fork. The fork keeps everything
+   * before it. null keeps the whole session.
+   */
+  cutBeforeMessageId: string | null;
+  cwd: string;
+  providerOptions?: Record<string, unknown>;
+}
+
+export interface AgentForkSessionResult {
+  persistence: AgentPersistenceHandle;
+  /** Context the fork would start with, when the provider can measure it. */
+  contextWindowUsedTokens?: number;
+  contextWindowMaxTokens?: number;
+}
+
 export interface AgentClient {
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags;
@@ -807,6 +826,14 @@ export interface AgentClient {
     launchContext?: AgentLaunchContext,
     options?: AgentResumeSessionOptions,
   ): Promise<AgentSession>;
+  /**
+   * Create a new durable provider session from a copy of `handle`'s session, cut as asked. The
+   * source session stays untouched. Present only when capabilities.supportsNativeFork is true.
+   */
+  forkSession?(
+    handle: AgentPersistenceHandle,
+    input: AgentForkSessionInput,
+  ): Promise<AgentForkSessionResult>;
   /** Equal keys share availability and catalogue discovery within this configured client.
    * Include the execution environment and effective configuration; omit to use target identity.
    * force must not affect identity. Resolve before every cache lookup. */
