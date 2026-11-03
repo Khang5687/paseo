@@ -14,6 +14,10 @@ import {
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
+import {
+  selectSentMessageImages,
+  useSentMessageImagesStore,
+} from "@/stores/sent-message-images-store";
 import { TaskListRow } from "@/components/task-list-row";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -88,6 +92,7 @@ interface UserMessageProps {
   serverId?: string;
   agentId?: string;
   messageId?: string;
+  clientMessageId?: string;
   message: string;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
@@ -412,7 +417,8 @@ export const UserMessage = memo(function UserMessage({
   agentId,
   messageId,
   message,
-  images = [],
+  clientMessageId,
+  images: ownImages = [],
   attachments = [],
   timestamp,
   capabilities,
@@ -433,6 +439,10 @@ export const UserMessage = memo(function UserMessage({
   );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const hasText = message.trim().length > 0;
+  const indexedImages = useSentMessageImagesStore((state) =>
+    selectSentMessageImages(state, { serverId, agentId, messageIds: [clientMessageId, messageId] }),
+  );
+  const images = ownImages.length > 0 ? ownImages : indexedImages;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
   const getMessageContent = useCallback(() => message, [message]);
@@ -444,15 +454,34 @@ export const UserMessage = memo(function UserMessage({
     () => formatMessageTimestamp(new Date(timestamp)),
     [timestamp],
   );
-  const rewindMutation = useRewindAgentMutation({ serverId, agentId, client, messageId });
+  const rewindMutation = useRewindAgentMutation({
+    serverId,
+    agentId,
+    client,
+    messageId,
+    clientMessageId,
+  });
+
+  // Optimistic rows know both ids; remember the daemon id so the images still resolve once
+  // the row is rebuilt from the daemon timeline.
+  useEffect(() => {
+    if (ownImages.length === 0 || !serverId || !agentId || !clientMessageId || !messageId) return;
+    if (messageId === clientMessageId) return;
+    useSentMessageImagesStore.getState().alias({
+      serverId,
+      agentId,
+      fromMessageId: clientMessageId,
+      toMessageId: messageId,
+    });
+  }, [agentId, clientMessageId, messageId, ownImages.length, serverId]);
 
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
   const handleRewind = useCallback(
     (input: { mode: RewindMode; rewoundText: string }) => {
-      return rewindMutation.rewindAgent(input);
+      return rewindMutation.rewindAgent({ ...input, rewoundImages: images });
     },
-    [rewindMutation],
+    [images, rewindMutation],
   );
 
   const containerStyle = useMemo(

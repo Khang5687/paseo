@@ -1,3 +1,7 @@
+import {
+  collectSentMessageImageIds,
+  waitForSentMessageImagesHydration,
+} from "@/stores/sent-message-images-store";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -153,7 +157,9 @@ async function runAttachmentGc(): Promise<void> {
     };
   });
 
-  const referencedIds = new Set<string>();
+  await waitForSentMessageImagesHydration();
+
+  const referencedIds = new Set<string>(collectSentMessageImageIds());
   for (const id of useDraftStore.getState().collectActiveAttachmentIds()) {
     referencedIds.add(id);
   }

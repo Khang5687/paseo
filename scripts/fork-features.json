@@ -810,5 +810,14 @@
       "packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts",
       "packages/app/e2e/browser/sidebar-thread-child-archive.spec.ts"
     ]
+  },
+  {
+    "pr": 106,
+    "title": "fix(app): keep sent-message images across rewind, timeline replacement and GC (fork port of #104)",
+    "tests": [
+      "packages/app/src/stores/draft-store/sent-message-images-gc.test.ts",
+      "packages/app/src/stores/sent-message-images-store.test.ts",
+      "packages/app/src/components/rewind/composer-restore.test.ts"
+    ]
   }
 ]
