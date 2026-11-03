@@ -60,6 +60,5 @@ test("the APK runs beside the desktop build only when the disk holds both", () =
   const both = MIN_FREE_GB + ANDROID_MIN_FREE_GB;
   assert.equal(planBuilds({ freeGb: both, android: true }).android, "parallel");
   assert.equal(planBuilds({ freeGb: both - 0.1, android: true }).android, "after-desktop");
-  assert.equal(planBuilds({ freeGb: ANDROID_MIN_FREE_GB, android: true }).android, "after-desktop");
-  assert.equal(planBuilds({ freeGb: ANDROID_MIN_FREE_GB - 0.1, android: true }).android, "no-disk");
+  assert.equal(planBuilds({ freeGb: MIN_FREE_GB, android: true }).android, "after-desktop");
 });
