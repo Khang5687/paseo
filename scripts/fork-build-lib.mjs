@@ -10,8 +10,9 @@ import path from "node:path";
 // Below this, no build starts (CLAUDE.md "Build it" step 1).
 export const MIN_FREE_GB = 8;
 // The APK's JS bundle step is the disk peak: on 2026-11-01 an incremental APK build took the disk
-// from about 9.7 GB to 122 MB free.
-export const ANDROID_MIN_FREE_GB = 12;
+// from about 9.7 GB to 122 MB free. The Android build dir is about 1.5 GB and the owner's APK
+// builds finished with 11 GB free, so 6 GB keeps about 4.5 GB above the build dir.
+export const ANDROID_MIN_FREE_GB = 6;
 
 export function freeGb(dir = "/") {
   const stats = statfsSync(dir);
@@ -143,8 +144,8 @@ export function createTimer(log) {
 /**
  * How the builds after a green check share the disk. Remote daemon builds run on their hosts and
  * always start. The desktop build needs MIN_FREE_GB. The APK runs beside it only when the disk
- * holds both; with room for the APK alone it waits for the desktop build (and re-checks
- * ANDROID_MIN_FREE_GB itself then); with less it does not run.
+ * holds MIN_FREE_GB + ANDROID_MIN_FREE_GB (14 GB); with room for the APK alone it waits for the
+ * desktop build (and re-checks ANDROID_MIN_FREE_GB itself then); with less it does not run.
  */
 export function planBuilds({ freeGb: free, android }) {
   if (free < MIN_FREE_GB) {
