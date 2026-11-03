@@ -810,5 +810,15 @@
       "packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts",
       "packages/app/e2e/browser/sidebar-thread-child-archive.spec.ts"
     ]
+  },
+  {
+    "pr": 105,
+    "title": "feat(app): nest sidebar subagents under their spawner; archive finished for the whole thread",
+    "tests": [
+      "packages/app/src/subagents/thread-children.test.ts",
+      "packages/app/src/subagents/archive-finished.test.ts",
+      "packages/app/src/utils/archive-confirm.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/sidebar-thread-children.spec.ts"]
   }
 ]

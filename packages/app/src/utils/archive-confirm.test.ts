@@ -29,4 +29,13 @@ describe("buildArchiveConfirmDialog", () => {
       "Archive finished subagents?",
     );
   });
+
+  it("says how many finished subagents a bulk archive covers", () => {
+    expect(buildArchiveConfirmDialog({ subject: "finishedSubagents", count: 41 }).title).toBe(
+      "Archive 41 finished subagents?",
+    );
+    expect(buildArchiveConfirmDialog({ subject: "finishedSubagents", count: 1 }).title).toBe(
+      "Archive 1 finished subagent?",
+    );
+  });
 });

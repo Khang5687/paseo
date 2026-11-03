@@ -115,19 +115,25 @@ test("subagents nest under their spawner and one action archives every finished 
     const childBox = await childRow.boundingBox();
     const grandchildBox = await grandchildRow.boundingBox();
     const busyBox = await busyRow.boundingBox();
+    // A row is full width and indents with padding, so compare where its title starts.
+    const childLabel = await childRow.getByText("Tree child").boundingBox();
+    const grandchildLabel = await grandchildRow.getByText("Tree grandchild").boundingBox();
+    const busyLabel = await busyRow.getByText("Tree busy").boundingBox();
     // The grandchild sits right under its spawner, one indent step in; the other child stays flush.
     expect(grandchildBox?.y).toBeGreaterThan(childBox?.y ?? Infinity);
     expect(busyBox?.y).toBeGreaterThan(grandchildBox?.y ?? Infinity);
-    expect(grandchildBox?.x).toBeGreaterThan(childBox?.x ?? Infinity);
-    expect(busyBox?.x).toBe(childBox?.x);
+    expect(grandchildLabel?.x).toBeGreaterThan(childLabel?.x ?? Infinity);
+    expect(busyLabel?.x).toBe(childLabel?.x);
     await page.screenshot({ path: testInfo.outputPath("sidebar-thread-tree.png") });
 
-    const confirmed = page.waitForEvent("dialog");
+    let confirmMessage = "";
+    page.once("dialog", (dialog) => {
+      confirmMessage = dialog.message();
+      void dialog.dismiss();
+    });
     await page.getByTestId(`sidebar-thread-children-kebab-${parentKey}`).tap();
     await page.getByTestId(`sidebar-thread-children-archive-finished-${parentKey}`).tap();
-    const dialog = await confirmed;
-    expect(dialog.message()).toContain("2");
-    await dialog.dismiss();
+    await expect.poll(() => confirmMessage).toContain("Archive 2 finished subagents?");
     await expect(childRow).toBeVisible();
     await expect(grandchildRow).toBeVisible();
 
