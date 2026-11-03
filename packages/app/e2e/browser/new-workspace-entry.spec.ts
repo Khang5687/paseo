@@ -196,6 +196,7 @@ test.describe("New workspace entry points", () => {
       await composer.fill(draftText);
       await expect(composer).toHaveValue(draftText);
 
+      page.once("dialog", (dialog) => void dialog.accept());
       await clickArchiveWorkspaceMenuItem(page, rememberedProject.workspaceId);
       await expectWorkspaceAbsentFromSidebar(page, rememberedProject.workspaceId);
 

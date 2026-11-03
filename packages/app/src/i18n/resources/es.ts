@@ -1273,6 +1273,16 @@ export const es: TranslationResources = {
       description: "Comprueba tu conexión e inténtalo de nuevo.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "¿Archivar «{{name}}»?",
+    agentTitleUnnamed: "¿Archivar este agente?",
+    workspaceTitle: "¿Archivar el espacio de trabajo «{{name}}»?",
+    workspaceTitleUnnamed: "¿Archivar este espacio de trabajo?",
+    finishedSubagentsTitle: "¿Archivar los subagentes terminados?",
+    message: "Puedes restaurarlo desde el Historial.",
+    confirm: "Archivar",
+    cancel: "Cancelar",
+  },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
     unsentDraft: "Borrador sin enviar",

@@ -1254,6 +1254,16 @@ export const ru: TranslationResources = {
       description: "Проверьте подключение и попробуйте снова.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "Архивировать «{{name}}»?",
+    agentTitleUnnamed: "Архивировать этого агента?",
+    workspaceTitle: "Архивировать рабочее пространство «{{name}}»?",
+    workspaceTitleUnnamed: "Архивировать это рабочее пространство?",
+    finishedSubagentsTitle: "Архивировать завершённых субагентов?",
+    message: "Его можно восстановить из Истории.",
+    confirm: "Архивировать",
+    cancel: "Отмена",
+  },
   sidebar: {
     statusGroupAccessibility: "Группа «{{label}}»",
     unsentDraft: "Неотправленный черновик",

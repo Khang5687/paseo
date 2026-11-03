@@ -1229,6 +1229,16 @@ export const zhCN: TranslationResources = {
       description: "请检查网络连接后重试。",
     },
   },
+  archiveConfirm: {
+    agentTitle: "归档“{{name}}”？",
+    agentTitleUnnamed: "归档此 Agent？",
+    workspaceTitle: "归档工作区“{{name}}”？",
+    workspaceTitleUnnamed: "归档此工作区？",
+    finishedSubagentsTitle: "归档已完成的子 Agent？",
+    message: "你可以在历史记录中恢复。",
+    confirm: "归档",
+    cancel: "取消",
+  },
   sidebar: {
     statusGroupAccessibility: "{{label}} 分组",
     unsentDraft: "未发送的草稿",

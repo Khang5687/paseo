@@ -11,6 +11,9 @@ import { PressHighlight } from "@/components/ui/press-highlight";
 import { isNative, isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useCopyAgentId } from "@/hooks/use-copy-agent-id";
+import { SidebarThreadChildMenu } from "@/components/sidebar/sidebar-thread-child-menu";
+import { useOpenKebabMenuVisibility } from "@/components/sidebar/use-open-kebab-menu-visibility";
+import { useArchiveSubagent } from "@/subagents/use-archive-subagent";
 import { SidebarWorkspaceIconButton } from "@/components/sidebar/sidebar-workspace-icon-button";
 import { renderCopyAgentIdIcon } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { WorkspaceTabIcon } from "@/screens/workspace/workspace-tab-presentation";
@@ -149,6 +152,11 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
       t("sidebar.workspace.toasts.agentIdCopied", { id: noteAgentId.slice(0, 7) }),
     );
   }, [copyAgentId, noteAgentId, t]);
+  const archiveSubagent = useArchiveSubagent();
+  const handleArchive = useCallback(() => {
+    archiveSubagent({ serverId, agentId: row.id });
+  }, [archiveSubagent, row.id, serverId]);
+  const kebab = useOpenKebabMenuVisibility(false);
   const accessibilityLabel = [label, ...chatNoteBadgeLabels(noteBadge, t)].join(", ");
   const handlePress = useCallback(() => {
     if (row.kind === "paseo") {
@@ -182,25 +190,37 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
       highlightStyle={styles.rowPressed}
       testID={`sidebar-thread-child-${row.kind}-${row.id}`}
     >
-      {({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => (
-        <>
-          <WorkspaceTabIcon presentation={presentation} backdrop={rowBackdrop(hovered, pressed)} />
-          <Text style={styles.label} numberOfLines={1}>
-            {label}
-          </Text>
-          <SidebarNoteBadge badge={noteBadge} />
-          {noteAgentId && (hovered || isNative || isCompact) ? (
-            <View style={styles.rowAction}>
-              <SidebarWorkspaceIconButton
-                renderIcon={renderCopyAgentIdIcon}
-                label={t("sidebar.workspace.actions.copyAgentId")}
-                onPress={handleCopyAgentId}
-                testID={`sidebar-thread-child-copy-agent-id-${row.id}`}
-              />
-            </View>
-          ) : null}
-        </>
-      )}
+      {({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => {
+        const showActions = kebab.showKebab || hovered || isNative || isCompact;
+        return (
+          <>
+            <WorkspaceTabIcon
+              presentation={presentation}
+              backdrop={rowBackdrop(hovered, pressed)}
+            />
+            <Text style={styles.label} numberOfLines={1}>
+              {label}
+            </Text>
+            <SidebarNoteBadge badge={noteBadge} />
+            {noteAgentId && showActions ? (
+              <View style={styles.rowAction}>
+                <SidebarWorkspaceIconButton
+                  renderIcon={renderCopyAgentIdIcon}
+                  label={t("sidebar.workspace.actions.copyAgentId")}
+                  onPress={handleCopyAgentId}
+                  testID={`sidebar-thread-child-copy-agent-id-${row.id}`}
+                />
+                <SidebarThreadChildMenu
+                  {...kebab.menuProps}
+                  agentId={noteAgentId}
+                  onCopyAgentId={handleCopyAgentId}
+                  onArchive={handleArchive}
+                />
+              </View>
+            ) : null}
+          </>
+        );
+      }}
     </PressHighlight>
   );
 });
@@ -232,6 +252,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   rowAction: {
     marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
   },
   label: {
     color: theme.colors.foreground,

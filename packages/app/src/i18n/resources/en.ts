@@ -1245,6 +1245,16 @@ export const en = {
       description: "Check your connection and try again.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "Archive “{{name}}”?",
+    agentTitleUnnamed: "Archive this agent?",
+    workspaceTitle: "Archive workspace “{{name}}”?",
+    workspaceTitleUnnamed: "Archive this workspace?",
+    finishedSubagentsTitle: "Archive finished subagents?",
+    message: "You can restore it from History.",
+    confirm: "Archive",
+    cancel: "Cancel",
+  },
   sidebar: {
     statusGroupAccessibility: "{{label}} group",
     unsentDraft: "Unsent draft",
