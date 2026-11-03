@@ -7,6 +7,8 @@ export interface ArchiveConfirmInput {
   subject: ArchiveConfirmSubject;
   /** Title of the agent or name of the workspace; blank falls back to a generic title. */
   name?: string | null;
+  /** For `finishedSubagents`: how many will be archived, when the caller knows. */
+  count?: number;
 }
 
 /**
@@ -17,7 +19,16 @@ export function buildArchiveConfirmDialog(input: ArchiveConfirmInput): ConfirmDi
   const name = input.name?.trim() ?? "";
   let title: string;
   if (input.subject === "finishedSubagents") {
-    title = i18n.t("archiveConfirm.finishedSubagentsTitle");
+    if (input.count === undefined) {
+      title = i18n.t("archiveConfirm.finishedSubagentsTitle");
+    } else {
+      title = i18n.t(
+        input.count === 1
+          ? "archiveConfirm.finishedSubagentsCountOne"
+          : "archiveConfirm.finishedSubagentsCountMany",
+        { count: input.count },
+      );
+    }
   } else if (input.subject === "agent") {
     title = name
       ? i18n.t("archiveConfirm.agentTitle", { name })

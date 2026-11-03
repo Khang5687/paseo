@@ -26,7 +26,10 @@ import {
   toSubagentRow,
   type SubagentRow,
 } from "@/subagents/select";
-import { buildThreadChildRows } from "@/subagents/thread-children";
+import { buildThreadChildTree } from "@/subagents/thread-children";
+import { useArchiveFinishedThread } from "@/subagents/use-archive-finished";
+import { confirmArchive } from "@/utils/archive-confirm";
+import { SidebarThreadChildrenMenu } from "@/components/sidebar/sidebar-thread-children-menu";
 import { useSubagentRowPresentation } from "@/subagents/track";
 import { density } from "@/styles/density";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
@@ -36,6 +39,8 @@ import { useChatNoteBadge } from "@/notes/chat-badges-store";
 import { chatNoteBadgeLabels, SidebarNoteBadge } from "@/components/sidebar/sidebar-note-badge";
 
 const EMPTY_AGENT_IDS: string[] = [];
+/** Nesting past this depth stops indenting, so rows keep their width on a phone. */
+const MAX_TREE_INDENT_DEPTH = 2;
 
 /**
  * The subagents that live inside one thread row: a fold row ("3 subagents") and, unfolded, one row
@@ -74,14 +79,37 @@ export const SidebarThreadChildren = memo(function SidebarThreadChildren({
     [agentIds, nestingSupported, serverId, supported],
   );
   const providerRows = useStoreWithEqualityFn(useProviderSubagentStore, selectProviderRows, equal);
-  const rows = useMemo(
+  const nodes = useMemo(
     () =>
-      buildThreadChildRows({
-        children: (thread?.children ?? []).map(toSubagentRow),
+      buildThreadChildTree({
+        children: (thread?.children ?? []).map((agent) => ({
+          row: toSubagentRow(agent),
+          parentAgentId: agent.parentAgentId,
+        })),
         providerRows,
       }),
     [providerRows, thread],
   );
+  const rows = useMemo(() => nodes.map((node) => node.row), [nodes]);
+  const childAgentIds = useMemo(
+    () => new Set((thread?.children ?? []).map((agent) => agent.id)),
+    [thread],
+  );
+  const archiveFinishedThread = useArchiveFinishedThread({
+    serverId,
+    agentIds: childAgentIds,
+    rows,
+  });
+  const { archiveFinished } = archiveFinishedThread;
+  const finishedCount = archiveFinishedThread.eligibleCount;
+  const handleArchiveFinished = useCallback(() => {
+    void (async () => {
+      if (await confirmArchive({ subject: "finishedSubagents", count: finishedCount })) {
+        await archiveFinished();
+      }
+    })();
+  }, [archiveFinished, finishedCount]);
+  const kebab = useOpenKebabMenuVisibility(false);
   const expanded = useSidebarCollapsedSectionsStore((state) =>
     state.expandedThreadKeys.has(workspaceKey),
   );
@@ -91,6 +119,32 @@ export const SidebarThreadChildren = memo(function SidebarThreadChildren({
   const handleToggle = useCallback(
     () => toggleThreadExpanded(workspaceKey),
     [toggleThreadExpanded, workspaceKey],
+  );
+
+  const archiveFinishedStatus = archiveFinishedThread.status;
+  const showBulkMenu =
+    finishedCount > 0 ||
+    archiveFinishedStatus.kind === "archiving" ||
+    archiveFinishedStatus.kind === "failed";
+  const bulkMenu = useMemo(
+    () =>
+      showBulkMenu ? (
+        <SidebarThreadChildrenMenu
+          {...kebab.menuProps}
+          workspaceKey={workspaceKey}
+          finishedCount={finishedCount}
+          status={archiveFinishedStatus}
+          onArchiveFinished={handleArchiveFinished}
+        />
+      ) : null,
+    [
+      archiveFinishedStatus,
+      finishedCount,
+      handleArchiveFinished,
+      kebab.menuProps,
+      showBulkMenu,
+      workspaceKey,
+    ],
   );
 
   const count = rows.length + childWorkspaceCount;
@@ -105,15 +159,16 @@ export const SidebarThreadChildren = memo(function SidebarThreadChildren({
         label={t(count === 1 ? "subagents.pillLabelOne" : "subagents.pillLabelMany", { count })}
         indentLevel={indentLevel}
         testID={`sidebar-thread-children-toggle-${workspaceKey}`}
+        trailing={bulkMenu}
       />
       {expanded
-        ? rows.map((row) => (
+        ? nodes.map((node) => (
             <SidebarThreadChildRow
-              key={`${row.kind}:${row.id}`}
+              key={`${node.row.kind}:${node.row.id}`}
               serverId={serverId}
               workspaceId={workspaceId}
-              row={row}
-              indentLevel={indentLevel}
+              row={node.row}
+              indentLevel={indentLevel + Math.min(node.depth, MAX_TREE_INDENT_DEPTH)}
             />
           ))
         : null}

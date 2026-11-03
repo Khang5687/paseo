@@ -1261,6 +1261,8 @@ export const ru: TranslationResources = {
     workspaceTitle: "Архивировать рабочее пространство «{{name}}»?",
     workspaceTitleUnnamed: "Архивировать это рабочее пространство?",
     finishedSubagentsTitle: "Архивировать завершённых субагентов?",
+    finishedSubagentsCountOne: "Архивировать 1 завершённого субагента?",
+    finishedSubagentsCountMany: "Архивировать завершённых субагентов: {{count}}?",
     message: "Его можно восстановить из Истории.",
     confirm: "Архивировать",
     cancel: "Отмена",
@@ -2102,6 +2104,8 @@ export const ru: TranslationResources = {
     archiveTooltip: "Архивировать субагента",
     archiveFinishedAction: "Архивировать завершенные субагенты",
     archiveFinishedRetry: "Повторить ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "Архивировать завершённые ({{count}})",
+    archiveFinishedProgress: "Архивация {{completed}}/{{total}}",
   },
   panels: {
     draft: {

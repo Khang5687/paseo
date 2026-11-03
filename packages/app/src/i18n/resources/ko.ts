@@ -1251,6 +1251,8 @@ export const ko: TranslationResources = {
     workspaceTitle: "워크스페이스 “{{name}}”을(를) 보관할까요?",
     workspaceTitleUnnamed: "이 워크스페이스를 보관할까요?",
     finishedSubagentsTitle: "완료된 하위 에이전트를 보관할까요?",
+    finishedSubagentsCountOne: "완료된 하위 에이전트 1개를 보관할까요?",
+    finishedSubagentsCountMany: "완료된 하위 에이전트 {{count}}개를 보관할까요?",
     message: "기록에서 복원할 수 있습니다.",
     confirm: "보관",
     cancel: "취소",
@@ -2077,6 +2079,8 @@ export const ko: TranslationResources = {
     archiveTooltip: "서브에이전트 보관",
     archiveFinishedAction: "완료된 하위 에이전트 보관",
     archiveFinishedRetry: "다시 시도 ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "완료된 항목 보관 ({{count}})",
+    archiveFinishedProgress: "보관 중 {{completed}}/{{total}}",
   },
   panels: {
     draft: {

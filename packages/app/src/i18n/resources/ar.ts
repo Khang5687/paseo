@@ -1244,6 +1244,8 @@ export const ar: TranslationResources = {
     workspaceTitle: "أرشفة مساحة العمل «{{name}}»؟",
     workspaceTitleUnnamed: "أرشفة مساحة العمل هذه؟",
     finishedSubagentsTitle: "أرشفة الوكلاء الفرعيين المنتهين؟",
+    finishedSubagentsCountOne: "أرشفة وكيل فرعي منتهٍ واحد؟",
+    finishedSubagentsCountMany: "أرشفة {{count}} من الوكلاء الفرعيين المنتهين؟",
     message: "يمكنك استعادته من السجل.",
     confirm: "أرشفة",
     cancel: "إلغاء",
@@ -2071,6 +2073,8 @@ export const ar: TranslationResources = {
     archiveTooltip: "أرشفة الوكيل الفرعي",
     archiveFinishedAction: "أرشفة الوكلاء الفرعيين المكتملين",
     archiveFinishedRetry: "إعادة المحاولة ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "أرشفة المكتمل ({{count}})",
+    archiveFinishedProgress: "جارٍ الأرشفة {{completed}}/{{total}}",
   },
   panels: {
     draft: {

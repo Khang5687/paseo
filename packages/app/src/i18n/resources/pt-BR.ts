@@ -1270,6 +1270,8 @@ export const ptBR: TranslationResources = {
     workspaceTitle: "Arquivar o workspace “{{name}}”?",
     workspaceTitleUnnamed: "Arquivar este workspace?",
     finishedSubagentsTitle: "Arquivar os subagentes concluídos?",
+    finishedSubagentsCountOne: "Arquivar 1 subagente concluído?",
+    finishedSubagentsCountMany: "Arquivar {{count}} subagentes concluídos?",
     message: "Você pode restaurar pelo Histórico.",
     confirm: "Arquivar",
     cancel: "Cancelar",
@@ -2101,6 +2103,8 @@ export const ptBR: TranslationResources = {
     archiveTooltip: "Arquivar subagente",
     archiveFinishedAction: "Arquivar subagentes concluídos",
     archiveFinishedRetry: "Tentar novamente ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "Arquivar concluídos ({{count}})",
+    archiveFinishedProgress: "Arquivando {{completed}}/{{total}}",
   },
   panels: {
     draft: {

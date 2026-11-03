@@ -92,12 +92,69 @@ export function pickThreadRootAgent<A extends ThreadAgent>(
   return picked ? { agentId: picked.id, rootCount } : null;
 }
 
-/** The child rows under one sidebar thread: its same-workspace agents and provider subagents. */
-export function buildThreadChildRows(input: {
-  children: readonly SubagentRow[];
+/** One row in a thread's subagent tree, in display order (a parent sits right above its children). */
+export interface ThreadChildNode {
+  row: SubagentRow;
+  /** Nesting under the thread's own agents: 0 for a child of a root agent or an orphan. */
+  depth: number;
+}
+
+/** A same-workspace agent as the tree needs it: its row and the agent that spawned it. */
+export interface ThreadChildEntry {
+  row: SubagentRow;
+  parentAgentId: string | null;
+}
+
+/**
+ * The child rows under one sidebar thread as a tree: each same-workspace agent sits under the agent
+ * that spawned it, and each provider subagent under the agent that owns it. A row whose parent is
+ * not itself a row here (a root agent, archived, another workspace) starts at depth 0, so nothing
+ * is hidden. Siblings are oldest first. Output is the pre-order walk, so the list renders flat.
+ */
+export function buildThreadChildTree(input: {
+  children: readonly ThreadChildEntry[];
   providerRows: readonly ProviderSubagentRow[];
-}): SubagentRow[] {
-  const rows = [...input.children, ...input.providerRows];
-  rows.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
-  return rows;
+}): ThreadChildNode[] {
+  const entries: ThreadChildEntry[] = [
+    ...input.children,
+    ...input.providerRows.map((row) => ({ row, parentAgentId: row.parentAgentId })),
+  ];
+  const rowIds = new Set(input.children.map((entry) => entry.row.id));
+  const byParent = new Map<string | null, ThreadChildEntry[]>();
+  for (const entry of entries) {
+    const parentKey =
+      entry.parentAgentId !== null &&
+      entry.parentAgentId !== entry.row.id &&
+      rowIds.has(entry.parentAgentId)
+        ? entry.parentAgentId
+        : null;
+    const siblings = byParent.get(parentKey);
+    if (siblings) siblings.push(entry);
+    else byParent.set(parentKey, [entry]);
+  }
+  for (const siblings of byParent.values()) {
+    siblings.sort((left, right) => left.row.createdAt.getTime() - right.row.createdAt.getTime());
+  }
+
+  const nodes: ThreadChildNode[] = [];
+  const visited = new Set<SubagentRow>();
+  const walk = (parentKey: string | null, depth: number) => {
+    for (const entry of byParent.get(parentKey) ?? []) {
+      if (visited.has(entry.row)) continue;
+      visited.add(entry.row);
+      nodes.push({ row: entry.row, depth });
+      // Only a Paseo agent can own children; a provider row's id may collide with an agent id.
+      if (entry.row.kind === "paseo") walk(entry.row.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  // A parent cycle never reaches the walk from the top. Surface those rows rather than lose them.
+  for (const entry of entries) {
+    if (!visited.has(entry.row)) {
+      visited.add(entry.row);
+      nodes.push({ row: entry.row, depth: 0 });
+      if (entry.row.kind === "paseo") walk(entry.row.id, 1);
+    }
+  }
+  return nodes;
 }
