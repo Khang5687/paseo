@@ -801,5 +801,14 @@
     "title": "feat(app): copy agent ID from sidebar thread rows",
     "tests": ["packages/app/src/subagents/thread-children.test.ts"],
     "e2e": ["packages/app/e2e/browser/sidebar-workspace-copy-agent-id.spec.ts"]
+  },
+  {
+    "pr": 102,
+    "title": "feat(app): confirm every archive; archive via menu on touch layouts",
+    "tests": ["packages/app/src/utils/archive-confirm.test.ts"],
+    "e2e": [
+      "packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts",
+      "packages/app/e2e/browser/sidebar-thread-child-archive.spec.ts"
+    ]
   }
 ]
