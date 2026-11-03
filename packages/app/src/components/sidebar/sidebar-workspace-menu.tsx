@@ -78,7 +78,7 @@ const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorM
 const triggerIconProps = densityIconProps("sm", foregroundMutedColorMapping);
 const triggerIconHoveredProps = densityIconProps("sm", foregroundColorMapping);
 
-function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
+export function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return <ThemedMoreVertical uniProps={hovered ? triggerIconHoveredProps : triggerIconProps} />;
 }
 
@@ -455,7 +455,9 @@ export function SidebarWorkspaceContextMenu({
   );
 }
 
-function triggerStyle({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) {
+export function triggerStyle({
+  hovered = false,
+}: PressableStateCallbackType & { hovered?: boolean }) {
   return [styles.trigger, hovered && styles.triggerHovered];
 }
 

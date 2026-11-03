@@ -1267,6 +1267,16 @@ export const fr: TranslationResources = {
       description: "Vérifiez votre connexion et réessayez.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "Archiver « {{name}} » ?",
+    agentTitleUnnamed: "Archiver cet agent ?",
+    workspaceTitle: "Archiver l’espace de travail « {{name}} » ?",
+    workspaceTitleUnnamed: "Archiver cet espace de travail ?",
+    finishedSubagentsTitle: "Archiver les sous-agents terminés ?",
+    message: "Vous pourrez le restaurer depuis l’Historique.",
+    confirm: "Archiver",
+    cancel: "Annuler",
+  },
   sidebar: {
     statusGroupAccessibility: "Groupe {{label}}",
     unsentDraft: "Brouillon non envoyé",

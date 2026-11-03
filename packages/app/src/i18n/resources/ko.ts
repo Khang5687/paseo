@@ -1245,6 +1245,16 @@ export const ko: TranslationResources = {
       description: "연결을 확인한 후 다시 시도하세요.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "“{{name}}”을(를) 보관할까요?",
+    agentTitleUnnamed: "이 에이전트를 보관할까요?",
+    workspaceTitle: "워크스페이스 “{{name}}”을(를) 보관할까요?",
+    workspaceTitleUnnamed: "이 워크스페이스를 보관할까요?",
+    finishedSubagentsTitle: "완료된 하위 에이전트를 보관할까요?",
+    message: "기록에서 복원할 수 있습니다.",
+    confirm: "보관",
+    cancel: "취소",
+  },
   sidebar: {
     statusGroupAccessibility: "{{label}} 그룹",
     unsentDraft: "보내지 않은 초안",

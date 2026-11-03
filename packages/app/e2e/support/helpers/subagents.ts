@@ -199,6 +199,7 @@ export async function expectManagedSubagentArchived(
 }
 
 export async function archiveFinishedSubagents(page: Page): Promise<void> {
+  page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("menuitem", { name: "Archive finished subagents" }).click();
 }
 

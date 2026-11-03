@@ -1251,6 +1251,16 @@ export const ja: TranslationResources = {
       description: "接続を確認してもう一度お試しください。",
     },
   },
+  archiveConfirm: {
+    agentTitle: "「{{name}}」をアーカイブしますか？",
+    agentTitleUnnamed: "このエージェントをアーカイブしますか？",
+    workspaceTitle: "ワークスペース「{{name}}」をアーカイブしますか？",
+    workspaceTitleUnnamed: "このワークスペースをアーカイブしますか？",
+    finishedSubagentsTitle: "完了したサブエージェントをアーカイブしますか？",
+    message: "履歴から復元できます。",
+    confirm: "アーカイブ",
+    cancel: "キャンセル",
+  },
   sidebar: {
     statusGroupAccessibility: "{{label}} グループ",
     unsentDraft: "未送信の下書き",

@@ -1264,6 +1264,16 @@ export const ptBR: TranslationResources = {
       description: "Verifique sua conexão e tente novamente.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "Arquivar “{{name}}”?",
+    agentTitleUnnamed: "Arquivar este agente?",
+    workspaceTitle: "Arquivar o workspace “{{name}}”?",
+    workspaceTitleUnnamed: "Arquivar este workspace?",
+    finishedSubagentsTitle: "Arquivar os subagentes concluídos?",
+    message: "Você pode restaurar pelo Histórico.",
+    confirm: "Arquivar",
+    cancel: "Cancelar",
+  },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
     unsentDraft: "Rascunho não enviado",

@@ -1238,6 +1238,16 @@ export const ar: TranslationResources = {
       description: "تحقق من اتصالك وحاول مرة أخرى.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "أرشفة «{{name}}»؟",
+    agentTitleUnnamed: "أرشفة هذا الوكيل؟",
+    workspaceTitle: "أرشفة مساحة العمل «{{name}}»؟",
+    workspaceTitleUnnamed: "أرشفة مساحة العمل هذه؟",
+    finishedSubagentsTitle: "أرشفة الوكلاء الفرعيين المنتهين؟",
+    message: "يمكنك استعادته من السجل.",
+    confirm: "أرشفة",
+    cancel: "إلغاء",
+  },
   sidebar: {
     statusGroupAccessibility: "مجموعة {{label}}",
     unsentDraft: "مسودة غير مرسلة",

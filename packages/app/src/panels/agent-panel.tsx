@@ -60,6 +60,7 @@ import {
   useAgentScreenStateMachine,
   type AgentScreenReadySyncState,
 } from "@/hooks/use-agent-screen-state-machine";
+import { confirmArchive } from "@/utils/archive-confirm";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useForkAgent } from "@/hooks/use-fork-agent";
 import { useToast } from "@/contexts/toast-context";
@@ -1115,6 +1116,14 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     parentAgentId: agentId,
     rows: subagentRows,
   });
+  const { archiveFinished } = archiveFinishedSubagents;
+  const handleArchiveFinished = useCallback(() => {
+    void (async () => {
+      if (await confirmArchive({ subject: "finishedSubagents" })) {
+        await archiveFinished();
+      }
+    })();
+  }, [archiveFinished]);
   const hasPluginComposerPills = useHasPluginComposerPills(serverId, workspaceId, agentId);
   const hasActiveComposer = !agentState.archivedAt && !isArchivingCurrentAgent;
   const parentAgentId = useParentAgentId(serverId, agentId);
@@ -1235,7 +1244,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
           subagentRows={subagentRows}
           tasks={tasks}
           archiveFinishedStatus={archiveFinishedSubagents.status}
-          onArchiveFinished={archiveFinishedSubagents.archiveFinished}
+          onArchiveFinished={handleArchiveFinished}
           hasPluginComposerPills={hasPluginComposerPills}
         />
       ) : null}
@@ -1614,6 +1623,11 @@ function ActiveAgentComposer({
         await forkAgent({ agentId, agent, workspaceId, target: "tab" });
         return;
       }
+
+      if (!(await confirmArchive({ subject: "agent", name: agent.title }))) {
+        return;
+      }
+
       const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
       if (workspaceKey) {
         unpinWorkspaceAgent(workspaceKey, agentId);
