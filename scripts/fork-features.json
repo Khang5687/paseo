@@ -812,6 +812,12 @@
     ]
   },
   {
+    "pr": 103,
+    "title": "chore(fork): lower APK disk floor to 6 GB",
+    "untested": "build script; disk threshold covered by scripts/fork-build-lib.test.mjs, not registered",
+    "tests": []
+  },
+  {
     "pr": 106,
     "title": "fix(app): keep sent-message images across rewind, timeline replacement and GC (fork port of #104)",
     "tests": [
