@@ -812,6 +812,15 @@
     ]
   },
   {
+    "pr": 106,
+    "title": "fix(app): keep sent-message images across rewind, timeline replacement and GC (fork port of #104)",
+    "tests": [
+      "packages/app/src/stores/draft-store/sent-message-images-gc.test.ts",
+      "packages/app/src/stores/sent-message-images-store.test.ts",
+      "packages/app/src/components/rewind/composer-restore.test.ts"
+    ]
+  },
+  {
     "pr": 103,
     "title": "chore(fork): lower APK disk floor to 6 GB",
     "untested": "build script; disk threshold covered by scripts/fork-build-lib.test.mjs, not registered",
