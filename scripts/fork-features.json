@@ -816,5 +816,15 @@
     "title": "chore(fork): lower APK disk floor to 6 GB",
     "untested": "build script; disk threshold covered by scripts/fork-build-lib.test.mjs, not registered",
     "tests": []
+  },
+  {
+    "pr": 105,
+    "title": "feat(app): nest sidebar subagents under their spawner; archive finished for the whole thread",
+    "tests": [
+      "packages/app/src/subagents/thread-children.test.ts",
+      "packages/app/src/subagents/archive-finished.test.ts",
+      "packages/app/src/utils/archive-confirm.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/sidebar-thread-children.spec.ts"]
   }
 ]

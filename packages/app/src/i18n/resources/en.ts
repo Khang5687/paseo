@@ -1252,6 +1252,8 @@ export const en = {
     workspaceTitle: "Archive workspace “{{name}}”?",
     workspaceTitleUnnamed: "Archive this workspace?",
     finishedSubagentsTitle: "Archive finished subagents?",
+    finishedSubagentsCountOne: "Archive 1 finished subagent?",
+    finishedSubagentsCountMany: "Archive {{count}} finished subagents?",
     message: "You can restore it from History.",
     confirm: "Archive",
     cancel: "Cancel",
@@ -2093,6 +2095,8 @@ export const en = {
     archiveTooltip: "Archive subagent",
     archiveFinishedAction: "Archive finished subagents",
     archiveFinishedRetry: "Retry ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "Archive finished ({{count}})",
+    archiveFinishedProgress: "Archiving {{completed}}/{{total}}",
   },
   panels: {
     draft: {

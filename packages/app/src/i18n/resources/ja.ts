@@ -1257,6 +1257,8 @@ export const ja: TranslationResources = {
     workspaceTitle: "ワークスペース「{{name}}」をアーカイブしますか？",
     workspaceTitleUnnamed: "このワークスペースをアーカイブしますか？",
     finishedSubagentsTitle: "完了したサブエージェントをアーカイブしますか？",
+    finishedSubagentsCountOne: "完了したサブエージェント 1 件をアーカイブしますか？",
+    finishedSubagentsCountMany: "完了したサブエージェント {{count}} 件をアーカイブしますか？",
     message: "履歴から復元できます。",
     confirm: "アーカイブ",
     cancel: "キャンセル",
@@ -2086,6 +2088,8 @@ export const ja: TranslationResources = {
     archiveTooltip: "サブエージェントをアーカイブ",
     archiveFinishedAction: "完了したサブエージェントをアーカイブ",
     archiveFinishedRetry: "再試行 ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "完了分をアーカイブ ({{count}})",
+    archiveFinishedProgress: "アーカイブ中 {{completed}}/{{total}}",
   },
   panels: {
     draft: {

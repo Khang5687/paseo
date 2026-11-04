@@ -8,9 +8,10 @@ import {
 } from "./select";
 import {
   buildThreadAgentIndex,
-  buildThreadChildRows,
+  buildThreadChildTree,
   pickThreadRootAgent,
   type ThreadAgents,
+  type ThreadChildNode,
 } from "./thread-children";
 
 afterEach(() => {
@@ -143,7 +144,7 @@ describe("pickThreadRootAgent", () => {
   });
 });
 
-describe("buildThreadChildRows", () => {
+describe("buildThreadChildTree", () => {
   function providerRow(id: string, createdAt: number): ProviderSubagentRow {
     return {
       kind: "provider",
@@ -175,18 +176,81 @@ describe("buildThreadChildRows", () => {
     };
   }
 
-  it("interleaves Paseo and provider subagents by when they started", () => {
-    const rows = buildThreadChildRows({
-      children: [paseoRow("paseo-1", 1), paseoRow("paseo-3", 3)],
+  function entry(id: string, createdAt: number, parent: string | null) {
+    return { row: paseoRow(id, createdAt), parentAgentId: parent };
+  }
+
+  function shape(nodes: ThreadChildNode[]): string[] {
+    return nodes.map((node) => `${node.depth}:${node.row.kind}:${node.row.id}`);
+  }
+
+  it("interleaves roots' children and provider subagents by when they started", () => {
+    const nodes = buildThreadChildTree({
+      children: [entry("paseo-1", 1, "root"), entry("paseo-3", 3, "root")],
       providerRows: [providerRow("task-2", 2), providerRow("task-4", 4)],
     });
 
-    expect(rows.map((row) => `${row.kind}:${row.id}`)).toEqual([
-      "paseo:paseo-1",
-      "provider:task-2",
-      "paseo:paseo-3",
-      "provider:task-4",
+    expect(shape(nodes)).toEqual([
+      "0:paseo:paseo-1",
+      "0:provider:task-2",
+      "0:paseo:paseo-3",
+      "0:provider:task-4",
     ]);
+  });
+
+  it("nests each agent under the one that spawned it, depth first, oldest sibling first", () => {
+    const nodes = buildThreadChildTree({
+      children: [
+        entry("grandchild", 4, "child-1"),
+        entry("child-2", 5, "root"),
+        entry("child-1", 1, "root"),
+        entry("great-grandchild", 6, "grandchild"),
+      ],
+      providerRows: [],
+    });
+
+    expect(shape(nodes)).toEqual([
+      "0:paseo:child-1",
+      "1:paseo:grandchild",
+      "2:paseo:great-grandchild",
+      "0:paseo:child-2",
+    ]);
+  });
+
+  it("hangs provider subagents under the child that owns them", () => {
+    const owned = { ...providerRow("task-under-child", 3), parentAgentId: "child" };
+    const nodes = buildThreadChildTree({
+      children: [entry("child", 1, "root")],
+      providerRows: [owned, providerRow("task-under-root", 2)],
+    });
+
+    expect(shape(nodes)).toEqual([
+      "0:paseo:child",
+      "1:provider:task-under-child",
+      "0:provider:task-under-root",
+    ]);
+  });
+
+  it("keeps a row whose parent is archived or elsewhere at the top level", () => {
+    const nodes = buildThreadChildTree({
+      children: [entry("orphan", 2, "archived-parent"), entry("kid-of-orphan", 3, "orphan")],
+      providerRows: [],
+    });
+
+    expect(shape(nodes)).toEqual(["0:paseo:orphan", "1:paseo:kid-of-orphan"]);
+  });
+
+  it("never loses rows to a parent cycle", () => {
+    const nodes = buildThreadChildTree({
+      children: [entry("a", 1, "b"), entry("b", 2, "a")],
+      providerRows: [],
+    });
+
+    expect(shape(nodes).sort()).toEqual(["0:paseo:a", "1:paseo:b"].sort());
+  });
+
+  it("returns nothing for an empty thread", () => {
+    expect(buildThreadChildTree({ children: [], providerRows: [] })).toEqual([]);
   });
 });
 

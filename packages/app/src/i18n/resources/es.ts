@@ -1280,6 +1280,8 @@ export const es: TranslationResources = {
     workspaceTitle: "¿Archivar el espacio de trabajo «{{name}}»?",
     workspaceTitleUnnamed: "¿Archivar este espacio de trabajo?",
     finishedSubagentsTitle: "¿Archivar los subagentes terminados?",
+    finishedSubagentsCountOne: "¿Archivar 1 subagente terminado?",
+    finishedSubagentsCountMany: "¿Archivar {{count}} subagentes terminados?",
     message: "Puedes restaurarlo desde el Historial.",
     confirm: "Archivar",
     cancel: "Cancelar",
@@ -2116,6 +2118,8 @@ export const es: TranslationResources = {
     archiveTooltip: "Subagente de archivo",
     archiveFinishedAction: "Archivar subagentes finalizados",
     archiveFinishedRetry: "Reintentar ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "Archivar finalizados ({{count}})",
+    archiveFinishedProgress: "Archivando {{completed}}/{{total}}",
   },
   panels: {
     draft: {

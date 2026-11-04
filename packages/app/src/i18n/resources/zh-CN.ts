@@ -1236,6 +1236,8 @@ export const zhCN: TranslationResources = {
     workspaceTitle: "归档工作区“{{name}}”？",
     workspaceTitleUnnamed: "归档此工作区？",
     finishedSubagentsTitle: "归档已完成的子 Agent？",
+    finishedSubagentsCountOne: "归档 1 个已完成的子 Agent？",
+    finishedSubagentsCountMany: "归档 {{count}} 个已完成的子 Agent？",
     message: "你可以在历史记录中恢复。",
     confirm: "归档",
     cancel: "取消",
@@ -2044,6 +2046,8 @@ export const zhCN: TranslationResources = {
     archiveTooltip: "归档 subagent",
     archiveFinishedAction: "归档已完成的 subagent",
     archiveFinishedRetry: "重试 ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "归档已完成 ({{count}})",
+    archiveFinishedProgress: "正在归档 {{completed}}/{{total}}",
   },
   panels: {
     draft: {

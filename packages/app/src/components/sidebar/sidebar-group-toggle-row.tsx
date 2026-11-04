@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
@@ -28,6 +28,7 @@ export function SidebarGroupToggleRow({
   indentLevel,
   label: labelOverride,
   testID,
+  trailing,
 }: {
   expanded: boolean;
   onPress: () => void;
@@ -37,6 +38,8 @@ export function SidebarGroupToggleRow({
   /** What the row folds, instead of "Show more" / "Show less". */
   label?: string;
   testID: string;
+  /** A control at the row's end, such as a kebab. */
+  trailing?: ReactNode;
 }) {
   const { t } = useTranslation();
   const label =
@@ -74,6 +77,7 @@ export function SidebarGroupToggleRow({
           <Text style={hovered || pressed ? styles.textHovered : styles.text} numberOfLines={1}>
             {label}
           </Text>
+          {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
         </>
       )}
     </Pressable>
@@ -99,6 +103,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   rowPressed: {
     backgroundColor: theme.colors.surface2,
+  },
+  trailing: {
+    marginLeft: "auto",
+    flexShrink: 0,
   },
   // The width of a workspace row's status slot, so the label lands on the same rail as the
   // titles above it rather than two points to their left.

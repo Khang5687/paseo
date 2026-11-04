@@ -370,6 +370,10 @@ Every thread row in the sidebar carries its subagents behind one fold row ("3 su
 
 Detached children have no parent label, so they are top-level rows like any other agent.
 
+Unfolded, the rows are a tree (`buildThreadChildTree`): an agent sits under the agent that spawned it (`paseo.parent-agent-id`), and a provider subagent under the agent that owns it. A row whose parent is not a row here (a root agent, archived, elsewhere) renders at the top level, so nothing is hidden. Indent stops growing after two levels so rows keep their width on a phone. The fold count is the total across every depth; the chat footer chip counts only an agent's direct children, so the two numbers differ for a deep tree.
+
+The fold row's kebab holds **Archive finished (N)** for the whole thread: every idle or errored Paseo subagent at any depth plus every finished provider row, after a confirm that states N. It reuses the track's `archive-finished` engine with a thread scope (`useArchiveFinishedThread`). Running agents are never archived, and subagent workspaces that nest under the thread are not touched (they are rows of their own).
+
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion
 notification. Opening the workspace clears that attention through the normal focus flow.
