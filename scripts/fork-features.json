@@ -812,6 +812,12 @@
     ]
   },
   {
+    "pr": 103,
+    "title": "chore(fork): lower APK disk floor to 6 GB",
+    "untested": "build script; disk threshold covered by scripts/fork-build-lib.test.mjs, not registered",
+    "tests": []
+  },
+  {
     "pr": 105,
     "title": "feat(app): nest sidebar subagents under their spawner; archive finished for the whole thread",
     "tests": [
