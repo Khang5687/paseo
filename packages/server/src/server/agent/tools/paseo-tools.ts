@@ -16,7 +16,11 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
-import { ActiveTurnBehaviorSchema, AgentProfileSchema } from "@getpaseo/protocol/messages";
+import {
+  ActiveTurnBehaviorSchema,
+  AgentAskThreadInfoSchema,
+  AgentProfileSchema,
+} from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
   AgentFeatureSchema,
@@ -32,7 +36,13 @@ import {
   toAgentPayload,
 } from "../agent-projections.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
-import { askAgent } from "../ask-agent.js";
+import {
+  COPY_BLOCKED_MESSAGE,
+  DEFAULT_ASK_THREAD_SETTINGS,
+  askActionOf,
+  formatAskOutput,
+} from "../ask-agent.js";
+import type { AskAgentThreads } from "../ask-agent.js";
 import type { AgentStorage } from "../agent-storage.js";
 import { AgentNotFoundError, ensureAgentLoaded } from "../agent-loading.js";
 import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
@@ -117,7 +127,32 @@ import {
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
 
+/**
+ * The only Paseo tools an ask_agent copy may call: reads. Everything else is refused for copies.
+ * "Read" means it changes no agent's work; some of these (get_agent_activity, get_agent_status)
+ * may load a stored agent into memory to answer, which is a side effect on residency only.
+ */
+const COPY_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "list_hosts",
+  "list_workspaces",
+  "get_agent_status",
+  "list_agents",
+  "get_agent_activity",
+  "list_workspace_scripts",
+  "list_terminals",
+  "capture_terminal",
+  "list_schedules",
+  "inspect_schedule",
+  "schedule_logs",
+  "list_providers",
+  "list_models",
+  "list_profiles",
+  "inspect_provider",
+  "list_pending_permissions",
+]);
+
 export interface PaseoToolHostDependencies {
+  askThreads?: () => AskAgentThreads;
   agentMessages?: () => AgentMessageDelivery;
   finishSubscriptions?: () => FinishSubscriptions;
   serverId?: string;
@@ -704,6 +739,39 @@ function createToolCatalog(
       requireParentOwnership: true,
     });
   }
+  /** A thread opened on another host is closed there if this caller is archived. */
+  function trackRemoteAsk(
+    name: string,
+    destination: string | undefined,
+    input: Record<string, unknown>,
+    response: PaseoToolResult,
+  ): void {
+    if (
+      name !== "ask_agent" ||
+      !callerAgentId ||
+      !destination ||
+      destination === options.serverId ||
+      response.isError
+    ) {
+      return;
+    }
+    const parsed = z
+      .object({
+        thread: z.object({ threadId: z.string(), status: z.enum(["open", "closed"]) }).optional(),
+      })
+      .safeParse(response.structuredContent);
+    const thread = parsed.success ? parsed.data.thread : undefined;
+    if (!thread) return;
+    options.askThreads?.().trackRemoteThread(
+      {
+        askerId: callerAgentId,
+        serverId: destination,
+        agentId: input.agentId as string,
+        threadId: thread.threadId,
+      },
+      thread.status,
+    );
+  }
   const localHostOperations = new Map<string, HostOperation>();
   const tools = new Map<string, PaseoToolDefinition>();
   const builtinNames = new Set<string>();
@@ -778,6 +846,7 @@ function createToolCatalog(
           if (response.isError) await remoteNotification?.reject();
           else remoteNotification?.accept();
           await registerRemoteCreation(name, destination, input, response);
+          trackRemoteAsk(name, destination, input, response);
           return {
             ...response,
             structuredContent: {
@@ -815,7 +884,31 @@ function createToolCatalog(
       handler: handler as PaseoToolDefinition["handler"],
     });
   };
-  const toCatalog = (): PaseoToolCatalog => ({
+  let copyToolsLocked = false;
+  // A copy keeps the same tool list as its source (the list is part of the prompt-cache
+  // prefix); calls are refused at execution time instead.
+  const lockCopyTools = () => {
+    if (copyToolsLocked || !callerAgentId) return;
+    copyToolsLocked = true;
+    for (const tool of tools.values()) {
+      if (COPY_READ_ONLY_TOOLS.has(tool.name)) continue;
+      const run = tool.handler;
+      tools.set(tool.name, {
+        ...tool,
+        handler: async (input, context) => {
+          if (options.askThreads?.().isCopy(callerAgentId)) {
+            throw new PaseoToolInputError(COPY_BLOCKED_MESSAGE);
+          }
+          return run(input, context);
+        },
+      });
+    }
+  };
+  const toCatalog = (): PaseoToolCatalog => {
+    lockCopyTools();
+    return catalogView();
+  };
+  const catalogView = (): PaseoToolCatalog => ({
     tools,
     getTool(name: string): PaseoToolDefinition | undefined {
       return tools.get(name);
@@ -3193,39 +3286,56 @@ function createToolCatalog(
     },
   );
 
+  const askLimits = options.askThreads?.().limits ?? DEFAULT_ASK_THREAD_SETTINGS;
   registerTool(
     "ask_agent",
     {
       title: "Ask agent",
-      description:
-        "Ask another agent a question without interrupting it. A hidden copy of its whole conversation answers, then is deleted; the agent keeps working and never sees the question. The copy can read files but cannot change anything. Use it for context, progress, or decisions another agent holds, instead of asking the user to relay them. To find an agent by the workspace name the user sees, match list_workspaces titles to the workspaceId in list_agents.",
+      description: `Ask another agent a question without interrupting it. Forks a read-only copy of its whole session (the copy duplicates all its context, so cost grows with session size) and keeps it open: the first call returns threadId; pass threadId for follow-ups, the copy remembers earlier rounds. A thread allows ${askLimits.maxRounds} rounds, then closes (also when idle, or with close: true); every result says rounds left. Replies are cut at ${askLimits.replyCharLimit} characters. Omitting threadId reuses your open thread with that agent. Copies are limited (${askLimits.maxOpenThreads} per host): close the thread when you are finished. status: true shows the thread without asking. Use it for context, progress or decisions another agent holds. Do not use it to make the live agent do or change something; use send_agent_prompt. To find an agent by the workspace name the user sees, match list_workspaces titles to the workspaceId in list_agents.`,
       inputSchema: {
         agentId: z.string(),
         question: z
           .string()
           .min(1)
-          .describe("The copy remembers its whole conversation, so you can refer to it directly."),
+          .optional()
+          .describe("Required unless close or status. You send one question per round."),
+        threadId: z
+          .string()
+          .optional()
+          .describe("Continue this thread. Omit to start one (or reuse your open one)."),
+        close: z.boolean().optional().describe("End the thread and delete the copy."),
+        status: z.boolean().optional().describe("Report the thread's state, no question."),
       },
       outputSchema: {
         agentId: z.string(),
-        answer: z.string(),
+        threadId: z.string().optional(),
+        answer: z.string().nullable(),
+        thread: AgentAskThreadInfoSchema.optional(),
       },
     },
-    async ({ agentId, question }, context) => {
+    async ({ agentId, question, threadId, close, status }, context) => {
       if (agentId === callerAgentId) {
         throw new PaseoToolInputError(
           "ask_agent asks another agent; you already have your own context",
         );
       }
-      const { answer } = await askAgent(agentManager, childLogger, {
+      const action = askActionOf({ close, status });
+      if (action === "ask" && !question) {
+        throw new PaseoToolInputError("question is required unless close or status is set");
+      }
+      if (!options.askThreads) throw new Error("ask_agent is not configured");
+      const reply = await options.askThreads().act({
+        action,
         agentId,
-        question,
+        question: question ?? "",
+        threadId,
+        askerId: callerAgentId,
         askedBy: callerTitle(),
         signal: context.signal,
       });
       return {
         content: [],
-        structuredContent: ensureValidJson({ agentId, answer }),
+        structuredContent: ensureValidJson(formatAskOutput(agentId, reply)),
       };
     },
   );

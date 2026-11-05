@@ -59,6 +59,7 @@ import {
   type ToolCallTimelineItem,
   type ForkedNativeSession,
 } from "../agent-sdk-types.js";
+import { ForkHandleRefusedError, requireSafeNativeId } from "../fork-handle.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
   raceProviderRefreshAbort,
@@ -542,7 +543,9 @@ function isOpenCodeNotFoundError(error: unknown): boolean {
 function requireOpenCodeNativeSessionCwd(handle: AgentPersistenceHandle, action: string): string {
   const { cwd } = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
   if (!cwd) {
-    throw new Error(`OpenCode native ${action} requires the original working directory`);
+    const message = `OpenCode native ${action} requires the original working directory`;
+    // A leftover record that lacks it can never be retried into working.
+    throw action === "discard" ? new ForkHandleRefusedError(message) : new Error(message);
   }
   return cwd;
 }
@@ -1768,6 +1771,8 @@ export class OpenCodeAgentClient implements AgentClient {
       }
       return response.data.id;
     });
+    const discardFork = () =>
+      this.discardNativeFork({ ...handle, sessionId, nativeHandle: sessionId });
     let discarded = false;
     return {
       handle: {
@@ -1780,17 +1785,23 @@ export class OpenCodeAgentClient implements AgentClient {
       readOnlyModeId: OPENCODE_PLAN_MODE_ID,
       discard: async () => {
         if (discarded) return;
-        await this.withNativeSessionClient(sessionId, cwd, async (client) => {
-          const response = await client.session.delete({ sessionID: sessionId, directory: cwd });
-          if (response.error && !isOpenCodeNotFoundError(response.error)) {
-            throw new Error(
-              `Failed to delete OpenCode fork: ${toDiagnosticErrorMessage(response.error)}`,
-            );
-          }
-        });
+        await discardFork();
         discarded = true;
       },
     };
+  }
+
+  async discardNativeFork(handle: AgentPersistenceHandle): Promise<void> {
+    const sessionId = requireSafeNativeId(handle.sessionId, "OpenCode session id");
+    const cwd = requireOpenCodeNativeSessionCwd(handle, "discard");
+    await this.withNativeSessionClient(sessionId, cwd, async (client) => {
+      const response = await client.session.delete({ sessionID: sessionId, directory: cwd });
+      if (response.error && !isOpenCodeNotFoundError(response.error)) {
+        throw new Error(
+          `Failed to delete OpenCode fork: ${toDiagnosticErrorMessage(response.error)}`,
+        );
+      }
+    });
   }
 
   private async setNativeSessionArchived(

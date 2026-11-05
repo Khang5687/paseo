@@ -356,6 +356,15 @@ export const PersistedConfigSchema = z
         featureDefaults: ProviderFeatureDefaultsSchema.optional().describe(
           'Feature values every new agent starts with, e.g. { "output_style": "Concise" }. A provider\'s own featureDefaults win.',
         ),
+        askAgent: z
+          .object({
+            maxRounds: z.number().int().positive().optional(),
+            maxOpenThreads: z.number().int().positive().optional(),
+            idleTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
+            replyCharLimit: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
         skills: z.object({ selection: AgentSkillSelectionSchema.optional() }).strict().optional(),
       })
       .strict()

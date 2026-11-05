@@ -42,6 +42,7 @@ import {
   type ProviderRefreshContext,
   type ResolveAgentDefaultModeInput,
 } from "../agent-sdk-types.js";
+import { requireSafeNativeId } from "../fork-handle.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
 import type { Logger } from "pino";
@@ -7650,6 +7651,12 @@ export class CodexAppServerAgentClient implements AgentClient {
         return discarded;
       },
     };
+  }
+
+  async discardNativeFork(handle: AgentPersistenceHandle): Promise<void> {
+    await this.deleteNativeThread(
+      requireSafeNativeId(handle.nativeHandle ?? handle.sessionId, "Codex thread id"),
+    );
   }
 
   private async deleteNativeThread(threadId: string): Promise<void> {

@@ -16,6 +16,7 @@ import type { ConnectedHosts } from "../../connected-hosts/index.js";
 import { resolveRequiredProviderModel } from "../mcp-shared.js";
 import { selectAgentListItems } from "../agent-projections.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
+import { askActionOf, formatAskOutput } from "../ask-agent.js";
 import { expandUserPath } from "../../path-utils.js";
 import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
 
@@ -317,10 +318,18 @@ export function createHostResolver(input: {
           },
           async askAgent(args) {
             const agentId = args.agentId as string;
-            const answer = await client.askAgent(agentId, args.question as string, {
-              askedBy: input.callerTitle?.(),
-            });
-            return result({ agentId, answer });
+            const askAction = askActionOf(args);
+            const reply = await client.askAgent(
+              agentId,
+              (args.question as string | undefined) ?? "",
+              {
+                askedBy: input.callerTitle?.(),
+                askerAgentId: input.callerAgentId,
+                threadId: args.threadId as string | undefined,
+                ...(askAction === "ask" ? {} : { threadAction: askAction }),
+              },
+            );
+            return result(formatAskOutput(agentId, reply));
           },
           async listAgents(args) {
             const { entries } = await client.fetchAgents({

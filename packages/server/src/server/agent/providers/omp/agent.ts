@@ -43,6 +43,7 @@ import {
   type SteerResult,
   type ToolCallDetail,
 } from "../../agent-sdk-types.js";
+import { ForkHandleRefusedError, requireSafeNativeId } from "../../fork-handle.js";
 import type { PaseoToolCatalog } from "../../tools/types.js";
 import { importSessionFromPersistence } from "../../provider-session-import.js";
 import { runProviderRefreshActivity } from "../../provider-refresh-deadline.js";
@@ -2750,11 +2751,30 @@ export class OmpAgentClient implements AgentClient {
         provider: this.provider,
         sessionId: state.sessionId,
         nativeHandle: forkFile,
-        metadata: handle.metadata,
+        metadata: { ...handle.metadata, forkSessionDir: path.dirname(sourceFile) },
       },
       readOnlyModeId: OMP_READ_ONLY_MODE_ID,
       discard: () => removeOmpSessionFiles(forkFile),
     };
+  }
+
+  async discardNativeFork(handle: AgentPersistenceHandle): Promise<void> {
+    const file = handle.nativeHandle;
+    const sessionId = requireSafeNativeId(handle.sessionId, "OMP session id");
+    const forkDir = handle.metadata?.forkSessionDir;
+    // OMP names a session file <timestamp>_<id>.jsonl. The fork recorded the directory it was
+    // made in; a handle without it, or pointing elsewhere, is not one of ours to delete.
+    if (
+      !file ||
+      typeof forkDir !== "string" ||
+      !path.isAbsolute(file) ||
+      path.normalize(file) !== file ||
+      path.dirname(file) !== forkDir ||
+      !path.basename(file).endsWith(`_${sessionId}.jsonl`)
+    ) {
+      throw new ForkHandleRefusedError("the handle is not a fork this daemon made");
+    }
+    await removeOmpSessionFiles(file);
   }
 
   // OMP resumes a session on the model it recorded, or on its default when that model

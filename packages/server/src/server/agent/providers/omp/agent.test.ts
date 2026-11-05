@@ -13,6 +13,7 @@ import { resolveOmpProviderOptions } from "./provider-config.js";
 import { OmpRuntimeEventSchema, OmpSessionStateSchema } from "./rpc-types.js";
 import { OmpHarness } from "./test-utils/omp-harness.js";
 import { OmpAgentClient } from "./agent.js";
+import { ForkHandleRefusedError } from "../../fork-handle.js";
 import {
   FakeOmp,
   FakeOmpChild,
@@ -83,7 +84,7 @@ test("forks a session into a discardable copy beside it without touching the sou
     provider: "omp",
     sessionId: "omp-session-1",
     nativeHandle: forkFile,
-    metadata: source.metadata,
+    metadata: { ...source.metadata, forkSessionDir: directory },
   });
   expect(runtime.recordedLaunches[0]).toMatchObject({
     cwd: directory,
@@ -110,6 +111,43 @@ test("forks a session into a discardable copy beside it without touching the sou
   expect((await readdir(directory)).sort()).toEqual(["source", "source.jsonl"]);
   expect(await readFile(sourceFile, "utf8")).toBe(sourceJournal);
   expect(await readdir(path.join(directory, "source"))).toEqual(["0-Explore.jsonl"]);
+});
+
+test("deletes a leftover OMP fork from its handle alone, and refuses a handle that is not one", async () => {
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+  const directory = await mkdtemp(path.join(tmpdir(), "paseo-omp-fork-leftover-"));
+  const sourceFile = path.join(directory, "source.jsonl");
+  const sourceJournal = `${JSON.stringify({ type: "session", id: "source-id", cwd: directory })}\n`;
+  await writeFile(sourceFile, sourceJournal);
+  const fork = await client.forkNativeSession({
+    provider: "omp",
+    sessionId: "source-id",
+    nativeHandle: sourceFile,
+    metadata: { cwd: directory, modeId: "full" },
+  });
+  const before = (await readdir(directory)).sort();
+
+  for (const bad of [
+    { ...fork.handle, nativeHandle: sourceFile },
+    { ...fork.handle, nativeHandle: `${directory}/../${path.basename(directory)}/x.jsonl` },
+    { ...fork.handle, nativeHandle: "fork_omp-session-1.jsonl" },
+    { ...fork.handle, nativeHandle: path.join(directory, "fork_omp-session-1.txt") },
+    // The id only as a substring, not the `_<id>.jsonl` suffix OMP names its files with.
+    { ...fork.handle, nativeHandle: path.join(directory, "omp-session-1-extra.jsonl") },
+    { ...fork.handle, metadata: { ...fork.handle.metadata, forkSessionDir: "/elsewhere" } },
+    { ...fork.handle, metadata: { cwd: directory, modeId: "full" } },
+    { ...fork.handle, sessionId: "../omp-session-1" },
+  ]) {
+    await expect(client.discardNativeFork(bad)).rejects.toThrow(ForkHandleRefusedError);
+  }
+  expect((await readdir(directory)).sort()).toEqual(before);
+
+  await client.discardNativeFork(fork.handle);
+  await client.discardNativeFork(fork.handle);
+
+  expect((await readdir(directory)).sort()).toEqual(["source.jsonl"]);
+  expect(await readFile(sourceFile, "utf8")).toBe(sourceJournal);
 });
 
 test("OMP ready timeout defaults to 20 seconds and RPC timeout overrides both", () => {

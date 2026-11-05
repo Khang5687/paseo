@@ -132,7 +132,7 @@ import {
 import { assertPluginTimelineDataSize } from "./agent/agent-timeline-content.js";
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
-import { askAgent } from "./agent/ask-agent.js";
+import type { AskAgentThreads } from "./agent/ask-agent.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -477,6 +477,7 @@ export interface SessionOptions {
   messageReceipts: Pick<MessageReceipts, "send">;
   agentMessageQueue: Pick<AgentMessageQueueDispatcher, "sendNow" | "drainIfIdle">;
   agentMessages: AgentMessageDelivery;
+  askThreads?: AskAgentThreads;
   creationService: Pick<CreationService, "create" | "subscribe">;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
@@ -843,6 +844,7 @@ export class Session {
   private readonly messageReceipts: Pick<MessageReceipts, "send">;
   private readonly agentMessageQueue: Pick<AgentMessageQueueDispatcher, "sendNow" | "drainIfIdle">;
   private readonly agentMessages: AgentMessageDelivery;
+  private readonly askThreads: AskAgentThreads | undefined;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
 
@@ -933,6 +935,7 @@ export class Session {
     this.messageReceipts = options.messageReceipts;
     this.agentMessageQueue = options.agentMessageQueue;
     this.agentMessages = options.agentMessages;
+    this.askThreads = options.askThreads;
     this.creationService = options.creationService;
     this.projectIcons = new ProjectIconReader(paseoHome);
     this.worktreesRoot = worktreesRoot;
@@ -8360,16 +8363,20 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "agent.ask.request" }>,
   ): Promise<void> {
     try {
-      const { answer } = await askAgent(this.agentManager, this.sessionLogger, {
+      if (!this.askThreads) throw new Error("ask_agent is not configured on this daemon");
+      const { answer, thread } = await this.askThreads.act({
+        action: msg.threadAction,
         agentId: msg.agentId,
         question: msg.question,
+        threadId: msg.threadId,
+        askerId: msg.askerAgentId,
         askedBy: msg.askedBy,
         timeoutMs: msg.timeoutMs,
         signal: this.delivery.requestSignal,
       });
       this.emit({
         type: "agent.ask.response",
-        payload: { requestId: msg.requestId, agentId: msg.agentId, answer, error: null },
+        payload: { requestId: msg.requestId, agentId: msg.agentId, answer, error: null, thread },
       });
     } catch (error) {
       this.sessionLogger.warn({ err: error, agentId: msg.agentId }, "agent.ask.request failed");

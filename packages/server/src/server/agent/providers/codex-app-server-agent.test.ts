@@ -96,6 +96,7 @@ import {
 } from "./codex/test-utils/fake-app-server.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { asInternals as castInternals, createStub } from "../../test-utils/class-mocks.js";
+import { ForkHandleRefusedError } from "../fork-handle.js";
 import { AgentManager } from "../agent-manager.js";
 import { buildProviderRegistry } from "../provider-registry.js";
 
@@ -2350,6 +2351,54 @@ describe("Codex app-server provider", () => {
 
     expect(durableThreads).toEqual(new Set(["source-thread"]));
     expect(threadRequests().slice(1)).toEqual([
+      { method: "thread/delete", params: { threadId: "forked-thread" } },
+    ]);
+    for (const appServer of appServers) appServer.assertNoErrors();
+  });
+
+  test("deletes a leftover forked thread from its handle alone, and refuses a handle that is not one", async () => {
+    const durableThreads = new Set(["source-thread"]);
+    const { provider, appServers, threadRequests } = createProviderWithFakeAppServers({
+      "thread/fork": () => {
+        durableThreads.add("forked-thread");
+        return {
+          thread: { id: "forked-thread" },
+          model: "gpt-5.4",
+          modelProvider: "openai",
+          serviceTier: null,
+          cwd: "/workspace/project",
+          approvalPolicy: "on-request",
+          approvalsReviewer: "user",
+          sandbox: { type: "readOnly" },
+        };
+      },
+      "thread/delete": (params) => {
+        const { threadId } = params as { threadId: string };
+        durableThreads.delete(threadId);
+        return {};
+      },
+    });
+    const fork = await provider.forkNativeSession({
+      provider: "codex",
+      sessionId: "source-thread",
+      nativeHandle: "source-thread",
+      metadata: { provider: "codex", cwd: "/workspace/project", threadId: "source-thread" },
+    });
+    const requestsBefore = threadRequests().length;
+
+    for (const bad of [
+      { ...fork.handle, nativeHandle: "../forked-thread" },
+      { ...fork.handle, nativeHandle: "a/b" },
+      { ...fork.handle, nativeHandle: undefined, sessionId: "" },
+    ]) {
+      await expect(provider.discardNativeFork(bad)).rejects.toThrow(ForkHandleRefusedError);
+    }
+    expect(threadRequests()).toHaveLength(requestsBefore);
+
+    await provider.discardNativeFork(fork.handle);
+
+    expect(durableThreads).toEqual(new Set(["source-thread"]));
+    expect(threadRequests().slice(requestsBefore)).toEqual([
       { method: "thread/delete", params: { threadId: "forked-thread" } },
     ]);
     for (const appServer of appServers) appServer.assertNoErrors();

@@ -271,6 +271,40 @@ discovery and plugin hooks, and drops their timelines on archive. An archived he
 its exact-ID result briefly to cover completion before a waiter attaches. This internal
 lifecycle is separate from public workspace visibility and is not a public creation option.
 
+### ask_agent copies
+
+`ask_agent` keeps an internal copy of the asked agent alive between rounds, one open thread per
+(asker, target). The copy is a normal internal agent: its agent record is never persisted and the
+idle-runtime reaper skips it, so `AskAgentThreads` (`agent/ask-agent.ts`) owns its lifetime
+instead. Only an identified asker (an agent id) gets a thread; a caller with no identity, such as
+an old client, gets a one-shot ask that deletes the copy after one round.
+A thread closes at the round cap, on idle, when the asker or target is archived, when the asker
+closes it, or when the daemon stops. Close deletes the copy and its provider fork. The thread
+answers "closed" from the moment a close starts but keeps its slot and its fork record until the
+fork is gone; a close that arrives while the copy is still being made waits for that and undoes it.
+
+A daemon that dies mid-thread cannot run that cleanup. The provider's fork is durable, so open
+fork handles are written to `$PASEO_HOME/ask-agent-open-forks.json` and deleted from their handles
+in the background at the next startup, bounded per record and given up on after five failed
+starts. That is why `AgentClient.discardNativeFork(handle)` exists beside
+`ForkedNativeSession.discard`; it validates the handle because the file is on disk. A fork whose
+`discard` fails at close keeps its record for the same retry.
+
+A copy keeps the same Paseo tool list as its source, because the tool list is part of the prompt
+cache prefix. Calls are refused at execution time instead: only the reads in
+`COPY_READ_ONLY_TOOLS` (`agent/tools/paseo-tools.ts`) work for a copy. Add a new read-only tool
+there if copies should have it; a new mutating tool is blocked with no change. The guard covers
+Paseo tools only: a copy still has the source's third-party MCP servers, and for those it relies on
+the provider's read-only mode and auto-denied approvals. A user's own allow rules can approve some
+of those calls.
+
+The limits (`maxRounds`, `maxOpenThreads`, `idleTimeoutMs`, `replyCharLimit`) come from
+`agents.askAgent` in `config.json` and apply at daemon start.
+
+A thread an agent here opens on another host is closed there (best effort) when that agent is
+archived. If the daemon stops, or the host is unreachable, the remote thread lives until the remote
+host's idle timeout closes it.
+
 ## Archive
 
 Archive is a **soft delete**: the agent record stays on disk with `archivedAt` set, the runtime is closed, and the agent disappears from active lists. Archive is **global** — it lives on the server and propagates to every connected client.
