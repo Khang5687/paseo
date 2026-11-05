@@ -2938,7 +2938,7 @@ describe("create_agent MCP tool", () => {
     await rm(baseDir, { recursive: true, force: true });
   });
 
-  it("rejects background from caller agents and defaults notify-on-finish on", async () => {
+  it("rejects background from caller agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     spies.agentManager.getAgent.mockReturnValue({
       id: "parent-agent",
@@ -2967,24 +2967,7 @@ describe("create_agent MCP tool", () => {
         background: false,
       }),
     ).rejects.toThrow(/Unrecognized key/);
-
-    const parsed = await tool.inputSchema.safeParseAsync({
-      ...subagentCurrentWorkspace(),
-      title: "Child",
-      provider: "codex/gpt-5.4",
-      initialPrompt: "Do work",
-    });
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) {
-      throw new Error("Expected caller create_agent input to parse");
-    }
-    expect(parsed.data).toMatchObject({
-      relationship: { kind: "subagent" },
-      workspace: { kind: "current" },
-      notifyOnFinish: true,
-    });
   });
-
   it("returns notify-on-finish guidance for caller-created agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const parentAgent = {
@@ -3126,6 +3109,92 @@ describe("create_agent MCP tool", () => {
         workspaceId: "wks_parent",
       },
     );
+  });
+
+  describe("canonical detached input", () => {
+    async function createFromCaller(extra: { detached?: boolean; workspaceId?: string }) {
+      const ensureWorkspace = vi.fn(async () => "wks_new");
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue({
+        id: "parent-agent",
+        config: {},
+        cwd: existingCwd,
+        workspaceId: "wks_parent",
+        provider: "codex",
+        currentModeId: "full-access",
+      } as ManagedAgent);
+      spies.agentManager.createAgent.mockResolvedValue({
+        id: "new-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "New" },
+      } as ManagedAgent);
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        callerAgentId: "parent-agent",
+        ensureWorkspaceForCreate: ensureWorkspace,
+        listActiveWorkspaces: async () => [
+          { workspaceId: "wks_given", cwd: existingCwd, kind: "directory" },
+        ],
+        logger,
+      });
+      const response = await registeredTool(server, "create_agent").handler({
+        title: "New",
+        provider: "codex/gpt-5.4",
+        initialPrompt: "Discuss",
+        labels: { [PARENT_AGENT_ID_LABEL]: "spoofed-parent", source: "mcp" },
+        ...extra,
+      });
+      return {
+        response,
+        ensureWorkspace,
+        createConfig: spies.agentManager.createAgent.mock.calls[0]![0],
+        createOptions: spies.agentManager.createAgent.mock.calls[0]![2],
+      };
+    }
+
+    it("detached: true mints its own workspace in the caller directory, with no parent label", async () => {
+      const { response, createConfig, createOptions, ensureWorkspace } = await createFromCaller({
+        detached: true,
+      });
+
+      expect(ensureWorkspace).toHaveBeenCalledWith(
+        existingCwd,
+        { prompt: "New" },
+        { callerWorkspaceId: "wks_parent" },
+      );
+      expect(createConfig.cwd).toBe(existingCwd);
+      expect(createOptions).toMatchObject({
+        labels: { source: "mcp" },
+        workspaceId: "wks_new",
+      });
+      expect(createOptions.labels).toEqual({ source: "mcp" });
+      expect(response.structuredContent.guidance).not.toContain("You will get notified");
+    });
+
+    it("detached: true with workspaceId uses that workspace as given", async () => {
+      const { createOptions, ensureWorkspace } = await createFromCaller({
+        detached: true,
+        workspaceId: "wks_given",
+      });
+
+      expect(ensureWorkspace).not.toHaveBeenCalled();
+      expect(createOptions.workspaceId).toBe("wks_given");
+      expect(createOptions.labels).toEqual({ source: "mcp" });
+    });
+
+    it("omitting detached still stamps the parent label, shares the caller workspace and notifies", async () => {
+      const { response, createOptions, ensureWorkspace } = await createFromCaller({});
+
+      expect(ensureWorkspace).not.toHaveBeenCalled();
+      expect(createOptions.workspaceId).toBe("wks_parent");
+      expect(createOptions.labels).toMatchObject({ [PARENT_AGENT_ID_LABEL]: "parent-agent" });
+      expect(response.structuredContent.guidance).toContain("You will get notified");
+    });
   });
 
   it("accepts provider features from caller agents and passes them through createAgent", async () => {

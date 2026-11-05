@@ -835,5 +835,10 @@
       "packages/app/src/utils/archive-confirm.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/sidebar-thread-children.spec.ts"]
+  },
+  {
+    "pr": 108,
+    "title": "feat(server): detached create_agent gives a separate top-level agent with its own workspace (fork port of #107)",
+    "tests": ["packages/server/src/server/agent/mcp-server.test.ts"]
   }
 ]

@@ -1,5 +1,9 @@
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
-import { parentAddressLabels } from "@getpaseo/protocol/agent-labels";
+import {
+  PARENT_AGENT_ID_LABEL,
+  PARENT_SERVER_ID_LABEL,
+  parentAddressLabels,
+} from "@getpaseo/protocol/agent-labels";
 import type { ActiveTurnBehavior, AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -189,6 +193,7 @@ const remoteCreate = z
     workspaceId: z.string().min(1),
     labels: z.record(z.string(), z.string()).optional(),
     notifyOnFinish: z.boolean().optional(),
+    detached: z.boolean().optional(),
     idempotencyKey: z.string().optional(),
     settings: z
       .object({
@@ -232,12 +237,24 @@ export function createHostResolver(input: {
               (row) => row.id === parsed.workspaceId,
             );
             if (!workspace) throw new Error(`Workspace ${parsed.workspaceId} not found`);
-            const labels = {
-              ...parsed.labels,
-              ...(input.callerAgentId
-                ? parentAddressLabels({ agentId: input.callerAgentId, serverId: input.serverId })
-                : {}),
-            };
+            // A detached create is a root agent on the host: no parent link, so it is neither
+            // listed as the caller's subagent nor archived with it.
+            const {
+              [PARENT_AGENT_ID_LABEL]: _parent,
+              [PARENT_SERVER_ID_LABEL]: _parentServer,
+              ...callerLabels
+            } = parsed.labels ?? {};
+            const labels = parsed.detached
+              ? callerLabels
+              : {
+                  ...parsed.labels,
+                  ...(input.callerAgentId
+                    ? parentAddressLabels({
+                        agentId: input.callerAgentId,
+                        serverId: input.serverId,
+                      })
+                    : {}),
+                };
             const snapshot = await client.createAgent({
               config: {
                 provider,
