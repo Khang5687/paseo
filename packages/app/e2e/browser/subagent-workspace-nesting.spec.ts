@@ -62,8 +62,12 @@ test("a subagent's workspace sits indented under its parent's workspace and open
     const childRow = page.getByTestId(rowTestId(pair.child.workspaceId));
     const siblingRow = page.getByTestId(rowTestId(siblingId));
     await expect(parentRow).toBeVisible({ timeout: 30_000 });
-    await expect(childRow).toBeVisible({ timeout: 30_000 });
     await expect(siblingRow).toBeVisible({ timeout: 30_000 });
+    // Threads fold their subagents by default; unfold this one to reach the child row.
+    await page
+      .getByTestId(`sidebar-thread-children-toggle-${getServerId()}:${pair.parent.workspaceId}`)
+      .tap();
+    await expect(childRow).toBeVisible({ timeout: 30_000 });
 
     // The child row follows its parent row directly, ahead of the unrelated workspace.
     const ids = [pair.parent.workspaceId, pair.child.workspaceId, siblingId];

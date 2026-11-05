@@ -87,6 +87,18 @@ import {
   ScheduleUpdateResponseSchema,
 } from "./schedule/rpc-schemas.js";
 import {
+  NotesCreateRequestSchema,
+  NotesCreateResponseSchema,
+  NotesChangedMessageSchema,
+  NotesDeleteRequestSchema,
+  NotesDeleteResponseSchema,
+  NotesEditRequestSchema,
+  NotesEditResponseSchema,
+  NotesFiredMessageSchema,
+  NotesListRequestSchema,
+  NotesListResponseSchema,
+} from "./notes/schemas.js";
+import {
   SpeechLocalModelsDeleteRequestSchema,
   SpeechLocalModelsDeleteResponseSchema,
   SpeechLocalModelsDownloadRequestSchema,
@@ -235,6 +247,8 @@ export const MutableDaemonConfigSchema = z
       .optional(),
     app: z.object({ baseUrl: z.string() }).optional(),
     catalogRefreshTimeoutMs: z.number().int().positive().optional(),
+    // COMPAT(usageSetting): added in v0.14, remove after 2027-05-01.
+    usage: z.object({ enabled: z.boolean() }).optional(),
     browserTools: MutableBrowserToolsConfigSchema.default({ enabled: false }),
     providers: z.record(z.string(), MutableDaemonProviderConfigSchema).default({}),
     metadataGeneration: MutableMetadataGenerationConfigSchema.default({ providers: [] }),
@@ -244,6 +258,8 @@ export const MutableDaemonConfigSchema = z
     // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, keep optional while old daemons are supported.
     // Persisted host-wide value, applied live by the daemon.
     idleRuntimeCleanup: z.boolean().optional(),
+    // COMPAT(agentDraftSync): added in v0.14.0, keep optional while old daemons are supported.
+    draftHistoryRetentionDays: z.number().int().positive().optional(),
     // COMPAT(restartRecovery): added in v0.14.0, keep optional for older hosts.
     resumeOnStartup: z.boolean().optional(),
     resumePrompt: z.string().optional(),
@@ -263,6 +279,7 @@ export const MutableDaemonConfigPatchSchema = z
   .object({
     relay: MutableRelayConfigSchema.partial().optional(),
     mcp: z.object({ injectIntoAgents: z.boolean().optional() }).passthrough().optional(),
+    usage: z.object({ enabled: z.boolean() }).optional(),
     browserTools: MutableBrowserToolsConfigSchema.partial().optional(),
     providers: z
       .record(z.string(), MutableDaemonProviderConfigSchema.partial().passthrough())
@@ -273,6 +290,7 @@ export const MutableDaemonConfigPatchSchema = z
     autoArchiveAfterMerge: z.boolean().optional(),
     enableTerminalAgentHooks: z.boolean().optional(),
     idleRuntimeCleanup: z.boolean().optional(),
+    draftHistoryRetentionDays: z.number().int().positive().optional(),
     resumeOnStartup: z.boolean().optional(),
     resumePrompt: z.string().optional(),
     appendSystemPrompt: z.string().optional(),
@@ -622,7 +640,9 @@ const ToolCallDetailPayloadSchema: z.ZodType<ToolCallDetail, unknown> = z.discri
       subAgentType: z.string().optional(),
       description: z.string().optional(),
       childSessionId: z.string().optional(),
-      log: z.string(),
+      // COMPAT(subagent-log): added in v0.14.1, remove after 2027-04-30. A sub-agent card is a
+      // launch marker; apps before v0.14.1 required `log`, so daemons still send it empty.
+      log: z.string().optional(),
       // Compat cruft for clients <= 0.1.65-beta.3 that required this field. Producers still
       // emit `[]`; nothing reads it. Drop the field (and the `[]` emissions) once those
       // clients are no longer in the field.
@@ -1044,13 +1064,6 @@ export const WorkspacePinSetRequestSchema = z.object({
   requestId: z.string(),
 });
 
-export const WorkspaceSettleSetRequestSchema = z.object({
-  type: z.literal("workspace.settle.set.request"),
-  workspaceId: z.string(),
-  settled: z.boolean(),
-  requestId: z.string(),
-});
-
 export const WorkspaceLabelColorSchema = z.enum(WORKSPACE_LABEL_COLORS);
 export const WorkspaceLabelDefinitionSchema = z.object({
   name: z.string(),
@@ -1265,6 +1278,18 @@ const ImageAttachmentSchema = z.object({
   mimeType: z.string(), // e.g., "image/jpeg", "image/png"
 });
 
+/**
+ * Maps a placeholder the user typed in `text` (as `[label]`, e.g. `[Image #1]`) to the image or
+ * attachment it names. Exactly one of `imageIndex` (into `images`) or `attachmentIndex` (into
+ * `attachments`) is set. Daemons without `features.inlineAttachmentRefs` ignore it.
+ */
+export const InlineAttachmentRefSchema = z.object({
+  label: z.string(),
+  imageIndex: z.number().int().nonnegative().optional(),
+  attachmentIndex: z.number().int().nonnegative().optional(),
+});
+export type InlineAttachmentRef = z.infer<typeof InlineAttachmentRefSchema>;
+
 export const ActiveTurnBehaviorSchema = z.enum(["interrupt", "steer"]);
 export type ActiveTurnBehavior = z.infer<typeof ActiveTurnBehaviorSchema>;
 
@@ -1276,6 +1301,7 @@ export const SendAgentMessageSchema = z.object({
   activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 // ============================================================================
@@ -1438,6 +1464,7 @@ export const SendAgentMessageRequestSchema = z.object({
   activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export const WaitForFinishRequestSchema = z.object({
@@ -1617,6 +1644,14 @@ export const PluginRpcInvokeRequestSchema = z.object({
   requestId: z.string(),
   pluginId: PluginIdSchema,
   method: z.string().min(1),
+  input: z.unknown().optional(),
+});
+
+export const PluginRpcSubscribeRequestSchema = z.object({
+  type: z.literal("plugin.rpc.subscribe.request"),
+  requestId: z.string(),
+  pluginId: PluginIdSchema,
+  method: z.string().min(1),
   input: z.unknown(),
 });
 
@@ -1791,6 +1826,7 @@ export const CreateAgentRequestMessageSchema = z.object({
   outputSchema: z.record(z.string(), z.unknown()).optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
   git: GitSetupOptionsSchema.optional(),
   worktree: CreateAgentWorktreeTargetSchema.optional(),
   autoArchive: z.boolean().optional(),
@@ -2003,6 +2039,16 @@ export const AgentForkContextRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+// Forks an agent into a new agent. Providers with native session fork cut their own session at the
+// boundary; others get the curated chat-history summary as the new agent's first message.
+export const AgentForkRequestMessageSchema = z.object({
+  type: z.literal("agent.fork.request"),
+  agentId: z.string(),
+  boundaryCursor: AgentTimelineCursorSchema.optional(),
+  boundaryMessageId: z.string().optional(),
+  requestId: z.string(),
+});
+
 export const AGENT_ASK_DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
 /** State of an ask_agent thread after a round, a status read, or a close. */
@@ -2140,6 +2186,28 @@ export const AgentDetachResponseMessageSchema = z.object({
   payload: AgentActionResponsePayloadSchema,
 });
 
+export const AgentUnarchiveRequestMessageSchema = z.object({
+  type: z.literal("agent.unarchive.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentUnarchiveResponseMessageSchema = z.object({
+  type: z.literal("agent.unarchive.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    accepted: z.boolean(),
+    error: z.string().nullable(),
+    // False when the agent was already active and the request was a no-op.
+    wasArchived: z.boolean().optional(),
+    workspaceId: z.string().nullable().optional(),
+    workspaceRestored: z.boolean().optional(),
+    // Set when the agent's directory no longer exists, so it cannot run yet.
+    warning: z.string().nullable().optional(),
+  }),
+});
+
 export const AgentRewindModeSchema = z.enum(["conversation", "files", "both"]);
 
 export const AgentRewindRequestMessageSchema = z.object({
@@ -2225,19 +2293,6 @@ export const WorkspacePinSetResponsePayloadSchema = z.object({
 export const WorkspacePinSetResponseSchema = z.object({
   type: z.literal("workspace.pin.set.response"),
   payload: WorkspacePinSetResponsePayloadSchema,
-});
-
-export const WorkspaceSettleSetResponsePayloadSchema = z.object({
-  requestId: z.string(),
-  workspaceId: z.string(),
-  accepted: z.boolean(),
-  settledAt: z.string().nullable(),
-  error: z.string().nullable(),
-});
-
-export const WorkspaceSettleSetResponseSchema = z.object({
-  type: z.literal("workspace.settle.set.response"),
-  payload: WorkspaceSettleSetResponsePayloadSchema,
 });
 
 export const WorkspaceRecoveryStateSchema = z.discriminatedUnion("kind", [
@@ -2690,6 +2745,69 @@ export const WorkspaceSetupSubscribeRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Agent chat drafts. The daemon owns one unsent draft per agent so every client
+// shows the same composer text. Attachments are client-shaped: the daemon reads
+// only `kind` and `uploadId` (for cleanup and fetch) and stores `value` as-is.
+export const AgentDraftAttachmentSchema = z.object({
+  kind: z.string(),
+  uploadId: z.string().optional(),
+  value: z.unknown(),
+});
+
+export const AgentDraftSchema = z.object({
+  text: z.string(),
+  attachments: z.array(AgentDraftAttachmentSchema),
+  revision: z.number().int().nonnegative(),
+  // Epoch ms from the writing client's clock; last write wins on it.
+  updatedAt: z.number(),
+  updatedBy: z.string(),
+});
+
+export const AgentDraftSnapshotSummarySchema = z.object({
+  id: z.string(),
+  createdAt: z.number(),
+  preview: z.string(),
+  attachmentCount: z.number().int().nonnegative(),
+});
+
+export const AgentDraftStateSchema = z.object({
+  draft: AgentDraftSchema.nullable(),
+  history: z.array(AgentDraftSnapshotSummarySchema),
+});
+
+export const AgentDraftSubscribeRequestSchema = z.object({
+  type: z.literal("agent.draft.subscribe.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentDraftSetRequestSchema = z.object({
+  type: z.literal("agent.draft.set.request"),
+  agentId: z.string(),
+  text: z.string(),
+  attachments: z.array(AgentDraftAttachmentSchema),
+  updatedAt: z.number(),
+  // The revision this client last saw; null when it has seen none.
+  baseRevision: z.number().int().nonnegative().nullable(),
+  // "sent" marks the clear that follows a send.
+  reason: z.enum(["edit", "sent"]).optional(),
+  requestId: z.string(),
+});
+
+export const AgentDraftRestoreRequestSchema = z.object({
+  type: z.literal("agent.draft.restore.request"),
+  agentId: z.string(),
+  snapshotId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentDraftUploadGetRequestSchema = z.object({
+  type: z.literal("agent.draft.upload.get.request"),
+  agentId: z.string(),
+  uploadId: z.string(),
+  requestId: z.string(),
+});
+
 export const WorkspaceSetupRunRequestSchema = z.object({
   type: z.literal("workspace.setup.run.request"),
   workspaceId: z.string(),
@@ -2840,6 +2958,9 @@ export const AgentQueuedMessagePayloadSchema = z.object({
   createdAt: z.string(),
   images: z.array(ImageAttachmentSchema),
   attachments: z.array(AgentAttachmentSchema),
+  // Inline `[Image #N]`/`[File #N]` labels, replayed on dispatch like `send_agent_message`'s.
+  // Absent on entries queued by clients or daemons predating queued refs.
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export type AgentQueuedMessagePayload = z.infer<typeof AgentQueuedMessagePayloadSchema>;
@@ -2851,6 +2972,7 @@ export const AgentQueueAddRequestSchema = z.object({
   text: z.string(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: z.array(AgentAttachmentSchema).optional(),
+  attachmentRefs: z.array(InlineAttachmentRefSchema).optional(),
 });
 
 export const AgentQueueRemoveRequestSchema = z.object({
@@ -3733,6 +3855,8 @@ export const SessionEventSubscriptionSchema = z.enum([
   "activity_log",
   "hub.execution.agent.update",
   "hub.execution.agent.stream",
+  // Send only to hosts with features.notes; older hosts reject unknown event names.
+  "notes.fired",
 ]);
 export type SessionEventSubscription = z.infer<typeof SessionEventSubscriptionSchema>;
 export const SessionEventsSetSubscriptionRequestSchema = z.object({
@@ -3808,7 +3932,6 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
   WorkspacePinSetRequestSchema,
-  WorkspaceSettleSetRequestSchema,
   WorkspaceLabelListRequestSchema,
   WorkspaceLabelAssignmentSetRequestSchema,
   WorkspaceLabelUpdateRequestSchema,
@@ -3842,6 +3965,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   PluginDisableRequestSchema,
   PluginRemoveRequestSchema,
   PluginRpcInvokeRequestSchema,
+  PluginRpcSubscribeRequestSchema,
   AgentTimelineAppendRequestSchema,
   AgentSkillsGetStatusRequestSchema,
   AgentSkillsReconcileRequestSchema,
@@ -3880,6 +4004,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProviderSubagentTimelineRequestMessageSchema,
   SetAgentTimelineSubscriptionRequestMessageSchema,
   AgentForkContextRequestMessageSchema,
+  AgentForkRequestMessageSchema,
   AgentAskRequestMessageSchema,
   SetAgentModeRequestMessageSchema,
   SetAgentModelRequestMessageSchema,
@@ -3887,6 +4012,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentFeatureRequestMessageSchema,
   AgentConfigApplyRequestMessageSchema,
   AgentDetachRequestMessageSchema,
+  AgentUnarchiveRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
   CheckoutStatusRequestSchema,
@@ -3926,6 +4052,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceSetupStatusRequestSchema,
   WorkspaceSetupSubscribeRequestSchema,
   WorkspaceSetupRunRequestSchema,
+  AgentDraftSubscribeRequestSchema,
+  AgentDraftSetRequestSchema,
+  AgentDraftRestoreRequestSchema,
+  AgentDraftUploadGetRequestSchema,
   LegacyListAvailableEditorsRequestSchema,
   LegacyOpenInEditorRequestSchema,
   OpenProjectRequestSchema,
@@ -4002,6 +4132,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectRequestSchema,
   LoopLogsRequestSchema,
   LoopStopRequestSchema,
+  NotesListRequestSchema,
+  NotesCreateRequestSchema,
+  NotesEditRequestSchema,
+  NotesDeleteRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -4191,6 +4325,8 @@ export const ServerInfoStatusPayloadSchema = z
         providersSnapshot: z.boolean().optional(),
         connectedHosts: z.boolean().optional(),
         hostMultiplexing: z.boolean().optional(),
+        // COMPAT(usageSetting): added in v0.14, remove after 2027-05-01.
+        usageSetting: z.boolean().optional(),
         usageSources: z.boolean().optional(),
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
         providersSnapshotCwd: z.boolean().optional(),
@@ -4198,6 +4334,8 @@ export const ServerInfoStatusPayloadSchema = z
         directorySync: z.boolean().optional(),
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
+        // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
+        notes: z.boolean().optional(),
         // COMPAT(workspaceSetupRun): added in v0.8.0, remove gate after 2027-09-02.
         workspaceSetupRun: z.boolean().optional(),
         // COMPAT(workspaceTerminals): added in v0.8.0, remove gate after 2027-09-05.
@@ -4250,6 +4388,8 @@ export const ServerInfoStatusPayloadSchema = z
         pluginThemes: z.boolean().optional(),
         pluginSettings: z.boolean().optional(),
         pluginTimelineItems: z.boolean().optional(),
+        // COMPAT(pluginSubscriptions): added in v0.15.0, remove gate after 2027-05-02.
+        pluginSubscriptions: z.boolean().optional(),
         // COMPAT(skillManagement): added in v0.4.0, remove gate after 2027-08-16.
         skillManagement: z.boolean().optional(),
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
@@ -4262,6 +4402,8 @@ export const ServerInfoStatusPayloadSchema = z
         "terminal-input-mode-replay": z.boolean().optional(),
         // COMPAT(terminalSizeOwnership): added in v0.2.6, remove gate after 2027-02-02.
         "terminal-size-ownership": z.boolean().optional(),
+        // COMPAT(terminalGraphemeWidths): added in v0.15.0, remove gate after 2027-05-01.
+        "terminal-grapheme-widths": z.boolean().optional(),
         // COMPAT(rewind): added in v0.1.X, drop the gate when floor >= v0.1.X.
         rewind: z.boolean().optional(),
         // COMPAT(agentTimelinePromptIndex): added in v0.2.X, drop the gate when floor >= v0.2.X.
@@ -4288,6 +4430,8 @@ export const ServerInfoStatusPayloadSchema = z
         providerUsageList: z.boolean().optional(),
         // COMPAT(agentDetach): added in v0.1.98, remove gate after 2026-12-19 once daemon floor >= v0.1.98.
         agentDetach: z.boolean().optional(),
+        // COMPAT(agentUnarchive): added in v0.15.0, remove gate after 2027-05-02.
+        agentUnarchive: z.boolean().optional(),
         // COMPAT(agentThinkingUpdate): added in v0.2.4, remove gate after 2027-01-28.
         agentThinkingUpdate: z.boolean().optional(),
         // COMPAT(daemonDiagnostics): added in v0.1.100, remove gate after 2026-12-25 once daemon floor >= v0.1.100.
@@ -4300,6 +4444,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentForkContext: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: z.boolean().optional(),
+        // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03.
+        agentFork: z.boolean().optional(),
         // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
         agentAsk: z.boolean().optional(),
         // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
@@ -4315,8 +4461,6 @@ export const ServerInfoStatusPayloadSchema = z
         workspacePinning: z.boolean().optional(),
         // COMPAT(workspaceMarkUnread): added in v0.5.0, remove after 2027-08-20.
         workspaceMarkUnread: z.boolean().optional(),
-        // COMPAT(workspaceSettling): added in v0.11.0, remove gate after 2027-04-01.
-        workspaceSettling: z.boolean().optional(),
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
         hubRelationship: z.boolean().optional(),
         // COMPAT(relayProtectedSecurity): added in v0.13.0. A capable daemon always advertises
@@ -4360,12 +4504,18 @@ export const ServerInfoStatusPayloadSchema = z
         // Sign-in link, paste and add-only guard: needs `ompAccountLogin` and an OMP whose
         // capability document reports `login.existing`.
         ompAccountLoginLink: z.boolean().optional(),
+        binaryChunkingV1: z.boolean().optional(),
         workspaceSetupObservation: z.boolean().optional(),
+        // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
+        // Daemon owns agent chat drafts (agent.draft.* RPCs). Without it drafts stay on the device.
+        agentDraftSync: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
         agentMessageProvenance: z.boolean().optional(),
         agentMessageBatching: z.boolean().optional(),
+        // COMPAT(inlineAttachmentRefs): added in v0.14.1, remove gate after 2027-05-01.
+        inlineAttachmentRefs: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): accept peers that observed pre-release v0.2.6 through 2027-01-31.
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -4700,8 +4850,6 @@ export const WorkspaceDescriptorPayloadSchema = z
     title: z.string().nullable().optional(),
     // COMPAT(workspacePinning): added in v0.1.107, remove optional after 2027-01-12.
     pinnedAt: z.string().nullable().optional(),
-    // COMPAT(workspaceSettling): added in v0.11.0, remove optional after 2027-04-01.
-    settledAt: z.string().nullable().optional(),
     // COMPAT(workspaceLabels): added in v0.5.0, remove optional after 2027-08-14.
     labels: z.array(z.string()).optional(),
     // Retained for wire parsing of older daemon descriptors.
@@ -4717,6 +4865,10 @@ export const WorkspaceDescriptorPayloadSchema = z
       .string()
       .nullish()
       .transform((value) => value ?? null),
+    // Running subagents under the workspace's root agents. Omitted when none run,
+    // and by daemons that predate it; those let subagents mask a waiting root as
+    // running.
+    runningSubagentCount: z.number().int().nonnegative().optional(),
     activityAt: z.string().nullable(),
     createdAt: z.string().optional(),
     lastUserMessageAt: z.string().nullable().optional(),
@@ -5083,6 +5235,62 @@ export const WorkspaceSetupSubscribeResponseSchema = z.object({
     subscriptionId: z.string().optional(),
     workspaceId: z.string(),
     snapshot: WorkspaceSetupSnapshotSchema.nullable(),
+  }),
+});
+
+export const AgentDraftSubscribeResponseSchema = z.object({
+  type: z.literal("agent.draft.subscribe.response"),
+  payload: z.object({
+    requestId: z.string(),
+    subscriptionId: z.string().optional(),
+    agentId: z.string(),
+    state: AgentDraftStateSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentDraftUpdateMessageSchema = z.object({
+  type: z.literal("agent.draft.update"),
+  payload: z.object({
+    subscriptionId: z.string().optional(),
+    agentId: z.string(),
+    draft: AgentDraftSchema.nullable(),
+    // Present only when the history changed.
+    history: z.array(AgentDraftSnapshotSummarySchema).optional(),
+  }),
+});
+
+export const AgentDraftSetResponseSchema = z.object({
+  type: z.literal("agent.draft.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    // False when a newer draft already won; `state` then holds the winner.
+    accepted: z.boolean(),
+    state: AgentDraftStateSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentDraftRestoreResponseSchema = z.object({
+  type: z.literal("agent.draft.restore.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    state: AgentDraftStateSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentDraftUploadGetResponseSchema = z.object({
+  type: z.literal("agent.draft.upload.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    uploadId: z.string(),
+    fileName: z.string().nullable(),
+    // Base64 file bytes.
+    data: z.string().nullable(),
+    error: z.string().nullable(),
   }),
 });
 
@@ -5505,6 +5713,20 @@ export const AgentForkContextResponseMessageSchema = z.object({
     itemCount: z.number().int().nonnegative(),
     boundaryMessageId: z.string().nullable(),
     boundaryCursor: AgentTimelineCursorSchema.nullable().optional(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentForkResponseMessageSchema = z.object({
+  type: z.literal("agent.fork.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    forkedAgentId: z.string().nullable(),
+    // native: provider session forked at the boundary.
+    // native_with_summary: native fork plus one summary message of history the source compacted away.
+    // summary: fresh agent seeded with the chat-history summary.
+    method: z.enum(["native", "native_with_summary", "summary"]).nullable(),
     error: z.string().nullable(),
   }),
 });
@@ -7140,11 +7362,20 @@ export const UsageListReportsResponseMessageSchema = z.object({
   payload: z.object({ requestId: z.string(), error: z.string().nullable() }),
 });
 
+const AgentSlashCommandSubcommandSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  usage: z.string().optional(),
+});
+
 const AgentSlashCommandSchema = z.object({
   name: z.string(),
   description: z.string(),
   argumentHint: z.string(),
   kind: z.enum(["command", "skill"]).optional().catch("command"),
+  aliases: z.array(z.string()).optional(),
+  // Fixed choices for the first argument, e.g. `/compact soft|remote|snapcompact`.
+  subcommands: z.array(AgentSlashCommandSubcommandSchema).optional(),
 });
 
 export const ListCommandsResponseSchema = z.object({
@@ -7599,8 +7830,24 @@ export const PluginRpcInvokeResponseSchema = z.object({
   type: z.literal("plugin.rpc.invoke.response"),
   payload: z.object({
     requestId: z.string(),
-    output: z.unknown(),
+    output: z.unknown().optional(),
   }),
+});
+
+export const PluginRpcSubscribeResponseSchema = z.object({
+  type: z.literal("plugin.rpc.subscribe.response"),
+  payload: z.object({ requestId: z.string(), subscriptionId: z.string() }),
+});
+
+/** A JSON subscription event. A `Uint8Array` event rides as binary opcode 0x20 instead. */
+export const PluginRpcEventSchema = z.object({
+  type: z.literal("plugin.rpc.event"),
+  payload: z.object({ subscriptionId: z.string(), event: z.unknown() }),
+});
+
+export const PluginRpcClosedSchema = z.object({
+  type: z.literal("plugin.rpc.closed"),
+  payload: z.object({ subscriptionId: z.string(), error: z.string().optional() }),
 });
 
 export const AgentTimelineAppendResponseSchema = z.object({
@@ -7683,6 +7930,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   PluginDisableResponseSchema,
   PluginRemoveResponseSchema,
   PluginRpcInvokeResponseSchema,
+  PluginRpcSubscribeResponseSchema,
+  PluginRpcEventSchema,
+  PluginRpcClosedSchema,
   AgentTimelineAppendResponseSchema,
   AgentSkillsGetStatusResponseSchema,
   AgentSkillsReconcileResponseSchema,
@@ -7719,6 +7969,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceSetupStatusResponseMessageSchema,
   WorkspaceSetupSubscribeResponseSchema,
   WorkspaceSetupRunResponseMessageSchema,
+  AgentDraftSubscribeResponseSchema,
+  AgentDraftUpdateMessageSchema,
+  AgentDraftSetResponseSchema,
+  AgentDraftRestoreResponseSchema,
+  AgentDraftUploadGetResponseSchema,
   AgentStreamMessageSchema,
   AgentStatusMessageSchema,
   FetchAgentsResponseMessageSchema,
@@ -7748,6 +8003,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentTimelineSubscriptionResponseMessageSchema,
   AgentAttentionRequiredMessageSchema,
   AgentForkContextResponseMessageSchema,
+  AgentForkResponseMessageSchema,
   AgentAskResponseMessageSchema,
   CancelAgentResponseMessageSchema,
   ClearAgentAttentionResponseMessageSchema,
@@ -7785,6 +8041,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentFeatureResponseMessageSchema,
   AgentConfigApplyResponseMessageSchema,
   AgentDetachResponseMessageSchema,
+  AgentUnarchiveResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
@@ -7792,7 +8049,6 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
   WorkspacePinSetResponseSchema,
-  WorkspaceSettleSetResponseSchema,
   WorkspaceRecoveryInspectResponseSchema,
   WorkspaceRecoveryRestoreResponseSchema,
   WaitForFinishResponseMessageSchema,
@@ -7896,6 +8152,12 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LoopStopResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
+  NotesListResponseSchema,
+  NotesChangedMessageSchema,
+  NotesFiredMessageSchema,
+  NotesCreateResponseSchema,
+  NotesEditResponseSchema,
+  NotesDeleteResponseSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;
@@ -7981,6 +8243,7 @@ export type AgentTimelineListPromptsResponseMessage = z.infer<
   typeof AgentTimelineListPromptsResponseMessageSchema
 >;
 export type AgentForkContextResponseMessage = z.infer<typeof AgentForkContextResponseMessageSchema>;
+export type AgentForkResponseMessage = z.infer<typeof AgentForkResponseMessageSchema>;
 export type AgentAskResponseMessage = z.infer<typeof AgentAskResponseMessageSchema>;
 export type CancelAgentResponseMessage = z.infer<typeof CancelAgentResponseMessageSchema>;
 export type SendAgentMessageResponseMessage = z.infer<typeof SendAgentMessageResponseMessageSchema>;
@@ -7991,6 +8254,7 @@ export type SetAgentThinkingResponseMessage = z.infer<typeof SetAgentThinkingRes
 export type SetAgentFeatureResponseMessage = z.infer<typeof SetAgentFeatureResponseMessageSchema>;
 export type AgentConfigApplyResponseMessage = z.infer<typeof AgentConfigApplyResponseMessageSchema>;
 export type AgentDetachResponseMessage = z.infer<typeof AgentDetachResponseMessageSchema>;
+export type AgentUnarchiveResponseMessage = z.infer<typeof AgentUnarchiveResponseMessageSchema>;
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
@@ -8002,10 +8266,6 @@ export type WorkspaceTitleSetResponsePayload = z.infer<
 >;
 export type WorkspacePinSetResponse = z.infer<typeof WorkspacePinSetResponseSchema>;
 export type WorkspacePinSetResponsePayload = z.infer<typeof WorkspacePinSetResponsePayloadSchema>;
-export type WorkspaceSettleSetResponse = z.infer<typeof WorkspaceSettleSetResponseSchema>;
-export type WorkspaceSettleSetResponsePayload = z.infer<
-  typeof WorkspaceSettleSetResponsePayloadSchema
->;
 export type WorkspaceRecoveryState = z.infer<typeof WorkspaceRecoveryStateSchema>;
 export type WorkspaceRecoveryInspectResponse = z.infer<
   typeof WorkspaceRecoveryInspectResponseSchema
@@ -8094,6 +8354,7 @@ export type FetchWorkspacesRequestMessage = z.infer<typeof FetchWorkspacesReques
 export type ProjectListRequestMessage = z.infer<typeof ProjectListRequestMessageSchema>;
 export type FetchAgentRequestMessage = z.infer<typeof FetchAgentRequestMessageSchema>;
 export type AgentForkContextRequestMessage = z.infer<typeof AgentForkContextRequestMessageSchema>;
+export type AgentForkRequestMessage = z.infer<typeof AgentForkRequestMessageSchema>;
 export type AgentAskRequestMessage = z.infer<typeof AgentAskRequestMessageSchema>;
 export type SendAgentMessageRequest = z.infer<typeof SendAgentMessageRequestSchema>;
 export type WaitForFinishRequest = z.infer<typeof WaitForFinishRequestSchema>;
@@ -8157,7 +8418,6 @@ export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;
 export type WorkspacePinSetRequest = z.infer<typeof WorkspacePinSetRequestSchema>;
-export type WorkspaceSettleSetRequest = z.infer<typeof WorkspaceSettleSetRequestSchema>;
 export type WorkspaceRecoveryInspectRequest = z.infer<typeof WorkspaceRecoveryInspectRequestSchema>;
 export type WorkspaceRecoveryRestoreRequest = z.infer<typeof WorkspaceRecoveryRestoreRequestSchema>;
 export type SetAgentModeRequestMessage = z.infer<typeof SetAgentModeRequestMessageSchema>;
@@ -8166,6 +8426,7 @@ export type SetAgentThinkingRequestMessage = z.infer<typeof SetAgentThinkingRequ
 export type SetAgentFeatureRequestMessage = z.infer<typeof SetAgentFeatureRequestMessageSchema>;
 export type AgentConfigApplyRequestMessage = z.infer<typeof AgentConfigApplyRequestMessageSchema>;
 export type AgentDetachRequestMessage = z.infer<typeof AgentDetachRequestMessageSchema>;
+export type AgentUnarchiveRequestMessage = z.infer<typeof AgentUnarchiveRequestMessageSchema>;
 export type AgentPermissionResponseMessage = z.infer<typeof AgentPermissionResponseMessageSchema>;
 export type CheckoutStatusRequest = z.infer<typeof CheckoutStatusRequestSchema>;
 export type CheckoutStatusResponse = z.infer<typeof CheckoutStatusResponseSchema>;
@@ -8326,6 +8587,12 @@ export type FileDownloadTokenRequest = z.infer<typeof FileDownloadTokenRequestSc
 export type FileDownloadTokenResponse = z.infer<typeof FileDownloadTokenResponseSchema>;
 export type FileUploadRequest = z.infer<typeof FileUploadRequestSchema>;
 export type FileUploadResponse = z.infer<typeof FileUploadResponseSchema>;
+export type AgentDraftAttachment = z.infer<typeof AgentDraftAttachmentSchema>;
+export type AgentDraft = z.infer<typeof AgentDraftSchema>;
+export type AgentDraftSnapshotSummary = z.infer<typeof AgentDraftSnapshotSummarySchema>;
+export type AgentDraftState = z.infer<typeof AgentDraftStateSchema>;
+export type AgentDraftSetRequest = z.infer<typeof AgentDraftSetRequestSchema>;
+export type AgentDraftUpdateMessage = z.infer<typeof AgentDraftUpdateMessageSchema>;
 export type RestartServerRequestMessage = z.infer<typeof RestartServerRequestMessageSchema>;
 export type ShutdownServerRequestMessage = z.infer<typeof ShutdownServerRequestMessageSchema>;
 export type ClearAgentAttentionMessage = z.infer<typeof ClearAgentAttentionMessageSchema>;

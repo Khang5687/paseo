@@ -144,8 +144,8 @@ import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AskAgentThreads, type AskThreadSettings } from "./agent/ask-agent.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { AgentDraftService } from "./agent-draft/agent-draft-service.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
-import { attachWorkspaceAutoUnsettle } from "./workspace-settle.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
   createPaseoToolCatalog,
@@ -175,6 +175,7 @@ import {
 } from "./workspace-registry.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
+import { NotesService } from "./notes/notes-service.js";
 import {
   DaemonConfigStore,
   resolveFeatureDefaults,
@@ -483,6 +484,7 @@ export interface PaseoDaemonConfig {
   trustedProxies?: true | string[];
   mcpEnabled?: boolean;
   mcpInjectIntoAgents?: boolean;
+  usageEnabled?: boolean;
   browserToolsEnabled?: boolean;
   git?: {
     maxProcessesPerSecond: number;
@@ -529,6 +531,7 @@ export interface PaseoDaemonConfig {
   downloadTokenTtlMs?: number;
   agentProviderSettings?: AgentProviderRuntimeSettingsMap;
   idleRuntimeCleanup?: boolean;
+  draftHistoryRetentionDays?: number;
   resumeOnStartup?: boolean;
   resumePrompt?: string;
   askAgent?: Partial<AskThreadSettings>;
@@ -747,6 +750,7 @@ function createInitialMutableDaemonConfig(config: ResolvedDaemonSettings): Mutab
     ...(config.providerCatalogRefreshTimeoutMs !== undefined
       ? { catalogRefreshTimeoutMs: config.providerCatalogRefreshTimeoutMs }
       : {}),
+    usage: { enabled: config.usageEnabled !== false },
     browserTools: { enabled: config.browserToolsEnabled ?? false },
     providers,
     metadataGeneration: {
@@ -756,6 +760,7 @@ function createInitialMutableDaemonConfig(config: ResolvedDaemonSettings): Mutab
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
     idleRuntimeCleanup: config.idleRuntimeCleanup !== false,
+    draftHistoryRetentionDays: config.draftHistoryRetentionDays,
     resumeOnStartup: config.resumeOnStartup !== false,
     resumePrompt: config.resumePrompt ?? "Resume working.",
     appendSystemPrompt: config.appendSystemPrompt ?? "",
@@ -1229,12 +1234,13 @@ export async function createPaseoDaemon(
     agentManager,
     agentStorage,
   );
-  const detachWorkspaceAutoUnsettle = attachWorkspaceAutoUnsettle({
-    agentManager,
-    workspaceRegistry,
-    logger,
-  });
   await agentStorage.initialize();
+  const agentDrafts = new AgentDraftService({
+    storage: agentStorage,
+    paseoHome: config.paseoHome,
+    logger,
+    retentionDays: () => daemonConfigStore.get().draftHistoryRetentionDays,
+  });
   const restartRecovery = createRestartRecovery({
     storage: agentStorage,
     settings: () => ({
@@ -1650,6 +1656,11 @@ export async function createPaseoDaemon(
     archiveWorkspace: archiveScheduleWorkspaceExternal,
   });
   await scheduleService.start();
+  const notesService = new NotesService({ paseoHome: config.paseoHome, logger });
+  await notesService.start();
+  const unsubscribeNoteCommandFinished = terminalManager.subscribeTerminalCommandFinished((event) =>
+    notesService.handleCommandFinished(event),
+  );
 
   const askThreads = new AskAgentThreads(agentManager, logger, {
     paseoHome: config.paseoHome,
@@ -1677,6 +1688,11 @@ export async function createPaseoDaemon(
       await scheduleService.completeForAgent(agentId);
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to complete schedules for archived agent");
+    }
+    try {
+      await agentDrafts.clearForArchive(agentId);
+    } catch (error) {
+      logger.warn({ err: error, agentId }, "Failed to clear the archived agent's draft");
     }
   });
   logger.info({ elapsed: elapsed() }, "Schedule service initialized");
@@ -1762,6 +1778,14 @@ export async function createPaseoDaemon(
     archiveWorkspaceRecord: archiveWorkspaceRecordExternal,
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
+    restoreArchivedWorkspace: async (workspace) => {
+      const restored = await workspaceProvisioning.ensureWorkspaceRecordUnarchived(workspace);
+      await Promise.all(
+        (wsServer?.listSessions() ?? []).map((session) =>
+          session.refreshRecoveredWorkspaceForExternalMutation(restored),
+        ),
+      );
+    },
     projectRegistry,
     createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
@@ -2106,6 +2130,8 @@ export async function createPaseoDaemon(
               workspaceLabelService,
               accountRouting,
               accountLogin,
+              notesService,
+              agentDrafts,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
@@ -2223,7 +2249,6 @@ export async function createPaseoDaemon(
     }).catch((error) => logger.warn({ err: error }, "Plugin lifecycle events did not finish"));
     await agentManager.flushForShutdown().catch(() => undefined);
     detachAgentStoragePersistence();
-    detachWorkspaceAutoUnsettle();
     await agentStorage.flush().catch(() => undefined);
     await agentProviderRuntime.shutdown();
     unsubscribeAccountRoutingDisposal();
@@ -2245,6 +2270,8 @@ export async function createPaseoDaemon(
     }
     await speechService.stop();
     await scheduleService.stop().catch(() => undefined);
+    unsubscribeNoteCommandFinished();
+    await notesService.stop().catch(() => undefined);
     await relayRuntime?.stop().catch(() => undefined);
     if (wsServer) {
       await wsServer.close();

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  focalFromPoint,
-  isSkinSelected,
-  nearestVisibilityPercent,
-  skinNameFromFileName,
-} from "./selection";
+import { focalFromPoint, isSkinSelected, skinNameFromFileName } from "./selection";
 
 describe("isSkinSelected", () => {
   const selection = { light: "local:a", dark: "local:b" };
@@ -19,15 +14,6 @@ describe("isSkinSelected", () => {
     expect(isSkinSelected(selection, "local:a", "light")).toBe(true);
     expect(isSkinSelected(selection, "local:a", "dark")).toBe(false);
     expect(isSkinSelected(selection, null, "dark")).toBe(false);
-  });
-});
-
-describe("nearestVisibilityPercent", () => {
-  it("snaps to the nearest step", () => {
-    expect(nearestVisibilityPercent(1)).toBe(100);
-    expect(nearestVisibilityPercent(0.6)).toBe(50);
-    expect(nearestVisibilityPercent(0.7)).toBe(75);
-    expect(nearestVisibilityPercent(0)).toBe(25);
   });
 });
 

@@ -60,6 +60,49 @@ test("an idle follow-up is submitted as a prompt so OMP can start a turn", async
   ]);
 });
 
+describe("OMP forkSession", () => {
+  const SOURCE = { provider: "omp", sessionId: "source", nativeHandle: "/sessions/source.jsonl" };
+
+  test("forks the source file without opening it and cuts the copy before the given message", async () => {
+    const runtime = new FakeOmp();
+    runtime.queueSessionSetup((session) => {
+      session.stats = { contextUsage: { tokens: 209_000, contextWindow: 100_000 } };
+    });
+    const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+    const forked = await client.forkSession(SOURCE, {
+      cutBeforeMessageId: "entry-u2",
+      cwd: process.cwd(),
+    });
+
+    expect(runtime.recordedLaunches).toHaveLength(1);
+    expect(runtime.recordedLaunches[0]?.fork).toBe("/sessions/source.jsonl");
+    expect(runtime.recordedLaunches[0]?.session).toBeUndefined();
+    expect(runtime.latestSession().branchRequests).toEqual(["entry-u2"]);
+    expect(forked.persistence.nativeHandle).toBe(
+      "/sessions/source.jsonl.forked.cut-before-entry-u2",
+    );
+    expect(forked.persistence.sessionId).not.toBe(SOURCE.sessionId);
+    expect(forked.contextWindowUsedTokens).toBe(209_000);
+    expect(forked.contextWindowMaxTokens).toBe(100_000);
+    expect(runtime.latestSession().closed).toBe(true);
+  });
+
+  test("without a cut it keeps the whole copied session", async () => {
+    const runtime = new FakeOmp();
+    const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+    const forked = await client.forkSession(SOURCE, {
+      cutBeforeMessageId: null,
+      cwd: process.cwd(),
+    });
+
+    expect(runtime.latestSession().branchRequests).toEqual([]);
+    expect(forked.persistence.nativeHandle).toBe("/sessions/source.jsonl.forked");
+    expect(forked.contextWindowUsedTokens).toBeUndefined();
+  });
+});
+
 test("forks a session into a discardable copy beside it without touching the source", async () => {
   const runtime = new FakeOmp();
   const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
@@ -2417,4 +2460,125 @@ test("closing OMP during image conversion rejects its pending start", async () =
   expect(runtime.latestSession().prompts).toHaveLength(0);
   await session.close();
   await rejected;
+});
+
+describe("/compact modes", () => {
+  const compactCommand = {
+    name: "compact",
+    source: "builtin",
+    subcommands: [
+      { name: "soft", description: "Summarize locally", usage: "[focus]" },
+      { name: "snapcompact", description: "Archive history onto images" },
+    ],
+  };
+  const loadingRow = expect.objectContaining({
+    item: { type: "compaction", status: "loading", trigger: "manual" },
+  });
+  const completedRow = expect.objectContaining({
+    item: { type: "compaction", status: "completed", trigger: "manual" },
+  });
+
+  async function startWithCompactModes() {
+    const omp = new OmpHarness();
+    omp.queueCommands([compactCommand]);
+    await omp.start();
+    return omp;
+  }
+
+  test("a mode runs OMP's /compact handler and closes the row when compaction ends", async () => {
+    const omp = await startWithCompactModes();
+
+    const result = await omp.runCompactCommand("/compact snapcompact", (runtime) => {
+      runtime.stats = { contextUsage: { tokens: 2_000, contextWindow: 272_000 } };
+      runtime.emit({ type: "manual_compaction_start", mode: "snapcompact" });
+      runtime.emit({
+        type: "manual_compaction_end",
+        aborted: false,
+        result: { summary: "", firstKeptEntryId: "entry-9", tokensBefore: 48_210 },
+      });
+      runtime.emit({ type: "command_output", text: "Compaction complete." });
+    });
+
+    expect(result.prompts).toEqual(["/compact snapcompact"]);
+    expect(result.compactRequests).toEqual([]);
+    expect(result.events).toEqual([
+      loadingRow,
+      completedRow,
+      expect.objectContaining({
+        type: "usage_updated",
+        usage: expect.objectContaining({ contextWindowUsedTokens: 2_000 }),
+      }),
+    ]);
+  });
+
+  test("a skipped mode compaction shows OMP's reason", async () => {
+    const omp = await startWithCompactModes();
+
+    const result = await omp.runCompactCommand("/compact soft keep the API notes", (runtime) => {
+      runtime.emit({
+        type: "manual_compaction_end",
+        aborted: false,
+        skipped: true,
+        errorMessage: "Nothing to compact (session too small)",
+      });
+    });
+
+    expect(result.prompts).toEqual(["/compact soft keep the API notes"]);
+    expect(result.events).toEqual([
+      loadingRow,
+      completedRow,
+      expect.objectContaining({
+        item: {
+          type: "assistant_message",
+          text: "[Error] Failed to compact context: Nothing to compact (session too small)",
+        },
+      }),
+    ]);
+  });
+
+  test("an OMP without compaction events ends a mode compaction with its command output", async () => {
+    const omp = await startWithCompactModes();
+
+    const result = await omp.runCompactCommand("/compact snapcompact", (runtime) => {
+      runtime.emit({ type: "command_output", text: "Compaction failed: provider refused" });
+    });
+
+    expect(result.events).toEqual([
+      loadingRow,
+      completedRow,
+      expect.objectContaining({
+        item: {
+          type: "assistant_message",
+          text: "[Error] Failed to compact context: provider refused",
+        },
+      }),
+    ]);
+  });
+
+  test("focus text keeps the compact RPC", async () => {
+    const omp = await startWithCompactModes();
+
+    const result = await omp.runCompactCommand("/compact keep the failing tests");
+
+    expect(result.prompts).toEqual([]);
+    expect(result.compactRequests).toEqual([{ customInstructions: "keep the failing tests" }]);
+    expect(result.events.slice(0, 2)).toEqual([loadingRow, completedRow]);
+  });
+
+  test("snapcompact with focus text is refused before anything runs", async () => {
+    const omp = await startWithCompactModes();
+
+    const result = await omp.runCompactCommand("/compact snapcompact keep tests");
+
+    expect(result.prompts).toEqual([]);
+    expect(result.compactRequests).toEqual([]);
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        item: {
+          type: "assistant_message",
+          text: "[Error] /compact snapcompact does not take focus instructions.",
+        },
+      }),
+    ]);
+  });
 });

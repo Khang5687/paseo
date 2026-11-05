@@ -32,11 +32,14 @@ Trusted server plugins retain the authority of their runtime; they are not sandb
 ## Delegating agents
 
 Agent MCP discovers destination IDs with `list_hosts`. `create_workspace`, `list_workspaces`,
-`create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, `ask_agent`, and `list_agents`
-accept `serverId`; omission selects the calling daemon. Remote creation requires a
+`create_agent`, `send_agent_prompt`, `fork_agent`, `get_agent_status`, `get_agent_activity`,
+`ask_agent`, `list_pending_permissions`, `respond_to_permission`, and `list_agents` accept
+`serverId`; omission selects the calling daemon. Remote creation requires a
 destination workspace and explicit provider/model. Caller filesystem defaults apply only on the
 calling daemon. Prompting a remote child acknowledges acceptance and uses the existing idle wait for
 finish notifications. Remote agent lists have no caller-directory default; pass `cwd` to filter them.
+`fork_agent` forks on the destination from a source agent that lives there, so a remote call needs
+an explicit `agentId`; the fork is a main agent with no parent link and no finish notification.
 
 The parent’s Subagents track shows qualified children across connected hosts. Opening a child uses
 the ordinary conversation on the destination's session. The runtime selects among that host's
@@ -74,7 +77,10 @@ registrations remain inspectable; a changed destination requires explicit identi
 
 Both daemons advertise `connectedHosts`; the shared link additionally requires `hostMultiplexing`.
 A completes capability and pinned-identity checks on each physical recovery before admitting channels. There is no local fallback. An older daemon continues to serve existing local
-operations; requesting this feature gives update guidance.
+operations; requesting this feature gives update guidance. The registry retries an older destination
+with capped backoff, so it comes online once updated. Self, duplicate, changed-identity, and
+authentication failures stay in `error` until an update changes the connection, `enabled`, or
+`replaceIdentity`, or A restarts.
 
 Disposing a routed API releases its observations and session. It does not remove the saved host or
 affect sibling API scopes. Disposing the origin cascades to its derived scopes. Observations restore

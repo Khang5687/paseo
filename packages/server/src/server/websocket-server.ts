@@ -1,3 +1,7 @@
+import {
+  ChunkedTransport,
+  ChunkedTransportProtocolError,
+} from "@getpaseo/protocol/chunked-transport";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import {
   createAgentMessageDelivery,
@@ -121,6 +125,9 @@ import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
+import type { AgentDraftService } from "./agent-draft/agent-draft-service.js";
+import type { NoteFiredEvent, NotesService } from "./notes/notes-service.js";
+import type { Note } from "@getpaseo/protocol/notes/schemas";
 import type { AccountRoutingAuthority } from "./account-routing/authority.js";
 import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
@@ -129,8 +136,8 @@ import {
   MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
   outboundFrameByteLength,
   physicalSocketHasCapacity,
-  sendBoundedPhysicalFrame,
   sendBoundedPhysicalFrameAndWait,
+  sendBoundedPhysicalFrame,
 } from "./websocket/physical-socket.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
@@ -446,6 +453,7 @@ function bufferFromWsData(data: Buffer | ArrayBuffer | Buffer[] | string): Buffe
 }
 
 export interface WebSocketLike {
+  maxFrameBytes?: number;
   readyState: number;
   bufferedAmount?: number;
   send: (
@@ -589,6 +597,8 @@ export class VoiceAssistantWebSocketServer {
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly agentDrafts: AgentDraftService | undefined;
+  private readonly notesService: NotesService | null;
   private readonly accountRouting: AccountRoutingAuthority | undefined;
   private readonly accountLogin: OmpAccountLogin | undefined;
   // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
@@ -721,6 +731,8 @@ export class VoiceAssistantWebSocketServer {
     workspaceLabelService?: WorkspaceLabelService,
     accountRouting?: AccountRoutingAuthority,
     accountLogin?: OmpAccountLogin,
+    notesService?: NotesService,
+    agentDrafts?: AgentDraftService,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -782,6 +794,7 @@ export class VoiceAssistantWebSocketServer {
     this.projectRegistry = projectRegistry ?? createNoopProjectRegistry();
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
+    this.agentDrafts = agentDrafts;
     this.accountRouting = accountRouting;
     this.accountLogin = accountLogin;
     this.observeAccountRoutingCapability();
@@ -845,7 +858,9 @@ export class VoiceAssistantWebSocketServer {
     });
     this.pushNotificationSender = pushNotificationSender ?? this.pushNotifications;
 
+    this.notesService = this.wireFiredNotes(notesService);
     this.agentManager.setAgentAttentionCallback((params) => {
+      this.notesService?.handleAgentAttention(params);
       void this.broadcastAgentAttention(params).catch((err) => {
         this.logger.warn({ err, agentId: params.agentId }, "Failed to broadcast agent attention");
       });
@@ -856,6 +871,15 @@ export class VoiceAssistantWebSocketServer {
     this.startApplicationSocketLeaseInterval();
 
     this.logger.info("WebSocket server initialized on /ws");
+  }
+
+  private wireFiredNotes(notesService: NotesService | undefined): NotesService | null {
+    notesService?.setFiredHandler((event) => {
+      void this.broadcastNoteFired(event).catch((err) => {
+        this.logger.warn({ err, noteId: event.note.id }, "Failed to broadcast fired note");
+      });
+    });
+    return notesService ?? null;
   }
 
   private assignOptionalServices(params: {
@@ -1350,6 +1374,67 @@ export class VoiceAssistantWebSocketServer {
     return { sockets: writableSockets, payload, bytes: outboundFrameByteLength(payload) };
   }
 
+  private sendHelloResponse(ws: WebSocketLike, session: Session, hello: WSHelloMessage): void {
+    // The peer learns our support from this ordinary response before receiving chunks.
+    this.sendToClient(ws, this.createServerInfoMessage(session));
+    this.chunkedSocket(ws).enabled = hello.capabilities?.[CLIENT_CAPS.binaryChunkingV1] === true;
+  }
+
+  private readonly chunkedSockets = new WeakMap<WebSocketLike, ChunkedTransport>();
+
+  private chunkedSocket(ws: WebSocketLike): ChunkedTransport {
+    let transport = this.chunkedSockets.get(ws);
+    if (!transport) {
+      transport = new ChunkedTransport({
+        frameBytes: ws.maxFrameBytes ?? 32 * 1024 * 1024,
+        onFailure: (err) =>
+          this.closePhysicalSocket({
+            ws,
+            logMessage: "Closing physical WebSocket after outbound framing failure",
+            logFields: { err },
+          }),
+        send: (frame, waitForDrain) => {
+          const params = {
+            socket: ws,
+            frame,
+            onHighWater: () => this.closeAtOutboundHighWater(ws),
+          };
+          if (waitForDrain)
+            return sendBoundedPhysicalFrameAndWait(params).then((sent) => {
+              if (!sent) throw new Error("Source is closed");
+              return undefined;
+            });
+          if (!sendBoundedPhysicalFrame(params)) throw new Error("Source is closed");
+        },
+        deliver: (frame) =>
+          this.handleRawMessage(ws, typeof frame === "string" ? frame : Buffer.from(frame)),
+      });
+      this.chunkedSockets.set(ws, transport);
+    }
+    return transport;
+  }
+
+  private socketBufferedAmount(ws: WebSocketLike): number | null {
+    const queued = this.chunkedSockets.get(ws)?.queuedByteLength ?? 0;
+    if (typeof ws.bufferedAmount === "number") return ws.bufferedAmount + queued;
+    return queued > 0 ? queued : null;
+  }
+
+  private sendSocketFrame(
+    ws: WebSocketLike,
+    frame: string | Uint8Array,
+    bytes: number,
+    waitForDrain = false,
+  ): Promise<void> {
+    const transport = this.chunkedSocket(ws);
+    const admittedBytes = transport.isWriting
+      ? bytes
+      : Math.min(bytes, ws.maxFrameBytes ?? 32 * 1024 * 1024);
+    if (!this.ensureOutboundCapacity(ws, admittedBytes))
+      return Promise.reject(new Error("Source is closed"));
+    return transport.send(frame, { waitForDrain, byteLength: bytes });
+  }
+
   private async sendMessageToClientAndWait(
     ws: WebSocketLike,
     message: WSOutboundMessage,
@@ -1357,13 +1442,7 @@ export class VoiceAssistantWebSocketServer {
     const prepared = this.prepareJsonDelivery([ws], message, true);
     if (!prepared) throw new Error("Source message delivery unavailable");
     try {
-      const sent = await sendBoundedPhysicalFrameAndWait({
-        socket: ws,
-        frame: prepared.payload,
-        frameBytes: prepared.bytes,
-        onHighWater: () => this.closeAtOutboundHighWater(ws),
-      });
-      if (!sent) throw new Error("Source is closed");
+      await this.sendSocketFrame(ws, prepared.payload, prepared.bytes, true);
       this.runtimeMetrics.recordOutboundMessage(message, ws.bufferedAmount);
     } catch (err) {
       this.logger.warn({ err }, "ws_send_failed");
@@ -1390,14 +1469,7 @@ export class VoiceAssistantWebSocketServer {
       return;
     }
     try {
-      const sent = await sendBoundedPhysicalFrameAndWait({
-        socket: ws,
-        frame,
-        onHighWater: () => this.closeAtOutboundHighWater(ws),
-      });
-      if (!sent) {
-        throw new Error("Physical WebSocket is not open");
-      }
+      await this.sendSocketFrame(ws, frame, frame.byteLength, true);
       this.runtimeMetrics.recordOutboundBinaryFrame(ws.bufferedAmount);
     } catch (err) {
       this.logger.warn({ err }, "ws_send_failed");
@@ -1412,13 +1484,9 @@ export class VoiceAssistantWebSocketServer {
     recordSent: () => void,
   ): void {
     try {
-      const sent = sendBoundedPhysicalFrame({
-        socket: ws,
-        frame,
-        frameBytes,
-        onHighWater: () => this.closeAtOutboundHighWater(ws),
+      void this.sendSocketFrame(ws, frame, frameBytes).then(recordSent, (err) => {
+        this.logger.warn({ err }, "ws_send_failed");
       });
-      if (sent) recordSent();
     } catch (err) {
       this.logger.warn({ err }, "ws_send_failed");
     }
@@ -1426,7 +1494,13 @@ export class VoiceAssistantWebSocketServer {
 
   private ensureOutboundCapacity(ws: WebSocketLike, frameBytes: number): boolean {
     if (ws.readyState !== 1) return false;
-    if (physicalSocketHasCapacity(ws, frameBytes)) return true;
+    if (
+      physicalSocketHasCapacity(
+        { bufferedAmount: this.socketBufferedAmount(ws) ?? undefined },
+        frameBytes,
+      )
+    )
+      return true;
 
     this.closeAtOutboundHighWater(ws);
     return false;
@@ -1599,16 +1673,15 @@ export class VoiceAssistantWebSocketServer {
         if (!connection) {
           return null;
         }
-        if (source) return (source as WebSocketLike).bufferedAmount ?? null;
+        if (source) return this.socketBufferedAmount(source as WebSocketLike);
         // Relay-attached sockets are a WebSocketLike that doesn't expose
         // bufferedAmount. Return null when no socket gives a signal so the
         // terminal fallback can't mistake "no signal" for "client keeping up";
         // a direct ws reports its real buffered bytes (0 when drained).
         let maxBuffered: number | null = null;
         for (const socket of connection.sockets) {
-          if (typeof socket.bufferedAmount === "number") {
-            maxBuffered = Math.max(maxBuffered ?? 0, socket.bufferedAmount);
-          }
+          const buffered = this.socketBufferedAmount(socket);
+          if (buffered !== null) maxBuffered = Math.max(maxBuffered ?? 0, buffered);
         }
         return maxBuffered;
       },
@@ -1645,8 +1718,9 @@ export class VoiceAssistantWebSocketServer {
         let total = 0;
         for (const socket of this.sessions.keys()) {
           if (socket instanceof VirtualHostSocket) continue;
-          if (typeof socket.bufferedAmount !== "number") return null;
-          total += socket.bufferedAmount;
+          const buffered = this.socketBufferedAmount(socket);
+          if (buffered === null) return null;
+          total += buffered;
         }
         return total;
       },
@@ -1685,6 +1759,8 @@ export class VoiceAssistantWebSocketServer {
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      agentDrafts: this.agentDrafts,
+      notesService: this.notesService ?? undefined,
       accountRouting: this.accountRouting,
       accountLogin: this.accountLogin,
       isHostLocalSource: (source) => {
@@ -1858,7 +1934,7 @@ export class VoiceAssistantWebSocketServer {
       this.externalSessionsByKey.set(sessionKey, connection);
     }
     pending.identity.sessionId = connection.session.getSessionId();
-    this.sendToClient(ws, this.createServerInfoMessage(connection.session));
+    this.sendHelloResponse(ws, connection.session, message);
     connection.connectionLogger.info(
       {
         ...toConnectionLogFields(pending.identity),
@@ -2000,7 +2076,7 @@ export class VoiceAssistantWebSocketServer {
     existing.sockets.add(ws);
     this.sessions.set(ws, existing);
     pending.identity.sessionId = existing.session.getSessionId();
-    this.sendToClient(ws, this.createServerInfoMessage(existing.session));
+    this.sendHelloResponse(ws, existing.session, message);
     pending.connectionLogger.info(
       {
         ...toConnectionLogFields(pending.identity),
@@ -2044,8 +2120,10 @@ export class VoiceAssistantWebSocketServer {
         hostMultiplexing: true,
         // COMPAT(relayProtectedSecurity): added in v0.13.0, remove gate after 2027-04-21.
         relayProtectedSecurity: true,
+        usageSetting: true,
         usageSources: true,
         ownedSubscriptions: true,
+        binaryChunkingV1: true,
         agentRequestReceipts: true,
         workspaceRequestReceipts: true,
         creationLifecycle: true,
@@ -2055,6 +2133,10 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
+        ...(this.agentDrafts ? { agentDraftSync: true } : {}),
+        // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
+        ...(this.notesService ? { notes: true } : {}),
         ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
         // The host can open a browser and sign a Claude account in; only advertised with routing.
         ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
@@ -2110,6 +2192,8 @@ export class VoiceAssistantWebSocketServer {
         pluginThemes: true,
         pluginSettings: true,
         pluginTimelineItems: true,
+        // COMPAT(pluginSubscriptions): added in v0.15.0, remove gate after 2027-05-02.
+        pluginSubscriptions: true,
         // COMPAT(skillManagement): added in v0.4.0, remove gate after 2027-08-16.
         skillManagement: true,
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
@@ -2121,6 +2205,8 @@ export class VoiceAssistantWebSocketServer {
         "terminal-input-mode-replay": true,
         // COMPAT(terminalSizeOwnership): added in v0.2.6, remove gate after 2027-02-02.
         "terminal-size-ownership": true,
+        // COMPAT(terminalGraphemeWidths): added in v0.15.0, remove gate after 2027-05-01.
+        "terminal-grapheme-widths": true,
         workspaceTerminals: true,
         // COMPAT(rewind): added in v0.1.X, drop the gate when floor >= v0.1.X.
         rewind: true,
@@ -2150,6 +2236,8 @@ export class VoiceAssistantWebSocketServer {
         providerUsageList: true,
         // COMPAT(agentDetach): added in v0.1.98, remove gate after 2026-12-19 once daemon floor >= v0.1.98.
         agentDetach: true,
+        // COMPAT(agentUnarchive): added in v0.15.0, remove gate after 2027-05-02.
+        agentUnarchive: true,
         // COMPAT(agentThinkingUpdate): added in v0.2.4, remove gate after 2027-01-28.
         agentThinkingUpdate: true,
         // COMPAT(daemonDiagnostics): added in v0.1.100, remove gate after 2026-12-25 once daemon floor >= v0.1.100.
@@ -2162,6 +2250,8 @@ export class VoiceAssistantWebSocketServer {
         agentForkContext: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
+        // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03.
+        agentFork: true,
         // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
         agentAsk: true,
         // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
@@ -2177,8 +2267,6 @@ export class VoiceAssistantWebSocketServer {
         workspacePinning: true,
         // COMPAT(workspaceMarkUnread): added in v0.5.0, remove after 2027-08-20.
         workspaceMarkUnread: true,
-        // COMPAT(workspaceSettling): added in v0.11.0, remove gate after 2027-04-01.
-        workspaceSettling: true,
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
         hubRelationship: true,
         // COMPAT(projectGithubClone): added in v0.1.108, remove gate after 2027-01-15.
@@ -2212,6 +2300,8 @@ export class VoiceAssistantWebSocketServer {
         canonicalSubmittedPrompts: true,
         agentMessageProvenance: true,
         agentMessageBatching: true,
+        // COMPAT(inlineAttachmentRefs): added in v0.14.1, remove gate after 2027-05-01.
+        inlineAttachmentRefs: true,
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
         stableProjectIdentity: true,
         // COMPAT(workspaceScriptManagement): added in v0.1.105, remove gate after 2027-01-10.
@@ -2281,10 +2371,16 @@ export class VoiceAssistantWebSocketServer {
   private bindSocketHandlers(ws: WebSocketLike): void {
     ws.on("message", (...args: unknown[]) => {
       const data = args[0] as Buffer | ArrayBuffer | Buffer[] | string;
-      this.handleRawMessage(ws, data);
+      try {
+        this.chunkedSocket(ws).receive(typeof data === "string" ? data : bufferFromWsData(data));
+      } catch (error) {
+        if (!(error instanceof ChunkedTransportProtocolError)) throw error;
+        ws.close(1002, "Invalid chunked transport");
+      }
     });
 
     ws.on("close", async (...args: unknown[]) => {
+      this.chunkedSockets.get(ws)?.close();
       const code = args[0];
       const reason = args[1];
       await this.detachSocket(ws, {
@@ -2684,7 +2780,7 @@ export class VoiceAssistantWebSocketServer {
         identity: JSON.stringify([connection.principalId, connection.clientId]),
         permissions: () => connection.session.getPermissions(),
         routed: () => connection.session.isRouted(),
-        bufferedAmount: () => ws.bufferedAmount ?? null,
+        bufferedAmount: () => this.socketBufferedAmount(ws),
         delivery: connection.session.delivery,
         admit: (socket, permissions) =>
           this.attachSocket(socket, undefined, undefined, false, {
@@ -3002,6 +3098,55 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
+  private async broadcastNoteFired(event: NoteFiredEvent): Promise<void> {
+    const entries: Array<{ ws: WebSocketLike; session: Session; state: ClientPresenceState }> = [];
+    for (const [ws, connection] of this.sessions) {
+      // Older apps cannot parse notes.fired; only sources that subscribed to it receive it.
+      if (!connection.session.delivery.isModern(ws)) continue;
+      if (!connection.session.wantsSourceEvent(ws, "notes.fired")) continue;
+      if (!connection.session.wantsSourceNotification(ws, "notes.fired")) continue;
+      entries.push({
+        ws,
+        session: connection.session,
+        state: this.getClientActivityState(connection.session, ws),
+      });
+    }
+    const plan = computeNotificationPlan({
+      allStates: entries.map((entry) => entry.state),
+      focusTarget: null,
+      pushEligible: event.push,
+      nowMs: Date.now(),
+    });
+    const { note } = event;
+    if (plan.shouldPush) {
+      void this.pushNotificationSender
+        .send({
+          title: event.title,
+          body: event.body,
+          data: {
+            serverId: this.serverId,
+            noteId: note.id,
+            ...noteNotificationTarget(note),
+          },
+        })
+        .catch((err) => {
+          this.logger.warn({ err, noteId: note.id }, "Failed to send push notification");
+        });
+    }
+    for (const [index, entry] of entries.entries()) {
+      entry.session.publishToSource(entry.ws, {
+        type: "notes.fired",
+        payload: {
+          serverId: this.serverId,
+          note,
+          title: event.title,
+          body: event.body,
+          shouldNotify: plan.inAppRecipientIndex === index,
+        },
+      });
+    }
+  }
+
   private async broadcastTerminalAttention(params: {
     terminalId: string;
     cwd: string;
@@ -3093,6 +3238,22 @@ export class VoiceAssistantWebSocketServer {
       else this.sendToClient(ws, message);
     }
   }
+}
+
+// Where a note notification tap should open: the agent or terminal the note was made on.
+function noteNotificationTarget(note: Note): Record<string, string> {
+  const { anchor } = note;
+  if (anchor.kind === "agent") {
+    return {
+      agentId: anchor.agentId,
+      ...(anchor.workspaceId ? { workspaceId: anchor.workspaceId } : {}),
+    };
+  }
+  return {
+    terminalId: anchor.terminalId,
+    ...(anchor.workspaceId ? { workspaceId: anchor.workspaceId } : {}),
+    ...(anchor.cwd ? { cwd: anchor.cwd } : {}),
+  };
 }
 
 interface SocketRequestMetadata {

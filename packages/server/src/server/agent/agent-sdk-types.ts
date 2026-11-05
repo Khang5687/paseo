@@ -182,6 +182,8 @@ export interface AgentCapabilityFlags {
   supportsRewindConversation?: boolean;
   supportsRewindFiles?: boolean;
   supportsRewindBoth?: boolean;
+  /** The client implements forkSession: a new provider session cut from an existing one. */
+  supportsNativeFork?: boolean;
 }
 
 export interface AgentPersistenceHandle {
@@ -206,7 +208,8 @@ export interface ForkedNativeSession {
 }
 
 export type AgentPromptContentBlock =
-  | { type: "text"; text: string }
+  // `placeholders` lists the `[Image #1]`-style tokens in `text` that name a labeled attachment.
+  | { type: "text"; text: string; placeholders?: string[] }
   | { type: "image"; data: string; mimeType: string }
   | AgentAttachment;
 
@@ -224,7 +227,11 @@ export interface AgentSteerOptions extends AgentRunOptions {
   clearPendingPermissions?: boolean;
 }
 
-export type SteerResult = { status: "accepted" } | { status: "unavailable" };
+// providerMessageId names the steered message in the provider's own history, when the provider
+// mints one. Rewinding to the message needs it.
+export type SteerResult =
+  | { status: "accepted"; providerMessageId?: string }
+  | { status: "unavailable" };
 
 export interface SteerActiveTurnOptions extends AgentSteerOptions {
   expectedTurnId: string;
@@ -329,7 +336,10 @@ export type ToolCallDetail =
       subAgentType?: string;
       description?: string;
       childSessionId?: string;
-      log: string;
+      // COMPAT(subagent-log): added in v0.14.1, remove after 2027-04-30. Apps before v0.14.1
+      // require `log`; every producer sends it empty and carries the same tag. Optional here because
+      // protocol timeline items, where `log` is optional, flow into this type.
+      log?: string;
       actions?: Array<{
         index: number;
         toolName: string;
@@ -542,6 +552,14 @@ export interface AgentRuntimeInfo {
 
 export type AgentSlashCommandKind = "command" | "skill";
 
+/** A fixed choice for a slash command's first argument. */
+export interface AgentSlashCommandSubcommand {
+  name: string;
+  description?: string;
+  /** Arguments the choice takes after its name, e.g. `[focus]`. */
+  usage?: string;
+}
+
 /**
  * Represents a slash command available in an agent session.
  * Commands are executed by sending them as prompts with / prefix.
@@ -551,6 +569,8 @@ export interface AgentSlashCommand {
   description: string;
   argumentHint: string;
   kind?: AgentSlashCommandKind;
+  aliases?: string[];
+  subcommands?: AgentSlashCommandSubcommand[];
 }
 
 export interface ListImportableSessionsOptions {
@@ -711,6 +731,7 @@ export interface AgentSession {
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void>;
+  /** Null until a new provider process could resume this session; see docs/providers.md. */
   describePersistence(): AgentPersistenceHandle | null;
   /**
    * Resolve once every foreground turn that predates this call can no longer run or become active.
@@ -774,6 +795,23 @@ export interface ResolveAgentDefaultModeInput {
   signal?: AbortSignal;
 }
 
+export interface AgentForkSessionInput {
+  /**
+   * Provider message id of the first message to leave out of the fork. The fork keeps everything
+   * before it. null keeps the whole session.
+   */
+  cutBeforeMessageId: string | null;
+  cwd: string;
+  providerOptions?: Record<string, unknown>;
+}
+
+export interface AgentForkSessionResult {
+  persistence: AgentPersistenceHandle;
+  /** Context the fork would start with, when the provider can measure it. */
+  contextWindowUsedTokens?: number;
+  contextWindowMaxTokens?: number;
+}
+
 export interface AgentClient {
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags;
@@ -788,6 +826,14 @@ export interface AgentClient {
     launchContext?: AgentLaunchContext,
     options?: AgentResumeSessionOptions,
   ): Promise<AgentSession>;
+  /**
+   * Create a new durable provider session from a copy of `handle`'s session, cut as asked. The
+   * source session stays untouched. Present only when capabilities.supportsNativeFork is true.
+   */
+  forkSession?(
+    handle: AgentPersistenceHandle,
+    input: AgentForkSessionInput,
+  ): Promise<AgentForkSessionResult>;
   /** Equal keys share availability and catalogue discovery within this configured client.
    * Include the execution environment and effective configuration; omit to use target identity.
    * force must not affect identity. Resolve before every cache lookup. */

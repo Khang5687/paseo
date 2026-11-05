@@ -54,7 +54,8 @@ import {
   buildWorkspaceAgentActivityIndex,
   type WorkspaceAgentActivity,
 } from "@/utils/workspace-agent-activity";
-import { buildWorkspaceParentIndex } from "@/subagents/policies";
+import { buildThreadAgentIndex, buildWorkspaceParentIndex } from "@/subagents/policies";
+import type { ThreadAgents } from "@/subagents/thread-children";
 import {
   resolveTurnPresentation,
   TURN_LIVENESS_IDLE,
@@ -128,10 +129,11 @@ export interface WorkspaceDescriptor {
   name: string;
   title?: string | null;
   pinnedAt?: string | null;
-  settledAt?: string | null;
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
+  // Absent when no subagent runs, or when the daemon predates the count.
+  runningSubagentCount?: number;
   archivingAt: string | null;
   diffStat: { additions: number; deletions: number } | null;
   scripts: WorkspaceDescriptorPayload["scripts"];
@@ -172,12 +174,11 @@ export function normalizeWorkspaceDescriptor(
     name: payload.name,
     title: payload.title ?? null,
     pinnedAt: payload.pinnedAt ?? null,
-    // COMPAT(workspaceSettling): added in v0.11.0, remove fallback after 2027-04-01.
-    settledAt: payload.settledAt ?? null,
     // COMPAT(workspaceLabels): old daemons omit assignments.
     labels: payload.labels ?? [],
     status: payload.status,
     statusEnteredAt,
+    runningSubagentCount: payload.runningSubagentCount,
     archivingAt: payload.archivingAt ?? null,
     diffStat: payload.diffStat ?? null,
     scripts: (payload.scripts ?? []).map((s) => Object.assign({}, s)),
@@ -444,6 +445,8 @@ export interface SessionState {
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
   // Subagent workspace id -> the workspace id it nests under in the sidebar.
   workspaceParents: Map<string, string>;
+  // Workspace id -> its agents, and the same-workspace subagents that show as its child rows.
+  threadAgents: Map<string, ThreadAgents>;
   agentDetails: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   // All active project descriptors, keyed by host-local projectId.
@@ -689,6 +692,7 @@ function createInitialSessionState(
     agents: new Map(),
     workspaceAgentActivity: new Map(),
     workspaceParents: new Map(),
+    threadAgents: new Map(),
     agentDetails: new Map(),
     workspaces: new Map(),
     projects: new Map(),
@@ -1537,6 +1541,7 @@ export const useSessionStore = create<SessionStore>()(
                   session.workspaceAgentActivity,
                 ),
                 workspaceParents: buildWorkspaceParentIndex(nextAgents, session.workspaceParents),
+                threadAgents: buildThreadAgentIndex(nextAgents, session.threadAgents),
               },
             },
           };

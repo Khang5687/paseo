@@ -1,3 +1,4 @@
+import { useAddHost } from "@/hosts/add-host";
 import { router } from "expo-router";
 import {
   CircleGauge,
@@ -46,7 +47,6 @@ import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import {
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
-  type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { density } from "@/styles/density";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
@@ -63,14 +63,9 @@ import { usePanelStore } from "@/stores/panel-store";
 import { useOwnsWindowChromeCorner, WindowChromeSafeArea } from "@/utils/desktop-window";
 import { useCloseAgentListGesture } from "@/mobile-panels/gestures";
 import { MobilePanelOverlay } from "@/mobile-panels/presentation";
-import { buildSettingsAddHostRoute, buildSettingsRoute } from "@/utils/host-routes";
+import { buildSettingsRoute } from "@/utils/host-routes";
 import { openHostOverview } from "@/navigation/settings-navigation";
-import {
-  UsageSidebarItem,
-  UsageSidebarRoot,
-  useHasUsageSummary,
-  useOpenSidebarUsage,
-} from "@/usage";
+import { UsageSidebarItem, UsageSidebarRoot, useUsageSummary, useOpenSidebarUsage } from "@/usage";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
@@ -84,7 +79,6 @@ interface SidebarSharedProps {
   workspaceGroups: SidebarWorkspaceGroup[];
   projectIconTargets: SidebarProjectIconTarget[];
   pinnedGroups: PinnedSidebarGroups;
-  settledRows: SidebarWorkspacePlacement[];
   projects: SidebarProjectEntry[];
   hasProjectsBeforeFilter: boolean;
   hasActiveProjectFilter: boolean;
@@ -145,7 +139,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     workspaceGroups,
     projectIconTargets,
     pinnedGroups,
-    settledRows,
     collapsedProjectKeys,
     toggleProjectCollapsed,
     groupMode,
@@ -187,14 +180,8 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     router.push(buildSettingsRoute());
   }, []);
 
-  const handleAddHostMobile = useCallback(() => {
-    showMobileAgent();
-    router.push(buildSettingsAddHostRoute(Date.now()));
-  }, [showMobileAgent]);
-
-  const handleAddHostDesktop = useCallback(() => {
-    router.push(buildSettingsAddHostRoute(Date.now()));
-  }, []);
+  const handleAddHostMobile = useAddHost();
+  const handleAddHostDesktop = handleAddHostMobile;
 
   const handleOpenHostSettingsMobile = useCallback(
     (serverId: string) => {
@@ -229,7 +216,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     workspaceGroups,
     projectIconTargets,
     pinnedGroups,
-    settledRows,
     projects,
     hasProjectsBeforeFilter,
     hasActiveProjectFilter: resolvedProjectFilters.length > 0,
@@ -487,10 +473,10 @@ function SidebarUsageIcon({ label }: { label: string }) {
  */
 function SidebarFooterRows({ onBeforeNavigate }: { onBeforeNavigate?: () => void }) {
   const { items } = useSidebarNavItems("footer");
-  const hasUsageSummary = useHasUsageSummary();
+  const usageSummary = useUsageSummary();
   const rowsRef = useRef<View | null>(null);
   const visibleItems = items.filter(
-    (item) => item.visible && (item.kind === "plugin" || hasUsageSummary),
+    (item) => item.visible && (item.kind === "plugin" || usageSummary.length > 0),
   );
   if (visibleItems.length === 0) return null;
   return (
@@ -506,7 +492,7 @@ function SidebarFooterRows({ onBeforeNavigate }: { onBeforeNavigate?: () => void
               onBeforeNavigate={onBeforeNavigate}
             />
           ) : (
-            <UsageSidebarItem key={item.key} />
+            <UsageSidebarItem key={item.key} sources={usageSummary} />
           ),
         )}
       </View>
@@ -521,7 +507,6 @@ function MobileSidebar({
   workspaceGroups,
   projectIconTargets,
   pinnedGroups,
-  settledRows,
   projects,
   hasProjectsBeforeFilter,
   hasActiveProjectFilter,
@@ -600,7 +585,6 @@ function MobileSidebar({
             workspaceGroups={workspaceGroups}
             projectIconTargets={projectIconTargets}
             pinnedGroups={pinnedGroups}
-            settledRows={settledRows}
             projects={projects}
             hasProjectsBeforeFilter={hasProjectsBeforeFilter}
             hasActiveProjectFilter={hasActiveProjectFilter}
@@ -634,7 +618,6 @@ function DesktopSidebar({
   workspaceGroups,
   projectIconTargets,
   pinnedGroups,
-  settledRows,
   projects,
   hasProjectsBeforeFilter,
   hasActiveProjectFilter,
@@ -786,7 +769,6 @@ function DesktopSidebar({
             workspaceGroups={workspaceGroups}
             projectIconTargets={projectIconTargets}
             pinnedGroups={pinnedGroups}
-            settledRows={settledRows}
             projects={projects}
             hasProjectsBeforeFilter={hasProjectsBeforeFilter}
             hasActiveProjectFilter={hasActiveProjectFilter}

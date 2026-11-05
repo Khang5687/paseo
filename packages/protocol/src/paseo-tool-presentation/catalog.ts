@@ -159,6 +159,16 @@ export const PASEO_TOOL_CATALOG = {
       outputFields: ["status", "lastMessage", "permission"],
     },
   },
+  fork_agent: {
+    label: "Fork agent",
+    completedLabel: "Forked agent",
+    context: field("prompt"),
+    detail: {
+      promptField: "prompt",
+      inputOrder: AGENT_FIELDS,
+      outputFields: ["forkedAgentId", "method"],
+    },
+  },
   get_agent_status: {
     label: "Check agent",
     completedLabel: "Checked agent",
@@ -186,6 +196,22 @@ export const PASEO_TOOL_CATALOG = {
     completedLabel: "Listed agents",
     detail: { inputOrder: ["cwd", "statuses", "sinceHours", "limit", "includeArchived"] },
   },
+  search_agents: {
+    label: "Search agents",
+    completedLabel: "Searched agents",
+    context: field("query"),
+    detail: {
+      inputOrder: [
+        "query",
+        "includeArchived",
+        "cwd",
+        "workspaceId",
+        "provider",
+        "sinceHours",
+        "limit",
+      ],
+    },
+  },
   update_agent: {
     label: "Update agent",
     completedLabel: "Updated agent",
@@ -210,6 +236,15 @@ export const PASEO_TOOL_CATALOG = {
     context: targetAgent(),
     detail: { inputOrder: ["agentId"] },
   },
+  unarchive_agent: {
+    label: "Unarchive agent",
+    completedLabel: "Unarchived agent",
+    context: targetAgent(),
+    detail: {
+      inputOrder: ["agentId"],
+      outputFields: ["wasArchived", "workspaceRestored", "warning"],
+    },
+  },
   kill_agent: {
     label: "Kill agent",
     completedLabel: "Killed agent",
@@ -221,7 +256,7 @@ export const PASEO_TOOL_CATALOG = {
     label: "Respond to permission",
     completedLabel: "Responded to permission",
     context: targetAgent(),
-    detail: { inputOrder: ["agentId", "requestId", "response"] },
+    detail: { inputOrder: ["agentId", "requestId", "answers", "response"] },
   },
 
   // Workspaces and scripts

@@ -1,5 +1,9 @@
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
-import { parentAddressLabels } from "@getpaseo/protocol/agent-labels";
+import {
+  PARENT_AGENT_ID_LABEL,
+  PARENT_SERVER_ID_LABEL,
+  parentAddressLabels,
+} from "@getpaseo/protocol/agent-labels";
 import type { ActiveTurnBehavior, AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -14,11 +18,19 @@ import type { HostDirectory } from "@getpaseo/protocol/hosts";
 import { OWNER_PERMISSIONS } from "../../authorization/index.js";
 import type { ConnectedHosts } from "../../connected-hosts/index.js";
 import { resolveRequiredProviderModel } from "../mcp-shared.js";
-import { selectAgentListItems } from "../agent-projections.js";
+import { selectAgentListPage } from "../agent-projections.js";
+import { moreNote, selectWorkspaceSummaries } from "../tools/paseo-tool-compaction.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
 import { askActionOf, formatAskOutput } from "../ask-agent.js";
 import { expandUserPath } from "../../path-utils.js";
-import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
+import {
+  PaseoToolInputError,
+  type PaseoToolExecutionContext,
+  type PaseoToolResult,
+} from "../tools/types.js";
+import { buildForkTaskPrompt } from "../fork-agent.js";
+import type { AgentPermissionResponse } from "../agent-sdk-types.js";
+import { resolvePermissionResponse } from "../permission-answers.js";
 
 export class HostOperationRejectedError extends Error {
   readonly code: unknown;
@@ -44,7 +56,10 @@ export interface HostOperations {
   getStatus: HostOperation;
   getActivity: HostOperation;
   listAgents: HostOperation;
+  forkAgent: HostOperation;
   askAgent: HostOperation;
+  listPermissions: HostOperation;
+  respondToPermission: HostOperation;
 }
 /** Connection authority at the host boundary, independent of child lifecycle. */
 export class HostObservationError extends Error {
@@ -179,6 +194,7 @@ const remoteCreate = z
     workspaceId: z.string().min(1),
     labels: z.record(z.string(), z.string()).optional(),
     notifyOnFinish: z.boolean().optional(),
+    detached: z.boolean().optional(),
     idempotencyKey: z.string().optional(),
     settings: z
       .object({
@@ -222,12 +238,24 @@ export function createHostResolver(input: {
               (row) => row.id === parsed.workspaceId,
             );
             if (!workspace) throw new Error(`Workspace ${parsed.workspaceId} not found`);
-            const labels = {
-              ...parsed.labels,
-              ...(input.callerAgentId
-                ? parentAddressLabels({ agentId: input.callerAgentId, serverId: input.serverId })
-                : {}),
-            };
+            // A detached create is a root agent on the host: no parent link, so it is neither
+            // listed as the caller's subagent nor archived with it.
+            const {
+              [PARENT_AGENT_ID_LABEL]: _parent,
+              [PARENT_SERVER_ID_LABEL]: _parentServer,
+              ...callerLabels
+            } = parsed.labels ?? {};
+            const labels = parsed.detached
+              ? callerLabels
+              : {
+                  ...parsed.labels,
+                  ...(input.callerAgentId
+                    ? parentAddressLabels({
+                        agentId: input.callerAgentId,
+                        serverId: input.serverId,
+                      })
+                    : {}),
+                };
             const snapshot = await client.createAgent({
               config: {
                 provider,
@@ -251,6 +279,39 @@ export function createHostResolver(input: {
               workspaceId: snapshot.workspaceId,
               currentModeId: snapshot.currentModeId,
               availableModes: snapshot.availableModes,
+            });
+          },
+          async forkAgent(args) {
+            const agentId = args.agentId as string | undefined;
+            if (!agentId) {
+              throw new PaseoToolInputError(
+                `A fork needs the source session on the same host. The calling agent runs on ${input.serverId}, not ${destination}; pass agentId of an agent on ${destination}.`,
+              );
+            }
+            const source = (await client.fetchAgent(agentId))?.agent;
+            if (!source) throw new PaseoToolInputError(`Agent ${agentId} not found`);
+            if (args.workspaceId && args.workspaceId !== source.workspaceId) {
+              throw new PaseoToolInputError(
+                `A fork stays in the source agent's workspace ${source.workspaceId}.`,
+              );
+            }
+            const forked = await client.forkAgent(agentId);
+            if (args.title)
+              await client.updateAgent(forked.forkedAgentId, { name: args.title as string });
+            if (args.prompt) {
+              await client.sendMessage(
+                forked.forkedAgentId,
+                buildForkTaskPrompt(args.prompt as string),
+                {
+                  activeTurnBehavior: "steer",
+                },
+              );
+            }
+            return result({
+              forkedAgentId: forked.forkedAgentId,
+              method: forked.method,
+              sourceAgentId: agentId,
+              workspaceId: source.workspaceId,
             });
           },
           async sendPrompt(args) {
@@ -331,30 +392,84 @@ export function createHostResolver(input: {
             );
             return result(formatAskOutput(agentId, reply));
           },
+          async listPermissions(args) {
+            const agentId = args.agentId as string | undefined;
+            const agents = agentId
+              ? [(await client.fetchAgent(agentId))?.agent].filter((agent) => agent !== undefined)
+              : (await client.fetchAgents({ includeBackground: true })).entries.map(
+                  (entry) => entry.agent,
+                );
+            return result({
+              permissions: agents.flatMap((agent) =>
+                agent.pendingPermissions.map((request) => ({
+                  agentId: agent.id,
+                  status: agent.status,
+                  request,
+                })),
+              ),
+            });
+          },
+          async respondToPermission(args) {
+            const agentId = args.agentId as string;
+            const requestId = args.requestId as string;
+            const response = await resolvePermissionResponse({
+              agentId,
+              requestId,
+              response: args.response as AgentPermissionResponse | undefined,
+              answers: args.answers as Record<string, string[]> | undefined,
+              loadRequest: async () =>
+                (await client.fetchAgent(agentId))?.agent.pendingPermissions.find(
+                  (pending) => pending.id === requestId,
+                ),
+            });
+            await client.respondToPermissionAndWait(agentId, requestId, response);
+            return result({ success: true });
+          },
           async listAgents(args) {
             const { entries } = await client.fetchAgents({
               includeBackground: args.includeBackground === true,
               filter: { includeArchived: args.includeArchived === true },
             });
+            const page = selectAgentListPage(
+              entries.map((entry) => entry.agent),
+              {
+                cwd: (args.cwd as string | undefined)?.trim()
+                  ? expandUserPath(args.cwd as string)
+                  : undefined,
+                statuses: args.statuses as AgentSnapshotPayload["status"][] | undefined,
+                sinceHours: args.sinceHours as number | undefined,
+                limit: args.limit as number | undefined,
+                query: args.query as string | undefined,
+              },
+            );
             return result({
-              agents: selectAgentListItems(
-                entries.map((entry) => entry.agent),
-                {
-                  cwd: (args.cwd as string | undefined)?.trim()
-                    ? expandUserPath(args.cwd as string)
-                    : undefined,
-                  statuses: args.statuses as AgentSnapshotPayload["status"][] | undefined,
-                  sinceHours: args.sinceHours as number | undefined,
-                  limit: args.limit as number | undefined,
-                },
-              ),
+              agents: page.agents,
+              ...(page.more > 0
+                ? moreNote(page.more, "narrow with query, cwd, or statuses, or raise limit")
+                : {}),
             });
           },
           async listWorkspaces(args) {
             const { entries } = await client.fetchWorkspaces({
               includeBackground: args.includeBackground === true,
             });
-            return result({ workspaces: entries.map(workspaceSummary) });
+            const newestFirst = entries.toSorted(
+              (a, b) =>
+                Date.parse(b.activityAt ?? b.createdAt ?? "") -
+                Date.parse(a.activityAt ?? a.createdAt ?? ""),
+            );
+            const page = selectWorkspaceSummaries(newestFirst.map(workspaceSummary), {
+              query: args.query as string | undefined,
+              projectId: args.projectId as string | undefined,
+              cwd: args.cwd as string | undefined,
+              limit: args.limit as number | undefined,
+            });
+            return result({
+              workspaces: page.items,
+              ...(page.more > 0
+                ? moreNote(page.more, "narrow with query, projectId, or cwd, or raise limit")
+                : {}),
+            });
           },
           async createWorkspace(args) {
             const isolation = z.enum(["local", "worktree"]).parse(args.isolation);
@@ -418,14 +533,16 @@ function remoteObservation(client: DaemonClient): HostObservation {
           // A new turn may start between the snapshot and the current-response read.
           // Bound that wait and refresh state instead of attributing the old event to it.
           const current = await client.waitForFinish(agentId, 100);
-          if (current.status === "timeout")
-            snapshot = (await client.fetchAgent(agentId))?.agent ?? null;
-          else {
-            if (!current.final && current.error && current.error !== `Agent not found: ${agentId}`)
-              throw new Error(current.error);
-            snapshot = current.final;
-            lastMessage = current.lastMessage;
+          if (current.status === "timeout") {
+            // Queued delivery can leave a closed/error snapshot visible before the new turn.
+            // A timed-out wait has not established an outcome for that queued work.
+            if (event?.type === "permission_resolved") handler(snapshot, event);
+            return;
           }
+          if (!current.final && current.error && current.error !== `Agent not found: ${agentId}`)
+            throw new Error(current.error);
+          snapshot = current.final;
+          lastMessage = current.lastMessage;
         }
         handler(snapshot, event, lastMessage);
       };

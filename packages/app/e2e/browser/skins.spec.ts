@@ -186,3 +186,75 @@ for (const theme of ["light", "dark"] as const) {
     await expectSkinVisibleAcrossSettings(page);
   });
 }
+
+const SKIN_PREFERENCES_KEY = "paseo-skin-preferences";
+
+async function storedSkinPreferences(page: Page): Promise<{ visibility: number; blur: number }> {
+  return page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key) ?? "null").state,
+    SKIN_PREFERENCES_KEY,
+  );
+}
+
+async function readArtOpacity(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const art = Array.from(document.querySelectorAll<HTMLImageElement>('img[src^="blob:"]')).find(
+      (image) => image.getBoundingClientRect().width >= window.innerWidth,
+    );
+    if (!art) throw new Error("no skin art is drawn behind the app");
+    let opacity = 1;
+    for (let node: Element | null = art; node; node = node.parentElement) {
+      opacity *= Number(getComputedStyle(node).opacity);
+    }
+    return opacity;
+  });
+}
+
+/** The x of `fraction` along a slider whose thumb center stops 10 px inside each end. */
+async function sliderPoint(slider: Locator, fraction: number): Promise<{ x: number; y: number }> {
+  const box = await slider.boundingBox();
+  if (!box) throw new Error("slider is not laid out");
+  return { x: box.x + 10 + (box.width - 20) * fraction, y: box.y + box.height / 2 };
+}
+
+test("background sliders preview while dragging and save once on release", async ({ page }) => {
+  await importSkinForBothThemes(page);
+  const visibility = page.getByTestId("settings-background-visibility");
+  const blur = page.getByTestId("settings-background-blur");
+  await blur.scrollIntoViewIfNeeded();
+  await expect(visibility).toHaveAttribute("aria-valuetext", "100%");
+  // The art fades in; measure it once it holds still.
+  let fullOpacity = 0;
+  await expect
+    .poll(async () => {
+      const previous = fullOpacity;
+      fullOpacity = await readArtOpacity(page);
+      return fullOpacity > MIN_VISIBLE_ART_OPACITY && fullOpacity === previous;
+    })
+    .toBe(true);
+
+  // Playwright's touchscreen only taps, so the drag goes through CDP touch events.
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type: "touchStart" | "touchMove" | "touchEnd", point?: { x: number; y: number }) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: point ? [point] : [] });
+  const start = await sliderPoint(visibility, 1);
+  const end = await sliderPoint(visibility, 0.25);
+  await touch("touchStart", start);
+  for (let step = 1; step <= 20; step++) {
+    await touch("touchMove", { x: start.x + ((end.x - start.x) * step) / 20, y: start.y });
+  }
+
+  // Mid-drag: the label and the art follow the thumb, storage still holds the old value.
+  await expect(visibility).toHaveAttribute("aria-valuetext", "25%");
+  await expect.poll(() => readArtOpacity(page)).toBeLessThan(fullOpacity * 0.5);
+  expect((await storedSkinPreferences(page)).visibility).toBe(1);
+
+  await touch("touchEnd");
+  await expect.poll(async () => (await storedSkinPreferences(page)).visibility).toBe(0.25);
+
+  // Tapping the track jumps there.
+  const half = await sliderPoint(blur, 0.5);
+  await page.touchscreen.tap(half.x, half.y);
+  await expect(blur).toHaveAttribute("aria-valuetext", "16 px");
+  await expect.poll(async () => (await storedSkinPreferences(page)).blur).toBe(16);
+});

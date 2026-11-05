@@ -214,3 +214,68 @@ test("a stored queue drains after a daemon restart without any client", async ()
     rmSync(paseoHomeRoot, { recursive: true, force: true });
   }
 }, 90_000);
+
+/**
+ * A queued message with an inline `[Image #1]` reaches the provider exactly
+ * like the same message sent directly: the placeholder marked in the text and
+ * the label note right before the image. Pulling an entry back for editing
+ * returns its labels so the composer can rebuild them.
+ */
+test("a queued message keeps its inline attachment labels on dispatch and on removal", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "daemon-e2e-queue-refs-"));
+  const prompts: AgentPromptInput[] = [];
+  let daemon: TestPaseoDaemon | null = null;
+  let client: DaemonClient | null = null;
+  const message = {
+    text: "what is in [Image #1]?",
+    images: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }],
+    attachmentRefs: [{ label: "Image #1", imageIndex: 0 }],
+  };
+  try {
+    daemon = await createTestPaseoDaemon({
+      agentClients: createTestAgentClients({
+        onStartTurn: (prompt) => {
+          prompts.push(prompt);
+        },
+      }),
+    });
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    expect(client.getLastServerInfoMessage()?.features?.inlineAttachmentRefs).toBe(true);
+    const agent = await client.createAgent({ provider: "codex", cwd });
+    await client.sendMessage(agent.id, "run echo hello");
+    const parked = await client.waitForFinish(agent.id, 30_000);
+    const permission = parked.final?.pendingPermissions?.[0];
+    expect(permission?.id).toBeTruthy();
+
+    const edited = await client.addQueuedAgentMessage({ agentId: agent.id, ...message });
+    const removed = await client.removeQueuedAgentMessage({
+      agentId: agent.id,
+      messageId: edited.id,
+    });
+    expect(removed).toMatchObject(message);
+
+    await client.addQueuedAgentMessage({ agentId: agent.id, ...message });
+    await client.respondToPermission(agent.id, permission!.id, { behavior: "allow" });
+    await vi.waitFor(() => expect(prompts).toHaveLength(2));
+    await client.waitForFinish(agent.id, 30_000);
+
+    await client.sendMessage(agent.id, message.text, {
+      images: message.images,
+      attachmentRefs: message.attachmentRefs,
+    });
+    await vi.waitFor(() => expect(prompts).toHaveLength(3));
+
+    const [, queuedPrompt, directPrompt] = prompts;
+    expect(queuedPrompt).toEqual([
+      { type: "text", text: "what is in [Image #1]?", placeholders: ["[Image #1]"] },
+      { type: "text", mimeType: "text/plain", text: "[Image #1]:" },
+      { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+    ]);
+    expect(queuedPrompt).toEqual(directPrompt);
+  } finally {
+    await client?.close().catch(() => undefined);
+    await daemon?.close().catch(() => undefined);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 60_000);

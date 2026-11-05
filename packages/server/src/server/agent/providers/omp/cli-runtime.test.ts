@@ -1,11 +1,11 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import pino from "pino";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import {
   OmpAccountRoutingRefusedError,
@@ -898,6 +898,36 @@ async function startManaged(
   return { child, launches, probes, session };
 }
 
+const COMPLETE_CAPABILITY_DOC = JSON.stringify({
+  version: 1,
+  provider: "anthropic",
+  managedAccountRouting: {
+    modelDispatch: "allowed",
+    completeCoverage: true,
+    purposes: ["model-dispatch", "metadata", "usage-refresh"],
+    sourceIdentity: "v1",
+    exactUsageRefresh: "v1",
+  },
+  build: { version: null },
+});
+
+/** A real executable standing in for `omp`; `runs()` counts its invocations. */
+function writeFakeOmp(body: string) {
+  const dir = mkdtempSync(path.join(tmpdir(), "omp-probe-"));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "omp");
+  writeFileSync(file, `#!/bin/sh\n${body}\n`);
+  chmodSync(file, 0o755);
+  const runs = () => {
+    try {
+      return readFileSync(`${file}.runs`, "utf8").split("\n").filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
+  return { path: file, runs };
+}
+
 function admitRequest(
   host: ReturnType<typeof routingHost>,
   runtimeInstanceId: string,
@@ -1188,6 +1218,77 @@ describe("OMP host account routing", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("the capability probe closes stdin, so an OMP that reads piped stdin answers at once", async () => {
+    // OMP reads a piped stdin as the prompt and waits for EOF before parsing its arguments.
+    const binary = writeFakeOmp(`cat >/dev/null\necho '${COMPLETE_CAPABILITY_DOC}'`);
+    await expect(
+      new OmpCliRuntime({
+        logger: pino({ level: "silent" }),
+        runtimeSettings: { command: { mode: "replace", argv: [binary.path] } },
+      }).probeConfigured(),
+    ).resolves.toEqual({ complete: true, version: 1 });
+  }, 5_000);
+
+  test("one probe serves every launch of a binary, whatever the agent; a changed binary is probed again", async () => {
+    const binary = writeFakeOmp(`echo run >> "$0.runs"\necho '${COMPLETE_CAPABILITY_DOC}'`);
+    const host = routingHost();
+    const launches: OmpRuntimeLaunch[] = [];
+    const runtime = new OmpCliRuntime({
+      logger: pino({ level: "silent" }),
+      runtimeSettings: { command: { mode: "replace", argv: [binary.path] } },
+      spawnProcess: (launch) => {
+        launches.push(launch);
+        return new FakeOmpChild().process;
+      },
+    });
+    const launchAgent = (agentId: string) =>
+      runtime.startSession({
+        cwd: "/workspace/project",
+        env: { PASEO_AGENT_ID: agentId },
+        routing: { authority: host.authority, agentId },
+      });
+
+    // The daemon's startup probe answers for every later launch of the same binary.
+    await expect(runtime.probeConfigured()).resolves.toEqual({ complete: true, version: 1 });
+    await launchAgent("agent-1");
+    await launchAgent("agent-2");
+    expect(binary.runs()).toBe(1);
+
+    utimesSync(binary.path, new Date(), new Date(Date.now() + 60_000));
+    await launchAgent("agent-1");
+    expect(binary.runs()).toBe(2);
+    expect(launches.map((launch) => launch.env?.OMP_HOST_ACCOUNT_ROUTING)).toEqual(["1", "1", "1"]);
+  });
+
+  test("a probe that timed out never makes a later launch wait; one fresh probe replaces it", async () => {
+    // The first run hangs like an OMP stuck at startup and, like OMP, exits 143 on SIGTERM.
+    const binary = writeFakeOmp(
+      [
+        `echo run >> "$0.runs"`,
+        `if [ "$(wc -l < "$0.runs")" -eq 1 ]; then`,
+        `  trap 'kill $!; exit 143' TERM; sleep 5 & wait $!`,
+        `fi`,
+        `sleep 0.3`,
+        `echo '${COMPLETE_CAPABILITY_DOC}'`,
+      ].join("\n"),
+    );
+    const runtime = new OmpCliRuntime({
+      logger: pino({ level: "silent" }),
+      runtimeSettings: { command: { mode: "replace", argv: [binary.path] } },
+      capabilityProbeTimeoutMs: 1_000,
+    });
+    const unavailable = { complete: false, version: 0, unavailable: true };
+
+    await expect(runtime.probeConfigured()).resolves.toEqual(unavailable);
+    // Answered from the held result while the retry (300 ms) is still running.
+    await expect(runtime.probeConfigured()).resolves.toEqual(unavailable);
+    await expect(runtime.probeConfigured()).resolves.toEqual(unavailable);
+    await vi.waitFor(async () =>
+      expect(await runtime.probeConfigured()).toEqual({ complete: true, version: 1 }),
+    );
+    expect(binary.runs()).toBe(2);
   });
 
   test("an agentless helper is marked metadata-only, never probed or configured", async () => {

@@ -54,6 +54,13 @@ export const DEFAULT_THEME_PREFERENCE = "auto" satisfies ThemePreference;
 export const DEFAULT_TERMINAL_SCROLLBACK_LINES = 10_000;
 export const MIN_TERMINAL_SCROLLBACK_LINES = 0;
 export const MAX_TERMINAL_SCROLLBACK_LINES = 1_000_000;
+/** Saved copies of chat files are bounded by these app-local limits. */
+export const OFFLINE_FILE_LIMITS = {
+  retentionDays: { default: 30, min: 1, max: 365 },
+  maxTotalMb: { default: 500, min: 10, max: 10_000 },
+  // The session socket download cap is 64 MiB.
+  maxFileMb: { default: 10, min: 1, max: 64 },
+} as const;
 export function defaultUiBaseFontSize(native: boolean): number {
   return native ? 15 : FONT_SIZE.base;
 }
@@ -114,6 +121,11 @@ export interface AppSettings {
   /** Desktop-only preferences for implicit opens into the ordinary side pane. */
   openInSidePane: OpenInSidePanePreferences;
   pullRequestOpenLocation: PullRequestOpenLocation;
+  /** Save files mentioned in opened chats so they open while the host is offline. */
+  offlineFilesAutoSave: boolean;
+  offlineFilesRetentionDays: number;
+  offlineFilesMaxTotalMb: number;
+  offlineFilesMaxFileMb: number;
 }
 
 export type AppSettingsUpdate =
@@ -171,6 +183,10 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   filePanelAssociations: {},
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
+  offlineFilesAutoSave: isNative,
+  offlineFilesRetentionDays: OFFLINE_FILE_LIMITS.retentionDays.default,
+  offlineFilesMaxTotalMb: OFFLINE_FILE_LIMITS.maxTotalMb.default,
+  offlineFilesMaxFileMb: OFFLINE_FILE_LIMITS.maxFileMb.default,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -184,6 +200,11 @@ function clampedNumber(min: number, max: number) {
     .unknown()
     .transform((value) => parseClampedFontSize(value, { min, max }))
     .pipe(z.number());
+}
+
+function offlineFileLimit(key: keyof typeof OFFLINE_FILE_LIMITS) {
+  const limit = OFFLINE_FILE_LIMITS[key];
+  return clampedNumber(limit.min, limit.max).catch(limit.default);
 }
 
 function sanitizedFontFamily() {
@@ -299,6 +320,10 @@ const StoredAppSettingsSchema = z
         legacyPullRequestsInSidePane: undefined,
       }),
     pullRequestOpenLocation: z.enum(["main", "side", "explorer"]).optional(),
+    offlineFilesAutoSave: z.boolean().catch(isNative),
+    offlineFilesRetentionDays: offlineFileLimit("retentionDays"),
+    offlineFilesMaxTotalMb: offlineFileLimit("maxTotalMb"),
+    offlineFilesMaxFileMb: offlineFileLimit("maxFileMb"),
     // COMPAT(explorerSidebarRouting): replaced by source-specific side-pane preferences in v0.6.
     openSupportingTabsInSidePanel: z.boolean().optional().catch(undefined),
     // COMPAT(rendererDesktopSettings): these fields used to share this renderer-owned key.

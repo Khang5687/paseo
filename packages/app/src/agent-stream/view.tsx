@@ -94,7 +94,11 @@ import {
 } from "./bottom-anchor-controller";
 import { createAssistantImageOccurrenceKey } from "@/assistant-image/acquisition-cache";
 import { AssistantSelectionCopySurface } from "@/assistant-selection-copy/surface";
+import { ChatNoteRowProvider, ChatNotesProvider } from "@/chat-notes/context";
+import { ChatNotesSurface } from "@/chat-notes/surface";
 import { AssistantFileLinkResolverProvider, createInlinePathOpener } from "@/assistant-file-links";
+import { useOfflineAutoSave } from "@/offline-files/use-auto-save";
+import { CodeRunScopeProvider } from "@/code-run/scope";
 import { useOpenOutsideWorkspaceFolder } from "@/workspace/open-in-file-manager/outside-folder";
 import {
   createWorkspaceFileTabTarget,
@@ -306,6 +310,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
   "supportsRewindConversation",
   "supportsRewindFiles",
   "supportsRewindBoth",
+  "supportsNativeFork",
 ];
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
@@ -322,6 +327,15 @@ const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
 
 function resolveBottomOverlayControlOffset(clearance: number | undefined): number {
   return Math.max(16, clearance ?? 0);
+}
+
+/** Read-only transcripts (provider subagent threads) show commands without running them. */
+function resolveCodeRunWorkspaceId(input: {
+  readOnly: boolean;
+  workspaceId: string | null | undefined;
+}): string | null {
+  if (input.readOnly || !input.workspaceId) return null;
+  return input.workspaceId;
 }
 
 const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamViewProps>(
@@ -399,6 +413,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const workspaceRoot = context.cwd?.trim() || "";
+    const codeRunWorkspaceId = resolveCodeRunWorkspaceId({
+      readOnly,
+      workspaceId: context.workspaceId,
+    });
     const { revealDirectory } = useFileExplorerActions({
       serverId: resolvedServerId,
       workspaceId: context.workspaceId,
@@ -422,16 +440,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           loadOlder: historyPagination.onLoadOlder,
         }
       : agentHistoryPagination;
-    // Keep entry/exit animations off on Android due to RN dispatchDraw crashes
-    // tracked in react-native-reanimated#8422.
-    const shouldDisableEntryExitAnimations = Platform.OS === "android";
-    const scrollIndicatorFadeIn = shouldDisableEntryExitAnimations
-      ? undefined
-      : FadeIn.duration(200);
-    const scrollIndicatorFadeOut = shouldDisableEntryExitAnimations
-      ? undefined
-      : FadeOut.duration(200);
-
     useEffect(() => {
       setIsNearBottom(true);
       setExpandedInlineToolCallIds(new Set());
@@ -468,6 +476,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       () =>
         createInlinePathOpener({
           workspaceRoot,
+          resolveRelativeFiles: true,
           client,
           openFile: openInlineFile,
           openDirectory: openInlineDirectory,
@@ -482,6 +491,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const handleInlinePathPress = useStableEvent(
       (target: InlinePathTarget, disposition: OpenFileDisposition) => {
         if (isActive) void inlinePathOpener.open(target, disposition);
+      },
+    );
+    const openCodeRunTerminal = useStableEvent(
+      (input: { workspaceId: string; terminalId: string }) => {
+        navigateToWorkspace({
+          serverId: resolvedServerId,
+          workspaceId: input.workspaceId,
+          target: { kind: "terminal", terminalId: input.terminalId },
+        });
       },
     );
 
@@ -520,6 +538,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // the component reads the current (fresh) streamItems/streamHead from props.
     const effectiveStreamItems = useRetainedValue(streamItems, isActive);
     const effectiveStreamHead = useRetainedValue(streamHead, isActive);
+    useOfflineAutoSave({
+      serverId: resolvedServerId,
+      workspaceRoot,
+      client,
+      items: effectiveStreamItems,
+      active: isActive,
+    });
     const effectiveTurnPresentation = useRetainedValue(turnPresentation, isActive);
     const isTurnActive = effectiveTurnPresentation.isActive;
     const presentStream = useMemo(() => createStreamPresentation(), []);
@@ -717,24 +742,27 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
         const collapsedTurn = getCollapsedTurn(item.id);
         const message = (
-          <UserMessage
-            serverId={resolvedServerId}
-            agentId={agentId}
-            messageId={item.messageId}
-            message={item.text}
-            sender={item.sender}
-            images={item.images}
-            attachments={item.attachments}
-            timestamp={item.timestamp.getTime()}
-            capabilities={context.capabilities}
-            client={client}
-            isFirstInGroup={layoutItem.isFirstInUserGroup}
-            isLastInGroup={layoutItem.isLastInUserGroup}
-            isPending={
-              item.clientMessageId !== undefined &&
-              pendingClientMessageIds.has(item.clientMessageId)
-            }
-          />
+          <ChatNoteRowProvider rowId={item.id} messageId={getStreamItemMessageId(item)} role="user">
+            <UserMessage
+              serverId={resolvedServerId}
+              agentId={agentId}
+              messageId={item.messageId}
+              clientMessageId={item.clientMessageId}
+              message={item.text}
+              sender={item.sender}
+              images={item.images}
+              attachments={item.attachments}
+              timestamp={item.timestamp.getTime()}
+              capabilities={context.capabilities}
+              client={client}
+              isFirstInGroup={layoutItem.isFirstInUserGroup}
+              isLastInGroup={layoutItem.isLastInUserGroup}
+              isPending={
+                item.clientMessageId !== undefined &&
+                pendingClientMessageIds.has(item.clientMessageId)
+              }
+            />
+          </ChatNoteRowProvider>
         );
         if (!collapsedTurn) {
           return message;
@@ -759,16 +787,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderAssistantMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "assistant_message" }>) => {
-        return (
-          <AssistantFileLinkResolverProvider
-            client={client}
-            serverId={resolvedServerId}
-            workspaceRoot={workspaceRoot}
-            onOpenWorkspaceFile={handleInlinePathPress}
-            toast={toast}
-          >
-            <ChatFindExpansion messageId={getStreamItemMessageId(item)}>
-              {(renderFullContent) => (
+        const message = (
+          <ChatFindExpansion messageId={getStreamItemMessageId(item)}>
+            {(renderFullContent) => (
+              <ChatNoteRowProvider
+                rowId={item.id}
+                messageId={getStreamItemMessageId(item)}
+                role="assistant"
+              >
                 <AssistantMessage
                   renderFullContent={renderFullContent}
                   occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
@@ -780,12 +806,45 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   spacing={layoutItem.assistantSpacing}
                   phase={layoutItem.phase}
                 />
-              )}
-            </ChatFindExpansion>
+              </ChatNoteRowProvider>
+            )}
+          </ChatFindExpansion>
+        );
+        return (
+          <AssistantFileLinkResolverProvider
+            client={client}
+            serverId={resolvedServerId}
+            workspaceRoot={workspaceRoot}
+            onOpenWorkspaceFile={handleInlinePathPress}
+            toast={toast}
+          >
+            {codeRunWorkspaceId && workspaceRoot ? (
+              <CodeRunScopeProvider
+                serverId={resolvedServerId}
+                agentId={agentId}
+                workspaceId={codeRunWorkspaceId}
+                cwd={workspaceRoot}
+                messageKey={item.messageId ?? item.id}
+                openTerminal={openCodeRunTerminal}
+              >
+                {message}
+              </CodeRunScopeProvider>
+            ) : (
+              message
+            )}
           </AssistantFileLinkResolverProvider>
         );
       },
-      [agentId, client, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
+      [
+        agentId,
+        client,
+        codeRunWorkspaceId,
+        handleInlinePathPress,
+        openCodeRunTerminal,
+        resolvedServerId,
+        toast,
+        workspaceRoot,
+      ],
     );
 
     const renderThoughtItem = useCallback(
@@ -1193,71 +1252,105 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [effectiveStreamItems, effectiveStreamHead],
     );
     return (
-      <ChatFind
-        agentId={agentId}
+      <ChatNotesProvider
         serverId={resolvedServerId}
-        epoch={timelineEpoch}
-        items={findItems}
-        viewportRef={viewportRef}
-        revealLoadedMessage={revealLoadedMessage}
-        visibleMessageIds={mountedMessageIds}
+        agentId={agentId}
+        workspaceId={context.workspaceId}
       >
-        <ToolCallSheetProvider>
-          <AssistantSelectionCopySurface style={stylesheet.container}>
-            <MessageOuterSpacingProvider disableOuterSpacing>
-              <ToolCallExpansionContext.Provider value={toolCallExpansion}>
-                {streamRenderStrategy.render({
-                  readingRowReplacements: presentation.readingRowReplacements,
-                  agentId,
-                  segments: renderModel.segments,
-                  historyRowRevision,
-                  liveHeadRowRevision: expandedToolCallGroups,
-                  boundary,
-                  renderers,
-                  listEmptyComponent,
-                  viewportRef,
-                  routeBottomAnchorRequest,
-                  isAuthoritativeHistoryReady,
-                  onNearBottomChange: setIsNearBottom,
-                  onReadingPositionChange: handleReadingPositionChange,
-                  onNearHistoryStart: loadOlder,
-                  isLoadingOlderHistory: isLoadingOlder,
-                  hasOlderHistory: hasOlder,
-                  olderHistoryProgressKey: progressKey,
-                  scrollEnabled: streamScrollEnabled,
-                  listStyle: stylesheet.list,
-                  baseListContentContainerStyle: stylesheet.listContentContainer,
-                  forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
-                  contentMaxWidth,
-                })}
-              </ToolCallExpansionContext.Provider>
-            </MessageOuterSpacingProvider>
-            <ChatOutlineRail
-              prompts={chatOutline.prompts}
-              activePrompt={chatOutline.activePrompt}
-              onJumpToPrompt={chatOutline.jumpToPrompt}
-            />
-            {(!isNearBottom || isTimelineDetached) && (
-              <View style={scrollToBottomContainerStyle} pointerEvents="box-none">
-                <Animated.View entering={scrollIndicatorFadeIn} exiting={scrollIndicatorFadeOut}>
-                  <Pressable
-                    style={stylesheet.scrollToBottomButton}
+        <ChatFind
+          agentId={agentId}
+          serverId={resolvedServerId}
+          epoch={timelineEpoch}
+          items={findItems}
+          viewportRef={viewportRef}
+          revealLoadedMessage={revealLoadedMessage}
+          visibleMessageIds={mountedMessageIds}
+        >
+          <ChatNotesSurface
+            viewportRef={viewportRef}
+            revealLoadedMessage={revealLoadedMessage}
+            visibleMessageIds={mountedMessageIds}
+          >
+            <ToolCallSheetProvider>
+              <AssistantSelectionCopySurface style={stylesheet.container}>
+                <MessageOuterSpacingProvider disableOuterSpacing>
+                  <ToolCallExpansionContext.Provider value={toolCallExpansion}>
+                    {streamRenderStrategy.render({
+                      readingRowReplacements: presentation.readingRowReplacements,
+                      agentId,
+                      segments: renderModel.segments,
+                      historyRowRevision,
+                      liveHeadRowRevision: expandedToolCallGroups,
+                      boundary,
+                      renderers,
+                      listEmptyComponent,
+                      viewportRef,
+                      routeBottomAnchorRequest,
+                      isAuthoritativeHistoryReady,
+                      onNearBottomChange: setIsNearBottom,
+                      onReadingPositionChange: handleReadingPositionChange,
+                      onNearHistoryStart: loadOlder,
+                      isLoadingOlderHistory: isLoadingOlder,
+                      hasOlderHistory: hasOlder,
+                      olderHistoryProgressKey: progressKey,
+                      scrollEnabled: streamScrollEnabled,
+                      listStyle: stylesheet.list,
+                      baseListContentContainerStyle: stylesheet.listContentContainer,
+                      forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
+                      contentMaxWidth,
+                    })}
+                  </ToolCallExpansionContext.Provider>
+                </MessageOuterSpacingProvider>
+                <ChatOutlineRail
+                  prompts={chatOutline.prompts}
+                  activePrompt={chatOutline.activePrompt}
+                  onJumpToPrompt={chatOutline.jumpToPrompt}
+                />
+                {(!isNearBottom || isTimelineDetached) && (
+                  <ScrollToBottomButton
+                    containerStyle={scrollToBottomContainerStyle}
                     onPress={scrollToBottom}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("agentStream.scrollToBottom")}
-                    testID="scroll-to-bottom-button"
-                  >
-                    <ChevronDown size={24} color={stylesheet.scrollToBottomIcon.color} />
-                  </Pressable>
-                </Animated.View>
-              </View>
-            )}
-          </AssistantSelectionCopySurface>
-        </ToolCallSheetProvider>
-      </ChatFind>
+                  />
+                )}
+              </AssistantSelectionCopySurface>
+            </ToolCallSheetProvider>
+          </ChatNotesSurface>
+        </ChatFind>
+      </ChatNotesProvider>
     );
   },
 );
+
+// Keep entry/exit animations off on Android due to RN dispatchDraw crashes
+// tracked in react-native-reanimated#8422.
+const shouldDisableEntryExitAnimations = Platform.OS === "android";
+const scrollIndicatorFadeIn = shouldDisableEntryExitAnimations ? undefined : FadeIn.duration(200);
+const scrollIndicatorFadeOut = shouldDisableEntryExitAnimations ? undefined : FadeOut.duration(200);
+
+function ScrollToBottomButton({
+  containerStyle,
+  onPress,
+}: {
+  containerStyle: StyleProp<ViewStyle>;
+  onPress: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={containerStyle} pointerEvents="box-none">
+      <Animated.View entering={scrollIndicatorFadeIn} exiting={scrollIndicatorFadeOut}>
+        <Pressable
+          style={stylesheet.scrollToBottomButton}
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel={t("agentStream.scrollToBottom")}
+          testID="scroll-to-bottom-button"
+        >
+          <ChevronDown size={24} color={stylesheet.scrollToBottomIcon.color} />
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
 
 function agentCapabilityFlagsEqual(
   left: AgentCapabilityFlags | undefined,

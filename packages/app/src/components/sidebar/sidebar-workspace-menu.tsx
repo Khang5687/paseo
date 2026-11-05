@@ -4,7 +4,6 @@ import { type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   Archive,
-  Check,
   Circle,
   CircleCheck,
   Copy,
@@ -13,13 +12,15 @@ import {
   Pin,
   PinOff,
   Tag,
-  Undo2,
 } from "lucide-react-native";
 import { isWeb } from "@/constants/platform";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
+import { useWorkspaceNoteBadge } from "@/notes/chat-badges-store";
+import { chatNoteBadgeLabels } from "@/components/sidebar/sidebar-note-badge";
+import { useCopyThreadAgentId } from "@/hooks/use-copy-agent-id";
 import { densityIconProps } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
@@ -63,8 +64,6 @@ const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
 const ThemedTag = withUnistyles(Tag);
-const ThemedCheck = withUnistyles(Check);
-const ThemedUndo2 = withUnistyles(Undo2);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
@@ -75,13 +74,11 @@ const markAsUnreadLeadingIcon = <ThemedCircle size={14} uniProps={foregroundMute
 const archiveLeadingIcon = <ThemedArchive size={14} uniProps={foregroundMutedColorMapping} />;
 const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />;
 const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
-const settleLeadingIcon = <ThemedCheck size={14} uniProps={foregroundMutedColorMapping} />;
-const unsettleLeadingIcon = <ThemedUndo2 size={14} uniProps={foregroundMutedColorMapping} />;
 
 const triggerIconProps = densityIconProps("sm", foregroundMutedColorMapping);
 const triggerIconHoveredProps = densityIconProps("sm", foregroundColorMapping);
 
-function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
+export function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return <ThemedMoreVertical uniProps={hovered ? triggerIconHoveredProps : triggerIconProps} />;
 }
 
@@ -102,9 +99,6 @@ export interface SidebarWorkspaceMenuProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
-  isSettled?: boolean;
-  /** Omitted for pinned rows: a pinned workspace cannot be settled. */
-  onToggleSettle?: () => void;
   openInFileManagerPath?: string | null;
   /**
    * Lifted so the row that reveals the kebab can keep it mounted while its menu is up. See
@@ -153,11 +147,10 @@ function SidebarWorkspaceMenuItems({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
-  isSettled,
-  onToggleSettle,
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
+  const copyAgentId = useCopyThreadAgentId(serverId, workspaceId);
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
@@ -187,6 +180,16 @@ function SidebarWorkspaceMenuItems({
           onSelect={onCopyBranchName}
         >
           {t("sidebar.workspace.actions.copyBranchName")}
+        </WorkspaceMenuItem>
+      ) : null}
+      {copyAgentId ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-copy-agent-id-${workspaceKey}`}
+          leading={copyLeadingIcon}
+          onSelect={copyAgentId}
+        >
+          {t("sidebar.workspace.actions.copyAgentId")}
         </WorkspaceMenuItem>
       ) : null}
       {onRename ? (
@@ -227,18 +230,6 @@ function SidebarWorkspaceMenuItems({
           onSelect={onTogglePin}
         >
           {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
-        </WorkspaceMenuItem>
-      ) : null}
-      {onToggleSettle ? (
-        <WorkspaceMenuItem
-          surface={surface}
-          testID={`sidebar-workspace-menu-settle-${workspaceKey}`}
-          leading={isSettled ? unsettleLeadingIcon : settleLeadingIcon}
-          onSelect={onToggleSettle}
-        >
-          {isSettled
-            ? t("sidebar.workspace.actions.unsettle")
-            : t("sidebar.workspace.actions.settle")}
         </WorkspaceMenuItem>
       ) : null}
       {serverId && workspaceId ? (
@@ -289,8 +280,6 @@ export function SidebarWorkspaceMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
-  isSettled,
-  onToggleSettle,
   openInFileManagerPath,
   open,
   onOpenChange,
@@ -337,8 +326,6 @@ export function SidebarWorkspaceMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
-          isSettled={isSettled}
-          onToggleSettle={onToggleSettle}
           openInFileManagerPath={openInFileManagerPath}
         />
       </DropdownMenuContent>
@@ -372,11 +359,10 @@ export function SidebarWorkspaceContextMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
-  isSettled,
-  onToggleSettle,
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
+  draggable,
   ...triggerProps
 }: PropsWithChildren<
   SidebarWorkspaceMenuItemsProps &
@@ -388,6 +374,9 @@ export function SidebarWorkspaceContextMenu({
       hostBadgeLabel?: string | null;
       serviceSummary?: WorkspaceServiceSummary | null;
       highlightStyle: ComponentProps<typeof ContextMenuTrigger>["highlightStyle"];
+      // Long-press on native starts a drag on draggable rows, so only rows that can't be dragged
+      // open this menu on long-press. Draggable rows keep the kebab.
+      draggable: boolean;
     }
 >) {
   const {
@@ -395,6 +384,7 @@ export function SidebarWorkspaceContextMenu({
   } = useAppSettings();
   const { t } = useTranslation();
   const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
+  const noteBadge = useWorkspaceNoteBadge(workspace.serverId, workspace.workspaceId);
   const pullRequestLabel = workspace.prHint
     ? t("workspace.git.pr.accessibility.pullRequest", {
         number: workspace.prHint.number,
@@ -411,6 +401,7 @@ export function SidebarWorkspaceContextMenu({
       ? t(workspaceServiceLabelKey(serviceSummary), { name: serviceSummary.name })
       : null,
     hasUnsentDraft,
+    noteLabels: chatNoteBadgeLabels(noteBadge, t),
     t,
   });
   const workspaceTarget = useMemo<WorkspaceLabelTarget>(
@@ -427,7 +418,7 @@ export function SidebarWorkspaceContextMenu({
     <ContextMenu open={contextMenuOpen} onOpenChange={onContextMenuOpenChange}>
       <ContextMenuTrigger
         {...triggerProps}
-        enabledOnMobile={false}
+        enabledOnMobile={!draggable}
         accessibilityLabel={accessibilityLabel ?? rowAccessibilityLabel}
         highlightStyle={highlightStyle}
       >
@@ -457,8 +448,6 @@ export function SidebarWorkspaceContextMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
-          isSettled={isSettled}
-          onToggleSettle={onToggleSettle}
           openInFileManagerPath={openInFileManagerPath}
         />
       </ContextMenuContent>
@@ -466,7 +455,9 @@ export function SidebarWorkspaceContextMenu({
   );
 }
 
-function triggerStyle({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) {
+export function triggerStyle({
+  hovered = false,
+}: PressableStateCallbackType & { hovered?: boolean }) {
   return [styles.trigger, hovered && styles.triggerHovered];
 }
 

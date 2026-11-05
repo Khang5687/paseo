@@ -1,4 +1,5 @@
 import { createExternalProcessEnv } from "../../../paseo-env.js";
+import { realpath, stat } from "node:fs/promises";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
@@ -11,7 +12,8 @@ import {
   JsonlRpcResponseError,
   type JsonlRpcLaunch,
 } from "../jsonl-rpc-process.js";
-import { execCommand } from "../../../../utils/spawn.js";
+import { spawnProcess as spawnCli } from "../../../../utils/spawn.js";
+import { findExecutableWithoutProbing } from "../../../../executable-resolution/executable-resolution.js";
 import {
   inertRoutingAdapter,
   memoizeProbe,
@@ -85,6 +87,8 @@ export interface OmpCliRuntimeOptions {
   spawnProcess?: (launch: OmpRuntimeLaunch) => ChildProcessWithoutNullStreams;
   /** Test seam: replaces `omp account-routing-capabilities`. Receives the launch the probe vets. */
   probeCapabilities?: (launch: OmpRuntimeLaunch) => Promise<OmpCapabilityProbe>;
+  /** Kills a capability probe that has not answered by then; it only runs once per binary. */
+  capabilityProbeTimeoutMs?: number;
 }
 
 /** What a routed launch resolved to before any child exists. */
@@ -219,26 +223,75 @@ export class OmpCliRuntime implements OmpRuntime {
     const settings = this.options.runtimeSettings?.command;
     const base = settings?.mode === "replace" && settings.argv[0] ? settings.argv : this.command;
     const [command, ...args] = base;
-    const env = launch.env;
-    const key = JSON.stringify([command, ...args, env ?? {}]);
-    return memoizeProbe(key, async () => {
-      try {
-        const { stdout } = await execCommand(
-          command,
-          [...args, "account-routing-capabilities", "--mode", "model"],
-          { envOverlay: env, timeout: CAPABILITY_PROBE_TIMEOUT_MS },
-        );
-        return parseOmpCapabilityProbe(stdout);
-      } catch (error) {
+    const binary = await identifyBinary(command, launch.env?.PATH);
+    if (!binary) return { complete: false, version: 0, unavailable: true };
+    // The answer belongs to the binary, not to the agent, so the per-agent launch env stays out of
+    // the key: the startup probe and every launch of the same binary share one answer.
+    const key = JSON.stringify([binary, ...args, this.options.runtimeSettings?.env ?? {}]);
+    return memoizeProbe(key, () =>
+      runCapabilityProbe(
+        command,
+        args,
+        launch.env,
+        this.options.capabilityProbeTimeoutMs ?? CAPABILITY_PROBE_TIMEOUT_MS,
+      ),
+    );
+  }
+}
+
+/** The executable's real path, mtime and size; an upgraded or re-linked binary reads as new. */
+async function identifyBinary(
+  command: string,
+  pathEnv: string | undefined,
+): Promise<string | null> {
+  try {
+    const found = await findExecutableWithoutProbing(command, {
+      path: pathEnv,
+      cwd: process.cwd(),
+    });
+    if (!found) return null;
+    const real = await realpath(found);
+    const { mtimeMs, size } = await stat(real);
+    return `${real}:${mtimeMs}:${size}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Runs `omp account-routing-capabilities` with stdin closed: OMP reads a piped stdin as the
+ * prompt and waits for EOF, so an open pipe would hold every probe until the timeout.
+ */
+function runCapabilityProbe(
+  command: string,
+  args: string[],
+  env: Record<string, string> | undefined,
+  timeoutMs: number,
+): Promise<OmpCapabilityProbe> {
+  return new Promise((resolve) => {
+    const child = spawnCli(command, [...args, "account-routing-capabilities", "--mode", "model"], {
+      envOverlay: env,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: timeoutMs,
+    });
+    let stdout = "";
+    child.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    // Nothing was learned about a binary that could not start or was killed at the timeout
+    // (OMP traps SIGTERM and exits 143, so the kill shows up as an exit code too).
+    child.once("error", () => resolve({ complete: false, version: 0, unavailable: true }));
+    child.once("close", (code) => {
+      if (child.killed || code === null || code < 0) {
+        resolve({ complete: false, version: 0, unavailable: true });
+      } else if (code !== 0) {
         // An older binary rejects the subcommand with an exit code: that is an incomplete runtime.
-        // Anything else (missing binary, timeout) taught us nothing about the binary.
-        const exited = typeof (error as { code?: unknown } | null)?.code === "number";
-        return exited
-          ? { complete: false, version: 0 }
-          : { complete: false, version: 0, unavailable: true };
+        resolve({ complete: false, version: 0 });
+      } else {
+        resolve(parseOmpCapabilityProbe(stdout));
       }
     });
-  }
+  });
 }
 
 function withRoutingMarker(env: Record<string, string>, plan: RoutingPlan): Record<string, string> {

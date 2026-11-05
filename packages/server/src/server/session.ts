@@ -1,3 +1,5 @@
+import type { AgentDraftService } from "./agent-draft/agent-draft-service.js";
+import { dispatchAgentDraftMessage } from "./agent-draft/agent-draft-session.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory } from "./agent/directory.js";
@@ -51,6 +53,11 @@ import type {
 import { TerminalSessionController } from "../terminal/terminal-session-controller.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
+import {
+  encodePluginEventFrame,
+  encodePluginOutputFrame,
+  PluginFrameOpcode,
+} from "@getpaseo/protocol/binary-frames/index";
 import { CursorError } from "./pagination/cursor.js";
 import { SortablePager, type SortSpec } from "./pagination/sortable-pager.js";
 import { matchesAgentHistoryQuery } from "./agent-history-search.js";
@@ -103,6 +110,7 @@ import {
   WorkspaceLabelStorageUncertainError,
   type WorkspaceLabelService,
 } from "./workspace-labels/index.js";
+import type { NotesService } from "./notes/notes-service.js";
 
 import { AgentManager, AgentRunCancellationError } from "./agent/agent-manager.js";
 import { buildTimelinePromptIndex } from "./agent/timeline-prompt-index.js";
@@ -122,6 +130,7 @@ import {
   closeAgentCommand,
   detachAgentCommand,
   setAgentModeCommand,
+  unarchiveAgentCommand,
   updateAgentCommand,
 } from "./agent/lifecycle-command.js";
 import {
@@ -133,6 +142,7 @@ import { assertPluginTimelineDataSize } from "./agent/agent-timeline-content.js"
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
 import type { AskAgentThreads } from "./agent/ask-agent.js";
+import { forkAgent } from "./agent/fork-agent.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -483,6 +493,8 @@ export interface SessionOptions {
   workspaceRegistry: WorkspaceRegistry;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  agentDrafts?: AgentDraftService;
+  notesService?: NotesService;
   accountRouting?: AccountRoutingAuthority;
   accountLogin?: OmpAccountLogin;
   /** The source is a direct loopback or local IPC socket: the host's own app. */
@@ -536,6 +548,11 @@ export interface SessionOptions {
     subscribeSettings?(listener: (pluginId: string, settingsId: string) => void): () => void;
     catalog(): Array<{ id: string; clientBundle: string; clientBundleHash?: string }>;
     invokePluginRpc(pluginId: string, method: string, input: unknown): Promise<unknown>;
+    subscribePluginRpc(
+      pluginId: string,
+      method: string,
+      input: unknown,
+    ): import("./plugins/runtime-subscription.js").PluginRuntimeSubscription;
     listUsageReports(options?: {
       forceRefresh?: boolean;
       reportIds?: string[];
@@ -807,6 +824,8 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly agentDrafts: AgentDraftService | undefined;
+  private readonly notesService: NotesService | null;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -873,6 +892,8 @@ export class Session {
       workspaceRegistry,
       directorySync,
       workspaceLabelService,
+      agentDrafts,
+      notesService,
       accountRouting,
       accountLogin,
       isHostLocalSource,
@@ -949,7 +970,7 @@ export class Session {
     this.workspaceFilesSession = new WorkspaceFilesSession({
       host: {
         emit: (msg, source) => this.emitForSource(msg, source),
-        emitBinary: (frame, source) => this.emitBinaryForFileTransfer(frame, source),
+        emitBinary: (frame, source) => this.emitBinaryReply(frame, source),
         hasBinaryChannel: () => this.onBinaryMessage !== null,
       },
       downloadTokenStore,
@@ -962,6 +983,8 @@ export class Session {
     this.workspaceRegistry = workspaceRegistry;
     this.directorySync = resolveDirectorySync(directorySync);
     this.workspaceLabelService = resolveWorkspaceLabelService(workspaceLabelService);
+    this.agentDrafts = agentDrafts;
+    this.notesService = notesService ?? null;
     this.filesystem = filesystem ?? nodeSessionFileSystem;
     this.github = github ?? createGitHubService();
     this.renameCurrentBranch = renameCurrentBranch ?? renameCurrentBranchDefault;
@@ -1065,6 +1088,7 @@ export class Session {
       logger: this.sessionLogger,
     });
     this.usageSession = new UsageSession({
+      isEnabled: () => daemonConfigStore.get().usage?.enabled !== false,
       emit: (msg) => this.emit(msg),
       runtime: pluginRuntime,
       logger: this.sessionLogger,
@@ -1160,11 +1184,11 @@ export class Session {
       terminalManager,
       emit: (msg) => this.emit(msg),
       hasBinaryChannel: () => this.onBinaryMessage !== null,
+      supportsChunkedReplay: (source) =>
+        this.supportsForSource(CLIENT_CAPS.terminalChunkedReplay, source),
       isPathWithinRoot: (rootPath, candidatePath) => this.isPathWithinRoot(rootPath, candidatePath),
       sessionLogger: this.sessionLogger,
       listTerminalWorkspaceRefs: () => this.listActiveWorkspaceRefs(),
-      clientSupportsWrapReflow: (source) =>
-        this.supportsForSource(CLIENT_CAPS.terminalReflowableSnapshot, source),
       getClientBufferedAmount: (source) => this.getTransportBufferedAmount(source),
     });
     this.agentDirectory = new AgentDirectory({
@@ -2251,13 +2275,15 @@ export class Session {
       this.peakInflightRequests = this.inflightRequests;
     }
     try {
-      this.sessionLogger.trace(
-        {
-          messageType: msg.type,
-          payloadBytes: JSON.stringify(msg).length,
-        },
-        "agent.session.inbound",
-      );
+      // Stringifying a binary plugin input costs its size; test logger stubs lack isLevelEnabled.
+      if (this.sessionLogger.isLevelEnabled?.("trace"))
+        this.sessionLogger.trace(
+          {
+            messageType: msg.type,
+            payloadBytes: JSON.stringify(msg).length,
+          },
+          "agent.session.inbound",
+        );
       if (!this.authorization.allowsInbound(msg)) {
         const requestId = sessionRequestId(msg);
         if (requestId) {
@@ -2320,6 +2346,17 @@ export class Session {
         .releaseFamily("browser-host")
         .catch((error) =>
           this.sessionLogger.error({ err: error }, "Failed to release revoked browser hosting"),
+        );
+    }
+    // Binary plugin events skip the outbound permission check, so revocation ends the streams.
+    if (!this.authorization.allowsPermission("daemon.manage")) {
+      void this.delivery
+        .releaseFamily("plugin-rpc")
+        .catch((error) =>
+          this.sessionLogger.error(
+            { err: error },
+            "Failed to release revoked plugin subscriptions",
+          ),
         );
     }
   }
@@ -2471,6 +2508,12 @@ export class Session {
     const promise =
       this.connectedHostSession?.dispatch(msg) ??
       this.dispatchSubscriptionMessage(msg, source) ??
+      dispatchAgentDraftMessage(msg, {
+        service: this.agentDrafts,
+        delivery: this.delivery,
+        clientId: this.clientId,
+        emit: (message) => this.emit(message),
+      }) ??
       this.dispatchVoiceAndControlMessage(msg) ??
       this.dispatchAgentObservationMessage(msg, source) ??
       this.dispatchHubExecutionMessage(msg) ??
@@ -2482,8 +2525,7 @@ export class Session {
       this.dispatchWorkspaceFileMessage(msg, source) ??
       this.dispatchProviderMessage(msg) ??
       this.dispatchOrchestrationSkillsMessage(msg) ??
-      this.dispatchPluginDirectoryMessage(msg) ??
-      this.dispatchPluginMessage(msg) ??
+      this.dispatchPluginFamilyMessage(msg) ??
       this.dispatchHostServiceMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
@@ -2500,10 +2542,19 @@ export class Session {
     );
   }
 
+  private dispatchPluginFamilyMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    return (
+      this.dispatchPluginDirectoryMessage(msg) ??
+      this.dispatchPluginMessage(msg) ??
+      this.dispatchPluginRpcMessage(msg)
+    );
+  }
+
   private dispatchHostServiceMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     return (
       this.dispatchTerminalMessage(msg) ??
       this.dispatchScheduleMessage(msg) ??
+      this.dispatchNotesMessage(msg) ??
       this.speechModelsSession.dispatch(msg)
     );
   }
@@ -2651,19 +2702,96 @@ export class Session {
       });
       return undefined;
     }
+    return undefined;
+  }
+
+  private dispatchPluginRpcMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     if (msg.type === "plugin.rpc.invoke.request") {
       if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
       return this.pluginRuntime
         .invokePluginRpc(msg.pluginId, msg.method, msg.input)
-        .then((output) => {
-          this.emit({
-            type: "plugin.rpc.invoke.response",
-            payload: { requestId: msg.requestId, output },
-          });
-          return undefined;
-        });
+        .then((output) => this.replyPluginRpc(msg, output));
     }
+    if (msg.type === "plugin.rpc.subscribe.request") return this.subscribePluginRpc(msg);
     return undefined;
+  }
+
+  /** A `Uint8Array` output is the binary form of `plugin.rpc.invoke.response`. */
+  private async replyPluginRpc(
+    request: Extract<SessionInboundMessage, { type: "plugin.rpc.invoke.request" }>,
+    output: unknown,
+  ): Promise<void> {
+    const response: SessionOutboundMessage = {
+      type: "plugin.rpc.invoke.response",
+      payload: { requestId: request.requestId, output },
+    };
+    if (!(output instanceof Uint8Array)) {
+      this.emit(response);
+      return;
+    }
+    // The frame is the binary form of the response, so it needs the response's permission.
+    if (!this.authorization.allowsOutbound(response)) return;
+    if (!this.supports(CLIENT_CAPS.pluginBinaryPayloads) || this.onBinaryMessage === null)
+      throw new Error(
+        `Update Paseo to receive the binary output of plugin RPC ${request.pluginId}.${request.method}`,
+      );
+    await this.emitBinaryReply(
+      encodePluginOutputFrame(request.requestId, output),
+      this.delivery.currentSource,
+    );
+  }
+
+  private async subscribePluginRpc(
+    request: Extract<SessionInboundMessage, { type: "plugin.rpc.subscribe.request" }>,
+  ): Promise<void> {
+    if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+    const subscription = this.pluginRuntime.subscribePluginRpc(
+      request.pluginId,
+      request.method,
+      request.input,
+    );
+    const owner = this.delivery.begin("plugin-rpc", undefined, () => subscription.release());
+    try {
+      await subscription.ready;
+    } catch (error) {
+      await owner.release();
+      throw error;
+    }
+    if (owner.signal.aborted) return;
+    this.emit({
+      type: "plugin.rpc.subscribe.response",
+      payload: { requestId: request.requestId, subscriptionId: owner.responseId },
+    });
+    const close = (reason?: string) => {
+      owner.emit({
+        type: "plugin.rpc.closed",
+        payload: {
+          subscriptionId: owner.responseId,
+          ...(reason === undefined ? {} : { error: reason }),
+        },
+      });
+      void owner.release().catch(() => undefined);
+    };
+    subscription.attach({
+      event: (event) => {
+        const message: SessionOutboundMessage = {
+          type: "plugin.rpc.event",
+          payload: { subscriptionId: owner.responseId, event },
+        };
+        if (!(event instanceof Uint8Array)) {
+          owner.emit(message);
+          return;
+        }
+        if (!this.authorization.allowsOutbound(message)) return;
+        if (this.onBinaryMessage === null) {
+          subscription.release();
+          close("This connection cannot carry binary plugin events");
+          return;
+        }
+        owner.emitBinary(encodePluginEventFrame(owner.responseId, event));
+      },
+      closed: close,
+    });
   }
 
   private dispatchPluginDirectoryMessage(msg: SessionInboundMessage): Promise<void> | undefined {
@@ -2824,6 +2952,8 @@ export class Session {
     switch (msg.type) {
       case "agent.detach.request":
         return this.handleDetachAgentRequest(msg.agentId, msg.requestId);
+      case "agent.unarchive.request":
+        return this.handleUnarchiveAgentRequest(msg.agentId, msg.requestId);
       default:
         return undefined;
     }
@@ -2886,6 +3016,8 @@ export class Session {
       }
       case "agent.fork_context.request":
         return this.handleAgentForkContextRequest(msg);
+      case "agent.fork.request":
+        return this.handleAgentForkRequest(msg);
       case "agent.ask.request":
         return this.handleAgentAskRequest(msg);
       default:
@@ -3144,8 +3276,6 @@ export class Session {
         return this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId);
       case "workspace.pin.set.request":
         return this.handleWorkspacePinSetRequest(msg.workspaceId, msg.pinned, msg.requestId);
-      case "workspace.settle.set.request":
-        return this.handleWorkspaceSettleSetRequest(msg.workspaceId, msg.settled, msg.requestId);
       default:
         return undefined;
     }
@@ -3305,6 +3435,114 @@ export class Session {
     }
   }
 
+  private dispatchNotesMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "notes.list.request":
+        return this.handleNotesList(msg);
+      case "notes.create.request":
+      case "notes.edit.request":
+      case "notes.delete.request":
+        return this.handleNotesMutation(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private requireNotes(): NotesService {
+    if (!this.notesService) {
+      throw new SessionRequestError("notes_unavailable", "Notes unavailable");
+    }
+    return this.notesService;
+  }
+
+  private async handleNotesList(
+    request: Extract<SessionInboundMessage, { type: "notes.list.request" }>,
+  ): Promise<void> {
+    if (!this.notesService) {
+      this.emit({
+        type: "notes.list.response",
+        payload: { requestId: request.requestId, notes: [], error: "Notes unavailable" },
+      });
+      return;
+    }
+    const service = this.notesService;
+    if (!request.subscribe) {
+      this.emit({
+        type: "notes.list.response",
+        payload: { requestId: request.requestId, notes: service.list(), error: null },
+      });
+      return;
+    }
+    let unsubscribe: (() => void) | undefined;
+    const owner = this.delivery.begin("notes", request.subscribe.subscriptionId, () => {
+      unsubscribe?.();
+    });
+    unsubscribe = service.subscribe((change) => {
+      if (owner.signal.aborted) return;
+      owner.emit({ type: "notes.changed", payload: change });
+    });
+    this.emit({
+      type: "notes.list.response",
+      payload: {
+        requestId: request.requestId,
+        subscriptionId: owner.responseId,
+        notes: service.list(),
+        error: null,
+      },
+    });
+  }
+
+  private async handleNotesMutation(
+    request: Extract<
+      SessionInboundMessage,
+      { type: "notes.create.request" | "notes.edit.request" | "notes.delete.request" }
+    >,
+  ): Promise<void> {
+    try {
+      const service = this.requireNotes();
+      switch (request.type) {
+        case "notes.create.request": {
+          const note = await service.create(request);
+          this.emit({
+            type: "notes.create.response",
+            payload: { requestId: request.requestId, note, error: null },
+          });
+          return;
+        }
+        case "notes.edit.request": {
+          const note = await service.edit(request);
+          this.emit({
+            type: "notes.edit.response",
+            payload: { requestId: request.requestId, note, error: null },
+          });
+          return;
+        }
+        case "notes.delete.request":
+          await service.delete(request.noteId);
+          this.emit({
+            type: "notes.delete.response",
+            payload: { requestId: request.requestId, noteId: request.noteId, error: null },
+          });
+          return;
+      }
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.sessionLogger.warn({ err: error, requestType: request.type }, "Note request failed");
+      if (request.type === "notes.delete.request") {
+        this.emit({
+          type: "notes.delete.response",
+          payload: { requestId: request.requestId, noteId: request.noteId, error: message },
+        });
+        return;
+      }
+      this.emit({
+        type:
+          request.type === "notes.create.request" ? "notes.create.response" : "notes.edit.response",
+        payload: { requestId: request.requestId, note: null, error: message },
+      });
+    }
+  }
+
   private async dispatchMiscMessage(msg: SessionInboundMessage): Promise<void> {
     switch (msg.type) {
       case "list_commands_request":
@@ -3337,6 +3575,22 @@ export class Session {
   public async handleBinaryFrame(binaryFrame: BinaryFrame, source: object): Promise<void> {
     if (binaryFrame.kind === "host_route") {
       this.connectedHostSession?.binary(binaryFrame.frame, source);
+      return;
+    }
+    if (binaryFrame.kind === "plugin") {
+      const frame = binaryFrame.frame;
+      // The binary form of plugin.rpc.invoke.request; it authorizes and replies like the JSON form.
+      if (frame.opcode !== PluginFrameOpcode.Input) return;
+      await this.handleMessage(
+        {
+          type: "plugin.rpc.invoke.request",
+          requestId: frame.requestId,
+          pluginId: frame.pluginId,
+          method: frame.method,
+          input: frame.payload,
+        },
+        source,
+      );
       return;
     }
     if (!this.authorization.allowsPermission("workspace.write")) {
@@ -3544,6 +3798,37 @@ export class Session {
           accepted: false,
           error: message,
         },
+      });
+    }
+  }
+
+  private async handleUnarchiveAgentRequest(agentId: string, requestId: string): Promise<void> {
+    this.sessionLogger.info({ agentId, requestId }, "Unarchiving agent");
+    try {
+      const result = await unarchiveAgentCommand(
+        {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          getWorkspace: (workspaceId) => this.workspaceRegistry.get(workspaceId),
+          restoreWorkspace: async (workspace) => {
+            const restored =
+              await this.workspaceProvisioning.ensureWorkspaceRecordUnarchived(workspace);
+            await this.publishRecoveredWorkspace(restored);
+          },
+          isDirectory: (path) => this.filesystem.isDirectory(path),
+        },
+        agentId,
+      );
+      this.emit({
+        type: "agent.unarchive.response",
+        payload: { requestId, accepted: true, error: null, ...result },
+      });
+    } catch (error) {
+      const message = getErrorMessageOr(error, "Failed to unarchive agent");
+      this.sessionLogger.error({ err: error, agentId, requestId }, "Failed to unarchive agent");
+      this.emit({
+        type: "agent.unarchive.response",
+        payload: { requestId, agentId, accepted: false, error: message },
       });
     }
   }
@@ -4025,8 +4310,6 @@ export class Session {
       const updated = await this.workspaceRegistry.update(workspaceId, (existing) => ({
         ...existing,
         pinnedAt: nextPinnedAt,
-        // A pinned workspace is one the user is keeping in view, so pinning ends a settle.
-        settledAt: pinned ? null : existing.settledAt,
         updatedAt,
       }));
       if (!updated) {
@@ -4050,43 +4333,6 @@ export class Session {
         },
       });
       emitResponse(false, null, getErrorMessageOr(error, "Failed to pin workspace"));
-    }
-  }
-
-  private async handleWorkspaceSettleSetRequest(
-    workspaceId: string,
-    settled: boolean,
-    requestId: string,
-  ): Promise<void> {
-    const logContext = { workspaceId, settled, requestId };
-    this.sessionLogger.info(logContext, "session: workspace.settle.set.request");
-    const emitResponse = (accepted: boolean, settledAt: string | null, error: string | null) => {
-      this.emit({
-        type: "workspace.settle.set.response",
-        payload: { requestId, workspaceId, accepted, settledAt, error },
-      });
-    };
-
-    try {
-      const now = new Date().toISOString();
-      const nextSettledAt = settled ? now : null;
-      const updated = await this.workspaceRegistry.update(workspaceId, (existing) => ({
-        ...existing,
-        settledAt: nextSettledAt,
-        updatedAt: now,
-      }));
-      if (!updated) {
-        emitResponse(false, null, "Workspace not found");
-        return;
-      }
-      emitResponse(true, nextSettledAt, null);
-      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
-    } catch (error) {
-      this.sessionLogger.error(
-        { ...logContext, err: error },
-        "session: workspace.settle.set.request error",
-      );
-      emitResponse(false, null, getErrorMessageOr(error, "Failed to settle workspace"));
     }
   }
 
@@ -4538,6 +4784,7 @@ export class Session {
       autoArchive,
       images,
       attachments,
+      attachmentRefs,
       env,
     } = msg;
     this.sessionLogger.info(
@@ -4611,6 +4858,7 @@ export class Session {
           outputSchema,
           images,
           attachments,
+          attachmentRefs,
           labels: resolvedIntent.intent.labels,
           env,
           provisionalTitle,
@@ -4618,7 +4866,10 @@ export class Session {
         },
       );
       createdAgentId = snapshot.id;
-      await this.agentUpdates.forwardLiveAgent(snapshot);
+      // `snapshot` predates the initial prompt; subscribers keep the last state they receive.
+      await this.agentUpdates.forwardLiveAgent(
+        this.agentManager.getAgent(snapshot.id) ?? liveSnapshot,
+      );
       if (resolvedIntent.createdDirectoryWorkspace && trimmedPrompt) {
         this.workspaceAutoName.scheduleForDirectory(
           {
@@ -5808,7 +6059,6 @@ export class Session {
       name: resolveWorkspaceDisplayName(workspace),
       title: workspace.title,
       pinnedAt: workspace.pinnedAt,
-      settledAt: workspace.settledAt,
       ...(workspace.labels && workspace.labels.length > 0 ? { labels: workspace.labels } : {}),
       background: workspace.background,
       archivingAt: null,
@@ -5905,7 +6155,6 @@ export class Session {
       }),
       title: result.workspace.title,
       pinnedAt: result.workspace.pinnedAt,
-      settledAt: result.workspace.settledAt,
       ...(result.workspace.labels && result.workspace.labels.length > 0
         ? { labels: result.workspace.labels }
         : {}),
@@ -6093,13 +6342,17 @@ export class Session {
     if (!workspace) {
       throw new Error(`Recovered workspace record not found: ${workspaceId}`);
     }
+    await this.publishRecoveredWorkspace(workspace);
+  }
+
+  private async publishRecoveredWorkspace(workspace: PersistedWorkspaceRecord): Promise<void> {
     if (this.onWorkspaceRecovered) {
       try {
         await this.onWorkspaceRecovered(workspace);
         return;
       } catch (error) {
         this.sessionLogger.warn(
-          { err: error, workspaceId },
+          { err: error, workspaceId: workspace.workspaceId },
           "Failed to publish workspace recovery to active sessions",
         );
       }
@@ -7752,7 +8005,9 @@ export class Session {
         const clearableAgentIds = agents
           .filter((agent) => !agent.archivedAt)
           .filter((agent) => agent.workspaceId === workspace.workspaceId)
-          .filter((agent) => agent.requiresAttention === true)
+          // Lifecycle `error` alone keeps an agent failed after its attention is cleared, so
+          // "Mark as read" also dismisses errored agents.
+          .filter((agent) => agent.requiresAttention === true || agent.status === "error")
           .filter((agent) => (agent.pendingPermissions?.length ?? 0) === 0)
           .filter((agent) => agent.attentionReason !== "permission")
           .map((agent) => agent.id);
@@ -7760,7 +8015,7 @@ export class Session {
         for (const agentId of clearableAgentIds) {
           const liveAgent = this.agentManager.getAgent(agentId);
           if (liveAgent) {
-            await this.agentManager.clearAgentAttention(agentId);
+            await this.agentManager.markAgentRead(agentId);
             clearedAgentIds.push(agentId);
             continue;
           }
@@ -7770,13 +8025,14 @@ export class Session {
             !record ||
             record.internal ||
             record.archivedAt ||
-            record.requiresAttention !== true
+            (record.requiresAttention !== true && record.lastStatus !== "error")
           ) {
             continue;
           }
           const nextRecord: StoredAgentRecord = {
             ...record,
             updatedAt: new Date().toISOString(),
+            lastStatus: record.lastStatus === "error" ? "idle" : record.lastStatus,
             requiresAttention: false,
             attentionReason: null,
             attentionTimestamp: null,
@@ -8359,6 +8615,54 @@ export class Session {
     }
   }
 
+  private async handleAgentForkRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.fork.request" }>,
+  ): Promise<void> {
+    try {
+      const snapshot = await ensureAgentLoaded(msg.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+      });
+      const agentPayload = await this.buildAgentPayload(snapshot);
+      const forked = await forkAgent({
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+        agentId: msg.agentId,
+        boundaryCursor: msg.boundaryCursor,
+        boundaryMessageId: msg.boundaryMessageId,
+        agentTitle: agentPayload.title,
+      });
+      await this.agentUpdates.forwardLiveAgent(forked.agent);
+      this.emit({
+        type: "agent.fork.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          forkedAgentId: forked.agent.id,
+          method: forked.method,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, agentId: msg.agentId },
+        "Failed to handle agent.fork.request",
+      );
+      this.emit({
+        type: "agent.fork.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          forkedAgentId: null,
+          method: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
   private async handleAgentAskRequest(
     msg: Extract<SessionInboundMessage, { type: "agent.ask.request" }>,
   ): Promise<void> {
@@ -8448,6 +8752,7 @@ export class Session {
         text: msg.text,
         images: msg.images,
         attachments: msg.attachments,
+        attachmentRefs: msg.attachmentRefs,
       });
       this.emit({
         type: "agent.queue.add.response",
@@ -8762,7 +9067,7 @@ export class Session {
     try {
       const agentId = resolved.agentId;
 
-      const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments);
+      const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments, msg.attachmentRefs);
       this.sessionLogger.trace(
         {
           agentId,
@@ -8793,7 +9098,7 @@ export class Session {
             },
             activeTurnBehavior: msg.activeTurnBehavior ?? "steer",
             sessionMode: msg.sessionMode,
-            clearPendingPermissions: true,
+            clearPendingPermissions: false,
           });
           deliveryStatus = "queued";
           queued();
@@ -9165,9 +9470,9 @@ export class Session {
     }
   }
 
-  private async emitBinaryForFileTransfer(frame: Uint8Array, source?: object): Promise<void> {
+  private async emitBinaryReply(frame: Uint8Array, source?: object): Promise<void> {
     if (source && this.onBinaryMessageToSource) {
-      this.delivery.authorizeFileReply(frame, source);
+      this.delivery.authorizeBinaryReply(frame, source);
       await this.onBinaryMessageToSource(source, frame);
       return;
     }
@@ -9298,6 +9603,7 @@ function sessionEventCategory(message: SessionOutboundMessage): SessionEventSubs
     case "activity_log":
     case "hub.execution.agent.update":
     case "hub.execution.agent.stream":
+    case "notes.fired":
       return message.type;
     case "status":
       switch (message.payload.status) {

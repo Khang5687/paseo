@@ -83,6 +83,7 @@ MCP 不提供解除 Agent 父子关系的工具。解除关系是用户在应用
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `create_agent`       | 创建 Agent，可用 `workspaceId` 把它放到已有的工作区。用 `initialPrompt` 开始工作；不等待完成就返回。                                                                              |
 | `send_agent_prompt`  | 用 `agentId` 和 `prompt` 发送提示词；不等待完成就返回。                                                                                                                           |
+| `fork_agent`         | 把 Agent（默认是自己）分叉成一个新的主 Agent，继承当前对话，并用 `prompt` 开始另一项任务；原 Agent 不受影响。                                                                     |
 | `get_agent_status`   | 返回 Agent 的最新快照。                                                                                                                                                           |
 | `list_agents`        | 以精简元数据列出最近的 Agent；`includeBackground: true` 会包含后台工作。                                                                                                          |
 | `cancel_agent`       | 中止 Agent 当前的运行，但保留该 Agent。                                                                                                                                           |
@@ -180,10 +181,10 @@ MCP heartbeat 是临时的：只能创建或删除。要修改一个 heartbeat�
 
 ### 权限 {#permissions}
 
-| 工具                       | 功能                                |
-| -------------------------- | ----------------------------------- |
-| `list_pending_permissions` | 返回所有 Agent 中待处理的权限请求。 |
-| `respond_to_permission`    | 批准或拒绝一个待处理的权限请求。    |
+| 工具                       | 功能                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------- |
+| `list_pending_permissions` | 列出 Agent 正在等待的提问框和批准请求；`agentId` 只看某一个 Agent。          |
+| `respond_to_permission`    | 像用户点按一样回答：按问题 header 传 `answers`，或传允许/拒绝的 `response`。 |
 
 ### 浏览器 {#browser}
 

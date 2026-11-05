@@ -115,7 +115,8 @@ export class FakeOmp implements OmpRuntime {
       sessionId,
       this.removedModels,
     );
-    if (!launch.noSession) this.sessionIdsByFile.set(session.state.sessionFile, sessionId);
+    const sessionFile = session.state.sessionFile;
+    if (!launch.noSession && sessionFile) this.sessionIdsByFile.set(sessionFile, sessionId);
     session.commands = this.queuedCommands.shift() ?? [];
     for (const [level, error] of this.queuedSubagentSubscriptionErrors) {
       session.subagentSubscriptionErrors.set(level, error);
@@ -281,7 +282,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
       autoCompactionEnabled: true,
       fastModeEnabled: false,
       fastModeActive: false,
-      sessionFile: launch.session ?? "/tmp/omp-session",
+      sessionFile: launch.session ?? (launch.fork ? `${launch.fork}.forked` : "/tmp/omp-session"),
       sessionId,
       messageCount: 0,
       queuedMessageCount: 0,
@@ -552,6 +553,11 @@ export class FakeOmpSession implements OmpRuntimeSession {
       throw new Error("FakeOmp branch response requires text");
     }
     this.activeBranchEntryId = entryId;
+    // Like OMP, a branch continues in a new session file and leaves the old one as it was.
+    this.state = {
+      ...this.state,
+      sessionFile: `${this.state.sessionFile}.cut-before-${entryId}`,
+    };
     return { text: this.branchResponse.text };
   }
 
@@ -913,12 +919,14 @@ export class FakeOmpChild {
     if (typeof command.id !== "string") return;
     const type = String(command.type);
     if (type === "account.routing.configure") return this.answerConfigure(command);
-    if (type === "account.routing.refresh")
-      return this.answerScripted(command, this.options.refresh);
+    if (type === "account.routing.refresh") {
+      void this.answerScripted(command, this.options.refresh);
+      return;
+    }
     if (type === "account.routing.rank") {
       // Default mirrors a native rank of equally good candidates.
       const refs = (command.candidateRefs as OmpAccountRef[]) ?? [];
-      return this.answerScripted(
+      void this.answerScripted(
         command,
         this.options.rank ??
           (() => ({
@@ -929,6 +937,7 @@ export class FakeOmpChild {
             bestCloseRefs: refs,
           })),
       );
+      return;
     }
     if (type === "get_state") {
       return this.respond(command, {

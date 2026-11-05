@@ -1,3 +1,4 @@
+import { AddHostProvider, AddHostFlowHost } from "@/hosts/add-host";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { useIsExplorerSidebarOpen } from "@/workspace-tabs/explorer-sidebar";
@@ -52,6 +53,7 @@ import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-short
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
 import { HostConfirmationSheet } from "@/hosts/host-confirmation-sheet";
+import { NoteComposerHost } from "@/notes/composer/note-composer-host";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import {
   canDesktopAppSidebarShare,
@@ -131,6 +133,8 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
+import { NoteRemindersHost } from "@/notes/reminders-host";
+import { ChatNoteBadgesHost } from "@/notes/chat-badges-store";
 import { ensureOsNotificationPermission } from "@/utils/os-notifications";
 
 polyfillCrypto();
@@ -468,6 +472,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
     <View style={layoutStyles.surfaceFill}>
       <SkinBackdrop />
       {workspaceChrome}
+      <AddHostFlowHost />
       <AppearanceStyleBoundary>
         {!isCompactLayout && appChromeLayout.sidebarToggleOwner === "window" ? (
           <WindowChromeRegion corners="top-left">
@@ -500,6 +505,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <AddProjectFlowHost />
         <HostChooserModal />
         <HostConfirmationSheet />
+        <NoteComposerHost />
         <ProviderSettingsHost />
         <WorkspaceSetupDialog />
         <KeyboardShortcutsDialog />
@@ -777,6 +783,7 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/new" ||
       pathname === "/sessions" ||
       pathname === "/schedules" ||
+      pathname === "/notes" ||
       routeHasKnownHost);
 
   return <AppContainer chromeEnabled={shouldShowAppChrome}>{children}</AppContainer>;
@@ -809,7 +816,7 @@ function RootStack() {
         <Stack.Screen name="open-project" />
         <Stack.Screen name="sessions" />
         <Stack.Screen name="schedules" />
-        <Stack.Screen name="pair-scan" />
+        <Stack.Screen name="notes" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />
       <Stack.Screen name="settings/hosts/[serverId]/index" />
@@ -858,6 +865,8 @@ function RuntimeProviders({ children }: { children: ReactNode }) {
   return (
     <HostRuntimeBootstrapProvider>
       <NotificationOpenBridge />
+      <NoteRemindersHost />
+      <ChatNoteBadgesHost />
       <SidebarCalloutProvider>
         <ProvidersWrapper>{children}</ProvidersWrapper>
       </SidebarCalloutProvider>
@@ -894,11 +903,13 @@ function RootAppTree() {
     <GestureHandlerRootView style={flexStyle}>
       <View style={layoutStyles.surfaceFill}>
         <LucideProvider strokeWidth={ICON_STROKE_WIDTH}>
-          <RootProviders>
-            <RuntimeProviders>
-              <AppShell />
-            </RuntimeProviders>
-          </RootProviders>
+          <AddHostProvider>
+            <RootProviders>
+              <RuntimeProviders>
+                <AppShell />
+              </RuntimeProviders>
+            </RootProviders>
+          </AddHostProvider>
         </LucideProvider>
       </View>
     </GestureHandlerRootView>

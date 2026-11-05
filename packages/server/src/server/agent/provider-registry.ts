@@ -532,6 +532,27 @@ function forwardNativeSessionOperations(
   };
 }
 
+function wrapForkSession(
+  provider: AgentProvider,
+  inner: AgentClient,
+  providerOptions: ProviderOptions | undefined,
+): AgentClient["forkSession"] {
+  const forkSession = inner.forkSession?.bind(inner);
+  if (!forkSession) {
+    return undefined;
+  }
+  return async (handle, input) => {
+    const forked = await forkSession(
+      { ...handle, provider: inner.provider },
+      {
+        ...input,
+        providerOptions: mergeProviderOptions(providerOptions, input.providerOptions),
+      },
+    );
+    return { ...forked, persistence: { ...forked.persistence, provider } };
+  };
+}
+
 function wrapClientProvider(
   provider: AgentProvider,
   inner: AgentClient,
@@ -651,6 +672,7 @@ function wrapClientProvider(
         }
       : undefined,
     ...forwardNativeSessionOperations(inner, provider),
+    forkSession: wrapForkSession(provider, inner, providerOptions),
     getCatalogCacheKey: inner.getCatalogCacheKey?.bind(inner),
     isAvailable: (signal, options) => inner.isAvailable(signal, options),
     getDiagnostic: inner.getDiagnostic?.bind(inner),

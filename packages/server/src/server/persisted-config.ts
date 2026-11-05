@@ -260,6 +260,7 @@ export const PersistedConfigSchema = z
           })
           .passthrough()
           .optional(),
+        usage: z.object({ enabled: z.boolean().optional() }).optional(),
         browserTools: z
           .object({
             enabled: z.boolean().optional(),
@@ -349,6 +350,7 @@ export const PersistedConfigSchema = z
       .object({
         providers: z.preprocess(normalizeAgentProviders, ProviderOverridesSchema).optional(),
         idleRuntimeCleanup: z.boolean().optional(),
+        draftHistoryRetentionDays: z.number().int().positive().max(3650).optional(),
         resumeOnStartup: z.boolean().optional(),
         resumePrompt: z.string().optional(),
         catalogRefreshTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),

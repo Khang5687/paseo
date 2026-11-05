@@ -112,6 +112,12 @@ export const en = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restore draft",
+      attachmentsOnly: "(attachments only)",
+      attachments_one: "{{count}} attachment",
+      attachments_other: "{{count}} attachments",
+    },
     placeholders: {
       desktop: "Message the agent, tag @files, or use /commands and /skills",
       mobile: "Message, @files, /commands",
@@ -207,6 +213,7 @@ export const en = {
     clientCommands: {
       archiveAgent: "Archive the current agent",
       freshDraft: "Archive this agent and start a fresh draft",
+      forkAgent: "Fork this chat into a new tab",
     },
     github: {
       searching: "Searching...",
@@ -334,6 +341,57 @@ export const en = {
       hostOffline: "Host offline",
       runningAgent: "This agent is still running. Archiving it will stop the agent.",
       archive: "Archive",
+    },
+  },
+  codeRun: {
+    run: "Run",
+    runCommand: "Run command",
+    cancel: "Cancel",
+    commandLabel: "Command",
+    where: "Runs on {{host}} · {{folder}}",
+    running: "Running",
+    done: "Done · exit {{code}}",
+    failed: "Failed · exit {{code}}",
+    stopped: "Stopped",
+    terminalClosed: "Terminal closed",
+    close: "Close",
+    expand: "Show output",
+    collapse: "Hide output",
+    openTerminal: "Open in Terminal tab",
+    answerPlaceholder: "Send input",
+    send: "Send",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
+    sendToAgent: "Send output to agent",
+    rerun: "Re-run",
+    copyOutput: "Copy output",
+    copied: "Copied",
+    noOutput: "No output yet",
+    noOutputFinished: "No output",
+    startFailed: "Unable to start the command",
+    closeFailed: "Unable to close the terminal",
+    hostOffline: "Host offline. Reconnect to run this command.",
+    prompt: {
+      sudoPassword: "sudo password",
+      password: "Password",
+    },
+    chips: {
+      yes: "Yes",
+      no: "No",
+    },
+    keys: {
+      enter: "Enter",
+      tab: "Tab",
+      interrupt: "Ctrl-C",
+    },
+    risk: {
+      admin: "Runs as admin",
+      deletes: "Deletes files",
+    },
+    report: {
+      exitStatus: "Exit status",
+      stopped: "Stopped before it finished",
+      truncated: "[earlier output cut]",
     },
   },
   message: {
@@ -636,6 +694,7 @@ export const en = {
     terminal: {
       hostDisconnected: "Host is not connected",
       updateHost: "Update the host to use the native terminal renderer.",
+      restoreRequiresUpdate: "Update the host to view terminals.",
       unableToSubscribe: "Unable to subscribe to terminal",
       fileUploaded: "File uploaded",
       pasteFileFailed: "Failed to paste file: {{reason}}",
@@ -1187,6 +1246,18 @@ export const en = {
       description: "Check your connection and try again.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "Archive “{{name}}”?",
+    agentTitleUnnamed: "Archive this agent?",
+    workspaceTitle: "Archive workspace “{{name}}”?",
+    workspaceTitleUnnamed: "Archive this workspace?",
+    finishedSubagentsTitle: "Archive finished subagents?",
+    finishedSubagentsCountOne: "Archive 1 finished subagent?",
+    finishedSubagentsCountMany: "Archive {{count}} finished subagents?",
+    message: "You can restore it from History.",
+    confirm: "Archive",
+    cancel: "Cancel",
+  },
   sidebar: {
     statusGroupAccessibility: "{{label}} group",
     unsentDraft: "Unsent draft",
@@ -1253,10 +1324,6 @@ export const en = {
     pinned: {
       title: "Pinned",
     },
-    settled: {
-      title: "Settled",
-      titleWithCount: "Settled ({{count}})",
-    },
     host: {
       noHost: "No host",
       switchTitle: "Switch host",
@@ -1287,6 +1354,7 @@ export const en = {
       sessions: "History",
       search: "Search",
       schedules: "Schedules",
+      notes: "Notes",
     },
     worktreeSetup: {
       title: "Set up worktree scripts",
@@ -1323,6 +1391,9 @@ export const en = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} sub-agents working",
+      workingSubagents_one: "{{count}} sub-agent working",
+      workingSubagents_other: "{{count}} sub-agents working",
       status: {
         serviceRunning: "Service {{name}} running",
         serviceUnhealthy: "Service {{name}} unhealthy",
@@ -1344,13 +1415,10 @@ export const en = {
         createWorkspaceFor: "Create a new workspace for {{projectName}}",
         copyPath: "Copy path",
         copyBranchName: "Copy branch name",
+        copyAgentId: "Copy agent ID",
         rename: "Rename workspace",
         pin: "Pin to top",
         unpin: "Unpin",
-        settle: "Settle",
-        unsettle: "Unsettle",
-        settleWorkspace: "Settle workspace",
-        unsettleWorkspace: "Unsettle workspace",
         archive: "Archive",
         archiveWorkspace: "Archive workspace",
         hideFromSidebar: "Hide from sidebar",
@@ -1373,6 +1441,8 @@ export const en = {
         workspacePathUnavailable: "Workspace path not available",
         pathCopied: "Path copied",
         branchNameCopied: "Branch name copied",
+        agentIdCopied: "Agent ID {{id}}",
+        agentIdCopiedMostRecent: "Agent ID {{id}} (most recent of {{count}})",
         hostDisconnected: "Host is not connected",
         hideFailed: "Failed to hide workspace",
         archiveFailed: "Failed to archive workspace",
@@ -1967,6 +2037,40 @@ export const en = {
     shareFile: "Share file",
     shareFileNamed: "Share {{fileName}}",
   },
+  offlineFiles: {
+    title: "Offline files",
+    autoSave: {
+      label: "Save chat files automatically",
+      description:
+        "Save files mentioned in chats you open, on Wi-Fi only, so they open while the host is offline.",
+    },
+    retentionDays: {
+      label: "Keep for (days)",
+      description: "Saved files older than this are removed.",
+    },
+    maxTotalMb: {
+      label: "Storage limit (MB)",
+      description: "The oldest saved files are removed past this size.",
+    },
+    maxFileMb: {
+      label: "Largest file (MB)",
+      description: "Larger files are not saved.",
+    },
+    saved: {
+      label: "Saved: {{count}} files, {{size}}",
+      description: "The newest saved files are listed below.",
+    },
+    clearAll: "Clear all",
+    clearConfirmTitle: "Clear offline files?",
+    clearConfirmMessage:
+      "Saved copies are deleted from this device. Files on the host are not touched.",
+    saveOffline: "Save offline",
+    savedToast: "Saved for offline use",
+    tooLarge: "The file is over the {{size}} MB limit for offline files.",
+    readOnly: "This is a saved copy. Connect to the host to edit it.",
+    savedAgo: "Offline copy, saved {{time}}",
+    share: "Share",
+  },
   menu: {
     backdrop: "Menu backdrop",
   },
@@ -1991,6 +2095,8 @@ export const en = {
     archiveTooltip: "Archive subagent",
     archiveFinishedAction: "Archive finished subagents",
     archiveFinishedRetry: "Retry ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "Archive finished ({{count}})",
+    archiveFinishedProgress: "Archiving {{completed}}/{{total}}",
   },
   panels: {
     draft: {
@@ -2073,7 +2179,6 @@ export const en = {
   toolCallDetails: {
     error: "Error",
     empty: "No additional details available",
-    subAgentActivity: "Sub-agent activity",
     input: "Input",
     output: "Output",
   },
@@ -2324,6 +2429,11 @@ export const en = {
     },
   },
   providerUsage: {
+    checkUsage: "Check usage",
+    checkUsageHint: "Applies to {{host}} on every device",
+    off: "Usage is off on {{host}}.",
+    turnOn: "Turn on",
+
     options: "Settings",
     refreshFailed: "Unable to refresh usage",
     noHosts: "No connected hosts",
@@ -2388,6 +2498,169 @@ export const en = {
       hoursAgo: "{{value}}h ago",
       minutesAgo: "{{value}}m ago",
       updated: "Updated {{relativeTime}}",
+    },
+  },
+  notes: {
+    addNote: "Add note",
+    offline: "This host is offline.",
+    unsupported: "Update this host to use notes.",
+    marker: {
+      open: "{{count}} notes",
+      open_one: "{{count}} note",
+      open_other: "{{count}} notes",
+      waiting: "{{count}} notes waiting",
+      waiting_one: "{{count}} note waiting",
+      waiting_other: "{{count}} notes waiting",
+      fired: "{{count}} notes fired",
+      fired_one: "{{count}} note fired",
+      fired_other: "{{count}} notes fired",
+      resolved: "{{count}} resolved notes",
+      resolved_one: "{{count}} resolved note",
+      resolved_other: "{{count}} resolved notes",
+    },
+    composer: {
+      titleNew: "New note",
+      titleEdit: "Edit note",
+      quoteLabel: "Highlighted text",
+      showMore: "Show more",
+      showLess: "Show less",
+      textLabel: "Note",
+      textPlaceholder: "What do you want to remember?",
+      kind: {
+        label: "Type",
+        note: "Note",
+        waiting: "Waiting on",
+      },
+      event: {
+        label: "Waiting on",
+        agent: "Agent",
+        command: "Command",
+        time: "Time",
+      },
+      agent: {
+        label: "Agent finishes or needs input",
+        placeholder: "Choose an agent",
+        empty: "No agents on this host",
+        search: "Search agents",
+        untitled: "Untitled agent",
+      },
+      command: {
+        terminalLabel: "Command finishes in",
+        placeholder: "Choose a terminal",
+        empty: "No terminals on this host",
+        search: "Search terminals",
+        untitled: "Terminal",
+        binding:
+          "Binds to the command running now or the next one. Needs a Paseo terminal running zsh or bash.",
+        conditionLabel: "Notify when it",
+        any: "Any",
+        success: "Succeeds",
+        failure: "Fails",
+        commandLabel: "Command",
+        commandPlaceholder: "Optional label",
+      },
+      time: {
+        label: "Remind me",
+        presets: {
+          in30m: "In 30 min",
+          in1h: "In 1 hour",
+          in2h: "In 2 hours",
+          tomorrow9: "Tomorrow 9:00",
+        },
+        inputLabel: "Or type a time",
+        inputPlaceholder: "3pm, in 45 min, tomorrow 9am",
+        invalid: "Couldn't read that time",
+        resolvedToday: "Today at {{time}}",
+        resolvedTomorrow: "Tomorrow at {{time}}",
+        resolvedOther: "{{date}} at {{time}}",
+      },
+      actions: {
+        cancel: "Cancel",
+        add: "Add note",
+        save: "Save",
+        resolve: "Resolve",
+        reopen: "Reopen",
+        delete: "Delete",
+      },
+      deleteConfirm: {
+        title: "Delete note",
+        message: "Delete this note? This cannot be undone.",
+        confirm: "Delete",
+      },
+      errors: {
+        save: "Couldn't save the note: {{message}}",
+        update: "Couldn't update the note: {{message}}",
+        delete: "Couldn't delete the note: {{message}}",
+      },
+    },
+    screen: {
+      title: "Notes",
+      loadError: "{{host}}: Could not load notes",
+      unsupportedHosts_one: "{{hosts}} needs an update to show notes",
+      unsupportedHosts_other: "{{hosts}} need an update to show notes",
+      filters: {
+        all: "All",
+        waiting: "Waiting",
+        open: "Open",
+        resolved: "Resolved",
+      },
+      empty: {
+        all: "No notes yet",
+        allHint: "Highlight text in a chat or terminal to add a note",
+        waiting: "Nothing waiting",
+        open: "No open notes",
+        resolved: "No resolved notes",
+      },
+      source: {
+        agent: "Agent",
+        terminal: "Terminal",
+      },
+      wait: {
+        agent: "Waiting for {{agent}} to finish",
+        agentUnnamed: "Waiting for the agent to finish",
+        commandAny: "Waiting for command to finish",
+        commandSuccess: "Waiting for command to succeed",
+        commandFailure: "Waiting for command to fail",
+        namedCommandAny: "Waiting for {{command}} to finish",
+        namedCommandSuccess: "Waiting for {{command}} to succeed",
+        namedCommandFailure: "Waiting for {{command}} to fail",
+        timeToday: "Reminder at {{time}}",
+        timeTomorrow: "Reminder tomorrow at {{time}}",
+        timeOther: "Reminder {{date}} at {{time}}",
+        inMinutes: "in {{count}}m",
+        inHours: "in {{count}}h",
+        inDays: "in {{count}}d",
+      },
+      status: {
+        waiting: "Waiting",
+        done: "Done",
+        resolved: "Resolved",
+        unmatched: "Not matched",
+      },
+      actions: {
+        menu: "Note actions",
+        edit: "Edit note",
+        resolve: "Resolve",
+        reopen: "Reopen",
+        resolving: "Resolving...",
+        reopening: "Reopening...",
+        delete: "Delete note",
+        deleting: "Deleting...",
+      },
+      deleteConfirm: {
+        title: "Delete note",
+        message: "Delete this note? This cannot be undone.",
+        confirm: "Delete",
+      },
+      openFailed: "This terminal is no longer open",
+    },
+    chat: {},
+    terminal: {
+      quoteNotFound: "This note's text is no longer in the terminal's scrollback.",
+    },
+    alerts: {
+      reminderTitle: "Done: {{text}}",
+      reminderBody: "Reminder",
     },
   },
   settings: {
@@ -2869,16 +3142,12 @@ export const en = {
         },
         visibility: {
           title: "Art visibility",
-          hint: "Paseo keeps text readable automatically, so bright images may show less art.",
+          hint: "Even at 100%, Paseo caps the art so text stays readable. Bright images show less.",
         },
         blur: {
           title: "Blur",
-          options: {
-            off: "Off",
-            low: "Low",
-            medium: "Medium",
-            high: "High",
-          },
+          off: "Off",
+          value: "{{radius}} px",
         },
         showBehindSidebar: "Show behind sidebar",
         showBehindContent: "Show behind content",
@@ -3189,6 +3458,15 @@ export const en = {
           prompt: "Resume prompt",
           edit: "Edit",
           editAccessibilityLabel: "Edit prompt",
+        },
+        draftHistory: {
+          title: "Draft history",
+          hint_one:
+            "Deleted or overwritten drafts are kept for {{count}} day so you can restore them from the composer.",
+          hint_other:
+            "Deleted or overwritten drafts are kept for {{count}} days so you can restore them from the composer.",
+          days_one: "{{count}}d",
+          days_other: "{{count}}d",
         },
         idleRuntimeCleanup: {
           title: "Release idle agents",
@@ -3507,6 +3785,8 @@ type TranslationResourcesBase = WidenStringLeaves<typeof en>;
 type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
 type DurationPluralKey = `${"days" | "hours" | "minutes"}_${PluralCategory}`;
 type AgoPluralKey = `${"daysAgo" | "hoursAgo" | "minutesAgo"}_${PluralCategory}`;
+type WorkingSubagentsPluralKey = `workingSubagents_${PluralCategory}`;
+type NoteMarkerPluralKey = `${"open" | "waiting" | "fired" | "resolved"}_${PluralCategory}`;
 
 // i18next plural categories differ by locale, so locale catalogs may add the
 // explicit v4 suffixes they need while retaining the canonical fallback keys.
@@ -3516,5 +3796,13 @@ export type TranslationResources = TranslationResourcesBase & {
       Partial<Record<DurationPluralKey, string>>;
     timing: TranslationResourcesBase["providerUsage"]["timing"] &
       Partial<Record<AgoPluralKey, string>>;
+  };
+  sidebar: TranslationResourcesBase["sidebar"] & {
+    workspace: TranslationResourcesBase["sidebar"]["workspace"] &
+      Partial<Record<WorkingSubagentsPluralKey, string>>;
+  };
+  notes: TranslationResourcesBase["notes"] & {
+    marker: TranslationResourcesBase["notes"]["marker"] &
+      Partial<Record<NoteMarkerPluralKey, string>>;
   };
 };

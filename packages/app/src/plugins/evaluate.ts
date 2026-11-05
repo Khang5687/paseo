@@ -114,6 +114,7 @@ export type PluginClientRuntime = Pick<
   | "openScreen"
   | "openSurface"
   | "openPanel"
+  | "subscribe"
   | "addComposerPill"
   | "addHeaderButton"
 > & {

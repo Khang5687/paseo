@@ -24,7 +24,9 @@ import { queryClient } from "@/data/query-client";
 import {
   HostRuntimeController,
   HostRuntimeStore,
+  NATIVE_BACKGROUND_POLICY,
   readInitialDaemonConnectionHint,
+  type HostRuntimeBackgroundPolicy,
   type HostRuntimeControllerDeps,
   type HostRuntimeStorage,
 } from "./host-runtime";
@@ -68,6 +70,7 @@ class FakeDaemonClient {
   public ensureConnectedCalls = 0;
   public connectionVerifications = 0;
   public reconnectEnabledChanges: boolean[] = [];
+  public suspendCalls = 0;
   public fetchAgentsCalls: FetchAgentsOptions[] = [];
   public fetchAgentsResponses: Array<
     Awaited<ReturnType<DaemonClient["fetchAgents"]>> | ReturnType<DaemonClient["fetchAgents"]>
@@ -258,6 +261,11 @@ class FakeDaemonClient {
 
   setReconnectEnabled(enabled: boolean): void {
     this.reconnectEnabledChanges.push(enabled);
+  }
+
+  suspend(): void {
+    this.suspendCalls += 1;
+    this.setConnectionState({ status: "disconnected", reason: "Client suspended" });
   }
 
   getLastLivenessRttMs(): number | null {
@@ -1906,103 +1914,163 @@ describe("HostRuntimeStore", () => {
     },
   );
 
-  it.each(["active", "inactive", "background"] as const)(
-    "keeps reconnect enabled through inactive/background and resumes immediately (mounted %s)",
-    async (currentState) => {
-      const relay = (suffix: string): HostConnection => ({
-        id: `relay:relay-${suffix}.paseo.sh:443`,
-        type: "relay",
-        relayEndpoint: `relay-${suffix}.paseo.sh:443`,
-        daemonPublicKeyB64: `pk_${suffix}`,
-      });
-      const hostAConnection = relay("a");
-      const hostBConnection = relay("b");
-      const hostA = makeHost({
-        serverId: "srv_a",
-        connections: [hostAConnection],
-        preferredConnectionId: hostAConnection.id,
-      });
-      const hostB = makeHost({
-        serverId: "srv_b",
-        connections: [hostBConnection],
-        preferredConnectionId: hostBConnection.id,
-      });
-      const clientA = new FakeDaemonClient();
-      const clientB = new FakeDaemonClient();
-      clientA.setConnectionState({ status: "connected" });
-      clientB.setConnectionState({ status: "connected" });
-      const store = new HostRuntimeStore({
-        storage: createMemoryHostRuntimeStorage(),
-        deps: {
-          createClient: () => {
-            throw new Error("initial clients are supplied");
-          },
-          connectToDaemon: async () => {
-            throw new Error("single-connection hosts reuse their active clients");
-          },
-          getClientId: async () => "cid_test_runtime",
+  async function startTwoRelayHosts(backgroundPolicy: HostRuntimeBackgroundPolicy) {
+    const relay = (suffix: string): HostConnection => ({
+      id: `relay:relay-${suffix}.paseo.sh:443`,
+      type: "relay",
+      relayEndpoint: `relay-${suffix}.paseo.sh:443`,
+      daemonPublicKeyB64: `pk_${suffix}`,
+    });
+    const hostAConnection = relay("a");
+    const hostBConnection = relay("b");
+    const hostA = makeHost({
+      serverId: "srv_a",
+      connections: [hostAConnection],
+      preferredConnectionId: hostAConnection.id,
+    });
+    const hostB = makeHost({
+      serverId: "srv_b",
+      connections: [hostBConnection],
+      preferredConnectionId: hostBConnection.id,
+    });
+    const clientA = new FakeDaemonClient();
+    const clientB = new FakeDaemonClient();
+    clientA.setConnectionState({ status: "connected" });
+    clientB.setConnectionState({ status: "connected" });
+    const store = new HostRuntimeStore({
+      storage: createMemoryHostRuntimeStorage(),
+      backgroundPolicy,
+      deps: {
+        createClient: () => {
+          throw new Error("initial clients are supplied");
         },
-      });
-
-      let changeAppState: (state: AppStateStatus) => void = () => {
-        throw new Error("AppState listener not registered");
-      };
-      const unbind = bindHostRuntimeAppState(store, {
-        currentState,
-        addEventListener: (_event, listener) => {
-          changeAppState = listener;
-          return { remove: () => {} };
+        connectToDaemon: async () => {
+          throw new Error("single-connection hosts reuse their active clients");
         },
-      });
-      store.syncHosts([hostA, hostB], {
-        initialConnectionByServerId: new Map([
-          [
-            hostA.serverId,
-            {
-              connectionId: hostAConnection.id,
-              existingClient: clientA as unknown as DaemonClient,
-            },
-          ],
-          [
-            hostB.serverId,
-            {
-              connectionId: hostBConnection.id,
-              existingClient: clientB as unknown as DaemonClient,
-            },
-          ],
-        ]),
-      });
-      await waitForHostOnline(store, hostA.serverId);
-      await waitForHostOnline(store, hostB.serverId);
-      expect(clientA.reconnectEnabledChanges.at(-1)).toBe(true);
-      expect(clientB.reconnectEnabledChanges.at(-1)).toBe(true);
-      changeAppState("inactive");
-      expect(clientA.reconnectEnabledChanges.at(-1)).toBe(true);
-      expect(clientB.reconnectEnabledChanges.at(-1)).toBe(true);
-      changeAppState("background");
-      expect(clientA.reconnectEnabledChanges.at(-1)).toBe(true);
-      expect(clientB.reconnectEnabledChanges.at(-1)).toBe(true);
-      expect(clientA.getConnectionState()).toEqual({ status: "connected" });
-      expect(clientB.getConnectionState()).toEqual({ status: "connected" });
-      expect(clientA.ensureConnectedCalls).toBe(0);
-      expect(clientB.ensureConnectedCalls).toBe(0);
-      clientA.setConnectionState({ status: "disconnected", reason: "backgrounded" });
-      clientB.setConnectionState({ status: "disconnected", reason: "backgrounded" });
+        getClientId: async () => "cid_test_runtime",
+      },
+    });
 
-      changeAppState("active");
-      expect(clientA.reconnectEnabledChanges.at(-1)).toBe(true);
-      expect(clientB.reconnectEnabledChanges.at(-1)).toBe(true);
-      expect(clientA.ensureConnectedCalls).toBe(1);
-      expect(clientA.connectionVerifications).toBe(1);
-      expect(clientB.connectionVerifications).toBe(1);
-      expect(clientB.ensureConnectedCalls).toBe(1);
-      expect(store.getSnapshot(hostA.serverId)?.connectionStatus).toBe("online");
-      expect(store.getSnapshot(hostB.serverId)?.connectionStatus).toBe("online");
+    let changeAppState: (state: AppStateStatus) => void = () => {
+      throw new Error("AppState listener not registered");
+    };
+    const unbind = bindHostRuntimeAppState(store, {
+      currentState: "active",
+      addEventListener: (_event, listener) => {
+        changeAppState = listener;
+        return { remove: () => {} };
+      },
+    });
+    store.syncHosts([hostA, hostB], {
+      initialConnectionByServerId: new Map([
+        [
+          hostA.serverId,
+          {
+            connectionId: hostAConnection.id,
+            existingClient: clientA as unknown as DaemonClient,
+          },
+        ],
+        [
+          hostB.serverId,
+          {
+            connectionId: hostBConnection.id,
+            existingClient: clientB as unknown as DaemonClient,
+          },
+        ],
+      ]),
+    });
+    await waitForHostOnline(store, hostA.serverId);
+    await waitForHostOnline(store, hostB.serverId);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    return {
+      store,
+      clients: [clientA, clientB],
+      changeAppState: (state: AppStateStatus) => changeAppState(state),
+      dispose: () => {
+        vi.useRealTimers();
+        unbind();
+        store.syncHosts([]);
+      },
+    };
+  }
 
-      unbind();
-      store.syncHosts([]);
+  it.each(["inactive", "background"] as const)(
+    "on phones, closes host sockets 10s after the app goes %s and reconnects on return",
+    async (hiddenState) => {
+      const world = await startTwoRelayHosts(NATIVE_BACKGROUND_POLICY);
+      try {
+        world.changeAppState(hiddenState);
+        vi.advanceTimersByTime(9_999);
+        expect(world.clients.map((client) => client.suspendCalls)).toEqual([0, 0]);
+        vi.advanceTimersByTime(1);
+        expect(world.clients.map((client) => client.suspendCalls)).toEqual([1, 1]);
+        expect(world.store.getSnapshot("srv_a")?.connectionStatus).not.toBe("online");
+
+        world.changeAppState("active");
+        expect(
+          world.clients.map((client) => ({
+            ensureConnectedCalls: client.ensureConnectedCalls,
+            connectionVerifications: client.connectionVerifications,
+            state: client.getConnectionState(),
+          })),
+        ).toEqual([
+          { ensureConnectedCalls: 1, connectionVerifications: 1, state: { status: "connected" } },
+          { ensureConnectedCalls: 1, connectionVerifications: 1, state: { status: "connected" } },
+        ]);
+        expect(world.store.getSnapshot("srv_a")?.connectionStatus).toBe("online");
+        expect(world.store.getSnapshot("srv_b")?.connectionStatus).toBe("online");
+      } finally {
+        world.dispose();
+      }
     },
   );
+
+  it("on phones, returning within the grace period keeps host sockets open", async () => {
+    const world = await startTwoRelayHosts(NATIVE_BACKGROUND_POLICY);
+    try {
+      world.changeAppState("background");
+      vi.advanceTimersByTime(5_000);
+      world.changeAppState("active");
+      vi.advanceTimersByTime(30_000);
+      expect(
+        world.clients.map((client) => ({
+          suspendCalls: client.suspendCalls,
+          connectionVerifications: client.connectionVerifications,
+        })),
+      ).toEqual([
+        { suspendCalls: 0, connectionVerifications: 1 },
+        { suspendCalls: 0, connectionVerifications: 1 },
+      ]);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("on desktop, keeps host sockets and reconnect running while hidden", async () => {
+    const world = await startTwoRelayHosts({
+      suspendSocketsAfterMs: null,
+      timelineLiveScope: "opened",
+    });
+    try {
+      world.changeAppState("background");
+      vi.advanceTimersByTime(60_000);
+      expect(
+        world.clients.map((client) => ({
+          suspendCalls: client.suspendCalls,
+          reconnectEnabled: client.reconnectEnabledChanges.at(-1),
+          state: client.getConnectionState(),
+        })),
+      ).toEqual([
+        { suspendCalls: 0, reconnectEnabled: true, state: { status: "connected" } },
+        { suspendCalls: 0, reconnectEnabled: true, state: { status: "connected" } },
+      ]);
+
+      world.changeAppState("active");
+      expect(world.clients.map((client) => client.connectionVerifications)).toEqual([1, 1]);
+    } finally {
+      world.dispose();
+    }
+  });
 
   it("revokes push notifications before removing a host", async () => {
     const host = makeHost({ connections: [makeHost().connections[0]!] });

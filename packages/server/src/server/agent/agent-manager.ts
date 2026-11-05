@@ -19,6 +19,7 @@ import {
   isDelegatedAgent,
   isOpenAgentTabLabel,
   PARENT_AGENT_ID_LABEL,
+  PARENT_SERVER_ID_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
@@ -67,7 +68,7 @@ import {
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import { assertModelEnabled, pickDefaultEnabledModel } from "./provider-disabled-models.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
-import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
 import type { AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
@@ -791,6 +792,37 @@ export interface RetiredInternalAgent {
   lastMessage: string | null;
 }
 
+function forkSessionConfig(
+  source: ManagedAgent,
+  title: string | null | undefined,
+): AgentSessionConfig {
+  return stripInternalPaseoMcpServer({
+    provider: source.provider,
+    cwd: source.cwd,
+    modeId: source.currentModeId ?? source.config.modeId,
+    model: source.config.model,
+    thinkingOptionId: source.config.thinkingOptionId,
+    featureValues: source.config.featureValues,
+    providerOptions: source.config.providerOptions,
+    toolPolicy: source.config.toolPolicy,
+    systemPrompt: source.config.systemPrompt,
+    mcpServers: source.config.mcpServers,
+    ...(title ? { title } : {}),
+  });
+}
+
+// The fork is a top-level agent: parent links and per-client open-tab state belong to the source.
+function forkLabels(labels: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(labels).filter(
+      ([key]) =>
+        key !== PARENT_AGENT_ID_LABEL &&
+        key !== PARENT_SERVER_ID_LABEL &&
+        !isOpenAgentTabLabel(key),
+    ),
+  );
+}
+
 export class AgentManager {
   private readonly pluginLifecycle: PluginLifecycle | undefined;
   private readonly retiredInternalAgents = new Map<
@@ -1362,6 +1394,22 @@ export class AgentManager {
     await this.inFlightAgentCloses?.get(agentId)?.catch(() => undefined);
   }
 
+  /**
+   * Truncated first user message and latest assistant message from the in-memory
+   * timeline, or null when the timeline is not loaded. Never loads a runtime.
+   */
+  getSearchableMessages(
+    agentId: string,
+  ): { firstUserMessage: string | null; lastAssistantMessage: string | null } | null {
+    if (!this.timelineStore.has(agentId)) return null;
+    return {
+      firstUserMessage: toSearchableMessage(this.timelineStore.getFirstUserMessage(agentId)),
+      lastAssistantMessage: toSearchableMessage(
+        this.timelineStore.getLastAssistantMessage(agentId),
+      ),
+    };
+  }
+
   getTimeline(id: string): AgentTimelineItem[] {
     this.requireAgent(id);
     return this.timelineStore.getItems(id);
@@ -1616,6 +1664,66 @@ export class AgentManager {
       persistence: handle,
       restoring: true,
     });
+  }
+
+  supportsNativeFork(provider: AgentProvider): boolean {
+    const client = this.clients.get(provider);
+    return client?.capabilities.supportsNativeFork === true && client.forkSession !== undefined;
+  }
+
+  /**
+   * Fork without native provider support: a fresh agent with the source's configuration. The
+   * caller seeds it with the chat-history summary.
+   */
+  createForkSummaryAgent(agentId: string, input: { title?: string | null }): Promise<ManagedAgent> {
+    const source = this.requireSessionAgent(agentId);
+    return this.createAgent(forkSessionConfig(source, input.title), undefined, {
+      workspaceId: source.workspaceId,
+      labels: forkLabels(source.labels),
+      ...(input.title ? { initialTitle: input.title } : {}),
+    });
+  }
+
+  /**
+   * Fork an agent's provider session into a new agent. The source keeps running untouched. Call
+   * supportsNativeFork first. Callers hydrate the new agent's timeline.
+   */
+  async forkAgentIntoNew(
+    agentId: string,
+    input: { cutBeforeMessageId: string | null; title?: string | null },
+  ): Promise<{
+    agent: ManagedAgent;
+    contextWindowUsedTokens?: number;
+    contextWindowMaxTokens?: number;
+  }> {
+    const source = this.requireSessionAgent(agentId);
+    const client = this.requireClient(source.provider);
+    if (!this.supportsNativeFork(source.provider) || !client.forkSession) {
+      throw new Error(`Provider '${source.provider}' does not support native fork`);
+    }
+    if (!source.persistence) {
+      throw new Error("Agent has no durable session to fork yet");
+    }
+    const forked = await client.forkSession(source.persistence, {
+      cutBeforeMessageId: input.cutBeforeMessageId,
+      cwd: source.cwd,
+      providerOptions: source.config.providerOptions,
+    });
+    const agent = await this.resumeAgentFromPersistence(
+      forked.persistence,
+      forkSessionConfig(source, input.title),
+      undefined,
+      { workspaceId: source.workspaceId, labels: forkLabels(source.labels) },
+    );
+    return {
+      agent,
+      ...(forked.contextWindowUsedTokens !== undefined
+        ? { contextWindowUsedTokens: forked.contextWindowUsedTokens }
+        : {}),
+      ...(forked.contextWindowMaxTokens !== undefined
+        ? { contextWindowMaxTokens: forked.contextWindowMaxTokens }
+        : {}),
+    };
   }
 
   importProviderSession(input: {
@@ -2108,6 +2216,7 @@ export class AgentManager {
 
     await this.registry.applySnapshot(agent, {
       internal: agent.internal,
+      messages: this.getSearchableMessages(agentId) ?? undefined,
     });
     const stored = await this.registry.get(agentId);
     if (!stored) {
@@ -2404,6 +2513,7 @@ export class AgentManager {
       text: string;
       images?: AgentQueuedMessagePayload["images"];
       attachments?: AgentQueuedMessagePayload["attachments"];
+      attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
     },
   ): Promise<AgentQueuedMessagePayload> {
     return await this.runLifecycleMutation(agentId, async () => {
@@ -2413,6 +2523,7 @@ export class AgentManager {
         text: input.text,
         images: input.images ?? [],
         attachments: input.attachments ?? [],
+        ...(input.attachmentRefs?.length ? { attachmentRefs: input.attachmentRefs } : {}),
         createdAt: new Date().toISOString(),
       };
       await this.writeQueuedMessages(agent, [...agent.queuedMessages, message]);
@@ -2706,6 +2817,22 @@ export class AgentManager {
     }
   }
 
+  /**
+   * "Mark as read" from the sidebar. Unlike viewing the chat (clearAgentAttention), this also
+   * dismisses a failed status: lifecycle `error` alone keeps the agent in the failed bucket, so
+   * it moves to `idle` until the next error. The error stays in the timeline and in lastError.
+   */
+  async markAgentRead(agentId: string): Promise<void> {
+    const agent = this.requireAgent(agentId);
+    if (!agent.attention.requiresAttention && agent.lifecycle !== "error") {
+      return;
+    }
+    agent.attention = { requiresAttention: false };
+    agent.lifecycle = agent.lifecycle === "error" ? "idle" : agent.lifecycle;
+    await this.persistSnapshot(agent);
+    this.emitState(agent, { persist: false });
+  }
+
   async markAgentUnread(agentId: string): Promise<void> {
     const liveAgent = this.agents.get(agentId);
     if (liveAgent) {
@@ -2808,16 +2935,20 @@ export class AgentManager {
     if (this.agents.has(agentId)) await this.closeAgentRuntime(agentId);
     await this.syncNativeArchiveState(record.provider, record.persistence, "restore");
 
-    await registry.upsert({
+    const nextRecord: StoredAgentRecord = {
       ...record,
       ...(updates?.workspaceId ? { workspaceId: updates.workspaceId } : {}),
       ...(updates?.labels ? { labels: applyLabelPatch(record.labels, updates.labels) } : {}),
       archivedAt: null,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    await registry.upsert(nextRecord);
 
     if (this.getAgent(agentId)) {
       this.notifyAgentState(agentId);
+    } else if (!nextRecord.internal) {
+      // Clients only learn that an unloaded agent left the archive from this update.
+      this.dispatchStoredAgentState(nextRecord);
     }
     return true;
   }
@@ -3340,7 +3471,13 @@ export class AgentManager {
         expectedTurnId,
       });
       if (admission.status === "accepted") {
-        await this.recordAcceptedSteer(agent, prompt, options?.clientMessageId, expectedTurnId);
+        await this.recordAcceptedSteer(
+          agent,
+          prompt,
+          options?.clientMessageId,
+          expectedTurnId,
+          admission.providerMessageId,
+        );
       }
       return admission;
     });
@@ -3373,7 +3510,13 @@ export class AgentManager {
             expectedTurnId,
           });
           if (admission.status === "accepted") {
-            await this.recordAcceptedSteer(agent, prompt, options?.clientMessageId, expectedTurnId);
+            await this.recordAcceptedSteer(
+              agent,
+              prompt,
+              options?.clientMessageId,
+              expectedTurnId,
+              admission.providerMessageId,
+            );
           }
           return admission;
         })
@@ -3478,6 +3621,7 @@ export class AgentManager {
     prompt: AgentPromptInput,
     clientMessageId: string | undefined,
     expectedTurnId: string,
+    providerMessageId: string | undefined,
   ): Promise<void> {
     if (!clientMessageId) {
       return;
@@ -3485,6 +3629,7 @@ export class AgentManager {
     this.recordSubmittedPrompt(agent, prompt, clientMessageId, "accepted", {
       messageId: clientMessageId,
       turnId: expectedTurnId,
+      ...(providerMessageId ? { providerMessageId } : {}),
     });
     this.emitState(agent);
   }
@@ -3816,6 +3961,10 @@ export class AgentManager {
         "agent.rewind.complete",
       );
     } catch (error) {
+      // Native rewind can commit a fork before history refresh fails. Recovery
+      // must resume that latest handle rather than the abandoned conversation.
+      this.refreshSessionPersistence(agent);
+      await this.persistSnapshot(agent);
       this.logger.warn(
         { err: error, agentId, provider: agent.provider, messageId, mode },
         "agent.rewind.failed",
@@ -4598,7 +4747,10 @@ export class AgentManager {
     if (agent.internal) {
       return;
     }
-    await this.registry.applySnapshot(agent, options);
+    await this.registry.applySnapshot(agent, {
+      ...options,
+      messages: this.getSearchableMessages(agent.id) ?? undefined,
+    });
   }
 
   private requireRegistry(): AgentStorage {

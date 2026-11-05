@@ -6,6 +6,7 @@ import {
   type InlinePathTarget,
 } from "@/assistant-file-links";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
+import { useCopyAgentId } from "@/hooks/use-copy-agent-id";
 import { revealWorkspaceTab } from "@/workspace-tabs/navigation";
 import type { LayoutChangeEvent } from "react-native";
 import { ExplorerSidebarDock } from "@/screens/workspace/explorer-sidebar";
@@ -127,7 +128,6 @@ import {
   useWorkspaceSetupStore,
 } from "@/stores/workspace-setup-store";
 import { useWorkspace } from "@/stores/session-store-hooks";
-import { useWorkspaceTerminalSessionRetention } from "@/terminal/hooks/use-workspace-terminal-session-retention";
 import type { CheckoutStatusPayload } from "@/git/use-status-query";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
@@ -199,6 +199,7 @@ import {
   classifyBulkClosableTabs,
   closeBulkWorkspaceTabs,
 } from "@/screens/workspace/workspace-bulk-close";
+import { confirmArchiveAgentTab } from "@/utils/archive-confirm";
 import { resolveCloseAgentTabPolicy } from "@/subagents";
 import {
   getPanelInstanceAttributes,
@@ -881,13 +882,6 @@ function shouldShowWorkspaceScreenHeader(input: {
   return !input.isFocusModeEnabled || input.isMobile;
 }
 
-function buildWorkspaceTerminalScopeKey(serverId: string, workspaceId: string): string | null {
-  if (!serverId || !workspaceId) {
-    return null;
-  }
-  return `${serverId}:${workspaceId}`;
-}
-
 /**
  * A pane the user acted inside owns the tab: it opens there, and an existing tab
  * moves there. No pane means the open has no opinion beyond the focused pane.
@@ -1065,14 +1059,6 @@ function WorkspaceScreenContent({
   const workspaceScripts = getWorkspaceScripts(workspaceDescriptor);
   const { handleRetryHost, handleManageHost, handleDismissMissingWorkspace } =
     useWorkspaceRouteActions(normalizedServerId);
-
-  const workspaceTerminalScopeKey = useMemo(
-    () => buildWorkspaceTerminalScopeKey(normalizedServerId, normalizedWorkspaceId),
-    [normalizedServerId, normalizedWorkspaceId],
-  );
-  useWorkspaceTerminalSessionRetention({
-    scopeKey: workspaceTerminalScopeKey,
-  });
 
   const client = useHostRuntimeClient(normalizedServerId);
   const isConnected = useHostRuntimeIsConnected(normalizedServerId);
@@ -1966,19 +1952,13 @@ function WorkspaceScreenContent({
         const agent =
           useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
         let closePolicy = resolveCloseAgentTabPolicy(agent);
-        const isRunning = agent?.status === "running";
 
-        if (isRunning && closePolicy.kind === "archive-on-close") {
-          const confirmed = await confirmDialog({
-            title: t("workspace.tabs.confirmations.archiveRunningAgentTitle"),
-            message: t("workspace.tabs.confirmations.archiveRunningAgentMessage"),
-            confirmLabel: t("workspace.tabs.confirmations.archive"),
-            cancelLabel: t("workspace.tabs.confirmations.cancel"),
-            destructive: true,
-          });
-          if (!confirmed) {
-            return;
-          }
+        if (
+          closePolicy.kind === "archive-on-close" &&
+          !agent?.archivedAt &&
+          !(await confirmArchiveAgentTab(agent))
+        ) {
+          return;
         }
 
         if (closePolicy.kind === "layout-only") {
@@ -2098,18 +2078,7 @@ function WorkspaceScreenContent({
     ],
   );
 
-  const handleCopyAgentId = useCallback(
-    async (agentId: string) => {
-      if (!agentId) return;
-      try {
-        await Clipboard.setStringAsync(agentId);
-        toast.copied(t("workspace.tabs.toasts.agentIdCopiedLabel"));
-      } catch {
-        toast.error(t("workspace.tabs.toasts.copyFailed"));
-      }
-    },
-    [toast, t],
-  );
+  const handleCopyAgentId = useCopyAgentId();
 
   const handleCopyTerminalId = useCallback(
     async (terminalId: string) => {

@@ -1,6 +1,6 @@
 import type { AgentAddress } from "@getpaseo/protocol/addresses";
 import type { Agent } from "@/stores/session-store";
-import type { SubagentRow } from "./select";
+import type { ProviderSubagentRow, SubagentRow } from "./select";
 
 export type ArchiveFinishedStatus =
   | { kind: "idle" }
@@ -22,10 +22,15 @@ export interface ArchiveFinishedOutcome {
 export type ManagedSubagentSnapshot = Pick<Agent, "id" | "status" | "parentAgentId" | "archivedAt">;
 
 export interface ArchiveFinishedSubagentsDeps {
-  parentAgentId: string;
+  /**
+   * Re-checked against the live agent right before each archive: false skips it. Scopes the
+   * action to one agent's direct children (the track) or to every depth of a thread (the sidebar).
+   */
+  isInScope: (agent: ManagedSubagentSnapshot) => boolean;
   getManagedSubagent: (address: AgentAddress) => ManagedSubagentSnapshot | undefined;
   archiveManagedSubagent: (address: AgentAddress) => Promise<void>;
-  dismissProviderSubagents: (ids: string[]) => void;
+  /** Provider rows hide under the agent that owns them, so each carries its owner. */
+  dismissProviderSubagents: (rows: ProviderSubagentRow[]) => void;
 }
 
 export interface ArchiveFinishedSubagents {
@@ -42,12 +47,12 @@ export function isFinishedSubagent(row: SubagentRow): boolean {
 
 function canArchiveManagedSubagent(
   agent: ManagedSubagentSnapshot | undefined,
-  parentAgentId: string,
+  isInScope: ArchiveFinishedSubagentsDeps["isInScope"],
 ): boolean {
   return Boolean(
     agent &&
     !agent.archivedAt &&
-    agent.parentAgentId === parentAgentId &&
+    isInScope(agent) &&
     (agent.status === "idle" || agent.status === "error"),
   );
 }
@@ -169,28 +174,28 @@ async function runArchiveFinished(
   deps: ArchiveFinishedSubagentsDeps,
   reportProgress: (completedCount: number) => void,
 ): Promise<{ outcome: ArchiveFinishedOutcome; retryableFailureIds: Set<string> }> {
-  const providerIds = rows.filter((row) => row.kind === "provider").map((row) => row.id);
+  const providerRows = rows.filter((row) => row.kind === "provider");
   const paseoAddresses = rows.filter((row) => row.kind === "paseo").map((row) => row.address);
   let completedCount = 0;
   const outcome = emptyOutcome();
   const retryableFailureIds = new Set<string>();
 
-  if (providerIds.length > 0) {
-    deps.dismissProviderSubagents(providerIds);
-    outcome.dismissedProviderIds.push(...providerIds);
-    completedCount += providerIds.length;
+  if (providerRows.length > 0) {
+    deps.dismissProviderSubagents(providerRows);
+    outcome.dismissedProviderIds.push(...providerRows.map((row) => row.id));
+    completedCount += providerRows.length;
     reportProgress(completedCount);
   }
 
   for (const address of paseoAddresses) {
     const id = address.agentId;
-    if (canArchiveManagedSubagent(deps.getManagedSubagent(address), deps.parentAgentId)) {
+    if (canArchiveManagedSubagent(deps.getManagedSubagent(address), deps.isInScope)) {
       try {
         await deps.archiveManagedSubagent(address);
         outcome.archivedPaseoIds.push(id);
       } catch (error) {
         outcome.failures.push({ id, error });
-        if (canArchiveManagedSubagent(deps.getManagedSubagent(address), deps.parentAgentId)) {
+        if (canArchiveManagedSubagent(deps.getManagedSubagent(address), deps.isInScope)) {
           retryableFailureIds.add(managedRowIdentity(address));
         }
       }

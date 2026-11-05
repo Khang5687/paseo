@@ -2,8 +2,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { createValidatedPersistStorage } from "@/storage/validated-persist-storage";
-import { clampUnit, DEFAULT_SKIN_PREFERENCES, skinPreferencesSchema } from "./preferences-schema";
-import type { SkinBlur, SkinPreferences, SkinSchemeTarget } from "./types";
+import {
+  clampBlurRadius,
+  clampUnit,
+  DEFAULT_SKIN_PREFERENCES,
+  skinPreferencesSchema,
+} from "./preferences-schema";
+import type { SkinPreferences, SkinSchemeTarget } from "./types";
 
 export interface SkinPreferencesStoreState extends SkinPreferences {
   /** Transient skin shown while browsing the gallery. Never persisted. */
@@ -45,12 +50,56 @@ export function setSkinPreview(id: string | null): void {
   useSkinPreferencesStore.setState({ preview: id });
 }
 
-export function setSkinVisibility(visibility: number): void {
-  useSkinPreferencesStore.setState({ visibility: clampUnit(visibility) });
+/**
+ * Values shown while a control is dragged. Kept out of the persisted store, which writes storage
+ * on every change; the setters below write once, when the drag ends.
+ */
+interface SkinAdjustmentState {
+  visibility: number | null;
+  blur: number | null;
 }
 
-export function setSkinBlur(blur: SkinBlur): void {
-  useSkinPreferencesStore.setState({ blur });
+const useSkinAdjustmentStore = create<SkinAdjustmentState>()(() => ({
+  visibility: null,
+  blur: null,
+}));
+
+/** Visibility the art is drawn with: the dragged value, else the saved one. */
+export function useSkinVisibility(): number {
+  const adjusting = useSkinAdjustmentStore((state) => state.visibility);
+  const saved = useSkinPreferencesStore((state) => state.visibility);
+  return adjusting ?? saved;
+}
+
+/** Blur radius the art is drawn with: the dragged value, else the saved one. */
+export function useSkinBlur(): number {
+  const adjusting = useSkinAdjustmentStore((state) => state.blur);
+  const saved = useSkinPreferencesStore((state) => state.blur);
+  return adjusting ?? saved;
+}
+
+export function previewSkinVisibility(visibility: number): void {
+  useSkinAdjustmentStore.setState({ visibility: clampUnit(visibility) });
+}
+
+export function previewSkinBlur(blur: number): void {
+  useSkinAdjustmentStore.setState({ blur: clampBlurRadius(blur) });
+}
+
+export function setSkinVisibility(visibility: number): void {
+  const next = clampUnit(visibility);
+  if (useSkinPreferencesStore.getState().visibility !== next) {
+    useSkinPreferencesStore.setState({ visibility: next });
+  }
+  useSkinAdjustmentStore.setState({ visibility: null });
+}
+
+export function setSkinBlur(blur: number): void {
+  const next = clampBlurRadius(blur);
+  if (useSkinPreferencesStore.getState().blur !== next) {
+    useSkinPreferencesStore.setState({ blur: next });
+  }
+  useSkinAdjustmentStore.setState({ blur: null });
 }
 
 export function setSkinShowBehindSidebar(show: boolean): void {

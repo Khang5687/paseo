@@ -22,6 +22,7 @@ type ProviderOverride = import("./agent/provider-launch-config.js").ProviderOver
 interface SupportedMutableConfigPatch {
   relay?: { enabled?: boolean; requireProtectedSecurity?: boolean };
   mcp?: { injectIntoAgents?: boolean };
+  usage?: { enabled: boolean };
   browserTools?: { enabled?: boolean };
   providers?: MutableDaemonConfig["providers"];
   removeProviders?: string[];
@@ -30,6 +31,7 @@ interface SupportedMutableConfigPatch {
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   idleRuntimeCleanup?: boolean;
+  draftHistoryRetentionDays?: number;
   resumeOnStartup?: boolean;
   resumePrompt?: string;
   appendSystemPrompt?: string;
@@ -199,6 +201,7 @@ const RELOADABLE_PATHS = [
   "daemon.relay.requireProtectedSecurity",
   "daemon.mcp.enabled",
   "daemon.mcp.injectIntoAgents",
+  "daemon.usage.enabled",
   "daemon.browserTools.enabled",
   "daemon.hostnames",
   "daemon.cors.allowedOrigins",
@@ -212,6 +215,7 @@ const RELOADABLE_PATHS = [
   "daemon.agentProfiles",
   "app.baseUrl",
   "agents.idleRuntimeCleanup",
+  "agents.draftHistoryRetentionDays",
   "agents.resumeOnStartup",
   "agents.resumePrompt",
   "agents.providers",
@@ -227,6 +231,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.relay.requireProtectedSecurity", "relay.requireProtectedSecurity"],
   ["daemon.mcp.enabled", "mcp.enabled"],
   ["daemon.mcp.injectIntoAgents", "mcp.injectIntoAgents"],
+  ["daemon.usage.enabled", "usage.enabled"],
   ["daemon.browserTools.enabled", "browserTools.enabled"],
   ["daemon.hostnames", "hostnames"],
   ["daemon.cors.allowedOrigins", "cors.allowedOrigins"],
@@ -240,6 +245,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.agentProfiles", "agentProfiles"],
   ["app.baseUrl", "app.baseUrl"],
   ["agents.idleRuntimeCleanup", "idleRuntimeCleanup"],
+  ["agents.draftHistoryRetentionDays", "draftHistoryRetentionDays"],
   ["agents.resumeOnStartup", "resumeOnStartup"],
   ["agents.resumePrompt", "resumePrompt"],
   ["agents.providers", "providers"],
@@ -317,6 +323,7 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
   return {
     ...pickRelayPatch(patch.relay),
     ...pickAgentRuntimePatch(patch),
+    usage: patch.usage,
     ...(patch.mcp?.injectIntoAgents !== undefined
       ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
       : {}),
@@ -334,6 +341,7 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.enableTerminalAgentHooks !== undefined
       ? { enableTerminalAgentHooks: patch.enableTerminalAgentHooks }
       : {}),
+    ...agentHousekeepingPatch(patch),
     ...(patch.appendSystemPrompt !== undefined
       ? { appendSystemPrompt: patch.appendSystemPrompt }
       : {}),
@@ -748,13 +756,14 @@ function mergeMutableAgentPatch(
   patch: Omit<SupportedMutableConfigPatch, "removeProviders">,
   removeProviders: readonly string[],
 ): PersistedConfig["agents"] {
+  const housekeeping = agentHousekeepingPatch(patch);
   if (
     patch.providers === undefined &&
     patch.metadataGeneration === undefined &&
     patch.featureDefaults === undefined &&
     patch.skills === undefined &&
     !hasRestartRecoveryPatch(patch) &&
-    patch.idleRuntimeCleanup === undefined &&
+    Object.keys(housekeeping).length === 0 &&
     removeProviders.length === 0
   ) {
     return persistedAgents;
@@ -789,10 +798,7 @@ function mergeMutableAgentPatch(
     next["skills"] = { selection: patch.skills.selection };
   }
 
-  Object.assign(next, restartRecoveryPatch(patch));
-  if (patch.idleRuntimeCleanup !== undefined) {
-    next["idleRuntimeCleanup"] = patch.idleRuntimeCleanup;
-  }
+  Object.assign(next, restartRecoveryPatch(patch), housekeeping);
 
   return Object.keys(next).length > 0 ? (next as PersistedConfig["agents"]) : undefined;
 }
@@ -825,6 +831,7 @@ function mergeMutableDaemonPatch(
   if (patch.mcp?.injectIntoAgents !== undefined) {
     next.mcp = { ...next.mcp, injectIntoAgents: patch.mcp.injectIntoAgents };
   }
+  if (patch.usage) next.usage = patch.usage;
   if (patch.browserTools?.enabled !== undefined) {
     next.browserTools = { ...next.browserTools, enabled: patch.browserTools.enabled };
   }
@@ -847,5 +854,18 @@ function restartRecoveryPatch(patch: SupportedMutableConfigPatch) {
   return {
     ...(patch.resumeOnStartup !== undefined ? { resumeOnStartup: patch.resumeOnStartup } : {}),
     ...(patch.resumePrompt !== undefined ? { resumePrompt: patch.resumePrompt } : {}),
+  };
+}
+/** Host-wide agent cleanup settings that live under `agents` in config.json. */
+function agentHousekeepingPatch(
+  patch: Pick<SupportedMutableConfigPatch, "idleRuntimeCleanup" | "draftHistoryRetentionDays">,
+) {
+  return {
+    ...(patch.idleRuntimeCleanup !== undefined
+      ? { idleRuntimeCleanup: patch.idleRuntimeCleanup }
+      : {}),
+    ...(patch.draftHistoryRetentionDays !== undefined
+      ? { draftHistoryRetentionDays: patch.draftHistoryRetentionDays }
+      : {}),
   };
 }

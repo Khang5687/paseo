@@ -1400,6 +1400,136 @@ test("create_agent_request does not title an existing workspace from the agent p
   }
 });
 
+test("create_agent_request does not publish the pre-prompt snapshot after the prompt starts", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(path.join(tmpdir(), "paseo-create-agent-live-state-"));
+  const logger = createTestLogger();
+  const agentStorage = new AgentStorage(path.join(workdir, "agents"), asSessionLogger(logger));
+  // The test session's turn starts and then reports nothing, like a provider
+  // that stays quiet until its turn ends.
+  const agentManager = new AgentManager({
+    clients: { codex: new CreateAgentTestClient() },
+    registry: agentStorage,
+    logger: asSessionLogger(logger),
+    idFactory: () => "00000000-0000-4000-8000-000000000553",
+  });
+  try {
+    const cwd = path.join(workdir, "repo");
+    mkdirSync(cwd, { recursive: true });
+
+    const projectRegistry = new FileBackedProjectRegistry(
+      path.join(workdir, "projects.json"),
+      asSessionLogger(logger),
+    );
+    const workspaceRegistry = new FileBackedWorkspaceRegistry(
+      path.join(workdir, "workspaces.json"),
+      asSessionLogger(logger),
+    );
+
+    await projectRegistry.upsert(
+      createPersistedProjectRecord({
+        projectId: "proj-live-state",
+        rootPath: cwd,
+        kind: "git",
+        displayName: "repo",
+        createdAt: "2026-05-07T00:00:00.000Z",
+        updatedAt: "2026-05-07T00:00:00.000Z",
+      }),
+    );
+    await workspaceRegistry.upsert(
+      createPersistedWorkspaceRecord({
+        workspaceId: "ws-live-state",
+        projectId: "proj-live-state",
+        cwd,
+        kind: "local_checkout",
+        displayName: "repo",
+        title: null,
+        createdAt: "2026-05-07T00:00:00.000Z",
+        updatedAt: "2026-05-07T00:00:00.000Z",
+      }),
+    );
+
+    const agentUpdates: Extract<SessionOutboundMessage, { type: "agent_update" }>["payload"][] = [];
+    const session = asTestSession(
+      new Session({
+        workspaceRuntimeStore: createWorkspaceRuntimeStore(),
+        messageReceipts: createMessageReceiptsStub(),
+        agentMessages: createAgentMessageDeliveryStub(),
+        creationService: createTestCreationService(),
+        clientId: "test-client",
+        permissions: OWNER_PERMISSIONS,
+        appVersion: null,
+        onMessage: (message) => {
+          if (message.type === "agent_update") agentUpdates.push(message.payload);
+        },
+        logger: asSessionLogger(logger),
+        downloadTokenStore: asDownloadTokenStore(),
+        pushNotifications: asPushNotifications(),
+        paseoHome: path.join(workdir, "paseo-home"),
+        agentManager,
+        agentStorage,
+        projectRegistry,
+        workspaceRegistry,
+        scheduleService: asScheduleService(),
+        checkoutDiffManager: asCheckoutDiffManager({
+          subscribe: async () => ({
+            initial: { cwd, files: [], error: null },
+            unsubscribe: () => {},
+          }),
+          scheduleRefreshForCwd: () => {},
+          onWorkspaceStateMayHaveChanged: () => {},
+          invalidateForge: () => {},
+          getMetrics: () => ({
+            checkoutDiffTargetCount: 0,
+            checkoutDiffSubscriptionCount: 0,
+            checkoutDiffWatcherCount: 0,
+            checkoutDiffFallbackRefreshTargetCount: 0,
+          }),
+          dispose: () => {},
+        }),
+        workspaceGitService: createNoopWorkspaceGitService(),
+        daemonConfigStore: asDaemonConfigStore({
+          get: () => ({ mcp: { injectIntoAgents: false }, providers: {} }),
+          onChange: () => () => {},
+        }),
+        mcpBaseUrl: null,
+        stt: null,
+        tts: null,
+        generateWorkspaceName: async () => null,
+        providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+        terminalManager: null,
+      }),
+    );
+    await activateAgentUpdatesSubscription(session, "sub-live-state");
+
+    await session.handleMessage({
+      type: "create_agent_request",
+      requestId: "req-create-live-state",
+      workspaceId: "ws-live-state",
+      config: { provider: "codex", cwd },
+      initialPrompt: "Print the report",
+      attachments: [],
+    });
+    await vi.runAllTimersAsync();
+
+    const [createdAgent] = agentManager.listAgents();
+    expect(createdAgent?.lifecycle).toBe("running");
+    const upserts = agentUpdates.flatMap((update) =>
+      update.kind === "upsert" && update.agent.id === createdAgent?.id ? [update.agent] : [],
+    );
+    expect(upserts.length).toBeGreaterThan(0);
+    // A client keeps the last update it hears, so the latest one must be the running agent.
+    expect(upserts.at(-1)).toMatchObject({ status: "running" });
+    const updatedAt = upserts.map((agent) => Date.parse(agent.updatedAt));
+    expect(updatedAt).toEqual([...updatedAt].sort((left, right) => left - right));
+  } finally {
+    // Drain snapshot writes before removing their storage directory.
+    await agentManager.flush();
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("unsupported persisted agents are excluded from active lists but preserved in history payloads", async () => {
   const session = createSessionForWorkspaceTests({ appVersion: "0.1.45" });
   const storedRecord = {
@@ -1794,6 +1924,76 @@ test("workspace clear attention clears stored-only agents and responds", async (
   expect(agentUpdate.payload.kind).toBe("upsert");
   if (agentUpdate.payload.kind === "upsert") {
     expect(agentUpdate.payload.agent.requiresAttention).toBe(false);
+  }
+});
+
+test("workspace clear attention dismisses a stored failed agent that was already read", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: REPO_CWD,
+    projectId: REPO_CWD,
+    cwd: REPO_CWD,
+    kind: "directory",
+    displayName: "repo",
+    createdAt: "2026-03-30T15:00:00.000Z",
+    updatedAt: "2026-03-30T15:00:00.000Z",
+  });
+  const project = createPersistedProjectRecord({
+    projectId: REPO_CWD,
+    rootPath: REPO_CWD,
+    kind: "non_git",
+    displayName: "repo",
+    createdAt: "2026-03-30T15:00:00.000Z",
+    updatedAt: "2026-03-30T15:00:00.000Z",
+  });
+  // Viewing the chat already cleared attention; lifecycle `error` alone keeps the row red.
+  let storedRecord: StoredAgentRecord = {
+    ...makeStoredAgent({
+      id: "stored-agent-1",
+      cwd: REPO_CWD,
+      updatedAt: "2026-03-30T15:00:00.000Z",
+    }),
+    lastStatus: "error",
+    lastError: "boom",
+  };
+  const session = createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) });
+
+  session.workspaceRegistry.list = async () => [workspace];
+  session.workspaceRegistry.get = async (id: string) =>
+    id === workspace.workspaceId ? workspace : null;
+  session.projectRegistry.list = async () => [project];
+  session.projectRegistry.get = async (id: string) => (id === project.projectId ? project : null);
+  session.agentStorage.get = async (agentId: string) =>
+    agentId === storedRecord.id ? storedRecord : null;
+  session.agentStorage.upsert = async (record: unknown) => {
+    storedRecord = record as StoredAgentRecord;
+  };
+  session.listAgentPayloads = async () => [
+    makeAgent({
+      id: storedRecord.id,
+      cwd: storedRecord.cwd,
+      workspaceId: workspace.workspaceId,
+      status: storedRecord.lastStatus,
+      updatedAt: storedRecord.updatedAt,
+    }),
+  ];
+
+  await session.handleMessage({
+    type: "workspace.clear_attention.request",
+    workspaceId: workspace.workspaceId,
+    requestId: "req-1",
+  });
+
+  expect(storedRecord.lastStatus).toBe("idle");
+  expect(storedRecord.lastError).toBe("boom");
+  expect(findByType(emitted, "workspace.clear_attention.response").payload).toMatchObject({
+    clearedAgentIds: [storedRecord.id],
+    success: true,
+  });
+  const agentUpdate = findByType(emitted, "agent_update");
+  expect(agentUpdate.payload.kind).toBe("upsert");
+  if (agentUpdate.payload.kind === "upsert") {
+    expect(agentUpdate.payload.agent.status).toBe("idle");
   }
 });
 
@@ -8338,77 +8538,6 @@ test("workspace.pin.set.request stores the pin timestamp and emits an updated de
       pinnedAt: response?.payload.pinnedAt,
     },
   });
-});
-
-test("workspace.settle.set.request stores settledAt, and pinning the workspace ends the settle", async () => {
-  const emitted: SessionOutboundMessage[] = [];
-  const session = asTestSession(
-    createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) }),
-  );
-  const project = createPersistedProjectRecord({
-    projectId: "proj-1",
-    rootPath: REPO_CWD,
-    kind: "git",
-    displayName: "acme/repo",
-    createdAt: "2026-03-01T12:00:00.000Z",
-    updatedAt: "2026-03-01T12:00:00.000Z",
-  });
-  const workspace = createPersistedWorkspaceRecord({
-    workspaceId: "ws-1",
-    projectId: project.projectId,
-    cwd: REPO_CWD,
-    kind: "local_checkout",
-    displayName: "main",
-    createdAt: "2026-03-01T12:00:00.000Z",
-    updatedAt: "2026-03-01T12:00:00.000Z",
-  });
-  const workspaces = new Map([[workspace.workspaceId, workspace]]);
-  session.projectRegistry.get = async (id: string) => (id === project.projectId ? project : null);
-  session.projectRegistry.list = async () => [project];
-  session.workspaceRegistry.list = async () => Array.from(workspaces.values());
-  session.workspaceRegistry.update = async (id, updater) => {
-    const existing = workspaces.get(id);
-    if (!existing) return null;
-    const updated = updater(existing);
-    workspaces.set(id, updated);
-    return updated;
-  };
-  await session.handleMessage({
-    type: "fetch_workspaces_request",
-    requestId: "sub-workspaces",
-    subscribe: { subscriptionId: "sub-workspaces" },
-  });
-
-  await session.handleMessage({
-    type: "workspace.settle.set.request",
-    workspaceId: workspace.workspaceId,
-    settled: true,
-    requestId: "req-settle-1",
-  });
-
-  const response = findByType(emitted, "workspace.settle.set.response");
-  expect(response?.payload).toMatchObject({
-    requestId: "req-settle-1",
-    workspaceId: "ws-1",
-    accepted: true,
-    error: null,
-  });
-  expect(response?.payload.settledAt).toEqual(expect.any(String));
-  expect(workspaces.get("ws-1")?.settledAt).toBe(response?.payload.settledAt);
-  expect(findByType(emitted, "workspace_update")?.payload).toMatchObject({
-    kind: "upsert",
-    workspace: { id: "ws-1", settledAt: response?.payload.settledAt },
-  });
-
-  await session.handleMessage({
-    type: "workspace.pin.set.request",
-    workspaceId: workspace.workspaceId,
-    pinned: true,
-    requestId: "req-pin-1",
-  });
-
-  expect(workspaces.get("ws-1")?.pinnedAt).toEqual(expect.any(String));
-  expect(workspaces.get("ws-1")?.settledAt).toBeNull();
 });
 
 test("workspace.title.set.request with whitespace-only title clears the title", async () => {

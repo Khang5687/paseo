@@ -68,6 +68,7 @@ $PASEO_HOME/
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
+├── notes.json                           # Notes on chat/terminal selections (see docs/notes.md)
 └── push-tokens.json                     # Expo push notification tokens
 ```
 
@@ -105,6 +106,9 @@ Each agent is stored as a separate JSON file, grouped by project directory.
 | `attentionTimestamp` | `string?` (ISO 8601)                     | When attention was flagged                                                                                                                                                                                                                                                                                                                                                          |
 | `internal`           | `boolean?`                               | Whether this is a system-internal agent                                                                                                                                                                                                                                                                                                                                             |
 | `archivedAt`         | `string?` (ISO 8601)                     | Soft-delete timestamp                                                                                                                                                                                                                                                                                                                                                               |
+| `draft`              | `AgentDraft?`                            | The unsent agent chat composer draft every client shows: `{ text, attachments, revision, updatedAt, updatedBy }`. Only `AgentDraftService` writes it (`AgentStorage.mutateDraft`); every other record write keeps the stored value, because those writers build records from older reads. Last write wins on the writing client's `updatedAt`.                                      |
+| `draftHistory`       | `AgentDraftSnapshot[]?`                  | Up to 10 earlier drafts for "Restore draft", newest first, recorded when the box is emptied, loses more than half its text, or a stale write overwrites another client's text. Pruned past `agents.draftHistoryRetentionDays` (default 7). Cleared with `draft` on archive.                                                                                                         |
+| `sentDraftUploadIds` | `string[]?`                              | File uploads that went out with a sent message. Draft cleanup deletes uploads nothing references, except these: the agent may still read their path.                                                                                                                                                                                                                                |
 
 ### Nested: SerializableConfig
 
@@ -526,6 +530,14 @@ than treating it as valid.
 ```
 
 Simple set of Expo push notification tokens. Loaded with permissive parsing (filters non-string entries). Persisted with atomic temp-file rename.
+
+---
+
+## 6a. Notes
+
+**Path:** `$PASEO_HOME/notes.json`
+
+`{ "notes": Note[] }`, where `Note` is `NoteSchema` in `packages/protocol/src/notes/schemas.ts`. Each entry is parsed on its own at load, so one invalid note is skipped and logged instead of dropping the file. Written atomically on every change. What the fields mean and how waiting-on notes fire is in [notes.md](notes.md).
 
 ---
 

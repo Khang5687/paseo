@@ -1,14 +1,15 @@
+import { useAddHost } from "@/hosts/add-host";
 import type {
   CreateAgentRequestOptions,
   CreateWorkspaceRequestOptions,
 } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload, CreationSnapshot } from "@getpaseo/protocol/messages";
 import { encodeImages } from "@/utils/encode-images";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { router } from "expo-router";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { createNameId } from "mnemonic-id";
@@ -62,7 +63,6 @@ import type { KeyboardActionId } from "@/keyboard/keyboard-action-dispatcher";
 import { useFormPreferences } from "@/hooks/use-form-preferences";
 import type { CreateAgentInitialValues } from "@/hooks/use-agent-form-state";
 import { toErrorMessage } from "@/utils/error-messages";
-import { buildSettingsAddHostRoute } from "@/utils/host-routes";
 import {
   getHostProjectId,
   getWorktreeSupportForHostProject,
@@ -460,6 +460,7 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
     clientMessageId: `${input.draftId}:initial-message`,
     images: images?.length ? images : undefined,
     attachments: wirePayload.attachments?.length ? wirePayload.attachments : undefined,
+    attachmentRefs: matchEncodedImageRefs(wirePayload.attachmentRefs, images, wirePayload.images),
   };
   const execute = async (requestedAgent = initialAgent): Promise<AgentSnapshotPayload> => {
     const { agent } = await ensureWorkspace({
@@ -1171,9 +1172,7 @@ export function NewWorkspaceScreen({
     openAddProjectPicker(selectedServerId);
   }, [openAddProjectPicker, selectedServerId]);
 
-  const handleAddHost = useCallback(() => {
-    router.push(buildSettingsAddHostRoute(Date.now()));
-  }, []);
+  const handleAddHost = useAddHost();
 
   const openPicker = useCallback(() => {
     setPickerOpen(true);

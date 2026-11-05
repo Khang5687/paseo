@@ -7,7 +7,6 @@ const HOME_PATHS: Record<string, true> = {
   "/new": true,
   "/welcome": true,
   "/open-project": true,
-  "/pair-scan": true,
 };
 const HOST_PATH = /^\/h\/[^/]+(?:\/(.*))?$/;
 

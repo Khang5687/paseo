@@ -18,6 +18,7 @@ import {
   sendQueuedMessageNowOnDaemon,
   type DaemonQueueClient,
 } from "./daemon-queue";
+import { inlineRefLabels } from "./attachments/inline-refs";
 
 function createMirror(): QueueWriter & { state: Map<string, QueuedComposerMessage[]> } {
   const holder = { state: new Map<string, QueuedComposerMessage[]>() };
@@ -49,6 +50,7 @@ function createClient(): DaemonQueueClient & {
         createdAt: "2026-10-02T00:00:00.000Z",
         images: input.images ?? [],
         attachments: input.attachments ?? [],
+        ...(input.attachmentRefs ? { attachmentRefs: input.attachmentRefs } : {}),
       };
       queue.push(entry);
       return {
@@ -228,6 +230,53 @@ describe("daemon-owned queue", () => {
       },
     ]);
     expect(client.queue).toEqual([]);
+  });
+
+  it("queues inline labels and restores a cross-client entry in label order", async () => {
+    const client = createClient();
+    const mirror = createMirror();
+    const uploaded = {
+      type: "uploaded_file" as const,
+      id: "f1",
+      fileName: "notes.txt",
+      mimeType: "text/plain",
+      size: 3,
+      path: "/tmp/notes.txt",
+    };
+    // The composer had the file first, then the image: `[File #1]`, `[Image #2]`.
+    await queueMessageOnDaemon({
+      client,
+      agentId: "agent-1",
+      text: "compare [File #1] with [Image #2]",
+      attachments: [{ kind: "file", attachment: uploaded }, imageAttachment],
+      encodeImages: async () => [{ data: "AAAA", mimeType: "image/png" }],
+      localMirror: mirror,
+    });
+    expect(client.queue[0]?.attachmentRefs).toEqual([
+      { label: "File #1", attachmentIndex: 0 },
+      { label: "Image #2", imageIndex: 0 },
+    ]);
+
+    // Another client restores it: no mirror entry, so it rebuilds from the wire form.
+    const restored = await restoreQueuedMessageFromDaemon({
+      client,
+      agentId: "agent-1",
+      messageId: client.queue[0]!.id,
+      localMirror: createMirror(),
+      persister: {
+        persistFromDataUrl: async (input) => ({
+          id: "restored-1",
+          mimeType: input.mimeType,
+          storageType: "web-indexeddb" as const,
+          storageKey: "restored-1",
+          fileName: null,
+          createdAt: 2,
+        }),
+      },
+    });
+    expect(restored.text).toBe("compare [File #1] with [Image #2]");
+    expect([...inlineRefLabels(restored.attachments).values()]).toEqual(["File #1", "Image #2"]);
+    expect(restored.attachments.map((attachment) => attachment.kind)).toEqual(["file", "image"]);
   });
 
   it("send-now and pruning drop mirror entries the daemon no longer lists", async () => {

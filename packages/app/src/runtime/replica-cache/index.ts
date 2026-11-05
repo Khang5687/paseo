@@ -182,6 +182,7 @@ const AgentCapabilitiesSchema = z.strictObject({
   supportsRewindConversation: z.boolean().optional(),
   supportsRewindFiles: z.boolean().optional(),
   supportsRewindBoth: z.boolean().optional(),
+  supportsNativeFork: z.boolean().optional(),
 });
 
 const StoredProjectCheckoutSchema = z.union([
@@ -315,14 +316,14 @@ const StoredWorkspaceSchema = z.strictObject({
   name: z.string(),
   title: z.string().nullable(),
   pinnedAt: z.string().nullable(),
-  // Optional because entries written before settling existed have none.
-  settledAt: z.string().nullable().optional(),
   // Optional because entries written before labels existed have none. A cached workspace that
   // dropped them painted its row without its chips and stayed that way: the directory cursor is
   // current on reconnect, so the daemon has nothing newer to send back.
   labels: z.array(z.string()).optional(),
   status: z.enum(["needs_input", "failed", "running", "attention", "done"]),
   statusEnteredAt: IsoDateSchema.nullable(),
+  // Optional because entries written before the count existed have none.
+  runningSubagentCount: z.number().optional(),
   activityAt: z.null(),
   archivingAt: z.string().nullable(),
   diffStat: z.strictObject({ additions: z.number(), deletions: z.number() }).nullable(),
@@ -420,6 +421,25 @@ function timelineBase(item: StreamItem) {
     ...(item.turnId ? { turnId: item.turnId } : {}),
     timestamp: item.timestamp.toISOString(),
   };
+}
+
+const OPTIONAL_CAPABILITY_KEYS = [
+  "supportsSessionListing",
+  "supportsRewindConversation",
+  "supportsRewindFiles",
+  "supportsRewindBoth",
+  "supportsNativeFork",
+] as const;
+
+function pickDefinedCapabilities(
+  capabilities: Agent["capabilities"],
+): Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> {
+  const picked: Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> = {};
+  for (const key of OPTIONAL_CAPABILITY_KEYS) {
+    const value = capabilities[key];
+    if (value !== undefined) picked[key] = value;
+  }
+  return picked;
 }
 
 function serializeAgentToolCall(data: AgentToolCallData): StoredToolCall {
@@ -637,22 +657,11 @@ function serializeAgent(agent: Agent): StoredAgent {
     capabilities: {
       supportsStreaming: agent.capabilities.supportsStreaming,
       supportsSessionPersistence: agent.capabilities.supportsSessionPersistence,
-      ...(agent.capabilities.supportsSessionListing !== undefined
-        ? { supportsSessionListing: agent.capabilities.supportsSessionListing }
-        : {}),
       supportsDynamicModes: agent.capabilities.supportsDynamicModes,
       supportsMcpServers: agent.capabilities.supportsMcpServers,
       supportsReasoningStream: agent.capabilities.supportsReasoningStream,
       supportsToolInvocations: agent.capabilities.supportsToolInvocations,
-      ...(agent.capabilities.supportsRewindConversation !== undefined
-        ? { supportsRewindConversation: agent.capabilities.supportsRewindConversation }
-        : {}),
-      ...(agent.capabilities.supportsRewindFiles !== undefined
-        ? { supportsRewindFiles: agent.capabilities.supportsRewindFiles }
-        : {}),
-      ...(agent.capabilities.supportsRewindBoth !== undefined
-        ? { supportsRewindBoth: agent.capabilities.supportsRewindBoth }
-        : {}),
+      ...pickDefinedCapabilities(agent.capabilities),
     },
     currentModeId: agent.currentModeId,
     availableModes: [],
@@ -716,10 +725,10 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     name: workspace.name,
     title: workspace.title ?? null,
     pinnedAt: workspace.pinnedAt ?? null,
-    settledAt: workspace.settledAt ?? null,
     labels: workspace.labels,
     status: workspace.status,
     statusEnteredAt: workspace.statusEnteredAt?.toISOString() ?? null,
+    runningSubagentCount: workspace.runningSubagentCount,
     activityAt: null,
     archivingAt: workspace.archivingAt,
     diffStat: workspace.diffStat,

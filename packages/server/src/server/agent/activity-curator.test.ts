@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentForkContextAttachment, curateAgentActivity } from "./activity-curator.js";
+import {
+  buildAgentForkContextAttachment,
+  curateAgentActivity,
+  resolveForkCutPoint,
+} from "./activity-curator.js";
 import type { AgentTimelineItem } from "./agent-sdk-types.js";
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 import { formatAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
@@ -247,7 +251,7 @@ second line'`,
     ]);
   });
 
-  it("keeps nested sub-agent logs beside the sub-agent that produced them", () => {
+  it("lists each sub-agent as its launch marker", () => {
     const timeline: AgentTimelineItem[] = [
       { type: "assistant_message", text: "Before first child." },
       toolCallItem({
@@ -257,7 +261,7 @@ second line'`,
           type: "sub_agent",
           subAgentType: "Child one",
           description: "First investigation",
-          log: "[Assistant] First child result.",
+          log: "",
         },
       }),
       { type: "assistant_message", text: "Between children." },
@@ -268,7 +272,7 @@ second line'`,
           type: "sub_agent",
           subAgentType: "Child two",
           description: "Second investigation",
-          log: "[Assistant] Second child result.",
+          log: "",
         },
       }),
       { type: "assistant_message", text: "After second child." },
@@ -279,10 +283,8 @@ second line'`,
     expect(result.split("\n")).toEqual([
       "[Assistant] Before first child.",
       "[Child one] First investigation",
-      "[Assistant] First child result.",
       "[Assistant] Between children.",
       "[Child two] Second investigation",
-      "[Assistant] Second child result.",
       "[Assistant] After second child.",
     ]);
   });
@@ -545,4 +547,67 @@ it("preserves every message in fork history below the character budget", () => {
   expect(result.attachment.text).toBe(
     `<chat-history-summary>\nChat history from a previous Paseo agent.\n\n[User] ${text}\n</chat-history-summary>`,
   );
+});
+
+describe("fork cut", () => {
+  const rows = [
+    row(1, { type: "user_message", text: "old", messageId: "entry-1" }),
+    row(2, { type: "assistant_message", text: "old reply", messageId: "msg-1" }),
+    row(3, { type: "compaction", status: "completed" }),
+    row(4, { type: "user_message", text: "next", messageId: "entry-2" }),
+    row(5, { type: "assistant_message", text: "next reply", messageId: "msg-2" }),
+  ];
+
+  it("cuts before the first user message after the boundary", () => {
+    expect(resolveForkCutPoint({ rows, boundaryMessageId: "msg-1" }).cutBeforeMessageId).toBe(
+      "entry-2",
+    );
+  });
+
+  it("keeps the whole session when nothing follows the boundary or there is none", () => {
+    expect(resolveForkCutPoint({ rows, boundaryMessageId: "msg-2" }).cutBeforeMessageId).toBeNull();
+    expect(resolveForkCutPoint({ rows }).cutBeforeMessageId).toBeNull();
+  });
+
+  it("prefers the provider message id over the timeline message id", () => {
+    const acknowledged = [
+      rows[0],
+      rows[1],
+      {
+        ...row(4, {
+          type: "user_message",
+          text: "next",
+          messageId: "client-2",
+          clientMessageId: "client-2",
+        }),
+        providerMessageId: "entry-2",
+      },
+    ];
+    expect(
+      resolveForkCutPoint({ rows: acknowledged, boundaryMessageId: "msg-1" }).cutBeforeMessageId,
+    ).toBe("entry-2");
+  });
+
+  it("refuses a cut at a message the provider has not acknowledged", () => {
+    const unacknowledged = [
+      rows[0],
+      rows[1],
+      row(4, {
+        type: "user_message",
+        text: "next",
+        messageId: "client-2",
+        clientMessageId: "client-2",
+      }),
+    ];
+    expect(() => resolveForkCutPoint({ rows: unacknowledged, boundaryMessageId: "msg-1" })).toThrow(
+      "has not acknowledged",
+    );
+  });
+
+  it("reports only the rows before the last compaction that precedes the boundary", () => {
+    expect(
+      resolveForkCutPoint({ rows, boundaryMessageId: "msg-2" }).compactedRows.map((r) => r.seq),
+    ).toEqual([1, 2]);
+    expect(resolveForkCutPoint({ rows, boundaryMessageId: "msg-1" }).compactedRows).toEqual([]);
+  });
 });

@@ -2,6 +2,8 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import { toNativeLinkRecognition } from "react-native-enriched-markdown/src/utils/regexParser";
 import { parseMarkdown } from "react-native-enriched-markdown/src/web/parseMarkdown";
 import { recognizeTextLinks } from "react-native-enriched-markdown/src/web/recognizeTextLinks";
+import { matchCommandLink } from "@/agent-commands";
+
 import { classifyAssistantFileLink } from "@/assistant-file-links";
 import { markInlineImages } from "react-native-enriched-markdown/src/web/utils";
 import type { ASTNode } from "react-native-enriched-markdown/src/web/types";
@@ -10,8 +12,30 @@ import { decodeMarkdownImage, getMarkdownImageStatus } from "./image-decoding";
 import { describe, expect, it } from "vitest";
 import { darkTheme, lightTheme } from "@/styles/theme";
 import { createMarkdownStyles } from "./styles";
-import { prepareMarkdownSource, PENDING_MARKDOWN_IMAGE } from "./source";
+import { collectFileMentions, prepareMarkdownSource, PENDING_MARKDOWN_IMAGE } from "./source";
 import { normalizeMarkdownHtml } from "./html";
+
+it("recognizes complete known commands in inline code", () => {
+  const names = new Set(["code-review", "review:fast"]);
+  const prepared = prepareMarkdownSource("`/code-review` `/unknown`", undefined, {
+    commandNames: names,
+  });
+  expect(prepared.linkRecognition.inlineCode.test("/code-review")).toBe(true);
+  expect(prepared.linkRecognition.inlineCode.test("/unknown")).toBe(
+    prepareMarkdownSource("`/unknown`").linkRecognition.inlineCode.test("/unknown"),
+  );
+  const nonPath = prepareMarkdownSource("`/review:fast`", undefined, { commandNames: names });
+  expect(nonPath.linkRecognition.inlineCode.test("/review:fast")).toBe(true);
+  expect(matchCommandLink("/code-review", "inline-code", names)).toBe("/code-review");
+});
+
+it("resolves authored root-relative links only when the target is a known command", () => {
+  const names = new Set(["code-review"]);
+  expect(matchCommandLink("/code-review", "markdown", names)).toBe("/code-review");
+  expect(matchCommandLink("/code-review/file", "markdown", names)).toBeNull();
+  expect(matchCommandLink("/code-review", "text", names)).toBeNull();
+  expect(matchCommandLink("https://example.com/code-review", "markdown", names)).toBeNull();
+});
 
 describe("shared Markdown source adaptation", () => {
   it("keeps paragraphs, fences and quotes together for the library", () => {
@@ -104,6 +128,186 @@ it("preserves empty table cells while escaping spoilers in cell text", () => {
   expect(prepareMarkdownSource(source).render()).toBe(
     "| A | | B |\n| --- | --- | --- |\n| x | | z |",
   );
+});
+
+it("renders a table directly after a paragraph through the library parser", async () => {
+  const source = "**Notes**\n| Item | Detail |\n| --- | --- |\n| A | one |\n| B | two |";
+  const separated = "**Notes**\n\n| Item | Detail |\n| --- | --- |\n| A | one |\n| B | two |";
+  const flags = { hardSoftBreaks: true, latexMath: false };
+  const expected = await parseMarkdown(separated, flags);
+  expect(expected.children?.map((node) => node.type)).toEqual(["Paragraph", "Table"]);
+  expect(await parseMarkdown(prepareMarkdownSource(source).render(), flags)).toEqual(expected);
+});
+
+it.each([
+  [
+    "a quote",
+    "> Notes\n> | Item |\n> | --- |\n> | A |",
+    "> Notes\n>\n> | Item |\n> | --- |\n> | A |",
+    ["Document", ["Blockquote", "Paragraph", "Table"]],
+  ],
+  [
+    "a list item",
+    "- Notes\n  | Item |\n  | --- |\n  | A |\n- Next",
+    "- Notes\n\n  | Item |\n  | --- |\n  | A |\n- Next",
+    ["Document", ["UnorderedList", ["ListItem", "Paragraph", "Table"], ["ListItem", "Paragraph"]]],
+  ],
+  [
+    "a quoted list item",
+    "> - Notes\n>   | Item |\n>   | --- |\n>   | A |",
+    "> - Notes\n>\n>   | Item |\n>   | --- |\n>   | A |",
+    ["Document", ["Blockquote", ["UnorderedList", ["ListItem", "Paragraph", "Table"]]]],
+  ],
+  [
+    "a quote inside a list item",
+    "- > Notes\n  > | Item |\n  > | --- |\n  > | A |",
+    "- > Notes\n  >\n  > | Item |\n  > | --- |\n  > | A |",
+    ["Document", ["UnorderedList", ["ListItem", ["Blockquote", "Paragraph", "Table"]]]],
+  ],
+  [
+    "aligned columns without outer pipes",
+    "Notes\nItem | Detail\n:--- | ---:\nA | one",
+    "Notes\n\nItem | Detail\n:--- | ---:\nA | one",
+    ["Document", "Paragraph", "Table"],
+  ],
+  [
+    "an entity at the start of a header without outer pipes",
+    "Notes\nAT&amp;T | Detail\n--- | ---\nA | one",
+    "Notes\n\nAT\\&T | Detail\n--- | ---\nA | one",
+    ["Document", "Paragraph", "Table"],
+  ],
+  [
+    "a local image at the start of a header without outer pipes",
+    "Notes\n![Local](assets/a.png) | Detail\n--- | ---\nA | one",
+    "Notes\n\nLocal | Detail\n--- | ---\nA | one",
+    ["Document", "Paragraph", "Table"],
+  ],
+  [
+    "CRLF lines",
+    "Notes\r\n| Item |\r\n| --- |\r\n| A |",
+    "Notes\r\n\r\n| Item |\r\n| --- |\r\n| A |",
+    ["Document", "Paragraph", "Table"],
+  ],
+  [
+    "CR lines",
+    "Notes\r| Item |\r| --- |\r| A |",
+    "Notes\r\r| Item |\r| --- |\r| A |",
+    ["Document", "Paragraph", "Table"],
+  ],
+  [
+    "a quote with CRLF lines",
+    "> Notes\r\n> | Item |\r\n> | --- |\r\n> | A |",
+    "> Notes\r\n>\r\n> | Item |\r\n> | --- |\r\n> | A |",
+    ["Document", ["Blockquote", "Paragraph", "Table"]],
+  ],
+  [
+    "a list item with CRLF lines",
+    "- Notes\r\n  | Item |\r\n  | --- |\r\n  | A |\r\n- Next",
+    "- Notes\r\n\r\n  | Item |\r\n  | --- |\r\n  | A |\r\n- Next",
+    ["Document", ["UnorderedList", ["ListItem", "Paragraph", "Table"], ["ListItem", "Paragraph"]]],
+  ],
+  [
+    "a quote with CR lines",
+    "> Notes\r> | Item |\r> | --- |\r> | A |",
+    "> Notes\r>\r> | Item |\r> | --- |\r> | A |",
+    ["Document", ["Blockquote", "Paragraph", "Table"]],
+  ],
+  [
+    "a list item with CR lines",
+    "- Notes\r  | Item |\r  | --- |\r  | A |\r- Next",
+    "- Notes\r\r  | Item |\r  | --- |\r  | A |\r- Next",
+    ["Document", ["UnorderedList", ["ListItem", "Paragraph", "Table"], ["ListItem", "Paragraph"]]],
+  ],
+  [
+    "a non-interrupting ordered marker with tildes",
+    "Intro\n2. ~~~\n   Notes\n   | A |\n   | --- |\n   | x |",
+    "Intro\n2. ~~~\n   Notes\n\n   | A |\n   | --- |\n   | x |",
+    ["Document", "Paragraph", "Table"],
+  ],
+  [
+    "a non-interrupting ordered marker with backticks",
+    "Notes\n2. ```\n   | Item |\n   | --- |\n   | A |",
+    "Notes\n2. ```\n\n   | Item |\n   | --- |\n   | A |",
+    ["Document", "Paragraph", "Table"],
+  ],
+])("preserves tables after paragraphs in %s", async (_name, source, separated, expected) => {
+  const rendered = prepareMarkdownSource(source).render();
+  expect(rendered).toEqual(separated);
+  const flags = { hardSoftBreaks: true, latexMath: false };
+  function blocks(node: ASTNode): unknown {
+    if (node.type === "Paragraph" || node.type === "Table") return node.type;
+    return [node.type, ...(node.children ?? []).map(blocks)];
+  }
+  expect(blocks(await parseMarkdown(rendered, flags))).toEqual(expected);
+});
+
+it.each([
+  [
+    "a literal backslash",
+    "Notes\\\n| Item |\n| --- |\n| A |",
+    "Notes\\\n\n| Item |\n| --- |\n| A |",
+    "Notes\\",
+  ],
+  [
+    "an entity and literal backslash with LF lines",
+    "AT&amp;T\\\n| Item |\n| --- |\n| A |",
+    "AT\\&T\\\n\n| Item |\n| --- |\n| A |",
+    "AT&T\\",
+  ],
+  [
+    "an entity and literal backslash with CRLF lines",
+    "AT&amp;T\\\r\n| Item |\r\n| --- |\r\n| A |",
+    "AT\\&T\\\r\n\r\n| Item |\r\n| --- |\r\n| A |",
+    "AT&T\\",
+  ],
+  [
+    "an entity and literal backslash with CR lines",
+    "AT&amp;T\\\r| Item |\r| --- |\r| A |",
+    "AT\\&T\\\r\r| Item |\r| --- |\r| A |",
+    "AT&T\\",
+  ],
+])(
+  "preserves paragraph text before an interrupting table in %s",
+  async (_name, source, separated, text) => {
+    const rendered = prepareMarkdownSource(source).render();
+    expect(rendered).toEqual(separated);
+    const tree = await parseMarkdown(rendered, { hardSoftBreaks: true, latexMath: false });
+    expect(tree.children?.map((node) => node.type)).toEqual(["Paragraph", "Table"]);
+    expect(tree.children?.[0]?.children?.map((node) => node.content).join("")).toEqual(text);
+  },
+);
+
+it.each([
+  "```yaml\n---\nkey: value\n---\n```\n",
+  "~~~md\n| Item |\n| --- |\n| A |\n~~~\n",
+  "````md\n```\n| Item |\n| --- |\n```\n`````\n",
+  "> ```md\n> | Item |\n> | --- |\n> ```\n",
+  "> ```md\n> Code\n",
+  "- ```md\n  Code\n",
+  "    ```\n\n",
+  "```not`a-fence\n",
+])("renders a table after a fence without changing its code: %s", async (prefix) => {
+  const table = "| Item |\n| --- |\n| A |";
+  const rendered = prepareMarkdownSource(`${prefix}Notes\n${table}`).render();
+  expect(rendered).toEqual(`${prefix}Notes\n\n${table}`);
+  const tree = await parseMarkdown(rendered, { hardSoftBreaks: true, latexMath: false });
+  expect(tree.children?.slice(-2).map((node) => node.type)).toEqual(["Paragraph", "Table"]);
+});
+
+it.each([
+  "| Item | Detail |\n| --- | --- |\n" + "| A | one |\n".repeat(100),
+  "Notes\n\n| Item | Detail |\n| --- | --- |\n" + "| A | one |\n".repeat(100),
+  "Notes\n\n| Item |\n| --- |\n| A |",
+  "| Item |\n| --- |\n| A |",
+  "```md\nNotes\n| Item |\n| --- |\n| A |\n```",
+  "```yaml\n---\nkey: value\n---\n```",
+  "```yaml\n---\nkey: value",
+  "~~~md\n| Item |\n| --- |\n| A |\n~~~",
+  "````md\n```\n| Item |\n| --- |\n```\n````",
+  "    Notes\n    | Item |\n    | --- |\n    | A |",
+  "Notes\n| Item | Detail |\n| --- |\n| A |",
+])("leaves separated tables and table-like text unchanged: %s", (source) => {
+  expect(prepareMarkdownSource(source).render()).toEqual(source);
 });
 
 it.each([
@@ -206,6 +410,30 @@ it("lets the engine own code boundaries while classifying candidate values", asy
     "src/final.ts",
     "src/newline.ts",
   ]);
+});
+
+describe("file mentions saved for offline use", () => {
+  it("collects prose, inline-code and linked paths but not code blocks or URLs", () => {
+    const source = [
+      "Edited /repo/src/app.ts and `/repo/README.md`.",
+      "See [the plan](/repo/docs/plan.md) and https://example.com/a.ts.",
+      "```ts",
+      'import x from "/repo/src/hidden.ts";',
+      "```",
+    ].join("\n");
+    const paths = collectFileMentions(source, { workspaceRoot: "/repo" }).map((mention) =>
+      mention.kind === "path" ? mention.path : `lookup:${mention.token}`,
+    );
+    expect(paths.sort()).toEqual(["/repo/README.md", "/repo/docs/plan.md", "/repo/src/app.ts"]);
+  });
+
+  it("keeps bare file names for the host to find", () => {
+    const mentions = collectFileMentions("Updated `notes.txt` twice: `notes.txt`.", {
+      workspaceRoot: "/repo",
+    });
+    expect(mentions).toHaveLength(1);
+    expect(mentions[0]).toMatchObject({ kind: "needsLookup", token: "notes.txt" });
+  });
 });
 
 describe("bare URL sentence punctuation", () => {
@@ -322,22 +550,45 @@ it("keeps explicit and inline-code links distinct when their URL strings match",
 });
 
 it("extracts only Mermaid fences for the native diagram host", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
+  const { splitNativeFences } = await import("./fence/segments");
   const source =
     "First.\n\n```ts\nconst n = 1;\n```\n\n```mermaid\ngraph TD\nA-->B\n```\n\n> Last.";
-  expect(splitMermaidFences(source)).toEqual([
+  expect(splitNativeFences(source)).toEqual([
     { kind: "markdown", id: "0", source: "First.\n\n```ts\nconst n = 1;\n```\n\n" },
     { kind: "mermaid", id: "1", source: "graph TD\nA-->B" },
     { kind: "markdown", id: "2", source: "\n\n> Last." },
   ]);
-  expect(splitMermaidFences("```md\n```mermaid\n```")).toEqual([
+  expect(splitNativeFences("```md\n```mermaid\n```")).toEqual([
     { kind: "markdown", id: "0", source: "```md\n```mermaid\n```" },
   ]);
 });
 
+it("extracts runnable shell fences only when the message can run them", async () => {
+  const { splitNativeFences } = await import("./fence/segments");
+  const { isRunnableShellFence } = await import("@/code-run/fence");
+  const source = "Run:\n\n```bash\nnpm test\n```\n\n```ts\nconst n = 1;\n```\n\n```sh\n# note\n```";
+  expect(splitNativeFences(source)).toEqual([{ kind: "markdown", id: "0", source }]);
+  expect(splitNativeFences(source, isRunnableShellFence)).toEqual([
+    { kind: "markdown", id: "0", source: "Run:\n\n" },
+    { kind: "shell", id: "1", source: "npm test", language: "bash" },
+    { kind: "markdown", id: "2", source: "\n\n```ts\nconst n = 1;\n```\n\n```sh\n# note\n```" },
+  ]);
+});
+
+it("extracts an untagged fence only when it reads as a command", async () => {
+  const { splitNativeFences } = await import("./fence/segments");
+  const { isRunnableShellFence } = await import("@/code-run/fence");
+  const source = "Run this:\n```\nsudo bash /tmp/apply.sh\n```\n\nOutput:\n```\nDone in 3s.\n```";
+  expect(splitNativeFences(source, isRunnableShellFence)).toEqual([
+    { kind: "markdown", id: "0", source: "Run this:\n" },
+    { kind: "shell", id: "1", source: "sudo bash /tmp/apply.sh", language: "" },
+    { kind: "markdown", id: "2", source: "\n\nOutput:\n```\nDone in 3s.\n```" },
+  ]);
+});
+
 it("keeps reference links available across native Mermaid boundaries", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
-  const parts = splitMermaidFences(
+  const { splitNativeFences } = await import("./fence/segments");
+  const parts = splitNativeFences(
     "[Before][file]\n\n```mermaid\ngraph TD\nA-->B\n```\n\n[After][file]\n\n[file]: src/file.ts",
   );
   for (const part of parts.filter((candidate) => candidate.kind === "markdown"))
@@ -345,25 +596,25 @@ it("keeps reference links available across native Mermaid boundaries", async () 
 });
 
 it("recognizes mixed-case Mermaid fence info and incomplete streaming fences", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
-  expect(splitMermaidFences("```Mermaid title\ngraph TD\nA-->B")).toEqual([
+  const { splitNativeFences } = await import("./fence/segments");
+  expect(splitNativeFences("```Mermaid title\ngraph TD\nA-->B")).toEqual([
     { kind: "mermaid", id: "0", source: "graph TD\nA-->B" },
   ]);
 });
 
 it("carries reference definitions nested in quotes across a diagram", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
-  const parts = splitMermaidFences(
+  const { splitNativeFences } = await import("./fence/segments");
+  const parts = splitNativeFences(
     "[open][file]\n\n```mermaid\ngraph TD\nA-->B\n```\n\n> [file]: src/file.ts",
   );
   expect(parts[0].source).toContain("[file]: <src/file.ts>");
 });
 
 it("keeps diagram identity when an earlier workspace image resolves", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
+  const { splitNativeFences } = await import("./fence/segments");
   const source = "![image](a.png)\n\n```mermaid\ngraph TD\nA-->B\n```";
-  const before = splitMermaidFences(source).find((part) => part.kind === "mermaid");
-  const after = splitMermaidFences(
+  const before = splitNativeFences(source).find((part) => part.kind === "mermaid");
+  const after = splitNativeFences(
     source.replace("a.png", "file:///long/cache/path/image.png"),
   ).find((part) => part.kind === "mermaid");
   expect(before).toHaveProperty("id");
@@ -610,14 +861,14 @@ it("retries transient image decoding failures instead of caching an unavailable 
 });
 
 it("keeps the document's first reference definition across every native Mermaid segment", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
+  const { splitNativeFences } = await import("./fence/segments");
   const before = '[first]: /repo/first.ts "Original"\n\n';
   const after = '\n\n[open][first]\n\n[first]: /repo/second.ts "Later"';
   const source = `${before}\`\`\`mermaid\ngraph TD\nA-->B\n\`\`\`${after}`;
   const firstDefinition = (markdown: string) =>
     fromMarkdown(markdown).children.find((node) => node.type === "definition");
   const canonical = firstDefinition(source);
-  const segments = splitMermaidFences(source);
+  const segments = splitNativeFences(source);
   for (const segment of segments.filter((candidate) => candidate.kind === "markdown")) {
     expect(firstDefinition(segment.source)).toMatchObject({
       identifier: canonical?.identifier,

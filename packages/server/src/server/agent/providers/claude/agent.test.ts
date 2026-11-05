@@ -1248,16 +1248,17 @@ describe("ClaudeAgentSession features", () => {
       const iterator = input[Symbol.asyncIterator]();
       await expect(iterator.next()).resolves.toMatchObject({ value: { type: "user" } });
 
-      await expect(
-        session.steerActiveTurn?.("same turn follow-up", {
-          expectedTurnId: turnId,
-          clientMessageId: "steer-client-id",
-        }),
-      ).resolves.toEqual({ status: "accepted" });
+      const admission = await session.steerActiveTurn?.("same turn follow-up", {
+        expectedTurnId: turnId,
+        clientMessageId: "steer-client-id",
+      });
+      expect(admission).toEqual({ status: "accepted", providerMessageId: expect.any(String) });
+      if (admission?.status !== "accepted") throw new Error("Expected steer admission");
       await expect(iterator.next()).resolves.toMatchObject({
         value: {
           type: "user",
           priority: "next",
+          uuid: admission.providerMessageId,
           message: { content: [{ type: "text", text: "same turn follow-up" }] },
         },
       });
@@ -1315,7 +1316,7 @@ describe("ClaudeAgentSession features", () => {
           expectedTurnId: turnId,
           clearPendingPermissions: true,
         }),
-      ).resolves.toEqual({ status: "accepted" });
+      ).resolves.toEqual({ status: "accepted", providerMessageId: expect.any(String) });
       await expect(firstPermission).resolves.toMatchObject({
         behavior: "deny",
         interrupt: undefined,
@@ -1374,7 +1375,7 @@ describe("ClaudeAgentSession features", () => {
       const permission = internal.handlePermissionRequest("Write", {}, { toolUseID: "tool-1" });
       await expect(
         session.steerActiveTurn?.("system notification", { expectedTurnId: turnId }),
-      ).resolves.toEqual({ status: "accepted" });
+      ).resolves.toEqual({ status: "accepted", providerMessageId: expect.any(String) });
       expect(session.getPendingPermissions()).toHaveLength(1);
       const requestId = session.getPendingPermissions()[0]!.id;
       await session.respondToPermission(requestId, { behavior: "deny", message: "test cleanup" });
@@ -3102,6 +3103,39 @@ describe("ClaudeAgentSession context window usage", () => {
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
       });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("a queued task notification answered before the prompt does not end the prompt's turn", async () => {
+    // A resumed session with a finished background task: Claude runs the notification turn first.
+    const session = await createSessionForTurns([
+      [
+        createInitMessage(),
+        createSuccessResult({
+          num_turns: 0,
+          result: "",
+          usage: { input_tokens: 0, output_tokens: 0 },
+          origin: { kind: "task-notification" },
+          uuid: "result-notification",
+        }),
+        createInitMessage(),
+        {
+          type: "assistant",
+          message: { id: "msg-1", role: "assistant", content: [{ type: "text", text: "PONG" }] },
+          parent_tool_use_id: null,
+          uuid: "assistant-1",
+          session_id: "session-1",
+        },
+        createSuccessResult({ uuid: "result-prompt" }),
+      ],
+    ]);
+
+    try {
+      const result = await session.run("turn");
+
+      expect(result.finalText).toBe("PONG");
     } finally {
       await session.close();
     }

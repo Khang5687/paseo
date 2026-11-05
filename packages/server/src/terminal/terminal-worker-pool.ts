@@ -2,10 +2,11 @@ import type { TerminalActivityState } from "@getpaseo/protocol/terminal-activity
 import type { CaptureTerminalLinesResult } from "./terminal-capture.js";
 import type {
   TerminalActivityListener,
+  TerminalCommandFinishedListener,
   TerminalsChangedListener,
   TerminalWorkspaceContributionChangedListener,
 } from "./terminal-manager.js";
-import type { TerminalSession, TerminalStateSnapshot } from "./terminal.js";
+import type { TerminalSession } from "./terminal.js";
 import type { WorkerCreateTerminalOptions } from "./terminal-worker-protocol.js";
 import type { DaemonTerminalManager } from "./worker-terminal-manager.js";
 
@@ -73,6 +74,7 @@ export function createTerminalWorkerPool(
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
   const terminalActivityListeners = new Set<TerminalActivityListener>();
   const contributionListeners = new Set<TerminalWorkspaceContributionChangedListener>();
+  const commandFinishedListeners = new Set<TerminalCommandFinishedListener>();
   let closePromise: Promise<void> | null = null;
   let detached = false;
   // One start at a time, so concurrent creates never launch two workers.
@@ -128,6 +130,9 @@ export function createTerminalWorkerPool(
     });
     member.manager.subscribeTerminalWorkspaceContributionChanged((event) => {
       for (const listener of Array.from(contributionListeners)) listener(event);
+    });
+    member.manager.subscribeTerminalCommandFinished((event) => {
+      for (const listener of Array.from(commandFinishedListeners)) listener(event);
     });
   }
 
@@ -217,8 +222,8 @@ export function createTerminalWorkerPool(
       return undefined;
     },
 
-    async getTerminalState(id, stateOptions): Promise<TerminalStateSnapshot | null> {
-      return routed(id).getTerminalState(id, stateOptions);
+    async replayTerminal(id, replayOptions, sink) {
+      return routed(id).replayTerminal(id, replayOptions, sink);
     },
 
     setTerminalTitle(id, title) {
@@ -283,6 +288,11 @@ export function createTerminalWorkerPool(
     subscribeTerminalWorkspaceContributionChanged(listener) {
       contributionListeners.add(listener);
       return () => contributionListeners.delete(listener);
+    },
+
+    subscribeTerminalCommandFinished(listener) {
+      commandFinishedListeners.add(listener);
+      return () => commandFinishedListeners.delete(listener);
     },
   };
 }

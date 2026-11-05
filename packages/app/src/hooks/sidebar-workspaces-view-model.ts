@@ -45,7 +45,6 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   // Prefills the rename input and signals whether a reset is available.
   title: string | null;
   pinnedAt?: string | null;
-  settledAt?: string | null;
   labels?: string[];
   // Checkout branch (null when not a git checkout or detached HEAD).
   currentBranch: string | null;
@@ -56,6 +55,9 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   archiveUnpushedCommitCount: number | null;
   scripts: WorkspaceDescriptor["scripts"];
   hasRunningScripts: boolean;
+  // Subagents still working under a root agent that waits on the user. Zero while
+  // the row already shows running, since the spinner says the same thing.
+  workingSubagentCount: number;
 }
 
 export interface SidebarProjectEntry {
@@ -167,7 +169,6 @@ export function createSidebarWorkspaceEntry(input: {
     name: input.workspace.name,
     title: input.workspace.title ?? null,
     pinnedAt: input.workspace.pinnedAt,
-    settledAt: input.workspace.settledAt,
     labels: input.workspace.labels ?? EMPTY_WORKSPACE_LABELS,
     currentBranch: normalizeCurrentBranch(input.workspace.gitRuntime?.currentBranch),
     statusBucket: effectiveStatus.status,
@@ -182,6 +183,8 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
+    workingSubagentCount:
+      effectiveStatus.status === "running" ? 0 : (input.workspace.runningSubagentCount ?? 0),
   };
 }
 

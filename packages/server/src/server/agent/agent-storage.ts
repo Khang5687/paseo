@@ -46,6 +46,27 @@ const PERSISTENCE_HANDLE_SCHEMA = z
   .nullable()
   .optional();
 
+const STORED_DRAFT_ATTACHMENT_SCHEMA = z.object({
+  kind: z.string(),
+  uploadId: z.string().optional(),
+  value: z.unknown(),
+});
+
+const STORED_DRAFT_SCHEMA = z.object({
+  text: z.string(),
+  attachments: z.array(STORED_DRAFT_ATTACHMENT_SCHEMA),
+  revision: z.number().int().nonnegative(),
+  updatedAt: z.number(),
+  updatedBy: z.string(),
+});
+
+const STORED_DRAFT_SNAPSHOT_SCHEMA = z.object({
+  id: z.string(),
+  createdAt: z.number(),
+  text: z.string(),
+  attachments: z.array(STORED_DRAFT_ATTACHMENT_SCHEMA),
+});
+
 const STORED_AGENT_SCHEMA = z.object({
   id: z.string(),
   provider: z.string(),
@@ -88,6 +109,17 @@ const STORED_AGENT_SCHEMA = z.object({
   queuePauseReason: z.string().optional(),
   archivedAt: z.string().nullable().optional(),
   owner: AgentOwnerSchema.optional(),
+  // Truncated copies of the first user message and latest assistant message. The daemon
+  // does not persist timelines, so search_agents reads these once the agent is unloaded.
+  firstUserMessage: z.string().nullable().optional(),
+  lastAssistantMessage: z.string().nullable().optional(),
+  // The unsent composer draft and its restore history. Only AgentDraftService
+  // writes these (see mutateDraft); every other write keeps the stored value.
+  draft: STORED_DRAFT_SCHEMA.optional(),
+  draftHistory: z.array(STORED_DRAFT_SNAPSHOT_SCHEMA).optional(),
+  // File uploads that went out with a sent message. The agent may still read
+  // their path, so draft cleanup never deletes them.
+  sentDraftUploadIds: z.array(z.string()).optional(),
 });
 
 export type SerializableAgentConfig = Pick<
@@ -103,8 +135,43 @@ export type SerializableAgentConfig = Pick<
 >;
 
 export type StoredAgentRecord = z.infer<typeof STORED_AGENT_SCHEMA>;
+export type StoredAgentDraft = z.infer<typeof STORED_DRAFT_SCHEMA>;
+export type StoredAgentDraftSnapshot = z.infer<typeof STORED_DRAFT_SNAPSHOT_SCHEMA>;
+export type StoredAgentDraftFields = Pick<
+  StoredAgentRecord,
+  "draft" | "draftHistory" | "sentDraftUploadIds"
+>;
 export function parseStoredAgentRecord(value: unknown): StoredAgentRecord {
   return STORED_AGENT_SCHEMA.parse(value);
+}
+
+const SEARCHABLE_MESSAGE_MAX_CHARS = 2000;
+
+/** The stored form of firstUserMessage/lastAssistantMessage. */
+export function toSearchableMessage(text: string | null | undefined): string | null {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  return trimmed.length > SEARCHABLE_MESSAGE_MAX_CHARS
+    ? trimmed.slice(0, SEARCHABLE_MESSAGE_MAX_CHARS)
+    : trimmed;
+}
+
+type SearchableMessages = Pick<StoredAgentRecord, "firstUserMessage" | "lastAssistantMessage">;
+
+/**
+ * The first user message is sticky: an agent reloaded without its history would otherwise
+ * replace it with the first prompt sent after the reload. The latest reply always wins.
+ */
+function mergeSearchableMessages(
+  existing: SearchableMessages | null,
+  next: SearchableMessages | undefined,
+): SearchableMessages {
+  const firstUserMessage = existing?.firstUserMessage ?? next?.firstUserMessage ?? null;
+  const lastAssistantMessage = next?.lastAssistantMessage ?? existing?.lastAssistantMessage ?? null;
+  return {
+    ...(firstUserMessage !== null ? { firstUserMessage } : {}),
+    ...(lastAssistantMessage !== null ? { lastAssistantMessage } : {}),
+  };
 }
 
 export class AgentStorage {
@@ -172,9 +239,37 @@ export class AgentStorage {
     return this.queueRecordMutation(record.id, () => record);
   }
 
+  /**
+   * Replaces the draft fields of a stored agent inside its write queue. Returns
+   * null without writing when the agent has no record.
+   */
+  async mutateDraft<T>(
+    agentId: string,
+    mutate: (fields: StoredAgentDraftFields) => { fields: StoredAgentDraftFields; result: T },
+  ): Promise<T | null> {
+    await this.load();
+    let result: T | null = null;
+    await this.queueRecordMutation(
+      agentId,
+      (existing) => {
+        if (!existing) return null;
+        const next = mutate({
+          draft: existing.draft,
+          draftHistory: existing.draftHistory,
+          sentDraftUploadIds: existing.sentDraftUploadIds,
+        });
+        result = next.result;
+        return withDraftFields(existing, next.fields);
+      },
+      { ownsDraft: true },
+    );
+    return result;
+  }
+
   private queueRecordMutation(
     agentId: string,
-    mutate: (existing: StoredAgentRecord | null) => StoredAgentRecord,
+    mutate: (existing: StoredAgentRecord | null) => StoredAgentRecord | null,
+    options?: { ownsDraft?: boolean },
   ): Promise<void> {
     const prev = this.pendingWrites.get(agentId) ?? Promise.resolve();
     const next = prev.then(async () => {
@@ -182,7 +277,12 @@ export class AgentStorage {
         return undefined;
       }
 
-      const record = mutate(this.cache.get(agentId) ?? null);
+      const existing = this.cache.get(agentId) ?? null;
+      const mutated = mutate(existing);
+      if (!mutated) return undefined;
+      // Writers outside the draft service build records from older reads or
+      // from the live agent; the draft they carry is stale, so keep the stored one.
+      const record = options?.ownsDraft ? mutated : withDraftFields(mutated, existing ?? {});
       await this.writeRecord(record);
       return undefined;
     });
@@ -252,7 +352,11 @@ export class AgentStorage {
 
   async applySnapshot(
     agent: ManagedAgent,
-    options?: { title?: string | null; internal?: boolean },
+    options?: {
+      title?: string | null;
+      internal?: boolean;
+      messages?: { firstUserMessage: string | null; lastAssistantMessage: string | null };
+    },
   ): Promise<void> {
     await this.load();
     const hasTitleOverride =
@@ -272,6 +376,7 @@ export class AgentStorage {
       if (existing && existing.archivedAt !== undefined) {
         record.archivedAt = existing.archivedAt;
       }
+      Object.assign(record, mergeSearchableMessages(existing, options?.messages));
       record.resumeOnStartup =
         existing?.resumeOnStartup && agent.lifecycle !== "idle" && agent.lifecycle !== "error";
       return record;
@@ -440,6 +545,19 @@ export class AgentStorage {
   private async waitForPendingWrite(agentId: string): Promise<void> {
     await (this.pendingWrites.get(agentId) ?? Promise.resolve()).catch(() => undefined);
   }
+}
+
+function withDraftFields(
+  record: StoredAgentRecord,
+  fields: StoredAgentDraftFields,
+): StoredAgentRecord {
+  const { draft: _draft, draftHistory: _history, sentDraftUploadIds: _sent, ...rest } = record;
+  return {
+    ...rest,
+    ...(fields.draft ? { draft: fields.draft } : {}),
+    ...(fields.draftHistory?.length ? { draftHistory: fields.draftHistory } : {}),
+    ...(fields.sentDraftUploadIds?.length ? { sentDraftUploadIds: fields.sentDraftUploadIds } : {}),
+  };
 }
 
 function projectDirNameFromCwd(cwd: string): string {

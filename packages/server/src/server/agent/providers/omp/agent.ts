@@ -12,6 +12,8 @@ import {
   type AgentCapabilityFlags,
   type AgentClient,
   type AgentFeature,
+  type AgentForkSessionInput,
+  type AgentForkSessionResult,
   type AgentLaunchContext,
   type AgentMetadata,
   type AgentMode,
@@ -85,7 +87,7 @@ import {
   type OmpRuntimeOptions,
 } from "./provider-config.js";
 export { formatOmpVersionSupport, resolveOmpDiagnosticPaths } from "./provider-config.js";
-import { OmpSubagentCardTracker, type OmpSubagentCardScheduler } from "./subagent-card-tracker.js";
+import { OmpSubagentCardTracker } from "./subagent-card-tracker.js";
 import { ompSkillPromptUserText, shouldDisplayOmpCustomMessage } from "./custom-message.js";
 import { getUserMessageText } from "./message-history.js";
 import { mapOmpSystemNoticeToNotification } from "./system-notice.js";
@@ -116,10 +118,15 @@ import {
   type OmpToolResult,
   type OmpTrackedToolCall,
 } from "./tool-call-detail.js";
-import { mapOmpAvailableCommandsUpdate, mapOmpRuntimeSlashCommands } from "./commands.js";
+import {
+  mapOmpAvailableCommandsUpdate,
+  mapOmpSlashCommands,
+  resolveOmpCompactRequest,
+} from "./commands.js";
 import { readOmpHistoryTodoState, streamOmpHistory } from "./history.js";
 import { mapOmpTodoReminderEvent, mapOmpTodoState, mapOmpTodoToolResult } from "./todo-mapper.js";
 import { mapOmpRuntimeEventToTimelineItem } from "./event-mapper.js";
+import { OmpXdevMountNotices } from "./xdev-mount-notice.js";
 import { mapOmpAdvisorMessageToToolCall } from "./advisor-message.js";
 import { handleOmpHostToolRuntimeEvent, OmpHostToolRouter } from "./host-tools.js";
 import { OmpSubagentIndex } from "./subagent-index.js";
@@ -147,13 +154,13 @@ const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: false,
   supportsRewindBoth: false,
+  supportsNativeFork: true,
 };
 
 export interface OmpAgentClientOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
   runtime?: OmpRuntime;
-  subagentCardScheduler?: OmpSubagentCardScheduler;
   providerIdleScheduler?: OmpProviderIdleScheduler;
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
@@ -234,7 +241,6 @@ interface OmpAgentSessionOptions {
   initialState: OmpSessionState;
   currentModeId?: string | null;
   logger: Logger;
-  subagentCardScheduler?: OmpSubagentCardScheduler;
   providerIdleScheduler?: OmpProviderIdleScheduler;
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
@@ -790,12 +796,15 @@ export class OmpAgentSession implements AgentSession {
   private pendingNoTurnCompletionAbort: AbortController | null = null;
   private lastKnownThinkingOptionId: string | null;
   private manualCompactionRunning = false;
+  /** Settles a `/compact <mode>` run with its error, or undefined once it committed. */
+  private settleModeCompaction: ((errorMessage: string | undefined) => void) | null = null;
   private commandCache: AgentSlashCommand[] | null = null;
   private commandRefresh: Promise<AgentSlashCommand[]> | null = null;
   private lastCommandRefreshAt: number | null = null;
   private readonly subagentIndex = new OmpSubagentIndex();
   private readonly subagentCardTracker: OmpSubagentCardTracker;
   private lastTodoItem: Extract<AgentTimelineItem, { type: "todo" }> | null = null;
+  private readonly xdevMountNotices = new OmpXdevMountNotices();
   private state: OmpSessionState;
   private currentModeId: string | null;
   private runtimeDead = false;
@@ -868,9 +877,7 @@ export class OmpAgentSession implements AgentSession {
         this.logger.debug({ err: error }, "OMP context usage poll failed");
       },
     });
-    this.subagentCardTracker = new OmpSubagentCardTracker({
-      scheduler: options.subagentCardScheduler,
-    });
+    this.subagentCardTracker = new OmpSubagentCardTracker();
     this.lastKnownThinkingOptionId =
       normalizeOmpThinkingOption(options.config.thinkingOptionId) ??
       this.state.thinkingLevel ??
@@ -1337,6 +1344,7 @@ export class OmpAgentSession implements AgentSession {
     this.unsubscribeRuntime?.();
     this.usagePoller.close();
     this.cancelNoTurnPromptCompletion();
+    this.settleModeCompaction?.("OMP session closed");
     try {
       await this.runtimeSession.close();
     } finally {
@@ -1394,13 +1402,11 @@ export class OmpAgentSession implements AgentSession {
   private async refreshCommandCache(): Promise<AgentSlashCommand[]> {
     this.lastCommandRefreshAt = Date.now();
     try {
-      this.commandCache = mapOmpRuntimeSlashCommands(await this.runtimeSession.refreshCommands());
+      this.commandCache = mapOmpSlashCommands(await this.runtimeSession.refreshCommands());
       return this.commandCache;
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to refresh OMP slash commands; using cached list");
-      return (
-        this.commandCache ?? mapOmpRuntimeSlashCommands(await this.runtimeSession.getCommands())
-      );
+      return this.commandCache ?? mapOmpSlashCommands(await this.runtimeSession.getCommands());
     }
   }
 
@@ -1610,14 +1616,28 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private async executeCompactCommand(
-    customInstructions: string | undefined,
+    args: string | undefined,
     emit: (event: AgentStreamEvent) => void,
   ): Promise<void> {
     if (this.manualCompactionRunning) {
       throw new Error("An OMP compact command is already running");
     }
-    // OMP answers a manual compact with its RPC response alone, without
-    // compaction_start or compaction_end, so the request owns both rows.
+    const emitError = (text: string) =>
+      emit({
+        type: "timeline",
+        provider: this.provider,
+        item: { type: "assistant_message", text: `[Error] ${text}` },
+      });
+    const compactCommand = (await this.listCommands()).find(
+      (command) => command.name === "compact",
+    );
+    const request = resolveOmpCompactRequest(args, compactCommand?.subcommands ?? []);
+    if (request.kind === "invalid") {
+      emitError(request.error);
+      return;
+    }
+    // Manual compaction progress events are new in OMP, so the request owns both rows
+    // rather than depending on them.
     this.manualCompactionRunning = true;
     const emitCompaction = (status: "loading" | "completed") =>
       emit({
@@ -1626,25 +1646,71 @@ export class OmpAgentSession implements AgentSession {
         item: { type: "compaction", status, trigger: "manual" },
       });
     emitCompaction("loading");
+    let errorMessage: string | undefined;
     try {
-      await this.runtimeSession.compact(customInstructions);
+      if (request.kind === "prompt") {
+        errorMessage = await this.runModeCompaction(request.message);
+      } else {
+        await this.runtimeSession.compact(request.customInstructions);
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      emitCompaction("completed");
-      emit({
-        type: "timeline",
-        provider: this.provider,
-        item: {
-          type: "assistant_message",
-          text: `[Error] Failed to compact context: ${message}`,
-        },
-      });
-      return;
+      errorMessage = error instanceof Error ? error.message : String(error);
     } finally {
       this.manualCompactionRunning = false;
     }
     emitCompaction("completed");
+    if (errorMessage) {
+      emitError(`Failed to compact context: ${errorMessage}`);
+      return;
+    }
     await this.usagePoller.refresh();
+  }
+
+  // OMP's `/compact` handler answers the prompt at once and compacts in the
+  // background, so the end arrives later as an event (see settleModeCompactionFrom).
+  private async runModeCompaction(message: string): Promise<string | undefined> {
+    // The server's TypeScript lib predates Promise.withResolvers.
+    const promise = new Promise<string | undefined>((resolve) => {
+      this.settleModeCompaction = resolve;
+    });
+    try {
+      await this.runtimeSession.prompt({ message });
+      return await promise;
+    } finally {
+      this.settleModeCompaction = null;
+    }
+  }
+
+  /** Returns true when the event belonged to a running `/compact <mode>`. */
+  private settleModeCompactionFrom(event: OmpRuntimeEvent): boolean {
+    const settle = this.settleModeCompaction;
+    if (!settle) {
+      return false;
+    }
+    if (event.type === "manual_compaction_start") {
+      return true;
+    }
+    if (event.type === "manual_compaction_end") {
+      const committed = event.result !== undefined && !event.aborted && !event.skipped;
+      settle(
+        committed ? undefined : (event.errorMessage ?? (event.aborted ? "Cancelled" : "Skipped")),
+      );
+      return true;
+    }
+    // COMPAT(ompManualCompactionEvents): added in v0.2.0; OMP 18.13.3 and older end a
+    // `/compact <mode>` only with the handler's command_output ("Compaction complete…" or
+    // "Compaction failed: …", or a usage error). Remove after 2027-05-01 once the minimum
+    // OMP version sends manual_compaction_end.
+    if (event.type === "command_output") {
+      const text = stripAnsi(optionalString(event.text) ?? "").trim();
+      settle(
+        text.startsWith("Compaction complete")
+          ? undefined
+          : text.replace(/^Compaction failed:\s*/, "") || "Compaction failed",
+      );
+      return true;
+    }
+    return false;
   }
 
   private async executeGoalCommand(
@@ -1907,7 +1973,7 @@ export class OmpAgentSession implements AgentSession {
       }
       return true;
     }
-    const mappedEvent = mapOmpRuntimeEventToTimelineItem(event);
+    const mappedEvent = mapOmpRuntimeEventToTimelineItem(event, this.xdevMountNotices);
     if (!mappedEvent.handled) {
       return false;
     }
@@ -1959,6 +2025,9 @@ export class OmpAgentSession implements AgentSession {
       this.handleProcessExit(event.error);
       return;
     }
+    if (this.settleModeCompactionFrom(event)) {
+      return;
+    }
     if (event.type === "command_output") {
       this.handleCommandOutput(event.text);
       return;
@@ -2005,6 +2074,7 @@ export class OmpAgentSession implements AgentSession {
 
   private handleProcessExit(error: string): void {
     this.runtimeDead = true;
+    this.settleModeCompaction?.(error);
     void this.hostTools?.close();
     this.usagePoller.stopTurn();
     if (!this.activeTurnId) {
@@ -2362,8 +2432,7 @@ export class OmpAgentSession implements AgentSession {
     return mapOmpToolDetail(toolCall, result, {
       toolCallId,
       bridgedTool: this.hostTools?.bridge?.tool(toolCall.toolName),
-      mapSubagentDetail: (detail) =>
-        this.subagentCardTracker.detailFor(toolCallId, detail) ?? detail,
+      mapSubagentDetail: (detail) => this.subagentCardTracker.detailFor(toolCallId, detail),
     });
   }
 
@@ -2473,7 +2542,6 @@ export class OmpAgentClient implements AgentClient {
 
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;
-  private readonly subagentCardScheduler?: OmpSubagentCardScheduler;
   private readonly providerIdleScheduler?: OmpProviderIdleScheduler;
   private readonly noTurnScheduler?: OmpNoTurnScheduler;
   private readonly usagePollScheduler?: OmpUsagePollScheduler;
@@ -2495,7 +2563,6 @@ export class OmpAgentClient implements AgentClient {
     );
     this.logger = options.logger;
     this.runtimeSettings = runtimeSettings;
-    this.subagentCardScheduler = options.subagentCardScheduler;
     this.providerIdleScheduler = options.providerIdleScheduler;
     this.noTurnScheduler = options.noTurnScheduler;
     this.usagePollScheduler = options.usagePollScheduler;
@@ -2617,7 +2684,6 @@ export class OmpAgentClient implements AgentClient {
         initialState,
         currentModeId: launchMode.modeId,
         logger: this.logger,
-        subagentCardScheduler: this.subagentCardScheduler,
         providerIdleScheduler: this.providerIdleScheduler,
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
@@ -2694,7 +2760,6 @@ export class OmpAgentClient implements AgentClient {
         initialState,
         currentModeId: launchMode.modeId,
         logger: this.logger,
-        subagentCardScheduler: this.subagentCardScheduler,
         providerIdleScheduler: this.providerIdleScheduler,
         noTurnScheduler: this.noTurnScheduler,
         usagePollScheduler: this.usagePollScheduler,
@@ -2707,6 +2772,57 @@ export class OmpAgentClient implements AgentClient {
       await hostTools?.close();
       await runtimeSession.close().catch(() => undefined);
       throw error;
+    }
+  }
+
+  // `omp --fork` copies the source session file under a new session id, so the live source
+  // session is never opened twice. A cut then branches the copy at the first message to drop;
+  // OMP writes the branch to yet another file, which is the fork. The intermediate copy is
+  // removed.
+  async forkSession(
+    handle: AgentPersistenceHandle,
+    input: AgentForkSessionInput,
+  ): Promise<AgentForkSessionResult> {
+    const sourceFile = handle.nativeHandle;
+    if (!sourceFile) {
+      throw new Error("OMP fork requires a native session file handle");
+    }
+    const runtimeSession = await this.resolveRuntime(input.providerOptions).startSession({
+      cwd: input.cwd,
+      protocolMode: "rpc",
+      fork: sourceFile,
+    });
+    try {
+      const copied = await runtimeSession.getState();
+      if (!copied.sessionFile) {
+        throw new Error("OMP fork did not report a session file");
+      }
+      let state = copied;
+      if (input.cutBeforeMessageId) {
+        await runtimeSession.branch(input.cutBeforeMessageId);
+        state = await runtimeSession.getState();
+        if (!state.sessionFile) {
+          throw new Error("OMP fork did not report a session file after the cut");
+        }
+        if (state.sessionFile !== copied.sessionFile) {
+          await rm(copied.sessionFile, { force: true });
+        }
+      }
+      const stats = await runtimeSession.getSessionStats().catch(() => null);
+      const usedTokens = stats?.contextUsage?.tokens;
+      const windowTokens = stats?.contextUsage?.contextWindow;
+      return {
+        persistence: {
+          provider: this.provider,
+          sessionId: state.sessionId,
+          nativeHandle: state.sessionFile,
+          metadata: handle.metadata,
+        },
+        ...(typeof usedTokens === "number" ? { contextWindowUsedTokens: usedTokens } : {}),
+        ...(typeof windowTokens === "number" ? { contextWindowMaxTokens: windowTokens } : {}),
+      };
+    } finally {
+      await runtimeSession.close().catch(() => undefined);
     }
   }
 

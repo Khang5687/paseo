@@ -5,11 +5,9 @@ import {
   type PinnedSidebarGroups,
   type PinnedSidebarKeys,
 } from "@/hooks/use-sidebar-pins";
-import { splitSettledSidebarGroups, type SettledSidebarKeys } from "@/hooks/use-sidebar-settled";
 import type {
   SidebarProjectEntry,
   SidebarWorkspaceEntry,
-  SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
 import {
@@ -22,14 +20,11 @@ import {
   type SidebarShortcutSection,
 } from "@/utils/sidebar-shortcuts";
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
-import { createWorkspaceRowNester, inheritParentPins } from "./workspace-nesting";
+import { createWorkspaceRowNester, inheritParentPins, splitThreadHeads } from "./workspace-nesting";
 
 export interface SidebarProjection {
-  /** `unpinnedProjects` here also has the settled rows removed: it is exactly what the list shows. */
   pinnedGroups: PinnedSidebarGroups;
   workspaceGroups: SidebarWorkspaceGroup[];
-  /** The flat Settled section at the bottom of the list, most recently settled first. */
-  settledRows: SidebarWorkspacePlacement[];
   /**
    * The project icons this projection needs fetched, keyed by `projectViewKey` — one per project,
    * whatever the mode groups by. It sits here rather than beside `useProjectIcons` in the list
@@ -42,12 +37,13 @@ export interface SidebarProjection {
   shortcutModel: SidebarShortcutModel;
   /** Indent level of each subagent workspace row nested under its parent; top-level rows absent. */
   nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
+  /** Subagent workspace rows under each thread row, shown or folded; childless rows absent. */
+  childWorkspaceCountByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
 export interface SidebarProjectionInput {
   projects: SidebarProjectEntry[];
   pinnedKeys: PinnedSidebarKeys;
-  settledKeys: SettledSidebarKeys;
   pinnedWorkspaceOrder: string[];
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByViewKey: Map<string, string>;
@@ -57,6 +53,8 @@ export interface SidebarProjectionInput {
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
   /** Child workspaceKey -> parent workspaceKey for subagent workspaces. */
   parentKeyByWorkspaceKey: ReadonlyMap<string, string>;
+  /** Threads whose child rows the user unfolded; every other thread shows them folded. */
+  expandedThreadKeys: ReadonlySet<string>;
   t: TFunction;
 }
 
@@ -71,25 +69,14 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
     visibleWorkspaceKeys,
     parentKeyByWorkspaceKey: input.parentKeyByWorkspaceKey,
   });
-  // A child row follows a settled parent into Settled the same way it follows a pinned one.
-  const settledWorkspaceKeys = inheritParentPins({
-    pinnedWorkspaceKeys: input.settledKeys.settledWorkspaceKeys,
-    visibleWorkspaceKeys,
-    parentKeyByWorkspaceKey: input.parentKeyByWorkspaceKey,
-  });
   const pinned = splitPinnedSidebarGroups({
     projects: input.projects,
     keys: { ...input.pinnedKeys, pinnedWorkspaceKeys },
     pinnedWorkspaceOrder: input.pinnedWorkspaceOrder,
   });
-  // Settled splits after Pinned, from what Pinned left behind, so pinned wins.
-  const settled = splitSettledSidebarGroups({
-    projects: pinned.unpinnedProjects,
-    keys: { ...input.settledKeys, settledWorkspaceKeys },
-  });
   // Each mode nests only the lists it renders, so the depth map describes the rows on screen.
-  const nester = createWorkspaceRowNester(input.parentKeyByWorkspaceKey);
-  let unpinnedProjects = settled.unsettledProjects;
+  const nester = createWorkspaceRowNester(input.parentKeyByWorkspaceKey, input.expandedThreadKeys);
+  let unpinnedProjects = pinned.unpinnedProjects;
   if (input.groupMode === "project") {
     unpinnedProjects = unpinnedProjects.map((project) => {
       const workspaces = nester.nest(project.workspaces);
@@ -100,25 +87,21 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
     pinnedChats: nester.nest(pinned.pinnedChats),
     unpinnedProjects,
   };
-  const settledRows = nester.nest(settled.settledRows);
   const pinnedWorkspaceKeySet = new Set(pinnedWorkspaceKeys);
-  const settledWorkspaceKeySet = new Set(settledWorkspaceKeys);
   const listedWorkspaces = Array.from(input.workspaceEntriesByKey.values()).filter(
-    (workspace) =>
-      !pinnedWorkspaceKeySet.has(workspace.workspaceKey) &&
-      !settledWorkspaceKeySet.has(workspace.workspaceKey),
+    (workspace) => !pinnedWorkspaceKeySet.has(workspace.workspaceKey),
   );
   // One switch decides both what the list groups by and what the keyboard shortcuts walk, so the
   // two cannot disagree and a new grouping mode is a compile error here rather than a silent
-  // fall-through to the project rows. Status groups nest only within themselves: a child that
-  // needs attention stays in its own status group instead of hiding under a finished parent.
-  const workspaceGroups = buildWorkspaceGroups(input, listedWorkspaces);
+  // fall-through to the project rows. Status groups sort only thread heads; a child row follows
+  // its parent into the parent's group, the same place it has in project mode.
+  const threads = splitThreadHeads(listedWorkspaces, input.parentKeyByWorkspaceKey);
+  const workspaceGroups = buildWorkspaceGroups(input, threads.heads);
   // The groups were built just above, so nesting their rows in place shares nothing.
   for (const group of workspaceGroups) {
-    group.rows = nester.nest(group.rows);
+    group.rows = nester.nest([...group.rows, ...threads.childrenOf(group.rows)]);
   }
 
-  // Settled rows are put away, so no section here numbers them.
   const sections: SidebarShortcutSection[] = [];
   if (!input.pinnedCollapsed) {
     sections.push({ workspaces: pinnedGroups.pinnedChats });
@@ -142,24 +125,24 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   return {
     pinnedGroups,
     workspaceGroups,
-    settledRows,
     projectIconTargets: resolveSidebarProjectIconTargets(input.projects),
     shortcutModel: buildSidebarShortcutSections({ sections }),
     nestingDepthByWorkspaceKey: nester.depthByWorkspaceKey,
+    childWorkspaceCountByWorkspaceKey: nester.childCountByWorkspaceKey,
   };
 }
 
 /** Project mode keeps its project headers and groups nothing; status mode groups the rows. */
 function buildWorkspaceGroups(
   input: SidebarProjectionInput,
-  listedWorkspaces: SidebarWorkspaceEntry[],
+  unpinnedWorkspaces: SidebarWorkspaceEntry[],
 ): SidebarWorkspaceGroup[] {
   switch (input.groupMode) {
     case "project":
       return [];
     case "status":
       return statusWorkspaceGroups(
-        buildStatusGroups(listedWorkspaces, input.projectNamesByViewKey, input.t),
+        buildStatusGroups(unpinnedWorkspaces, input.projectNamesByViewKey, input.t),
       );
   }
 }

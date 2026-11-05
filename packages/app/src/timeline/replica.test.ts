@@ -51,13 +51,13 @@ function createOwner(storage: TimelineReplicaStorage): ViewedTimelineOwner {
     replica,
     replaceDemandedAgentIds: () => undefined,
     drainQueuedAgentMessage: () => undefined,
+    liveScope: "opened",
     ports: {
       observe: () => ({ ready: Promise.resolve(), release: async () => undefined }),
       readCursor: () => undefined,
       fetchPage: async () => ({ hasNewer: false, endCursor: null }),
       fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
       reportError: () => undefined,
-      schedule: () => () => undefined,
     },
   });
 }
@@ -607,6 +607,7 @@ describe("create handoff lifetime", () => {
       replica,
       replaceDemandedAgentIds: () => undefined,
       drainQueuedAgentMessage: () => undefined,
+      liveScope: "opened",
       ports: {
         observe: () => ({ ready: Promise.resolve(), release: async () => undefined }),
         readCursor: () => undefined,
@@ -617,7 +618,6 @@ describe("create handoff lifetime", () => {
         },
         fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
         reportError: () => undefined,
-        schedule: () => () => undefined,
       },
     });
 
