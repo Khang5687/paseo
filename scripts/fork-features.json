@@ -853,5 +853,11 @@
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/providers/opencode-agent.test.ts"
     ]
+  },
+  {
+    "pr": 110,
+    "title": "fix(fork): a remote daemon switch always brings the daemon back",
+    "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; checked with a fake systemctl/CLI harness (PR body)",
+    "tests": []
   }
 ]
