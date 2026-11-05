@@ -147,3 +147,35 @@ test("a background caller's remote child asks the host to update instead of turn
   ).rejects.toThrow("Update the host to use background agents.");
   expect(socket.requests.map((request) => request.type)).not.toContain("create_agent_request");
 });
+
+test("a remote create labels the caller as parent unless detached", async () => {
+  const { client, socket } = await olderHost();
+  const creating = resolverFor(client, false).use("srv_older", (host) =>
+    host.createAgent(createArgs, {} as never),
+  );
+  creating.catch(() => {});
+
+  const request = (await socket.createRequest()) as { labels: Record<string, string> };
+  expect(request.labels).toEqual({
+    "paseo.parent-agent-id": "caller",
+    "paseo.parent-server-id": "origin",
+  });
+});
+
+test("a detached remote create carries no parent labels", async () => {
+  const { client, socket } = await olderHost();
+  const creating = resolverFor(client, false).use("srv_older", (host) =>
+    host.createAgent(
+      {
+        ...createArgs,
+        detached: true,
+        labels: { "paseo.parent-agent-id": "spoofed", source: "mcp" },
+      },
+      {} as never,
+    ),
+  );
+  creating.catch(() => {});
+
+  const request = (await socket.createRequest()) as { labels: Record<string, string> };
+  expect(request.labels).toEqual({ source: "mcp" });
+});

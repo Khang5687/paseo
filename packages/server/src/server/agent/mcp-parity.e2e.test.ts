@@ -626,6 +626,49 @@ describe("Suite A: Core Fixes", () => {
     }
   });
 
+  test("create_agent detached: true gets its own workspace in the caller directory and no parent label", async () => {
+    let agentId: string | null = null;
+    try {
+      const payload = await callToolStructured(agentScopedClient, "create_agent", {
+        detached: true,
+        title: "Detached discussion",
+        provider: "claude/claude-test-model",
+        initialPrompt: "say done and stop",
+      });
+      agentId = str(payload.agentId);
+      const parent = daemonHandle.daemon.agentManager.getAgent(parentAgentId);
+      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      expect(snapshot?.workspaceId).toBeTruthy();
+      expect(snapshot?.workspaceId).not.toBe(parent?.workspaceId);
+      expect(payload.workspaceId).toBe(snapshot?.workspaceId);
+      expect(snapshot?.cwd).toBe(parent?.cwd);
+      expect(snapshot?.labels?.[PARENT_AGENT_ID_LABEL]).toBeUndefined();
+      expect(snapshot?.labels?.["paseo.parent-server-id"]).toBeUndefined();
+    } finally {
+      await archiveAgentIfPresent(agentId);
+    }
+  });
+
+  test("create_agent detached: true with workspaceId uses that workspace", async () => {
+    let agentId: string | null = null;
+    try {
+      const parent = daemonHandle.daemon.agentManager.getAgent(parentAgentId);
+      const payload = await callToolStructured(agentScopedClient, "create_agent", {
+        detached: true,
+        workspaceId: parent?.workspaceId,
+        title: "Detached same workspace",
+        provider: "claude/claude-test-model",
+        initialPrompt: "say done and stop",
+      });
+      agentId = str(payload.agentId);
+      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      expect(snapshot?.workspaceId).toBe(parent?.workspaceId);
+      expect(snapshot?.labels?.[PARENT_AGENT_ID_LABEL]).toBeUndefined();
+    } finally {
+      await archiveAgentIfPresent(agentId);
+    }
+  });
+
   test("agentManager.createAgent injects paseo MCP using the daemon listen target", async () => {
     let agentId: string | null = null;
     try {
