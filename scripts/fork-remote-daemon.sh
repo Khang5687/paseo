@@ -15,11 +15,14 @@
 # no running provider subagent, no pending permission, no queued message about to send, no
 # schedule run in progress), polling every 30s. Its log is ~/paseo-fork/swap.log on the host. A
 # newer request replaces a waiting one. --now switches immediately; restart recovery resumes the
-# agents it interrupts.
+# agents it interrupts. Every switch runs detached from the SSH session (--now follows its log),
+# so a dropped connection cannot stop it halfway.
 #
 # A switch stops the daemon with --keep-terminals and starts the unit again, so terminals survive
 # (the drop-in sets KillMode=process: systemd would otherwise kill the terminal worker with the
-# rest of the unit's processes).
+# rest of the unit's processes). A switch that ends with the daemon stopped, for any reason short
+# of SIGKILL, starts the unit on its way out; a restart that finds nothing to switch but the
+# daemon stopped starts it too.
 #
 # Host layout: ~/paseo-fork/repo is a clone of the fork; each build is a detached worktree in
 # ~/paseo-fork/releases/<sha> with its own node_modules. ~/paseo-fork/current and
@@ -128,26 +131,20 @@ UNIT
   systemctl --user daemon-reload
 }
 
-# Stops the running daemon keeping its terminals, then starts the unit with what the drop-in
-# (or its absence) now points at.
-restart_daemon() {
-  local before after version expected stop_cli
-  before="$(systemctl --user show -p MainPID --value paseo.service)"
-  stop_cli="${1:-$(running_cli)}"
-  if [[ $before != "0" ]]; then
-    if ! "$stop_cli" daemon stop --keep-terminals --json >/dev/null 2>&1; then
-      say "stop with --keep-terminals failed; restarting the unit (this closes terminals)"
-      systemctl --user restart paseo.service
-    fi
-  fi
-  systemctl --user start paseo.service
-  expected=""
+daemon_pid() { systemctl --user show -p MainPID --value paseo.service; }
+
+# Set while the daemon is stopped by a switch and not yet started again; the exit guard reads it.
+stopping=0
+
+# Waits until the unit serves again after a start; $1 is the main pid before the switch.
+wait_until_serving() {
+  local before="$1" after version expected=""
   if [[ -f $dropin ]]; then
     expected="$(node -p 'require(process.argv[1]).version' "$root/current/packages/cli/package.json" 2>/dev/null || true)"
   fi
   for _ in $(seq 1 60); do
     sleep 1
-    after="$(systemctl --user show -p MainPID --value paseo.service)"
+    after="$(daemon_pid)"
     [[ $after != "0" && $after != "$before" ]] || continue
     version="$("$(running_cli)" daemon status --json 2>/dev/null |
       node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>{try{const j=JSON.parse(s);if(j.localDaemon==="running")console.log(j.daemonVersion)}catch{}})')"
@@ -165,6 +162,37 @@ restart_daemon() {
   return 1
 }
 
+# Stops the running daemon keeping its terminals, then starts the unit with what the drop-in
+# (or its absence) now points at.
+restart_daemon() {
+  local before stop_cli
+  before="$(daemon_pid)"
+  stop_cli="${1:-$(running_cli)}"
+  if [[ $before != "0" ]]; then
+    stopping=1
+    say "stopping daemon pid $before (terminals stay)"
+    if ! "$stop_cli" daemon stop --keep-terminals --json >/dev/null 2>&1; then
+      say "stop with --keep-terminals failed; restarting the unit (this closes terminals)"
+      systemctl --user restart paseo.service
+    fi
+  fi
+  say "starting paseo.service"
+  systemctl --user start paseo.service
+  stopping=0
+  wait_until_serving "$before"
+}
+
+# Exit guard of every switch: releases the lock, and starts the unit when the switch dies between
+# stopping the daemon and starting it again (a signal, a failing command under set -e).
+on_exit() {
+  if [[ $stopping == 1 && "$(daemon_pid)" == "0" ]]; then
+    say "switch ended with the daemon stopped; starting paseo.service"
+    systemctl --user start paseo.service ||
+      say "could not start paseo.service; see: journalctl --user -u paseo.service -n 50"
+  fi
+  rm -rf "$lock_dir"
+}
+
 switch() {
   case "$1" in
     restart)
@@ -172,6 +200,12 @@ switch() {
       if [[ "$(readlink "$root/current" 2>/dev/null)" == "$(readlink "$root/next")" && -f $dropin ]]; then
         # Takes the current drop-in (KillMode) without restarting anything.
         write_dropin
+        if [[ "$(daemon_pid)" == "0" ]]; then
+          say "$(basename "$(readlink "$root/current")") is current but the daemon is stopped; starting it"
+          systemctl --user start paseo.service
+          wait_until_serving 0
+          return
+        fi
         say "already running $(basename "$(readlink "$root/current")"); nothing to switch"
         return 0
       fi
@@ -226,7 +260,7 @@ take_lock() {
       # This runs in a subshell: $$ would name the outer bash, and killing that leaves this
       # waiter running without the lock.
       echo "${BASHPID:-$$}" >"$lock_dir/pid"
-      trap 'rm -rf "$lock_dir"' EXIT
+      trap on_exit EXIT
       return 0
     fi
     holder="$(lock_holder)"
@@ -318,13 +352,23 @@ case "$action" in
     ;;
   restart | rollback | npm)
     if [[ $now == "--now" ]]; then
-      take_lock
-      trap '' TERM
-      switch "$action"
+      # Runs detached like a waiter, so closing this SSH session cannot stop it halfway; this side
+      # follows its lines in the log and returns its exit code.
+      touch "$root/swap.log"
+      from="$(($(stat -c %s "$root/swap.log") + 1))"
+      nohup setsid bash -l "$self" "now-$action" "" "" "" >>"$root/swap.log" 2>&1 </dev/null &
+      switcher=$!
+      tail -c "+$from" --pid="$switcher" -f "$root/swap.log" || true
+      wait "$switcher"
     else
       nohup setsid bash -l "$self" "wait-$action" "" "" "" >>"$root/swap.log" 2>&1 </dev/null &
       say "switches ($action) once nothing on this host is working; log: $root/swap.log"
     fi
+    ;;
+  now-restart | now-rollback | now-npm)
+    take_lock
+    trap '' TERM
+    switch "${action#now-}"
     ;;
   wait-restart | wait-rollback | wait-npm)
     wait_then_switch "${action#wait-}"
