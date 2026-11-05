@@ -142,6 +142,7 @@ import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
+import { AskAgentThreads, type AskThreadSettings } from "./agent/ask-agent.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { AgentDraftService } from "./agent-draft/agent-draft-service.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
@@ -533,6 +534,7 @@ export interface PaseoDaemonConfig {
   draftHistoryRetentionDays?: number;
   resumeOnStartup?: boolean;
   resumePrompt?: string;
+  askAgent?: Partial<AskThreadSettings>;
   providerCatalogRefreshTimeoutMs?: number;
   metadataGeneration?: {
     providers?: Array<{
@@ -1660,7 +1662,28 @@ export async function createPaseoDaemon(
     notesService.handleCommandFinished(event),
   );
 
+  const askThreads = new AskAgentThreads(agentManager, logger, {
+    paseoHome: config.paseoHome,
+    settings: config.askAgent,
+  });
+  // A previous process that died mid-thread left provider forks behind. Read the record file
+  // before anything can overwrite it; deleting the forks must not hold up startup.
+  await askThreads.loadLeftovers();
+  void askThreads.discardLeftovers();
+  askThreads.setRemoteCloser(async (ref) => {
+    if (!wsServer) return;
+    await wsServer.toolHosts().use(ref.serverId, (client) =>
+      client.askAgent(ref.agentId, "", {
+        askerAgentId: ref.askerId,
+        threadId: ref.threadId,
+        threadAction: "close",
+      }),
+    );
+  });
   agentManager.setAgentArchivedCallback(async (agentId) => {
+    await askThreads.handleAgentArchived(agentId).catch((error: unknown) => {
+      logger.warn({ err: error, agentId }, "Failed to close ask_agent threads for archived agent");
+    });
     try {
       await scheduleService.completeForAgent(agentId);
     } catch (error) {
@@ -1731,6 +1754,7 @@ export async function createPaseoDaemon(
     runtime: PaseoToolRuntimeContext,
   ): PaseoToolHostDependencies => ({
     finishSubscriptions: () => finishSubscriptions,
+    askThreads: () => askThreads,
     agentMessages: () => {
       if (!wsServer) throw new Error("Daemon is not accepting agent messages");
       return wsServer.agentMessages;
@@ -2046,6 +2070,7 @@ export async function createPaseoDaemon(
                 daemonStatusRpc: dependencies.serverFeatureOverrides?.daemonStatusRpc,
                 relayConfig: dependencies.serverFeatureOverrides?.relayConfig,
                 startPaused: true,
+                askThreads,
               },
               workspaceAutoName,
               workspaceRuntimeStore,
@@ -2212,6 +2237,7 @@ export async function createPaseoDaemon(
     // Freeze both ingress and registration before taking the agent closure snapshot.
     wsServer?.prepareForShutdown();
     await finishSubscriptions.close();
+    await askThreads.closeAll();
     await wsServer?.agentMessages.close();
     agentManager.prepareForShutdown();
     await restartRecovery.captureRunningAgents();

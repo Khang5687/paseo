@@ -886,6 +886,12 @@ export interface AgentClient {
    */
   forkNativeSession?(handle: AgentPersistenceHandle): Promise<ForkedNativeSession>;
   /**
+   * Delete a fork's durable provider state from its handle alone. Used to clean up forks left
+   * behind by a crashed daemon, when no ForkedNativeSession.discard closure exists anymore.
+   * Idempotent; never touches the source.
+   */
+  discardNativeFork?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
    * Release any provider-owned resources held by this client (background
    * processes, sockets, cached subprocesses, etc.). Called when the daemon
    * shuts down. Must be idempotent.

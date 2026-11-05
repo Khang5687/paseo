@@ -7,6 +7,7 @@ import {
   createAgentMessageDelivery,
   type AgentMessageDelivery,
 } from "./agent/agent-messages/index.js";
+import type { AskAgentThreads } from "./agent/ask-agent.js";
 import {
   sendPreparedPromptToAgent,
   waitForAgentRunStartWithTimeout,
@@ -189,6 +190,7 @@ interface WebSocketServerConfig {
   daemonStatusRpc?: boolean;
   relayConfig?: boolean;
   startPaused?: boolean;
+  askThreads?: AskAgentThreads;
 }
 
 type WebSocketRuntimeMetrics = SessionRuntimeMetrics & CheckoutDiffMetrics;
@@ -590,6 +592,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly messageReceipts: MessageReceipts;
   private readonly agentMessageQueue: AgentMessageQueueDispatcher;
   readonly agentMessages: AgentMessageDelivery;
+  private readonly askThreads: AskAgentThreads | undefined;
   private readonly creationService: CreationService;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
@@ -735,6 +738,7 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceSetupRuntime = workspaceSetupRuntime;
     this.advertiseDaemonStatusRpc = wsConfig.daemonStatusRpc !== false;
     this.advertiseRelayConfig = wsConfig.relayConfig !== false;
+    this.askThreads = wsConfig.askThreads;
     this.connectionLifecycle = wsConfig.startPaused === true ? "starting" : "accepting";
     this.serverId = serverId;
     if (typeof daemonVersion !== "string" || daemonVersion.trim().length === 0) {
@@ -1750,6 +1754,7 @@ export class VoiceAssistantWebSocketServer {
       messageReceipts: this.messageReceipts,
       agentMessageQueue: this.agentMessageQueue,
       agentMessages: this.agentMessages,
+      askThreads: this.askThreads,
       creationService: this.creationService,
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
@@ -2249,6 +2254,8 @@ export class VoiceAssistantWebSocketServer {
         agentFork: true,
         // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
         agentAsk: true,
+        // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
+        agentAskThreads: this.askThreads !== undefined,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: true,
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain advertisement.

@@ -14,6 +14,7 @@ import {
   translateOpenCodeEvent,
 } from "./opencode-agent.js";
 import { streamSession } from "./test-utils/session-stream-adapter.js";
+import { ForkHandleRefusedError } from "../fork-handle.js";
 import {
   TestOpenCodeClient,
   TestOpenCodeHarness,
@@ -598,6 +599,47 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
       expect(missing.calls.sessionDelete).toEqual([
         { sessionID: "session-fork-2", directory: cwd },
       ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("deletes a leftover fork from its handle alone, and refuses a handle that is not one", async () => {
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const forkClient = new TestOpenCodeClient();
+    const discardClient = new TestOpenCodeClient();
+    runtime.enqueueClient(forkClient);
+    runtime.enqueueClient(discardClient);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const source = {
+      provider: "opencode" as const,
+      sessionId: "session-1",
+      nativeHandle: "session-1",
+      metadata: { cwd, modeId: "build" },
+    };
+
+    try {
+      const fork = await client.forkNativeSession(source);
+
+      for (const bad of [
+        { ...fork.handle, sessionId: "../session-1" },
+        { ...fork.handle, sessionId: "" },
+      ]) {
+        await expect(client.discardNativeFork(bad)).rejects.toThrow(ForkHandleRefusedError);
+      }
+      await expect(client.discardNativeFork({ ...fork.handle, metadata: {} })).rejects.toThrow();
+      expect(discardClient.calls.sessionDelete).toEqual([]);
+
+      await client.discardNativeFork(fork.handle);
+
+      expect(discardClient.calls.sessionDelete).toEqual([
+        { sessionID: "session-fork", directory: cwd },
+      ]);
+      expect(forkClient.calls.sessionDelete).toEqual([]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

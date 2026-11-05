@@ -501,6 +501,37 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
   } satisfies ForwardedAgentSession;
 }
 
+/** Native-session lifecycle methods exist only on providers that implement them. */
+function forwardNativeSessionOperations(
+  inner: AgentClient,
+  provider: AgentProvider,
+): Pick<
+  AgentClient,
+  "archiveNativeSession" | "unarchiveNativeSession" | "forkNativeSession" | "discardNativeFork"
+> {
+  const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
+  const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  const forkNativeSession = inner.forkNativeSession?.bind(inner);
+  const discardNativeFork = inner.discardNativeFork?.bind(inner);
+  return {
+    archiveNativeSession: archiveNativeSession
+      ? async (handle) => await archiveNativeSession({ ...handle, provider: inner.provider })
+      : undefined,
+    unarchiveNativeSession: unarchiveNativeSession
+      ? async (handle) => await unarchiveNativeSession({ ...handle, provider: inner.provider })
+      : undefined,
+    forkNativeSession: forkNativeSession
+      ? async (handle) => {
+          const fork = await forkNativeSession({ ...handle, provider: inner.provider });
+          return { ...fork, handle: { ...fork.handle, provider } };
+        }
+      : undefined,
+    discardNativeFork: discardNativeFork
+      ? async (handle) => await discardNativeFork({ ...handle, provider: inner.provider })
+      : undefined,
+  };
+}
+
 function wrapForkSession(
   provider: AgentProvider,
   inner: AgentClient,
@@ -533,9 +564,6 @@ function wrapClientProvider(
   const listImportableSessions = inner.listImportableSessions?.bind(inner);
   const importSession = inner.importSession?.bind(inner);
   const listFeatures = inner.listFeatures?.bind(inner);
-  const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
-  const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
-  const forkNativeSession = inner.forkNativeSession?.bind(inner);
   const configuredModelIds = [...profileModels, ...additionalModels].map((model) => model.id);
 
   return {
@@ -643,19 +671,8 @@ function wrapClientProvider(
           };
         }
       : undefined,
+    ...forwardNativeSessionOperations(inner, provider),
     forkSession: wrapForkSession(provider, inner, providerOptions),
-    archiveNativeSession: archiveNativeSession
-      ? async (handle) => await archiveNativeSession({ ...handle, provider: inner.provider })
-      : undefined,
-    unarchiveNativeSession: unarchiveNativeSession
-      ? async (handle) => await unarchiveNativeSession({ ...handle, provider: inner.provider })
-      : undefined,
-    forkNativeSession: forkNativeSession
-      ? async (handle) => {
-          const fork = await forkNativeSession({ ...handle, provider: inner.provider });
-          return { ...fork, handle: { ...fork.handle, provider } };
-        }
-      : undefined,
     getCatalogCacheKey: inner.getCatalogCacheKey?.bind(inner),
     isAvailable: (signal, options) => inner.isAvailable(signal, options),
     getDiagnostic: inner.getDiagnostic?.bind(inner),

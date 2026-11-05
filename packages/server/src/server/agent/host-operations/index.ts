@@ -21,6 +21,7 @@ import { resolveRequiredProviderModel } from "../mcp-shared.js";
 import { selectAgentListPage } from "../agent-projections.js";
 import { moreNote, selectWorkspaceSummaries } from "../tools/paseo-tool-compaction.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
+import { askActionOf, formatAskOutput } from "../ask-agent.js";
 import { expandUserPath } from "../../path-utils.js";
 import {
   PaseoToolInputError,
@@ -378,10 +379,18 @@ export function createHostResolver(input: {
           },
           async askAgent(args) {
             const agentId = args.agentId as string;
-            const answer = await client.askAgent(agentId, args.question as string, {
-              askedBy: input.callerTitle?.(),
-            });
-            return result({ agentId, answer });
+            const askAction = askActionOf(args);
+            const reply = await client.askAgent(
+              agentId,
+              (args.question as string | undefined) ?? "",
+              {
+                askedBy: input.callerTitle?.(),
+                askerAgentId: input.callerAgentId,
+                threadId: args.threadId as string | undefined,
+                ...(askAction === "ask" ? {} : { threadAction: askAction }),
+              },
+            );
+            return result(formatAskOutput(agentId, reply));
           },
           async listPermissions(args) {
             const agentId = args.agentId as string | undefined;

@@ -2051,6 +2051,23 @@ export const AgentForkRequestMessageSchema = z.object({
 
 export const AGENT_ASK_DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
+/** State of an ask_agent thread after a round, a status read, or a close. */
+export const AgentAskThreadInfoSchema = z.object({
+  threadId: z.string(),
+  status: z.enum(["open", "closed"]),
+  /** Rounds used so far. */
+  round: z.number().int().nonnegative(),
+  maxRounds: z.number().int().positive(),
+  roundsLeft: z.number().int().nonnegative(),
+  /** Why the thread closed; set only when status is "closed". */
+  closeReason: z.string().optional(),
+  /** Turns the asked agent finished after the copy was made. */
+  sourceTurnsSince: z.number().int().nonnegative(),
+  /** Warnings and notices for the asker, in plain words. */
+  notes: z.array(z.string()),
+});
+export type AgentAskThreadInfo = z.infer<typeof AgentAskThreadInfoSchema>;
+
 /** Ask a forked copy of an agent's conversation; the agent itself is never interrupted. */
 export const AgentAskRequestMessageSchema = z.object({
   type: z.literal("agent.ask.request"),
@@ -2060,6 +2077,13 @@ export const AgentAskRequestMessageSchema = z.object({
   askedBy: z.string().optional(),
   timeoutMs: z.number().int().positive().optional(),
   requestId: z.string(),
+  // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
+  /** Continue an open thread with its copy. Omit to open (or reuse) the asker's thread with this agent. */
+  threadId: z.string().optional(),
+  /** "ask" (default) runs a round; "status" reads the thread without asking; "close" ends it. */
+  threadAction: z.enum(["ask", "status", "close"]).optional(),
+  /** Agent id of the asker; with the target it identifies the one open thread. */
+  askerAgentId: z.string().optional(),
 });
 
 export const SetAgentModeRequestMessageSchema = z.object({
@@ -4424,6 +4448,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentFork: z.boolean().optional(),
         // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
         agentAsk: z.boolean().optional(),
+        // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
+        agentAskThreads: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain wire field.
@@ -5712,6 +5738,8 @@ export const AgentAskResponseMessageSchema = z.object({
     agentId: z.string(),
     answer: z.string().nullable(),
     error: z.string().nullable(),
+    // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
+    thread: AgentAskThreadInfoSchema.optional(),
   }),
 });
 

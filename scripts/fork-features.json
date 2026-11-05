@@ -840,5 +840,18 @@
     "pr": 108,
     "title": "feat(server): detached create_agent gives a separate top-level agent with its own workspace (fork port of #107)",
     "tests": ["packages/server/src/server/agent/mcp-server.test.ts"]
+  },
+  {
+    "pr": 109,
+    "title": "feat(server): ask_agent threads: multi-round copies, copy lockdown, crash cleanup",
+    "tests": [
+      "packages/server/src/server/agent/ask-agent.test.ts",
+      "packages/server/src/server/agent/host-operations/index.test.ts",
+      "packages/protocol/src/messages.agent-ask-threads.test.ts",
+      "packages/server/src/server/agent/providers/claude/rewind.test.ts",
+      "packages/server/src/server/agent/providers/codex-app-server-agent.test.ts",
+      "packages/server/src/server/agent/providers/omp/agent.test.ts",
+      "packages/server/src/server/agent/providers/opencode-agent.test.ts"
+    ]
   }
 ]

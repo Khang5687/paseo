@@ -4,7 +4,9 @@ Not released yet. These changes are on `main` but not in 0.15.0-beta.1; the next
 
 Added:
 
-- Agents can ask another agent a question with `ask_agent` without interrupting it: a hidden read-only copy of its conversation answers and is then deleted, on the same host or a connected one. Works for Claude, Codex, OpenCode, and OMP agents; `list_agents` now includes each agent's `workspaceId`
+- Copy gitignored files selected by `.worktreeinclude` into new worktrees before setup and agents, using the built-in `worktree-include` plugin ([#8100](https://github.com/getpaseo/paseo/pull/8100))
+- Let plugins choose worktree paths and creation options through `worktree.create.before`, with listing, archive, deletion, and recovery at custom locations; includes a sibling-directory placement example ([#8117](https://github.com/getpaseo/paseo/pull/8117))
+- Agents can ask another agent questions with `ask_agent` without interrupting it: a hidden read-only copy of its conversation answers and stays open for follow-ups with the returned `threadId`, up to a round cap, then closes after the last round, on idle, on archive, or when the asker closes it. The copy cannot call mutating Paseo tools. Works on the same host or a connected one for Claude, Codex, OpenCode, and OMP agents; limits are set under `agents.askAgent` in `config.json`; `list_agents` now includes each agent's `workspaceId`
 - Agents can answer another agent's question boxes with `respond_to_permission` `answers` keyed by question header; `list_pending_permissions` filters by `agentId`, and both reach agents on connected hosts with `serverId`. The `paseo` skill now covers finding, asking, messaging, and unblocking other agents
 
 ## 0.15.0-beta.1 - 2026-11-01

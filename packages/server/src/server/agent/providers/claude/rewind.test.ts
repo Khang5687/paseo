@@ -23,6 +23,7 @@ import {
 } from "./rewind.js";
 import { FakeClaudeSdk } from "./test-rewind-claude-sdk.js";
 import { ClaudeAgentClient } from "./agent.js";
+import { ForkHandleRefusedError } from "../../fork-handle.js";
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 
 describe("Claude rewind", () => {
@@ -270,6 +271,50 @@ describe("Claude rewind against the Claude SDK", () => {
 
     await fork.discard();
     await fork.discard();
+
+    expect(existsSync(forkPath)).toBe(false);
+    expect(existsSync(path.join(projectDir, fork.handle.sessionId))).toBe(false);
+    expect(readFileSync(transcriptPath, "utf8")).toBe(source);
+  });
+
+  test("deletes a leftover fork from its handle alone, and refuses a handle that is not one", async () => {
+    tempRoot = mkdtempSync(path.join(tmpdir(), "claude-fork-leftover-"));
+    delete process.env.CLAUDE_CONFIG_DIR;
+    const configDir = path.join(tempRoot, "custom-claude-dir");
+    const projectDir = path.join(configDir, "projects", "-repo");
+    mkdirSync(projectDir, { recursive: true });
+    const sessionId = randomUUID();
+    const firstUser = randomUUID();
+    const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);
+    writeTranscript(transcriptPath, sessionId, [
+      { type: "user", uuid: firstUser, parentUuid: null, text: "first" },
+    ]);
+    const source = readFileSync(transcriptPath, "utf8");
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: configDir } },
+    });
+    const fork = await client.forkNativeSession({
+      provider: "claude",
+      sessionId,
+      nativeHandle: sessionId,
+      metadata: { cwd: "/repo" },
+    });
+    const forkPath = path.join(projectDir, `${fork.handle.sessionId}.jsonl`);
+    mkdirSync(path.join(projectDir, fork.handle.sessionId, "tool-results"), { recursive: true });
+
+    for (const bad of [
+      { ...fork.handle, nativeHandle: `../${fork.handle.sessionId}` },
+      { ...fork.handle, nativeHandle: "not-a-uuid" },
+      { ...fork.handle, nativeHandle: undefined, sessionId: "" },
+      { ...fork.handle, metadata: {} },
+    ]) {
+      await expect(client.discardNativeFork(bad)).rejects.toThrow(ForkHandleRefusedError);
+    }
+    expect(existsSync(forkPath)).toBe(true);
+
+    await client.discardNativeFork(fork.handle);
+    await client.discardNativeFork(fork.handle);
 
     expect(existsSync(forkPath)).toBe(false);
     expect(existsSync(path.join(projectDir, fork.handle.sessionId))).toBe(false);

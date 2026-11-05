@@ -148,6 +148,13 @@ export class AgentManagerShuttingDownError extends Error {
   }
 }
 
+export class AgentSessionForkUnsupportedError extends Error {
+  constructor(provider: string) {
+    super(`Provider '${provider}' cannot fork an agent's session`);
+    this.name = "AgentSessionForkUnsupportedError";
+  }
+}
+
 export class AgentRunCancellationError extends Error {
   constructor(agentId: string, action: "reload" | "replace" | "rewind" | "stop") {
     super(
@@ -3985,9 +3992,18 @@ export class AgentManager {
     }
     const client = this.requireClient(persistence.provider);
     if (!client.forkNativeSession) {
-      throw new Error(`Provider '${persistence.provider}' cannot fork an agent's session`);
+      throw new AgentSessionForkUnsupportedError(persistence.provider);
     }
     return await client.forkNativeSession(persistence);
+  }
+
+  /** Delete a fork left behind by a previous daemon process, from its persisted handle. */
+  async discardForkedHandle(handle: AgentPersistenceHandle): Promise<void> {
+    const client = this.clients.get(handle.provider);
+    if (!client?.discardNativeFork) {
+      throw new Error(`Provider '${handle.provider}' cannot discard a forked session`);
+    }
+    await client.discardNativeFork(handle);
   }
 
   async deleteAgentState(agentId: string): Promise<void> {

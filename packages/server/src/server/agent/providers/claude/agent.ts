@@ -148,6 +148,7 @@ import {
   type ResolveAgentDefaultModeInput,
   type ToolCallDetail,
 } from "../../agent-sdk-types.js";
+import { ForkHandleRefusedError, requireUuid } from "../../fork-handle.js";
 import { importSessionFromPersistence } from "../../provider-session-import.js";
 import { runProviderRefreshActivity } from "../../provider-refresh-deadline.js";
 import {
@@ -1610,6 +1611,12 @@ export function readEventIdentifiers(message: SDKMessage): EventIdentifiers {
   };
 }
 
+/** Claude Code keeps a turn's tool results and subagent transcripts in a folder named after the session. */
+async function removeClaudeSessionFiles(sessionPathWithoutExtension: string): Promise<void> {
+  await promises.rm(`${sessionPathWithoutExtension}.jsonl`, { force: true });
+  await promises.rm(sessionPathWithoutExtension, { recursive: true, force: true });
+}
+
 export class ClaudeAgentClient implements AgentClient {
   private readonly discoverModels: typeof discoverClaudeModels;
   readonly provider = "claude" as const;
@@ -1724,7 +1731,6 @@ export class ClaudeAgentClient implements AgentClient {
       configDir: claudeConfigDir(this.buildProviderEnv()),
     });
     const { sessionId } = await this.rewindSdk.forkSession(sourceId, { transcriptPath });
-    // Claude Code keeps a turn's tool results and subagent transcripts in a folder named after the session.
     const forkPath = path.join(path.dirname(transcriptPath), sessionId);
     return {
       handle: {
@@ -1735,11 +1741,20 @@ export class ClaudeAgentClient implements AgentClient {
       },
       // Reads need no approval in "default"; edits and shell commands ask, and the caller denies.
       readOnlyModeId: "default",
-      discard: async () => {
-        await promises.rm(`${forkPath}.jsonl`, { force: true });
-        await promises.rm(forkPath, { recursive: true, force: true });
-      },
+      discard: () => removeClaudeSessionFiles(forkPath),
     };
+  }
+
+  async discardNativeFork(handle: AgentPersistenceHandle): Promise<void> {
+    const sessionId = requireUuid(handle.nativeHandle ?? handle.sessionId, "Claude session id");
+    const cwd = coerceSessionMetadata(handle.metadata).cwd;
+    if (!cwd) throw new ForkHandleRefusedError("the handle has no working directory");
+    const transcriptPath = await claudeTranscriptPath({
+      cwd,
+      sessionId,
+      configDir: claudeConfigDir(this.buildProviderEnv()),
+    });
+    await removeClaudeSessionFiles(transcriptPath.replace(/\.jsonl$/, ""));
   }
 
   async getCatalogCacheKey(_options: FetchCatalogOptions): Promise<string> {
