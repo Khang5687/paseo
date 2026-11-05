@@ -8668,19 +8668,29 @@ export class Session {
   ): Promise<void> {
     try {
       if (!this.askThreads) throw new Error("ask_agent is not configured on this daemon");
-      const { answer, thread } = await this.askThreads.act({
+      const { answer, thread, reply } = await this.askThreads.act({
         action: msg.threadAction,
         agentId: msg.agentId,
         question: msg.question,
         threadId: msg.threadId,
         askerId: msg.askerAgentId,
+        callerKey: `client:${this.clientId}`,
+        cursor: msg.readCursor,
+        paged: msg.replyPaging !== undefined,
         askedBy: msg.askedBy,
         timeoutMs: msg.timeoutMs,
         signal: this.delivery.requestSignal,
       });
       this.emit({
         type: "agent.ask.response",
-        payload: { requestId: msg.requestId, agentId: msg.agentId, answer, error: null, thread },
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          answer,
+          error: null,
+          thread,
+          reply,
+        },
       });
     } catch (error) {
       this.sessionLogger.warn({ err: error, agentId: msg.agentId }, "agent.ask.request failed");

@@ -364,6 +364,7 @@ export const PersistedConfigSchema = z
             maxOpenThreads: z.number().int().positive().optional(),
             idleTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
             replyCharLimit: z.number().int().positive().optional(),
+            replyStoreChars: z.number().int().positive().optional(),
           })
           .strict()
           .optional(),

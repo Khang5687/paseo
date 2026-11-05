@@ -353,6 +353,7 @@ interface SessionForTestOptions {
   pluginRuntime?: SessionOptions["pluginRuntime"];
   orchestrationSkills?: SessionOptions["orchestrationSkills"];
   workspaceLabelService?: WorkspaceLabelService;
+  askThreads?: SessionOptions["askThreads"];
 }
 
 function createSessionForTest(options: SessionForTestOptions = {}): Session {
@@ -459,6 +460,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     hubExecutionAgents: options.hubExecutionAgents,
     serviceProxy: options.serviceProxy,
     scriptRuntimeStore: options.scriptRuntimeStore,
+    askThreads: options.askThreads,
     getDaemonTcpPort: options.getDaemonTcpPort,
     getDaemonTcpHost: options.getDaemonTcpHost,
     voice: options.voice,
@@ -470,6 +472,69 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   if (options.sendToSource) sessionOptions.onMessageToSource = options.sendToSource;
   return new Session(sessionOptions);
 }
+
+test("agent.ask.request keys an anonymous caller by its client id, marks paging clients, and returns the reply page", async () => {
+  const messages: SessionOutboundMessage[] = [];
+  const calls: Array<Record<string, unknown>> = [];
+  const reply = {
+    replyId: "r1",
+    round: 1,
+    page: 1,
+    pages: 2,
+    totalChars: 80,
+    expiresAt: "2030-01-01T00:30:00.000Z",
+    nextCursor: "cursor-2",
+  };
+  // Stands in for AskAgentThreads: it answers like the real one, with a page only for a client
+  // that said it understands pages.
+  const askThreads = {
+    act: vi.fn(async (input: Record<string, unknown>) => {
+      calls.push(input);
+      return { answer: "page 1", ...(input.paged ? { reply } : {}) };
+    }),
+  } as unknown as SessionOptions["askThreads"];
+  const session = createSessionForTest({ messages, askThreads, clientId: "client-7" });
+
+  await session.handleMessage({
+    type: "agent.ask.request",
+    agentId: "target",
+    question: "Q",
+    requestId: "ask-paged",
+    replyPaging: {},
+  });
+  await session.handleMessage({
+    type: "agent.ask.request",
+    agentId: "target",
+    question: "",
+    requestId: "ask-read",
+    threadAction: "read",
+    readCursor: "cursor-2",
+    askerAgentId: "agent-9",
+    replyPaging: {},
+  });
+  await session.handleMessage({
+    type: "agent.ask.request",
+    agentId: "target",
+    question: "Q",
+    requestId: "ask-old",
+  });
+
+  expect(calls[0]).toMatchObject({ callerKey: "client:client-7", paged: true });
+  expect(calls[1]).toMatchObject({
+    action: "read",
+    cursor: "cursor-2",
+    askerId: "agent-9",
+    callerKey: "client:client-7",
+    paged: true,
+  });
+  expect(calls[2]).toMatchObject({ paged: false });
+  expect(messages).toMatchObject([
+    { type: "agent.ask.response", payload: { requestId: "ask-paged", reply } },
+    { type: "agent.ask.response", payload: { requestId: "ask-read", reply } },
+    { type: "agent.ask.response", payload: { requestId: "ask-old", answer: "page 1" } },
+  ]);
+  expect(messages[2]).toMatchObject({ payload: { reply: undefined } });
+});
 
 test("routes host-scoped agent skills requests through the daemon owner", async () => {
   const messages: SessionOutboundMessage[] = [];

@@ -292,8 +292,18 @@ Paseo tools only: a copy still has the source's third-party MCP servers, and for
 the provider's read-only mode and auto-denied approvals. A user's own allow rules can approve some
 of those calls.
 
-The limits (`maxRounds`, `maxOpenThreads`, `idleTimeoutMs`, `replyCharLimit`) come from
-`agents.askAgent` in `config.json` and apply at daemon start.
+The limits (`maxRounds`, `maxOpenThreads`, `idleTimeoutMs`, `replyCharLimit`, `replyStoreChars`)
+come from `agents.askAgent` in `config.json` and apply at daemon start.
+
+A reply longer than `replyCharLimit` code points is saved whole in memory (`agent/ask-reply-store.ts`)
+and served in pages by an opaque cursor, with no model call and no round. Page boundaries are
+frozen when the reply is stored. Saved replies live 30 minutes from when the answer completes,
+independent of the thread: closing, compaction and idle close free the copy but not its replies,
+and reads never extend the 30 minutes. They are not persisted, so a daemon restart drops them.
+`replyStoreChars` bounds the stored text; the oldest replies go first. A cursor works only for the
+asker that got the reply (an anonymous one-shot caller is identified by its connection) and the
+same agent. Clients opt in with `replyPaging` on the request and gate cursor reads on
+`features.agentAskReplyPaging`; a client without it gets page 1 and a fixed note.
 
 A thread an agent here opens on another host is closed there (best effort) when that agent is
 archived. If the daemon stops, or the host is unreachable, the remote thread lives until the remote

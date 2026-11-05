@@ -16,11 +16,7 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
-import {
-  ActiveTurnBehaviorSchema,
-  AgentAskThreadInfoSchema,
-  AgentProfileSchema,
-} from "@getpaseo/protocol/messages";
+import { ActiveTurnBehaviorSchema, AgentProfileSchema } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
   AgentFeatureSchema,
@@ -40,8 +36,8 @@ import { summarizeAgentActivity } from "../activity-curator.js";
 import {
   COPY_BLOCKED_MESSAGE,
   DEFAULT_ASK_THREAD_SETTINGS,
-  askActionOf,
   formatAskOutput,
+  resolveAskAction,
 } from "../ask-agent.js";
 import type { AskAgentThreads } from "../ask-agent.js";
 import { resolvePermissionResponse } from "../permission-answers.js";
@@ -774,20 +770,35 @@ function createToolCatalog(
     }
     const parsed = z
       .object({
-        thread: z.object({ threadId: z.string(), status: z.enum(["open", "closed"]) }).optional(),
+        threadId: z.string().optional(),
+        thread: z.object({ status: z.enum(["open", "closed"]) }).optional(),
       })
       .safeParse(response.structuredContent);
+    const threadId = parsed.success ? parsed.data.threadId : undefined;
     const thread = parsed.success ? parsed.data.thread : undefined;
-    if (!thread) return;
+    if (!threadId || !thread) return;
     options.askThreads?.().trackRemoteThread(
       {
         askerId: callerAgentId,
         serverId: destination,
         agentId: input.agentId as string,
-        threadId: thread.threadId,
+        threadId,
       },
       thread.status,
     );
+  }
+  /** Adds the host to the result and to the arguments of the next page, so both are complete calls. */
+  function withDestination(structured: unknown, destination: string | undefined): unknown {
+    if (!destination || typeof structured !== "object" || structured === null) return structured;
+    const body = structured as { reply?: { next?: object | null } };
+    const next = body.reply?.next;
+    return {
+      ...body,
+      ...(body.reply && next
+        ? { reply: { ...body.reply, next: { ...next, serverId: destination } } }
+        : {}),
+      serverId: destination,
+    };
   }
   const localHostOperations = new Map<string, HostOperation>();
   const tools = new Map<string, PaseoToolDefinition>();
@@ -874,10 +885,7 @@ function createToolCatalog(
           trackRemoteAsk(name, destination, input, response);
           return {
             ...response,
-            structuredContent: {
-              ...(response.structuredContent as object),
-              ...(destination ? { serverId: destination } : {}),
-            },
+            structuredContent: withDestination(response.structuredContent, destination),
           };
         } catch (error) {
           // A lost response does not establish whether the remote daemon admitted the prompt.
@@ -3645,18 +3653,22 @@ function createToolCatalog(
     "ask_agent",
     {
       title: "Ask agent",
-      description: `Ask another agent a question without interrupting it. Forks a read-only copy of its whole session (the copy duplicates all its context, so cost grows with session size) and keeps it open: the first call returns threadId; pass threadId for follow-ups, the copy remembers earlier rounds. A thread allows ${askLimits.maxRounds} rounds, then closes (also when idle, or with close: true); every result says rounds left. Replies are cut at ${askLimits.replyCharLimit} characters. Omitting threadId reuses your open thread with that agent. Copies are limited (${askLimits.maxOpenThreads} per host): close the thread when you are finished. status: true shows the thread without asking. Use it for context, progress or decisions another agent holds. Do not use it to make the live agent do or change something; use send_agent_prompt. To find an agent by the workspace name the user sees, match list_workspaces titles to the workspaceId in list_agents.`,
+      description: `Ask another agent a question without interrupting it. Forks a read-only copy of its whole session; each question is a model turn on the copy and uses one round, and cost grows with session size. The first call returns threadId; pass threadId for follow-ups (omitting it reuses your open thread with that agent). A thread allows ${askLimits.maxRounds} rounds, then closes (also when idle, or with close: true); every result says rounds left. Copies are limited (${askLimits.maxOpenThreads} per host): close the thread when you are finished. status: true reports the thread without asking. A long answer arrives in pages of up to ${askLimits.replyCharLimit} characters with reply.next: call ask_agent with exactly those arguments to read the next page. That is free (no model, no round); read only the pages you need. Saved replies expire at reply.expiresAt and are lost if that host restarts; closing the thread leaves them readable until then. Use exactly one of question, cursor, status or close per call. Use it for context, progress or decisions another agent holds; to make the live agent act, use send_agent_prompt. To find an agent by the workspace name the user sees, match list_workspaces titles to the workspaceId in list_agents.`,
       inputSchema: {
         agentId: z.string(),
         question: z
           .string()
           .min(1)
           .optional()
-          .describe("Required unless close or status. You send one question per round."),
+          .describe("Required unless cursor, status or close. You send one question per round."),
         threadId: z
           .string()
           .optional()
           .describe("Continue this thread. Omit to start one (or reuse your open one)."),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Page cursor from reply.next. Returns that saved page; no question needed."),
         close: z.boolean().optional().describe("End the thread and delete the copy."),
         status: z.boolean().optional().describe("Report the thread's state, no question."),
       },
@@ -3664,18 +3676,42 @@ function createToolCatalog(
         agentId: z.string(),
         threadId: z.string().optional(),
         answer: z.string().nullable(),
-        thread: AgentAskThreadInfoSchema.optional(),
+        reply: z
+          .object({
+            replyId: z.string(),
+            round: z.number(),
+            page: z.number(),
+            pages: z.number(),
+            totalChars: z.number(),
+            expiresAt: z.string(),
+            next: z
+              .object({ agentId: z.string(), serverId: z.string().optional(), cursor: z.string() })
+              .nullable(),
+          })
+          .optional(),
+        thread: z
+          .object({
+            status: z.enum(["open", "closed"]),
+            round: z.number(),
+            roundsLeft: z.number(),
+            notes: z.array(z.string()).optional(),
+            sourceTurnsSince: z.number().optional(),
+            closeReason: z.string().optional(),
+          })
+          .optional(),
       },
     },
-    async ({ agentId, question, threadId, close, status }, context) => {
+    async ({ agentId, question, threadId, cursor, close, status }, context) => {
       if (agentId === callerAgentId) {
         throw new PaseoToolInputError(
           "ask_agent asks another agent; you already have your own context",
         );
       }
-      const action = askActionOf({ close, status });
-      if (action === "ask" && !question) {
-        throw new PaseoToolInputError("question is required unless close or status is set");
+      let action;
+      try {
+        action = resolveAskAction({ question, cursor, status, close });
+      } catch (error) {
+        throw new PaseoToolInputError(error instanceof Error ? error.message : String(error));
       }
       if (!options.askThreads) throw new Error("ask_agent is not configured");
       const reply = await options.askThreads().act({
@@ -3683,6 +3719,7 @@ function createToolCatalog(
         agentId,
         question: question ?? "",
         threadId,
+        cursor,
         askerId: callerAgentId,
         askedBy: callerTitle(),
         signal: context.signal,
