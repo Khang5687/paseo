@@ -709,6 +709,7 @@ function createToolCatalog(
       destination === options.serverId ||
       !callerAgentId ||
       input.notifyOnFinish === false ||
+      (input.notifyOnFinish === undefined && input.detached === true) ||
       response.isError
     )
       return;
@@ -1261,14 +1262,26 @@ function createToolCatalog(
         "Existing workspace id. Agent-scoped calls default to the caller workspace; top-level calls create a new local workspace when omitted.",
       ),
   };
+  const defaultNotifyOnFinishInputSchema = z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      "Get notified when the created agent finishes, errors, or needs permission. Set false for explicit reporting or no completion callback.",
+    );
   const agentToAgentInputSchema = {
     ...canonicalCreateAgentFields,
+    detached: z
+      .boolean()
+      .optional()
+      .describe(
+        "True creates a normal top-level agent instead of your subagent: no parent link, not in your subagent track, not archived with you. Without workspaceId it gets its own new workspace in your directory (its own sidebar row). notifyOnFinish defaults to false when detached.",
+      ),
     notifyOnFinish: z
       .boolean()
       .optional()
-      .default(true)
       .describe(
-        "Get notified when the created agent finishes, errors, or needs permission. Set false for explicit reporting or no completion callback.",
+        "Get notified when the created agent finishes, errors, or needs permission. Defaults to true, or false when detached. Set false for explicit reporting or no completion callback.",
       ),
   };
   const canonicalTopLevelInputSchema = {
@@ -1284,7 +1297,7 @@ function createToolCatalog(
   const legacyAgentToAgentInputSchema = {
     ...commonCreateAgentFields,
     ...legacyCreateAgentPlacementFields,
-    notifyOnFinish: agentToAgentInputSchema.notifyOnFinish,
+    notifyOnFinish: defaultNotifyOnFinishInputSchema,
   };
   const legacyTopLevelCreateAgentInputSchema = {
     ...commonCreateAgentFields,
@@ -1673,7 +1686,7 @@ function createToolCatalog(
     {
       title: "Create agent",
       description:
-        'Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain. Returns agentId, status, cwd, workspaceId, and currentModeId; detail "full" also returns availableModes.',
+        'Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent; pass detached: true when the user asks for a separate, main, or top-level agent rather than a helper: it gets its own sidebar row (a new workspace in your directory) unless workspaceId is given. Use fork_agent instead when the new agent needs this conversation\'s context. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain. Returns agentId, status, cwd, workspaceId, and currentModeId; detail "full" also returns availableModes.',
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -1691,7 +1704,7 @@ function createToolCatalog(
       const { parsedArgs } = resolvedArgs;
       let notifyOnFinish: boolean;
       if (resolvedArgs.kind === "agent-scoped") {
-        notifyOnFinish = parsedArgs.notifyOnFinish;
+        notifyOnFinish = parsedArgs.notifyOnFinish ?? !resolvedArgs.detached;
       } else {
         notifyOnFinish = resolvedArgs.parsedArgs.notifyOnFinish ?? false;
       }
@@ -1817,13 +1830,16 @@ function createToolCatalog(
         };
       }
       const parsed = parseToolArguments(agentToAgentCreateAgentArgsSchema, args);
-      const { cwd, workspaceId } = await resolveCanonicalCreateAgentWorkspace(parsed.workspaceId, {
-        prompt: parsed.initialPrompt,
-      });
+      const { cwd, workspaceId } =
+        parsed.detached && !parsed.workspaceId
+          ? await createDetachedAgentWorkspace(parsed.title)
+          : await resolveCanonicalCreateAgentWorkspace(parsed.workspaceId, {
+              prompt: parsed.initialPrompt,
+            });
       return {
         kind: "agent-scoped",
         parsedArgs: parsed,
-        detached: false,
+        detached: parsed.detached ?? false,
         cwd,
         workspaceId,
       };
@@ -1881,6 +1897,21 @@ function createToolCatalog(
       "refName",
       "githubPrNumber",
     ].some((key) => input[key] !== undefined);
+  }
+
+  /** A detached agent gets its own workspace, hence its own sidebar row, in the caller's directory. */
+  async function createDetachedAgentWorkspace(
+    title: string,
+  ): Promise<{ cwd: string; workspaceId: string }> {
+    const caller = resolveCallerAgent();
+    if (!caller) throw new PaseoToolInputError("detached requires an agent-scoped tool session");
+    if (!options.ensureWorkspaceForCreate) throw new Error("Workspace creation is not configured");
+    const workspaceId = await options.ensureWorkspaceForCreate(
+      caller.cwd,
+      { prompt: title },
+      { callerWorkspaceId: caller.workspaceId },
+    );
+    return { cwd: caller.cwd, workspaceId };
   }
 
   async function resolveCanonicalCreateAgentWorkspace(
