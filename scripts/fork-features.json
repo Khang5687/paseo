@@ -859,5 +859,14 @@
     "title": "fix(fork): a remote daemon switch always brings the daemon back",
     "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; checked with a fake systemctl/CLI harness (PR body)",
     "tests": []
+  },
+  {
+    "pr": 111,
+    "title": "feat(server): ask_agent long replies come back in pages read by cursor",
+    "tests": [
+      "packages/server/src/server/agent/ask-agent.test.ts",
+      "packages/server/src/server/agent/host-operations/index.test.ts",
+      "packages/protocol/src/messages.agent-ask-threads.test.ts"
+    ]
   }
 ]
