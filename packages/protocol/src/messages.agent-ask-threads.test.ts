@@ -72,4 +72,49 @@ describe("agent.ask thread fields", () => {
     });
     expect(parsed).toMatchObject({ payload: { thread } });
   });
+
+  test("a read request carries a cursor and the paging marker", () => {
+    const parsed = SessionInboundMessageSchema.parse({
+      type: "agent.ask.request",
+      agentId: "agent-1",
+      question: "",
+      requestId: "ask-5",
+      threadAction: "read",
+      readCursor: "opaque",
+      replyPaging: {},
+    });
+    expect(parsed).toMatchObject({ threadAction: "read", readCursor: "opaque", replyPaging: {} });
+  });
+
+  test("a response carries one page of a long reply; the last page has no next cursor", () => {
+    const reply = {
+      replyId: "r1",
+      round: 1,
+      page: 3,
+      pages: 3,
+      totalChars: 9000,
+      expiresAt: "2030-01-01T00:30:00.000Z",
+      nextCursor: null,
+    };
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "agent.ask.response",
+      payload: { requestId: "ask-6", agentId: "agent-1", answer: "end", error: null, reply },
+    });
+    expect(parsed).toMatchObject({ payload: { reply } });
+  });
+
+  test("a malformed reply page is rejected", () => {
+    expect(() =>
+      SessionOutboundMessageSchema.parse({
+        type: "agent.ask.response",
+        payload: {
+          requestId: "ask-7",
+          agentId: "agent-1",
+          answer: "x",
+          error: null,
+          reply: { replyId: "r1", round: 1, page: 0, pages: 1, totalChars: 1, expiresAt: "t" },
+        },
+      }),
+    ).toThrow();
+  });
 });

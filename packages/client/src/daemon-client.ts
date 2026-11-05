@@ -48,6 +48,7 @@ import {
   type OmpAccountRoutingMutationResult,
   type OmpAccountRoutingState,
   type OmpRoutingAccountRef,
+  type AgentAskReplyInfo,
   type AgentAskThreadInfo,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
@@ -1566,6 +1567,27 @@ function buildFetchAgentsRequest(
       ? { includeBackground: options.includeBackground }
       : {}),
   });
+}
+
+/** Only the fields the caller set go on the wire, so old daemons see old-shaped requests. */
+function askRequestFields(
+  options: {
+    askedBy?: string;
+    askerAgentId?: string;
+    threadId?: string;
+    threadAction?: "ask" | "status" | "close" | "read";
+    readCursor?: string;
+  },
+  pagedReplies: boolean,
+) {
+  return {
+    ...(options.askedBy ? { askedBy: options.askedBy } : {}),
+    ...(options.askerAgentId ? { askerAgentId: options.askerAgentId } : {}),
+    ...(options.threadId ? { threadId: options.threadId } : {}),
+    ...(options.threadAction ? { threadAction: options.threadAction } : {}),
+    ...(options.readCursor !== undefined ? { readCursor: options.readCursor } : {}),
+    ...(pagedReplies ? { replyPaging: {} } : {}),
+  };
 }
 
 export class DaemonClient {
@@ -4658,11 +4680,13 @@ export class DaemonClient {
       askedBy?: string;
       askerAgentId?: string;
       threadId?: string;
-      threadAction?: "ask" | "status" | "close";
+      threadAction?: "ask" | "status" | "close" | "read";
+      /** Cursor from an earlier reply's nextCursor; with threadAction "read". */
+      readCursor?: string;
       timeoutMs?: number;
       requestId?: string;
     } = {},
-  ): Promise<{ answer: string | null; thread?: AgentAskThreadInfo }> {
+  ): Promise<{ answer: string | null; thread?: AgentAskThreadInfo; reply?: AgentAskReplyInfo }> {
     // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
     const features = this.getLastServerInfoMessage()?.features;
     if (features?.agentAsk !== true) {
@@ -4675,6 +4699,11 @@ export class DaemonClient {
     ) {
       throw new Error("Update Paseo on that host to continue ask_agent threads.");
     }
+    // COMPAT(agentAskReplyPaging): added in v0.16.0, remove gate after 2027-05-06.
+    const pagedReplies = features.agentAskReplyPaging === true;
+    if (!pagedReplies && options.readCursor !== undefined) {
+      throw new Error("Update Paseo on that host to read long replies.");
+    }
     const resolvedRequestId = this.createRequestId(options.requestId);
     const timeoutMs = options.timeoutMs ?? AGENT_ASK_DEFAULT_TIMEOUT_MS;
     const message = SessionInboundMessageSchema.parse({
@@ -4683,10 +4712,7 @@ export class DaemonClient {
       question,
       requestId: resolvedRequestId,
       timeoutMs,
-      ...(options.askedBy ? { askedBy: options.askedBy } : {}),
-      ...(options.askerAgentId ? { askerAgentId: options.askerAgentId } : {}),
-      ...(options.threadId ? { threadId: options.threadId } : {}),
-      ...(options.threadAction ? { threadAction: options.threadAction } : {}),
+      ...askRequestFields(options, pagedReplies),
     });
     const payload = await this.sendRequest({
       requestId: resolvedRequestId,
@@ -4702,7 +4728,11 @@ export class DaemonClient {
     if (payload.error !== null) {
       throw new Error(payload.error);
     }
-    return { answer: payload.answer, ...(payload.thread ? { thread: payload.thread } : {}) };
+    return {
+      answer: payload.answer,
+      ...(payload.thread ? { thread: payload.thread } : {}),
+      ...(payload.reply ? { reply: payload.reply } : {}),
+    };
   }
 
   // ============================================================================

@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
+import type { AgentAskReplyInfo } from "@getpaseo/protocol/messages";
 
 import { createTestAgentMessages } from "../test-utils/agent-messages.js";
 import { createTestLogger } from "../../test-utils/test-logger.js";
@@ -9,8 +10,10 @@ import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
 import { ForkHandleRefusedError } from "./fork-handle.js";
 import { AskAgentThreads, COPY_BLOCKED_MESSAGE, type AskThreadSettings } from "./ask-agent.js";
+import { paginate } from "./ask-reply-store.js";
 import { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import { createPaseoToolCatalog } from "./tools/paseo-tools.js";
+import type { ToolHosts } from "./host-operations/index.js";
 import type {
   AgentClient,
   AgentLaunchContext,
@@ -561,17 +564,380 @@ test("stopping the daemon closes every thread", async () => {
   expect(readOpenForks()).toEqual([]);
 });
 
-test("a reply longer than the cap is cut, with a note on how to read the rest", async () => {
-  const { client, threads, sourceId } = await scenario({ settings: { replyCharLimit: 50 } });
-  client.copy.reply = () => "x".repeat(120);
+// --- Long replies: saved whole, read in pages ---------------------------------------------
+const REPLY_GONE = "no longer stored";
 
-  const cut = await threads.ask({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+/** Built in pieces so this file never holds the phrase the product must never say. */
+const CONTINUE_FROM_CHARACTER = ["continue from", "character"].join(" ");
+const PAGE = 50;
+const PARAGRAPHS = Array.from({ length: 6 }, (_, i) => `para ${i} ${"w".repeat(25)}`);
+const LONG_TEXT = PARAGRAPHS.join("\n\n");
 
-  expect(cut.answer.startsWith("x".repeat(50))).toBe(true);
-  expect(cut.answer).not.toContain("x".repeat(51));
-  expect(cut.answer).toContain("[Reply cut at 50 of 120 characters.");
-  expect(cut.answer).toContain(`threadId ${cut.threadId}`);
-  expect(cut.thread.notes[0]).toContain("Reply cut");
+async function longScenario(settings: Partial<AskThreadSettings> = {}, text: string = LONG_TEXT) {
+  const base = await scenario({ settings: { replyCharLimit: PAGE, ...settings } });
+  base.client.copy.reply = (turn) => (turn === 1 ? text : `short ${turn}`);
+  return base;
+}
+
+interface PageRead {
+  answer: string | null;
+  reply?: AgentAskReplyInfo;
+}
+
+interface AskToolOutput {
+  answer: string | null;
+  reply: { next: Record<string, unknown> | null };
+  thread?: unknown;
+}
+
+/** Reads every page after the first with the cursors the daemon hands out. */
+async function readRest(
+  threads: AskAgentThreads,
+  first: PageRead,
+  who: { agentId: string; askerId?: string; callerKey?: string },
+): Promise<string[]> {
+  const pages = [first.answer ?? ""];
+  let next = first.reply?.nextCursor ?? null;
+  while (next) {
+    const page = await threads.act({ ...who, question: "", cursor: next });
+    pages.push(page.answer ?? "");
+    next = page.reply?.nextCursor ?? null;
+  }
+  return pages;
+}
+
+test("a long reply returns page 1 and a cursor; reading every page gives the text back with no round and no model turn", async () => {
+  const { client, threads, sourceId } = await longScenario();
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+  const copy = client.sessions.get(COPY)!;
+  const promptsAfterAsk = copy.prompts.length;
+  const pages = await readRest(threads, first, { agentId: sourceId, askerId: "asker-1" });
+
+  expect(first.reply).toMatchObject({ page: 1, round: 1, totalChars: LONG_TEXT.length });
+  expect(first.reply!.pages).toBeGreaterThan(1);
+  expect(pages).toHaveLength(first.reply!.pages);
+  expect(pages.join("")).toBe(LONG_TEXT);
+  for (const page of pages) expect(Array.from(page).length).toBeLessThanOrEqual(PAGE);
+  expect(copy.prompts).toHaveLength(promptsAfterAsk);
+  expect(threads.status({ agentId: sourceId, askerId: "asker-1" }).thread.round).toBe(1);
+  // Notes live in thread.notes once, never inside the answer.
+  expect(first.thread!.notes).toContain(
+    `Long reply: page 1 of ${first.reply!.pages}. Call ask_agent with reply.next to read more; it runs no model and uses no round.`,
+  );
+  for (const page of pages) expect(page).not.toMatch(/Long reply|\[Reply/);
+  expect(JSON.stringify([first, pages])).not.toContain(CONTINUE_FROM_CHARACTER);
+});
+
+test("a reply at the page size is one page with no reply info", async () => {
+  const { threads, sourceId } = await longScenario({}, "y".repeat(PAGE));
+
+  const whole = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+
+  expect(whole.answer).toBe("y".repeat(PAGE));
+  expect(whole.reply).toBeUndefined();
+  expect(whole.thread!.notes).toEqual([]);
+});
+
+test("page breaks prefer a paragraph or heading break in the last 40% of the page, then a line break, then a code point", () => {
+  const starts = (text: string) => paginate(text, PAGE);
+  const paragraph = `${"a".repeat(35)}\n\n${"b".repeat(60)}`;
+  const heading = `${"a".repeat(34)}\n# Title\n${"c".repeat(60)}`;
+  const line = `${"a".repeat(38)}\n${"b".repeat(60)}`;
+  const earlyBreak = `${"a".repeat(10)}\n\n${"b".repeat(100)}`;
+  const none = "x".repeat(120);
+
+  expect(starts(paragraph)[1]).toBe(37);
+  expect(starts(heading)[1]).toBe(35);
+  expect(starts(line)[1]).toBe(39);
+  // A break before the last 40% is too early to be worth a short page.
+  expect(starts(earlyBreak)[1]).toBe(PAGE);
+  expect(starts(none)).toEqual([0, 50, 100]);
+  for (const text of [paragraph, heading, line, earlyBreak, none]) {
+    const cuts = starts(text);
+    const joined = cuts.map((from, i) => text.slice(from, cuts[i + 1])).join("");
+    expect(joined).toBe(text);
+  }
+});
+
+test("a page break never splits a surrogate pair", async () => {
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  // One leading letter shifts every emoji so a UTF-16 cut at 50 would land mid-pair.
+  const text = `a${"😀".repeat(120)}`;
+  const { threads, sourceId } = await longScenario({}, text);
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+  const pages = await readRest(threads, first, { agentId: sourceId, askerId: "asker-1" });
+
+  expect(pages.join("")).toBe(text);
+  expect(first.reply!.totalChars).toBe(121);
+  for (const page of pages) {
+    expect(page).not.toMatch(lone);
+    expect(Array.from(page).length).toBeLessThanOrEqual(PAGE);
+  }
+});
+
+test.each(["the round limit", "an explicit close", "an idle close", "a compaction"] as const)(
+  "a saved reply is still readable after the thread closes by %s",
+  async (how) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const { client, threads, sourceId } = await longScenario(
+      how === "the round limit" ? { maxRounds: 1 } : { idleTimeoutMs: 60_000 },
+    );
+    if (how === "a compaction") client.copy.compactOnTurn = 1;
+    const asking = threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+    await vi.advanceTimersByTimeAsync(5);
+    const first = await asking;
+    if (how === "an explicit close") {
+      await threads.act({ agentId: sourceId, question: "", action: "close", askerId: "asker-1" });
+    }
+    if (how === "an idle close") await vi.advanceTimersByTimeAsync(61_000);
+
+    expect(
+      threads.status({ agentId: sourceId, askerId: "asker-1", threadId: first.thread!.threadId })
+        .thread.status,
+    ).toBe("closed");
+    const pages = await readRest(threads, first, { agentId: sourceId, askerId: "asker-1" });
+    expect(pages.join("")).toBe(LONG_TEXT);
+    expect(client.discarded).toContain(COPY);
+  },
+);
+
+test("a saved reply expires 30 minutes after it was made, and reads do not extend that", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { threads, sourceId } = await longScenario();
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+  const readAt = async (minutes: number, cursor: string) => {
+    vi.setSystemTime(new Date(Date.parse(first.reply!.expiresAt) - 30 * 60_000 + minutes * 60_000));
+    return threads.act({ agentId: sourceId, question: "", cursor, askerId: "asker-1" });
+  };
+
+  const cursor = first.reply!.nextCursor!;
+  await expect(readAt(20, cursor)).resolves.toMatchObject({ reply: { page: 2 } });
+  await expect(readAt(29.9, cursor)).resolves.toMatchObject({ reply: { page: 2 } });
+  await expect(readAt(30.1, cursor)).rejects.toThrow(
+    "That reply is no longer stored (expired or the host restarted). Ask again if you still need it.",
+  );
+});
+
+test("the store drops the oldest replies first when it passes the character cap", async () => {
+  const text = "z".repeat(200);
+  const { threads, sourceId } = await longScenario({ replyStoreChars: 300 }, text);
+
+  const old = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+  const newer = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-2" });
+
+  await expect(
+    threads.act({
+      agentId: sourceId,
+      question: "",
+      cursor: old.reply!.nextCursor!,
+      askerId: "asker-1",
+    }),
+  ).rejects.toThrow("no longer stored");
+  await expect(
+    threads.act({
+      agentId: sourceId,
+      question: "",
+      cursor: newer.reply!.nextCursor!,
+      askerId: "asker-2",
+    }),
+  ).resolves.toMatchObject({ reply: { page: 2 } });
+});
+
+test("a reply bigger than the whole store is not saved; page 1 comes with a note and no cursor", async () => {
+  const { threads, sourceId } = await longScenario({ replyStoreChars: 100 }, "z".repeat(200));
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+
+  expect(first.answer).toBe("z".repeat(PAGE));
+  expect(first.reply).toBeUndefined();
+  expect(first.thread!.notes.join(" ")).toContain("too long to store");
+});
+
+test("only the asker of the same agent can read a saved reply", async () => {
+  const { threads, sourceId } = await longScenario();
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+  const cursor = first.reply!.nextCursor!;
+
+  await expect(
+    threads.act({ agentId: sourceId, question: "", cursor, askerId: "asker-2" }),
+  ).rejects.toThrow(REPLY_GONE);
+  await expect(threads.act({ agentId: sourceId, question: "", cursor })).rejects.toThrow(
+    REPLY_GONE,
+  );
+  await expect(
+    threads.act({ agentId: "other-agent", question: "", cursor, askerId: "asker-1" }),
+  ).rejects.toThrow(REPLY_GONE);
+  await expect(
+    threads.act({ agentId: sourceId, question: "", cursor: "not-a-cursor", askerId: "asker-1" }),
+  ).rejects.toThrow("no longer stored");
+});
+
+test("reading a page repeats the same text and does not restart the idle clock", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const { threads, sourceId } = await longScenario({ idleTimeoutMs: 1000 });
+  const asking = threads.act({ agentId: sourceId, question: "Q1", askerId: "asker-1" });
+  await vi.advanceTimersByTimeAsync(5);
+  const first = await asking;
+  const cursor = first.reply!.nextCursor!;
+  const read = () => threads.act({ agentId: sourceId, question: "", cursor, askerId: "asker-1" });
+  const thread = { agentId: sourceId, askerId: "asker-1", threadId: first.thread!.threadId };
+
+  // A read at 600 ms must not push the idle close past 1000 ms.
+  await vi.advanceTimersByTimeAsync(600);
+  const once = await read();
+  await vi.advanceTimersByTimeAsync(500);
+
+  expect(threads.status(thread).thread.status).toBe("closed");
+  expect(await read()).toEqual(once);
+});
+
+test("a cursor read works while another round is still running", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const { client, threads, sourceId } = await longScenario();
+  const firstAsk = threads.act({ agentId: sourceId, question: "Q1", askerId: "asker-1" });
+  await vi.advanceTimersByTimeAsync(5);
+  const first = await firstAsk;
+  const copy = client.sessions.get(COPY)!;
+
+  client.copy.replyDelayMs = 1000;
+  const second = threads.act({ agentId: sourceId, question: "Q2", askerId: "asker-1" });
+  await vi.advanceTimersByTimeAsync(5);
+  const during = await threads.act({
+    agentId: sourceId,
+    question: "",
+    cursor: first.reply!.nextCursor!,
+    askerId: "asker-1",
+  });
+  expect(copy.prompts).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(during.reply).toMatchObject({ page: 2 });
+  await expect(second).resolves.toMatchObject({ answer: "short 2" });
+});
+
+test("one call does exactly one thing: question, cursor, status or close", async () => {
+  const { client, threads, sourceId } = await longScenario();
+  const base = { agentId: sourceId, askerId: "asker-1" };
+  const combos: Array<Parameters<AskAgentThreads["act"]>[0]> = [
+    { ...base, question: "Q", cursor: "c" },
+  ];
+
+  for (const combo of combos) {
+    await expect(threads.act(combo)).rejects.toThrow(
+      "exactly one of question, cursor, status or close",
+    );
+  }
+  await expect(threads.act({ ...base, question: "", action: "read" })).rejects.toThrow(
+    "cursor is required",
+  );
+  expect(client.forks).toBe(0);
+});
+
+test("an anonymous one-shot long reply can be read only by the same caller", async () => {
+  const { client, threads, sourceId } = await longScenario();
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", callerKey: "client:a" });
+  const pages = await readRest(threads, first, { agentId: sourceId, callerKey: "client:a" });
+
+  expect(first.thread).toBeUndefined();
+  expect(pages.join("")).toBe(LONG_TEXT);
+  expect(client.sessions.get(COPY)!.closed).toBe(true);
+  const cursor = first.reply!.nextCursor!;
+  await expect(
+    threads.act({ agentId: sourceId, question: "", cursor, callerKey: "client:b" }),
+  ).rejects.toThrow(REPLY_GONE);
+  await expect(threads.act({ agentId: sourceId, question: "", cursor })).rejects.toThrow(
+    REPLY_GONE,
+  );
+});
+
+test("a caller with no identity at all gets page 1 and a note, and nothing is stored", async () => {
+  const { threads, sourceId } = await longScenario();
+
+  const first = await threads.act({ agentId: sourceId, question: "Q" });
+
+  expect(first.reply).toBeUndefined();
+  expect(first.answer).toContain("without an agent identity");
+  expect(first.answer!.startsWith("para 0")).toBe(true);
+  await expect(
+    threads.act({ agentId: sourceId, question: "", cursor: "anything" }),
+  ).rejects.toThrow(REPLY_GONE);
+});
+
+test("a one-shot reply too big to store gets the note after page 1", async () => {
+  const { threads, sourceId } = await longScenario({ replyStoreChars: 100 }, "z".repeat(200));
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", callerKey: "client:a" });
+
+  expect(first.reply).toBeUndefined();
+  expect(first.answer).toBe(
+    `${"z".repeat(PAGE)}\n\n[This reply is too long to store, so only page 1 is available. Ask again with a narrower question.]`,
+  );
+});
+
+test("an old-style status or close that still carries a question is honored, and the question ignored", async () => {
+  const { client, threads, sourceId } = await longScenario();
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+  const target = { agentId: sourceId, askerId: "asker-1", threadId: first.thread!.threadId };
+
+  const status = await threads.act({ ...target, question: "ignored", action: "status" });
+  const closed = await threads.act({ ...target, question: "ignored", action: "close" });
+
+  expect(status.thread).toMatchObject({ status: "open", round: 1 });
+  expect(closed.thread).toMatchObject({ status: "closed" });
+  expect(client.sessions.get(COPY)!.prompts).toHaveLength(1);
+});
+
+test("an answer loses its leading blank lines and trailing whitespace but keeps first-line indentation", async () => {
+  const { client, threads, sourceId } = await scenario();
+  client.copy.reply = () => "\n \r\n  indented\nline  \n\n";
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+
+  expect(first.answer).toBe("  indented\nline");
+});
+
+test("CRLF text pages at paragraph breaks and rejoins exactly", async () => {
+  const text = PARAGRAPHS.join("\r\n\r\n");
+  const { threads, sourceId } = await longScenario({}, text);
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+  const pages = await readRest(threads, first, { agentId: sourceId, askerId: "asker-1" });
+
+  expect(pages[0]).toBe(`${PARAGRAPHS[0]}\r\n\r\n`);
+  expect(pages.join("")).toBe(text);
+});
+
+test("the store cap counts code points, like totalChars", async () => {
+  // 200 code points are 400 UTF-16 units: they fit a cap of 300 only if the cap counts points.
+  const { threads, sourceId } = await longScenario({ replyStoreChars: 300 }, "😀".repeat(200));
+
+  const first = await threads.act({ agentId: sourceId, question: "Q", askerId: "asker-1" });
+
+  expect(first.reply).toMatchObject({ totalChars: 200 });
+});
+
+test("a client that cannot read pages gets page 1 and a fixed note that points to no model call", async () => {
+  const { threads, sourceId } = await longScenario();
+
+  const threaded = await threads.act({
+    agentId: sourceId,
+    question: "Q",
+    askerId: "a",
+    paged: false,
+  });
+  const oneShot = await threads.act({ agentId: sourceId, question: "Q", paged: false });
+  const note = `Reply was longer than ${PAGE} characters; this host can return the rest to updated clients.`;
+
+  expect(threaded.reply).toBeUndefined();
+  expect(threaded.answer).toBe(LONG_TEXT.slice(0, threaded.answer!.length));
+  expect(threaded.thread!.notes).toEqual([note]);
+  // With no thread to carry notes, a one-shot caller gets the note after the answer.
+  expect(oneShot.reply).toBeUndefined();
+  expect(oneShot.answer).toContain(`[${note}]`);
+  expect(JSON.stringify([threaded, oneShot])).not.toContain(CONTINUE_FROM_CHARACTER);
 });
 
 test("a reply at the cap is returned whole", async () => {
@@ -861,6 +1227,104 @@ test("ask_agent as a tool: follow-ups with threadId, status, close, and the aske
   await expect(catalog.executeTool("ask_agent", { agentId: sourceId })).rejects.toThrow(
     "question is required",
   );
+});
+
+test("ask_agent as a tool: a long reply gives reply.next, which is the whole next call; the projection drops repeats", async () => {
+  const { client, manager, dependencies, sourceId, workdir } = await lockdownScenario({
+    replyCharLimit: PAGE,
+  });
+  const asker = await manager.createAgent(
+    { provider: "codex", cwd: workdir, title: "planner" },
+    undefined,
+    { workspaceId: undefined },
+  );
+  await manager.runAgent(asker.id, "hello");
+  const catalog = createPaseoToolCatalog({ ...dependencies, callerAgentId: asker.id });
+  const call = async (input: Record<string, unknown>) =>
+    (await catalog.executeTool("ask_agent", input)).structuredContent as AskToolOutput;
+  client.copy.reply = (turn) => (turn === 1 ? LONG_TEXT : `short ${turn}`);
+
+  const first = await call({ agentId: sourceId, question: "Q" });
+  const pages = [first.answer as string];
+  let step = first;
+  while (step.reply.next) {
+    // The documented use: pass reply.next as the arguments, unchanged.
+    step = await call(step.reply.next);
+    pages.push(step.answer as string);
+  }
+
+  expect(Object.keys(first)).toEqual(["agentId", "threadId", "answer", "reply", "thread"]);
+  expect(first.reply).toMatchObject({ page: 1, round: 1, next: { agentId: sourceId } });
+  expect(first.thread).toEqual({
+    status: "open",
+    round: 1,
+    roundsLeft: 9,
+    notes: [expect.stringContaining("Long reply: page 1 of 6.")],
+  });
+  expect(pages.join("")).toBe(LONG_TEXT);
+  expect(step.reply.next).toBeNull();
+  expect(step.thread).toBeUndefined();
+  expect(client.sessions.get("source-session-copy-2")!.prompts).toHaveLength(1);
+  await expect(call({ agentId: sourceId, question: "Q", status: true })).rejects.toThrow(
+    "exactly one of question, cursor, status or close",
+  );
+  await expect(
+    call({ agentId: sourceId, cursor: first.reply.next?.cursor as string, close: true }),
+  ).rejects.toThrow("exactly one of question, cursor, status or close");
+});
+
+test("ask_agent as a tool: for a remote host, reply.next carries serverId and reads on that host", async () => {
+  const { manager, dependencies, workdir } = await lockdownScenario();
+  const asker = await manager.createAgent(
+    { provider: "codex", cwd: workdir, title: "planner" },
+    undefined,
+    { workspaceId: undefined },
+  );
+  const sent: Array<{ agentId: string; question: string; options: Record<string, unknown> }> = [];
+  const remote = {
+    askAgent: async (agentId: string, question: string, options: Record<string, unknown>) => {
+      sent.push({ agentId, question, options });
+      const reading = options.threadAction === "read";
+      return {
+        answer: reading ? "page 2" : "page 1",
+        reply: {
+          replyId: "r1",
+          round: 1,
+          page: reading ? 2 : 1,
+          pages: 2,
+          totalChars: 80,
+          expiresAt: "2030-01-01T00:30:00.000Z",
+          nextCursor: reading ? null : "cursor-2",
+        },
+      };
+    },
+  };
+  const hosts = {
+    directory: () => [],
+    use: async (_serverId: string, action: (c: unknown) => Promise<unknown>) => action(remote),
+  } as unknown as ToolHosts;
+  const catalog = createPaseoToolCatalog({
+    ...dependencies,
+    callerAgentId: asker.id,
+    serverId: "host-a",
+    hosts: () => hosts,
+  });
+  const call = async (input: Record<string, unknown>) =>
+    (await catalog.executeTool("ask_agent", input)).structuredContent as AskToolOutput;
+
+  const first = await call({ serverId: "host-b", agentId: "remote-agent", question: "Q" });
+  const second = await call(first.reply.next ?? {});
+
+  expect(first.reply.next).toEqual({
+    agentId: "remote-agent",
+    serverId: "host-b",
+    cursor: "cursor-2",
+  });
+  expect(second).toMatchObject({ answer: "page 2", serverId: "host-b", reply: { next: null } });
+  expect(sent[1]).toMatchObject({
+    agentId: "remote-agent",
+    options: { threadAction: "read", readCursor: "cursor-2", askerAgentId: asker.id },
+  });
 });
 
 // --- Review fixes -------------------------------------------------------------------------
@@ -1162,7 +1626,9 @@ test("the tool description carries this daemon's limits", async () => {
   const description = sourceCatalog.tools.get("ask_agent")!.description;
 
   expect(description).toContain("allows 3 rounds");
-  expect(description).toContain("cut at 123 characters");
+  expect(description).toContain("pages of up to 123 characters");
+  expect(description).toContain("reply.next");
   expect(description).toContain("2 per host");
-  expect(description).toContain("Omitting threadId reuses your open thread");
+  expect(description).toContain("omitting it reuses your open thread");
+  expect(description).not.toContain(CONTINUE_FROM_CHARACTER);
 });

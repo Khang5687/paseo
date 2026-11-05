@@ -49,14 +49,29 @@ class AskHostSocket {
       sourceTurnsSince: 1,
       notes: [],
     };
+    const reply = {
+      replyId: "r1",
+      round: 1,
+      page: frame.message.threadAction === "read" ? 2 : 1,
+      pages: 3,
+      totalChars: 150,
+      expiresAt: "2030-01-01T00:30:00.000Z",
+      nextCursor: frame.message.threadAction === "read" ? "cursor-3" : "cursor-2",
+    };
+    const paged = this.features.agentAskReplyPaging && frame.message.replyPaging !== undefined;
+    const reading = frame.message.threadAction === "read";
+    let answer: string | null = "remote answer";
+    if (frame.message.threadAction) answer = null;
+    if (reading) answer = "page 2";
     this.reply({
       type: "agent.ask.response",
       payload: {
         requestId: frame.message.requestId,
         agentId: frame.message.agentId,
-        answer: frame.message.threadAction ? null : "remote answer",
+        answer,
         error: null,
-        ...(this.features.agentAskThreads ? { thread } : {}),
+        ...(this.features.agentAskThreads && !reading ? { thread } : {}),
+        ...(paged && (reading || frame.message.question === "long") ? { reply } : {}),
       },
     });
   }
@@ -137,4 +152,44 @@ test("a host from before ask threads still answers a plain ask, and refuses thre
     "Update Paseo on that host to continue ask_agent threads.",
   );
   expect(socket.asks).toHaveLength(1);
+});
+
+test("a remote read passes the cursor and returns the page with the next cursor", async () => {
+  const { socket, ask } = await askHost({
+    agentAsk: true,
+    agentAskThreads: true,
+    agentAskReplyPaging: true,
+  });
+
+  const first = await ask({ agentId: "agent-9", question: "long" });
+  const page = await ask({ agentId: "agent-9", cursor: "cursor-2" });
+
+  expect(socket.asks[0]).toMatchObject({ replyPaging: {} });
+  expect(socket.asks[1]).toMatchObject({
+    threadAction: "read",
+    readCursor: "cursor-2",
+    askerAgentId: "caller-1",
+    replyPaging: {},
+  });
+  expect(first.structuredContent).toMatchObject({
+    answer: "remote answer",
+    reply: { page: 1, pages: 3, next: { agentId: "agent-9", cursor: "cursor-2" } },
+  });
+  expect(page.structuredContent).toMatchObject({
+    answer: "page 2",
+    reply: { page: 2, next: { agentId: "agent-9", cursor: "cursor-3" } },
+  });
+});
+
+test("a host from before reply paging refuses a cursor read with an update hint, and is not told about paging", async () => {
+  const { socket, ask } = await askHost({ agentAsk: true, agentAskThreads: true });
+
+  await expect(ask({ agentId: "agent-9", cursor: "cursor-2" })).rejects.toThrow(
+    "Update Paseo on that host to read long replies.",
+  );
+  await ask({ agentId: "agent-9", question: "Why?" });
+
+  expect(socket.asks).toHaveLength(1);
+  expect(socket.asks[0]).not.toHaveProperty("replyPaging");
+  expect(socket.asks[0]).not.toHaveProperty("readCursor");
 });

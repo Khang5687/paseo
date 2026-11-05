@@ -2068,6 +2068,22 @@ export const AgentAskThreadInfoSchema = z.object({
 });
 export type AgentAskThreadInfo = z.infer<typeof AgentAskThreadInfoSchema>;
 
+/** One page of a stored ask_agent answer. `nextCursor` is null on the last page. */
+export const AgentAskReplyInfoSchema = z.object({
+  replyId: z.string(),
+  /** The thread round that produced the answer. */
+  round: z.number().int().nonnegative(),
+  /** 1-based. */
+  page: z.number().int().positive(),
+  pages: z.number().int().positive(),
+  /** Length of the whole answer in Unicode code points. */
+  totalChars: z.number().int().nonnegative(),
+  /** ISO time after which the host no longer stores the answer. */
+  expiresAt: z.string(),
+  nextCursor: z.string().nullable(),
+});
+export type AgentAskReplyInfo = z.infer<typeof AgentAskReplyInfoSchema>;
+
 /** Ask a forked copy of an agent's conversation; the agent itself is never interrupted. */
 export const AgentAskRequestMessageSchema = z.object({
   type: z.literal("agent.ask.request"),
@@ -2080,10 +2096,19 @@ export const AgentAskRequestMessageSchema = z.object({
   // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
   /** Continue an open thread with its copy. Omit to open (or reuse) the asker's thread with this agent. */
   threadId: z.string().optional(),
-  /** "ask" (default) runs a round; "status" reads the thread without asking; "close" ends it. */
-  threadAction: z.enum(["ask", "status", "close"]).optional(),
+  /**
+   * "ask" (default) runs a round; "status" reads the thread without asking; "close" ends it;
+   * "read" returns a stored page of an earlier answer (needs readCursor; runs no model).
+   */
+  // COMPAT(agentAskReplyPaging): "read" added in v0.16.0, remove gate after 2027-05-06.
+  threadAction: z.enum(["ask", "status", "close", "read"]).optional(),
   /** Agent id of the asker; with the target it identifies the one open thread. */
   askerAgentId: z.string().optional(),
+  // COMPAT(agentAskReplyPaging): added in v0.16.0, remove gate after 2027-05-06.
+  /** Opaque cursor from an earlier reply's nextCursor; used with threadAction "read". */
+  readCursor: z.string().optional(),
+  /** Marks a client that understands paged replies; others get page 1 and a fixed note. */
+  replyPaging: z.object({}).optional(),
 });
 
 export const SetAgentModeRequestMessageSchema = z.object({
@@ -4450,6 +4475,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentAsk: z.boolean().optional(),
         // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
         agentAskThreads: z.boolean().optional(),
+        // COMPAT(agentAskReplyPaging): added in v0.16.0, remove gate after 2027-05-06.
+        agentAskReplyPaging: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain wire field.
@@ -5740,6 +5767,8 @@ export const AgentAskResponseMessageSchema = z.object({
     error: z.string().nullable(),
     // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
     thread: AgentAskThreadInfoSchema.optional(),
+    // COMPAT(agentAskReplyPaging): added in v0.16.0, remove gate after 2027-05-06.
+    reply: AgentAskReplyInfoSchema.optional(),
   }),
 });
 

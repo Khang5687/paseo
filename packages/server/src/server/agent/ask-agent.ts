@@ -4,13 +4,14 @@ import path from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
 import { AGENT_ASK_DEFAULT_TIMEOUT_MS } from "@getpaseo/protocol/messages";
-import type { AgentAskThreadInfo } from "@getpaseo/protocol/messages";
+import type { AgentAskReplyInfo, AgentAskThreadInfo } from "@getpaseo/protocol/messages";
 
 import { writeFileAtomic } from "../atomic-file.js";
 import { AgentSessionForkUnsupportedError } from "./agent-manager.js";
 import type { AgentManager, AgentManagerEvent } from "./agent-manager.js";
 import type { ForkedNativeSession } from "./agent-sdk-types.js";
 import { ForkHandleRefusedError } from "./fork-handle.js";
+import { AskReplyStore, DEFAULT_REPLY_STORE_CHARS, paginate } from "./ask-reply-store.js";
 
 export interface AskThreadSettings {
   /** Rounds one thread may run before it closes. */
@@ -21,6 +22,8 @@ export interface AskThreadSettings {
   idleTimeoutMs: number;
   /** Longest reply returned to the asker, in characters. */
   replyCharLimit: number;
+  /** Total text of saved long replies kept at once, in characters; the oldest go first. */
+  replyStoreChars: number;
 }
 
 export const DEFAULT_ASK_THREAD_SETTINGS: AskThreadSettings = {
@@ -28,6 +31,7 @@ export const DEFAULT_ASK_THREAD_SETTINGS: AskThreadSettings = {
   maxOpenThreads: 5,
   idleTimeoutMs: 10 * 60_000,
   replyCharLimit: 4000,
+  replyStoreChars: DEFAULT_REPLY_STORE_CHARS,
 };
 
 /** Past this share of the context window, the asker is warned once. */
@@ -72,6 +76,12 @@ export interface AskRoundInput {
   askedBy?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Stored page to return, from an earlier reply's cursor. Needs no thread and runs no model. */
+  cursor?: string;
+  /** Identity of an anonymous caller (no askerId); only it can read that caller's one-shot replies. */
+  callerKey?: string;
+  /** False for a client that cannot read pages: it gets page 1 and a fixed note. Default true. */
+  paged?: boolean;
 }
 
 export interface AskThreadTarget {
@@ -85,6 +95,7 @@ export interface AskRoundResult {
   threadId: string;
   answer: string;
   thread: AgentAskThreadInfo;
+  reply?: AgentAskReplyInfo;
 }
 
 /** A thread an agent on this daemon opened on another host; closed there when the agent goes. */
@@ -161,6 +172,10 @@ function buildOpeningPrompt(question: string, asker: { title?: string; id?: stri
       "stops in the middle of a task, do not continue the task; the original is doing it. Do " +
       "not edit files, run commands that change anything, or message other agents; your Paseo " +
       "tools that change things are blocked. Reply with the answer only.",
+    "Lead with the direct answer, recommendation and material caveats. Keep that opening " +
+      "brief. Put supporting details afterward and leave out details the question does not " +
+      "need. The daemon pages long replies, so write the complete answer in this turn; do " +
+      "not count characters, add page labels, or stop for continuation.",
     "",
     "Question:",
     question,
@@ -184,6 +199,7 @@ export class AskAgentThreads {
   private readonly remoteThreads = new Map<string, Map<string, RemoteThreadRef>>();
   private remoteCloser: ((ref: RemoteThreadRef) => Promise<void>) | null = null;
   private readonly settings: AskThreadSettings;
+  private readonly replies: AskReplyStore;
   private readonly forksFile: string;
   private persistQueue: Promise<void> = Promise.resolve();
   /** Forks no live thread owns that still need deleting; written with the live ones. */
@@ -196,6 +212,7 @@ export class AskAgentThreads {
     options: { paseoHome: string; settings?: Partial<AskThreadSettings> },
   ) {
     this.settings = { ...DEFAULT_ASK_THREAD_SETTINGS, ...options.settings };
+    this.replies = new AskReplyStore({ maxChars: this.settings.replyStoreChars });
     this.forksFile = path.join(options.paseoHome, OPEN_FORKS_FILE);
   }
 
@@ -275,26 +292,37 @@ export class AskAgentThreads {
     }
   }
 
-  /** One entry point for a round, a status read, or a close, shared by the tool and the RPC. */
-  async act(
-    input: AskRoundInput & { action?: "ask" | "status" | "close" },
-  ): Promise<{ answer: string | null; thread?: AgentAskThreadInfo }> {
+  /** One entry point for a round, a status read, a close or a stored page, shared by the tool and the RPC. */
+  async act(input: AskRoundInput & { action?: AskAction }): Promise<AskActResult> {
+    const action = resolveAskAction(input);
     const target: AskThreadTarget = {
       agentId: input.agentId,
       threadId: input.threadId,
       askerId: input.askerId,
     };
-    if (input.action === "status") return { answer: null, thread: this.status(target).thread };
-    if (input.action === "close") {
+    if (action === "status") return { answer: null, thread: this.status(target).thread };
+    if (action === "close") {
       return { answer: null, thread: (await this.close(target)).thread };
     }
-    if (!input.question.trim()) throw new Error("question is required");
+    if (action === "read") return this.readReply(input);
     if (!input.askerId) {
       if (input.threadId) throw new Error(noThreadMessage(input.threadId));
-      return { answer: await this.askOnce(input) };
+      const once = await this.askOnce(input);
+      return { answer: once.answer, ...(once.reply ? { reply: once.reply } : {}) };
     }
-    const { answer, thread } = await this.ask({ ...input, askerId: input.askerId });
-    return { answer, thread };
+    const { answer, thread, reply } = await this.ask({ ...input, askerId: input.askerId });
+    return { answer, thread, ...(reply ? { reply } : {}) };
+  }
+
+  /** A stored page of an earlier answer: no model, no round, no timers touched. */
+  private readReply(input: AskRoundInput): AskActResult {
+    if (!input.cursor) throw new Error("cursor is required");
+    const page = this.replies.read(
+      input.cursor,
+      input.askerId || input.callerKey || "",
+      input.agentId,
+    );
+    return { answer: page.text, reply: page.reply };
   }
 
   async ask(input: AskRoundInput & { askerId: string }): Promise<AskRoundResult> {
@@ -312,10 +340,10 @@ export class AskAgentThreads {
   }
 
   /** A caller with no identity cannot come back to a thread: one round, then the copy is gone. */
-  private async askOnce(input: AskRoundInput): Promise<string> {
+  private async askOnce(input: AskRoundInput): Promise<AskRoundResult> {
     input.signal?.throwIfAborted();
     const thread = await this.openThread(input, "", true);
-    return (await this.runRound(thread, input)).answer;
+    return await this.runRound(thread, input);
   }
 
   /** Thread state without asking anything. Works for closed threads the daemon still remembers. */
@@ -503,8 +531,10 @@ export class AskAgentThreads {
         input.signal,
         () => this.manager.cancelAgentRun(copyId),
       );
-      answer = result.finalText.trim();
-      if (!answer) {
+      // Leading blank lines and trailing whitespace go; the first line's indentation stays.
+      // Only the emptiness check uses a full trim.
+      answer = result.finalText.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
+      if (!result.finalText.trim()) {
         throw new Error(
           result.canceled
             ? "The forked copy was canceled before answering"
@@ -526,15 +556,8 @@ export class AskAgentThreads {
     thread.lastRoundEndedAt = Date.now();
     const notes: string[] = [];
     const lastRound = thread.rounds >= this.settings.maxRounds;
-    const cap = this.settings.replyCharLimit;
-    if (answer.length > cap) {
-      const hint =
-        lastRound || thread.oneShot
-          ? "Ask again with a narrower question for the rest."
-          : `Ask a follow-up with threadId ${thread.id} for the rest, for example "continue from character ${cap}".`;
-      notes.push(`Reply cut: showing ${cap} of ${answer.length} characters. ${hint}`);
-      answer = `${answer.slice(0, cap)}\n\n[Reply cut at ${cap} of ${answer.length} characters. ${hint}]`;
-    }
+    const firstPage = this.firstPage(thread, input, answer, notes);
+    answer = firstPage.answer;
     if (pausedMs > PAUSE_NOTICE_MS) {
       notes.push(
         `${Math.round(pausedMs / 60_000)} minutes passed since the last round. A big session costs more to continue after a pause.`,
@@ -564,7 +587,63 @@ export class AskAgentThreads {
       threadId: thread.id,
       answer,
       thread: this.describe(thread, notes),
+      ...(firstPage.reply ? { reply: firstPage.reply } : {}),
     };
+  }
+
+  /**
+   * Page 1 of the answer. A long answer is saved whole first, so the asker can read the rest
+   * without the copy. The note goes in `notes`; a one-shot caller from an old client has no
+   * thread to carry it, so it is appended to the answer.
+   */
+  private firstPage(
+    thread: Thread,
+    input: AskRoundInput,
+    text: string,
+    notes: string[],
+  ): { answer: string; reply?: AgentAskReplyInfo } {
+    const size = this.settings.replyCharLimit;
+    // Code points never outnumber UTF-16 units, so this much text is one page.
+    if (text.length <= size) return { answer: text };
+    const starts = paginate(text, size);
+    if (starts.length === 1) return { answer: text };
+    const firstText = text.slice(0, starts[1]);
+    // Page 1 alone, with the reason the rest is not available. A one-shot caller has no thread
+    // to carry a note, so it goes after the answer.
+    const pageOneOnly = (note: string) => {
+      if (thread.oneShot) return { answer: `${firstText}\n\n[${note}]` };
+      notes.push(note);
+      return { answer: firstText };
+    };
+    if (input.paged === false) {
+      return pageOneOnly(
+        `Reply was longer than ${size} characters; this host can return the rest to updated clients.`,
+      );
+    }
+    const ownerKey = thread.askerId || input.callerKey || "";
+    // No identity, no stored reply: a cursor would be readable by any other anonymous caller.
+    if (!ownerKey) {
+      return pageOneOnly(
+        "The rest of this reply can't be read without an agent identity. Ask as an agent, or ask a narrower question.",
+      );
+    }
+    const record = this.replies.save({
+      ownerKey,
+      agentId: thread.targetId,
+      round: thread.rounds,
+      text,
+      starts,
+    });
+    if (!record) {
+      return pageOneOnly(
+        "This reply is too long to store, so only page 1 is available. Ask again with a narrower question.",
+      );
+    }
+    const page = this.replies.page(record, 1);
+    notes.push(
+      `Long reply: page 1 of ${page.reply.pages}. Call ask_agent with reply.next to read more; it runs no model and uses no round.`,
+    );
+    return { answer: page.text, reply: page.reply };
   }
 
   private noteFullness(thread: Thread, copyId: string, notes: string[]): void {
@@ -739,25 +818,74 @@ export class AskAgentThreads {
   }
 }
 
-/** The tool's `close` and `status` flags choose the action; neither means a round. */
-export function askActionOf(args: {
-  close?: unknown;
-  status?: unknown;
-}): "ask" | "status" | "close" {
-  if (args.close === true) return "close";
-  return args.status === true ? "status" : "ask";
+export type AskAction = "ask" | "status" | "close" | "read";
+
+export interface AskActResult {
+  answer: string | null;
+  thread?: AgentAskThreadInfo;
+  reply?: AgentAskReplyInfo;
 }
 
-/** What the ask_agent tool returns, for a local or a remote answer. */
-export function formatAskOutput(
-  agentId: string,
-  reply: { answer: string | null; thread?: AgentAskThreadInfo },
-): { agentId: string; threadId?: string; answer: string | null; thread?: AgentAskThreadInfo } {
+/**
+ * A tool call does exactly one of: ask a question, read a stored page (cursor), read thread
+ * status, close the thread; `status` and `close` are the tool's flags. A wire request names its
+ * operation in `action`, and that wins: an old client may send a question with status or close,
+ * and it is ignored.
+ */
+export function resolveAskAction(args: {
+  action?: AskAction;
+  question?: string;
+  cursor?: string;
+  status?: unknown;
+  close?: unknown;
+}): AskAction {
+  if (args.action && args.action !== "ask") return args.action;
+  const operations: AskAction[] = [];
+  if (args.question?.trim()) operations.push("ask");
+  if (args.cursor) operations.push("read");
+  if (args.status === true) operations.push("status");
+  if (args.close === true) operations.push("close");
+  if (operations.length > 1) {
+    throw new Error("Use exactly one of question, cursor, status or close per call.");
+  }
+  if (operations.length === 0) {
+    throw new Error("question is required unless cursor, status or close is set");
+  }
+  return operations[0] as AskAction;
+}
+
+/** What the ask_agent tool returns, for a local or a remote answer. Drops what repeats. */
+export function formatAskOutput(agentId: string, reply: AskActResult) {
+  const { thread, reply: page } = reply;
   return {
     agentId,
-    ...(reply.thread ? { threadId: reply.thread.threadId } : {}),
+    ...(thread ? { threadId: thread.threadId } : {}),
     answer: reply.answer,
-    ...(reply.thread ? { thread: reply.thread } : {}),
+    ...(page
+      ? {
+          reply: {
+            replyId: page.replyId,
+            round: page.round,
+            page: page.page,
+            pages: page.pages,
+            totalChars: page.totalChars,
+            expiresAt: page.expiresAt,
+            next: page.nextCursor ? { agentId, cursor: page.nextCursor } : null,
+          },
+        }
+      : {}),
+    ...(thread
+      ? {
+          thread: {
+            status: thread.status,
+            round: thread.round,
+            roundsLeft: thread.roundsLeft,
+            ...(thread.notes.length > 0 ? { notes: thread.notes } : {}),
+            ...(thread.sourceTurnsSince > 0 ? { sourceTurnsSince: thread.sourceTurnsSince } : {}),
+            ...(thread.closeReason ? { closeReason: thread.closeReason } : {}),
+          },
+        }
+      : {}),
   };
 }
 
