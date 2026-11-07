@@ -33,6 +33,8 @@ export interface AgentSlashCommand {
   kind?: string;
   aliases?: string[];
   subcommands?: AgentSlashCommandSubcommand[];
+  /** Folder a skill loads from on the daemon host; absent on older daemons and for other providers. */
+  sourcePath?: string;
 }
 
 export type DraftCommandConfig = AgentCommandsDraftConfig;

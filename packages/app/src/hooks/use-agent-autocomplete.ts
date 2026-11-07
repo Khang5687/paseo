@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AutocompleteOption } from "@/components/ui/autocomplete";
+import { shortenPath } from "@/utils/shorten-path";
 import {
   useAutocompleteCommands,
   type AgentSlashCommand,
@@ -195,6 +196,7 @@ function mapCommandToOption(entry: AvailableCommand, t: TFunction): AgentAutocom
   return {
     ...base,
     type: "provider_command",
+    ...(entry.command.sourcePath ? { sourcePath: shortenPath(entry.command.sourcePath) } : {}),
   };
 }
 

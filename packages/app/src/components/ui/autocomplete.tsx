@@ -20,6 +20,8 @@ export interface AutocompleteOption {
   label: string;
   detail?: string;
   description?: string;
+  /** Muted second line under the row, e.g. the folder a skill loads from. */
+  sourcePath?: string;
   kind?: "command" | "file" | "directory";
 }
 
@@ -104,11 +106,18 @@ function AutocompleteRow({
           </View>
         </>
       ) : (
-        <View style={styles.itemMainRow}>
-          <Text style={styles.itemLabel}>{optionLabel}</Text>
-          {optionDescription ? (
-            <Text style={styles.itemDescriptionInline} numberOfLines={1}>
-              {optionDescription}
+        <View style={styles.itemMain}>
+          <View style={styles.itemMainRow}>
+            <Text style={styles.itemLabel}>{optionLabel}</Text>
+            {optionDescription ? (
+              <Text style={styles.itemDescriptionInline} numberOfLines={1}>
+                {optionDescription}
+              </Text>
+            ) : null}
+          </View>
+          {option.sourcePath ? (
+            <Text style={styles.itemSourcePath} numberOfLines={1} ellipsizeMode="head">
+              {option.sourcePath}
             </Text>
           ) : null}
         </View>
@@ -389,6 +398,12 @@ const styles = StyleSheet.create((theme: Theme) => ({
   },
   itemDescription: {
     color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    marginTop: 2,
+  },
+  itemSourcePath: {
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.sm,
     marginTop: 2,
   },
