@@ -83,6 +83,7 @@ import {
   resolveOmpDiagnosticPaths,
   resolveOmpLaunchMode,
   resolveOmpProviderOptions,
+  OMP_APPROVAL_MODES,
   OMP_MODES,
   type OmpRuntimeOptions,
 } from "./provider-config.js";
@@ -137,13 +138,16 @@ import { OmpUsagePoller, type OmpUsagePollScheduler } from "./usage-poller.js";
 import {
   buildOmpRpcUiPermissionResponse,
   mapOmpRpcUiPermissionRequest,
+  readOmpModeBashApprovalCommand,
+  TOOL_APPROVAL_APPROVE_VALUE,
 } from "./rpc-ui-permission-mapper.js";
+import { isReadOnlyShellCommand } from "../../read-only-shell-command.js";
 import { DEFAULT_OMP_THINKING_LEVEL, mapOmpModel } from "./map-omp-model.js";
 
 const OMP_PROVIDER = "omp";
-// "Always Ask": every write and exec tool asks for approval, so a copy answering questions reads freely
-// while the approvals it raises are denied.
-const OMP_READ_ONLY_MODE_ID = "ask";
+// "Read Only": edits, writes and other tools ask; shell commands that only read are approved by
+// Paseo. A copy answering questions reads freely while the approvals it raises are denied.
+const OMP_READ_ONLY_MODE_ID = "read-only";
 const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
@@ -1189,6 +1193,15 @@ export class OmpAgentSession implements AgentSession {
       throw new Error(`Invalid OMP mode '${modeId}'`);
     }
     if (modeId === this.currentModeId) return;
+    // Modes that launch OMP alike differ only in what Paseo approves, so they apply at once.
+    if (
+      this.currentModeId &&
+      OMP_APPROVAL_MODES[modeId] === OMP_APPROVAL_MODES[this.currentModeId]
+    ) {
+      this.currentModeId = modeId;
+      this.config.modeId = modeId;
+      return;
+    }
     if (this.activeTurnId || this.state.isStreaming || this.state.isCompacting) {
       return { type: "warning", message: "Change approval mode once the current turn ends" };
     }
@@ -1878,6 +1891,17 @@ export class OmpAgentSession implements AgentSession {
         item: sideEffectItem,
       });
       return;
+    }
+
+    if (this.currentModeId === OMP_READ_ONLY_MODE_ID) {
+      const command = readOmpModeBashApprovalCommand(event);
+      if (command !== null && isReadOnlyShellCommand(command)) {
+        this.logger.debug({ command }, "OMP read-only mode approved a read-only shell command");
+        this.runtimeSession.respondToExtensionUiRequest(event.id, {
+          value: TOOL_APPROVAL_APPROVE_VALUE,
+        });
+        return;
+      }
     }
 
     const request =

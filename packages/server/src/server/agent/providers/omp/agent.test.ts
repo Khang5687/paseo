@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { AgentStreamEvent } from "../../agent-sdk-types.js";
 import type { PaseoToolCatalog } from "../../tools/types.js";
-import type { OmpAgentMessage, OmpSessionStats } from "./rpc-types.js";
+import type { OmpAgentMessage, OmpRuntimeEvent, OmpSessionStats } from "./rpc-types.js";
 import type { OmpNoTurnScheduler, OmpProviderIdleScheduler } from "./agent.js";
 import type { OmpUsagePollScheduler } from "./usage-poller.js";
 import { resolveOmpProviderOptions } from "./provider-config.js";
@@ -122,7 +122,7 @@ test("forks a session into a discardable copy beside it without touching the sou
   const fork = await client.forkNativeSession(source);
 
   const forkFile = path.join(directory, "fork_omp-session-1.jsonl");
-  expect(fork.readOnlyModeId).toBe("ask");
+  expect(fork.readOnlyModeId).toBe("read-only");
   expect(fork.handle).toEqual({
     provider: "omp",
     sessionId: "omp-session-1",
@@ -147,7 +147,7 @@ test("forks a session into a discardable copy beside it without touching the sou
     modeId: fork.readOnlyModeId,
   });
   await copy.close();
-  expect(runtime.recordedLaunches[1]).toMatchObject({ session: forkFile, modeId: "ask" });
+  expect(runtime.recordedLaunches[1]).toMatchObject({ session: forkFile, modeId: "read-only" });
 
   await fork.discard();
   await fork.discard();
@@ -1540,6 +1540,88 @@ describe("OMP agent client and session", () => {
     ]);
   });
 
+  describe("read-only mode", () => {
+    const modeBashApproval = (id: string, command: string): OmpRuntimeEvent => ({
+      type: "extension_ui_request",
+      id,
+      method: "select",
+      title: `Allow tool: bash\nCommand: ${command}`,
+      options: ["Approve", "Approve bash for this session", "Deny"],
+    });
+
+    test("launches OMP in always-ask mode so edits and writes ask", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "read-only" });
+
+      expect(omp.launchConfiguration()).toMatchObject({
+        modeId: "read-only",
+        argv: ["omp", "--mode", "rpc-ui", "--approval-mode", "always-ask"],
+      });
+    });
+
+    test("approves read-only shell commands without raising a permission", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "read-only" });
+
+      omp.emit(modeBashApproval("read-1", "git log --oneline -5"));
+      omp.requestToolApproval({ id: "read-2", tool: "bash", detail: "ls -la" });
+
+      expect(omp.pendingPermissions()).toEqual([]);
+      expect(omp.extensionUiResponses()).toEqual([
+        { id: "read-1", response: { value: "Approve" } },
+        { id: "read-2", response: { value: "Approve" } },
+      ]);
+    });
+
+    test("still asks for edits, writes and commands it cannot prove read-only", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "read-only" });
+
+      omp.requestToolApproval({ id: "edit", tool: "edit", detail: "src/index.ts" });
+      omp.requestToolApproval({ id: "write", tool: "write", detail: "notes.md" });
+      omp.emit(modeBashApproval("delete", "rm -rf build"));
+      omp.emit(modeBashApproval("unknown", "npm test"));
+
+      expect(omp.pendingPermissions()).toEqual([
+        expect.objectContaining({ id: "edit", name: "edit" }),
+        expect.objectContaining({ id: "write" }),
+        expect.objectContaining({ id: "delete" }),
+        expect.objectContaining({ id: "unknown" }),
+      ]);
+      expect(omp.extensionUiResponses()).toEqual([]);
+    });
+
+    test.each(["ask", "write"])(
+      "leaves read-only commands to the user in %s mode",
+      async (modeId) => {
+        const omp = new OmpHarness();
+        await omp.start({ modeId });
+
+        omp.requestToolApproval({ id: "read", tool: "bash", detail: "git status" });
+
+        expect(omp.pendingPermissions()).toEqual([
+          expect.objectContaining({ id: "read", name: "bash", kind: "tool" }),
+        ]);
+        expect(omp.extensionUiResponses()).toEqual([]);
+      },
+    );
+
+    test("switches between ask and read-only during a turn without relaunching OMP", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "ask" });
+      await omp.requireStartTurn("work");
+
+      await expect(omp.setMode("read-only")).resolves.toBeUndefined();
+      expect(await omp.currentMode()).toBe("read-only");
+      omp.requestToolApproval({ id: "read", tool: "bash", detail: "git status" });
+      expect(omp.extensionUiResponses()).toEqual([{ id: "read", response: { value: "Approve" } }]);
+
+      await expect(omp.setMode("ask")).resolves.toBeUndefined();
+      expect(await omp.currentMode()).toBe("ask");
+      expect(omp.runtimeLaunches()).toHaveLength(1);
+    });
+  });
+
   test("shows OMP notifications during a turn and while idle with their levels", async () => {
     const omp = new OmpHarness();
     await omp.start();
@@ -1641,6 +1723,7 @@ describe("OMP agent client and session", () => {
       expect.objectContaining({ id: "full" }),
       expect.objectContaining({ id: "write" }),
       expect.objectContaining({ id: "ask" }),
+      expect.objectContaining({ id: "read-only" }),
     ]);
     await expect(omp.commands()).resolves.toEqual(
       expect.arrayContaining([

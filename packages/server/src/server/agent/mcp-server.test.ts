@@ -4985,6 +4985,54 @@ describe("update_agent MCP tool", () => {
   });
 });
 
+describe("set_agent_mode MCP tool", () => {
+  const logger = createTestLogger();
+
+  it("reports the mode the agent is in and the provider notice when the change waits", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.setAgentMode.mockResolvedValue({
+      type: "warning",
+      message: "Change approval mode once the current turn ends",
+    });
+    spies.agentManager.getAgent.mockReturnValue({ currentModeId: "write" });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+
+    const response = await registeredTool(server, "set_agent_mode").handler({
+      agentId: "agent-1",
+      modeId: "full",
+    });
+
+    expect(response.structuredContent).toEqual({
+      success: false,
+      newMode: "write",
+      notice: "Change approval mode once the current turn ends",
+    });
+  });
+
+  it("reports success when the agent is in the requested mode", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue({ currentModeId: "read-only" });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+
+    const response = await registeredTool(server, "set_agent_mode").handler({
+      agentId: "agent-1",
+      modeId: "read-only",
+    });
+
+    expect(response.structuredContent).toEqual({ success: true, newMode: "read-only" });
+  });
+});
+
 describe("rename_workspace MCP tool", () => {
   const logger = createTestLogger();
 

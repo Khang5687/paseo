@@ -9,7 +9,7 @@ import type { OmpRuntimeEvent } from "./rpc-types.js";
 
 const OMP_PROVIDER = "omp";
 const OMP_RPC_UI_TOOL_APPROVAL_METADATA = "omp_rpc_ui_tool_approval";
-const TOOL_APPROVAL_APPROVE_VALUE = "Approve";
+export const TOOL_APPROVAL_APPROVE_VALUE = "Approve";
 const TOOL_APPROVAL_DENY_VALUE = "Deny";
 const TOOL_APPROVAL_OPTIONS = [TOOL_APPROVAL_APPROVE_VALUE, TOOL_APPROVAL_DENY_VALUE] as const;
 const TOOL_TITLE_PREFIX = "Allow tool: ";
@@ -96,6 +96,38 @@ export function buildOmpRpcUiPermissionResponse(
   const approveValue = readString(request.metadata.approveValue) ?? TOOL_APPROVAL_APPROVE_VALUE;
   const denyValue = readString(request.metadata.denyValue) ?? TOOL_APPROVAL_DENY_VALUE;
   return { value: response.behavior === "allow" ? approveValue : denyValue };
+}
+
+// OMP 18.11.3 and later add "Approve <tool> for this session" to prompts its approval mode raised.
+const MODE_BASH_APPROVAL_OPTIONS = [
+  TOOL_APPROVAL_APPROVE_VALUE,
+  "Approve bash for this session",
+  TOOL_APPROVAL_DENY_VALUE,
+];
+// OMP cuts long commands in the prompt and appends this marker; the hidden rest is unknown.
+const ELIDED_PROMPT_SUFFIX = /\[…\d+ch elided…\]$/;
+
+/**
+ * The command of a bash approval prompt that only the approval mode raised, or null. The title
+ * must hold the tool line and a single-line `Command:` and nothing else: a `Reason:` line, provider
+ * safety checks, a multi-line or cut command all return null, as does any other answer list.
+ */
+export function readOmpModeBashApprovalCommand(event: ExtensionUiRequestEvent): string | null {
+  if (event.method !== "select") return null;
+  const options = event.options;
+  if (
+    !hasExactToolApprovalOptions(options) &&
+    !(
+      Array.isArray(options) &&
+      options.length === MODE_BASH_APPROVAL_OPTIONS.length &&
+      options.every((option, index) => option === MODE_BASH_APPROVAL_OPTIONS[index])
+    )
+  ) {
+    return null;
+  }
+  const command = /^Allow tool: bash\r?\nCommand: ([^\r\n]+)$/.exec(event.title ?? "")?.[1];
+  if (!command || ELIDED_PROMPT_SUFFIX.test(command)) return null;
+  return command;
 }
 
 function parseToolApprovalDescriptor(

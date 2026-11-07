@@ -35,27 +35,32 @@ export interface OmpModelRoles {
   planModel?: string;
 }
 
+/**
+ * The OMP `--approval-mode` each Paseo mode launches with. `read-only` launches like `ask`; Paseo
+ * then approves the shell commands it can prove only read (see OmpAgentSession).
+ */
+export const OMP_APPROVAL_MODES: Readonly<Record<string, string>> = {
+  full: "yolo",
+  write: "write",
+  ask: "always-ask",
+  "read-only": "always-ask",
+};
+
 export function resolveOmpLaunchMode(
   modeId: string | undefined,
   modelRoles: OmpModelRoles = {},
 ): { modeId: string; extraArgs: string[] } {
-  const modelRoleArgs = resolveOmpModelRoleArgs(modelRoles);
-  switch (modeId ?? DEFAULT_OMP_MODE_ID) {
-    case "full":
-      return { modeId: "full", extraArgs: ["--approval-mode", "yolo", ...modelRoleArgs] };
-    case "write":
-      return {
-        modeId: "write",
-        extraArgs: ["--approval-mode", "write", ...modelRoleArgs],
-      };
-    case "ask":
-      return {
-        modeId: "ask",
-        extraArgs: ["--approval-mode", "always-ask", ...modelRoleArgs],
-      };
-    default:
-      throw new Error(`Unsupported OMP mode '${modeId}'`);
+  const resolvedModeId = modeId ?? DEFAULT_OMP_MODE_ID;
+  const approvalMode = Object.hasOwn(OMP_APPROVAL_MODES, resolvedModeId)
+    ? OMP_APPROVAL_MODES[resolvedModeId]
+    : undefined;
+  if (!approvalMode) {
+    throw new Error(`Unsupported OMP mode '${modeId}'`);
   }
+  return {
+    modeId: resolvedModeId,
+    extraArgs: ["--approval-mode", approvalMode, ...resolveOmpModelRoleArgs(modelRoles)],
+  };
 }
 
 function resolveOmpModelRoleArgs(modelRoles: OmpModelRoles): string[] {

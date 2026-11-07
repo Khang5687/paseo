@@ -165,6 +165,14 @@ export const OMP_MODES: AgentProviderModeDefinition[] = [
     icon: "ShieldCheck",
     colorTier: "safe",
   },
+  {
+    id: "read-only",
+    label: "Read Only",
+    description:
+      "Launches OMP with always-ask approval mode; Paseo approves shell commands that only read.",
+    icon: "ShieldEllipsis",
+    colorTier: "planning",
+  },
 ];
 
 const MOCK_LOAD_TEST_MODES: AgentProviderModeDefinition[] = [

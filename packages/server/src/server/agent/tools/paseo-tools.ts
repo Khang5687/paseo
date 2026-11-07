@@ -3744,13 +3744,20 @@ function createToolCatalog(
       outputSchema: {
         success: z.boolean(),
         newMode: z.string(),
+        notice: z.string().optional(),
       },
     },
     async ({ agentId, modeId }) => {
-      const result = await setAgentModeCommand({ agentManager }, { agentId, modeId });
+      const { notice } = await setAgentModeCommand({ agentManager }, { agentId, modeId });
+      // A provider may keep the old mode (OMP while a turn runs); report the mode in force.
+      const currentMode = agentManager.getAgent(agentId)?.currentModeId ?? modeId;
       return {
         content: [],
-        structuredContent: ensureValidJson({ success: true, newMode: result.modeId }),
+        structuredContent: ensureValidJson({
+          success: currentMode === modeId,
+          newMode: currentMode,
+          ...(notice ? { notice: notice.message } : {}),
+        }),
       };
     },
   );
