@@ -2331,7 +2331,7 @@ test(
 );
 
 test.each(["removed", "disabled"] as const)(
-  "%s remote destination reports unknown child status and consumes its finish subscription",
+  "%s remote destination: removal reports unknown child status, an unreachable host keeps the finish subscription until it answers",
   { timeout: 30000 },
   async (availability) => {
     const parentPrompts: string[] = [];
@@ -2387,14 +2387,32 @@ test.each(["removed", "disabled"] as const)(
     const childId = (response.structuredContent as { agentId: string }).agentId;
     if (availability === "removed") await origin.paseo.hosts.remove(saved.registrationId);
     else await origin.paseo.hosts.update(saved.registrationId, { enabled: false });
+    if (availability === "disabled") {
+      // An unreachable host is not an outcome. The child finishes while the origin cannot see it.
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      expect(parentPrompts).toEqual([]);
+      finish.resolve();
+      expect((await destination.client.waitForFinish(childId, 5000)).final?.status).toBe("idle");
+      expect(parentPrompts).toEqual([]);
+      await origin.paseo.hosts.update(saved.registrationId, { enabled: true });
+      await online(origin.paseo);
+      await expect.poll(() => parentPrompts, { timeout: 20000 }).toHaveLength(1);
+      expect(parentPrompts[0]).toContain("finished.");
+      expect(parentPrompts[0]).toContain(`Server: ${serverId}`);
+      expect(parentPrompts[0]).not.toContain("is unknown.");
+      await expect
+        .poll(
+          async () =>
+            JSON.parse(await readFile(join(a.paseoHome, "finish-subscriptions.json"), "utf8")),
+          { timeout: 10000 },
+        )
+        .toEqual([]);
+      return;
+    }
     await expect.poll(() => parentPrompts, { timeout: 15000 }).toHaveLength(1);
     expect(parentPrompts[0]).toContain(`Status of child agent ${childId}`);
     expect(parentPrompts[0]).toContain(`Server: ${serverId}`);
-    expect(parentPrompts[0]).toContain(
-      availability === "removed"
-        ? `Host ${serverId} was removed or is unavailable.`
-        : `Could not observe child agent ${childId} on host ${serverId} after three failed attempts.`,
-    );
+    expect(parentPrompts[0]).toContain(`Host ${serverId} was removed or is unavailable.`);
     expect(parentPrompts[0]).toContain("is unknown.");
     expect(parentPrompts[0]).not.toContain("finished.");
     await expect
@@ -2404,9 +2422,7 @@ test.each(["removed", "disabled"] as const)(
         { timeout: 10000 },
       )
       .toEqual([]);
-    if (availability === "removed")
-      await origin.paseo.hosts.add({ connection: `127.0.0.1:${b.port}` });
-    else await origin.paseo.hosts.update(saved.registrationId, { enabled: true });
+    await origin.paseo.hosts.add({ connection: `127.0.0.1:${b.port}` });
     await online(origin.paseo);
     finish.resolve();
     const completed = await destination.client.waitForFinish(childId, 5000);

@@ -174,6 +174,36 @@ test("a terminal event observed after newer work starts waits for that running w
   }
 });
 
+test("a finish that happened before the observation opened is reported from the initial wait", async () => {
+  const { host, observation } = await scenario();
+  try {
+    host.emit("idle");
+    host.baseline.resolve({
+      status: "idle",
+      final: buildStoredAgentPayload(
+        {
+          id: "child",
+          cwd: "/tmp",
+          provider: "codex",
+          labels: {},
+          lastStatus: "idle",
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        },
+        ["codex"],
+      ),
+      lastMessage: "Finished while away",
+      error: null,
+    });
+    expect(await observation.next()).toMatchObject({
+      status: "idle",
+      lastMessage: "Finished while away",
+    });
+  } finally {
+    await observation.close();
+  }
+});
+
 test.each([
   { status: "connecting", reason: "connecting" },
   { status: "offline", reason: "unreachable" },
