@@ -51,6 +51,8 @@ export interface AutocompleteOption {
   description?: string;
   /** Where the option comes from, when that is not the provider itself: `Skill`, `Paseo`, a plugin. */
   tag?: string;
+  /** Muted second line under the row, e.g. the folder a skill loads from. */
+  detail?: string;
 }
 
 /** What the list shows in place of options. */
@@ -80,6 +82,7 @@ const ErrorIcon = withUnistyles(CircleAlert, mutedIconColorMapping);
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner, mutedIconColorMapping);
 
 const ROW_ICON_SIZE = 14;
+const ROW_ICON_BOX = 16;
 
 const BOLT_GLYPH_PATTERN = /⚡|️/gu;
 
@@ -135,24 +138,31 @@ function AutocompleteRow({
       // Name and description only; the hint and tag repeat what the name implies.
       accessibilityLabel={description ? `${label}, ${description}` : label}
     >
-      <View style={styles.itemIcon}>
-        <Icon size={ROW_ICON_SIZE} />
+      <View style={styles.itemMain}>
+        <View style={styles.itemIcon}>
+          <Icon size={ROW_ICON_SIZE} />
+        </View>
+        <HighlightedText
+          text={label}
+          ranges={labelMatches}
+          style={styles.itemLabel}
+          numberOfLines={1}
+        />
+        {argumentHint ? (
+          <Text style={styles.itemArgumentHint} numberOfLines={1}>
+            {argumentHint}
+          </Text>
+        ) : null}
+        <Text style={styles.itemDescription} numberOfLines={1}>
+          {description ?? ""}
+        </Text>
+        {option.tag ? <StatusBadge label={option.tag} size="xs" /> : null}
       </View>
-      <HighlightedText
-        text={label}
-        ranges={labelMatches}
-        style={styles.itemLabel}
-        numberOfLines={1}
-      />
-      {argumentHint ? (
-        <Text style={styles.itemArgumentHint} numberOfLines={1}>
-          {argumentHint}
+      {option.detail ? (
+        <Text style={styles.itemDetail} numberOfLines={1} ellipsizeMode="head">
+          {option.detail}
         </Text>
       ) : null}
-      <Text style={styles.itemDescription} numberOfLines={1}>
-        {description ?? ""}
-      </Text>
-      {option.tag ? <StatusBadge label={option.tag} size="xs" /> : null}
     </Pressable>
   );
 }
@@ -354,18 +364,28 @@ const styles = StyleSheet.create((theme: Theme) => ({
     paddingVertical: theme.spacing[1],
   },
   item: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
+    justifyContent: "center",
     minHeight: 36,
     paddingHorizontal: theme.spacing[3],
     paddingVertical: theme.spacing[2],
+  },
+  itemMain: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  // Aligns with the label: the icon box plus the row gap.
+  itemDetail: {
+    marginLeft: ROW_ICON_BOX + theme.spacing[2],
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.sm,
   },
   itemActive: {
     backgroundColor: theme.colors.surface2,
   },
   itemIcon: {
-    width: 16,
+    width: ROW_ICON_BOX,
     alignItems: "center",
     justifyContent: "center",
   },

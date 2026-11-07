@@ -6668,6 +6668,7 @@ const AgentSlashCommandSchema = z.object({
   description: z.string(),
   argumentHint: z.string(),
   kind: z.enum(["command", "skill"]).optional().catch("command"),
+  sourcePath: z.string().optional(),
 });
 
 export const ListCommandsResponseSchema = z.object({

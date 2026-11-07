@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { mapOmpAvailableCommandsUpdate, mapOmpSlashCommands } from "./commands.js";
+import {
+  mapOmpAvailableCommandsUpdate,
+  mapOmpRuntimeSlashCommands,
+  mapOmpSlashCommands,
+} from "./commands.js";
 
 describe("OMP slash command mapper", () => {
   test("maps command updates and preserves input hints", () => {
@@ -57,6 +61,50 @@ describe("OMP slash command mapper", () => {
     expect(
       mapOmpAvailableCommandsUpdate({ type: "available_commands_update", commands: [{}] }),
     ).toBeNull();
+  });
+
+  test("reports the folder of a skill so same-named skills can be told apart", () => {
+    const commands = mapOmpRuntimeSlashCommands([
+      {
+        name: "skill:grill-with-docs",
+        source: "skill",
+        path: "/repo/.agents/skills/grill-with-docs/SKILL.md",
+      },
+      {
+        name: "skill:agents/grill-with-docs",
+        source: "skill",
+        path: "/home/k/.agents/skills/grill-with-docs/SKILL.md",
+      },
+    ]);
+
+    expect(commands.filter((command) => command.kind === "skill")).toEqual([
+      {
+        name: "skill:grill-with-docs",
+        description: "skill",
+        argumentHint: "",
+        kind: "skill",
+        sourcePath: "/repo/.agents/skills/grill-with-docs",
+      },
+      {
+        name: "skill:agents/grill-with-docs",
+        description: "skill",
+        argumentHint: "",
+        kind: "skill",
+        sourcePath: "/home/k/.agents/skills/grill-with-docs",
+      },
+    ]);
+  });
+
+  test("leaves sourcePath unset for older OMP builds and for non-skill commands", () => {
+    const commands = mapOmpSlashCommands([
+      { name: "skill:legacy", source: "skill" },
+      { name: "custom", source: "custom", path: "/repo/.omp/commands/custom.md" },
+    ]);
+
+    expect(commands.find((command) => command.name === "skill:legacy")).not.toHaveProperty(
+      "sourcePath",
+    );
+    expect(commands.find((command) => command.name === "custom")).not.toHaveProperty("sourcePath");
   });
 
   test("adds OMP-only out-of-band commands to handled built-ins", () => {

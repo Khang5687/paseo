@@ -17,6 +17,7 @@ import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { pluginDisplayName, usePluginList } from "@/plugins/plugin-list";
 import { resolveProviderLabel } from "@/utils/provider-definitions";
+import { shortenPath } from "@/utils/shorten-path";
 import { CLIENT_SLASH_COMMANDS, type ClientSlashCommand } from "@/client-slash-commands";
 import type { PluginClientSlashCommand } from "@/plugins/client-slash-commands";
 import { mergeSlashCommandSources } from "@/plugins/client-slash-commands/model";
@@ -217,6 +218,7 @@ function mapCommandToOption(
     icon: isSkill ? "skill" : "command",
     description: entry.command.description,
     tag: isSkill ? context.t("agentAutocomplete.skillTag") : undefined,
+    detail: isSkill && entry.command.sourcePath ? shortenPath(entry.command.sourcePath) : undefined,
   };
 }
 

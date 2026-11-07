@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { AgentSlashCommand, AgentSlashCommandKind } from "../../agent-sdk-types.js";
 import type { OmpRpcSlashCommand } from "./rpc-types.js";
 import { OmpAvailableCommandsUpdateEventSchema, type OmpAvailableCommand } from "./rpc-types.js";
@@ -46,6 +47,9 @@ export function mapOmpSlashCommands(commands: readonly OmpAvailableCommand[]): A
       description: command.description ?? command.source ?? "command",
       argumentHint: command.input?.hint ?? knownCommand?.argumentHint ?? "",
       kind: mapOmpCommandKind(command.source),
+      ...(command.source === "skill" && command.path
+        ? { sourcePath: path.dirname(command.path) }
+        : {}),
     });
   }
   return [...mappedCommands.values()];
@@ -59,6 +63,7 @@ export function mapOmpRuntimeSlashCommands(
       name: command.name,
       ...(command.description ? { description: command.description } : {}),
       source: command.source,
+      ...(command.path ? { path: command.path } : {}),
       ...(command.input ? { input: command.input } : {}),
     })),
   );

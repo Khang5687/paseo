@@ -189,6 +189,7 @@ export const OmpRpcSlashCommandSchema = z
     name: z.string(),
     description: z.string().optional(),
     source: z.string().optional(),
+    path: z.string().optional(),
     sourceInfo: z.record(z.string(), z.unknown()).optional(),
     input: z.object({ hint: z.string().optional() }).passthrough().nullable().optional(),
   })
@@ -456,6 +457,7 @@ export const OmpAvailableCommandSchema = z
     name: z.string(),
     description: z.string().optional(),
     source: z.string().optional(),
+    path: z.string().optional(),
     input: z.object({ hint: z.string().optional() }).passthrough().nullable().optional(),
   })
   .passthrough();

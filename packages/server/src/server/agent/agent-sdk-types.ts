@@ -548,6 +548,8 @@ export interface AgentSlashCommand {
   description: string;
   argumentHint: string;
   kind?: AgentSlashCommandKind;
+  /** Folder the command loads from, as an absolute path on the daemon host. Set for skills when the provider reports one. */
+  sourcePath?: string;
 }
 
 export interface ListImportableSessionsOptions {
