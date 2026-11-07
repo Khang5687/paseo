@@ -55,6 +55,8 @@ started finishes. Re-enabling keeps the existing idle timestamps.
 Foreground runs, permissions and responses, queued deliveries, lifecycle operations, and working
 managed or native descendants prevent collection. Outstanding local or remote finish subscriptions
 also protect their caller, including registration, recovery and notification dispatch acknowledgment.
+A pending subscription to an unreachable host keeps the parent's runtime from idle cleanup until the
+host answers, the host is removed, or the parent is archived.
 An idle managed child can still own background work.
 
 The daemon baseline always applies. An optional provider `canStopRuntime()` adds a veto: false,

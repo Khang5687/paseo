@@ -50,13 +50,15 @@ the destination workspace keeps its existing disconnected or reconnecting behavi
 Finish notifications name the destination server and child agent. The caller's daemon owns durable
 subscription intent and restores observation through the same routed wait and permission observation
 used during ordinary operation. Restarting the caller's daemon does not imply that a remote child
-stopped. Three failed remote observation attempts end the subscription with a notification that the
-child could not be observed and its status is unknown. This does not prove the host is offline: remote
-RPC failures also prevent observation. Attempts use capped backoff; a connection still
-in progress does not spend that budget. A confirmed removed registration reports host unavailability
-immediately through the same path. Neither notice claims the child finished. Intent remains stored
-until the parent accepts dispatch, then is consumed; reconnecting does not restore that watch. The
-parent decides whether to inspect the child or delegate again.
+stopped. An unreachable host never ends the subscription, and neither does a failing remote RPC
+(the origin cannot tell those apart from an offline host): the observation reopens with backoff
+capped at 60 s until the host answers, then reports the child's real outcome, including a finish
+that happened while the host was away. A connection still in progress is retried the same way. Only
+a confirmed removed registration ends the subscription, with a notice that host availability and
+the child's status are unknown; that notice never claims the child finished. Archiving the parent
+also ends it. Intent remains stored until the parent accepts dispatch, then is consumed;
+reconnecting does not restore a consumed watch. The parent decides whether to inspect the child or
+delegate again.
 
 A definitely unsent prompt returns a tool error and creates no notification. An ambiguous prompt
 response retains intent because the destination may have admitted it; observation then follows the
