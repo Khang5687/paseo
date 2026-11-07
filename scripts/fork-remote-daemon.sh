@@ -162,6 +162,22 @@ wait_until_serving() {
   return 1
 }
 
+# `daemon stop` returns once the daemon accepts the request, a moment before systemd marks the unit
+# inactive. `systemctl start` on a unit that is still active does nothing and succeeds, so a start
+# sent in that moment is lost and the daemon stays down (the Omen on 2026-11-08: the worker exited at
+# .367, the start ran in the same second, the unit went inactive at .567 and nothing started it).
+# Returns 1 when the unit is still up after 30 s. "activating" counts as stopped: that is systemd
+# restarting the unit itself after a failure.
+wait_until_stopped() {
+  local state
+  for _ in $(seq 1 100); do
+    state="$(systemctl --user show -p ActiveState --value paseo.service)"
+    [[ $state == active || $state == deactivating || $state == reloading ]] || return 0
+    sleep 0.3
+  done
+  return 1
+}
+
 # Stops the running daemon keeping its terminals, then starts the unit with what the drop-in
 # (or its absence) now points at.
 restart_daemon() {
@@ -173,6 +189,9 @@ restart_daemon() {
     say "stopping daemon pid $before (terminals stay)"
     if ! "$stop_cli" daemon stop --keep-terminals --json >/dev/null 2>&1; then
       say "stop with --keep-terminals failed; restarting the unit (this closes terminals)"
+      systemctl --user restart paseo.service
+    elif ! wait_until_stopped; then
+      say "paseo.service still up 30s after the stop; restarting the unit (this closes terminals)"
       systemctl --user restart paseo.service
     fi
   fi
