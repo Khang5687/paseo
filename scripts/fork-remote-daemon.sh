@@ -9,6 +9,7 @@
 #   scripts/fork-remote-daemon.sh <ssh-host> rollback [--now]     switch back to the previous build
 #   scripts/fork-remote-daemon.sh <ssh-host> npm [--now]          drop the fork, run the host's npm daemon again
 #   scripts/fork-remote-daemon.sh <ssh-host> status               builds, running daemon, waiting switch
+#   scripts/fork-remote-daemon.sh <ssh-host> nightly on|off       at 04:00, switch to a waiting build
 #
 # restart, rollback and npm never interrupt working agents: they return at once and leave a waiter
 # on the host that switches the daemon once nothing is working (no agent running or initializing,
@@ -17,6 +18,11 @@
 # newer request replaces a waiting one. --now switches immediately; restart recovery resumes the
 # agents it interrupts. Every switch runs detached from the SSH session (--now follows its log),
 # so a dropped connection cannot stop it halfway.
+#
+# nightly on installs a systemd user timer (paseo-fork-nightly.timer) that, at 04:00 host time,
+# starts the same waiting switch as restart when a build waits (next differs from current) and no
+# switch is queued yet. Nothing happens when no build waits or the host runs its npm daemon. The
+# waiter runs inside the timer's own service, so it never sits in paseo.service's control group.
 #
 # A switch stops the daemon with --keep-terminals and starts the unit again, so terminals survive
 # (the drop-in sets KillMode=process: systemd would otherwise kill the terminal worker with the
@@ -35,7 +41,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <ssh-host> build | status | restart [--now] | rollback [--now] | npm [--now]" >&2
+  echo "usage: $0 <ssh-host> build | status | restart [--now] | rollback [--now] | npm [--now] | nightly on|off" >&2
   exit 2
 }
 
@@ -46,6 +52,7 @@ now="${3:-}"
 case "$action" in
   build | status) [[ -z $now ]] || usage ;;
   restart | rollback | npm) [[ -z $now || $now == "--now" ]] || usage ;;
+  nightly) [[ $now == on || $now == off ]] || usage ;;
   *) usage ;;
 esac
 
@@ -391,6 +398,56 @@ case "$action" in
     ;;
   wait-restart | wait-rollback | wait-npm)
     wait_then_switch "${action#wait-}"
+    ;;
+  nightly)
+    user_units="$HOME/.config/systemd/user"
+    if [[ $now == on ]]; then
+      mkdir -p "$user_units"
+      # Oneshot with no start timeout: the waiter runs in this service until nothing is working.
+      # 143 is a newer restart request replacing this waiter (take_lock sends TERM).
+      cat >"$user_units/paseo-fork-nightly.service" <<'UNIT'
+# Written by the Paseo fork's scripts/fork-remote-daemon.sh ("nightly off" removes it).
+[Unit]
+Description=Paseo fork: switch to a waiting build once nothing is working
+[Service]
+Type=oneshot
+TimeoutStartSec=infinity
+SuccessExitStatus=143
+ExecStart=/bin/bash -l %h/paseo-fork/bin/fork-remote-daemon-host.sh nightly-check - - -
+StandardOutput=append:%h/paseo-fork/swap.log
+StandardError=append:%h/paseo-fork/swap.log
+UNIT
+      cat >"$user_units/paseo-fork-nightly.timer" <<'UNIT'
+# Written by the Paseo fork's scripts/fork-remote-daemon.sh ("nightly off" removes it).
+[Unit]
+Description=Paseo fork: nightly switch to a waiting build at 04:00
+[Timer]
+OnCalendar=*-*-* 04:00:00
+[Install]
+WantedBy=timers.target
+UNIT
+      systemctl --user daemon-reload
+      systemctl --user enable --now paseo-fork-nightly.timer
+      say "nightly switch on; next: $(systemctl --user show -p NextElapseUSecRealtime --value paseo-fork-nightly.timer)"
+    else
+      systemctl --user disable --now paseo-fork-nightly.timer 2>/dev/null || true
+      rm -f "$user_units/paseo-fork-nightly.service" "$user_units/paseo-fork-nightly.timer"
+      systemctl --user daemon-reload
+      say "nightly switch off"
+    fi
+    ;;
+  nightly-check)
+    next="$(readlink "$root/next" 2>/dev/null || true)"
+    if [[ ! -f $dropin ]]; then
+      say "nightly: the npm daemon runs here; nothing to switch"
+    elif [[ -z $next || $next == "$(readlink "$root/current" 2>/dev/null)" ]]; then
+      say "nightly: no build waiting"
+    elif [[ -n "$(lock_holder)" ]]; then
+      say "nightly: a switch already waits (pid $(lock_holder))"
+    else
+      say "nightly: $(basename "$next") waits"
+      wait_then_switch restart
+    fi
     ;;
 esac
 )
