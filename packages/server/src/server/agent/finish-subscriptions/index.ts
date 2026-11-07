@@ -237,11 +237,13 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
     let acknowledged = false;
     let retries = 0;
     let warned = false;
+    let unreachableWarned = false;
     async function observeNext(): Promise<FinishObservationResult | undefined> {
       try {
         observation ??= await deps.open(record, signal);
         const result = await abortable(observation.next(), signal);
         retries = 0;
+        unreachableWarned = false;
         return result;
       } catch (error) {
         await observation?.close();
@@ -251,7 +253,16 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
         if (error.reason === "connecting") return undefined;
         // A host that cannot be reached is not an outcome: the durable intent stays and the
         // observation reopens until the host answers. Only removal ends the subscription.
-        if (error.reason !== "removed") return undefined;
+        if (error.reason !== "removed") {
+          if (!unreachableWarned) {
+            deps.logger.warn(
+              { err: error, serverId: record.serverId, childAgentId: record.childAgentId },
+              "Finish subscription cannot observe host; retrying",
+            );
+            unreachableWarned = true;
+          }
+          return undefined;
+        }
         return {
           status: "error",
           final: null,
