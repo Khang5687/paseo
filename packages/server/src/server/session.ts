@@ -91,6 +91,8 @@ import {
 import type { DaemonConfigStore } from "./daemon-config-store.js";
 import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { getErrorMessage, getErrorMessageOr } from "@getpaseo/protocol/error-utils";
+import { searchAgents } from "./agent/agent-search.js";
+import { expandUserPath } from "./path-utils.js";
 import { getAgentStatusPriority } from "@getpaseo/protocol/agent-state-bucket";
 import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
 import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
@@ -2954,6 +2956,10 @@ export class Session {
         return this.handleDetachAgentRequest(msg.agentId, msg.requestId);
       case "agent.unarchive.request":
         return this.handleUnarchiveAgentRequest(msg.agentId, msg.requestId);
+      case "agent.close.request":
+        return this.handleCloseAgentRequest(msg.agentId, msg.requestId);
+      case "agent.search.request":
+        return this.handleSearchAgentsRequest(msg);
       default:
         return undefined;
     }
@@ -3829,6 +3835,74 @@ export class Session {
       this.emit({
         type: "agent.unarchive.response",
         payload: { requestId, agentId, accepted: false, error: message },
+      });
+    }
+  }
+
+  private async handleCloseAgentRequest(agentId: string, requestId: string): Promise<void> {
+    this.sessionLogger.info({ agentId, requestId }, "Closing agent session");
+    try {
+      await closeAgentCommand({ agentManager: this.agentManager }, agentId);
+      this.emit({
+        type: "agent.close.response",
+        payload: { requestId, agentId, accepted: true, error: null },
+      });
+    } catch (error) {
+      const message = getErrorMessageOr(error, "Failed to close agent");
+      this.sessionLogger.error({ err: error, agentId, requestId }, "Failed to close agent");
+      this.emit({
+        type: "agent.close.response",
+        payload: { requestId, agentId, accepted: false, error: message },
+      });
+    }
+  }
+
+  private async handleSearchAgentsRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.search.request" }>,
+  ): Promise<void> {
+    try {
+      const registeredProviderIds = new Set(
+        this.providerSnapshotManager.listRegisteredProviderIds(),
+      );
+      const cwd = msg.cwd?.trim();
+      const result = await searchAgents(
+        {
+          manager: this.agentManager,
+          storage: this.agentStorage,
+          projectLive: (agent) => this.buildAgentPayload(agent),
+          projectStored: (record) => this.buildStoredAgentPayload(record, registeredProviderIds),
+        },
+        {
+          query: msg.query,
+          includeArchived: msg.includeArchived ?? true,
+          ...(cwd ? { cwd: expandUserPath(cwd) } : {}),
+          ...(msg.workspaceId ? { workspaceId: msg.workspaceId } : {}),
+          ...(msg.provider ? { provider: msg.provider } : {}),
+          ...(msg.sinceHours !== undefined ? { sinceHours: msg.sinceHours } : {}),
+          limit: Math.max(1, Math.min(Math.trunc(msg.limit ?? 10), 50)),
+        },
+      );
+      this.emit({
+        type: "agent.search.response",
+        payload: {
+          requestId: msg.requestId,
+          accepted: true,
+          error: null,
+          matches: result.matches.map(({ agent, matchedFields, snippet }) => ({
+            agent,
+            matchedFields,
+            snippet,
+          })),
+          scanned: result.scanned,
+          truncated: result.truncated,
+        },
+      });
+    } catch (error) {
+      const message = getErrorMessageOr(error, "Failed to search agents");
+      this.sessionLogger.error({ err: error, requestId: msg.requestId }, "Failed to search agents");
+      this.emit({
+        type: "agent.search.response",
+        payload: { requestId: msg.requestId, accepted: false, error: message },
       });
     }
   }

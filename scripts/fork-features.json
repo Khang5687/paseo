@@ -888,5 +888,18 @@
     "title": "feat(fork): nightly switch of a remote daemon to a waiting build at 04:00",
     "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; nightly-check decisions checked with a fake HOME/systemctl/CLI harness (PR body)",
     "tests": []
+  },
+  {
+    "pr": 115,
+    "title": "fix(server): keep finish subscriptions through a host outage",
+    "tests": [
+      "packages/server/src/server/agent/finish-subscriptions/finish-subscriptions.test.ts",
+      "packages/server/src/server/agent/finish-subscriptions/internal/observation-stream.test.ts"
+    ]
+  },
+  {
+    "pr": 116,
+    "title": "feat(server): serverId on archive, cancel, kill, set mode, update and search agent tools",
+    "tests": ["packages/server/src/server/connected-hosts/hosts.e2e.test.ts"]
   }
 ]

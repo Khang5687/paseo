@@ -205,7 +205,7 @@ test("shutdown before dispatch acknowledgment leaves intent for recovery", async
   await until(() => restarted.delivery.prompts.length === 1);
 });
 
-test("remote recovery before three failed observations still reports child completion", async () => {
+test("remote recovery after an unreachable observation still reports child completion", async () => {
   const first = await scenario();
   await first.service.register({ ...intent, serverId: "remote" });
   await first.service.close();
@@ -326,31 +326,46 @@ test("finish notification limits a long last response and points to activity for
   expect(state.delivery.prompts[0]).toContain("get_agent_activity");
 });
 
-test("three failed remote observations consume intent only after unavailable-notification acknowledgment", async () => {
+test("an unreachable host is not an outcome: many failed observations still deliver the child's finish", async () => {
   const state = await scenario();
   await state.service.register({ ...intent, serverId: "remote" });
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const attempts = 20;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     await until(() => state.observation.waits.length === attempt + 1);
     expect(state.delivery.prompts).toEqual([]);
     state.observation.waits[attempt]!.result.reject(new HostObservationError("unreachable"));
   }
-  await until(() => state.delivery.prompts.length === 1);
-  expect(state.delivery.prompts[0]).toContain(
-    "Could not observe child agent child on host remote after three failed attempts.",
-  );
-  expect(state.delivery.prompts[0]).toContain("Status of child agent child (child) is unknown.");
-  expect(state.delivery.prompts[0]).not.toContain("finished.");
+  await until(() => state.observation.waits.length === attempts + 1);
+  expect(state.delivery.prompts).toEqual([]);
   expect(await state.store.list()).toHaveLength(1);
-  expect(state.observation.waits).toHaveLength(3);
+  // The child finished while the host was away; the reopened observation reports it.
+  state.observation.waits[attempts]!.result.resolve(outcome("idle"));
+  await until(() => state.delivery.prompts.length === 1);
+  expect(state.delivery.prompts[0]).toContain("finished.");
+  expect(state.delivery.prompts[0]).toContain("Server: remote");
+  expect(state.delivery.prompts[0]).not.toContain("Could not observe");
   state.delivery.acknowledgments[0]!.resolve("steered");
   await expect.poll(async () => (await state.store.list()).length).toBe(0);
-  await state.service.close();
-  const restarted = await scenario(state.home);
-  expect(restarted.observation.waits).toEqual([]);
-  expect(restarted.delivery.prompts).toEqual([]);
 });
 
-test("connecting does not spend the remote failure budget and recovery before three failures still completes", async () => {
+test("a watcher restarted during a long host outage resumes and delivers the finish", async () => {
+  const first = await scenario();
+  await first.service.register({ ...intent, serverId: "remote" });
+  await until(() => first.observation.waits.length === 1);
+  first.observation.waits[0]!.result.reject(new HostObservationError("unreachable"));
+  await first.service.close();
+  const state = await scenario(first.home);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await until(() => state.observation.waits.length === attempt + 1);
+    state.observation.waits[attempt]!.result.reject(new HostObservationError("unreachable"));
+  }
+  await until(() => state.observation.waits.length === 11);
+  state.observation.waits[10]!.result.resolve(outcome("idle"));
+  await until(() => state.delivery.prompts.length === 1);
+  expect(state.delivery.prompts[0]).toContain("finished.");
+});
+
+test("connecting and unreachable observations retry without ending the subscription", async () => {
   const state = await scenario();
   await state.service.register({ ...intent, serverId: "remote" });
   for (let attempt = 0; attempt < 4; attempt++) {

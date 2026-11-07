@@ -4137,6 +4137,36 @@ export class DaemonClient {
     }
   }
 
+  /** Ends the agent's session without archiving or deleting it. Requires `server_info.features.agentCloseSearch`. */
+  async closeAgent(agentId: string): Promise<void> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.close.response">({
+      message: { type: "agent.close.request", agentId },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "closeAgent rejected");
+    }
+  }
+
+  /** Requires `server_info.features.agentCloseSearch`. */
+  async searchAgents(
+    input: Omit<
+      Extract<SessionInboundMessage, { type: "agent.search.request" }>,
+      "type" | "requestId"
+    >,
+  ) {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.search.response">({
+      message: { type: "agent.search.request", ...input },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "searchAgents rejected");
+    }
+    return {
+      matches: payload.matches ?? [],
+      scanned: payload.scanned ?? 0,
+      truncated: payload.truncated ?? false,
+    };
+  }
+
   /** Requires `server_info.features.agentUnarchive`. */
   async unarchiveAgent(agentId: string): Promise<{
     wasArchived: boolean;
