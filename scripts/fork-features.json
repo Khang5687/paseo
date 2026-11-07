@@ -901,5 +901,15 @@
     "pr": 116,
     "title": "feat(server): serverId on archive, cancel, kill, set mode, update and search agent tools",
     "tests": ["packages/server/src/server/connected-hosts/hosts.e2e.test.ts"]
+  },
+  {
+    "pr": 117,
+    "title": "feat(omp): read-only mode that runs read-only shell commands without asking",
+    "tests": [
+      "packages/server/src/server/agent/read-only-shell-command.test.ts",
+      "packages/server/src/server/agent/providers/omp/rpc-ui-permission-mapper.test.ts",
+      "packages/server/src/server/agent/providers/omp/agent.test.ts",
+      "packages/server/src/server/agent/mcp-server.test.ts"
+    ]
   }
 ]
