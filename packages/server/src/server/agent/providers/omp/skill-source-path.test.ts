@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -90,6 +90,28 @@ describe("attachOmpSkillSourcePaths", () => {
     writeSkill(path.join(home, ".agents", "skills"), "twin", "Identical");
 
     const [command] = await resolve([skillCommand("skill:twin", "Identical")]);
+
+    expect(command?.sourcePath).toBeUndefined();
+  });
+
+  test("collapses a symlinked duplicate and shows the first root in scan order", async () => {
+    const target = writeSkill(path.join(tmp, "shared"), "linked", "Shared skill");
+    const agentsDir = path.join(home, ".agents", "skills", "linked");
+    mkdirSync(agentsDir, { recursive: true });
+    symlinkSync(path.join(target, "SKILL.md"), path.join(agentsDir, "SKILL.md"));
+    mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
+    symlinkSync(target, path.join(home, ".claude", "skills", "linked"));
+
+    const [command] = await resolve([skillCommand("skill:linked", "Shared skill")]);
+
+    expect(command?.sourcePath).toBe(agentsDir);
+  });
+
+  test("keeps two real copies with the same description ambiguous", async () => {
+    writeSkill(path.join(home, ".agents", "skills"), "copy", "Same");
+    writeSkill(path.join(home, ".claude", "skills"), "copy", "Same");
+
+    const [command] = await resolve([skillCommand("skill:copy", "Same")]);
 
     expect(command?.sourcePath).toBeUndefined();
   });

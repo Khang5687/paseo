@@ -868,5 +868,13 @@
       "packages/server/src/server/agent/host-operations/index.test.ts",
       "packages/protocol/src/messages.agent-ask-threads.test.ts"
     ]
+  },
+  {
+    "pr": 112,
+    "title": "feat(omp): show the source folder of skills in the slash-command picker",
+    "tests": [
+      "packages/server/src/server/agent/providers/omp/skill-source-path.test.ts",
+      "packages/protocol/src/messages.list-commands.test.ts"
+    ]
   }
 ]

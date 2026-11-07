@@ -195,7 +195,15 @@ export async function attachOmpSkillSourcePaths(
         }
         return (description || `Run ${parsed.name} skill`) === wanted;
       });
-      const only = matches.length === 1 ? matches[0] : undefined;
+      // One file reached through several roots (a symlinked copy) is one skill; the first
+      // root in scan order is the one shown.
+      const realPaths = await Promise.all(
+        matches.map((match) => fs.realpath(path.join(match.dir, "SKILL.md")).catch(() => null)),
+      );
+      const distinct = matches.filter(
+        (_, index) => realPaths[index] === null || realPaths.indexOf(realPaths[index]) === index,
+      );
+      const only = distinct.length === 1 ? distinct[0] : undefined;
       if (only) {
         resolved.set(command.name, only.dir);
       }
