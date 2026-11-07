@@ -571,6 +571,8 @@ export interface AgentSlashCommand {
   kind?: AgentSlashCommandKind;
   aliases?: string[];
   subcommands?: AgentSlashCommandSubcommand[];
+  /** Folder an OMP skill loads from, set only when it can be told apart without doubt. */
+  sourcePath?: string;
 }
 
 export interface ListImportableSessionsOptions {

@@ -118,6 +118,7 @@ import {
   type OmpToolResult,
   type OmpTrackedToolCall,
 } from "./tool-call-detail.js";
+import { attachOmpSkillSourcePaths } from "./skill-source-path.js";
 import {
   mapOmpAvailableCommandsUpdate,
   mapOmpSlashCommands,
@@ -1402,11 +1403,38 @@ export class OmpAgentSession implements AgentSession {
   private async refreshCommandCache(): Promise<AgentSlashCommand[]> {
     this.lastCommandRefreshAt = Date.now();
     try {
-      this.commandCache = mapOmpSlashCommands(await this.runtimeSession.refreshCommands());
+      this.commandCache = await this.withSkillSourcePaths(
+        mapOmpSlashCommands(await this.runtimeSession.refreshCommands()),
+      );
       return this.commandCache;
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to refresh OMP slash commands; using cached list");
-      return this.commandCache ?? mapOmpSlashCommands(await this.runtimeSession.getCommands());
+      return (
+        this.commandCache ??
+        (await this.withSkillSourcePaths(
+          mapOmpSlashCommands(await this.runtimeSession.getCommands()),
+        ))
+      );
+    }
+  }
+
+  /** Skill folders are best effort: any failure leaves the list without them. */
+  private async withSkillSourcePaths(commands: AgentSlashCommand[]): Promise<AgentSlashCommand[]> {
+    try {
+      return await attachOmpSkillSourcePaths(commands, {
+        cwd: this.config.cwd,
+        home: homedir(),
+      });
+    } catch (error) {
+      this.logger.debug({ err: error }, "Failed to resolve OMP skill source paths");
+      return commands;
+    }
+  }
+
+  private async enrichCommandCacheWithSkillPaths(commands: AgentSlashCommand[]): Promise<void> {
+    const enriched = await this.withSkillSourcePaths(commands);
+    if (this.commandCache === commands) {
+      this.commandCache = enriched;
     }
   }
 
@@ -1968,6 +1996,7 @@ export class OmpAgentSession implements AgentSession {
       const commands = mapOmpAvailableCommandsUpdate(event);
       if (commands) {
         this.commandCache = commands;
+        void this.enrichCommandCacheWithSkillPaths(commands);
       } else {
         this.logger.debug({ event }, "Dropped malformed OMP command update event");
       }

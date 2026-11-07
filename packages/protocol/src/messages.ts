@@ -7405,6 +7405,7 @@ const AgentSlashCommandSchema = z.object({
   aliases: z.array(z.string()).optional(),
   // Fixed choices for the first argument, e.g. `/compact soft|remote|snapcompact`.
   subcommands: z.array(AgentSlashCommandSubcommandSchema).optional(),
+  sourcePath: z.string().optional(),
 });
 
 export const ListCommandsResponseSchema = z.object({
