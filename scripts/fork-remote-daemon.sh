@@ -231,6 +231,11 @@ on_exit() {
 
 switch() {
   case "$1" in
+    nightly)
+      # The nightly waiter may wait for hours; the drop-in can be deleted by hand meanwhile.
+      [[ -f $dropin ]] || { say "nightly: the npm daemon runs here now; not switching"; return 0; }
+      switch restart
+      ;;
     restart)
       [[ -L $root/next ]] || { say "nothing built yet; run the build action first"; exit 1; }
       if [[ "$(readlink "$root/current" 2>/dev/null)" == "$(readlink "$root/next")" && -f $dropin ]]; then
@@ -414,7 +419,9 @@ case "$action" in
     if [[ $now == on ]]; then
       mkdir -p "$user_units"
       # Oneshot with no start timeout: the waiter runs in this service until nothing is working.
-      # 143 is a newer restart request replacing this waiter (take_lock sends TERM).
+      # 143 is a newer restart request replacing this waiter (take_lock sends TERM). KillMode=process:
+      # a stop of this service must not kill a switch halfway (the switch ignores TERM; a SIGKILL
+      # after the stop timeout would skip the exit guard that starts the daemon again).
       cat >"$user_units/paseo-fork-nightly.service" <<'UNIT'
 # Written by the Paseo fork's scripts/fork-remote-daemon.sh ("nightly off" removes it).
 [Unit]
@@ -423,6 +430,7 @@ Description=Paseo fork: switch to a waiting build once nothing is working
 Type=oneshot
 TimeoutStartSec=infinity
 SuccessExitStatus=143
+KillMode=process
 ExecStart=/bin/bash -l %h/paseo-fork/bin/fork-remote-daemon-host.sh nightly-check - - -
 StandardOutput=append:%h/paseo-fork/swap.log
 StandardError=append:%h/paseo-fork/swap.log
@@ -441,6 +449,13 @@ UNIT
       say "nightly switch on; next: $(systemctl --user show -p NextElapseUSecRealtime --value paseo-fork-nightly.timer)"
     else
       systemctl --user disable --now paseo-fork-nightly.timer 2>/dev/null || true
+      # A waiter from an earlier night keeps waiting after its unit is gone; TERM stops a waiting
+      # one, and one in the middle of a switch ignores it and finishes.
+      pid="$(lock_holder)"
+      if [[ -n $pid ]] && grep -q paseo-fork-nightly.service "/proc/$pid/cgroup" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        say "stopped the waiting nightly switch (pid $pid)"
+      fi
       rm -f "$user_units/paseo-fork-nightly.service" "$user_units/paseo-fork-nightly.timer"
       systemctl --user daemon-reload
       say "nightly switch off"
@@ -456,7 +471,7 @@ UNIT
       say "nightly: a switch already waits (pid $(lock_holder))"
     else
       say "nightly: $(basename "$next") waits"
-      wait_then_switch restart
+      wait_then_switch nightly
     fi
     ;;
 esac
