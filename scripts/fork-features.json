@@ -2,9 +2,7 @@
   {
     "pr": 1,
     "title": "fix(omp): settle /compact when OMP replies without compaction events",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/agent.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 2,
@@ -56,9 +54,7 @@
   {
     "pr": 6,
     "title": "fix(omp): report context usage when a session is resumed",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/agent.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 7,
@@ -89,9 +85,7 @@
   {
     "pr": 10,
     "title": "fix(app): show newly installed skills in the / menu without restarting",
-    "tests": [
-      "packages/server/src/server/agent/agent-manager.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/agent-manager.test.ts"]
   },
   {
     "pr": 11,
@@ -104,12 +98,8 @@
   {
     "pr": 12,
     "title": "feat(sidebar): mark workspaces holding an unsent prompt",
-    "tests": [
-      "packages/app/src/stores/workspace-unsent-draft.test.ts"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/sidebar-unsent-prompt.spec.ts"
-    ]
+    "tests": ["packages/app/src/stores/workspace-unsent-draft.test.ts"],
+    "e2e": ["packages/app/e2e/browser/sidebar-unsent-prompt.spec.ts"]
   },
   {
     "pr": 13,
@@ -130,9 +120,7 @@
       "packages/app/src/skins/contrast.test.ts",
       "packages/app/src/skins/image-limits.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/skins.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 14,
@@ -146,29 +134,19 @@
   {
     "pr": 15,
     "title": "feat(app): right-click menu for file paths in agent replies",
-    "tests": [
-      "packages/app/src/assistant-file-links/use-file-link.test.tsx"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/assistant-file-link-menu.spec.ts"
-    ]
+    "tests": ["packages/app/src/assistant-file-links/use-file-link.test.tsx"],
+    "e2e": ["packages/app/e2e/browser/assistant-file-link-menu.spec.ts"]
   },
   {
     "pr": 16,
     "title": "fix(omp): keep /goal running across turns like OMP's own /goal",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/agent.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 17,
     "title": "fix(app): keep skin art visible in light themes",
-    "tests": [
-      "packages/app/src/skins/contrast.test.ts"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/skins.spec.ts"
-    ]
+    "tests": ["packages/app/src/skins/contrast.test.ts"],
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 18,
@@ -184,9 +162,7 @@
       "packages/server/src/server/agent/providers/pi/extensions/rpiv-ask-user-question/index.test.ts",
       "plugins/muse-provider/test/provider.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/question-card.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/question-card.spec.ts"]
   },
   {
     "pr": 20,
@@ -196,9 +172,7 @@
       "packages/app/src/components/sidebar/workspace-nesting.test.ts",
       "packages/app/src/subagents/workspace-parents.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/subagent-workspace-nesting.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/subagent-workspace-nesting.spec.ts"]
   },
   {
     "pr": 21,
@@ -226,9 +200,7 @@
       "packages/app/src/stores/draft-keys.test.ts",
       "packages/app/src/stores/draft-store/migration.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/new-workspace-composer-draft.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/new-workspace-composer-draft.spec.ts"]
   },
   {
     "pr": 28,
@@ -239,16 +211,12 @@
       "packages/server/src/server/agent/providers/claude/agent.test.ts",
       "packages/server/src/server/agent/providers/omp/agent.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/output-style.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/output-style.spec.ts"]
   },
   {
     "pr": 30,
     "title": "feat(cli): look up timeline rows by seq in paseo logs",
-    "tests": [
-      "packages/cli/src/commands/agent/logs-seq.test.ts"
-    ]
+    "tests": ["packages/cli/src/commands/agent/logs-seq.test.ts"]
   },
   {
     "pr": 32,
@@ -264,17 +232,12 @@
   {
     "pr": 33,
     "title": "feat(app): add ompAccountRouting copy in all locales",
-    "tests": [
-      "packages/app/src/i18n/resources.test.ts"
-    ]
+    "tests": ["packages/app/src/i18n/resources.test.ts"]
   },
   {
     "pr": 34,
     "title": "feat(client): OMP account-routing mutations and owned observations",
-    "tests": [
-      "packages/client/src/daemon-client.test.ts",
-      "packages/client/src/index.test.ts"
-    ]
+    "tests": ["packages/client/src/daemon-client.test.ts", "packages/client/src/index.test.ts"]
   },
   {
     "pr": 35,
@@ -297,16 +260,12 @@
     "pr": 37,
     "title": "fix(app): keep model toggles aligned in the provider sheet",
     "tests": [],
-    "e2e": [
-      "packages/app/e2e/browser/provider-model-toggles.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/provider-model-toggles.spec.ts"]
   },
   {
     "pr": 38,
     "title": "feat(plugin): emit Claude routing metadata on usage reports",
-    "tests": [
-      "plugins/claude-usage-source/server/usage.test.ts"
-    ]
+    "tests": ["plugins/claude-usage-source/server/usage.test.ts"]
   },
   {
     "pr": 39,
@@ -337,9 +296,7 @@
   {
     "pr": 42,
     "title": "test(server): synthetic end-to-end acceptance for OMP global account routing",
-    "tests": [
-      "packages/server/src/server/account-routing/routing.acceptance.test.ts"
-    ]
+    "tests": ["packages/server/src/server/account-routing/routing.acceptance.test.ts"]
   },
   {
     "pr": 43,
@@ -349,26 +306,18 @@
       "packages/app/src/omp-account-routing/queries.test.ts",
       "packages/app/src/screens/settings/providers-section.test.tsx"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/settings-host-page.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 44,
     "title": "fix(omp): accept OMP's native billing shape in routing catalogs",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   },
   {
     "pr": 45,
     "title": "feat(app): make the OMP Claude account routing section readable",
-    "tests": [
-      "packages/app/src/omp-account-routing/presentation.test.ts"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/settings-host-page.spec.ts"
-    ]
+    "tests": ["packages/app/src/omp-account-routing/presentation.test.ts"],
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 46,
@@ -384,9 +333,7 @@
       "packages/server/src/server/authorization/index.test.ts",
       "packages/server/src/server/session/account-routing-session.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/settings-host-page.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 47,
@@ -398,9 +345,7 @@
       "packages/server/src/server/account-routing/routing.integration.test.ts",
       "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/settings-host-page.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 48,
@@ -440,9 +385,7 @@
       "packages/app/src/omp-account-routing/presentation.test.ts",
       "packages/app/src/omp-account-routing/queries.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/settings-host-page.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
   },
   {
     "pr": 51,
@@ -451,9 +394,7 @@
       "packages/app/src/components/question-form-card-core.test.ts",
       "packages/app/src/components/question-form-card.browser.test.tsx"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/question-card.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/question-card.spec.ts"]
   },
   {
     "pr": 52,
@@ -462,23 +403,17 @@
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/daemon-config-store.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/output-style.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/output-style.spec.ts"]
   },
   {
     "pr": 53,
     "title": "fix(omp): show newly installed skills in a running session on released OMP",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   },
   {
     "pr": 54,
     "title": "fix(omp): resolve the rewind entry ID when OMP's prompt echo has none",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/agent.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
   },
   {
     "pr": 55,
@@ -496,41 +431,29 @@
       "packages/server/src/server/session/agent-updates/agent-updates-service.test.ts",
       "packages/server/src/server/wire-compat.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/queue-controls.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/queue-controls.spec.ts"]
   },
   {
     "pr": 56,
     "title": "fix(app): keep skins visible after the Expo Router upgrade",
     "tests": [],
-    "e2e": [
-      "packages/app/e2e/browser/skins.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 57,
     "title": "fix(server): let relay clients read why their hello was refused",
-    "tests": [
-      "packages/server/src/server/websocket-server.relay-reconnect.test.ts"
-    ]
+    "tests": ["packages/server/src/server/websocket-server.relay-reconnect.test.ts"]
   },
   {
     "pr": 58,
     "title": "fix(queue): keep images on queued messages",
-    "tests": [
-      "packages/app/src/composer/daemon-queue.test.ts"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/queue-controls.spec.ts"
-    ]
+    "tests": ["packages/app/src/composer/daemon-queue.test.ts"],
+    "e2e": ["packages/app/e2e/browser/queue-controls.spec.ts"]
   },
   {
     "pr": 59,
     "title": "chore(fork): check every fork feature before and after upstream syncs",
-    "tests": [
-      "scripts/fork-lib.test.mjs"
-    ]
+    "tests": ["scripts/fork-lib.test.mjs"]
   },
   {
     "pr": 65,
@@ -607,9 +530,7 @@
       "packages/app/src/components/markdown/file-mentions.test.ts",
       "packages/app/src/assistant-file-links/resolver.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/assistant-file-mentions.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/assistant-file-mentions.spec.ts"]
   },
   {
     "pr": 70,
@@ -625,9 +546,7 @@
   {
     "pr": 71,
     "title": "fix(claude): a queued task notification's result no longer ends the next prompt's turn",
-    "tests": [
-      "packages/server/src/server/agent/providers/claude/agent.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/claude/agent.test.ts"]
   },
   {
     "pr": 72,
@@ -660,9 +579,7 @@
       "packages/app/src/code-run/command.test.ts",
       "packages/app/src/components/markdown/renderer.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/code-run.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
   },
   {
     "pr": 75,
@@ -671,9 +588,7 @@
       "packages/app/src/offline-files/store.test.ts",
       "packages/app/src/components/markdown/renderer.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/assistant-file-link-menu.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/assistant-file-link-menu.spec.ts"]
   },
   {
     "pr": 76,
@@ -725,9 +640,7 @@
   {
     "pr": 82,
     "title": "perf(fork): faster build it: one check, skip unchanged installs, incremental APK, parallel builds",
-    "tests": [
-      "scripts/fork-build-lib.test.mjs"
-    ]
+    "tests": ["scripts/fork-build-lib.test.mjs"]
   },
   {
     "pr": 83,
@@ -752,12 +665,8 @@
   {
     "pr": 84,
     "title": "fix(app): import skin images picked in the desktop dialog",
-    "tests": [
-      "packages/app/src/screens/settings/appearance/background/picked-image.test.ts"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/skins.spec.ts"
-    ]
+    "tests": ["packages/app/src/screens/settings/appearance/background/picked-image.test.ts"],
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 85,
@@ -766,33 +675,23 @@
       "packages/app/src/components/ui/slider-math.test.ts",
       "packages/app/src/skins/image-limits.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/skins.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
   },
   {
     "pr": 86,
     "title": "feat(server): agents can answer other agents' question boxes, across hosts",
-    "tests": [
-      "packages/server/src/server/agent/mcp-server.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/mcp-server.test.ts"]
   },
   {
     "pr": 88,
     "title": "fix(omp): don't block agent resume on the account-routing capability probe",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
   },
   {
     "pr": 89,
     "title": "fix(app): show the slash command menu while provider commands load",
-    "tests": [
-      "packages/app/src/components/ui/autocomplete-utils.test.ts"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/composer-autocomplete.spec.ts"
-    ]
+    "tests": ["packages/app/src/components/ui/autocomplete-utils.test.ts"],
+    "e2e": ["packages/app/e2e/browser/composer-autocomplete.spec.ts"]
   },
   {
     "pr": 90,
@@ -803,17 +702,13 @@
       "packages/protocol/src/messages.list-commands.test.ts",
       "packages/app/src/utils/agent-command-autocomplete.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/composer-autocomplete.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/composer-autocomplete.spec.ts"]
   },
   {
     "pr": 91,
     "title": "fix(app): anchor the context window hover card to its ring",
     "tests": [],
-    "e2e": [
-      "packages/app/e2e/browser/context-window-meter.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/context-window-meter.spec.ts"]
   },
   {
     "pr": 92,
@@ -827,17 +722,12 @@
   {
     "pr": 93,
     "title": "feat(app): show waiting and fired notes in chats, terminals and sidebar",
-    "tests": [
-      "packages/app/src/notes/model.test.ts",
-      "packages/app/src/notes/chat-badges.test.ts"
-    ]
+    "tests": ["packages/app/src/notes/model.test.ts", "packages/app/src/notes/chat-badges.test.ts"]
   },
   {
     "pr": 94,
     "title": "fix(omp): skip OMP metadata records when mapping history",
-    "tests": [
-      "packages/server/src/server/agent/providers/omp/history-mapper.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/providers/omp/history-mapper.test.ts"]
   },
   {
     "pr": 95,
@@ -885,9 +775,7 @@
     "pr": 26,
     "title": "feat(app): one-press archive button on sidebar workspace rows",
     "tests": [],
-    "e2e": [
-      "packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"]
   },
   {
     "pr": 99,
@@ -901,33 +789,23 @@
   {
     "pr": 100,
     "title": "feat(app): /fork slash command",
-    "tests": [
-      "packages/app/src/client-slash-commands/index.test.ts"
-    ]
+    "tests": ["packages/app/src/client-slash-commands/index.test.ts"]
   },
   {
     "pr": 101,
     "title": "feat(server): fork_agent MCP tool",
-    "tests": [
-      "packages/server/src/server/agent/fork-agent.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/fork-agent.test.ts"]
   },
   {
     "pr": 98,
     "title": "feat(app): copy agent ID from sidebar thread rows",
-    "tests": [
-      "packages/app/src/subagents/thread-children.test.ts"
-    ],
-    "e2e": [
-      "packages/app/e2e/browser/sidebar-workspace-copy-agent-id.spec.ts"
-    ]
+    "tests": ["packages/app/src/subagents/thread-children.test.ts"],
+    "e2e": ["packages/app/e2e/browser/sidebar-workspace-copy-agent-id.spec.ts"]
   },
   {
     "pr": 102,
     "title": "feat(app): confirm every archive; archive via menu on touch layouts",
-    "tests": [
-      "packages/app/src/utils/archive-confirm.test.ts"
-    ],
+    "tests": ["packages/app/src/utils/archive-confirm.test.ts"],
     "e2e": [
       "packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts",
       "packages/app/e2e/browser/sidebar-thread-child-archive.spec.ts"
@@ -956,16 +834,12 @@
       "packages/app/src/subagents/archive-finished.test.ts",
       "packages/app/src/utils/archive-confirm.test.ts"
     ],
-    "e2e": [
-      "packages/app/e2e/browser/sidebar-thread-children.spec.ts"
-    ]
+    "e2e": ["packages/app/e2e/browser/sidebar-thread-children.spec.ts"]
   },
   {
     "pr": 108,
     "title": "feat(server): detached create_agent gives a separate top-level agent with its own workspace (fork port of #107)",
-    "tests": [
-      "packages/server/src/server/agent/mcp-server.test.ts"
-    ]
+    "tests": ["packages/server/src/server/agent/mcp-server.test.ts"]
   },
   {
     "pr": 109,
