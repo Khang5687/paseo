@@ -30,6 +30,7 @@ import {
 } from "../tools/types.js";
 import { buildForkTaskPrompt } from "../fork-agent.js";
 import type { AgentPermissionResponse } from "../agent-sdk-types.js";
+import { toAgentSearchResult } from "../agent-search.js";
 import { resolvePermissionResponse } from "../permission-answers.js";
 
 export class HostOperationRejectedError extends Error {
@@ -60,6 +61,12 @@ export interface HostOperations {
   askAgent: HostOperation;
   listPermissions: HostOperation;
   respondToPermission: HostOperation;
+  archiveAgent: HostOperation;
+  cancelAgent: HostOperation;
+  killAgent: HostOperation;
+  setMode: HostOperation;
+  updateAgent: HostOperation;
+  searchAgents: HostOperation;
 }
 /** Connection authority at the host boundary, independent of child lifecycle. */
 export class HostObservationError extends Error {
@@ -431,6 +438,64 @@ export function createHostResolver(input: {
             await client.respondToPermissionAndWait(agentId, requestId, response);
             return result({ success: true });
           },
+          async archiveAgent(args) {
+            await client.archiveAgent(args.agentId as string);
+            return result({ success: true });
+          },
+          async cancelAgent(args) {
+            await client.cancelAgent(args.agentId as string);
+            return result({ success: true });
+          },
+          async killAgent(args) {
+            requireCloseSearch(client, destination);
+            await client.closeAgent(args.agentId as string);
+            return result({ success: true });
+          },
+          async setMode(args) {
+            await client.setAgentMode(args.agentId as string, args.modeId as string);
+            return result({ success: true, newMode: args.modeId });
+          },
+          async updateAgent(args) {
+            const agentId = args.agentId as string;
+            const settings = args.settings as
+              | {
+                  modeId?: string;
+                  model?: string | null;
+                  thinkingOptionId?: string | null;
+                  features?: Record<string, unknown>;
+                }
+              | undefined;
+            if (settings?.modeId !== undefined) await client.setAgentMode(agentId, settings.modeId);
+            if (settings?.model !== undefined) await client.setAgentModel(agentId, settings.model);
+            if (settings?.thinkingOptionId !== undefined) {
+              await client.setAgentThinkingOption(agentId, settings.thinkingOptionId);
+            }
+            for (const [featureId, value] of Object.entries(settings?.features ?? {})) {
+              await client.setAgentFeature(agentId, featureId, value);
+            }
+            await client.updateAgent(agentId, {
+              name: args.name as string | undefined,
+              labels: args.labels as Record<string, string> | undefined,
+            });
+            return result({ success: true });
+          },
+          async searchAgents(args) {
+            requireCloseSearch(client, destination);
+            const response = await client.searchAgents({
+              query: args.query as string,
+              includeArchived: args.includeArchived as boolean | undefined,
+              cwd: args.cwd as string | undefined,
+              workspaceId: args.workspaceId as string | undefined,
+              provider: args.provider as string | undefined,
+              sinceHours: args.sinceHours as number | undefined,
+              limit: args.limit as number | undefined,
+            });
+            return result({
+              results: response.matches.map(toAgentSearchResult),
+              scanned: response.scanned,
+              truncated: response.truncated,
+            });
+          },
           async listAgents(args) {
             const { entries } = await client.fetchAgents({
               includeBackground: args.includeBackground === true,
@@ -510,6 +575,13 @@ export function createHostResolver(input: {
     },
   };
 }
+function requireCloseSearch(client: DaemonClient, destination: string): void {
+  // COMPAT(agentCloseSearch): added in v0.15.0, remove gate after 2027-05-08.
+  if (client.getLastServerInfoMessage()?.features?.agentCloseSearch !== true) {
+    throw new PaseoToolInputError(`Update the host ${destination} to use this tool on it.`);
+  }
+}
+
 function workspaceSummary(workspace: FetchWorkspacesEntry) {
   return {
     workspaceId: workspace.id,

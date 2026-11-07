@@ -2233,6 +2233,56 @@ export const AgentUnarchiveResponseMessageSchema = z.object({
   }),
 });
 
+export const AgentCloseRequestMessageSchema = z.object({
+  type: z.literal("agent.close.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentCloseResponseMessageSchema = z.object({
+  type: z.literal("agent.close.response"),
+  payload: AgentActionResponsePayloadSchema,
+});
+
+export const AgentSearchRequestMessageSchema = z.object({
+  type: z.literal("agent.search.request"),
+  requestId: z.string(),
+  query: z.string(),
+  includeArchived: z.boolean().optional(),
+  cwd: z.string().optional(),
+  workspaceId: z.string().optional(),
+  provider: z.string().optional(),
+  sinceHours: z.number().optional(),
+  limit: z.number().optional(),
+});
+
+export const AgentSearchFieldSchema = z.enum([
+  "title",
+  "labels",
+  "firstUserMessage",
+  "lastAssistantMessage",
+]);
+
+export const AgentSearchResponseMessageSchema = z.object({
+  type: z.literal("agent.search.response"),
+  payload: z.object({
+    requestId: z.string(),
+    accepted: z.boolean(),
+    error: z.string().nullable(),
+    matches: z
+      .array(
+        z.object({
+          agent: AgentSnapshotPayloadSchema,
+          matchedFields: z.array(AgentSearchFieldSchema),
+          snippet: z.object({ field: AgentSearchFieldSchema, text: z.string() }),
+        }),
+      )
+      .optional(),
+    scanned: z.number().optional(),
+    truncated: z.boolean().optional(),
+  }),
+});
+
 export const AgentRewindModeSchema = z.enum(["conversation", "files", "both"]);
 
 export const AgentRewindRequestMessageSchema = z.object({
@@ -4038,6 +4088,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentUnarchiveRequestMessageSchema,
+  AgentCloseRequestMessageSchema,
+  AgentSearchRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
   CheckoutStatusRequestSchema,
@@ -4457,6 +4509,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentDetach: z.boolean().optional(),
         // COMPAT(agentUnarchive): added in v0.15.0, remove gate after 2027-05-02.
         agentUnarchive: z.boolean().optional(),
+        // COMPAT(agentCloseSearch): added in v0.15.0, remove gate after 2027-05-08.
+        agentCloseSearch: z.boolean().optional(),
         // COMPAT(agentThinkingUpdate): added in v0.2.4, remove gate after 2027-01-28.
         agentThinkingUpdate: z.boolean().optional(),
         // COMPAT(daemonDiagnostics): added in v0.1.100, remove gate after 2026-12-25 once daemon floor >= v0.1.100.
@@ -8072,6 +8126,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentUnarchiveResponseMessageSchema,
+  AgentCloseResponseMessageSchema,
+  AgentSearchResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
@@ -8285,6 +8341,8 @@ export type SetAgentFeatureResponseMessage = z.infer<typeof SetAgentFeatureRespo
 export type AgentConfigApplyResponseMessage = z.infer<typeof AgentConfigApplyResponseMessageSchema>;
 export type AgentDetachResponseMessage = z.infer<typeof AgentDetachResponseMessageSchema>;
 export type AgentUnarchiveResponseMessage = z.infer<typeof AgentUnarchiveResponseMessageSchema>;
+export type AgentCloseResponseMessage = z.infer<typeof AgentCloseResponseMessageSchema>;
+export type AgentSearchResponseMessage = z.infer<typeof AgentSearchResponseMessageSchema>;
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
@@ -8457,6 +8515,8 @@ export type SetAgentFeatureRequestMessage = z.infer<typeof SetAgentFeatureReques
 export type AgentConfigApplyRequestMessage = z.infer<typeof AgentConfigApplyRequestMessageSchema>;
 export type AgentDetachRequestMessage = z.infer<typeof AgentDetachRequestMessageSchema>;
 export type AgentUnarchiveRequestMessage = z.infer<typeof AgentUnarchiveRequestMessageSchema>;
+export type AgentCloseRequestMessage = z.infer<typeof AgentCloseRequestMessageSchema>;
+export type AgentSearchRequestMessage = z.infer<typeof AgentSearchRequestMessageSchema>;
 export type AgentPermissionResponseMessage = z.infer<typeof AgentPermissionResponseMessageSchema>;
 export type CheckoutStatusRequest = z.infer<typeof CheckoutStatusRequestSchema>;
 export type CheckoutStatusResponse = z.infer<typeof CheckoutStatusResponseSchema>;

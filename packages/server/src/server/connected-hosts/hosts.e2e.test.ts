@@ -1733,6 +1733,133 @@ test(
 );
 
 test(
+  "archive, cancel, kill, set mode, update and search agents act on the named host only",
+  { timeout: 30000 },
+  async () => {
+    const a = await daemon();
+    const b = await daemon();
+    const { paseo, client: aClient } = await api(a);
+    await paseo.hosts.add({ connection: `127.0.0.1:${b.port}`, label: "Fleet B" });
+    const directory = await online(paseo);
+    const workspace = await paseo.workspaces.create({
+      source: { kind: "directory", path: a.staticDir },
+    });
+    const caller = await workspace.agents.create({
+      config: { provider: "claude/claude-test" },
+      title: "Tool caller",
+    });
+    const mcp = new Client({ name: "fleet-agent-tools", version: "1" });
+    cleanup.push(() => mcp.close());
+    await mcp.connect(
+      new StreamableHTTPClientTransport(
+        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${caller.id}`),
+      ),
+    );
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const response = await mcp.callTool({ name, arguments: args });
+      expect(response.isError, JSON.stringify(response)).not.toBe(true);
+      return z.record(z.string(), z.unknown()).parse(response.structuredContent);
+    };
+    const serverId = directory.hosts[0]!.serverId!;
+    const selfId = directory.self.serverId;
+    const destination = await call("create_workspace", {
+      serverId,
+      isolation: "local",
+      path: b.staticDir,
+      title: "Destination workspace",
+    });
+    const createRemote = async (title: string) =>
+      String(
+        (
+          await call("create_agent", {
+            serverId,
+            workspaceId: destination.workspaceId,
+            title,
+            provider: "claude/claude-test",
+            initialPrompt: "Nothing to do",
+            notifyOnFinish: false,
+          })
+        ).agentId,
+      );
+    const remoteId = await createRemote("Remote victim");
+    const killId = await createRemote("Remote kill target");
+    const bApi = await api(b);
+    await bApi.client.waitForFinish(remoteId, 10000);
+    await bApi.client.waitForFinish(killId, 10000);
+    // Same ID on A: a call that ignored serverId would hit this agent instead.
+    await aClient.createAgent({
+      agentId: remoteId,
+      provider: "claude",
+      model: "claude-test",
+      cwd: a.staticDir,
+      workspaceId: workspace.id,
+      title: "Local twin",
+    });
+    const remote = async () => (await bApi.client.fetchAgent(remoteId))!.agent;
+    const twin = async () => (await aClient.fetchAgent(remoteId))!.agent;
+
+    expect(await call("search_agents", { serverId, query: "victim" })).toMatchObject({
+      serverId,
+      results: [expect.objectContaining({ agentId: remoteId, title: "Remote victim" })],
+    });
+    expect((await call("search_agents", { query: "victim" })).results).toEqual([]);
+    expect(await call("search_agents", { serverId: selfId, query: "twin" })).toMatchObject({
+      serverId: selfId,
+      results: [expect.objectContaining({ agentId: remoteId, title: "Local twin" })],
+    });
+
+    const twinMode = (await twin()).currentModeId;
+    expect(
+      await call("set_agent_mode", { serverId, agentId: remoteId, modeId: "full-access" }),
+    ).toMatchObject({ success: true, newMode: "full-access", serverId });
+    expect((await remote()).currentModeId).toBe("full-access");
+    expect((await twin()).currentModeId).toBe(twinMode);
+
+    expect(
+      await call("update_agent", { serverId, agentId: remoteId, name: "Renamed remotely" }),
+    ).toMatchObject({ success: true, serverId });
+    expect((await remote()).title).toBe("Renamed remotely");
+    expect((await twin()).title).toBe("Local twin");
+
+    expect(await call("cancel_agent", { serverId, agentId: remoteId })).toMatchObject({
+      success: true,
+      serverId,
+    });
+
+    expect(await call("kill_agent", { serverId, agentId: killId })).toMatchObject({
+      success: true,
+      serverId,
+    });
+    expect((await bApi.client.fetchAgent(killId))!.agent.status).toBe("closed");
+    expect((await remote()).status).not.toBe("closed");
+
+    expect(await call("archive_agent", { serverId, agentId: remoteId })).toMatchObject({
+      success: true,
+      serverId,
+    });
+    expect((await remote()).archivedAt).toEqual(expect.any(String));
+    expect((await twin()).archivedAt).toBeNull();
+
+    for (const selector of [{}, { serverId: selfId }]) {
+      const id = String(
+        (
+          await call("create_agent", {
+            workspaceId: workspace.id,
+            title: "Local archive target",
+            provider: "claude/claude-test",
+            initialPrompt: "Nothing to do",
+            notifyOnFinish: false,
+          })
+        ).agentId,
+      );
+      await aClient.waitForFinish(id, 10000);
+      await call("archive_agent", { ...selector, agentId: id });
+      expect((await aClient.fetchAgent(id))!.agent.archivedAt).toEqual(expect.any(String));
+    }
+  },
+);
+
+test(
   "remote agent reports, local CLI sends and automatic completion reach the same recipient",
   { timeout: 30000 },
   async () => {

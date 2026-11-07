@@ -100,7 +100,7 @@ import {
   unarchiveAgentCommand,
   updateAgentCommand,
 } from "../lifecycle-command.js";
-import { AGENT_SEARCH_SCAN_LIMIT, searchAgents } from "../agent-search.js";
+import { AGENT_SEARCH_SCAN_LIMIT, searchAgents, toAgentSearchResult } from "../agent-search.js";
 import type { ForgeService } from "../../../services/forge-service.js";
 import type { WorkspaceGitService } from "../../workspace-git-service.js";
 import type {
@@ -815,6 +815,12 @@ function createToolCatalog(
     ["ask_agent", "askAgent"],
     ["list_pending_permissions", "listPermissions"],
     ["respond_to_permission", "respondToPermission"],
+    ["archive_agent", "archiveAgent"],
+    ["cancel_agent", "cancelAgent"],
+    ["kill_agent", "killAgent"],
+    ["set_agent_mode", "setMode"],
+    ["update_agent", "updateAgent"],
+    ["search_agents", "searchAgents"],
   ] as const satisfies ReadonlyArray<readonly [string, keyof HostOperations]>);
   const callerTitle = () =>
     (callerAgentId ? agentManager.getAgent(callerAgentId)?.config.title : undefined) ?? undefined;
@@ -842,6 +848,12 @@ function createToolCatalog(
         localHostOperations.get("list_pending_permissions")!(args, context),
       respondToPermission: (args, context) =>
         localHostOperations.get("respond_to_permission")!(args, context),
+      archiveAgent: (args, context) => localHostOperations.get("archive_agent")!(args, context),
+      cancelAgent: (args, context) => localHostOperations.get("cancel_agent")!(args, context),
+      killAgent: (args, context) => localHostOperations.get("kill_agent")!(args, context),
+      setMode: (args, context) => localHostOperations.get("set_agent_mode")!(args, context),
+      updateAgent: (args, context) => localHostOperations.get("update_agent")!(args, context),
+      searchAgents: (args, context) => localHostOperations.get("search_agents")!(args, context),
     },
   });
   const registerTool = (
@@ -2670,20 +2682,7 @@ function createToolCatalog(
       return {
         content: [],
         structuredContent: ensureValidJson({
-          results: result.matches.map(({ agent, matchedFields, snippet }) => ({
-            agentId: agent.id,
-            title: agent.title,
-            status: agent.status,
-            archivedAt: agent.archivedAt ?? null,
-            workspaceId: agent.workspaceId ?? null,
-            cwd: agent.cwd,
-            provider: agent.provider,
-            model: agent.model,
-            createdAt: agent.createdAt,
-            updatedAt: agent.updatedAt,
-            matchedFields,
-            snippet,
-          })),
+          results: result.matches.map(toAgentSearchResult),
           scanned: result.scanned,
           truncated: result.truncated,
         }),
