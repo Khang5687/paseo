@@ -133,8 +133,10 @@ UNIT
 
 daemon_pid() { systemctl --user show -p MainPID --value paseo.service; }
 
-# Set while the daemon is stopped by a switch and not yet started again; the exit guard reads it.
+# Set while the daemon is stopped by a switch and not yet started again, with the main pid it
+# stopped; the exit guard reads both.
 stopping=0
+stopped_pid=0
 
 # Waits until the unit serves again after a start; $1 is the main pid before the switch.
 wait_until_serving() {
@@ -162,17 +164,21 @@ wait_until_serving() {
   return 1
 }
 
-# `daemon stop` returns once the daemon accepts the request, a moment before systemd marks the unit
-# inactive. `systemctl start` on a unit that is still active does nothing and succeeds, so a start
-# sent in that moment is lost and the daemon stays down (the Omen on 2026-11-08: the worker exited at
-# .367, the start ran in the same second, the unit went inactive at .567 and nothing started it).
-# Returns 1 when the unit is still up after 30 s. "activating" counts as stopped: that is systemd
-# restarting the unit itself after a failure.
+# `daemon stop` returns when the daemon's supervisor exits; the unit's main process (the launcher
+# around it) exits a moment later, and only then does systemd mark the unit inactive.
+# `systemctl start` on a unit that is still active does nothing and succeeds, so a start sent in
+# that moment is lost and the daemon stays down (the Omen on 2026-11-08: the worker exited at .367,
+# the start ran in the same second, the unit went inactive at .567 and nothing started it).
+# $1 is the main pid that was stopped. Returns 0 once the unit is down or already runs a new main
+# pid (systemd restarted it after a failure; "activating" is that restart under way), 1 when the
+# old pid is still up after 30 s.
 wait_until_stopped() {
-  local state
+  local before="$1" state pid
   for _ in $(seq 1 100); do
     state="$(systemctl --user show -p ActiveState --value paseo.service)"
     [[ $state == active || $state == deactivating || $state == reloading ]] || return 0
+    pid="$(daemon_pid)"
+    [[ $pid == "0" || $pid == "$before" ]] || return 0
     sleep 0.3
   done
   return 1
@@ -186,11 +192,12 @@ restart_daemon() {
   stop_cli="${1:-$(running_cli)}"
   if [[ $before != "0" ]]; then
     stopping=1
+    stopped_pid="$before"
     say "stopping daemon pid $before (terminals stay)"
     if ! "$stop_cli" daemon stop --keep-terminals --json >/dev/null 2>&1; then
       say "stop with --keep-terminals failed; restarting the unit (this closes terminals)"
       systemctl --user restart paseo.service
-    elif ! wait_until_stopped; then
+    elif ! wait_until_stopped "$before"; then
       say "paseo.service still up 30s after the stop; restarting the unit (this closes terminals)"
       systemctl --user restart paseo.service
     fi
@@ -202,9 +209,12 @@ restart_daemon() {
 }
 
 # Exit guard of every switch: releases the lock, and starts the unit when the switch dies between
-# stopping the daemon and starting it again (a signal, a failing command under set -e).
+# stopping the daemon and starting it again (a signal, a failing command under set -e). It waits for
+# the stop to land first, for the same reason restart_daemon does; a start on a unit that already
+# runs does nothing.
 on_exit() {
-  if [[ $stopping == 1 && "$(daemon_pid)" == "0" ]]; then
+  if [[ $stopping == 1 ]]; then
+    wait_until_stopped "$stopped_pid" || true
     say "switch ended with the daemon stopped; starting paseo.service"
     systemctl --user start paseo.service ||
       say "could not start paseo.service; see: journalctl --user -u paseo.service -n 50"
