@@ -882,5 +882,11 @@
     "title": "fix(fork): wait for the unit to stop before starting the switched daemon",
     "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; checked against a throwaway systemd user unit that exits 0.2 s after stop (PR body)",
     "tests": []
+  },
+  {
+    "pr": 114,
+    "title": "feat(fork): nightly switch of a remote daemon to a waiting build at 04:00",
+    "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; nightly-check decisions checked with a fake HOME/systemctl/CLI harness (PR body)",
+    "tests": []
   }
 ]
