@@ -2238,6 +2238,8 @@ export class VoiceAssistantWebSocketServer {
         agentDetach: true,
         // COMPAT(agentUnarchive): added in v0.15.0, remove gate after 2027-05-02.
         agentUnarchive: true,
+        // COMPAT(agentCloseSearch): added in v0.15.0, remove gate after 2027-05-08.
+        agentCloseSearch: true,
         // COMPAT(agentThinkingUpdate): added in v0.2.4, remove gate after 2027-01-28.
         agentThinkingUpdate: true,
         // COMPAT(daemonDiagnostics): added in v0.1.100, remove gate after 2026-12-25 once daemon floor >= v0.1.100.

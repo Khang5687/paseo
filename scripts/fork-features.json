@@ -896,5 +896,10 @@
       "packages/server/src/server/agent/finish-subscriptions/finish-subscriptions.test.ts",
       "packages/server/src/server/agent/finish-subscriptions/internal/observation-stream.test.ts"
     ]
+  },
+  {
+    "pr": 116,
+    "title": "feat(server): serverId on archive, cancel, kill, set mode, update and search agent tools",
+    "tests": ["packages/server/src/server/connected-hosts/hosts.e2e.test.ts"]
   }
 ]

@@ -217,3 +217,25 @@ export async function searchAgents(
   );
   return { matches, scanned: scanned.length, truncated: candidates.length > scanLimit };
 }
+
+/** The row search_agents returns for one match, whether the search ran here or on a connected host. */
+export function toAgentSearchResult({
+  agent,
+  matchedFields,
+  snippet,
+}: Pick<AgentSearchMatch, "agent" | "matchedFields" | "snippet">) {
+  return {
+    agentId: agent.id,
+    title: agent.title,
+    status: agent.status,
+    archivedAt: agent.archivedAt ?? null,
+    workspaceId: agent.workspaceId ?? null,
+    cwd: agent.cwd,
+    provider: agent.provider,
+    model: agent.model,
+    createdAt: agent.createdAt,
+    updatedAt: agent.updatedAt,
+    matchedFields,
+    snippet,
+  };
+}
