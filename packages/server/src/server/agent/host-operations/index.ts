@@ -473,10 +473,12 @@ export function createHostResolver(input: {
             for (const [featureId, value] of Object.entries(settings?.features ?? {})) {
               await client.setAgentFeature(agentId, featureId, value);
             }
-            await client.updateAgent(agentId, {
-              name: args.name as string | undefined,
-              labels: args.labels as Record<string, string> | undefined,
-            });
+            const name = (args.name as string | undefined)?.trim();
+            const labels = args.labels as Record<string, string> | undefined;
+            // The destination rejects an update with nothing to rename or label.
+            if (name || (labels && Object.keys(labels).length > 0)) {
+              await client.updateAgent(agentId, { name, labels });
+            }
             return result({ success: true });
           },
           async searchAgents(args) {

@@ -231,6 +231,26 @@ describe("SessionAuthorization", () => {
     }
   });
 
+  test("closing a session needs write authority and searching agents needs read authority", () => {
+    for (const permissions of [["workspace.write"], ["hub.execute"]] as const) {
+      const authorization = new SessionAuthorization(permissions);
+      expect(authorization.allowsInbound(inboundMessage("agent.close.request"))).toBe(true);
+    }
+    for (const permissions of [["workspace.read"], ["hub.execute"]] as const) {
+      const authorization = new SessionAuthorization(permissions);
+      expect(authorization.allowsInbound(inboundMessage("agent.search.request"))).toBe(true);
+    }
+    for (const permissions of [["workspace.read"], ["workspace.manage"], []] as const) {
+      const authorization = new SessionAuthorization(permissions);
+      expect(authorization.allowsInbound(inboundMessage("agent.close.request"))).toBe(false);
+    }
+    expect(
+      new SessionAuthorization(["workspace.manage"]).allowsInbound(
+        inboundMessage("agent.search.request"),
+      ),
+    ).toBe(false);
+  });
+
   test("legacy Hub authority is translated at one compatibility boundary", () => {
     expect(permissionsForLegacyHubScopes(["hub.execution.*"])).toEqual(["hub.execute"]);
     expect(permissionsForLegacyHubScopes(["*"])).toEqual([]);

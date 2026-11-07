@@ -2515,7 +2515,8 @@ function createToolCatalog(
     "cancel_agent",
     {
       title: "Cancel agent run",
-      description: "Abort the agent's current run but keep the agent alive for future tasks.",
+      description:
+        "Abort the agent's current run but keep the agent alive for future tasks. On another host, success means the host accepted the request.",
       inputSchema: {
         agentId: z.string(),
       },

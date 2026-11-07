@@ -3879,7 +3879,7 @@ export class Session {
           ...(msg.workspaceId ? { workspaceId: msg.workspaceId } : {}),
           ...(msg.provider ? { provider: msg.provider } : {}),
           ...(msg.sinceHours !== undefined ? { sinceHours: msg.sinceHours } : {}),
-          limit: Math.min(msg.limit ?? 10, 50),
+          limit: Math.max(1, Math.min(Math.trunc(msg.limit ?? 10), 50)),
         },
       );
       this.emit({

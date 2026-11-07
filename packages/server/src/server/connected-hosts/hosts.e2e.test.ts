@@ -1820,6 +1820,16 @@ test(
     ).toMatchObject({ success: true, serverId });
     expect((await remote()).title).toBe("Renamed remotely");
     expect((await twin()).title).toBe("Local twin");
+    expect(
+      await call("update_agent", {
+        serverId,
+        agentId: remoteId,
+        settings: { modeId: "default" },
+      }),
+    ).toMatchObject({ success: true, serverId });
+    expect((await remote()).currentModeId).toBe("default");
+    expect((await remote()).title).toBe("Renamed remotely");
+    expect((await twin()).currentModeId).toBe(twinMode);
 
     expect(await call("cancel_agent", { serverId, agentId: remoteId })).toMatchObject({
       success: true,

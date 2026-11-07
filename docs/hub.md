@@ -29,7 +29,7 @@ manage their own relationship or permissions.
 
 Hub uses the same authenticated, resumable Session protocol as other clients. Its persisted
 `hub.execute` permission authorizes ordinary agent creation, workspace titling, messaging,
-cancellation, archival, agent/workspace observation, timeline subscriptions, and workspace recovery. This authority is
+cancellation, archival, closing a session, searching agents, agent/workspace observation, timeline subscriptions, and workspace recovery. This authority is
 daemon-wide; it is not limited to agents created by that Hub. Daemon configuration, terminals,
 browser control, and permission management still require their own permissions. See
 [permissions.md](permissions.md).
