@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { OMP_MODES } from "@getpaseo/protocol/provider-manifest";
 import { z } from "zod";
 
@@ -35,27 +36,73 @@ export interface OmpModelRoles {
   planModel?: string;
 }
 
+/** The OMP `--approval-mode` each Paseo mode launches with. */
+const OMP_APPROVAL_MODES: Readonly<Record<string, string>> = {
+  full: "yolo",
+  write: "write",
+  ask: "always-ask",
+  "read-only": "always-ask",
+};
+
+/**
+ * The read-only files next to this module: the guard extension (`.ts` when the daemon runs from
+ * source, `.js` from `dist`) and the config overlay. See `read-only-guard-extension.ts` for why
+ * read-only mode needs them. OMP is a separate process that cannot read Electron's `app.asar`, so
+ * the desktop app unpacks both files (`asarUnpack` in `packages/desktop/electron-builder.yml`)
+ * and OMP loads those copies.
+ */
+export function resolveOmpReadOnlyFiles(moduleUrl: string = import.meta.url): {
+  guardExtension: string;
+  configOverlay: string;
+} {
+  const modulePath = fileURLToPath(moduleUrl);
+  const beside = (fileName: string) =>
+    join(dirname(modulePath), fileName).replace(
+      `${sep}app.asar${sep}`,
+      `${sep}app.asar.unpacked${sep}`,
+    );
+  return {
+    guardExtension: beside(`read-only-guard-extension${extname(modulePath)}`),
+    configOverlay: beside("read-only-config-overlay.yml"),
+  };
+}
+
+const OMP_READ_ONLY_FILES = resolveOmpReadOnlyFiles();
+
+/**
+ * `read-only` launches like `ask` plus the guard extension, which keeps the tools that run without
+ * a prompt inside the agent's folder, and the config overlay, which beats user and project config
+ * so none of it can turn a prompt off; every shell command still asks.
+ */
 export function resolveOmpLaunchMode(
   modeId: string | undefined,
   modelRoles: OmpModelRoles = {},
 ): { modeId: string; extraArgs: string[] } {
-  const modelRoleArgs = resolveOmpModelRoleArgs(modelRoles);
-  switch (modeId ?? DEFAULT_OMP_MODE_ID) {
-    case "full":
-      return { modeId: "full", extraArgs: ["--approval-mode", "yolo", ...modelRoleArgs] };
-    case "write":
-      return {
-        modeId: "write",
-        extraArgs: ["--approval-mode", "write", ...modelRoleArgs],
-      };
-    case "ask":
-      return {
-        modeId: "ask",
-        extraArgs: ["--approval-mode", "always-ask", ...modelRoleArgs],
-      };
-    default:
-      throw new Error(`Unsupported OMP mode '${modeId}'`);
+  const resolvedModeId = modeId ?? DEFAULT_OMP_MODE_ID;
+  const approvalMode = Object.hasOwn(OMP_APPROVAL_MODES, resolvedModeId)
+    ? OMP_APPROVAL_MODES[resolvedModeId]
+    : undefined;
+  if (!approvalMode) {
+    throw new Error(`Unsupported OMP mode '${modeId}'`);
   }
+  const guardArgs =
+    resolvedModeId === "read-only"
+      ? [
+          "--extension",
+          OMP_READ_ONLY_FILES.guardExtension,
+          "--config",
+          OMP_READ_ONLY_FILES.configOverlay,
+        ]
+      : [];
+  return {
+    modeId: resolvedModeId,
+    extraArgs: [
+      "--approval-mode",
+      approvalMode,
+      ...guardArgs,
+      ...resolveOmpModelRoleArgs(modelRoles),
+    ],
+  };
 }
 
 function resolveOmpModelRoleArgs(modelRoles: OmpModelRoles): string[] {

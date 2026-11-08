@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { cp, copyFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { basename, join } from "node:path";
@@ -42,6 +42,7 @@ import type {
   OmpThinkingLevel,
 } from "../rpc-types.js";
 import { buildOmpLaunch } from "../runtime.js";
+import { OMP_READ_ONLY_GUARD_COMMAND } from "../read-only-guard-extension.js";
 
 type FakeOmpSubagentSubscriptionLevel = "off" | "progress" | "events";
 type FakeOmpSubagentStatus = "pending" | "running" | "completed" | "failed" | "aborted";
@@ -118,6 +119,11 @@ export class FakeOmp implements OmpRuntime {
     const sessionFile = session.state.sessionFile;
     if (!launch.noSession && sessionFile) this.sessionIdsByFile.set(sessionFile, sessionId);
     session.commands = this.queuedCommands.shift() ?? [];
+    // Like OMP: an `--extension` file that loads registers its command; a missing one is skipped.
+    const extension = readFlagValue(launch.extraArgs, "--extension");
+    if (extension && existsSync(extension)) {
+      session.commands.push({ name: OMP_READ_ONLY_GUARD_COMMAND, source: "extension" });
+    }
     for (const [level, error] of this.queuedSubagentSubscriptionErrors) {
       session.subagentSubscriptionErrors.set(level, error);
     }

@@ -105,6 +105,7 @@ import type {
   OmpGoalAction,
   OmpGoalModeState,
   OmpModel,
+  OmpRpcSlashCommand,
   OmpRuntimeEvent,
   OmpSessionState,
   OmpThinkingLevel,
@@ -138,12 +139,25 @@ import {
   buildOmpRpcUiPermissionResponse,
   mapOmpRpcUiPermissionRequest,
 } from "./rpc-ui-permission-mapper.js";
+import { OMP_READ_ONLY_GUARD_COMMAND } from "./read-only-guard-extension.js";
 import { DEFAULT_OMP_THINKING_LEVEL, mapOmpModel } from "./map-omp-model.js";
 
 const OMP_PROVIDER = "omp";
-// "Always Ask": every write and exec tool asks for approval, so a copy answering questions reads freely
-// while the approvals it raises are denied.
-const OMP_READ_ONLY_MODE_ID = "ask";
+// "Read Only": OMP asks for every tool but its read-tier ones (read, grep, glob, ...), which the
+// guard extension confines to the agent's folder. A copy answering questions uses this mode, and
+// the approvals it raises are denied.
+const OMP_READ_ONLY_MODE_ID = "read-only";
+
+/**
+ * Whether OMP lists the read-only guard extension's command. A folder's `.omp/commands` file of
+ * the same name lists with source `file`, so only an extension's counts.
+ */
+function hasReadOnlyGuard(commands: readonly OmpRpcSlashCommand[]): boolean {
+  return commands.some(
+    (command) => command.name === OMP_READ_ONLY_GUARD_COMMAND && command.source === "extension",
+  );
+}
+
 const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
@@ -1403,9 +1417,14 @@ export class OmpAgentSession implements AgentSession {
   private async refreshCommandCache(): Promise<AgentSlashCommand[]> {
     this.lastCommandRefreshAt = Date.now();
     try {
-      this.commandCache = await this.withSkillSourcePaths(
-        mapOmpSlashCommands(await this.runtimeSession.refreshCommands()),
-      );
+      const commands = await this.runtimeSession.refreshCommands();
+      // A refresh rediscovers OMP's commands (on old OMP through `/reload-plugins`). Read-only OMP
+      // that no longer lists the guard is stopped, so it takes no turn without the guard.
+      if (this.currentModeId === OMP_READ_ONLY_MODE_ID && !hasReadOnlyGuard(commands)) {
+        this.logger.error("OMP no longer lists Paseo's read-only guard extension; stopping OMP");
+        await this.runtimeSession.close().catch(() => undefined);
+      }
+      this.commandCache = await this.withSkillSourcePaths(mapOmpSlashCommands(commands));
       return this.commandCache;
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to refresh OMP slash commands; using cached list");
@@ -2689,9 +2708,7 @@ export class OmpAgentClient implements AgentClient {
       env: launchContext?.env,
       routing: this.routingFor(launchContext),
     };
-    const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession(
-      startInput,
-    );
+    const runtimeSession = await this.startAgentRuntime(config.providerOptions, startInput);
     let hostTools: OmpHostToolRouter | undefined;
     try {
       hostTools = await this.configureNativePaseoTools(
@@ -2764,9 +2781,10 @@ export class OmpAgentClient implements AgentClient {
       outputStyles,
     });
     startInput.routing = this.routingFor(launchContext);
-    const runtimeSession = await this.resolveRuntime(
+    const runtimeSession = await this.startAgentRuntime(
       resumeConfig.config.providerOptions,
-    ).startSession(startInput);
+      startInput,
+    );
     let hostTools: OmpHostToolRouter | undefined;
     try {
       hostTools = await this.configureNativePaseoTools(
@@ -2869,7 +2887,7 @@ export class OmpAgentClient implements AgentClient {
       this.provider,
     );
     const launchMode = this.resolveLaunchMode(OMP_READ_ONLY_MODE_ID, config.providerOptions);
-    const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession({
+    const runtimeSession = await this.startAgentRuntime(config.providerOptions, {
       cwd,
       protocolMode: "rpc-ui",
       modeId: launchMode.modeId,
@@ -2959,7 +2977,7 @@ export class OmpAgentClient implements AgentClient {
   ): OmpAgentSessionOptions["restartRuntime"] {
     return async (sessionFile, modeId) => {
       const launchMode = this.resolveLaunchMode(modeId, config.providerOptions);
-      const next = await this.resolveRuntime(config.providerOptions).startSession({
+      const next = await this.startAgentRuntime(config.providerOptions, {
         ...startInput,
         model: config.model,
         thinkingOptionId: normalizeOmpThinkingOption(config.thinkingOptionId) ?? undefined,
@@ -3135,6 +3153,32 @@ export class OmpAgentClient implements AgentClient {
   private resolveRuntime(providerOptions: Record<string, unknown> | undefined): OmpRuntime {
     const { runtimeOptions } = resolveOmpProviderOptions(providerOptions);
     return this.runtime ?? createRuntime(this.logger, this.runtimeSettings, runtimeOptions);
+  }
+
+  /**
+   * Starts OMP for an agent that takes prompts. OMP runs on without an extension that fails to
+   * load, so a read-only launch is refused unless OMP lists the guard extension's command.
+   */
+  private async startAgentRuntime(
+    providerOptions: Record<string, unknown> | undefined,
+    input: OmpStartSessionInput,
+  ): Promise<OmpRuntimeSession> {
+    const runtimeSession = await this.resolveRuntime(providerOptions).startSession(input);
+    if (input.modeId !== OMP_READ_ONLY_MODE_ID) return runtimeSession;
+    let guardLoaded = false;
+    try {
+      guardLoaded = hasReadOnlyGuard(await runtimeSession.getCommands());
+    } catch (error) {
+      await runtimeSession.close().catch(() => undefined);
+      throw error;
+    }
+    if (!guardLoaded) {
+      await runtimeSession.close().catch(() => undefined);
+      throw new Error(
+        "OMP did not load Paseo's read-only guard extension, so read-only mode cannot start",
+      );
+    }
+    return runtimeSession;
   }
 
   private async resolveOmpLaunch(): Promise<ResolvedProviderLaunch> {

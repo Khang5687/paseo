@@ -165,6 +165,14 @@ export const OMP_MODES: AgentProviderModeDefinition[] = [
     icon: "ShieldCheck",
     colorTier: "safe",
   },
+  {
+    id: "read-only",
+    label: "Read Only",
+    description:
+      "Launches OMP with always-ask approval mode; reads and searches stay in the agent's folder and every shell command asks.",
+    icon: "ShieldEllipsis",
+    colorTier: "planning",
+  },
 ];
 
 const MOCK_LOAD_TEST_MODES: AgentProviderModeDefinition[] = [
