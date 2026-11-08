@@ -1,9 +1,8 @@
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
-import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { AgentStreamEvent } from "../../agent-sdk-types.js";
@@ -14,10 +13,12 @@ import type { OmpUsagePollScheduler } from "./usage-poller.js";
 import { resolveOmpProviderOptions } from "./provider-config.js";
 import { OmpRuntimeEventSchema, OmpSessionStateSchema } from "./rpc-types.js";
 import { OmpHarness } from "./test-utils/omp-harness.js";
+import { OMP_READ_ONLY_GUARD_COMMAND } from "./read-only-guard-extension.js";
 import { OmpAgentClient } from "./agent.js";
 import { ForkHandleRefusedError } from "../../fork-handle.js";
 import {
   FakeOmp,
+  type FakeOmpSession,
   FakeOmpChild,
   ROUTING_MODEL,
   routingBlockedCatalog,
@@ -35,6 +36,12 @@ const TURN_LIFECYCLE_EVENTS = new Set<AgentStreamEvent["type"]>([
 
 function isTurnLifecycle(type: AgentStreamEvent["type"]): boolean {
   return TURN_LIFECYCLE_EVENTS.has(type);
+}
+
+function dropGuardCommand(session: FakeOmpSession): void {
+  session.commands = session.commands.filter(
+    (command) => command.name !== OMP_READ_ONLY_GUARD_COMMAND,
+  );
 }
 
 // What OMP reports for a turn the user stopped: an error message on a terminal
@@ -1552,6 +1559,7 @@ describe("OMP agent client and session", () => {
   });
 
   describe("read-only mode", () => {
+    // OMP 18.11.3 and later offer to approve the tool for the rest of the session.
     const modeBashApproval = (id: string, command: string): OmpRuntimeEvent => ({
       type: "extension_ui_request",
       id,
@@ -1559,37 +1567,8 @@ describe("OMP agent client and session", () => {
       title: `Allow tool: bash\nCommand: ${command}`,
       options: ["Approve", "Approve bash for this session", "Deny"],
     });
-    // What the guard extension sends before OMP's prompt for each bash call it lets through.
-    const guardStatus = (id = "guard"): OmpRuntimeEvent => ({
-      type: "extension_ui_request",
-      id,
-      method: "setStatus",
-      statusKey: "paseo-read-only-guard",
-      statusText: "active",
-    });
-    // The checker resolves paths and asks git about the folder's repository, so the agent runs in
-    // a real repository.
-    const repoFolder = async (): Promise<string> => {
-      const folder = await mkdtemp(path.join(tmpdir(), "paseo-omp-read-only-"));
-      onTestFinished(() => rm(folder, { recursive: true, force: true }));
-      execFileSync("git", ["init", "-q", folder]);
-      await writeFile(path.join(folder, "README.md"), "hi\n");
-      return folder;
-    };
-    // Approvals resolve paths first, so they settle after a few turns of the event loop.
-    const settle = async () => {
-      for (let turn = 0; turn < 50; turn += 1) await waitForImmediate();
-    };
-    const waitForApproved = (omp: OmpHarness, ...ids: string[]) => {
-      const expected = ids.map((id) => ({ id, response: { value: "Approve" } }));
-      return vi.waitFor(() =>
-        expect(omp.extensionUiResponses()).toEqual(expect.arrayContaining(expected)),
-      );
-    };
-    const waitForAsked = (omp: OmpHarness, ...ids: string[]) => {
-      const expected = ids.map((id) => expect.objectContaining({ id }));
-      return vi.waitFor(() => expect(omp.pendingPermissions()).toEqual(expected));
-    };
+    // Real OMP starts without an extension it cannot load.
+    const withoutGuard = (omp: OmpHarness) => omp.queueSessionSetup(dropGuardCommand);
 
     test("launches OMP in always-ask mode with the guard extension", async () => {
       const omp = new OmpHarness();
@@ -1610,115 +1589,55 @@ describe("OMP agent client and session", () => {
       expect(existsSync(omp.launchConfiguration().argv[6] ?? "")).toBe(true);
     });
 
-    test("approves read-only shell commands once the guard reported itself", async () => {
-      const omp = new OmpHarness();
-      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
-
-      omp.emit(guardStatus());
-      omp.emit(modeBashApproval("read-1", "git log --oneline -5"));
-      omp.requestToolApproval({ id: "read-2", tool: "bash", detail: "ls -la" });
-
-      await waitForApproved(omp, "read-1", "read-2");
-      expect(omp.pendingPermissions()).toEqual([]);
-    });
-
-    test("asks while the guard has not reported itself, so OMP may run a hidden cwd", async () => {
-      const omp = new OmpHarness();
-      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
-
-      omp.emit(modeBashApproval("read", "cat README.md"));
-      await settle();
-
-      expect(omp.pendingPermissions()).toEqual([expect.objectContaining({ id: "read" })]);
-      expect(omp.extensionUiResponses()).toEqual([]);
-    });
-
-    test("forgets the guard when OMP relaunches", async () => {
-      const omp = new OmpHarness();
-      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
-      omp.emit(guardStatus());
-
-      await omp.setMode("ask");
-      await omp.setMode("read-only");
-      omp.emit(modeBashApproval("read", "git status"));
-      await settle();
-
-      expect(omp.runtimeLaunches()).toHaveLength(3);
-      expect(omp.pendingPermissions()).toEqual([expect.objectContaining({ id: "read" })]);
-    });
-
-    // OMP's shell keeps aliases, functions and exports between calls: after `alias cat=...` or
-    // `export GIT_EXTERNAL_DIFF=...` ran, a command that looks read-only no longer is.
-    test("stops auto-approving once the user approved a shell command, until OMP relaunches", async () => {
-      const omp = new OmpHarness();
-      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
-      omp.emit(guardStatus());
-
-      omp.emit(modeBashApproval("denied", "export GIT_EXTERNAL_DIFF=./x"));
-      await waitForAsked(omp, "denied");
-      await omp.respondToPermission("denied", { behavior: "deny" });
-      omp.emit(modeBashApproval("still-read", "cat README.md"));
-      await waitForApproved(omp, "still-read");
-
-      omp.emit(modeBashApproval("alias", "alias cat='sh -c'"));
-      await waitForAsked(omp, "alias");
-      await omp.respondToPermission("alias", { behavior: "allow" });
-      omp.emit(modeBashApproval("after", "cat README.md"));
-      await settle();
-      expect(omp.pendingPermissions()).toEqual([expect.objectContaining({ id: "after" })]);
-
-      await omp.respondToPermission("after", { behavior: "deny" });
-      await omp.setMode("ask");
-      await omp.setMode("read-only");
-      omp.emit(guardStatus());
-      omp.emit(modeBashApproval("fresh-shell", "cat README.md"));
-      await waitForApproved(omp, "fresh-shell");
-    });
-
-    test.each(["/", homedir(), path.dirname(homedir())])(
-      "asks for every shell command when the agent folder is %s",
-      async (cwd) => {
-        const omp = new OmpHarness();
-        await omp.start({ modeId: "read-only", cwd });
-
-        omp.emit(guardStatus());
-        omp.emit(modeBashApproval("read", "cat .config/gh/hosts.yml"));
-        omp.emit(modeBashApproval("plain", "ls -la"));
-
-        await waitForAsked(omp, "read", "plain");
-      },
-    );
-
-    test("still asks for edits, writes and commands it cannot prove read-only", async () => {
+    test("asks for every shell command, even one that only reads", async () => {
       const omp = new OmpHarness();
       await omp.start({ modeId: "read-only" });
-      omp.emit(guardStatus());
 
+      omp.emit(modeBashApproval("git-log", "git log --oneline -5"));
+      omp.requestToolApproval({ id: "ls", tool: "bash", detail: "ls -la" });
       omp.requestToolApproval({ id: "edit", tool: "edit", detail: "src/index.ts" });
-      omp.requestToolApproval({ id: "write", tool: "write", detail: "notes.md" });
-      omp.emit(modeBashApproval("delete", "rm -rf build"));
-      omp.emit(modeBashApproval("unknown", "npm test"));
 
-      await waitForAsked(omp, "edit", "write", "delete", "unknown");
-      expect(omp.pendingPermissions()[0]).toMatchObject({ name: "edit" });
+      expect(omp.pendingPermissions()).toEqual([
+        // Paseo maps only two-button approvals to tool cards; this one shows as a question.
+        expect.objectContaining({ id: "git-log" }),
+        expect.objectContaining({ id: "ls", name: "bash" }),
+        expect.objectContaining({ id: "edit", name: "edit" }),
+      ]);
       expect(omp.extensionUiResponses()).toEqual([]);
     });
 
-    test.each(["ask", "write"])(
-      "leaves read-only commands to the user in %s mode",
-      async (modeId) => {
-        const omp = new OmpHarness();
-        await omp.start({ modeId });
+    test("refuses to start when OMP did not load the guard extension", async () => {
+      const omp = new OmpHarness();
+      withoutGuard(omp);
 
-        omp.emit(guardStatus());
-        omp.requestToolApproval({ id: "read", tool: "bash", detail: "git status" });
+      await expect(omp.start({ modeId: "read-only" })).rejects.toThrow(
+        "OMP did not load Paseo's read-only guard extension",
+      );
+      expect(omp.runtimeSessions()[0]?.closed).toBe(true);
+    });
 
-        expect(omp.pendingPermissions()).toEqual([
-          expect.objectContaining({ id: "read", name: "bash", kind: "tool" }),
-        ]);
-        expect(omp.extensionUiResponses()).toEqual([]);
-      },
-    );
+    test("stays in its mode when the relaunched OMP did not load the guard extension", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "ask" });
+      withoutGuard(omp);
+
+      await expect(omp.setMode("read-only")).rejects.toThrow(
+        "OMP did not load Paseo's read-only guard extension",
+      );
+      await expect(omp.currentMode()).resolves.toBe("ask");
+    });
+
+    test("keeps the guard's command out of the slash commands", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "read-only" });
+
+      expect(omp.runtimeSessions()[0]?.commands).toContainEqual(
+        expect.objectContaining({ name: OMP_READ_ONLY_GUARD_COMMAND }),
+      );
+      expect(await omp.commands()).not.toContainEqual(
+        expect.objectContaining({ name: OMP_READ_ONLY_GUARD_COMMAND }),
+      );
+    });
 
     test("refuses to switch to read-only during a turn, since it relaunches OMP", async () => {
       const omp = new OmpHarness();

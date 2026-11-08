@@ -4,7 +4,6 @@ import type { OmpRuntimeEvent } from "./rpc-types.js";
 import {
   buildOmpRpcUiPermissionResponse,
   classifyOmpRpcUiPermissionRequest,
-  readOmpModeBashApprovalCommand,
 } from "./rpc-ui-permission-mapper.js";
 
 type ExtensionUiRequestEvent = Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>;
@@ -152,38 +151,5 @@ describe("OMP rpc-ui permission mapper", () => {
     expect(buildOmpRpcUiPermissionResponse(request, { behavior: "deny", message: "no" })).toEqual({
       value: "Deny",
     });
-  });
-
-  test("reads the command only from plain mode-raised bash approvals", () => {
-    const bash = (title: string, options: string[]): ExtensionUiRequestEvent => ({
-      type: "extension_ui_request",
-      id: "bash",
-      method: "select",
-      title,
-      options,
-    });
-    const sessionOptions = ["Approve", "Approve bash for this session", "Deny"];
-
-    expect(
-      readOmpModeBashApprovalCommand(bash("Allow tool: bash\nCommand: git status", sessionOptions)),
-    ).toBe("git status");
-    expect(
-      readOmpModeBashApprovalCommand(bash("Allow tool: bash\nCommand: ls", ["Approve", "Deny"])),
-    ).toBe("ls");
-
-    for (const event of [
-      // A reason means a rule or safety override asked, not the approval mode.
-      bash("Allow tool: bash\nReason: matched prompt rule\nCommand: ls", sessionOptions),
-      // Provider safety checks follow the command.
-      bash("Allow tool: bash\nCommand: ls\nProvider safety checks:\n- check", ["Approve", "Deny"]),
-      // OMP cut the command; the rest is not shown.
-      bash(`Allow tool: bash\nCommand: ls ${"a".repeat(10)}[…120ch elided…]`, sessionOptions),
-      bash("Allow tool: edit\nCommand: ls", sessionOptions),
-      bash("Allow tool: bash\nCommand: ls", ["Approve once", "Deny"]),
-      bash("Allow tool: bash\nCommand: ls", ["Approve", "Approve edit for this session", "Deny"]),
-      { ...bash("Allow tool: bash\nCommand: ls", sessionOptions), method: "input" as const },
-    ]) {
-      expect(readOmpModeBashApprovalCommand(event)).toBeNull();
-    }
   });
 });

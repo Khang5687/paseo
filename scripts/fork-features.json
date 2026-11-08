@@ -904,11 +904,9 @@
   },
   {
     "pr": 117,
-    "title": "feat(omp): read-only mode that runs read-only shell commands without asking",
+    "title": "feat(omp): read-only mode: reads stay in the agent's folder, every shell command asks",
     "tests": [
-      "packages/server/src/server/agent/read-only-shell-command.test.ts",
       "packages/server/src/server/agent/providers/omp/read-only-guard-extension.test.ts",
-      "packages/server/src/server/agent/providers/omp/rpc-ui-permission-mapper.test.ts",
       "packages/server/src/server/agent/providers/omp/agent.test.ts",
       "packages/server/src/server/agent/mcp-server.test.ts"
     ]

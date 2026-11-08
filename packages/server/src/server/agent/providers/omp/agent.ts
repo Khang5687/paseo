@@ -137,19 +137,14 @@ import { OmpUsagePoller, type OmpUsagePollScheduler } from "./usage-poller.js";
 import {
   buildOmpRpcUiPermissionResponse,
   mapOmpRpcUiPermissionRequest,
-  readOmpModeBashApprovalCommand,
-  TOOL_APPROVAL_APPROVE_VALUE,
 } from "./rpc-ui-permission-mapper.js";
-import { isReadOnlyShellCommand } from "../../read-only-shell-command.js";
-import {
-  OMP_READ_ONLY_GUARD_STATUS_KEY,
-  OMP_READ_ONLY_GUARD_STATUS_TEXT,
-} from "./read-only-guard-extension.js";
+import { OMP_READ_ONLY_GUARD_COMMAND } from "./read-only-guard-extension.js";
 import { DEFAULT_OMP_THINKING_LEVEL, mapOmpModel } from "./map-omp-model.js";
 
 const OMP_PROVIDER = "omp";
-// "Read Only": edits, writes and other tools ask; shell commands that only read are approved by
-// Paseo. A copy answering questions reads freely while the approvals it raises are denied.
+// "Read Only": OMP asks for every tool but its read-tier ones (read, grep, glob, ...), which the
+// guard extension confines to the agent's folder. A copy answering questions uses this mode, and
+// the approvals it raises are denied.
 const OMP_READ_ONLY_MODE_ID = "read-only";
 const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
@@ -909,16 +904,6 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private runtimeSession: OmpRuntimeSession;
-  /** The read-only guard extension reported itself from the current OMP process. */
-  private readOnlyGuardActive = false;
-  /**
-   * A bash command the user approved ran in the current OMP process. OMP's shell keeps aliases,
-   * functions and exports between calls, so such a command can change what a later read-only
-   * command does; nothing is auto-approved again until OMP relaunches with a fresh shell.
-   */
-  private readOnlyShellTainted = false;
-  /** Bash prompts of read-only mode that went to the user, by request id. */
-  private readonly readOnlyBashPromptIds = new Set<string>();
   private hostTools?: OmpHostToolRouter;
   private readonly restartRuntime: OmpAgentSessionOptions["restartRuntime"];
   private readonly config: AgentSessionConfig;
@@ -1232,9 +1217,6 @@ export class OmpAgentSession implements AgentSession {
         // correlate with prompts sent to the new one.
         this.pendingPromptResults.clear();
         this.runtimeSession = next;
-        this.readOnlyGuardActive = false;
-        this.readOnlyShellTainted = false;
-        this.readOnlyBashPromptIds.clear();
         this.hostTools = restarted.hostTools;
         this.state = state;
         this.currentModeId = modeId;
@@ -1273,11 +1255,6 @@ export class OmpAgentSession implements AgentSession {
       throw new Error(`No pending permission request with id '${requestId}'`);
     }
     this.pendingExtensionUiRequests.delete(requestId);
-    // Any answer but a denial may run the command (the user can also pick an option that approves
-    // bash for the rest of the session).
-    if (this.readOnlyBashPromptIds.delete(requestId) && response.behavior !== "deny") {
-      this.readOnlyShellTainted = true;
-    }
 
     const approvalResponse = buildOmpRpcUiPermissionResponse(request, response);
     if (approvalResponse) {
@@ -1876,12 +1853,6 @@ export class OmpAgentSession implements AgentSession {
   private handleExtensionUiRequest(
     event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
   ): void {
-    // The guard extension of a read-only launch reports itself before each bash prompt it let
-    // through; until then OMP may be running without it, so nothing is approved.
-    if (event.method === "setStatus" && event.statusKey === OMP_READ_ONLY_GUARD_STATUS_KEY) {
-      this.readOnlyGuardActive = event.statusText === OMP_READ_ONLY_GUARD_STATUS_TEXT;
-      return;
-    }
     const message = optionalString(event.message);
     if (event.method === "notify" && message) {
       this.emit({
@@ -1911,40 +1882,6 @@ export class OmpAgentSession implements AgentSession {
       return;
     }
 
-    if (this.currentModeId === OMP_READ_ONLY_MODE_ID) {
-      const command = readOmpModeBashApprovalCommand(event);
-      if (command !== null && this.readOnlyGuardActive && !this.readOnlyShellTainted) {
-        void this.approveReadOnlyCommandOrAsk(event, command);
-        return;
-      }
-    }
-    this.forwardExtensionUiRequest(event);
-  }
-
-  private async approveReadOnlyCommandOrAsk(
-    event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
-    command: string,
-  ): Promise<void> {
-    const runtimeSession = this.runtimeSession;
-    let readOnly = false;
-    try {
-      readOnly = await isReadOnlyShellCommand(command, this.config.cwd);
-    } catch (error) {
-      this.logger.warn({ err: error, command }, "OMP read-only check failed; asking the user");
-    }
-    // The prompt belonged to an OMP process that has since been replaced.
-    if (runtimeSession !== this.runtimeSession) return;
-    if (readOnly && !this.readOnlyShellTainted && this.currentModeId === OMP_READ_ONLY_MODE_ID) {
-      this.logger.debug({ command }, "OMP read-only mode approved a read-only shell command");
-      runtimeSession.respondToExtensionUiRequest(event.id, { value: TOOL_APPROVAL_APPROVE_VALUE });
-      return;
-    }
-    this.forwardExtensionUiRequest(event);
-  }
-
-  private forwardExtensionUiRequest(
-    event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
-  ): void {
     const request =
       mapOmpRpcUiPermissionRequest(event, { provider: this.provider }) ??
       this.questionUi.handleRequest(event, this.provider, (id, response) =>
@@ -1954,12 +1891,6 @@ export class OmpAgentSession implements AgentSession {
       return;
     }
 
-    if (
-      this.currentModeId === OMP_READ_ONLY_MODE_ID &&
-      /^Allow tool: bash\r?\n/.test(event.title ?? "")
-    ) {
-      this.readOnlyBashPromptIds.add(request.id);
-    }
     this.pendingExtensionUiRequests.set(request.id, request);
     this.emit({
       type: "permission_requested",
@@ -2760,9 +2691,7 @@ export class OmpAgentClient implements AgentClient {
       env: launchContext?.env,
       routing: this.routingFor(launchContext),
     };
-    const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession(
-      startInput,
-    );
+    const runtimeSession = await this.startAgentRuntime(config.providerOptions, startInput);
     let hostTools: OmpHostToolRouter | undefined;
     try {
       hostTools = await this.configureNativePaseoTools(
@@ -2835,9 +2764,10 @@ export class OmpAgentClient implements AgentClient {
       outputStyles,
     });
     startInput.routing = this.routingFor(launchContext);
-    const runtimeSession = await this.resolveRuntime(
+    const runtimeSession = await this.startAgentRuntime(
       resumeConfig.config.providerOptions,
-    ).startSession(startInput);
+      startInput,
+    );
     let hostTools: OmpHostToolRouter | undefined;
     try {
       hostTools = await this.configureNativePaseoTools(
@@ -3030,7 +2960,7 @@ export class OmpAgentClient implements AgentClient {
   ): OmpAgentSessionOptions["restartRuntime"] {
     return async (sessionFile, modeId) => {
       const launchMode = this.resolveLaunchMode(modeId, config.providerOptions);
-      const next = await this.resolveRuntime(config.providerOptions).startSession({
+      const next = await this.startAgentRuntime(config.providerOptions, {
         ...startInput,
         model: config.model,
         thinkingOptionId: normalizeOmpThinkingOption(config.thinkingOptionId) ?? undefined,
@@ -3206,6 +3136,33 @@ export class OmpAgentClient implements AgentClient {
   private resolveRuntime(providerOptions: Record<string, unknown> | undefined): OmpRuntime {
     const { runtimeOptions } = resolveOmpProviderOptions(providerOptions);
     return this.runtime ?? createRuntime(this.logger, this.runtimeSettings, runtimeOptions);
+  }
+
+  /**
+   * Starts OMP for an agent that takes prompts. OMP runs on without an extension that fails to
+   * load, so a read-only launch is refused unless OMP lists the guard extension's command.
+   */
+  private async startAgentRuntime(
+    providerOptions: Record<string, unknown> | undefined,
+    input: OmpStartSessionInput,
+  ): Promise<OmpRuntimeSession> {
+    const runtimeSession = await this.resolveRuntime(providerOptions).startSession(input);
+    if (input.modeId !== OMP_READ_ONLY_MODE_ID) return runtimeSession;
+    let guardLoaded = false;
+    try {
+      const commands = await runtimeSession.getCommands();
+      guardLoaded = commands.some((command) => command.name === OMP_READ_ONLY_GUARD_COMMAND);
+    } catch (error) {
+      await runtimeSession.close().catch(() => undefined);
+      throw error;
+    }
+    if (!guardLoaded) {
+      await runtimeSession.close().catch(() => undefined);
+      throw new Error(
+        "OMP did not load Paseo's read-only guard extension, so read-only mode cannot start",
+      );
+    }
+    return runtimeSession;
   }
 
   private async resolveOmpLaunch(): Promise<ResolvedProviderLaunch> {

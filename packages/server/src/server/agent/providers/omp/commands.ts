@@ -4,6 +4,7 @@ import type {
   AgentSlashCommandSubcommand,
 } from "../../agent-sdk-types.js";
 import { OmpAvailableCommandsUpdateEventSchema, type OmpAvailableCommand } from "./rpc-types.js";
+import { OMP_READ_ONLY_GUARD_COMMAND } from "./read-only-guard-extension.js";
 
 export const OMP_HANDLED_BUILTIN_SLASH_COMMANDS: readonly AgentSlashCommand[] = [
   {
@@ -54,6 +55,8 @@ export function mapOmpSlashCommands(commands: readonly OmpAvailableCommand[]): A
     OMP_HANDLED_BUILTIN_SLASH_COMMANDS.map((command) => [command.name, { ...command }]),
   );
   for (const command of commands) {
+    // Only shows that the read-only guard loaded; it does nothing for the user.
+    if (command.name === OMP_READ_ONLY_GUARD_COMMAND) continue;
     const knownCommand = mappedCommands.get(command.name);
     const subcommands = command.subcommands?.length
       ? command.subcommands.map(mapOmpSubcommand)

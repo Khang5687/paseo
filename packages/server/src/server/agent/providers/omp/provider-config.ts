@@ -59,8 +59,8 @@ export function resolveOmpReadOnlyGuardPath(moduleUrl: string = import.meta.url)
 const OMP_READ_ONLY_GUARD_EXTENSION_PATH = resolveOmpReadOnlyGuardPath();
 
 /**
- * `read-only` launches like `ask` plus the guard extension; Paseo then approves the shell commands
- * it can prove only read (see OmpAgentSession).
+ * `read-only` launches like `ask` plus the guard extension, which keeps the tools that run without
+ * a prompt inside the agent's folder; every shell command still asks.
  */
 export function resolveOmpLaunchMode(
   modeId: string | undefined,

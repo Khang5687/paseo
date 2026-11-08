@@ -169,7 +169,7 @@ export const OMP_MODES: AgentProviderModeDefinition[] = [
     id: "read-only",
     label: "Read Only",
     description:
-      "Launches OMP with always-ask approval mode; Paseo approves shell commands that only read.",
+      "Launches OMP with always-ask approval mode; reads and searches stay in the agent's folder and every shell command asks.",
     icon: "ShieldEllipsis",
     colorTier: "planning",
   },
