@@ -9,3 +9,12 @@ bash:
 fetch:
   # `read`, `grep` and `ast_grep` fetch URLs (`https://`, `www.`) without a prompt.
   enabled: false
+# A folder `shellPath` would swap the program an approved bash prompt runs.
+shellPath: null
+mcp:
+  # A folder `.mcp.json`, `.omp/mcp.json` or `.codex/config.toml` starts servers at launch with no
+  # prompt: a command runs, or env vars go to any URL as a bearer token. The user's own still load.
+  enableProjectConfig: false
+skills:
+  # A folder `customDirectories` would let `skill://` read outside the folder.
+  customDirectories: null
