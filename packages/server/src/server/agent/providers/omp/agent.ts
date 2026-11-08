@@ -83,7 +83,6 @@ import {
   resolveOmpDiagnosticPaths,
   resolveOmpLaunchMode,
   resolveOmpProviderOptions,
-  OMP_APPROVAL_MODES,
   OMP_MODES,
   type OmpRuntimeOptions,
 } from "./provider-config.js";
@@ -142,6 +141,10 @@ import {
   TOOL_APPROVAL_APPROVE_VALUE,
 } from "./rpc-ui-permission-mapper.js";
 import { isReadOnlyShellCommand } from "../../read-only-shell-command.js";
+import {
+  OMP_READ_ONLY_GUARD_STATUS_KEY,
+  OMP_READ_ONLY_GUARD_STATUS_TEXT,
+} from "./read-only-guard-extension.js";
 import { DEFAULT_OMP_THINKING_LEVEL, mapOmpModel } from "./map-omp-model.js";
 
 const OMP_PROVIDER = "omp";
@@ -633,6 +636,16 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * True for `/`, the home folder and folders above it. Read-only mode trusts relative paths because
+ * they stay inside the agent's folder; inside these folders they still reach every dotfile secret.
+ */
+function isBroadReadOnlyRoot(cwd: string): boolean {
+  const root = path.resolve(cwd);
+  const home = path.resolve(homedir());
+  return root === path.parse(root).root || home === root || home.startsWith(`${root}${path.sep}`);
+}
+
 function isExtensionUiRequestEvent(
   event: OmpRuntimeEvent,
 ): event is Extract<OmpRuntimeEvent, { type: "extension_ui_request" }> {
@@ -906,6 +919,8 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private runtimeSession: OmpRuntimeSession;
+  /** The read-only guard extension reported itself from the current OMP process. */
+  private readOnlyGuardActive = false;
   private hostTools?: OmpHostToolRouter;
   private readonly restartRuntime: OmpAgentSessionOptions["restartRuntime"];
   private readonly config: AgentSessionConfig;
@@ -1193,15 +1208,6 @@ export class OmpAgentSession implements AgentSession {
       throw new Error(`Invalid OMP mode '${modeId}'`);
     }
     if (modeId === this.currentModeId) return;
-    // Modes that launch OMP alike differ only in what Paseo approves, so they apply at once.
-    if (
-      this.currentModeId &&
-      OMP_APPROVAL_MODES[modeId] === OMP_APPROVAL_MODES[this.currentModeId]
-    ) {
-      this.currentModeId = modeId;
-      this.config.modeId = modeId;
-      return;
-    }
     if (this.activeTurnId || this.state.isStreaming || this.state.isCompacting) {
       return { type: "warning", message: "Change approval mode once the current turn ends" };
     }
@@ -1228,6 +1234,7 @@ export class OmpAgentSession implements AgentSession {
         // correlate with prompts sent to the new one.
         this.pendingPromptResults.clear();
         this.runtimeSession = next;
+        this.readOnlyGuardActive = false;
         this.hostTools = restarted.hostTools;
         this.state = state;
         this.currentModeId = modeId;
@@ -1864,6 +1871,12 @@ export class OmpAgentSession implements AgentSession {
   private handleExtensionUiRequest(
     event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
   ): void {
+    // The guard extension of a read-only launch reports itself before each bash prompt it let
+    // through; until then OMP may be running without it, so nothing is approved.
+    if (event.method === "setStatus" && event.statusKey === OMP_READ_ONLY_GUARD_STATUS_KEY) {
+      this.readOnlyGuardActive = event.statusText === OMP_READ_ONLY_GUARD_STATUS_TEXT;
+      return;
+    }
     const message = optionalString(event.message);
     if (event.method === "notify" && message) {
       this.emit({
@@ -1895,7 +1908,12 @@ export class OmpAgentSession implements AgentSession {
 
     if (this.currentModeId === OMP_READ_ONLY_MODE_ID) {
       const command = readOmpModeBashApprovalCommand(event);
-      if (command !== null && isReadOnlyShellCommand(command)) {
+      if (
+        command !== null &&
+        this.readOnlyGuardActive &&
+        !isBroadReadOnlyRoot(this.config.cwd) &&
+        isReadOnlyShellCommand(command)
+      ) {
         this.logger.debug({ command }, "OMP read-only mode approved a read-only shell command");
         this.runtimeSession.respondToExtensionUiRequest(event.id, {
           value: TOOL_APPROVAL_APPROVE_VALUE,

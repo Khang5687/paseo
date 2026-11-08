@@ -1,15 +1,19 @@
 /**
- * Decides whether a shell command line only reads. Used to auto-approve shell commands for agents
- * in a read-only mode, so the answer must never be "yes" for a command that can change something:
- * anything this module does not understand is not read-only.
+ * Decides whether a shell command line only reads files inside the agent's folder. Used to
+ * auto-approve shell commands for agents in a read-only mode, so the answer must never be "yes" for
+ * a command that can change something or read outside that folder: anything this module does not
+ * understand is not read-only.
  *
  * The check parses one line of POSIX shell: words, quotes, `|`, `||`, `&&` and `;`. It refuses
  * any `$` outside single quotes (the shell is persistent, so a variable can hold anything),
- * command substitution, subshells, background jobs, comments, environment assignments, and
- * redirects other than to `/dev/null`, to another descriptor, or from a file. A command with an
- * argument check refuses unquoted globs, which can expand to a file named like a flag.
- * Every command in the line must be on the allowlist below and pass its argument check, and no
- * word or redirect target may name a secret path (see `SECRET_PATHS`): those still ask.
+ * command substitution, subshells, background jobs, comments, environment assignments, unquoted
+ * globs, and redirects other than to `/dev/null`, to another descriptor, or from a file.
+ * Every command in the line must be on the allowlist below and pass its argument check.
+ *
+ * Paths: the command runs in the agent's folder (OMP's `cwd` argument is held there by
+ * `providers/omp/read-only-guard-extension.ts`), so only relative paths that stay below it pass.
+ * Absolute paths, `~`, `..` segments and `cd` ask, and so do the credential names in
+ * `SECRET_PATHS` (`.env`, SSH keys, ...), which can sit inside the folder too.
  */
 
 type ArgumentCheck = (args: readonly string[]) => boolean;
@@ -20,23 +24,18 @@ const READ_ONLY_COMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, A
   ...[
     "basename",
     "cat",
-    "cd",
     "cksum",
     "cmp",
     "column",
     "comm",
     "cut",
     "df",
-    "diff",
     "dirname",
     "du",
     "echo",
-    "egrep",
     "false",
-    "fgrep",
     "fold",
     "free",
-    "grep",
     "head",
     "hexdump",
     "id",
@@ -69,10 +68,14 @@ const READ_ONLY_COMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, A
     "which",
     "whoami",
   ].map((name): [string, ArgumentCheck] => [name, ANY_ARGUMENTS]),
-  // `e` (BSD style, no dash) prints each process's environment.
-  ["ps", (args) => !args.some((arg) => !arg.startsWith("-") && arg.includes("e"))],
-  // `env` and `$ENV` print the environment.
-  ["jq", (args) => !args.some((arg) => /env/i.test(arg))],
+  ["ps", (args) => !psPrintsEnvironment(args, process.platform)],
+  // `env` and `$ENV` print the environment; -i/--in-place writes the input file back; -f reads
+  // the program from a file.
+  [
+    "jq",
+    (args) =>
+      !args.some((arg) => /env/i.test(arg)) && !hasFlag(args, "if", ["--in-place", "--from-file"]),
+  ],
   // -v assigns a shell variable, which outlives the command in a persistent shell.
   ["printf", (args) => !hasFlag(args, "v", [])],
   // -C compiles a magic file next to the input.
@@ -82,21 +85,70 @@ const READ_ONLY_COMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, A
   // -o writes the output to a file; --compress-program runs a program.
   ["sort", (args) => !hasFlag(args, "o", ["--output", "--compress-program"])],
   // A second operand is an output file.
-  ["uniq", (args) => args.filter((arg) => !arg.startsWith("-")).length <= 1],
+  ["uniq", (args) => operands(args).length <= 1],
   // -o writes the listing to a file; -R writes an HTML index into every directory.
   ["tree", (args) => !hasFlag(args, "oR", [])],
   ["find", (args) => !args.some((arg) => FIND_ACTIONS.some((action) => arg.startsWith(action)))],
-  // --pre runs a program on every file.
-  ["rg", (args) => !hasFlag(args, "", ["--pre"])],
+  // Recursive reads open every file below a directory, `.env` files included.
+  ...["grep", "egrep", "fgrep"].map((name): [string, ArgumentCheck] => [
+    name,
+    (args) => !hasFlag(args, "rRd", ["--recursive", "--dereference-recursive", "--directories"]),
+  ]),
+  ["diff", (args) => !hasFlag(args, "rN", ["--recursive", "--new-file"])],
+  // rg skips hidden and ignored files (where `.env` lives) unless told otherwise; --pre and
+  // --search-zip run programs.
+  [
+    "rg",
+    (args) =>
+      !hasFlag(args, "u.Lz", [
+        "--pre",
+        "--hidden",
+        "--no-ignore",
+        "--unrestricted",
+        "--follow",
+        "--search-zip",
+      ]),
+  ],
   ["fd", (args) => !hasFlag(args, "xX", ["--exec", "--exec-batch"])],
   ["git", isReadOnlyGitCommand],
 ]);
 
-const FIND_ACTIONS = ["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fls"];
+const FIND_ACTIONS = [
+  "-exec",
+  "-execdir",
+  "-ok",
+  "-okdir",
+  "-delete",
+  "-fprint",
+  "-fls",
+  "-files0-from",
+];
+
+/** Long options any command refuses: they read the list of files to open from a file. */
+const REFUSED_LONG_OPTIONS = ["--files0-from"];
+
+/** `e` without a dash (BSD style), `-E`, and `-e` on macOS print each process's environment. */
+function psPrintsEnvironment(args: readonly string[], platform: NodeJS.Platform): boolean {
+  return args.some((arg) => {
+    if (!arg.startsWith("-")) return arg.includes("e");
+    if (arg.startsWith("--")) return false;
+    return arg.includes("E") || (platform === "darwin" && arg.includes("e"));
+  });
+}
+
+/** The arguments that are not options: words without a leading dash, and every word after `--`. */
+function operands(args: readonly string[]): string[] {
+  const end = args.indexOf("--");
+  const before = end < 0 ? args : args.slice(0, end);
+  const after = end < 0 ? [] : args.slice(end + 1);
+  return [...before.filter((arg) => !arg.startsWith("-") || arg === "-"), ...after];
+}
 
 /**
  * True when `args` holds one of the short flags (as its own argument or inside a cluster like
- * `-bo`) or a long flag, with or without `=value`. Over-matches a short flag's value on purpose.
+ * `-bo`) or a long flag, with or without `=value`. GNU and git accept any unambiguous prefix of a
+ * long option (`--outp` for `--output`), and some tools have families (`--no-ignore-vcs`), so a
+ * long option matches when either name starts with the other. Over-matches on purpose.
  */
 function hasFlag(
   args: readonly string[],
@@ -105,7 +157,10 @@ function hasFlag(
 ): boolean {
   return args.some((arg) => {
     if (arg.startsWith("--")) {
-      return longFlags.some((flag) => arg === flag || arg.startsWith(`${flag}=`));
+      const name = arg.split("=", 1)[0];
+      return (
+        name.length > 2 && longFlags.some((flag) => flag.startsWith(name) || name.startsWith(flag))
+      );
     }
     if (arg.startsWith("-") && arg.length > 1) {
       return arg
@@ -121,6 +176,32 @@ function hasFlag(
 const GIT_HISTORY_CHECK: ArgumentCheck = (args) =>
   !hasFlag(args, "O", ["--output", "--ext-diff", "--open-files-in-pager"]);
 
+// Listing flags only: any other word names a branch to create, move or delete.
+const GIT_BRANCH_LIST_FLAGS = new Set([
+  "-a",
+  "--all",
+  "-r",
+  "--remotes",
+  "-v",
+  "-vv",
+  "--verbose",
+  "--show-current",
+  "--merged",
+  "--no-merged",
+  "--color",
+  "--no-color",
+  "--column",
+  "--no-column",
+]);
+const GIT_BRANCH_LIST_VALUE_FLAGS = ["--sort=", "--format=", "--contains=", "--points-at="];
+
+/**
+ * Keys `git config --get` may print. Anything else can hold a token: remote URLs, `http.*`
+ * headers, credential helpers.
+ */
+const GIT_CONFIG_READABLE_KEY =
+  /^(?:user\.(?:name|email)|core\.[a-z]+|init\.defaultbranch|pull\.rebase|push\.default)$/i;
+
 const GIT_SUBCOMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, ArgumentCheck>([
   ...[
     "blame",
@@ -133,10 +214,8 @@ const GIT_SUBCOMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, Argu
     "diff-files",
     "diff-index",
     "diff-tree",
-    "grep",
     "log",
     "ls-files",
-    "ls-remote",
     "ls-tree",
     "merge-base",
     "name-rev",
@@ -149,23 +228,17 @@ const GIT_SUBCOMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, Argu
     "version",
     "whatchanged",
   ].map((name): [string, ArgumentCheck] => [name, GIT_HISTORY_CHECK]),
+  // --no-index and --untracked search files git does not track, `.env` files included.
+  ["grep", (args) => GIT_HISTORY_CHECK(args) && !hasFlag(args, "", ["--no-index", "--untracked"])],
   ["for-each-ref", ANY_ARGUMENTS],
-  // Listing only: any argument that is not a flag names a branch to create.
   [
     "branch",
     (args) =>
-      args.every((arg) => arg.startsWith("-")) &&
-      !hasFlag(args, "dDmMcCfu", [
-        "--delete",
-        "--move",
-        "--copy",
-        "--force",
-        "--set-upstream-to",
-        "--unset-upstream",
-        "--edit-description",
-        "--track",
-        "--no-track",
-      ]),
+      args.every(
+        (arg) =>
+          GIT_BRANCH_LIST_FLAGS.has(arg) ||
+          GIT_BRANCH_LIST_VALUE_FLAGS.some((flag) => arg.startsWith(flag)),
+      ),
   ],
   [
     "tag",
@@ -174,29 +247,14 @@ const GIT_SUBCOMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, Argu
       ((args[0] === "-l" || args[0] === "--list") &&
         args.slice(1).every((arg) => !arg.startsWith("-"))),
   ],
-  [
-    "remote",
-    (args) =>
-      args.length === 0 ||
-      (args.length === 1 && (args[0] === "-v" || args[0] === "--verbose")) ||
-      args[0] === "get-url" ||
-      args[0] === "show",
-  ],
+  // Remote names only: URLs can carry a token.
+  ["remote", (args) => args.length === 0],
   [
     "config",
     (args) =>
-      args[0] === "get" ||
-      args[0] === "list" ||
-      (args.some((arg) => ["--get", "--get-all", "--get-regexp", "--list", "-l"].includes(arg)) &&
-        !hasFlag(args, "e", [
-          "--add",
-          "--edit",
-          "--replace-all",
-          "--unset",
-          "--unset-all",
-          "--rename-section",
-          "--remove-section",
-        ])),
+      args.length === 2 &&
+      (args[0] === "get" || args[0] === "--get") &&
+      GIT_CONFIG_READABLE_KEY.test(args[1]),
   ],
   [
     "reflog",
@@ -209,7 +267,7 @@ const GIT_SUBCOMMANDS: ReadonlyMap<string, ArgumentCheck> = new Map<string, Argu
 function isReadOnlyGitCommand(args: readonly string[]): boolean {
   let index = 0;
   // Global options that only pick the repository or turn the pager off. `-c` is refused: it can
-  // set an alias, pager or hook command.
+  // set an alias, pager or hook command. The paths they take pass the same path check as any word.
   while (index < args.length) {
     const arg = args[index];
     if (arg === "-C") {
@@ -232,42 +290,60 @@ function isReadOnlyGitCommand(args: readonly string[]): boolean {
 }
 
 /**
- * Paths whose contents are credentials. A word or redirect target matching one of these makes the
- * command ask, even when it only reads. Relative paths are matched as written, so a `cd` into a
- * secret directory matches through the `cd` word.
+ * Credential names that can sit inside the agent's folder. A word or redirect target matching one
+ * of these makes the command ask, even when it only reads.
  */
 const SECRET_PATHS: readonly RegExp[] = [
-  // Paseo daemon home, SSH keys, GitHub CLI auth.
+  // Paseo daemon home, SSH keys, GitHub CLI auth, OMP's credential vault.
   /(?:^|[/=])\.paseo(?:\/|$)/,
   /(?:^|[/=])\.ssh(?:\/|$)/,
   /(?:^|[/=])\.config\/gh(?:\/|$)/,
-  // OMP's credential vault, legacy auth file and broker tokens, or a glob that could reach them.
-  /(?:^|[/=])\.omp\/agent(?:\/?$|\/[^/]*[*?[])/,
+  /(?:^|[/=])\.omp\/agent(?:\/|$)/,
   /(?:^|[/=])(?:agent\.db|auth\.json)/,
   /(?:^|[/=])\.env(?:\.[^/]*)?$/,
   /(?:^|[/=])id_(?:rsa|ecdsa|ed25519|dsa)/,
   /\.(?:pem|key|token)$/,
-  // A glob in a hidden path segment can expand to any of the above.
-  /(?:^|\/)\.[^/]*[*?[]/,
 ];
 
 function namesSecretPath(word: string): boolean {
   return SECRET_PATHS.some((pattern) => pattern.test(word));
 }
 
+// A path that starts at `/` or `~`, alone or as an option value (`--git-dir=/x`, `HEAD:/x`).
+const ROOTED_PATH = /(?:^|[=:,])[/~]/;
+// A `..` segment, alone or as an option value.
+const PARENT_SEGMENT = /(?:^|[/=:,])\.\.(?:$|[/:,])/;
+
+/**
+ * True when a word may name a path outside the agent's folder. `/dev/null` is the one absolute
+ * path allowed. A short option with a value glued on (`-f/etc/x`) counts when the value holds a
+ * `/` or `~`.
+ */
+function mayLeaveFolder(word: string): boolean {
+  if (word === "/dev/null") return false;
+  if (ROOTED_PATH.test(word) || PARENT_SEGMENT.test(word)) return true;
+  return /^-[^-]/.test(word) && /[/~]/.test(word);
+}
+
+function refusedWord(word: string): boolean {
+  return (
+    mayLeaveFolder(word) ||
+    namesSecretPath(word) ||
+    REFUSED_LONG_OPTIONS.some((option) => word.startsWith(option))
+  );
+}
+
 export function isReadOnlyShellCommand(command: string): boolean {
   const parser = new ShellLineParser(command);
   const segments = parser.parse();
   if (!segments || segments.length === 0) return false;
-  if (parser.redirectTargets.some(namesSecretPath)) return false;
+  if (parser.redirectTargets.some(refusedWord)) return false;
   return segments.every((words) => {
-    if (words.some((word) => namesSecretPath(word.text))) return false;
+    if (words.some((word) => word.globbed || refusedWord(word.text))) return false;
     const [name, ...args] = words;
-    if (name === undefined || name.globbed || name.text.includes("=")) return false;
+    if (name === undefined || name.text.includes("=")) return false;
     const check = READ_ONLY_COMMANDS.get(name.text);
-    if (check === undefined) return false;
-    if (check !== ANY_ARGUMENTS && args.some((arg) => arg.globbed)) return false;
-    return check(args.map((arg) => arg.text));
+    return check !== undefined && check(args.map((arg) => arg.text));
   });
 }
 
@@ -283,6 +359,8 @@ const GLOB_CHARS = "*?[";
 
 const PLAIN_TARGET = /^[\w./+-]+$/;
 const TARGET_END = /[\s|&;<>()'"`$\\]/;
+// What may follow a redirect target: the end of the word.
+const TARGET_FOLLOWERS = " \t|&;<>";
 
 /**
  * Splits one command line into the words of each command. `parse` returns null for anything
@@ -414,6 +492,9 @@ class ShellLineParser {
     }
     const target = this.line.slice(start, this.index);
     if (!PLAIN_TARGET.test(target)) return null;
+    // A quote or backslash right after the target glues more text onto it (`>&1'x'` writes `1x`).
+    const next = this.line[this.index];
+    if (next !== undefined && !TARGET_FOLLOWERS.includes(next)) return null;
     this.redirectTargets.push(target);
     return target;
   }

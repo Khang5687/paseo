@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { OMP_MODES } from "@getpaseo/protocol/provider-manifest";
 import { z } from "zod";
 
@@ -35,17 +36,32 @@ export interface OmpModelRoles {
   planModel?: string;
 }
 
-/**
- * The OMP `--approval-mode` each Paseo mode launches with. `read-only` launches like `ask`; Paseo
- * then approves the shell commands it can prove only read (see OmpAgentSession).
- */
-export const OMP_APPROVAL_MODES: Readonly<Record<string, string>> = {
+/** The OMP `--approval-mode` each Paseo mode launches with. */
+const OMP_APPROVAL_MODES: Readonly<Record<string, string>> = {
   full: "yolo",
   write: "write",
   ask: "always-ask",
   "read-only": "always-ask",
 };
 
+/**
+ * The guard extension next to this module: `.ts` when the daemon runs from source, `.js` from
+ * `dist`. See `read-only-guard-extension.ts` for why read-only mode needs it. OMP is a separate
+ * process that cannot read Electron's `app.asar`, so the desktop app unpacks the file
+ * (`asarUnpack` in `packages/desktop/electron-builder.yml`) and OMP loads that copy.
+ */
+export function resolveOmpReadOnlyGuardPath(moduleUrl: string = import.meta.url): string {
+  const modulePath = fileURLToPath(moduleUrl);
+  const guard = join(dirname(modulePath), `read-only-guard-extension${extname(modulePath)}`);
+  return guard.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
+}
+
+const OMP_READ_ONLY_GUARD_EXTENSION_PATH = resolveOmpReadOnlyGuardPath();
+
+/**
+ * `read-only` launches like `ask` plus the guard extension; Paseo then approves the shell commands
+ * it can prove only read (see OmpAgentSession).
+ */
 export function resolveOmpLaunchMode(
   modeId: string | undefined,
   modelRoles: OmpModelRoles = {},
@@ -57,9 +73,16 @@ export function resolveOmpLaunchMode(
   if (!approvalMode) {
     throw new Error(`Unsupported OMP mode '${modeId}'`);
   }
+  const guardArgs =
+    resolvedModeId === "read-only" ? ["--extension", OMP_READ_ONLY_GUARD_EXTENSION_PATH] : [];
   return {
     modeId: resolvedModeId,
-    extraArgs: ["--approval-mode", approvalMode, ...resolveOmpModelRoleArgs(modelRoles)],
+    extraArgs: [
+      "--approval-mode",
+      approvalMode,
+      ...guardArgs,
+      ...resolveOmpModelRoleArgs(modelRoles),
+    ],
   };
 }
 
