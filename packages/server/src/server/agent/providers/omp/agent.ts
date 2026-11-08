@@ -636,16 +636,6 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/**
- * True for `/`, the home folder and folders above it. Read-only mode trusts relative paths because
- * they stay inside the agent's folder; inside these folders they still reach every dotfile secret.
- */
-function isBroadReadOnlyRoot(cwd: string): boolean {
-  const root = path.resolve(cwd);
-  const home = path.resolve(homedir());
-  return root === path.parse(root).root || home === root || home.startsWith(`${root}${path.sep}`);
-}
-
 function isExtensionUiRequestEvent(
   event: OmpRuntimeEvent,
 ): event is Extract<OmpRuntimeEvent, { type: "extension_ui_request" }> {
@@ -921,6 +911,14 @@ export class OmpAgentSession implements AgentSession {
   private runtimeSession: OmpRuntimeSession;
   /** The read-only guard extension reported itself from the current OMP process. */
   private readOnlyGuardActive = false;
+  /**
+   * A bash command the user approved ran in the current OMP process. OMP's shell keeps aliases,
+   * functions and exports between calls, so such a command can change what a later read-only
+   * command does; nothing is auto-approved again until OMP relaunches with a fresh shell.
+   */
+  private readOnlyShellTainted = false;
+  /** Bash prompts of read-only mode that went to the user, by request id. */
+  private readonly readOnlyBashPromptIds = new Set<string>();
   private hostTools?: OmpHostToolRouter;
   private readonly restartRuntime: OmpAgentSessionOptions["restartRuntime"];
   private readonly config: AgentSessionConfig;
@@ -1235,6 +1233,8 @@ export class OmpAgentSession implements AgentSession {
         this.pendingPromptResults.clear();
         this.runtimeSession = next;
         this.readOnlyGuardActive = false;
+        this.readOnlyShellTainted = false;
+        this.readOnlyBashPromptIds.clear();
         this.hostTools = restarted.hostTools;
         this.state = state;
         this.currentModeId = modeId;
@@ -1273,6 +1273,11 @@ export class OmpAgentSession implements AgentSession {
       throw new Error(`No pending permission request with id '${requestId}'`);
     }
     this.pendingExtensionUiRequests.delete(requestId);
+    // Any answer but a denial may run the command (the user can also pick an option that approves
+    // bash for the rest of the session).
+    if (this.readOnlyBashPromptIds.delete(requestId) && response.behavior !== "deny") {
+      this.readOnlyShellTainted = true;
+    }
 
     const approvalResponse = buildOmpRpcUiPermissionResponse(request, response);
     if (approvalResponse) {
@@ -1908,20 +1913,38 @@ export class OmpAgentSession implements AgentSession {
 
     if (this.currentModeId === OMP_READ_ONLY_MODE_ID) {
       const command = readOmpModeBashApprovalCommand(event);
-      if (
-        command !== null &&
-        this.readOnlyGuardActive &&
-        !isBroadReadOnlyRoot(this.config.cwd) &&
-        isReadOnlyShellCommand(command)
-      ) {
-        this.logger.debug({ command }, "OMP read-only mode approved a read-only shell command");
-        this.runtimeSession.respondToExtensionUiRequest(event.id, {
-          value: TOOL_APPROVAL_APPROVE_VALUE,
-        });
+      if (command !== null && this.readOnlyGuardActive && !this.readOnlyShellTainted) {
+        void this.approveReadOnlyCommandOrAsk(event, command);
         return;
       }
     }
+    this.forwardExtensionUiRequest(event);
+  }
 
+  private async approveReadOnlyCommandOrAsk(
+    event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
+    command: string,
+  ): Promise<void> {
+    const runtimeSession = this.runtimeSession;
+    let readOnly = false;
+    try {
+      readOnly = await isReadOnlyShellCommand(command, this.config.cwd);
+    } catch (error) {
+      this.logger.warn({ err: error, command }, "OMP read-only check failed; asking the user");
+    }
+    // The prompt belonged to an OMP process that has since been replaced.
+    if (runtimeSession !== this.runtimeSession) return;
+    if (readOnly && !this.readOnlyShellTainted && this.currentModeId === OMP_READ_ONLY_MODE_ID) {
+      this.logger.debug({ command }, "OMP read-only mode approved a read-only shell command");
+      runtimeSession.respondToExtensionUiRequest(event.id, { value: TOOL_APPROVAL_APPROVE_VALUE });
+      return;
+    }
+    this.forwardExtensionUiRequest(event);
+  }
+
+  private forwardExtensionUiRequest(
+    event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
+  ): void {
     const request =
       mapOmpRpcUiPermissionRequest(event, { provider: this.provider }) ??
       this.questionUi.handleRequest(event, this.provider, (id, response) =>
@@ -1931,6 +1954,12 @@ export class OmpAgentSession implements AgentSession {
       return;
     }
 
+    if (
+      this.currentModeId === OMP_READ_ONLY_MODE_ID &&
+      /^Allow tool: bash\r?\n/.test(event.title ?? "")
+    ) {
+      this.readOnlyBashPromptIds.add(request.id);
+    }
     this.pendingExtensionUiRequests.set(request.id, request);
     this.emit({
       type: "permission_requested",

@@ -1,5 +1,6 @@
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -1566,6 +1567,29 @@ describe("OMP agent client and session", () => {
       statusKey: "paseo-read-only-guard",
       statusText: "active",
     });
+    // The checker resolves paths and asks git about the folder's repository, so the agent runs in
+    // a real repository.
+    const repoFolder = async (): Promise<string> => {
+      const folder = await mkdtemp(path.join(tmpdir(), "paseo-omp-read-only-"));
+      onTestFinished(() => rm(folder, { recursive: true, force: true }));
+      execFileSync("git", ["init", "-q", folder]);
+      await writeFile(path.join(folder, "README.md"), "hi\n");
+      return folder;
+    };
+    // Approvals resolve paths first, so they settle after a few turns of the event loop.
+    const settle = async () => {
+      for (let turn = 0; turn < 50; turn += 1) await waitForImmediate();
+    };
+    const waitForApproved = (omp: OmpHarness, ...ids: string[]) => {
+      const expected = ids.map((id) => ({ id, response: { value: "Approve" } }));
+      return vi.waitFor(() =>
+        expect(omp.extensionUiResponses()).toEqual(expect.arrayContaining(expected)),
+      );
+    };
+    const waitForAsked = (omp: OmpHarness, ...ids: string[]) => {
+      const expected = ids.map((id) => expect.objectContaining({ id }));
+      return vi.waitFor(() => expect(omp.pendingPermissions()).toEqual(expected));
+    };
 
     test("launches OMP in always-ask mode with the guard extension", async () => {
       const omp = new OmpHarness();
@@ -1588,24 +1612,22 @@ describe("OMP agent client and session", () => {
 
     test("approves read-only shell commands once the guard reported itself", async () => {
       const omp = new OmpHarness();
-      await omp.start({ modeId: "read-only" });
+      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
 
       omp.emit(guardStatus());
       omp.emit(modeBashApproval("read-1", "git log --oneline -5"));
       omp.requestToolApproval({ id: "read-2", tool: "bash", detail: "ls -la" });
 
+      await waitForApproved(omp, "read-1", "read-2");
       expect(omp.pendingPermissions()).toEqual([]);
-      expect(omp.extensionUiResponses()).toEqual([
-        { id: "read-1", response: { value: "Approve" } },
-        { id: "read-2", response: { value: "Approve" } },
-      ]);
     });
 
     test("asks while the guard has not reported itself, so OMP may run a hidden cwd", async () => {
       const omp = new OmpHarness();
-      await omp.start({ modeId: "read-only" });
+      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
 
-      omp.emit(modeBashApproval("read", "cat hosts.yml"));
+      omp.emit(modeBashApproval("read", "cat README.md"));
+      await settle();
 
       expect(omp.pendingPermissions()).toEqual([expect.objectContaining({ id: "read" })]);
       expect(omp.extensionUiResponses()).toEqual([]);
@@ -1613,15 +1635,44 @@ describe("OMP agent client and session", () => {
 
     test("forgets the guard when OMP relaunches", async () => {
       const omp = new OmpHarness();
-      await omp.start({ modeId: "read-only" });
+      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
       omp.emit(guardStatus());
 
       await omp.setMode("ask");
       await omp.setMode("read-only");
       omp.emit(modeBashApproval("read", "git status"));
+      await settle();
 
       expect(omp.runtimeLaunches()).toHaveLength(3);
       expect(omp.pendingPermissions()).toEqual([expect.objectContaining({ id: "read" })]);
+    });
+
+    // OMP's shell keeps aliases, functions and exports between calls: after `alias cat=...` or
+    // `export GIT_EXTERNAL_DIFF=...` ran, a command that looks read-only no longer is.
+    test("stops auto-approving once the user approved a shell command, until OMP relaunches", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "read-only", cwd: await repoFolder() });
+      omp.emit(guardStatus());
+
+      omp.emit(modeBashApproval("denied", "export GIT_EXTERNAL_DIFF=./x"));
+      await waitForAsked(omp, "denied");
+      await omp.respondToPermission("denied", { behavior: "deny" });
+      omp.emit(modeBashApproval("still-read", "cat README.md"));
+      await waitForApproved(omp, "still-read");
+
+      omp.emit(modeBashApproval("alias", "alias cat='sh -c'"));
+      await waitForAsked(omp, "alias");
+      await omp.respondToPermission("alias", { behavior: "allow" });
+      omp.emit(modeBashApproval("after", "cat README.md"));
+      await settle();
+      expect(omp.pendingPermissions()).toEqual([expect.objectContaining({ id: "after" })]);
+
+      await omp.respondToPermission("after", { behavior: "deny" });
+      await omp.setMode("ask");
+      await omp.setMode("read-only");
+      omp.emit(guardStatus());
+      omp.emit(modeBashApproval("fresh-shell", "cat README.md"));
+      await waitForApproved(omp, "fresh-shell");
     });
 
     test.each(["/", homedir(), path.dirname(homedir())])(
@@ -1634,10 +1685,7 @@ describe("OMP agent client and session", () => {
         omp.emit(modeBashApproval("read", "cat .config/gh/hosts.yml"));
         omp.emit(modeBashApproval("plain", "ls -la"));
 
-        expect(omp.pendingPermissions()).toEqual([
-          expect.objectContaining({ id: "read" }),
-          expect.objectContaining({ id: "plain" }),
-        ]);
+        await waitForAsked(omp, "read", "plain");
       },
     );
 
@@ -1651,12 +1699,8 @@ describe("OMP agent client and session", () => {
       omp.emit(modeBashApproval("delete", "rm -rf build"));
       omp.emit(modeBashApproval("unknown", "npm test"));
 
-      expect(omp.pendingPermissions()).toEqual([
-        expect.objectContaining({ id: "edit", name: "edit" }),
-        expect.objectContaining({ id: "write" }),
-        expect.objectContaining({ id: "delete" }),
-        expect.objectContaining({ id: "unknown" }),
-      ]);
+      await waitForAsked(omp, "edit", "write", "delete", "unknown");
+      expect(omp.pendingPermissions()[0]).toMatchObject({ name: "edit" });
       expect(omp.extensionUiResponses()).toEqual([]);
     });
 

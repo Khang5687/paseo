@@ -4,8 +4,8 @@
  * Paseo approves a bash prompt in that mode when the command only reads, but OMP's prompt shows
  * only `Command:`, not the bash tool's `cwd` argument, so `{command: "cat hosts.yml", cwd:
  * "~/.config/gh"}` looks like a harmless read. OMP fires `tool_call` with the full input before
- * its approval gate, so this extension blocks any bash call whose `cwd` leaves the session folder;
- * the prompt for a call that gets through then runs where Paseo assumes it runs.
+ * its approval gate, so this extension blocks any bash call whose `cwd` is not the session folder
+ * itself; Paseo resolves the paths in a command against that folder, so a subfolder is blocked too.
  *
  * The extension reports itself with a status line on every bash call it lets through, before
  * OMP's approval prompt for that call. Paseo approves nothing for an OMP process until that line
@@ -49,14 +49,13 @@ export async function bashCwdBlockReason(
   sessionCwd: string,
 ): Promise<string | undefined> {
   if (cwd === undefined || cwd === "") return undefined;
-  const refusal = `Paseo read-only mode runs bash only inside ${sessionCwd}. Drop the cwd argument and use paths relative to that folder.`;
+  const refusal = `Paseo read-only mode runs bash only in ${sessionCwd}. Drop the cwd argument and use paths relative to that folder.`;
   if (typeof cwd !== "string" || !PLAIN_RELATIVE_DIR.test(cwd)) return refusal;
   if (cwd.split("/").some((segment) => segment === "..")) return refusal;
-  // A symlink inside the folder can still point out of it.
   try {
     const root = await realpath(sessionCwd);
     const target = await realpath(path.resolve(sessionCwd, cwd));
-    if (target === root || target.startsWith(`${root}${path.sep}`)) return undefined;
+    if (target === root) return undefined;
   } catch {
     // A cwd that does not resolve fails in OMP anyway; refuse it here too.
   }

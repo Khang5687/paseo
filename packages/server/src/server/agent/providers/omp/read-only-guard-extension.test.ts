@@ -14,6 +14,7 @@ const folder = path.join(root, "agent");
 mkdirSync(path.join(folder, "packages", "server"), { recursive: true });
 mkdirSync(path.join(root, "outside"));
 symlinkSync(path.join(root, "outside"), path.join(folder, "escape"));
+symlinkSync(folder, path.join(folder, "packages", "self"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 type ToolCallHandler = (
@@ -38,7 +39,7 @@ function loadGuard() {
 }
 
 describe("read-only guard extension", () => {
-  test.each([undefined, "", "packages", "packages/server", "packages/server/"])(
+  test.each([undefined, "", "packages/self"])(
     "lets bash run in the session folder with cwd %j",
     async (cwd) => {
       await expect(bashCwdBlockReason(cwd, folder)).resolves.toBeUndefined();
@@ -48,6 +49,10 @@ describe("read-only guard extension", () => {
   test.each([
     // The review's example: the prompt shows `cat hosts.yml`, the call runs in ~/.config/gh.
     "~/.config/gh",
+    // Paseo resolves the paths in a command against the session folder, so a subfolder would
+    // make `cat link` name a different file than the one Paseo checked.
+    "packages",
+    "packages/server/",
     "~",
     "/etc",
     "..",
@@ -79,6 +84,10 @@ describe("read-only guard extension", () => {
       reason: expect.stringContaining(folder),
     });
     expect(guard.statuses).toEqual([]);
+
+    await expect(
+      guard.call("bash", { command: "cat package.json", cwd: "packages" }),
+    ).resolves.toMatchObject({ block: true });
 
     await expect(guard.call("bash", { command: "cat package.json" })).resolves.toBeUndefined();
     expect(guard.statuses).toEqual([
