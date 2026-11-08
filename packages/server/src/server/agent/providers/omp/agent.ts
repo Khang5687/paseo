@@ -105,6 +105,7 @@ import type {
   OmpGoalAction,
   OmpGoalModeState,
   OmpModel,
+  OmpRpcSlashCommand,
   OmpRuntimeEvent,
   OmpSessionState,
   OmpThinkingLevel,
@@ -146,6 +147,17 @@ const OMP_PROVIDER = "omp";
 // guard extension confines to the agent's folder. A copy answering questions uses this mode, and
 // the approvals it raises are denied.
 const OMP_READ_ONLY_MODE_ID = "read-only";
+
+/**
+ * Whether OMP lists the read-only guard extension's command. A folder's `.omp/commands` file of
+ * the same name lists with source `file`, so only an extension's counts.
+ */
+function hasReadOnlyGuard(commands: readonly OmpRpcSlashCommand[]): boolean {
+  return commands.some(
+    (command) => command.name === OMP_READ_ONLY_GUARD_COMMAND && command.source === "extension",
+  );
+}
+
 const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
@@ -1405,9 +1417,14 @@ export class OmpAgentSession implements AgentSession {
   private async refreshCommandCache(): Promise<AgentSlashCommand[]> {
     this.lastCommandRefreshAt = Date.now();
     try {
-      this.commandCache = await this.withSkillSourcePaths(
-        mapOmpSlashCommands(await this.runtimeSession.refreshCommands()),
-      );
+      const commands = await this.runtimeSession.refreshCommands();
+      // A refresh rediscovers OMP's commands (on old OMP through `/reload-plugins`). Read-only OMP
+      // that no longer lists the guard is stopped, so it takes no turn without the guard.
+      if (this.currentModeId === OMP_READ_ONLY_MODE_ID && !hasReadOnlyGuard(commands)) {
+        this.logger.error("OMP no longer lists Paseo's read-only guard extension; stopping OMP");
+        await this.runtimeSession.close().catch(() => undefined);
+      }
+      this.commandCache = await this.withSkillSourcePaths(mapOmpSlashCommands(commands));
       return this.commandCache;
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to refresh OMP slash commands; using cached list");
@@ -2870,7 +2887,7 @@ export class OmpAgentClient implements AgentClient {
       this.provider,
     );
     const launchMode = this.resolveLaunchMode(OMP_READ_ONLY_MODE_ID, config.providerOptions);
-    const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession({
+    const runtimeSession = await this.startAgentRuntime(config.providerOptions, {
       cwd,
       protocolMode: "rpc-ui",
       modeId: launchMode.modeId,
@@ -3150,8 +3167,7 @@ export class OmpAgentClient implements AgentClient {
     if (input.modeId !== OMP_READ_ONLY_MODE_ID) return runtimeSession;
     let guardLoaded = false;
     try {
-      const commands = await runtimeSession.getCommands();
-      guardLoaded = commands.some((command) => command.name === OMP_READ_ONLY_GUARD_COMMAND);
+      guardLoaded = hasReadOnlyGuard(await runtimeSession.getCommands());
     } catch (error) {
       await runtimeSession.close().catch(() => undefined);
       throw error;

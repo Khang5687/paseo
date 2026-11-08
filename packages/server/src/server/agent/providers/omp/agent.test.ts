@@ -44,6 +44,12 @@ function dropGuardCommand(session: FakeOmpSession): void {
   );
 }
 
+// A folder's `.omp/commands/paseo-read-only-guard.md`, listed in place of the extension's command.
+function spoofGuardCommand(session: FakeOmpSession): void {
+  dropGuardCommand(session);
+  session.commands.push({ name: OMP_READ_ONLY_GUARD_COMMAND, source: "file" });
+}
+
 // What OMP reports for a turn the user stopped: an error message on a terminal
 // response whose stop reason says the request was aborted.
 const ABORTED_TERMINAL_RESPONSE: OmpAgentMessage = {
@@ -145,6 +151,8 @@ test("forks a session into a discardable copy beside it without touching the sou
       "always-ask",
       "--extension",
       expect.stringMatching(/read-only-guard-extension\.ts$/),
+      "--config",
+      expect.stringMatching(/read-only-config-overlay\.yml$/),
       "--fork",
       sourceFile,
       "--session-dir",
@@ -1570,10 +1578,11 @@ describe("OMP agent client and session", () => {
     // Real OMP starts without an extension it cannot load.
     const withoutGuard = (omp: OmpHarness) => omp.queueSessionSetup(dropGuardCommand);
 
-    test("launches OMP in always-ask mode with the guard extension", async () => {
+    test("launches OMP in always-ask mode with the guard extension and the config overlay", async () => {
       const omp = new OmpHarness();
       await omp.start({ modeId: "read-only" });
 
+      const { argv } = omp.launchConfiguration();
       expect(omp.launchConfiguration()).toMatchObject({
         modeId: "read-only",
         argv: [
@@ -1584,9 +1593,13 @@ describe("OMP agent client and session", () => {
           "always-ask",
           "--extension",
           expect.stringMatching(/[\\/]omp[\\/]read-only-guard-extension\.ts$/),
+          "--config",
+          expect.stringMatching(/[\\/]omp[\\/]read-only-config-overlay\.yml$/),
         ],
       });
-      expect(existsSync(omp.launchConfiguration().argv[6] ?? "")).toBe(true);
+      // OMP refuses to start when a `--config` overlay is missing.
+      expect(existsSync(argv[6] ?? "")).toBe(true);
+      expect(existsSync(argv[8] ?? "")).toBe(true);
     });
 
     test("asks for every shell command, even one that only reads", async () => {
@@ -1614,6 +1627,35 @@ describe("OMP agent client and session", () => {
         "OMP did not load Paseo's read-only guard extension",
       );
       expect(omp.runtimeSessions()[0]?.closed).toBe(true);
+    });
+
+    test("refuses to start when only a folder's command file has the guard's name", async () => {
+      const omp = new OmpHarness();
+      omp.queueSessionSetup(spoofGuardCommand);
+
+      await expect(omp.start({ modeId: "read-only" })).rejects.toThrow(
+        "OMP did not load Paseo's read-only guard extension",
+      );
+      expect(omp.runtimeSessions()[0]?.closed).toBe(true);
+    });
+
+    test("stops OMP when a command refresh no longer lists the guard extension", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "read-only" });
+      dropGuardCommand(omp.runtime());
+
+      await omp.commands();
+
+      expect(omp.runtimeSessions()[0]?.closed).toBe(true);
+    });
+
+    test("keeps OMP running when a command refresh still lists the guard extension", async () => {
+      const omp = new OmpHarness();
+      await omp.start({ modeId: "read-only" });
+
+      await omp.commands();
+
+      expect(omp.runtimeSessions()[0]?.closed).toBe(false);
     });
 
     test("stays in its mode when the relaunched OMP did not load the guard extension", async () => {

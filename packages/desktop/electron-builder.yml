@@ -27,8 +27,9 @@ files:
 asarUnpack:
   - dist/daemon/node-entrypoint-runner.js
   - node_modules/@getpaseo/server/dist/server/terminal/shell-integration/**/*
-  # OMP loads this file in its own process, which cannot read app.asar.
+  # OMP loads these files in its own process, which cannot read app.asar.
   - node_modules/@getpaseo/server/dist/server/server/agent/providers/omp/read-only-guard-extension.js
+  - node_modules/@getpaseo/server/dist/server/server/agent/providers/omp/read-only-config-overlay.yml
 extraResources:
   # Preserve physical compiler inputs, including .d.ts files omitted from packaged node_modules.
   - from: ../server/dist/server/builtin-plugins

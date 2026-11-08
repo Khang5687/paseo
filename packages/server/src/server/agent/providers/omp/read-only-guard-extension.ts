@@ -1,24 +1,29 @@
 /**
  * OMP extension that Paseo loads (`--extension`) into every OMP it launches in read-only mode.
  *
- * Read-only launches OMP with `--approval-mode always-ask`: bash, edit, write, eval, task and host
- * tools ask, but read-tier tools run without a prompt, and OMP's `read`, `grep` and `glob` accept
- * any path: absolute, `~`, `@/`, `..`, `file://`, URLs, internal URLs, and symlinks that lead out
- * of the folder. This extension blocks such a call unless every path it names stays inside the
+ * Read-only launches OMP with `--approval-mode always-ask` and the `--config` overlay
+ * `read-only-config-overlay.yml`: bash, edit, write, eval, task and host tools ask, but read-tier
+ * tools run without a prompt, and OMP's `read`, `grep` and `glob` accept any path: absolute, `~`,
+ * `@/`, `..`, `file://`, URLs (`www.` counts as one), internal URLs, and symlinks that lead out of
+ * the folder. This extension blocks such a call unless every path it names stays inside the
  * session folder. It also checks bash's `cwd`, which OMP's approval prompt does not show, and
- * blocks the read-tier tools that reach outside the folder without a path it could check. `read`
- * resolves a missing path by suffix match anywhere in the folder, so its result is checked too.
+ * blocks the read-tier tools that reach outside the folder without a path it could check, or
+ * write OMP's memory. `read` resolves a missing path by suffix match anywhere in the folder, so
+ * its result is checked too. `read` runs a JSON file through a jq filter after `?q=`, and jq's
+ * `env` prints the process environment, so a `?` in a read path is refused.
  *
  * One internal URL stays open: `skill://<name>[/<path>]` reads, so helpers can follow a skill.
  * OMP resolves the name against its loaded skills and refuses `..`; the guard only accepts plain
  * names and refuses a result whose file sits inside the folder but resolves outside it.
  *
- * Secret files stay unreadable even inside the folder (`isSecretPath`). A named path is refused
- * before the tool runs. A search over a folder cannot be told to skip a file, so the result of
- * `grep`, `glob`, `find` and `ast_grep` is replaced with an error when it lists a secret file.
+ * Secret files stay unreadable even inside the folder (`isSecretPath`), including as an archive
+ * member (`bundle.zip:.env`). A named path is refused before the tool runs. A search over a
+ * folder cannot be told to skip a file, so the result of `grep`, `glob`, `find` and `ast_grep` is
+ * replaced with an error when it lists a secret file.
  *
  * OMP starts without an extension that fails to load, so the extension registers a slash command
- * that only says it is active; Paseo refuses to start read-only OMP unless OMP lists it.
+ * that only says it is active; Paseo refuses to start read-only OMP unless OMP lists it with
+ * source `extension`.
  *
  * This module runs inside OMP's process: it imports only Node built-ins.
  */
@@ -78,15 +83,19 @@ const PATH_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * Read-tier tools (no prompt under always-ask) that reach outside the folder through arguments
- * this guard cannot check: language servers, debuggers, the user's GitHub token, IDA. None is in
- * OMP's default tool set; settings can enable them.
+ * Read-tier tools (no prompt under always-ask) the guard refuses outright: the ones that reach
+ * outside the folder through arguments this guard cannot check (language servers, debuggers, the
+ * user's GitHub token, IDA), and the ones that write OMP's memory, which outlives the session.
+ * None is in OMP's default tool set; settings can enable them.
  */
-const BLOCKED_TOOLS: Readonly<Record<string, true>> = {
-  lsp: true,
-  debug: true,
-  github: true,
-  ida: true,
+const BLOCKED_TOOLS: Readonly<Record<string, string>> = {
+  lsp: "it reaches outside the folder",
+  debug: "it reaches outside the folder",
+  github: "it reaches outside the folder",
+  ida: "it reaches outside the folder",
+  retain: "it writes OMP's memory",
+  memory_edit: "it writes OMP's memory",
+  learn: "it writes OMP's memory",
 };
 
 // Plain ASCII path or glob characters. Quotes and backslashes are refused, since OMP unescapes
@@ -98,6 +107,8 @@ const ENTRY_SEPARATOR = /[\s,;{}]+/;
 // resolves a path, so none may start any entry.
 const OUTSIDE_START = /^[/~@:]/;
 const GLOB_CHAR = /[*?[{!]/;
+// OMP reads an entry starting with `www.` (any case) as an https URL, in read, grep and ast_grep.
+const WWW_URL = /(?:^|[\s,;{}:])www\./i;
 // `skill://<name>[/<path>]` with an optional line or `raw` selector. Plain characters only: no
 // `..`, `%` escapes, query, fragment or empty segment, so OMP gets nothing to resolve but names.
 const SKILL_URL = /^skill:\/\/[\w.-]+(?:\/[\w.+@-]+)*\/?(?::[\w+,-]+){0,2}$/;
@@ -114,11 +125,15 @@ const SECRET_NAME: readonly RegExp[] = [
   /^\.env/,
   /\.pem$/,
   /\.key$/,
+  /\.p12$/,
+  /\.pfx$/,
   /token/,
   /secret/,
   /^credentials/,
+  /^service-account.*\.json$/,
   /^\.netrc$/,
   /^\.npmrc$/,
+  /^\.pgpass$/,
   /^\.git-credentials$/,
   /^id_(?!.*\.pub$)/,
 ];
@@ -132,28 +147,48 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether the last part of `file` names a secret: `.env*`, `*.pem`, `*.key`, `id_*` (not `.pub`),
- * `*token*`, `*secret*`, `credentials*`, `.netrc`, `.npmrc`, `.git-credentials`, or `hosts.yml`
- * inside a `gh` folder (the GitHub CLI's token file). Case-insensitive; folders are not matched.
+ * Whether `file` names a secret: its last part is `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+ * `id_*` (not `.pub`), `*token*`, `*secret*`, `credentials*`, `service-account*.json`, `.netrc`,
+ * `.npmrc`, `.pgpass`, `.git-credentials`, or `hosts.yml` inside a `gh` folder (the GitHub CLI's
+ * token file); or it lies in `.dev/paseo-home` (a Paseo dev daemon's home). OMP reads an archive
+ * member or applies a selector after a `:`, so each `:` piece is checked on its own.
+ * Case-insensitive; other folders are not matched.
  */
 export function isSecretPath(file: string): boolean {
-  const parts = file
-    .toLowerCase()
-    .replaceAll("\\", "/")
-    .split("/")
-    .filter((part) => part !== "" && part !== ".");
-  const name = parts.at(-1);
-  if (name === undefined) return false;
-  return (
-    SECRET_NAME.some((pattern) => pattern.test(name)) ||
-    (name === "hosts.yml" && parts.at(-2) === "gh")
-  );
+  return file.split(":").some((piece) => {
+    const parts = piece
+      .toLowerCase()
+      .replaceAll("\\", "/")
+      .split("/")
+      .filter((part) => part !== "" && part !== ".");
+    const name = parts.at(-1);
+    if (name === undefined) return false;
+    return (
+      SECRET_NAME.some((pattern) => pattern.test(name)) ||
+      (name === "hosts.yml" && parts.at(-2) === "gh") ||
+      parts.some((part, index) => part === "paseo-home" && parts[index - 1] === ".dev")
+    );
+  });
 }
 
-/** A path argument the guard refuses: what it was, and whether it is outside or a secret. */
+/** A path argument the guard refuses: what it was, and why. */
 interface PathRefusal {
-  secret: boolean;
+  kind: "outside" | "secret" | "query";
   what: string;
+}
+
+/**
+ * Whether `entry`, or one of the `pieces` OMP may split it into, takes a form OMP resolves
+ * outside the folder or fetches as a URL, before any file is looked at.
+ */
+function leavesFolderAsWritten(entry: string, pieces: readonly string[]): boolean {
+  return (
+    !PLAIN_PATH.test(entry) ||
+    entry.includes("..") ||
+    entry.includes(":/") ||
+    WWW_URL.test(entry) ||
+    pieces.some((piece) => OUTSIDE_START.test(piece))
+  );
 }
 
 /** Why `entry` may not name a path in read-only mode, or undefined when it stays in `root`. */
@@ -162,19 +197,20 @@ async function pathEntryBlockReason(
   entry: unknown,
   root: string,
 ): Promise<PathRefusal | undefined> {
-  if (typeof entry !== "string") return { secret: false, what: "a path that is not a string" };
+  if (typeof entry !== "string") return { kind: "outside", what: "a path that is not a string" };
   if (entry === "") return undefined;
   const what = `path ${JSON.stringify(entry)}`;
-  const outside: PathRefusal = { secret: false, what };
-  const secret: PathRefusal = { secret: true, what };
+  const outside: PathRefusal = { kind: "outside", what };
+  const secret: PathRefusal = { kind: "secret", what };
   if (toolName === "read" && entry.startsWith("skill://")) {
     if (!isSkillUrl(entry)) return outside;
     // A secret-named file inside a skill is as unreadable as one in the folder.
-    return entry.split(":").some((part) => isSecretPath(part)) ? secret : undefined;
+    return isSecretPath(entry.slice("skill://".length)) ? secret : undefined;
   }
-  if (!PLAIN_PATH.test(entry) || entry.includes("..") || entry.includes(":/")) return outside;
   const pieces = entry.split(ENTRY_SEPARATOR).filter((piece) => piece !== "");
-  if (pieces.some((piece) => OUTSIDE_START.test(piece))) return outside;
+  if (leavesFolderAsWritten(entry, pieces)) return outside;
+  // `read` takes what follows `?` as a query: jq on JSON (jq's `env` prints the environment), SQL.
+  if (toolName === "read" && entry.includes("?")) return { kind: "query", what };
   // Every form OMP may resolve: the whole entry, each split-off piece, and each part before a
   // `:line` selector. Each, cut before its first glob character, must resolve inside the folder.
   const candidates = new Set<string>();
@@ -227,19 +263,25 @@ export async function toolCallBlockReason(
   sessionCwd: string,
 ): Promise<string | undefined> {
   if (Object.hasOwn(BLOCKED_TOOLS, toolName)) {
-    return `Paseo read-only mode does not run ${toolName}: it reaches outside ${sessionCwd}.`;
+    return `Paseo read-only mode does not run ${toolName}: ${BLOCKED_TOOLS[toolName]}.`;
   }
   if (!Object.hasOwn(PATH_ARGUMENTS, toolName)) return undefined;
   const argumentNames = PATH_ARGUMENTS[toolName];
-  const refusal = ({ secret, what }: PathRefusal) =>
-    secret
-      ? `Paseo read-only mode hides secret files (.env, keys, tokens, credentials); ${toolName} was given ${what}, which names one. Read other files.`
-      : `Paseo read-only mode reads only inside ${sessionCwd}; ${toolName} was given ${what}. Use paths relative to that folder, without "..", "~", URLs or symlinks that lead out. Only skill:// URLs are allowed, in read.`;
+  const refusal = ({ kind, what }: PathRefusal) => {
+    switch (kind) {
+      case "secret":
+        return `Paseo read-only mode hides secret files (.env, keys, tokens, credentials); ${toolName} was given ${what}, which names one. Read other files.`;
+      case "query":
+        return `Paseo read-only mode does not run read queries; ${toolName} was given ${what}. Read the file without "?".`;
+      case "outside":
+        return `Paseo read-only mode reads only inside ${sessionCwd}; ${toolName} was given ${what}. Use paths relative to that folder, without "..", "~", URLs (including www.) or symlinks that lead out. Only skill:// URLs are allowed, in read.`;
+    }
+  };
   let root: string;
   try {
     root = await realpath(sessionCwd);
   } catch {
-    return refusal({ secret: false, what: "a session folder that does not resolve" });
+    return refusal({ kind: "outside", what: "a session folder that does not resolve" });
   }
   for (const name of argumentNames) {
     const value = input?.[name];
@@ -332,8 +374,7 @@ export async function searchResultBlockReason(
   if (!Object.hasOwn(SEARCH_TOOLS, toolName)) return undefined;
   const base = isRecord(details) && typeof details.cwd === "string" ? details.cwd : sessionCwd;
   for (const file of listedFiles(details)) {
-    // An archive member (`a.zip:dir/.env`) or a `:line` selector follows a `:`.
-    let secret = file.split(":").some((part) => isSecretPath(part));
+    let secret = isSecretPath(file);
     if (!secret) {
       const real = await realpath(path.resolve(base, file)).catch(() => undefined);
       secret = real !== undefined && isSecretPath(real);

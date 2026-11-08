@@ -1,0 +1,11 @@
+# Paseo launches read-only OMP with this file as a `--config` overlay. OMP merges an overlay
+# above the user and project config, so a project `.omp/config.yml` cannot turn a prompt off.
+tools:
+  # Drops every `tools.approval.<tool>: allow` rule; each non-read tool asks.
+  approval: null
+bash:
+  # A matching `allow` pattern skips the bash prompt before `tools.approval` is read.
+  patterns: []
+fetch:
+  # `read`, `grep` and `ast_grep` fetch URLs (`https://`, `www.`) without a prompt.
+  enabled: false

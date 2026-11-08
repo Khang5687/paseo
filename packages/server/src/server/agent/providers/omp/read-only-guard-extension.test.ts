@@ -83,6 +83,8 @@ describe("read-only guard extension", () => {
     ["grep", { pattern: "x", path: "src;README.md" }],
     ["grep", { pattern: "x", path: ".;!**/.env;!**/*token*;!**/hosts.yml" }],
     ["bash", { command: "ls", cwd: "token-store" }],
+    ["read", { path: "wwwroot/index.html" }],
+    ["read", { path: "README.md:raw" }],
   ])("allows %s %j inside the folder", async (tool, input) => {
     await expect(toolCallBlockReason(tool, input, folder)).resolves.toBeUndefined();
   });
@@ -125,6 +127,14 @@ describe("read-only guard extension", () => {
     ["semicolon list with ..", "grep", { pattern: "x", path: "src;../outside" }],
     ["semicolon list with home", "grep", { pattern: "x", path: "src;~/.ssh" }],
     ["exclusion list through a symlink", "grep", { pattern: "x", path: "escape;!**/.env" }],
+    ["www. URL in read", "read", { path: "www.example.com" }],
+    ["uppercase www. URL in read", "read", { path: "WWW.Example.com/leak" }],
+    ["www. URL in grep", "grep", { pattern: "x", path: "www.example.com" }],
+    ["www. URL in a grep list", "grep", { pattern: "x", path: "src;www.example.com" }],
+    ["www. URL in ast_grep", "ast_grep", { pat: "x", paths: ["src", "www.example.com"] }],
+    ["www. URL in glob", "glob", { pattern: "*", path: "src,www.example.com" }],
+    ["www. URL in find", "find", { pattern: "*", path: "www.example.com" }],
+    ["www. URL after a selector", "read", { path: "README.md:www.example.com" }],
   ])("blocks %s", async (_label, tool, input) => {
     await expect(toolCallBlockReason(tool, input, folder)).resolves.toContain(
       `Paseo read-only mode reads only inside ${folder}`,
@@ -135,10 +145,30 @@ describe("read-only guard extension", () => {
     "blocks %s, which reaches outside the folder without a path",
     async (tool) => {
       await expect(toolCallBlockReason(tool, {}, folder)).resolves.toContain(
-        `does not run ${tool}`,
+        `does not run ${tool}: it reaches outside the folder`,
       );
     },
   );
+
+  test.each(["retain", "memory_edit", "learn"])(
+    "blocks %s, which writes OMP's memory",
+    async (tool) => {
+      await expect(toolCallBlockReason(tool, { content: "x" }, folder)).resolves.toContain(
+        `does not run ${tool}: it writes OMP's memory`,
+      );
+    },
+  );
+
+  test.each([
+    ["package.json?q=env"],
+    ["package.json?q=env.MY_FAKE_API_TOKEN"],
+    ["data.db?q=SELECT 1"],
+    ["photo.png?q=what is this"],
+  ])("refuses the read query %s", async (readPath) => {
+    await expect(toolCallBlockReason("read", { path: readPath }, folder)).resolves.toContain(
+      "does not run read queries",
+    );
+  });
 
   test("refuses a read that OMP resolved by suffix match to a symlink leading out", async () => {
     // `read deep/link` finds `src/deep/link` anywhere in the folder and reads its target.
@@ -175,6 +205,13 @@ describe("read-only guard extension", () => {
     ["./.ENV"],
     [".env:1-3"],
     [".env*"],
+    ["bundle.zip:.env"],
+    ["bundle.zip:.env:raw"],
+    [".pgpass"],
+    ["client.p12"],
+    ["client.pfx"],
+    ["service-account-prod.json"],
+    [".dev/paseo-home/daemon.log"],
     ["notes.txt"],
     ["src/../.env"],
   ])("hides the secret file %s from read, grep, glob, find and ast_grep", async (name) => {
@@ -223,9 +260,16 @@ describe("read-only guard extension", () => {
       "id_ed25519",
       "x/Token.txt",
       "my-secrets.yaml",
-      "credentials",
       ".NETRC",
       "/home/k/.config/gh/hosts.yml",
+      "bundle.zip:.env",
+      "bundle.tar.gz:conf/id_rsa:raw",
+      "a/.PGPASS",
+      "cert.P12",
+      "cert.pfx",
+      "service-account.json",
+      ".dev/paseo-home",
+      "repo/.dev/paseo-home/agents/a.json",
     ]) {
       expect(isSecretPath(file), file).toBe(true);
     }
@@ -238,6 +282,10 @@ describe("read-only guard extension", () => {
       "gh/config.yml",
       "secrets/readme.md",
       "src/",
+      "bundle.zip:README.md",
+      "service-account.md",
+      ".dev/other/x.json",
+      "paseo-home/x.json",
       "",
     ]) {
       expect(isSecretPath(file), file).toBe(false);

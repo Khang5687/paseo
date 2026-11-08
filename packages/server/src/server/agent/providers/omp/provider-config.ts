@@ -45,22 +45,34 @@ const OMP_APPROVAL_MODES: Readonly<Record<string, string>> = {
 };
 
 /**
- * The guard extension next to this module: `.ts` when the daemon runs from source, `.js` from
- * `dist`. See `read-only-guard-extension.ts` for why read-only mode needs it. OMP is a separate
- * process that cannot read Electron's `app.asar`, so the desktop app unpacks the file
- * (`asarUnpack` in `packages/desktop/electron-builder.yml`) and OMP loads that copy.
+ * The read-only files next to this module: the guard extension (`.ts` when the daemon runs from
+ * source, `.js` from `dist`) and the config overlay. See `read-only-guard-extension.ts` for why
+ * read-only mode needs them. OMP is a separate process that cannot read Electron's `app.asar`, so
+ * the desktop app unpacks both files (`asarUnpack` in `packages/desktop/electron-builder.yml`)
+ * and OMP loads those copies.
  */
-export function resolveOmpReadOnlyGuardPath(moduleUrl: string = import.meta.url): string {
+export function resolveOmpReadOnlyFiles(moduleUrl: string = import.meta.url): {
+  guardExtension: string;
+  configOverlay: string;
+} {
   const modulePath = fileURLToPath(moduleUrl);
-  const guard = join(dirname(modulePath), `read-only-guard-extension${extname(modulePath)}`);
-  return guard.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
+  const beside = (fileName: string) =>
+    join(dirname(modulePath), fileName).replace(
+      `${sep}app.asar${sep}`,
+      `${sep}app.asar.unpacked${sep}`,
+    );
+  return {
+    guardExtension: beside(`read-only-guard-extension${extname(modulePath)}`),
+    configOverlay: beside("read-only-config-overlay.yml"),
+  };
 }
 
-const OMP_READ_ONLY_GUARD_EXTENSION_PATH = resolveOmpReadOnlyGuardPath();
+const OMP_READ_ONLY_FILES = resolveOmpReadOnlyFiles();
 
 /**
  * `read-only` launches like `ask` plus the guard extension, which keeps the tools that run without
- * a prompt inside the agent's folder; every shell command still asks.
+ * a prompt inside the agent's folder, and the config overlay, which beats user and project config
+ * so none of it can turn a prompt off; every shell command still asks.
  */
 export function resolveOmpLaunchMode(
   modeId: string | undefined,
@@ -74,7 +86,14 @@ export function resolveOmpLaunchMode(
     throw new Error(`Unsupported OMP mode '${modeId}'`);
   }
   const guardArgs =
-    resolvedModeId === "read-only" ? ["--extension", OMP_READ_ONLY_GUARD_EXTENSION_PATH] : [];
+    resolvedModeId === "read-only"
+      ? [
+          "--extension",
+          OMP_READ_ONLY_FILES.guardExtension,
+          "--config",
+          OMP_READ_ONLY_FILES.configOverlay,
+        ]
+      : [];
   return {
     modeId: resolvedModeId,
     extraArgs: [
