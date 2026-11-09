@@ -2108,6 +2108,7 @@ export const es: TranslationResources = {
     pillLabelOne: "1 subagente",
     pillLabelMany: "{{count}} subagentes",
     pillLabelWorking: "{{count}} en ejecución",
+    pillLabelYourTurnWorking: "Tu turno · {{count}} en ejecución",
     pillLabelFailed: "{{count}} con error",
     pillLabelNeedsInputOne: "1 necesita datos",
     pillLabelNeedsInputMany: "{{count}} necesitan datos",

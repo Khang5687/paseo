@@ -165,6 +165,9 @@ export function extractAttention(record: StoredAgentRecord): AttentionState {
     requiresAttention: true,
     attentionReason: record.attentionReason,
     attentionTimestamp: new Date(record.attentionTimestamp),
+    ...(record.attentionReason === "finished" && record.awaitingAnswer
+      ? { awaitingAnswer: true }
+      : {}),
   };
 }
 

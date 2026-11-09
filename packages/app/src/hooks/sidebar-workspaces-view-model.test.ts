@@ -80,16 +80,16 @@ describe("createSidebarWorkspaceEntry working subagents", () => {
     });
   }
 
-  it("counts working subagents while the root agent waits on the user", () => {
-    expect(entryFor("attention", 3)).toMatchObject({
-      statusBucket: "attention",
+  it("counts working subagents beside whatever the root agent's status is", () => {
+    expect(entryFor("done", 3)).toMatchObject({
+      statusBucket: "done",
       workingSubagentCount: 3,
     });
     expect(entryFor("needs_input", 1).workingSubagentCount).toBe(1);
-  });
-
-  it("shows no count when the row already reports running", () => {
-    expect(entryFor("running", 2).workingSubagentCount).toBe(0);
+    expect(entryFor("running", 2)).toMatchObject({
+      statusBucket: "running",
+      workingSubagentCount: 2,
+    });
   });
 
   it("shows no count when an old daemon omits it", () => {

@@ -5979,6 +5979,69 @@ test("runAgent persists finished attention and idle status without an external s
   expect(persisted?.attentionTimestamp).toEqual(expect.any(String));
 });
 
+test("finished attention flags a reply that asks the user a question until it is read", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-awaiting-answer-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const replies: string[] = [];
+  class ReplyingSession extends TestAgentSession {
+    private turns = 0;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turnId = `reply-turn-${++this.turns}`;
+      const text = replies.shift() ?? "";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: { type: "assistant_message", text },
+        });
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+  class ReplyingClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new ReplyingSession(config);
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new ReplyingClient() },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000135",
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const awaitingAnswer = () => toAgentPayload(manager.getAgent(snapshot.id)!).awaitingAnswer;
+
+  replies.push("Plan written.\n\n❓ Q1 storage: SQLite or Postgres?");
+  await manager.runAgent(snapshot.id, "plan it");
+  await manager.flush();
+  expect(awaitingAnswer()).toBe(true);
+  expect((await storage.get(snapshot.id))?.awaitingAnswer).toBe(true);
+
+  // A second turn ends before anyone read the first: the flag follows the newest reply.
+  replies.push("Used SQLite. Should I also add Postgres? ❓");
+  await manager.runAgent(snapshot.id, "pick for me");
+  await manager.flush();
+  expect(manager.getAgent(snapshot.id)?.attention.requiresAttention).toBe(true);
+  expect(awaitingAnswer()).toBeUndefined();
+
+  replies.push("❓ Ship it?");
+  await manager.runAgent(snapshot.id, "next");
+  await manager.flush();
+  expect(awaitingAnswer()).toBe(true);
+
+  await manager.clearAgentAttention(snapshot.id);
+  await manager.flush();
+  expect(awaitingAnswer()).toBeUndefined();
+  expect((await storage.get(snapshot.id))?.awaitingAnswer).toBeUndefined();
+});
+
 test("archiveSnapshot clears persisted attention and normalizes running status", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-archive-attention-"));
   const storagePath = join(workdir, "agents");

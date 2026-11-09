@@ -284,7 +284,6 @@ export class WorkspaceDirectory {
       activeAgents,
       providerSubagentActivity,
       descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
     });
 
     const contributingAgentsByWorkspaceId = groupAgentsByWorkspaceId(
@@ -319,34 +318,26 @@ export class WorkspaceDirectory {
   }
 
   // Count running subagents per workspace: same-workspace Paseo descendants and
-  // provider-native subagents, both owned by the nearest workspace root. Runs
-  // after the root and terminal contributions because a working subagent only
-  // turns a `done` workspace into `running`. A root waiting on the user
-  // (attention, needs_input, failed) keeps its status and the count tells the
-  // client that work is still going on underneath it.
+  // provider-native subagents, both owned by the nearest workspace root. The
+  // count never changes the workspace status: the status follows the root
+  // agents, so a root whose turn ended reads `done` (or waits on the user)
+  // while its subagents keep working, and the client shows the count beside it.
   private applySubagentContributions(params: {
     activeAgents: AgentSnapshotPayload[];
     providerSubagentActivity: ProviderSubagentWorkspaceActivity[];
     descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>;
-    activityEntriesByWorkspaceId: Map<string, WorkspaceBucketTimestampEntry[]>;
   }): void {
-    const {
-      activeAgents,
-      providerSubagentActivity,
-      descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
-    } = params;
+    const { activeAgents, providerSubagentActivity, descriptorsByWorkspaceId } = params;
     const activeAgentsById = new Map(activeAgents.map((agent) => [agent.id, agent] as const));
     const runningCountByWorkspaceId = new Map<string, number>();
     const countRunning = (workspaceId: string | undefined) => {
       if (!workspaceId || !descriptorsByWorkspaceId.has(workspaceId)) {
-        return false;
+        return;
       }
       runningCountByWorkspaceId.set(
         workspaceId,
         (runningCountByWorkspaceId.get(workspaceId) ?? 0) + 1,
       );
-      return true;
     };
 
     for (const agent of activeAgents) {
@@ -367,13 +358,7 @@ export class WorkspaceDirectory {
       if (!parent) {
         continue;
       }
-      const workspaceId = resolveWorkspaceRootAgent(parent, activeAgentsById)?.workspaceId;
-      if (!workspaceId || !countRunning(workspaceId)) {
-        continue;
-      }
-      const entries = activityEntriesByWorkspaceId.get(workspaceId) ?? [];
-      entries.push({ bucket: "running", changedAtIso: subagent.updatedAt });
-      activityEntriesByWorkspaceId.set(workspaceId, entries);
+      countRunning(resolveWorkspaceRootAgent(parent, activeAgentsById)?.workspaceId);
     }
 
     for (const [workspaceId, count] of runningCountByWorkspaceId) {
@@ -382,9 +367,6 @@ export class WorkspaceDirectory {
         continue;
       }
       descriptor.runningSubagentCount = count;
-      if (descriptor.status === "done") {
-        descriptor.status = "running";
-      }
     }
   }
 
@@ -413,6 +395,7 @@ export class WorkspaceDirectory {
         pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
         requiresAttention: agent.requiresAttention,
         attentionReason: agent.attentionReason ?? null,
+        awaitingAnswer: agent.awaitingAnswer,
       });
 
       const workspaceId = workspaceAgent.workspaceId;
@@ -561,6 +544,7 @@ export class WorkspaceDirectory {
           pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
           requiresAttention: agent.requiresAttention,
           attentionReason: agent.attentionReason ?? null,
+          awaitingAnswer: agent.awaitingAnswer,
         });
         return derived === winningBucket;
       })

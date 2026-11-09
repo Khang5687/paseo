@@ -39,6 +39,11 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
 export interface SubagentsTrackProps {
   serverId: string;
   rows: SubagentRow[];
+  /**
+   * The chat's own turn has ended. Working children then read "Your turn · N working". False for
+   * a read-only transcript, where the user has no turn to take.
+   */
+  yourTurn: boolean;
   onOpenSubagent: (address: AgentAddress) => void;
   onOpenProviderSubagent: (parentAgentId: string, subagentId: string) => void;
   /**
@@ -74,6 +79,7 @@ export function useSubagentRowPresentation(
 export function SubagentsTrack({
   serverId,
   rows,
+  yourTurn,
   onOpenSubagent,
   onOpenProviderSubagent,
   sheetTabFor,
@@ -91,7 +97,7 @@ export function SubagentsTrack({
     return null;
   }
 
-  const pill = buildSubagentPillPresentation(t, rows);
+  const pill = buildSubagentPillPresentation(t, rows, { yourTurn });
   const finishedCount = countFinishedSubagents(rows);
   const showArchiveFinished = finishedCount > 0 || isArchivingFinished || isArchiveFinishedFailed;
   const sheets = rows.map(sheetTabFor);

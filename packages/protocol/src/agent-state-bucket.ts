@@ -9,6 +9,11 @@ export interface AgentStateBucketInput {
   pendingPermissionCount?: number;
   requiresAttention?: boolean;
   attentionReason?: AgentAttentionReason;
+  /**
+   * The unread finished reply asks the user a question. Ranks the agent with pending permissions,
+   * because either way the agent stopped until the user answers.
+   */
+  awaitingAnswer?: boolean;
 }
 
 const WORKSPACE_STATE_BUCKET_PRIORITY = {
@@ -28,6 +33,9 @@ export function deriveAgentStateBucket(input: AgentStateBucketInput): WorkspaceS
   }
   if (input.status === "running") {
     return "running";
+  }
+  if (input.requiresAttention && input.awaitingAnswer) {
+    return "needs_input";
   }
   if (input.requiresAttention) {
     return "attention";
