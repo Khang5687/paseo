@@ -25,6 +25,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { z } from "zod";
 
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
+import { UNSEEN_AGENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import { createTestLogger } from "../test-utils/test-logger.js";
 import { Session } from "./session.js";
 import type { SessionOptions } from "./session.js";
@@ -1925,6 +1926,89 @@ test("workspace clear attention clears stored-only agents and responds", async (
   if (agentUpdate.payload.kind === "upsert") {
     expect(agentUpdate.payload.agent.requiresAttention).toBe(false);
   }
+});
+
+test("workspace mark read drops the new-agent label, keeping a pending permission", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: REPO_CWD,
+    projectId: REPO_CWD,
+    cwd: REPO_CWD,
+    kind: "directory",
+    displayName: "repo",
+    createdAt: "2026-03-30T15:00:00.000Z",
+    updatedAt: "2026-03-30T15:00:00.000Z",
+  });
+  const project = createPersistedProjectRecord({
+    projectId: REPO_CWD,
+    rootPath: REPO_CWD,
+    kind: "non_git",
+    displayName: "repo",
+    createdAt: "2026-03-30T15:00:00.000Z",
+    updatedAt: "2026-03-30T15:00:00.000Z",
+  });
+  const unseenLabels = { role: "main", [UNSEEN_AGENT_LABEL]: "true" };
+  let storedRecord = makeStoredAgent({
+    id: "new-main",
+    cwd: REPO_CWD,
+    workspaceId: workspace.workspaceId,
+    updatedAt: "2026-03-30T15:00:00.000Z",
+    labels: unseenLabels,
+  });
+  const seenAgentIds: string[] = [];
+  const session = createSessionForWorkspaceTests({
+    onMessage: (message) => emitted.push(message),
+    agentManager: {
+      markAgentSeen: async (agentId: string) => {
+        seenAgentIds.push(agentId);
+      },
+    },
+  });
+
+  session.workspaceRegistry.get = async (id: string) =>
+    id === workspace.workspaceId ? workspace : null;
+  session.projectRegistry.get = async (id: string) => (id === project.projectId ? project : null);
+  session.agentStorage.get = async (agentId: string) =>
+    agentId === storedRecord.id ? storedRecord : null;
+  session.agentStorage.upsert = async (record: unknown) => {
+    storedRecord = record as StoredAgentRecord;
+  };
+  session.listAgentPayloads = async () => [
+    // Nothing to read but the label: a new main agent the user never opened.
+    makeAgent({
+      id: storedRecord.id,
+      cwd: REPO_CWD,
+      workspaceId: workspace.workspaceId,
+      status: "closed",
+      updatedAt: storedRecord.updatedAt,
+      labels: unseenLabels,
+    }),
+    // A new main agent asking for permission stops being new; the question stays.
+    makeAgent({
+      id: "new-main-asking",
+      cwd: REPO_CWD,
+      workspaceId: workspace.workspaceId,
+      status: "running",
+      updatedAt: storedRecord.updatedAt,
+      pendingPermissions: 1,
+      requiresAttention: true,
+      attentionReason: "permission",
+      labels: unseenLabels,
+    }),
+  ];
+
+  await session.handleMessage({
+    type: "workspace.clear_attention.request",
+    workspaceId: workspace.workspaceId,
+    requestId: "req-1",
+  });
+
+  expect(storedRecord.labels).toEqual({ role: "main" });
+  expect(seenAgentIds).toEqual(["new-main-asking"]);
+  expect(findByType(emitted, "workspace.clear_attention.response").payload).toMatchObject({
+    clearedAgentIds: ["new-main"],
+    success: true,
+  });
 });
 
 test("workspace clear attention dismisses a stored failed agent that was already read", async () => {

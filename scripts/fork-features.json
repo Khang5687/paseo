@@ -901,5 +901,16 @@
     "pr": 116,
     "title": "feat(server): serverId on archive, cancel, kill, set mode, update and search agent tools",
     "tests": ["packages/server/src/server/connected-hosts/hosts.e2e.test.ts"]
+  },
+  {
+    "pr": 119,
+    "title": "feat(app): highlight newly spawned main agents in the sidebar",
+    "tests": [
+      "packages/server/src/server/agent/agent-manager.test.ts",
+      "packages/server/src/server/session.workspaces.test.ts",
+      "packages/app/src/utils/workspace-agent-activity.test.ts",
+      "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
+      "packages/app/src/utils/agent-attention.test.ts"
+    ]
   }
 ]

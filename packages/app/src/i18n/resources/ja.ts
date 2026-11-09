@@ -1400,6 +1400,7 @@ export const ja: TranslationResources = {
       workingSubagents: "{{count}}個のサブエージェントが作業中",
       workingSubagents_one: "{{count}}個のサブエージェントが作業中",
       workingSubagents_other: "{{count}}個のサブエージェントが作業中",
+      newAgent: "新規",
       status: {
         serviceRunning: "サービス {{name}} 実行中",
         serviceUnhealthy: "サービス {{name}} 異常",

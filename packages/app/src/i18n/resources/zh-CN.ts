@@ -1376,6 +1376,7 @@ export const zhCN: TranslationResources = {
       workingSubagents: "{{count}} 个子代理正在工作",
       workingSubagents_one: "{{count}} 个子代理正在工作",
       workingSubagents_other: "{{count}} 个子代理正在工作",
+      newAgent: "新",
       status: {
         serviceRunning: "服务 {{name}} 运行中",
         serviceUnhealthy: "服务 {{name}} 异常",

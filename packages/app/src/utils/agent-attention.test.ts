@@ -141,6 +141,14 @@ describe("shouldClearAgentAttention", () => {
       }),
     ).toBe(true);
   });
+
+  it("clears a new main agent on opening even with no attention, but not while disconnected", () => {
+    const unseen = { agentId: "agent-1", requiresAttention: false, attentionReason: null };
+    expect(shouldClearAgentAttention({ ...unseen, isConnected: true, isUnseen: true })).toBe(true);
+    expect(shouldClearAgentAttention({ ...unseen, isConnected: false, isUnseen: true })).toBe(
+      false,
+    );
+  });
 });
 
 describe("pickAttentionAgent", () => {
