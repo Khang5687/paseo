@@ -2085,6 +2085,7 @@ export const en = {
     pillLabelOne: "1 subagent",
     pillLabelMany: "{{count}} subagents",
     pillLabelWorking: "{{count}} working",
+    pillLabelYourTurnWorking: "Your turn · {{count}} working",
     pillLabelFailed: "{{count}} failed",
     pillLabelNeedsInputOne: "1 needs input",
     pillLabelNeedsInputMany: "{{count}} need input",

@@ -905,6 +905,9 @@ export const AgentSnapshotPayloadSchema = z.object({
   requiresAttention: z.boolean().optional(),
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),
   attentionTimestamp: z.string().nullable().optional(),
+  // Set with `finished` attention when a line of the agent's last reply starts with "❓". Absent
+  // on older daemons and whenever attention is clear; the daemon folds it into workspace status.
+  awaitingAnswer: z.boolean().optional(),
   archivedAt: z.string().nullable().optional(),
   providerUnavailable: z.boolean().optional(),
   // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02. Absent on older daemons.

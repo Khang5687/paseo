@@ -11,9 +11,9 @@ import type { WorkspaceServiceSummary } from "./service-summary";
  * running, and what someone filed it under. Identity first, then the work, then the work's
  * state, then the labels a person put on it.
  *
- * Working subagents lead the line when the row's status is not running: the root agent is
- * waiting on you, and this says work is still going on underneath it. It is not a toggle,
- * because it is status rather than identity.
+ * Working subagents lead the line whenever any are working. The row's status icon follows the
+ * root agent alone, so it stops spinning when the root's turn ends; this says work is still going
+ * on underneath it. It is not a toggle, because it is status rather than identity.
  *
  * Labels are one item rather than one per label: they are drawn as a run of chips with a single
  * separator in front of them, so the line reads as four peers however many labels a workspace

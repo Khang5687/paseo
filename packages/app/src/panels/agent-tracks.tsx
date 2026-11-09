@@ -60,6 +60,12 @@ export const AgentTracks = memo(function AgentTracks({
   const canDetachSubagents = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.agentDetach === true,
   );
+  // Same rule as the sidebar's root activity: an open turn is the agent working, whatever the
+  // lifecycle says while a turn closes.
+  const yourTurn = useSessionStore((state) => {
+    const agent = state.sessions[serverId]?.agents.get(agentId);
+    return agent ? agent.turn.phase !== "open" && agent.status !== "initializing" : false;
+  });
   const archiveSubagent = useArchiveSubagent();
   const detachSubagent = useDetachSubagent();
   const openSubagentTarget = useCallback(
@@ -132,6 +138,7 @@ export const AgentTracks = memo(function AgentTracks({
       <SubagentsTrack
         serverId={serverId}
         rows={subagentRows}
+        yourTurn={yourTurn}
         onOpenSubagent={handleOpenSubagent}
         onOpenProviderSubagent={handleOpenProviderSubagent}
         sheetTabFor={sheetTabFor}

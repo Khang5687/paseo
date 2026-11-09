@@ -75,17 +75,21 @@ export interface SubagentPillPresentation {
  * It stays one line because subagent rows only ever reach three states — see
  * `buildSubagentRowPresentationData`, which reports no attention of its own — so the pill is two
  * segments at worst, and falls back to naming what it opens once nothing is happening.
+ *
+ * `yourTurn` is the chat's own turn having ended while children still work. The working count
+ * then reads "Your turn · N working", so the chat says the next move is yours while they finish.
  */
 export function buildSubagentPillPresentation(
   t: TFunction,
   rows: readonly SubagentRow[],
+  options: { yourTurn: boolean },
 ): SubagentPillPresentation {
   const counts = summarizeSubagentStatus(rows);
   if (counts.length === 0) {
     const label = totalLabel(t, rows.length);
     return { segments: [{ bucket: null, text: label }], accessibilityLabel: label };
   }
-  const labels = counts.map(({ bucket, count }) => statusLabel(t, bucket, count));
+  const labels = counts.map(({ bucket, count }) => statusLabel(t, bucket, count, options.yourTurn));
   return {
     segments: counts.map(({ bucket }, index) => ({ bucket, text: labels[index] ?? "" })),
     // Marks separate the segments on screen; a screen reader needs the pause spelled out.
@@ -94,10 +98,17 @@ export function buildSubagentPillPresentation(
 }
 
 /** Wording comes from the sidebar's status groups — one name per state across the whole app. */
-function statusLabel(t: TFunction, bucket: ActiveStatusBucket, count: number): string {
+function statusLabel(
+  t: TFunction,
+  bucket: ActiveStatusBucket,
+  count: number,
+  yourTurn: boolean,
+): string {
   switch (bucket) {
     case "running":
-      return t("subagents.pillLabelWorking", { count });
+      return yourTurn
+        ? t("subagents.pillLabelYourTurnWorking", { count })
+        : t("subagents.pillLabelWorking", { count });
     case "failed":
       return t("subagents.pillLabelFailed", { count });
     case "needs_input":

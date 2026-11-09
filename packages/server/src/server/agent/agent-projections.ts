@@ -107,6 +107,8 @@ export function toStoredAgentRecord(
     attentionTimestamp: agent.attention.requiresAttention
       ? agent.attention.attentionTimestamp.toISOString()
       : null,
+    awaitingAnswer:
+      agent.attention.requiresAttention && agent.attention.awaitingAnswer ? true : undefined,
     internal: options?.internal,
     owner: agent.owner,
     queuedMessages: agent.queuedMessages,
@@ -173,17 +175,33 @@ export function toAgentPayload(
     payload.lastError = agent.lastError;
   }
 
-  // Handle attention state
-  payload.requiresAttention = agent.attention.requiresAttention;
-  if (agent.attention.requiresAttention) {
-    payload.attentionReason = agent.attention.attentionReason;
-    payload.attentionTimestamp = agent.attention.attentionTimestamp.toISOString();
-  } else {
-    payload.attentionReason = null;
-    payload.attentionTimestamp = null;
-  }
+  return Object.assign(payload, projectAttention(agent.attention));
+}
 
-  return payload;
+type AttentionPayload = Pick<
+  AgentSnapshotPayload,
+  "requiresAttention" | "attentionReason" | "attentionTimestamp" | "awaitingAnswer"
+>;
+
+function projectAttention(attention: ManagedAgent["attention"]): AttentionPayload {
+  if (!attention.requiresAttention) {
+    return { requiresAttention: false, attentionReason: null, attentionTimestamp: null };
+  }
+  return {
+    requiresAttention: true,
+    attentionReason: attention.attentionReason,
+    attentionTimestamp: attention.attentionTimestamp.toISOString(),
+    ...(attention.awaitingAnswer ? { awaitingAnswer: true } : {}),
+  };
+}
+
+// The flag only means something on the unread finish it was recorded with.
+function projectStoredAwaitingAnswer(
+  record: StoredAgentRecord,
+): Pick<AttentionPayload, "awaitingAnswer"> {
+  return record.requiresAttention && record.attentionReason === "finished" && record.awaitingAnswer
+    ? { awaitingAnswer: true }
+    : {};
 }
 
 function buildStoredRuntimeInfo(record: StoredAgentRecord): AgentRuntimeInfo | undefined {
@@ -269,6 +287,7 @@ export function buildStoredAgentPayload(
     requiresAttention: record.requiresAttention ?? false,
     attentionReason: record.attentionReason ?? null,
     attentionTimestamp: record.attentionTimestamp ?? null,
+    ...projectStoredAwaitingAnswer(record),
     archivedAt: record.archivedAt ?? null,
     ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),

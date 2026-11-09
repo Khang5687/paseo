@@ -39,12 +39,35 @@ describe("buildSubagentPillPresentation", () => {
     await i18n.changeLanguage("en");
   });
 
-  const pill = (rows: SubagentRow[]) => buildSubagentPillPresentation(i18n.t, rows);
+  const pill = (rows: SubagentRow[]) =>
+    buildSubagentPillPresentation(i18n.t, rows, { yourTurn: false });
+  const yourTurnPill = (rows: SubagentRow[]) =>
+    buildSubagentPillPresentation(i18n.t, rows, { yourTurn: true });
 
   it("counts the children that are working, not the fan-out", () => {
     expect(pill([row({ id: "a" }), row({ id: "b", status: "running" })])).toEqual({
       segments: [{ bucket: "running", text: "1 working" }],
       accessibilityLabel: "1 working",
+    });
+  });
+
+  it("says it is your turn when the chat's turn ended while children work", () => {
+    expect(
+      yourTurnPill([
+        row({ id: "a", status: "running" }),
+        row({ id: "b", status: "running" }),
+        row({ id: "c" }),
+      ]),
+    ).toEqual({
+      segments: [{ bucket: "running", text: "Your turn · 2 working" }],
+      accessibilityLabel: "Your turn · 2 working",
+    });
+  });
+
+  it("keeps naming the fan-out on your turn once every child is done", () => {
+    expect(yourTurnPill([row({ id: "a" }), row({ id: "b" })])).toEqual({
+      segments: [{ bucket: null, text: "2 subagents" }],
+      accessibilityLabel: "2 subagents",
     });
   });
 

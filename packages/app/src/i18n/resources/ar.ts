@@ -2063,6 +2063,7 @@ export const ar: TranslationResources = {
     pillLabelOne: "وكيل فرعي واحد",
     pillLabelMany: "{{count}} وكلاء فرعيين",
     pillLabelWorking: "{{count}} قيد التشغيل",
+    pillLabelYourTurnWorking: "دورك · {{count}} قيد التشغيل",
     pillLabelFailed: "{{count}} فشلت",
     pillLabelNeedsInputOne: "واحد يحتاج إدخالاً",
     pillLabelNeedsInputMany: "{{count}} تحتاج إدخالاً",

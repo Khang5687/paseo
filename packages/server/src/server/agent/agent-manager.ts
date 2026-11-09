@@ -69,6 +69,7 @@ import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agen
 import { assertModelEnabled, pickDefaultEnabledModel } from "./provider-disabled-models.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
+import { replyAwaitsAnswer } from "./awaiting-answer.js";
 import type { AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
@@ -415,6 +416,8 @@ export type AttentionState =
       requiresAttention: true;
       attentionReason: "finished" | "error" | "permission";
       attentionTimestamp: Date;
+      /** Only with `finished`: the reply that finished the turn asks the user a question. */
+      awaitingAnswer?: true;
     };
 
 function resolveInitialAttention(input: AttentionState | undefined): AttentionState {
@@ -425,6 +428,7 @@ function resolveInitialAttention(input: AttentionState | undefined): AttentionSt
     requiresAttention: true,
     attentionReason: input.attentionReason,
     attentionTimestamp: new Date(input.attentionTimestamp),
+    ...(input.awaitingAnswer ? { awaitingAnswer: true } : {}),
   };
 }
 
@@ -2843,11 +2847,7 @@ export class AgentManager {
       if (!canMarkUnread) {
         throw new Error(`Agent is no longer finished and read: ${agentId}`);
       }
-      liveAgent.attention = {
-        requiresAttention: true,
-        attentionReason: "finished",
-        attentionTimestamp: new Date(),
-      };
+      liveAgent.attention = this.finishedAttention(liveAgent.id);
       await this.persistSnapshot(liveAgent);
       this.emitState(liveAgent, { persist: false });
       return;
@@ -2868,6 +2868,8 @@ export class AgentManager {
       requiresAttention: true,
       attentionReason: "finished",
       attentionTimestamp: updatedAt,
+      // The stored reply is truncated for search, so it cannot say whether the reply asked.
+      awaitingAnswer: undefined,
     };
     await registry.upsert(nextRecord);
     this.dispatchStoredAgentState(nextRecord);
@@ -5709,18 +5711,21 @@ export class AgentManager {
       return;
     }
 
-    // Skip if already requires attention
+    const finished = previousStatus === "running" && currentStatus === "idle";
+
+    // Skip if already requires attention. An unread finish stays one unread signal, but its
+    // question flag follows the newest reply: a turn started without the user reading (a queued
+    // message, another agent's prompt) may end with or without a question.
     if (agent.attention.requiresAttention) {
+      if (finished && agent.attention.attentionReason === "finished") {
+        agent.attention = this.finishedAttention(agent.id, agent.attention.attentionTimestamp);
+      }
       return;
     }
 
     // Check if agent transitioned from running to idle (finished)
-    if (previousStatus === "running" && currentStatus === "idle") {
-      agent.attention = {
-        requiresAttention: true,
-        attentionReason: "finished",
-        attentionTimestamp: new Date(),
-      };
+    if (finished) {
+      agent.attention = this.finishedAttention(agent.id);
       this.broadcastAgentAttention(agent, "finished");
       return;
     }
@@ -5735,6 +5740,21 @@ export class AgentManager {
       this.broadcastAgentAttention(agent, "error");
       return;
     }
+  }
+
+  // Read when the turn ends, so the flag describes the reply the user has not seen yet. It clears
+  // with the attention that carries it (viewing the chat, mark-read); a newer turn outranks it
+  // while running and replaces it when it ends.
+  private finishedAttention(agentId: string, attentionTimestamp = new Date()): AttentionState {
+    const lastReply = this.timelineStore.has(agentId)
+      ? this.timelineStore.getLastAssistantMessage(agentId)
+      : null;
+    return {
+      requiresAttention: true,
+      attentionReason: "finished",
+      attentionTimestamp,
+      ...(replyAwaitsAnswer(lastReply) ? { awaitingAnswer: true } : {}),
+    };
   }
 
   private enqueueBackgroundPersist(agent: ManagedAgent): void {
