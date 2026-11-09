@@ -24,7 +24,11 @@ import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { toAgentPayload } from "./agent-projections.js";
 import { projectTimelineRows } from "./timeline-projection.js";
-import { getOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import {
+  getOpenAgentTabLabel,
+  PARENT_AGENT_ID_LABEL,
+  UNSEEN_AGENT_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 import { startAgentRun } from "./agent-prompt.js";
 import { StaleProviderSessionError } from "./stale-provider-session-error.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
@@ -8618,6 +8622,68 @@ test("archiveAgent on a parent archives its live internal children", async () =>
     expect.any(String),
   );
   expect(await storage.get(childAgentId)).toBeNull();
+});
+
+test("a new main agent starts unseen and reading it clears that; helpers never start unseen", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+    idFactory: () => randomUUID(),
+  });
+  const create = (labels?: Record<string, string>) =>
+    manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels,
+    });
+
+  const main = await create({ role: "main", topic: "x" });
+  const helper = await create({ role: "helper" });
+  const unlabeled = await create();
+  await manager.flush();
+
+  expect(main.labels).toEqual({ role: "main", topic: "x", [UNSEEN_AGENT_LABEL]: "true" });
+  expect((await storage.get(main.id))?.labels[UNSEEN_AGENT_LABEL]).toBe("true");
+  expect(helper.labels).toEqual({ role: "helper" });
+  expect(unlabeled.labels).toEqual({});
+
+  // Opening the chat clears it even though nothing finished yet.
+  await manager.clearAgentAttention(main.id);
+  expect(manager.getAgent(main.id)?.labels).toEqual({ role: "main", topic: "x" });
+  expect((await storage.get(main.id))?.labels).toEqual({ role: "main", topic: "x" });
+});
+
+test("mark as read and mark as seen drop the unseen label for live and stored agents", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+    idFactory: () => randomUUID(),
+  });
+  const create = () =>
+    manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { role: "main" },
+    });
+
+  const live = await create();
+  await manager.markAgentRead(live.id);
+  expect(manager.getAgent(live.id)?.labels).toEqual({ role: "main" });
+  expect((await storage.get(live.id))?.labels).toEqual({ role: "main" });
+
+  const liveSeen = await create();
+  await manager.markAgentSeen(liveSeen.id);
+  expect(manager.getAgent(liveSeen.id)?.labels).toEqual({ role: "main" });
+
+  const stored = await create();
+  await manager.closeAgent(stored.id);
+  expect(manager.getAgent(stored.id)).toBeNull();
+  await manager.markAgentSeen(stored.id);
+  expect((await storage.get(stored.id))?.labels).toEqual({ role: "main" });
 });
 
 test("subscribe does not emit state events for internal agents to global subscribers", async () => {

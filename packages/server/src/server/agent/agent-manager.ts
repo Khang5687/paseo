@@ -17,9 +17,13 @@ import {
   getParentAgentIdFromLabels,
   hasOpenAgentTab,
   isDelegatedAgent,
+  isMainAgentLabels,
   isOpenAgentTabLabel,
+  isUnseenAgentLabels,
   PARENT_AGENT_ID_LABEL,
   PARENT_SERVER_ID_LABEL,
+  removeUnseenAgentLabel,
+  UNSEEN_AGENT_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
@@ -779,6 +783,13 @@ function detachedAgentLabelPatch(labels: Record<string, string>): AgentLabelPatc
   return patch;
 }
 
+/** A new main agent starts unseen; the user reading it or its workspace removes the label. */
+function stampUnseenMainAgentLabel(
+  labels: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  return isMainAgentLabels(labels) ? { ...labels, [UNSEEN_AGENT_LABEL]: "true" } : labels;
+}
+
 /**
  * How long an archived internal agent stays readable by id. Storage plays this
  * role for public agents; internal agents never reach it, and a one-shot helper
@@ -1523,7 +1534,7 @@ export class AgentManager {
     const session = await client.createSession(providerLaunchConfig, launchContext, createOptions);
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
     const agent = await this.registerSession(session, storedConfig, resolvedAgentId, {
-      labels: options.labels,
+      labels: config.internal ? options.labels : stampUnseenMainAgentLabel(options.labels),
       initialTitle: options.initialTitle,
       workspaceId: options.workspaceId,
       owner: options.owner,
@@ -2810,8 +2821,10 @@ export class AgentManager {
 
   async clearAgentAttention(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
-    if (agent.attention.requiresAttention) {
+    const isUnseen = isUnseenAgentLabels(agent.labels);
+    if (agent.attention.requiresAttention || isUnseen) {
       agent.attention = { requiresAttention: false };
+      agent.labels = removeUnseenAgentLabel(agent.labels);
       await this.persistSnapshot(agent);
       this.emitState(agent, { persist: false });
     }
@@ -2824,13 +2837,44 @@ export class AgentManager {
    */
   async markAgentRead(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
-    if (!agent.attention.requiresAttention && agent.lifecycle !== "error") {
+    if (
+      !agent.attention.requiresAttention &&
+      agent.lifecycle !== "error" &&
+      !isUnseenAgentLabels(agent.labels)
+    ) {
       return;
     }
     agent.attention = { requiresAttention: false };
     agent.lifecycle = agent.lifecycle === "error" ? "idle" : agent.lifecycle;
+    agent.labels = removeUnseenAgentLabel(agent.labels);
     await this.persistSnapshot(agent);
     this.emitState(agent, { persist: false });
+  }
+
+  /** Drops the unseen label alone, for an agent whose attention must stay (a pending permission). */
+  async markAgentSeen(agentId: string): Promise<void> {
+    const liveAgent = this.agents.get(agentId);
+    if (liveAgent) {
+      if (!isUnseenAgentLabels(liveAgent.labels)) {
+        return;
+      }
+      liveAgent.labels = removeUnseenAgentLabel(liveAgent.labels);
+      await this.persistSnapshot(liveAgent);
+      this.emitState(liveAgent, { persist: false });
+      return;
+    }
+
+    const registry = this.requireRegistry();
+    const record = await registry.get(agentId);
+    if (!record || !isUnseenAgentLabels(record.labels)) {
+      return;
+    }
+    const nextRecord: StoredAgentRecord = {
+      ...record,
+      labels: removeUnseenAgentLabel(record.labels),
+    };
+    await registry.upsert(nextRecord);
+    this.dispatchStoredAgentState(nextRecord);
   }
 
   async markAgentUnread(agentId: string): Promise<void> {

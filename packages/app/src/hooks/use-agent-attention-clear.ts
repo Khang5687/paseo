@@ -16,6 +16,7 @@ interface UseAgentAttentionClearParams {
   isConnected: boolean;
   requiresAttention: boolean | null | undefined;
   attentionReason: AttentionReason;
+  isUnseen: boolean;
   isScreenFocused: boolean;
 }
 
@@ -31,6 +32,7 @@ export function useAgentAttentionClear({
   isConnected,
   requiresAttention,
   attentionReason,
+  isUnseen,
   isScreenFocused,
 }: UseAgentAttentionClearParams): AgentAttentionClearController {
   const [isAppVisible, setIsAppVisible] = useState<boolean>(() => getIsAppActivelyVisible());
@@ -52,6 +54,7 @@ export function useAgentAttentionClear({
           isConnected,
           requiresAttention,
           attentionReason,
+          isUnseen,
           trigger,
           hasDeferredFocusEntryClear: deferredFocusEntryClearRef.current,
         })
@@ -61,7 +64,7 @@ export function useAgentAttentionClear({
       deferredFocusEntryClearRef.current = false;
       client.clearAgentAttention(resolvedAgentId).catch(() => {});
     },
-    [agentId, attentionReason, client, isConnected, requiresAttention],
+    [agentId, attentionReason, client, isConnected, isUnseen, requiresAttention],
   );
 
   useEffect(() => {

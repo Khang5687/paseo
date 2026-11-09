@@ -1,4 +1,5 @@
 import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { CircleAlert, Folder, FolderGit2, Monitor, PencilLine } from "lucide-react-native";
@@ -33,6 +34,7 @@ import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 
 const needsInputColorMapping = (theme: Theme) => ({
@@ -135,13 +137,15 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
+  const isNew = workspace.isNew === true;
   const workspaceBranchTextStyle = useMemo(
     () => [
       styles.workspaceBranchText,
       isHovered && styles.workspaceBranchTextHovered,
       isCreating && styles.workspaceBranchTextCreating,
+      isNew && styles.workspaceBranchTextNew,
     ],
-    [isHovered, isCreating],
+    [isHovered, isCreating, isNew],
   );
 
   return (
@@ -173,6 +177,9 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
               {workspaceLabel}
             </Text>
             <View style={sidebarWorkspaceRowStyles.rowRight}>
+              {isNew ? (
+                <NewAgentBadge testID={`sidebar-workspace-new-${workspace.workspaceKey}`} />
+              ) : null}
               <SidebarNoteBadge
                 badge={noteBadge}
                 testID={`sidebar-workspace-note-badge-${workspace.workspaceKey}`}
@@ -289,6 +296,18 @@ function WorkspaceStatusIndicator({
 
 function StatusDotOverlay({ dotColorStyle }: { dotColorStyle: ViewStyle }) {
   return <View style={[styles.statusDotOverlay, dotColorStyle]} />;
+}
+
+// A new main agent nobody has opened yet. Always visible (no hover), so phones see it too;
+// it leaves once the agent is opened or the workspace is marked read.
+function NewAgentBadge({ testID }: { testID: string }) {
+  const { t } = useTranslation();
+  const dot = useMemo(() => <View style={styles.newAgentDot} />, []);
+  return (
+    <View testID={testID}>
+      <StatusBadge size="xs" label={t("sidebar.workspace.newAgent")} leading={dot} />
+    </View>
+  );
 }
 
 function getStatusDotColorStyle(bucket: SidebarStateBucket) {
@@ -586,6 +605,16 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceBranchTextHovered: {
     opacity: 1,
+  },
+  workspaceBranchTextNew: {
+    fontWeight: theme.fontWeight.semibold,
+    opacity: 1,
+  },
+  newAgentDot: {
+    width: STATUS_INDICATOR_FILLED_DOT_SIZE,
+    height: STATUS_INDICATOR_FILLED_DOT_SIZE,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.accent,
   },
   statusDotNeedsInput: {
     backgroundColor: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,

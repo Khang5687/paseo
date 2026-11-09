@@ -1422,6 +1422,7 @@ export const es: TranslationResources = {
       workingSubagents: "{{count}} subagentes trabajando",
       workingSubagents_one: "{{count}} subagente trabajando",
       workingSubagents_other: "{{count}} subagentes trabajando",
+      newAgent: "Nuevo",
       status: {
         serviceRunning: "Servicio {{name}} en ejecución",
         serviceUnhealthy: "Servicio {{name}} con fallos",

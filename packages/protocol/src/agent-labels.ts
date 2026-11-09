@@ -32,6 +32,26 @@ export function hasOpenAgentTab(labels: Record<string, unknown> | null | undefin
   );
 }
 
+// A main agent (`role=main`) the user has not opened yet. The daemon stamps it at creation and
+// removes it when the user reads the agent or marks its workspace read, so every client agrees.
+export const UNSEEN_AGENT_LABEL = "paseo.unseen";
+
+export function isMainAgentLabels(labels: Record<string, unknown> | null | undefined): boolean {
+  return labels?.role === "main";
+}
+
+export function isUnseenAgentLabels(labels: Record<string, unknown> | null | undefined): boolean {
+  return labels?.[UNSEEN_AGENT_LABEL] === "true";
+}
+
+export function removeUnseenAgentLabel(labels: Record<string, string>): Record<string, string> {
+  if (!(UNSEEN_AGENT_LABEL in labels)) {
+    return labels;
+  }
+  const { [UNSEEN_AGENT_LABEL]: _removed, ...rest } = labels;
+  return rest;
+}
+
 // Absent parent server label means the same host.
 export function getParentAddressFromLabels(
   labels: Record<string, unknown> | null | undefined,

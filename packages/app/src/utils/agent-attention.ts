@@ -5,6 +5,8 @@ interface ShouldClearAgentAttentionInput {
   isConnected: boolean;
   requiresAttention: boolean | null | undefined;
   attentionReason?: "finished" | "error" | "permission" | null | undefined;
+  // A new main agent nobody opened yet. Opening it is what clears that, whatever its attention.
+  isUnseen?: boolean;
   trigger?: AgentAttentionClearTrigger;
   hasDeferredFocusEntryClear?: boolean;
 }
@@ -67,6 +69,9 @@ export function shouldClearAgentAttention(input: ShouldClearAgentAttentionInput)
   }
   if (!input.isConnected) {
     return false;
+  }
+  if (input.isUnseen) {
+    return true;
   }
   if (!input.requiresAttention) {
     return false;

@@ -1394,6 +1394,7 @@ export const en = {
       workingSubagents: "{{count}} sub-agents working",
       workingSubagents_one: "{{count}} sub-agent working",
       workingSubagents_other: "{{count}} sub-agents working",
+      newAgent: "New",
       status: {
         serviceRunning: "Service {{name}} running",
         serviceUnhealthy: "Service {{name}} unhealthy",

@@ -1390,6 +1390,7 @@ export const ar: TranslationResources = {
       workingSubagents_few: "{{count}} وكلاء فرعيين يعملون",
       workingSubagents_many: "{{count}} وكيلًا فرعيًا يعملون",
       workingSubagents_other: "{{count}} وكيل فرعي يعمل",
+      newAgent: "جديد",
       status: {
         serviceRunning: "الخدمة {{name}} قيد التشغيل",
         serviceUnhealthy: "الخدمة {{name}} غير سليمة",
