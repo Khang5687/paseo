@@ -901,5 +901,14 @@
     "pr": 116,
     "title": "feat(server): serverId on archive, cancel, kill, set mode, update and search agent tools",
     "tests": ["packages/server/src/server/connected-hosts/hosts.e2e.test.ts"]
+  },
+  {
+    "pr": 120,
+    "title": "fix(server): keep file attachment uploads when the composer drops them from the draft",
+    "tests": [
+      "packages/server/src/server/agent-draft/agent-draft-service.test.ts",
+      "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/composer-file-attachment-send.spec.ts"]
   }
 ]
