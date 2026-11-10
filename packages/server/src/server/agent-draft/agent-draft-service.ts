@@ -5,7 +5,6 @@ import type pino from "pino";
 import type {
   AgentDraft,
   AgentDraftAttachment,
-  AgentDraftSetRequest,
   AgentDraftSnapshotSummary,
   AgentDraftState,
 } from "@getpaseo/protocol/messages";
@@ -30,7 +29,6 @@ export interface DraftSetInput {
   attachments: AgentDraftAttachment[];
   updatedAt: number;
   baseRevision: number | null;
-  reason?: AgentDraftSetRequest["reason"];
   clientId: string;
 }
 
@@ -101,14 +99,27 @@ function referencedUploadIds(fields: StoredAgentDraftFields): Set<string> {
   return ids;
 }
 
-/** Uploads the draft referenced before and no longer does, minus ones a sent message uses. */
+/**
+ * Image uploads the draft or its history referenced before and no longer do. Draft sync makes
+ * those uploads only so another device can show the images; a send carries image bytes itself.
+ * File uploads are never released here: the message names their path, and the composer clears
+ * its attachments while that message can still be on its way to the agent.
+ */
 export function releasedUploadIds(
   before: StoredAgentDraftFields,
   after: StoredAgentDraftFields,
 ): string[] {
   const still = referencedUploadIds(after);
-  const sent = new Set(after.sentDraftUploadIds ?? []);
-  return [...referencedUploadIds(before)].filter((id) => !still.has(id) && !sent.has(id));
+  const images = new Set<string>();
+  for (const attachments of [
+    before.draft?.attachments ?? [],
+    ...(before.draftHistory ?? []).map((snapshot) => snapshot.attachments),
+  ]) {
+    for (const attachment of attachments) {
+      if (attachment.kind === "image" && attachment.uploadId) images.add(attachment.uploadId);
+    }
+  }
+  return [...images].filter((id) => !still.has(id));
 }
 
 /** True when replacing `current` with `next` throws away text worth restoring later. */
@@ -117,14 +128,6 @@ function losesDraft(current: AgentDraft, next: DraftContent, overwritten: boolea
   const shrunk =
     current.text.length >= MIN_SHRINK_SNAPSHOT_CHARS && next.text.length < current.text.length / 2;
   return isEmpty(next) || shrunk || overwritten;
-}
-
-/** File uploads a sent message took along; the agent may still read them. */
-function addSentFileUploads(sent: string[] | undefined, draft: AgentDraft): string[] | undefined {
-  const files = draft.attachments.flatMap((attachment) =>
-    attachment.kind === "file" && attachment.uploadId ? [attachment.uploadId] : [],
-  );
-  return files.length > 0 ? [...new Set([...(sent ?? []), ...files])] : sent;
 }
 
 export function applyDraftSet(
@@ -151,11 +154,6 @@ export function applyDraftSet(
     history = pushSnapshot(history, current, policy.now);
   }
 
-  const sentDraftUploadIds =
-    input.reason === "sent" && current
-      ? addSentFileUploads(fields.sentDraftUploadIds, current)
-      : fields.sentDraftUploadIds;
-
   return {
     fields: {
       draft: {
@@ -166,7 +164,6 @@ export function applyDraftSet(
         updatedBy: input.clientId,
       },
       draftHistory: history,
-      sentDraftUploadIds,
     },
     accepted: true,
   };
@@ -277,11 +274,11 @@ export class AgentDraftService {
     return this.mutate(agentId, (fields) => applyDraftRestore(fields, input, this.policy()));
   }
 
-  /** Drops the draft, its history and their uploads. Called when the agent is archived. */
+  /** Drops the draft, its history and their image uploads. Called when the agent is archived. */
   async clearForArchive(agentId: string): Promise<void> {
     const released = await this.storage.mutateDraft(agentId, (fields) => ({
-      fields: { sentDraftUploadIds: fields.sentDraftUploadIds },
-      result: releasedUploadIds(fields, { sentDraftUploadIds: fields.sentDraftUploadIds }),
+      fields: {},
+      result: releasedUploadIds(fields, {}),
     }));
     if (released === null) return;
     await this.deleteUploads(released);

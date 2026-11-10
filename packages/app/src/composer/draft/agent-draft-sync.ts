@@ -429,6 +429,7 @@ export class AgentDraftSyncController {
         attachments,
         updatedAt: local.updatedAt,
         baseRevision: this.lastSeenRevision,
+        // COMPAT(draftSentReason): older fork daemons keep sent file uploads only on "sent"; remove after 2027-02-01.
         reason: local.lifecycle === "sent" ? "sent" : "edit",
       });
       const state = result.state;

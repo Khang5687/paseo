@@ -146,6 +146,7 @@ import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
 import type { AskAgentThreads } from "./agent/ask-agent.js";
 import { forkAgent } from "./agent/fork-agent.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
+import { assertUploadedFilesExist } from "./file-upload/index.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
   getAgentStreamEventTurnId,
@@ -8832,6 +8833,7 @@ export class Session {
       return;
     }
     try {
+      await assertUploadedFilesExist(msg.attachments);
       const message = await this.agentManager.addQueuedMessage(resolved.agentId, {
         text: msg.text,
         images: msg.images,
@@ -9151,6 +9153,7 @@ export class Session {
     try {
       const agentId = resolved.agentId;
 
+      await assertUploadedFilesExist(msg.attachments);
       const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments, msg.attachmentRefs);
       this.sessionLogger.trace(
         {
