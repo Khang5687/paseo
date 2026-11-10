@@ -117,9 +117,6 @@ const STORED_AGENT_SCHEMA = z.object({
   // writes these (see mutateDraft); every other write keeps the stored value.
   draft: STORED_DRAFT_SCHEMA.optional(),
   draftHistory: z.array(STORED_DRAFT_SNAPSHOT_SCHEMA).optional(),
-  // File uploads that went out with a sent message. The agent may still read
-  // their path, so draft cleanup never deletes them.
-  sentDraftUploadIds: z.array(z.string()).optional(),
 });
 
 export type SerializableAgentConfig = Pick<
@@ -137,10 +134,7 @@ export type SerializableAgentConfig = Pick<
 export type StoredAgentRecord = z.infer<typeof STORED_AGENT_SCHEMA>;
 export type StoredAgentDraft = z.infer<typeof STORED_DRAFT_SCHEMA>;
 export type StoredAgentDraftSnapshot = z.infer<typeof STORED_DRAFT_SNAPSHOT_SCHEMA>;
-export type StoredAgentDraftFields = Pick<
-  StoredAgentRecord,
-  "draft" | "draftHistory" | "sentDraftUploadIds"
->;
+export type StoredAgentDraftFields = Pick<StoredAgentRecord, "draft" | "draftHistory">;
 export function parseStoredAgentRecord(value: unknown): StoredAgentRecord {
   return STORED_AGENT_SCHEMA.parse(value);
 }
@@ -253,11 +247,7 @@ export class AgentStorage {
       agentId,
       (existing) => {
         if (!existing) return null;
-        const next = mutate({
-          draft: existing.draft,
-          draftHistory: existing.draftHistory,
-          sentDraftUploadIds: existing.sentDraftUploadIds,
-        });
+        const next = mutate({ draft: existing.draft, draftHistory: existing.draftHistory });
         result = next.result;
         return withDraftFields(existing, next.fields);
       },
@@ -551,12 +541,11 @@ function withDraftFields(
   record: StoredAgentRecord,
   fields: StoredAgentDraftFields,
 ): StoredAgentRecord {
-  const { draft: _draft, draftHistory: _history, sentDraftUploadIds: _sent, ...rest } = record;
+  const { draft: _draft, draftHistory: _history, ...rest } = record;
   return {
     ...rest,
     ...(fields.draft ? { draft: fields.draft } : {}),
     ...(fields.draftHistory?.length ? { draftHistory: fields.draftHistory } : {}),
-    ...(fields.sentDraftUploadIds?.length ? { sentDraftUploadIds: fields.sentDraftUploadIds } : {}),
   };
 }
 

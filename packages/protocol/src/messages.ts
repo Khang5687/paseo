@@ -2864,7 +2864,8 @@ export const AgentDraftSetRequestSchema = z.object({
   updatedAt: z.number(),
   // The revision this client last saw; null when it has seen none.
   baseRevision: z.number().int().nonnegative().nullable(),
-  // "sent" marks the clear that follows a send.
+  // "sent" marks the clear that follows a send. Current daemons ignore it; older fork daemons
+  // kept a draft's file uploads only on a "sent" clear.
   reason: z.enum(["edit", "sent"]).optional(),
   requestId: z.string(),
 });
