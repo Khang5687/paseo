@@ -359,6 +359,15 @@ export interface ProviderCommand {
   name: string;
   description: string;
   argumentHint?: string;
+  /** Fixed choices for the first argument, offered after `/name `. */
+  subcommands?: ProviderCommandSubcommand[];
+}
+
+export interface ProviderCommandSubcommand {
+  name: string;
+  description?: string;
+  /** Arguments the choice takes after its name, e.g. `[focus]`. */
+  usage?: string;
 }
 
 export interface ProviderError {
@@ -1055,7 +1064,22 @@ const noticeSchema = z
   })
   .strip();
 const commandSchema = z
-  .object({ name: idSchema, description: z.string(), argumentHint: z.string().optional() })
+  .object({
+    name: idSchema,
+    description: z.string(),
+    argumentHint: z.string().optional(),
+    subcommands: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            description: z.string().optional(),
+            usage: z.string().optional(),
+          })
+          .strip(),
+      )
+      .optional(),
+  })
   .strip();
 const usageSchema = z
   .object({

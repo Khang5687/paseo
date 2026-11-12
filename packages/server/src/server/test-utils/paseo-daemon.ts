@@ -7,6 +7,7 @@ import pino from "pino";
 import {
   createPaseoDaemon,
   type PaseoDaemonConfig,
+  type PaseoDaemonDependencies,
   type PaseoOpenAIConfig,
   type PaseoSpeechConfig,
 } from "../bootstrap.js";
@@ -14,6 +15,21 @@ import type { AgentClient, AgentProvider } from "../agent/agent-sdk-types.js";
 import { createTestAgentClients } from "./fake-agent-client.js";
 import type { PushNotificationSender } from "../push/index.js";
 import type { AgentProfile } from "@getpaseo/protocol/messages";
+import { OmpAgentClient } from "../agent/providers/omp/agent.js";
+import { OmpCliRuntime } from "../agent/providers/omp/cli-runtime.js";
+import {
+  OMP_HOST_ACCOUNT_ROUTING_ENV,
+  type OmpRpcAdmitDecision,
+} from "../agent/providers/omp/rpc-types.js";
+import type { OmpRoutingAuthority } from "../agent/providers/omp/account-routing-bridge.js";
+import {
+  FakeOmpChild,
+  type FakeOmpChildOptions,
+} from "../agent/providers/omp/test-utils/fake-omp.js";
+import type { AccountRoutingAuthority } from "../account-routing/authority.js";
+import type { OmpAccountLogin } from "../account-routing/login.js";
+import type { RoutingCatalog } from "../account-routing/types.js";
+import type { OmpRoutingBlock } from "@getpaseo/protocol/messages";
 
 interface TestPaseoDaemonOptions {
   daemonVersion?: string;
@@ -57,6 +73,68 @@ interface TestPaseoDaemonOptions {
   pluginsEnabled?: PaseoDaemonConfig["pluginsEnabled"];
   builtinPlugins?: BuiltinPluginLoader;
   plugins?: PaseoDaemonConfig["plugins"];
+  /**
+   * Replaces the OMP client with the real one over a scripted JSONL child, bound to the daemon's own
+   * routing authority. Synthetic data only; no process is spawned.
+   */
+  ompRouting?: FakeOmpChildOptions;
+  /** Replaces the macOS-only host sign-in; tests pass one backed by FakeOmp. */
+  ompAccountLogin?: OmpAccountLogin;
+  /** The plain OMP runtime the account listing reads through; tests pass FakeOmp. */
+  ompRuntime?: PaseoDaemonDependencies["ompRuntime"];
+  /** Replaces the startup OMP capability probe. Defaults to one that learns nothing, never a real omp. */
+  ompCapabilityProbe?: PaseoDaemonDependencies["ompCapabilityProbe"];
+}
+
+/** Test-only control of the fake native peer. Drives the real JSONL frames; never the store. */
+export interface OmpRoutingFixture {
+  /** The first scripted child; every opened agent gets its own, listed in `children`. */
+  child: FakeOmpChild;
+  children: FakeOmpChild[];
+  authority: AccountRoutingAuthority;
+  /** Opens an OMP agent through the daemon so its runtime registers with the authority. */
+  openAgent(
+    cwd: string,
+  ): Promise<{ agentId: string; runtimeInstanceId: string; child: FakeOmpChild }>;
+  /** Replaces the catalogs native reports from now on (configure, refresh and default admit). */
+  updateCatalog(next: (runtimeInstanceId: string) => RoutingCatalog[]): void;
+  /** Replaces the answer native gives to the next `account.routing.configure`. */
+  setRuntimeCapability(configure: FakeOmpChildOptions["configure"]): void;
+  /** Native outcome frame for an admitted request, with optional confirmed quota blocks. */
+  outcome(input: {
+    runtimeInstanceId: string;
+    admission: Extract<OmpRpcAdmitDecision, { kind: "admit" }>;
+    operationId: string;
+    sessionId: string;
+    modelId: string;
+    quotaBlocks?: OmpRoutingBlock[];
+    code?: string;
+  }): void;
+  /** Native withdraws a request or wait. */
+  cancel(input: {
+    runtimeInstanceId: string;
+    operationId: string;
+    waitId?: string;
+    admissionId?: string;
+  }): void;
+  /** Native admit.request; resolves with the host's `decision` once the response frame lands. */
+  requestAdmission(input: {
+    runtimeInstanceId: string;
+    operationId: string;
+    sessionId: string;
+    modelId: string;
+    /** Defaults to the first catalog the fixture currently reports. */
+    catalog?: Record<string, unknown>;
+    purpose?: string;
+    previousWaitId?: string;
+  }): Promise<OmpRpcAdmitDecision>;
+  started(input: {
+    runtimeInstanceId: string;
+    admission: Extract<OmpRpcAdmitDecision, { kind: "admit" }>;
+    operationId: string;
+    sessionId: string;
+    modelId: string;
+  }): void;
 }
 
 export interface TestPaseoDaemon {
@@ -65,6 +143,7 @@ export interface TestPaseoDaemon {
   port: number;
   paseoHome: string;
   staticDir: string;
+  routingFixture?: OmpRoutingFixture;
   close: () => Promise<void>;
 }
 
@@ -107,8 +186,19 @@ export async function createTestPaseoDaemon(
     const { config, paseoHomeRoot, paseoHome, staticDir, createdDirs } =
       await prepareTestDaemonConfig(options);
     const logger = options.logger ?? pino({ level: "silent" });
+    const routing = options.ompRouting ? createOmpRoutingClient(options.ompRouting, logger) : null;
+    if (routing) {
+      config.agentClients = { ...config.agentClients, omp: routing.client };
+      config.providerOverrides = { ...config.providerOverrides, omp: { enabled: true } };
+    }
     const daemon = await createPaseoDaemon(config, logger, {
       builtinPlugins: options.builtinPlugins ?? new BuiltinPluginLoader(undefined, []),
+      accountLogin: options.ompAccountLogin,
+      ompRuntime: options.ompRuntime,
+      // Never spawn a real omp from a test daemon, inside vitest or a spawned fixture child.
+      ompCapabilityProbe:
+        options.ompCapabilityProbe ??
+        (async () => ({ complete: false, version: 0, unavailable: true })),
       serverFeatureOverrides: {
         daemonStatusRpc: options.daemonStatusRpcCapability,
         relayConfig: options.relayConfigCapability,
@@ -136,6 +226,7 @@ export async function createTestPaseoDaemon(
         port: listenTarget.port,
         paseoHome,
         staticDir,
+        routingFixture: routing?.fixture(daemon),
         close,
       };
     } catch (error) {
@@ -154,6 +245,159 @@ export async function createTestPaseoDaemon(
   }
 
   throw lastError ?? new Error("Failed to start test daemon");
+}
+
+/** The client is built before the daemon exists; the authority is resolved when a launch needs it. */
+function createOmpRoutingClient(options: FakeOmpChildOptions, logger: pino.Logger) {
+  // One shared options object: the fixture swaps catalogs and capability on it between scenarios.
+  const children: FakeOmpChild[] = [];
+  const byRuntime = new Map<string, FakeOmpChild>();
+  const childFor = (runtimeInstanceId: string) => {
+    const found = byRuntime.get(runtimeInstanceId);
+    if (!found) throw new Error(`No scripted child for ${runtimeInstanceId}`);
+    return found;
+  };
+  let authority: AccountRoutingAuthority | undefined;
+  const lazy = (): AccountRoutingAuthority => {
+    if (!authority) throw new Error("Routing authority is not available yet");
+    return authority;
+  };
+  const delegate: OmpRoutingAuthority = {
+    get hostEpoch() {
+      return lazy().hostEpoch;
+    },
+    attachRuntime: (...args) => lazy().attachRuntime(...args),
+    admit: (...args) => lazy().admit(...args),
+    started: (...args) => lazy().started(...args),
+    outcome: (...args) => lazy().outcome(...args),
+    cancel: (...args) => lazy().cancel(...args),
+  };
+  const client = new OmpAgentClient({
+    logger,
+    runtime: new OmpCliRuntime({
+      logger,
+      command: ["omp"],
+      // Only the marked launch is the scripted peer; catalog and model listing spawn throwaways.
+      spawnProcess: (launch) => {
+        if (launch.env?.[OMP_HOST_ACCOUNT_ROUTING_ENV] !== "1") return new FakeOmpChild().process;
+        const child = new FakeOmpChild(options);
+        children.push(child);
+        return child.process;
+      },
+      probeCapabilities: async () => ({ complete: true, version: 1 }),
+    }),
+    accountRouting: delegate,
+  });
+  return {
+    client,
+    fixture(daemon: TestPaseoDaemon["daemon"]): OmpRoutingFixture {
+      if (!daemon.accountRouting) throw new Error("Daemon has no routing authority");
+      authority = daemon.accountRouting;
+      return {
+        get child() {
+          return children[0];
+        },
+        children,
+        authority,
+        async openAgent(cwd) {
+          const before = children.length;
+          const agent = await daemon.agentManager.createAgent({ provider: "omp", cwd }, undefined, {
+            workspaceId: undefined,
+          });
+          const child = children[before];
+          if (!child) throw new Error("Launch did not spawn a scripted routing child");
+          const configure = await child.waitForFrame("account.routing.configure");
+          const runtimeInstanceId = String(configure.runtimeInstanceId);
+          byRuntime.set(runtimeInstanceId, child);
+          return { agentId: agent.id, runtimeInstanceId, child };
+        },
+        updateCatalog(next) {
+          options.catalogs = next;
+          options.refresh = (command) => ({
+            catalog: next(String(command.runtimeInstanceId))[0],
+          });
+        },
+        setRuntimeCapability(configure) {
+          options.configure = configure;
+        },
+        outcome(input) {
+          childFor(input.runtimeInstanceId).emit({
+            type: "account.routing.outcome",
+            hostEpoch: lazy().hostEpoch,
+            runtimeInstanceId: input.runtimeInstanceId,
+            admissionId: input.admission.admissionId,
+            operationId: input.operationId,
+            attemptId: "attempt-1",
+            sessionId: input.sessionId,
+            modelId: input.modelId,
+            accountRef: input.admission.accountRef,
+            selectionGeneration: input.admission.selectionGeneration,
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+            code: input.code ?? (input.quotaBlocks?.length ? "quota_exhausted" : "ok"),
+            dispatch: "dispatched",
+            replaySafe: false,
+            refusalReason: null,
+            retryAfterMs: null,
+            quotaBlocks: input.quotaBlocks ?? [],
+            windows: [],
+          });
+        },
+        cancel(input) {
+          childFor(input.runtimeInstanceId).emit({
+            type: "account.routing.cancel",
+            id: `ar-${input.operationId}`,
+            sessionId: "native-1",
+            hostEpoch: lazy().hostEpoch,
+            runtimeInstanceId: input.runtimeInstanceId,
+            operationId: input.operationId,
+            attemptId: "attempt-1",
+            ...(input.waitId ? { waitId: input.waitId } : {}),
+            ...(input.admissionId ? { admissionId: input.admissionId } : {}),
+          });
+        },
+        async requestAdmission(input) {
+          const id = `ar-${input.operationId}`;
+          const child = childFor(input.runtimeInstanceId);
+          child.emit({
+            type: "account.routing.admit.request",
+            id,
+            hostEpoch: lazy().hostEpoch,
+            runtimeInstanceId: input.runtimeInstanceId,
+            operationId: input.operationId,
+            attemptId: "attempt-1",
+            sessionId: input.sessionId,
+            purpose: input.purpose ?? "main",
+            provider: "anthropic",
+            modelId: input.modelId,
+            requestGeneration: 1,
+            ...(input.previousWaitId ? { previousWaitId: input.previousWaitId } : {}),
+            catalog: input.catalog ?? options.catalogs?.(input.runtimeInstanceId)[0],
+          });
+          const response = await child.waitForFrame(
+            "account.routing.admit.response",
+            (frame) => frame.id === id,
+          );
+          return response.decision as OmpRpcAdmitDecision;
+        },
+        started(input) {
+          childFor(input.runtimeInstanceId).emit({
+            type: "account.routing.started",
+            hostEpoch: lazy().hostEpoch,
+            runtimeInstanceId: input.runtimeInstanceId,
+            admissionId: input.admission.admissionId,
+            operationId: input.operationId,
+            attemptId: "attempt-1",
+            sessionId: input.sessionId,
+            modelId: input.modelId,
+            accountRef: input.admission.accountRef,
+            selectionGeneration: input.admission.selectionGeneration,
+            startedAt: Date.now(),
+          });
+        },
+      };
+    },
+  };
 }
 
 interface PreparedTestDaemonConfig {

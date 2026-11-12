@@ -9,17 +9,21 @@ import { useRewindComposerRestore } from "./composer-restore";
 import { useSessionStore } from "@/stores/session-store";
 import { shouldRestoreComposerForRewindMode } from "./rewind-mode";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import type { AttachmentMetadata } from "@/attachments/types";
+import { useSentMessageImagesStore } from "@/stores/sent-message-images-store";
 
 interface UseRewindAgentMutationInput {
   serverId?: string;
   agentId?: string;
   messageId?: string;
+  clientMessageId?: string;
   client?: DaemonClient | null;
 }
 
 interface RewindAgentInput {
   mode: RewindMode;
   rewoundText: string;
+  rewoundImages?: AttachmentMetadata[];
 }
 
 export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
@@ -52,7 +56,17 @@ export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
       if (!shouldRestoreComposerForRewindMode(variables.mode)) {
         return;
       }
-      composerRestore?.completeRewind(variables.rewoundText);
+      if (!composerRestore) return;
+      composerRestore.completeRewind(variables.rewoundText, variables.rewoundImages ?? []);
+      // The composer draft owns the images now; drop the sent-message entry so GC can free
+      // them if the draft is discarded.
+      if (input.serverId && input.agentId) {
+        const store = useSentMessageImagesStore.getState();
+        for (const messageId of [input.messageId, input.clientMessageId]) {
+          if (!messageId) continue;
+          store.remove({ serverId: input.serverId, agentId: input.agentId, messageId });
+        }
+      }
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : t("rewind.errors.failed"));

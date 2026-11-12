@@ -509,10 +509,18 @@ function mapEntryMessage(entry: OmpSessionEntry): OmpAgentMessage | null {
   if (entry.type === "custom_message") {
     return mapCustomMessageEntry(entry);
   }
-  if (!entry.type || isControlEntryType(entry.type)) {
+  if (
+    !entry.type ||
+    Object.hasOwn(OMP_METADATA_ENTRY_TYPES, entry.type) ||
+    entry.type.startsWith("tool_execution_")
+  ) {
     return null;
   }
-  return visibleFallback(entry.type, entry);
+  // An entry type this mapper does not know yet: show it when it carries text, so a future
+  // conversation record is not lost; a content-less one is metadata.
+  const hasText =
+    textOf(entry.content) !== "" || (typeof entry.text === "string" && entry.text !== "");
+  return hasText ? visibleFallback(entry.type, entry) : null;
 }
 
 // OMP persists a compaction as a top-level entry; the live timeline shows it as a compaction row.
@@ -550,22 +558,33 @@ function isSystemReminder(text: string): boolean {
   );
 }
 
-function isControlEntryType(type: string): boolean {
-  return (
-    type === "session" ||
-    type === "session_init" ||
-    type === "system" ||
-    type === "title" ||
-    type === "title_change" ||
-    type === "custom" ||
-    type === "system_prompt" ||
-    type === "model_change" ||
-    type === "thinking_level_change" ||
-    type === "ttsr_injection" ||
-    type === "tool_execution" ||
-    type.startsWith("tool_execution_")
-  );
-}
+// OMP session entry types that carry no conversation row. Source of truth: OMP's `SessionEntry`
+// union, `SessionHeader` and `SessionTitleSlotEntry` in
+// oh-my-pi packages/coding-agent/src/session/session-entries.ts. `message`, `compaction` and
+// `custom_message` are mapped above; every other member is listed here.
+const OMP_METADATA_ENTRY_TYPES: Record<string, true> = {
+  session: true,
+  title: true,
+  title_change: true,
+  session_init: true,
+  model_change: true,
+  thinking_level_change: true,
+  service_tier_change: true,
+  mode_change: true,
+  credential_pin: true,
+  model_usage: true,
+  label: true,
+  custom: true,
+  ttsr_injection: true,
+  reset_boundary: true,
+  // Summarises an abandoned branch for the model; the live timeline drops branchSummary
+  // messages too.
+  branch_summary: true,
+  // Written by older OMP builds.
+  system: true,
+  system_prompt: true,
+  tool_execution: true,
+};
 
 function visibleFallback(role: string, value: Record<string, unknown>): OmpAgentMessage {
   let text = "Unsupported history record";

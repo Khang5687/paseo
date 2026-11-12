@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import * as Clipboard from "expo-clipboard";
-import { Check, Copy } from "lucide-react-native";
+import { Check, Copy, Play } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import type { HighlightToken } from "@getpaseo/highlight";
 import { isNative, isWeb } from "@/constants/platform";
@@ -23,11 +23,19 @@ import {
   TRAILING_CODE_LINE_BREAKS,
 } from "@/assistant-selection-copy/markup";
 
+export interface CodeBlockRunControl {
+  onPress: () => void;
+  /** False hides the control and keeps its space, e.g. while the fence streams in. */
+  available: boolean;
+}
+
 interface HighlightedCodeBlockProps {
   code: string;
   language: string | null | undefined;
   inheritedStyles: TextStyle;
   textStyle: TextStyle;
+  /** Shows a Run control beside Copy. */
+  run?: CodeBlockRunControl;
 }
 
 // Fence info strings ("```ts", "```typescript", "```ts {1,3}") map to the
@@ -65,6 +73,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   language,
   inheritedStyles,
   textStyle,
+  run,
 }: HighlightedCodeBlockProps) {
   // Box styles (bg / padding / border / radius / margin) go on the wrapper View
   // so the absolute copy button positions relative to the visible code area,
@@ -93,6 +102,12 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   // and ends in more than one when the author left a blank line before the closing
   // fence; pasting any of them into a terminal runs the last line.
   const getCode = useCallback(() => code.replace(TRAILING_CODE_LINE_BREAKS, ""), [code]);
+  // Two controls cover more of the first line than Copy alone; keep the code clear of them.
+  const runnable = run !== undefined;
+  const codeTextStyle = useMemo(
+    () => (runnable ? [innerTextStyle, copyButtonStyles.runReserve] : innerTextStyle),
+    [innerTextStyle, runnable],
+  );
 
   return (
     <View
@@ -102,15 +117,24 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
       onPointerLeave={handlePointerLeave}
     >
       {keyedLines ? (
-        <Text style={innerTextStyle} dataSet={markdownCopyDataSet.code}>
+        <Text style={codeTextStyle} dataSet={markdownCopyDataSet.code}>
           {renderCodeSegments(keyedLines)}
         </Text>
       ) : (
-        <Text style={innerTextStyle} dataSet={markdownCopyDataSet.code}>
+        <Text style={codeTextStyle} dataSet={markdownCopyDataSet.code}>
           {renderedCode}
         </Text>
       )}
-      <CopyButton getCode={getCode} visible={controlsVisible} />
+      <View
+        style={copyButtonStyles.actions}
+        pointerEvents={controlsVisible ? "box-none" : "none"}
+        dataSet={markdownCopyDataSet.ignore}
+      >
+        {run ? (
+          <RunButton onPress={run.onPress} visible={controlsVisible && run.available} />
+        ) : null}
+        <CopyButton getCode={getCode} visible={controlsVisible} />
+      </View>
     </View>
   );
 });
@@ -231,11 +255,54 @@ const CopyButton = React.memo(function CopyButton({ getCode, visible }: CopyButt
   );
 });
 
+interface RunButtonProps {
+  onPress: () => void;
+  visible: boolean;
+}
+
+const RunButton = React.memo(function RunButton({ onPress, visible }: RunButtonProps) {
+  const { t } = useTranslation();
+  const visibilityStyle = visible
+    ? copyButtonStyles.containerVisible
+    : copyButtonStyles.containerHidden;
+  const wrapperStyle = useMemo(
+    () => [copyButtonStyles.container, visibilityStyle],
+    [visibilityStyle],
+  );
+  return (
+    <Pressable
+      onPress={onPress}
+      style={wrapperStyle}
+      pointerEvents={visible ? "auto" : "none"}
+      accessibilityRole="button"
+      accessibilityLabel={t("codeRun.run")}
+      hitSlop={8}
+      testID="code-block-run"
+    >
+      {({ hovered }) => (
+        <Play
+          size={14}
+          color={
+            hovered ? copyButtonStyles.iconHoveredColor.color : copyButtonStyles.iconColor.color
+          }
+        />
+      )}
+    </Pressable>
+  );
+});
+
 const copyButtonStyles = StyleSheet.create((theme) => ({
-  container: {
+  runReserve: {
+    paddingRight: theme.spacing[12],
+  },
+  actions: {
     position: "absolute",
     top: theme.spacing[2],
     right: theme.spacing[2],
+    flexDirection: "row",
+    gap: theme.spacing[2],
+  },
+  container: {
     padding: theme.spacing[1],
   },
   containerVisible: {
