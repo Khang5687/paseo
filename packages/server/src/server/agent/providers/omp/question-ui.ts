@@ -4,6 +4,7 @@ import type {
   AgentProvider,
 } from "../../agent-sdk-types.js";
 import { splitMultiSelectAnswer } from "../question-card-answer.js";
+import { type OmpAskChoiceField, parseOmpAskForm } from "./ask-form.js";
 import type { OmpAgentMessage, OmpRuntimeEvent } from "./rpc-types.js";
 
 type UiRequest = Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>;
@@ -28,11 +29,23 @@ interface AskQuestion {
   options: SelectOption[];
 }
 
+/** The rest of an answer, replayed into OMP's follow-up prompts for the same question. */
 interface PendingAnswer {
-  question: AskQuestion;
-  selected: string[];
+  matches: (title: string) => boolean;
+  /** Rows still to send: options to toggle, then Other. */
+  queue: string[];
   custom: string | null;
-  next: "select" | "editor";
+  multi: boolean;
+  next: "select" | "text";
+  /** A form's checkbox walk returns to its select after the Other text; the old ask ended there. */
+  selectAfterText: boolean;
+}
+
+interface ActiveForm {
+  context: string;
+  choices: OmpAskChoiceField[];
+  /** Index of the first choice field no select has matched yet. */
+  next: number;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -106,8 +119,20 @@ function mapGenericQuestion(
         ...(optional ? { allowEmpty: true, dismissLabel: "Skip" } : {}),
       });
     }
-    case "editor":
-      return genericQuestion(event, provider, event.title ?? "Edit text", []);
+    case "editor": {
+      // OMP opens its editor on this text; an empty answer keeps it.
+      const prefill = event.prefill?.trim() ? event.prefill : undefined;
+      const request = genericQuestion(
+        event,
+        provider,
+        event.title ?? "Edit text",
+        [],
+        prefill ? { placeholder: prefill, allowEmpty: true } : {},
+      );
+      return prefill
+        ? { ...request, metadata: { ...request.metadata, editorPrefill: prefill } }
+        : request;
+    }
     case "confirm":
       return genericQuestion(
         event,
@@ -130,6 +155,8 @@ function genericResponse(
     (value): value is string => typeof value === "string",
   );
   if (answer === undefined) return { cancelled: true };
+  const prefill = request.metadata?.editorPrefill;
+  if (answer === "" && typeof prefill === "string") return { value: prefill };
   return request.metadata?.extensionUiMethod === "confirm"
     ? { confirmed: /^yes$/i.test(answer.trim()) }
     : { value: answer };
@@ -180,28 +207,64 @@ function selectedAnswer(
   return splitMultiSelectAnswer(answer, labels);
 }
 
-/** Owns OMP question mapping and the ask tool's multi-RPC answer sequence. */
+function isDoneRow(row: string): boolean {
+  return row.endsWith(" Done selecting");
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function readAnswer(response: AgentPermissionResponse): string | undefined {
+  if (response.behavior !== "allow") return undefined;
+  const answer = record(response.updatedInput?.answers)?.[ANSWER_HEADER];
+  return typeof answer === "string" ? answer : undefined;
+}
+
+/**
+ * Owns OMP question mapping and the ask tool's multi-RPC answer sequence.
+ *
+ * OMP's RPC host has no form surface, so `ask` arrives as one prompt per field: a
+ * `select` per choice question (checkboxes toggle a row per prompt until a Done
+ * row; "Other" opens a text prompt) and `input`/`editor` per text field. Paseo
+ * shows one card per choice question and replays the answer into that sequence.
+ * Two argument shapes exist: `{ questions }` (OMP before 18.18.3) and `{ html }`.
+ */
 export class OmpQuestionUi {
+  private askId: string | null = null;
   private questions: AskQuestion[] = [];
+  private form: ActiveForm | null = null;
   private pending: PendingAnswer | null = null;
 
   observeMessage(message: OmpAgentMessage): void {
     if (message.role !== "assistant") return;
     for (const item of message.content) {
-      if (item.type === "toolCall" && item.name === "ask") this.start(item.name, item.arguments);
+      if (item.type === "toolCall" && item.name === "ask") {
+        this.start(item.name, item.arguments, item.id);
+      }
     }
   }
 
-  start(toolName: string, args: unknown): void {
-    if (toolName === "ask") {
-      this.questions = readQuestions(args);
-      this.pending = null;
-    }
+  /**
+   * OMP sends the assistant message, then the first prompt, then
+   * `tool_execution_start`; the second sighting of the same call keeps its state.
+   */
+  start(toolName: string, args: unknown, toolCallId: string): void {
+    if (toolName !== "ask" || toolCallId === this.askId) return;
+    this.askId = toolCallId;
+    this.questions = readQuestions(args);
+    const html = record(args)?.html;
+    this.form = typeof html === "string" ? { ...parseOmpAskForm(html), next: 0 } : null;
+    this.pending = null;
   }
 
   finish(toolName: string): void {
     if (toolName === "ask") {
+      this.askId = null;
       this.questions = [];
+      this.form = null;
       this.pending = null;
     }
   }
@@ -212,7 +275,11 @@ export class OmpQuestionUi {
     send: SendResponse,
   ): AgentPermissionRequest | null {
     if (this.consume(event, send)) return null;
-    return this.mapAsk(event, provider) ?? mapGenericQuestion(event, provider);
+    const request =
+      this.mapAsk(event, provider) ??
+      this.mapFormChoice(event, provider) ??
+      mapGenericQuestion(event, provider);
+    return request ? this.withFormContext(request) : null;
   }
 
   private mapAsk(event: UiRequest, provider: AgentProvider): AgentPermissionRequest | null {
@@ -225,7 +292,7 @@ export class OmpQuestionUi {
       question.options.map((option) => [option.label, option.description]),
     );
     const options = readSelectOptions(event)
-      .filter((option) => option.label !== OTHER && !option.label.endsWith(" Done selecting"))
+      .filter((option) => option.label !== OTHER && !isDoneRow(option.label))
       .map((option) => {
         const description =
           descriptions.get(option.label) ??
@@ -258,85 +325,197 @@ export class OmpQuestionUi {
     };
   }
 
+  /** A `select` from an `{ html }` ask, matched to the form's next choice field by option count. */
+  private mapFormChoice(event: UiRequest, provider: AgentProvider): AgentPermissionRequest | null {
+    const form = this.form;
+    if (!form || event.method !== "select" || typeof event.title !== "string") return null;
+    const rows = event.options ?? [];
+    const labels = rows.filter((row) => row !== OTHER && !isDoneRow(row));
+    const index = form.choices.findIndex(
+      (field, fieldIndex) => fieldIndex >= form.next && field.checked.length === labels.length,
+    );
+    const field = form.choices[index];
+    if (!field) return null;
+    form.next = index + 1;
+
+    // A preselected checkbox already counts: OMP titles its first prompt "(1 selected) …".
+    const title = questionTitle(event.title);
+    const preselected = labels.filter((_, optionIndex) => field.checked[optionIndex]);
+    return {
+      id: event.id,
+      provider,
+      name: "OMP ask",
+      kind: "question",
+      title,
+      input: {
+        questions: [
+          {
+            question: title,
+            header: ANSWER_HEADER,
+            options: labels.map((label) =>
+              preselected.includes(label) ? { label, description: "Recommended" } : { label },
+            ),
+            multiSelect: field.multi,
+            ...(rows.includes(OTHER) ? { allowOther: true } : {}),
+            ...(field.multi && !field.required ? { allowEmpty: true } : {}),
+          },
+        ],
+      },
+      metadata: {
+        ompAsk: true,
+        ompAskForm: true,
+        answerHeader: ANSWER_HEADER,
+        optionLabels: labels,
+        selectRows: rows,
+        multiSelect: field.multi,
+        preselected,
+      },
+    };
+  }
+
+  /** OMP's walk drops the form's context text; the ask's first card carries it. */
+  private withFormContext(request: AgentPermissionRequest): AgentPermissionRequest {
+    const context = this.form?.context;
+    const questions = request.input?.questions;
+    if (!this.form || !context || request.kind !== "question" || !Array.isArray(questions)) {
+      return request;
+    }
+    const [first, ...rest] = questions;
+    const question = record(first);
+    if (!question || typeof question.question !== "string") return request;
+    this.form.context = "";
+    return {
+      ...request,
+      input: {
+        ...request.input,
+        questions: [{ ...question, question: `${context}\n\n${question.question}` }, ...rest],
+      },
+    };
+  }
+
+  private respondFormChoice(
+    request: AgentPermissionRequest,
+    answer: string | undefined,
+    send: SendResponse,
+  ): void {
+    const metadata = request.metadata ?? {};
+    const multi = metadata.multiSelect === true;
+    if (answer === undefined) return this.cancel(request.id, send);
+    const labels = stringList(metadata.optionLabels);
+    const { selected, custom } = selectedAnswer(answer, labels, multi);
+    const other = custom?.trim() ? custom : null;
+    const preselected = stringList(metadata.preselected);
+    // Checkbox rows toggle, so send the rows whose state changes.
+    const queue = multi
+      ? labels.filter((label) => selected.includes(label) !== preselected.includes(label))
+      : selected.slice(0, 1);
+    if (other !== null && (multi || queue.length === 0)) queue.push(OTHER);
+    if (!multi && queue.length === 0) return this.cancel(request.id, send);
+    const title = request.title ?? "";
+    this.advance(
+      {
+        matches: (eventTitle) => questionTitle(eventTitle) === title,
+        queue,
+        custom: other,
+        multi,
+        next: "select",
+        selectAfterText: multi,
+      },
+      request.id,
+      stringList(metadata.selectRows),
+      send,
+    );
+  }
+
   respond(
     request: AgentPermissionRequest,
     response: AgentPermissionResponse,
     send: SendResponse,
   ): void {
-    if (request.metadata?.ompAsk !== true) {
+    const metadata = request.metadata;
+    if (metadata?.ompAsk !== true) {
       send(request.id, genericResponse(request, response));
       return;
     }
-    const question = this.questions.find((item) => item.title === request.title);
-    const answers = record(
-      response.behavior === "allow" ? response.updatedInput?.answers : undefined,
-    );
-    const answer = answers?.[ANSWER_HEADER];
-    if (response.behavior === "deny" || typeof answer !== "string" || !question) {
-      this.pending = null;
-      send(request.id, { cancelled: true });
+    const answer = readAnswer(response);
+    if (metadata.ompAskForm === true) {
+      this.respondFormChoice(request, answer, send);
       return;
     }
+    const labels = stringList(metadata.optionLabels);
 
-    const labels = Array.isArray(request.metadata.optionLabels)
-      ? request.metadata.optionLabels.filter((item): item is string => typeof item === "string")
-      : [];
+    const question = this.questions.find((item) => item.title === request.title);
+    if (answer === undefined || !question) return this.cancel(request.id, send);
     const { selected, custom } = selectedAnswer(answer, labels, question.multi);
-    if (selected.length === 0 && custom === null) {
-      this.pending = null;
-      send(request.id, { cancelled: true });
-      return;
-    }
-    if (question.multi) {
-      this.pending = { question, selected: selected.slice(1), custom, next: "select" };
-      send(request.id, { value: selected[0] ?? OTHER });
-      if (selected.length === 0) this.pending.next = "editor";
-    } else if (custom !== null) {
-      this.pending = { question, selected: [], custom, next: "editor" };
-      send(request.id, { value: OTHER });
-    } else {
-      this.pending = null;
-      send(request.id, { value: selected[0] });
-    }
+    const queue = question.multi ? [...selected] : selected.slice(0, 1);
+    if (custom !== null && (question.multi || queue.length === 0)) queue.push(OTHER);
+    if (queue.length === 0) return this.cancel(request.id, send);
+    this.advance(
+      {
+        matches: (eventTitle) => matchesQuestion(eventTitle, question),
+        queue,
+        custom,
+        multi: question.multi,
+        next: "select",
+        selectAfterText: false,
+      },
+      request.id,
+      [...labels, OTHER],
+      send,
+    );
   }
 
   consume(event: UiRequest, send: SendResponse): boolean {
     const pending = this.pending;
-    if (pending?.next === "editor" && event.method === "editor" && pending.custom !== null) {
-      this.pending = null;
-      send(event.id, { value: pending.custom });
+    if (!pending) return false;
+    if (pending.next === "text") {
+      if ((event.method !== "input" && event.method !== "editor") || pending.custom === null) {
+        return false;
+      }
+      const custom = pending.custom;
+      pending.custom = null;
+      if (pending.selectAfterText) pending.next = "select";
+      else this.pending = null;
+      send(event.id, { value: custom });
       return true;
     }
     if (
-      !pending ||
+      event.method !== "select" ||
       typeof event.title !== "string" ||
-      !matchesQuestion(event.title, pending.question)
-    )
+      !Array.isArray(event.options) ||
+      !pending.matches(event.title)
+    ) {
       return false;
-    if (pending.next !== "select" || event.method !== "select" || !Array.isArray(event.options))
-      return false;
-
-    const choice = pending.selected[0];
-    if (choice && event.options.includes(choice)) {
-      pending.selected.shift();
-      send(event.id, { value: choice });
-      return true;
     }
-    if (pending.custom !== null && event.options.includes(OTHER)) {
-      pending.next = "editor";
-      send(event.id, { value: OTHER });
-      return true;
-    }
-    const done = event.options.find((option) => option.endsWith(" Done selecting"));
-    if (!done) {
-      // OMP omits Done for multi-question asks and expects a right-arrow
-      // navigation callback, which its RPC response cannot express.
-      this.pending = null;
-      send(event.id, { cancelled: true });
-      return true;
-    }
-    this.pending = null;
-    send(event.id, { value: done });
+    this.advance(pending, event.id, event.options, send);
     return true;
+  }
+
+  /** Answers one select of the question with the next queued row, else its Done row. */
+  private advance(
+    pending: PendingAnswer,
+    id: string,
+    rows: readonly string[],
+    send: SendResponse,
+  ): void {
+    const row = pending.queue[0];
+    if (row !== undefined && rows.includes(row)) {
+      pending.queue.shift();
+      if (row === OTHER) pending.next = "text";
+      this.pending = row === OTHER || pending.multi ? pending : null;
+      send(id, { value: row });
+      return;
+    }
+    // OMP omits Done in a multi-question old-shape ask (it wants a right-arrow
+    // callback) and in a required checkbox group with nothing checked; RPC can
+    // finish neither.
+    const done = rows.find(isDoneRow);
+    this.pending = null;
+    send(id, done ? { value: done } : { cancelled: true });
+  }
+
+  private cancel(id: string, send: SendResponse): void {
+    this.pending = null;
+    send(id, { cancelled: true });
   }
 }

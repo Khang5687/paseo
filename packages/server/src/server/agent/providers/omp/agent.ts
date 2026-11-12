@@ -1872,7 +1872,7 @@ export class OmpAgentSession implements AgentSession {
       case "tool_execution_start": {
         const toolCall = parseToolArgs(event.toolName, event.args);
         this.activeToolCalls.set(event.toolCallId, toolCall);
-        this.questionUi.start(event.toolName, event.args);
+        this.questionUi.start(event.toolName, event.args, event.toolCallId);
         this.emitToolCallEvent(event.toolCallId, toolCall, "running", null, null);
         return;
       }

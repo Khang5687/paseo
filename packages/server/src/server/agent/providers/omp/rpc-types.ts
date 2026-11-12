@@ -476,6 +476,7 @@ const OmpExtensionUiRequestSchema = z
     options: z.array(z.string()).optional(),
     optionDetails: z.unknown().optional(),
     placeholder: z.string().optional(),
+    prefill: z.string().optional(),
     url: z.string().optional(),
     launchUrl: z.string().optional(),
     instructions: z.string().optional(),

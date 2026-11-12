@@ -309,3 +309,175 @@ describe("OMP ask RPC UI", () => {
     );
   });
 });
+
+// Recorded from OMP 18.18.6 `--mode rpc-ui`: the assistant message, then the
+// first prompt, then tool_execution_start; one prompt per field after that.
+const FORM = `<form>
+  <p>Sessions live in memory &amp; are lost on restart.</p>
+  <fieldset>
+    <legend>Session store</legend>
+    <label><input type="radio" name="store" value="sqlite" checked> SQLite: one file</label>
+    <label><input type="radio" name="store" value="redis"> Redis: shared</label>
+  </fieldset>
+  <fieldset>
+    <legend>Extras</legend>
+    <label><input type="checkbox" name="extras" value="a" checked> Alpha</label>
+    <label><input type="checkbox" name="extras" value="b"> Beta</label>
+  </fieldset>
+  <label>Region <select name="region"><option value="us">US</option><option value="eu" selected>EU</option></select></label>
+  <label>Lifetime (days) <input type="number" name="ttl" value="30" min="1"></label>
+</form>`;
+const STORE_ROWS = ["SQLite: one file", "Redis: shared", "Other (type your own)"];
+const EXTRAS_ROWS = ["Alpha", "Beta", "Other (type your own)", "✔ Done selecting"];
+
+function startFormAsk(omp: OmpHarness): void {
+  const args = { html: FORM };
+  omp.emit({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "ask-html", name: "ask", arguments: args }],
+    },
+  });
+  select(omp, "store", "Session store", STORE_ROWS);
+  omp.emit({ type: "tool_execution_start", toolCallId: "ask-html", toolName: "ask", args });
+}
+
+async function answer(omp: OmpHarness, id: string, response: string): Promise<void> {
+  await omp.respondToPermission(id, {
+    behavior: "allow",
+    updatedInput: { answers: { Response: response } },
+  });
+}
+
+describe("OMP ask RPC UI for an HTML form", () => {
+  test("shows each choice field as a card and replays toggles, Other and Done", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    startFormAsk(omp);
+
+    expect(omp.pendingPermissions()[0]).toMatchObject({
+      kind: "question",
+      title: "Session store",
+      input: {
+        questions: [
+          {
+            question: "Sessions live in memory & are lost on restart.\n\nSession store",
+            options: [
+              { label: "SQLite: one file", description: "Recommended" },
+              { label: "Redis: shared" },
+            ],
+            multiSelect: false,
+            allowOther: true,
+          },
+        ],
+      },
+    });
+    await answer(omp, "store", "Postgres");
+    omp.emit({
+      type: "extension_ui_request",
+      id: "store-text",
+      method: "input",
+      title: "Session store",
+    });
+
+    // Alpha is preselected, so OMP's first Extras prompt already counts it.
+    select(omp, "extras", "(1 selected) Extras", EXTRAS_ROWS);
+    expect(omp.pendingPermissions()[0]?.input?.questions?.[0]).toMatchObject({
+      question: "Extras",
+      options: [{ label: "Alpha", description: "Recommended" }, { label: "Beta" }],
+      multiSelect: true,
+      allowOther: true,
+    });
+    await answer(omp, "extras", "Beta, Gamma");
+    select(omp, "extras-2", "Extras", EXTRAS_ROWS);
+    select(omp, "extras-3", "(1 selected) Extras", EXTRAS_ROWS);
+    omp.emit({ type: "extension_ui_request", id: "extras-text", method: "input", title: "Extras" });
+    select(omp, "extras-4", "(2 selected) Extras", EXTRAS_ROWS);
+
+    select(omp, "region", "Region", ["US", "EU"]);
+    expect(omp.pendingPermissions()[0]?.input?.questions?.[0]).toMatchObject({
+      question: "Region",
+      options: [{ label: "US" }, { label: "EU", description: "Recommended" }],
+      multiSelect: false,
+    });
+    expect(omp.pendingPermissions()[0]?.input?.questions?.[0]).not.toHaveProperty("allowOther");
+    await answer(omp, "region", "US");
+
+    omp.emit({
+      type: "extension_ui_request",
+      id: "ttl",
+      method: "editor",
+      title: "Lifetime (days)",
+      prefill: "30",
+    });
+    expect(omp.pendingPermissions()[0]?.input?.questions?.[0]).toMatchObject({
+      question: "Lifetime (days)",
+      placeholder: "30",
+      allowEmpty: true,
+    });
+    await answer(omp, "ttl", "");
+
+    expect(omp.pendingPermissions()).toHaveLength(0);
+    expect(omp.extensionUiResponses()).toEqual([
+      { id: "store", response: { value: "Other (type your own)" } },
+      { id: "store-text", response: { value: "Postgres" } },
+      { id: "extras", response: { value: "Alpha" } },
+      { id: "extras-2", response: { value: "Beta" } },
+      { id: "extras-3", response: { value: "Other (type your own)" } },
+      { id: "extras-text", response: { value: "Gamma" } },
+      { id: "extras-4", response: { value: "✔ Done selecting" } },
+      { id: "region", response: { value: "US" } },
+      { id: "ttl", response: { value: "30" } },
+    ]);
+  });
+
+  test("keeps preselected checkboxes the user leaves checked", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    startFormAsk(omp);
+    await answer(omp, "store", "Redis: shared");
+    select(omp, "extras", "(1 selected) Extras", EXTRAS_ROWS);
+    await answer(omp, "extras", "Alpha");
+
+    expect(omp.extensionUiResponses()).toEqual([
+      { id: "store", response: { value: "Redis: shared" } },
+      { id: "extras", response: { value: "✔ Done selecting" } },
+    ]);
+    expect(omp.pendingPermissions()).toHaveLength(0);
+  });
+
+  test("shows the form's answers on the finished ask", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    startFormAsk(omp);
+    await answer(omp, "store", "Redis: shared");
+    omp.emit({
+      type: "tool_execution_end",
+      toolCallId: "ask-html",
+      toolName: "ask",
+      result: {
+        content: [{ type: "text", text: 'User answers:\n{"store": "redis"}' }],
+        details: {
+          answers: [
+            { name: "store", question: "Session store", answer: "Redis: shared" },
+            { name: "extras", question: "Extras", answer: "Alpha, Other: Gamma" },
+          ],
+        },
+      },
+      isError: false,
+    });
+
+    expect(omp.timeline()).toContainEqual(
+      expect.objectContaining({
+        type: "tool_call",
+        name: "ask",
+        detail: {
+          type: "plain_text",
+          label: "Session store",
+          text: "Session store\nRedis: shared\n\nExtras\nAlpha, Other: Gamma",
+        },
+      }),
+    );
+  });
+});
