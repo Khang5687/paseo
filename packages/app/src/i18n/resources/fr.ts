@@ -129,6 +129,7 @@ export const fr: TranslationResources = {
       terminalAccessibilityLabel: "Prompt du terminal",
       fullscreen: "Plein écran",
       exitFullscreen: "Quitter le plein écran",
+      resizeInput: "Redimensionner la zone de message",
       focusHint: "{{shortcut}} pour saisir",
       addAttachment: "Ajouter une pièce jointe",
       interruptAgent: "Interrompre l’agent",

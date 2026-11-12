@@ -127,6 +127,7 @@ export const zhCN: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "全屏",
       exitFullscreen: "退出全屏",
+      resizeInput: "调整消息框大小",
       focusHint: "{{shortcut}} 聚焦",
       addAttachment: "添加附件",
       interruptAgent: "中断 Agent",

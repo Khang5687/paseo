@@ -128,6 +128,7 @@ export const ru: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "Полный экран",
       exitFullscreen: "Выйти из полноэкранного режима",
+      resizeInput: "Изменить размер поля сообщения",
       focusHint: "{{shortcut}}, для фокуса",
       addAttachment: "Добавить вложение",
       interruptAgent: "Прервать агента",

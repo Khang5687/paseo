@@ -123,6 +123,7 @@ export const en = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "Fullscreen",
       exitFullscreen: "Exit fullscreen",
+      resizeInput: "Resize message box",
       focusHint: "{{shortcut}} to focus",
       addAttachment: "Add attachment",
       interruptAgent: "Interrupt agent",

@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyDictationTranscript,
+  clampComposerInputHeight,
   computeCanStartDictation,
   type MessageInputEnterContext,
   resolveActiveSendBehavior,
+  resolveComposerMaxInputHeight,
   resolveComposerSurfacePresentation,
   resolveComposerSurfaceText,
   resolveGlyphRailOffset,
@@ -610,5 +612,48 @@ describe("fullscreen glyph rail", () => {
     expect(
       resolveGlyphRailOffset({ controlSize: 28, sendIconSize: 20, glyphIconSize: 16 }),
     ).toBeCloseTo(1 / 6);
+  });
+});
+
+describe("composer max input height", () => {
+  const wide = { windowHeight: 900, compact: false, minHeight: 46 };
+  const phone = { windowHeight: 844, compact: true, minHeight: 30 };
+
+  it("defaults to a third of a desktop window and 160px on a phone", () => {
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: null })).toBe(300);
+    expect(resolveComposerMaxInputHeight({ ...phone, preferredHeight: null })).toBe(160);
+  });
+
+  it("never defaults a short desktop window below the phone cap", () => {
+    expect(
+      resolveComposerMaxInputHeight({ ...wide, windowHeight: 360, preferredHeight: null }),
+    ).toBe(160);
+  });
+
+  it("uses a dragged size, held between one line and 80% of the window", () => {
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: 500 })).toBe(500);
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: 10 })).toBe(46);
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: 2000 })).toBe(720);
+    expect(resolveComposerMaxInputHeight({ ...phone, preferredHeight: 900 })).toBe(675);
+  });
+
+  it("refits a size saved in a taller window", () => {
+    expect(
+      resolveComposerMaxInputHeight({ ...wide, windowHeight: 500, preferredHeight: 700 }),
+    ).toBe(400);
+  });
+
+  it("clamps a drag to the same bounds", () => {
+    const bounds = { windowHeight: 900, minHeight: 46 };
+    expect(clampComposerInputHeight(250.4, bounds)).toBe(250);
+    expect(clampComposerInputHeight(-80, bounds)).toBe(46);
+    expect(clampComposerInputHeight(5000, bounds)).toBe(720);
+  });
+
+  it("only applies the floor before the window has a height", () => {
+    expect(clampComposerInputHeight(5000, { windowHeight: 0, minHeight: 46 })).toBe(5000);
+    expect(resolveComposerMaxInputHeight({ ...wide, windowHeight: 0, preferredHeight: null })).toBe(
+      160,
+    );
   });
 });

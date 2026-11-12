@@ -268,3 +268,45 @@ export function resolveRetainedSelection(
   const start = Math.min(Math.max(retained.start, 0), end);
   return { start, end };
 }
+
+/** The phone default. A desktop default never drops below it either. */
+const COMPOSER_DEFAULT_MAX_INPUT_HEIGHT = 160;
+const WIDE_DEFAULT_MAX_INPUT_RATIO = 1 / 3;
+// A dragged composer still leaves room to see the conversation it answers.
+const MAX_INPUT_CEILING_RATIO = 0.8;
+
+/** Holds an input height between one line and 80% of the window. */
+export function clampComposerInputHeight(
+  height: number,
+  bounds: { windowHeight: number; minHeight: number },
+): number {
+  const floored = Math.max(bounds.minHeight, Math.round(height));
+  // Before the first layout the window can report 0; only the floor applies then.
+  if (!(bounds.windowHeight > 0)) return floored;
+  const ceiling = Math.max(
+    bounds.minHeight,
+    Math.floor(bounds.windowHeight * MAX_INPUT_CEILING_RATIO),
+  );
+  return Math.min(ceiling, floored);
+}
+
+/**
+ * How tall the input may grow before it scrolls. A size the user dragged wins
+ * over the layout default; either way the window bounds it, so a size saved in
+ * a tall window still fits a short one.
+ */
+export function resolveComposerMaxInputHeight(input: {
+  windowHeight: number;
+  compact: boolean;
+  minHeight: number;
+  preferredHeight: number | null;
+}): number {
+  const defaultHeight =
+    input.compact || !(input.windowHeight > 0)
+      ? COMPOSER_DEFAULT_MAX_INPUT_HEIGHT
+      : Math.max(
+          COMPOSER_DEFAULT_MAX_INPUT_HEIGHT,
+          Math.floor(input.windowHeight * WIDE_DEFAULT_MAX_INPUT_RATIO),
+        );
+  return clampComposerInputHeight(input.preferredHeight ?? defaultHeight, input);
+}

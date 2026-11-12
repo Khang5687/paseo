@@ -35,6 +35,10 @@ import { DictationOverlay } from "@/components/dictation-controls";
 import { RealtimeVoiceOverlay } from "@/components/realtime-voice-overlay";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useSessionStore } from "@/stores/session-store";
+import {
+  useComposerInputHeightStore,
+  type ComposerInputLayout,
+} from "@/stores/composer-input-height-store";
 import { useVoiceOptional } from "@/contexts/voice-context";
 import { useToast } from "@/contexts/toast-context";
 import { resolveVoiceUnavailableMessage } from "@/utils/server-info-capabilities";
@@ -65,6 +69,7 @@ import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { RenderProfile } from "@/utils/render-profiler";
 import { useComposerHeight } from "./height";
 import { ComposerInputPresentation } from "./presentation";
+import { ComposerResizeGrip } from "./resize-grip";
 import { resolveComposerInputMode, type ComposerInputMode } from "@/composer/input-mode";
 import type { NativePastedFile } from "@/composer/native-pasted-image";
 import {
@@ -85,9 +90,11 @@ import {
 } from "./labels";
 import {
   applyDictationTranscript,
+  clampComposerInputHeight,
   computeCanStartDictation,
   resolveAlternateSendAction,
   resolveComposerSurfacePresentation,
+  resolveComposerMaxInputHeight,
   resolveComposerSurfaceText,
   resolveMessageInputEnterAction,
   resolveRetainedSelection,
@@ -215,8 +222,6 @@ export interface MessageInputRef {
 
 const MIN_INPUT_HEIGHT_MOBILE = 30;
 const MIN_INPUT_HEIGHT_DESKTOP = 46;
-const DEFAULT_MAX_INPUT_HEIGHT = 160;
-const MAX_INPUT_VIEWPORT_RATIO = 0.5;
 const MIN_INPUT_HEIGHT = isWeb ? MIN_INPUT_HEIGHT_DESKTOP : MIN_INPUT_HEIGHT_MOBILE;
 type WebTextInputKeyPressEvent = NativeSyntheticEvent<
   TextInputKeyPressEventData & {
@@ -665,6 +670,7 @@ interface ComposerTextSurfaceProps {
   focusHintVisible: boolean;
   focusInputKeys: ShortcutChord | null | undefined;
   focusHintLabel: string;
+  onInputLayout: (event: LayoutChangeEvent) => void;
 }
 
 /**
@@ -700,7 +706,10 @@ function ComposerTextSurface(props: ComposerTextSurfaceProps): React.ReactElemen
     );
   }
   return (
-    <View style={[styles.textInputScrollWrapper, props.fullscreen && styles.fullscreenTextSurface]}>
+    <View
+      style={[styles.textInputScrollWrapper, props.fullscreen && styles.fullscreenTextSurface]}
+      onLayout={props.onInputLayout}
+    >
       {!isWeb && props.compact && !props.fullscreen ? (
         <Text
           accessible={false}
@@ -1043,12 +1052,6 @@ function computeIsDictationStartEnabled(
   return (isReadyForDictation ?? isConnected) && !disabled;
 }
 
-function resolveMaxInputHeight(windowHeight: number, compact: boolean): number {
-  if (compact) return DEFAULT_MAX_INPUT_HEIGHT;
-  if (!Number.isFinite(windowHeight) || windowHeight <= 0) return DEFAULT_MAX_INPUT_HEIGHT;
-  return Math.max(DEFAULT_MAX_INPUT_HEIGHT, Math.floor(windowHeight * MAX_INPUT_VIEWPORT_RATIO));
-}
-
 function isTextAreaLike(v: unknown): v is TextAreaHandle {
   return typeof v === "object" && v !== null && "scrollHeight" in v;
 }
@@ -1280,7 +1283,25 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     const editingSession = useComposerEditingSession(inputMode, props.editingSession);
     const isFullscreen = useComposerFullscreen(editingSession);
     const [renderedLines, setRenderedLines] = useState(1);
-    const maxInputHeight = resolveMaxInputHeight(windowHeight, isCompact);
+    const inputLayout: ComposerInputLayout = isCompact ? "compact" : "wide";
+    const preferredMaxInputHeight = useComposerInputHeightStore((state) => state[inputLayout]);
+    const setPreferredMaxInputHeight = useComposerInputHeightStore(
+      (state) => state.setMaxInputHeight,
+    );
+    const resetPreferredMaxInputHeight = useComposerInputHeightStore(
+      (state) => state.resetMaxInputHeight,
+    );
+    // While the grab bar is held the input asks for exactly the dragged height, so
+    // the box follows the pointer even when the draft is shorter than the new cap.
+    const [draggedInputHeight, setDraggedInputHeight] = useState<number | null>(null);
+    const maxInputHeight =
+      draggedInputHeight ??
+      resolveComposerMaxInputHeight({
+        windowHeight,
+        compact: isCompact,
+        minHeight: MIN_INPUT_HEIGHT,
+        preferredHeight: preferredMaxInputHeight,
+      });
     const buttonIconSize = isWeb ? ICON_SIZE.md : ICON_SIZE.lg;
     const toast = useToast();
     const voice = useVoiceOptional();
@@ -1375,10 +1396,56 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       onRenderedLinesChange: setRenderedLines,
       presentationKey: isFullscreen,
     });
-    const { style: composerHeightStyle, scrollEnabled: isComposerScrollEnabled } = composerHeight;
+    const { style: measuredHeightStyle, scrollEnabled: isComposerScrollEnabled } = composerHeight;
+    // The drag preview keeps the one-line minHeight so the input can still shrink
+    // when the composer dock caps it; a dragged minHeight would overflow the dock
+    // and the box would jump back on release.
+    const composerHeightStyle = useMemo(
+      () =>
+        draggedInputHeight === null
+          ? measuredHeightStyle
+          : {
+              height: draggedInputHeight,
+              minHeight: MIN_INPUT_HEIGHT,
+              maxHeight: draggedInputHeight,
+            },
+      [draggedInputHeight, measuredHeightStyle],
+    );
     const measuredComposerHeight = composerHeight.mode === "measured" ? composerHeight : undefined;
     const updateComposerHeightForText = measuredComposerHeight?.onTextChange;
     const resetComposerHeight = measuredComposerHeight?.reset;
+
+    // The rendered input height, so a drag starts from what the user sees.
+    const inputSurfaceHeightRef = useRef(MIN_INPUT_HEIGHT);
+    const dragOriginHeightRef = useRef(MIN_INPUT_HEIGHT);
+    const draggedInputHeightRef = useRef<number | null>(null);
+    const handleInputSurfaceLayout = useCallback((event: LayoutChangeEvent) => {
+      inputSurfaceHeightRef.current = event.nativeEvent.layout.height;
+    }, []);
+    const handleResizeStart = useCallback(() => {
+      dragOriginHeightRef.current = inputSurfaceHeightRef.current;
+    }, []);
+    const handleResizeMove = useCallback(
+      (deltaY: number) => {
+        const nextHeight = clampComposerInputHeight(dragOriginHeightRef.current - deltaY, {
+          windowHeight,
+          minHeight: MIN_INPUT_HEIGHT,
+        });
+        draggedInputHeightRef.current = nextHeight;
+        setDraggedInputHeight(nextHeight);
+      },
+      [windowHeight],
+    );
+    const handleResizeEnd = useCallback(() => {
+      const committedHeight = draggedInputHeightRef.current;
+      draggedInputHeightRef.current = null;
+      setDraggedInputHeight(null);
+      if (committedHeight !== null) setPreferredMaxInputHeight(inputLayout, committedHeight);
+    }, [inputLayout, setPreferredMaxInputHeight]);
+    const handleResizeReset = useCallback(
+      () => resetPreferredMaxInputHeight(inputLayout),
+      [inputLayout, resetPreferredMaxInputHeight],
+    );
 
     const exitFullscreen = useCallback(() => editingSession.setFullscreen(false), [editingSession]);
     const enterFullscreen = useCallback(() => editingSession.setFullscreen(true), [editingSession]);
@@ -1944,6 +2011,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       () => [
         styles.textInput,
         mode.isMonospace && styles.textInputMonospace,
+        // Not `inlineUnistylesStyle`: on web `withUnistyles` drops that lane, and the
+        // input would stop growing.
         isFullscreen ? styles.fullscreenTextInput : composerHeightStyle,
         isCompact && !isFullscreen && styles.compactTextInput,
       ],
@@ -2082,6 +2151,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
             focusHintLabel={t("composer.input.focusHint", {
               shortcut: focusInputKeys ? formatShortcut(focusInputKeys[0], getShortcutOs()) : "",
             })}
+            onInputLayout={handleInputSurfaceLayout}
           />
         </RenderProfile>
       ),
@@ -2111,6 +2181,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         isInputFocused,
         value,
         focusInputKeys,
+        handleInputSurfaceLayout,
       ],
     );
     const toolbar = useMemo(
@@ -2219,6 +2290,19 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         handleRealtimeVoiceStop,
       ],
     );
+    const resizeGrip = useMemo(
+      () =>
+        readOnly ? null : (
+          <ComposerResizeGrip
+            accessibilityLabel={t("composer.input.resizeInput")}
+            onDragStart={handleResizeStart}
+            onDragMove={handleResizeMove}
+            onDragEnd={handleResizeEnd}
+            onReset={handleResizeReset}
+          />
+        ),
+      [readOnly, t, handleResizeStart, handleResizeMove, handleResizeEnd, handleResizeReset],
+    );
     return (
       <View
         ref={rootRef}
@@ -2251,6 +2335,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           )}
           onEnter={enterFullscreen}
           overlay={voiceOverlay}
+          resizeGrip={resizeGrip}
         />
       </View>
     );

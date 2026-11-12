@@ -128,6 +128,7 @@ export const es: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "Pantalla completa",
       exitFullscreen: "Salir de pantalla completa",
+      resizeInput: "Cambiar tamaño del cuadro de mensaje",
       focusHint: "{{shortcut}}para enfocar",
       addAttachment: "Agregar archivo adjunto",
       interruptAgent: "agente de interrupción",
