@@ -429,6 +429,29 @@ test("context details support keyboard entry and dismiss when the viewport moves
   await expect(details).toHaveCount(0);
 });
 
+for (const viewport of [DESKTOP, { width: 700, height: 800 }]) {
+  test(`the hover card sits above the ring, right-aligned and on screen (${viewport.width}px)`, async ({
+    page,
+    agent,
+  }) => {
+    const usage = await scriptAgentUsage(page);
+    await page.setViewportSize(viewport);
+    await openAgent(page, agent);
+    const [claude] = claudeAndCodexReports();
+    usage.answerNext([onPersonalLogin(claude!)]);
+    const card = await hoverContextWindowMeter(page);
+    const ring = await page
+      .getByTestId("context-window-meter")
+      .filter({ visible: true })
+      .boundingBox();
+    const box = await card.boundingBox();
+    if (!ring || !box) throw new Error("The ring and its hover card must be on screen.");
+    expect(box.y + box.height).toBeLessThanOrEqual(ring.y);
+    expect(box.y + box.height).toBeGreaterThan(ring.y - 24);
+    expect(Math.abs(box.x + box.width - (ring.x + ring.width))).toBeLessThanOrEqual(2);
+  });
+}
+
 test("pointer hovering context details preserves composer focus", async ({ page, agent }) => {
   const usage = await scriptAgentUsage(page);
   await page.setViewportSize(DESKTOP);

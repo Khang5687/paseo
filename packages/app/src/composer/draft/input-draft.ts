@@ -68,7 +68,12 @@ export interface AgentInputDraft {
   composerState: DraftComposerState | null;
 }
 
-export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDraft {
+export interface AgentInputDraftWithSync extends AgentInputDraft {
+  /** Shows text the store already holds from another device, keeping the caret. */
+  showRemoteText: (text: string) => void;
+}
+
+export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDraftWithSync {
   const composerOptions = input.composer ?? null;
   const workingDir = composerOptions?.lockedWorkingDir?.trim() || "";
   const formState = useAgentFormState({
@@ -123,7 +128,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
   }));
 
   const publishTextReplacement = useCallback(
-    (kind: "hydrated" | "replace", nextText: string) => {
+    (kind: "hydrated" | "replace" | "remote", nextText: string) => {
       textReplacementRevisionRef.current += 1;
       setTextReplacement({
         kind,
@@ -179,6 +184,14 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       publishTextReplacement("replace", nextText);
     },
     [draftKey, publishTextReplacement, textPublication],
+  );
+
+  const showRemoteText = useCallback(
+    (nextText: string) => {
+      textPublication.cancel();
+      publishTextReplacement("remote", nextText);
+    },
+    [publishTextReplacement, textPublication],
   );
 
   const setAttachments = useCallback(
@@ -352,6 +365,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     textSource,
     editText,
     replaceText,
+    showRemoteText,
     textReplacement,
     attachments,
     setAttachments,

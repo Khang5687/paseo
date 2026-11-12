@@ -1,8 +1,10 @@
 import type {
+  AgentMetadata,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentProvider,
 } from "../../agent-sdk-types.js";
+import { readQuestionAnswerList } from "../../question-answers.js";
 import { splitMultiSelectAnswer } from "../question-card-answer.js";
 import { type OmpAskChoiceField, parseOmpAskForm } from "./ask-form.js";
 import type { OmpAgentMessage, OmpRuntimeEvent } from "./rpc-types.js";
@@ -195,7 +197,28 @@ function readQuestions(args: unknown): AskQuestion[] {
   });
 }
 
-function selectedAnswer(
+function askAnswer(
+  updatedInput: AgentMetadata | undefined,
+  labels: string[],
+  multi: boolean,
+): { selected: string[]; custom: string | null } | null {
+  const answerList = readQuestionAnswerList(updatedInput, ANSWER_HEADER);
+  if (answerList) {
+    // The app lists the checked labels, then the Other text. Any entry that is not
+    // exactly an option label is the Other text.
+    const custom = answerList.filter((item) => !labels.includes(item));
+    return {
+      selected: answerList.filter((item) => labels.includes(item)),
+      custom: custom.length > 0 ? custom.join(", ") : null,
+    };
+  }
+  const answer = record(updatedInput?.answers)?.[ANSWER_HEADER];
+  return typeof answer === "string" ? legacySelectedAnswer(answer, labels, multi) : null;
+}
+
+// COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before
+// v0.11.0 send only a comma-joined answer, so labels are peeled off its front.
+function legacySelectedAnswer(
   answer: string,
   labels: string[],
   multi: boolean,
@@ -215,12 +238,6 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-function readAnswer(response: AgentPermissionResponse): string | undefined {
-  if (response.behavior !== "allow") return undefined;
-  const answer = record(response.updatedInput?.answers)?.[ANSWER_HEADER];
-  return typeof answer === "string" ? answer : undefined;
 }
 
 /**
@@ -395,14 +412,16 @@ export class OmpQuestionUi {
 
   private respondFormChoice(
     request: AgentPermissionRequest,
-    answer: string | undefined,
+    response: AgentPermissionResponse,
     send: SendResponse,
   ): void {
     const metadata = request.metadata ?? {};
     const multi = metadata.multiSelect === true;
-    if (answer === undefined) return this.cancel(request.id, send);
     const labels = stringList(metadata.optionLabels);
-    const { selected, custom } = selectedAnswer(answer, labels, multi);
+    const answer =
+      response.behavior === "allow" ? askAnswer(response.updatedInput, labels, multi) : null;
+    if (!answer) return this.cancel(request.id, send);
+    const { selected, custom } = answer;
     const other = custom?.trim() ? custom : null;
     const preselected = stringList(metadata.preselected);
     // Checkbox rows toggle, so send the rows whose state changes.
@@ -437,16 +456,18 @@ export class OmpQuestionUi {
       send(request.id, genericResponse(request, response));
       return;
     }
-    const answer = readAnswer(response);
     if (metadata.ompAskForm === true) {
-      this.respondFormChoice(request, answer, send);
+      this.respondFormChoice(request, response, send);
       return;
     }
     const labels = stringList(metadata.optionLabels);
-
     const question = this.questions.find((item) => item.title === request.title);
-    if (answer === undefined || !question) return this.cancel(request.id, send);
-    const { selected, custom } = selectedAnswer(answer, labels, question.multi);
+    const answer =
+      response.behavior === "allow" && question
+        ? askAnswer(response.updatedInput, labels, question.multi)
+        : null;
+    if (!answer || !question) return this.cancel(request.id, send);
+    const { selected, custom } = answer;
     const queue = question.multi ? [...selected] : selected.slice(0, 1);
     if (custom !== null && (question.multi || queue.length === 0)) queue.push(OTHER);
     if (queue.length === 0) return this.cancel(request.id, send);

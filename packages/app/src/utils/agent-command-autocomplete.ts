@@ -122,3 +122,53 @@ export function applySlashCommandReplacement(input: ApplySlashCommandReplacement
   const replacement = `${before}/${input.commandName}${after}`;
   return input.command.end === input.text.length ? `${replacement} ` : replacement;
 }
+
+/** The first argument of a `/command` that starts the composer text. */
+export interface SlashArgumentRange {
+  commandName: string;
+  /** Start of the argument token. */
+  start: number;
+  /** End of the argument token, which can run past the cursor. */
+  end: number;
+  /** The token text before the cursor. */
+  query: string;
+}
+
+const SLASH_ARGUMENT_BEFORE_CURSOR = /^\/([^\s/]+)[ \t]+(\S*)$/;
+
+export function findActiveSlashArgument(
+  input: FindActiveSlashCommandInput,
+): SlashArgumentRange | null {
+  const clampedCursor = Math.max(0, Math.min(input.cursorIndex, input.text.length));
+  const match = SLASH_ARGUMENT_BEFORE_CURSOR.exec(input.text.slice(0, clampedCursor));
+  const commandName = match?.[1];
+  if (!commandName) {
+    return null;
+  }
+  const query = match[2] ?? "";
+  const tokenTail = /^\S*/.exec(input.text.slice(clampedCursor))?.[0] ?? "";
+  return {
+    commandName,
+    start: clampedCursor - query.length,
+    end: clampedCursor + tokenTail.length,
+    query,
+  };
+}
+
+export function filterSlashArgumentChoices<TChoice extends { name: string }>(
+  choices: readonly TChoice[],
+  query: string,
+): TChoice[] {
+  const prefix = query.toLowerCase();
+  return choices.filter((choice) => choice.name.toLowerCase().startsWith(prefix));
+}
+
+export function applySlashArgumentReplacement(input: {
+  text: string;
+  argument: SlashArgumentRange;
+  value: string;
+}): string {
+  const before = input.text.slice(0, input.argument.start);
+  const after = input.text.slice(input.argument.end);
+  return after.length === 0 ? `${before}${input.value} ` : `${before}${input.value}${after}`;
+}

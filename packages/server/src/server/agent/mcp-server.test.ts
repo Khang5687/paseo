@@ -39,7 +39,7 @@ import type {
   AgentStreamEvent,
   ProviderSnapshotEntry,
 } from "./agent-sdk-types.js";
-import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
+import { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import { createProviderSnapshotManagerStub } from "../test-utils/session-stubs.js";
 import {
   AgentListItemPayloadSchema,
@@ -560,6 +560,8 @@ function createManagedAgent(overrides: Partial<ManagedAgent> = {}): ManagedAgent
     availableModes: [],
     features: [],
     pendingPermissions: new Map(),
+    queuedMessages: [],
+    queuePaused: false,
     persistence: null,
     labels: {},
     attention: { requiresAttention: false },
@@ -1033,7 +1035,7 @@ describe("browser MCP tools", () => {
         agents: [],
       });
       expectSingleTextContent(browserResult);
-      expect(expectSingleTextContent(listAgentsResult)).toContain('"agents": []');
+      expect(expectSingleTextContent(listAgentsResult)).toBe('{"agents":[]}');
 
       const listedTools = await client.listTools();
       expect(listedTools.tools.map((tool) => tool.name)).toEqual(
@@ -1874,6 +1876,7 @@ describe("create_agent MCP tool", () => {
       title: "Mode test",
       provider: "codex/gpt-5.4",
       initialPrompt: "Do work",
+      detail: "full",
     });
 
     expect(response.structuredContent).toEqual(
@@ -1894,6 +1897,41 @@ describe("create_agent MCP tool", () => {
         ],
       }),
     );
+  });
+
+  it("omits the mode catalog from create_agent by default", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.createAgent.mockResolvedValue({
+      id: "compact-agent",
+      provider: "codex",
+      cwd: REPO_CWD,
+      lifecycle: "idle",
+      currentModeId: null,
+      availableModes: [{ id: "build", label: "Build", description: null }],
+      config: { title: "Compact" },
+    } as ManagedAgent);
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      ensureWorkspaceForCreate,
+      logger,
+    });
+    const response = await registeredTool(server, "create_agent").handler({
+      ...detachedDirectoryWorkspace(existingCwd),
+      title: "Compact",
+      provider: "codex/gpt-5.4",
+      initialPrompt: "Do work",
+    });
+
+    expect(response.structuredContent).toEqual({
+      agentId: "compact-agent",
+      type: "codex",
+      status: "idle",
+      cwd: REPO_CWD,
+      guidance: expect.any(String),
+    });
   });
 
   it("requires provider as provider/model and rejects the old model field", async () => {
@@ -2713,6 +2751,73 @@ describe("create_agent MCP tool", () => {
     ]);
   });
 
+  it("filters, orders newest first, and truncates list_workspaces", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const records = Array.from({ length: 30 }, (_, index) =>
+      createPersistedWorkspaceRecord({
+        workspaceId: `ws-${index}`,
+        projectId: index % 2 === 0 ? "project-even" : "project-odd",
+        cwd: `/tmp/paseo/repo-${index}`,
+        kind: "directory",
+        displayName: `Repo ${index}`,
+        title: `Repo ${index}`,
+        createdAt: "2026-07-01T00:00:00.000Z",
+        updatedAt: new Date(Date.UTC(2026, 6, 1, 0, index)).toISOString(),
+      }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      workspaceRegistry: {
+        get: vi.fn(async () => records[0]),
+        list: vi.fn(async () => records),
+        upsert: vi.fn(async () => undefined),
+      },
+      logger,
+    });
+    const tool = registeredTool(server, "list_workspaces");
+
+    const first = await tool.handler({});
+    expect(first.structuredContent.workspaces).toHaveLength(20);
+    expect(first.structuredContent.workspaces[0]).toEqual({
+      workspaceId: "ws-29",
+      title: "Repo 29",
+      cwd: "/tmp/paseo/repo-29",
+      projectId: "project-odd",
+    });
+    expect(first.structuredContent).toMatchObject({ more: 10 });
+
+    const byQuery = await tool.handler({ query: "REPO-1", limit: 100 });
+    expect(
+      byQuery.structuredContent.workspaces.map((w: { workspaceId: string }) => w.workspaceId),
+    ).toEqual([
+      "ws-19",
+      "ws-18",
+      "ws-17",
+      "ws-16",
+      "ws-15",
+      "ws-14",
+      "ws-13",
+      "ws-12",
+      "ws-11",
+      "ws-10",
+      "ws-1",
+    ]);
+    expect(byQuery.structuredContent).not.toHaveProperty("more");
+
+    const byProject = await tool.handler({ projectId: "project-even", limit: 2 });
+    expect(byProject.structuredContent).toMatchObject({
+      workspaces: [{ workspaceId: "ws-28" }, { workspaceId: "ws-26" }],
+      more: 13,
+    });
+
+    const full = await tool.handler({ limit: 1, detail: "full" });
+    expect(full.structuredContent.workspaces).toEqual([
+      expect.objectContaining({ workspaceId: "ws-29", isolation: "local", kind: "directory" }),
+    ]);
+  });
+
   it("creates an background local workspace and leaves it out of list_workspaces", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const createCalls: Array<{ cwd: string; context: { background?: boolean } | undefined }> = [];
@@ -2833,7 +2938,7 @@ describe("create_agent MCP tool", () => {
     await rm(baseDir, { recursive: true, force: true });
   });
 
-  it("rejects background from caller agents and defaults notify-on-finish on", async () => {
+  it("rejects background from caller agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     spies.agentManager.getAgent.mockReturnValue({
       id: "parent-agent",
@@ -2862,24 +2967,7 @@ describe("create_agent MCP tool", () => {
         background: false,
       }),
     ).rejects.toThrow(/Unrecognized key/);
-
-    const parsed = await tool.inputSchema.safeParseAsync({
-      ...subagentCurrentWorkspace(),
-      title: "Child",
-      provider: "codex/gpt-5.4",
-      initialPrompt: "Do work",
-    });
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) {
-      throw new Error("Expected caller create_agent input to parse");
-    }
-    expect(parsed.data).toMatchObject({
-      relationship: { kind: "subagent" },
-      workspace: { kind: "current" },
-      notifyOnFinish: true,
-    });
   });
-
   it("returns notify-on-finish guidance for caller-created agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const parentAgent = {
@@ -3021,6 +3109,92 @@ describe("create_agent MCP tool", () => {
         workspaceId: "wks_parent",
       },
     );
+  });
+
+  describe("canonical detached input", () => {
+    async function createFromCaller(extra: { detached?: boolean; workspaceId?: string }) {
+      const ensureWorkspace = vi.fn(async () => "wks_new");
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue({
+        id: "parent-agent",
+        config: {},
+        cwd: existingCwd,
+        workspaceId: "wks_parent",
+        provider: "codex",
+        currentModeId: "full-access",
+      } as ManagedAgent);
+      spies.agentManager.createAgent.mockResolvedValue({
+        id: "new-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "New" },
+      } as ManagedAgent);
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        callerAgentId: "parent-agent",
+        ensureWorkspaceForCreate: ensureWorkspace,
+        listActiveWorkspaces: async () => [
+          { workspaceId: "wks_given", cwd: existingCwd, kind: "directory" },
+        ],
+        logger,
+      });
+      const response = await registeredTool(server, "create_agent").handler({
+        title: "New",
+        provider: "codex/gpt-5.4",
+        initialPrompt: "Discuss",
+        labels: { [PARENT_AGENT_ID_LABEL]: "spoofed-parent", source: "mcp" },
+        ...extra,
+      });
+      return {
+        response,
+        ensureWorkspace,
+        createConfig: spies.agentManager.createAgent.mock.calls[0]![0],
+        createOptions: spies.agentManager.createAgent.mock.calls[0]![2],
+      };
+    }
+
+    it("detached: true mints its own workspace in the caller directory, with no parent label", async () => {
+      const { response, createConfig, createOptions, ensureWorkspace } = await createFromCaller({
+        detached: true,
+      });
+
+      expect(ensureWorkspace).toHaveBeenCalledWith(
+        existingCwd,
+        { prompt: "New" },
+        { callerWorkspaceId: "wks_parent" },
+      );
+      expect(createConfig.cwd).toBe(existingCwd);
+      expect(createOptions).toMatchObject({
+        labels: { source: "mcp" },
+        workspaceId: "wks_new",
+      });
+      expect(createOptions.labels).toEqual({ source: "mcp" });
+      expect(response.structuredContent.guidance).not.toContain("You will get notified");
+    });
+
+    it("detached: true with workspaceId uses that workspace as given", async () => {
+      const { createOptions, ensureWorkspace } = await createFromCaller({
+        detached: true,
+        workspaceId: "wks_given",
+      });
+
+      expect(ensureWorkspace).not.toHaveBeenCalled();
+      expect(createOptions.workspaceId).toBe("wks_given");
+      expect(createOptions.labels).toEqual({ source: "mcp" });
+    });
+
+    it("omitting detached still stamps the parent label, shares the caller workspace and notifies", async () => {
+      const { response, createOptions, ensureWorkspace } = await createFromCaller({});
+
+      expect(ensureWorkspace).not.toHaveBeenCalled();
+      expect(createOptions.workspaceId).toBe("wks_parent");
+      expect(createOptions.labels).toMatchObject({ [PARENT_AGENT_ID_LABEL]: "parent-agent" });
+      expect(response.structuredContent.guidance).toContain("You will get notified");
+    });
   });
 
   it("accepts provider features from caller agents and passes them through createAgent", async () => {
@@ -3177,6 +3351,47 @@ describe("create_agent MCP tool", () => {
       const storedChild = await storage.get(childId);
       expect(storedChild?.workspaceId).toBe("wks_parent");
       expect(storedChild?.labels[PARENT_AGENT_ID_LABEL]).toBe(parent.id);
+    } finally {
+      await removeAgentStateDir(agentManager, storage, workdir);
+    }
+  });
+
+  it("rejects a child on a model disabled in Provider settings", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-disabled-model-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const agentManager = new AgentManager({
+      clients: createTestAgentClients(),
+      providerDefinitions: {
+        claude: { enabled: true, disabledModels: ["sonnet"] },
+        codex: { enabled: true },
+      },
+      registry: storage,
+      logger,
+    });
+
+    try {
+      const parent = await agentManager.createAgent(
+        { provider: "codex", cwd: existingCwd },
+        undefined,
+        { workspaceId: "wks_parent" },
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage: storage,
+        callerAgentId: parent.id,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        logger,
+      });
+
+      await expect(
+        registeredTool(server, "create_agent").handler({
+          ...subagentCurrentWorkspace(),
+          title: "Child",
+          provider: "claude/sonnet",
+          initialPrompt: "Do work",
+        }),
+      ).rejects.toThrow("Model 'sonnet' is disabled for provider 'claude' in Provider settings");
+      expect(agentManager.listAgents().map((agent) => agent.id)).toEqual([parent.id]);
     } finally {
       await removeAgentStateDir(agentManager, storage, workdir);
     }
@@ -5759,6 +5974,27 @@ describe("provider listing MCP tool", () => {
         {
           id: "claude",
           label: "Claude",
+          status: "available",
+          modes: [{ id: "default", label: "Default" }],
+        },
+        {
+          id: "zai",
+          label: "ZAI",
+          status: "available",
+          modes: [{ id: "default", label: "Default" }],
+        },
+      ],
+    });
+    expect(modelVisibleText).not.toContain("providers_count");
+    expect(modelVisibleText).not.toContain("providers_ids");
+    expect(modelVisibleText).toBe(JSON.stringify(response.structuredContent));
+
+    const full = await tool.handler({ detail: "full" });
+    expect(full.structuredContent).toEqual({
+      providers: [
+        {
+          id: "claude",
+          label: "Claude",
           description: "Test provider",
           enabled: true,
           status: "available",
@@ -5774,9 +6010,6 @@ describe("provider listing MCP tool", () => {
         },
       ],
     });
-    expect(modelVisibleText).toContain("providers_count=2");
-    expect(modelVisibleText).toContain("providers_ids=claude,zai");
-    expect(modelVisibleText).toContain('"providers"');
   });
 
   it("returns provider modes from the shared snapshot catalog", async () => {
@@ -5798,7 +6031,7 @@ describe("provider listing MCP tool", () => {
     });
     const tool = registeredTool(server, "list_providers");
 
-    const response = await tool.handler({});
+    const response = await tool.handler({ detail: "full" });
 
     expect(response.structuredContent.providers).toEqual([
       expect.objectContaining({
@@ -5828,7 +6061,7 @@ describe("provider listing MCP tool", () => {
       logger,
     });
     const tool = registeredTool(server, "list_providers");
-    const response = await tool.handler({});
+    const response = await tool.handler({ detail: "full" });
 
     expect(response.structuredContent).toEqual({
       providers: [
@@ -5972,7 +6205,7 @@ describe("provider MCP tools", () => {
     const parsed = await tool.inputSchema.safeParseAsync(input);
     expect(parsed.success).toBe(true);
 
-    const response = await tool.handler(input);
+    const response = await tool.handler({ ...input, detail: "full" });
 
     expect(spies.agentManager.listDraftFeatures).toHaveBeenCalledWith({
       provider: "codex",
@@ -5999,6 +6232,17 @@ describe("provider MCP tools", () => {
         },
       ],
     });
+
+    const compact = await tool.handler(input);
+    expect(compact.structuredContent).toEqual({
+      provider: "codex",
+      label: "Codex",
+      enabled: true,
+      status: "available",
+      modes: [{ id: "full-access", label: "Full Access" }],
+      selectedModel: "gpt-5.4",
+      features: response.structuredContent.features,
+    });
   });
 
   it("rejects disabled providers without fetching models", async () => {
@@ -6017,6 +6261,34 @@ describe("provider MCP tools", () => {
     await expect(tool.handler({ provider: "codex" })).rejects.toThrow(
       "Provider 'codex' is disabled",
     );
+  });
+
+  it("list_models omits models disabled in Provider settings", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const providerSnapshotManager = new ProviderSnapshotManager({
+      logger,
+      extraClients: { claude: createTestAgentClients().claude },
+      providerOverrides: { claude: { disabledModels: ["haiku"] } },
+    });
+    try {
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager,
+        logger,
+      });
+
+      const response = await registeredTool(server, "list_models").handler({
+        provider: "claude",
+      });
+
+      expect(response.structuredContent).toEqual({
+        provider: "claude",
+        models: [{ id: "sonnet", label: "Sonnet" }],
+      });
+    } finally {
+      providerSnapshotManager.destroy();
+    }
   });
 
   it("inspect_provider rejects disabled providers without fetching models", async () => {
@@ -6121,7 +6393,7 @@ describe("agent snapshot MCP serialization", () => {
       logger,
     });
     const tool = registeredTool(server, "list_agents");
-    const response = await tool.handler({});
+    const response = await tool.handler({ detail: "full" });
     const structured = z
       .object({ agents: z.array(z.record(z.string(), z.unknown())) })
       .parse(response.structuredContent);
@@ -6157,6 +6429,64 @@ describe("agent snapshot MCP serialization", () => {
     expect(structured.agents[0]).not.toHaveProperty("pendingPermissions");
   });
 
+  it("returns minimal list items by default and reports truncation", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.listAgents = vi.fn().mockReturnValue([
+      createManagedAgent({
+        id: "agent-child",
+        provider: "codex",
+        cwd: REPO_CWD,
+        config: { model: "gpt-5.4", title: "Child worker" },
+        labels: { role: "researcher", "paseo.parent-agent-id": "agent-parent" },
+      }),
+      createManagedAgent({
+        id: "agent-other",
+        provider: "codex",
+        cwd: REPO_CWD,
+        config: { model: "gpt-5.4", title: "Unrelated" },
+      }),
+    ]);
+    spies.agentStorage.get.mockImplementation(async (id: string) =>
+      id === "agent-child" ? { title: "Child worker" } : null,
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+    const tool = registeredTool(server, "list_agents");
+
+    const compact = await tool.handler({ limit: 1 });
+    expect(compact.structuredContent.agents).toHaveLength(1);
+    expect(compact.structuredContent).toMatchObject({
+      more: 1,
+      note: expect.stringContaining("1 more"),
+    });
+    const [item] = compact.structuredContent.agents;
+    for (const dropped of ["createdAt", "lastUserMessageAt", "archivedAt", "labels"]) {
+      expect(item).not.toHaveProperty(dropped);
+    }
+
+    const filtered = await tool.handler({ query: "CHILD" });
+    expect(filtered.structuredContent).toEqual({
+      agents: [
+        {
+          id: "agent-child",
+          shortId: "agent-c",
+          title: "Child worker",
+          status: "idle",
+          provider: "codex",
+          model: "gpt-5.4",
+          cwd: REPO_CWD,
+          updatedAt: expect.any(String),
+          parentId: "agent-parent",
+          labelCount: 1,
+        },
+      ],
+    });
+  });
+
   it("returns archived agent snapshots from storage for get_agent_status", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const record = createStoredRecord({
@@ -6173,7 +6503,7 @@ describe("agent snapshot MCP serialization", () => {
       providerSnapshotManager: createClaudeOnlyManager(),
     });
     const tool = registeredTool(server, "get_agent_status");
-    const response = await tool.handler({ agentId: "archived-agent" });
+    const response = await tool.handler({ agentId: "archived-agent", detail: "full" });
 
     expect(response.structuredContent).toEqual({
       status: "closed",
@@ -6185,6 +6515,41 @@ describe("agent snapshot MCP serialization", () => {
       }),
     });
     expect(spies.agentStorage.get).toHaveBeenCalledWith("archived-agent");
+  });
+
+  it("returns a minimal snapshot from get_agent_status by default", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(null);
+    spies.agentStorage.get.mockResolvedValue(
+      createStoredRecord({ id: "archived-agent", archivedAt: "2026-04-12T00:00:00.000Z" }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      logger,
+      providerSnapshotManager: createClaudeOnlyManager(),
+    });
+    const response = await registeredTool(server, "get_agent_status").handler({
+      agentId: "archived-agent",
+    });
+
+    const snapshot = response.structuredContent.snapshot;
+    expect(response.structuredContent.status).toBe("closed");
+    expect(snapshot).toMatchObject({
+      id: "archived-agent",
+      title: "Stored agent",
+      status: "closed",
+      archived: true,
+    });
+    for (const dropped of [
+      "capabilities",
+      "availableModes",
+      "persistence",
+      "labels",
+      "createdAt",
+    ]) {
+      expect(snapshot).not.toHaveProperty(dropped);
+    }
   });
 
   it("returns full-detail snapshots from get_agent_status", async () => {
@@ -6244,7 +6609,7 @@ describe("agent snapshot MCP serialization", () => {
       logger,
     });
     const tool = registeredTool(server, "get_agent_status");
-    const response = await tool.handler({ agentId: "full-detail-agent" });
+    const response = await tool.handler({ agentId: "full-detail-agent", detail: "full" });
     const snapshot = z.record(z.string(), z.unknown()).parse(response.structuredContent.snapshot);
 
     const parsed = AgentSnapshotPayloadSchema.safeParse(snapshot);
@@ -6452,14 +6817,15 @@ describe("agent snapshot MCP serialization", () => {
     const response = await tool.handler({ includeArchived: true });
     const agentIds = agentsOf(response).map((agent) => agent.id);
 
-    expect(agentIds).toHaveLength(50);
+    expect(agentIds).toHaveLength(20);
     expect(agentIds).toEqual(
       Array.from(
-        { length: 50 },
+        { length: 20 },
         (_, index) => `recent-archived-${index.toString().padStart(2, "0")}`,
       ),
     );
     expect(agentIds).not.toContain("old-archived");
+    expect(response.structuredContent).toMatchObject({ more: 35 });
   });
 
   it("returns compact list items for stored archived agents", async () => {
@@ -6490,7 +6856,7 @@ describe("agent snapshot MCP serialization", () => {
       providerSnapshotManager: createClaudeOnlyManager(),
     });
     const tool = registeredTool(server, "list_agents");
-    const response = await tool.handler({ cwd: REPO_CWD, includeArchived: true });
+    const response = await tool.handler({ cwd: REPO_CWD, includeArchived: true, detail: "full" });
     const item = agentsOf(response)[0];
 
     expect(item).toEqual({
@@ -6601,7 +6967,7 @@ describe("agent snapshot MCP serialization", () => {
       providerSnapshotManager: createClaudeOnlyManager(),
     });
     const tool = registeredTool(server, "list_agents");
-    const response = await tool.handler({ includeArchived: true });
+    const response = await tool.handler({ includeArchived: true, detail: "full" });
 
     const parsed = z.array(AgentListItemPayloadSchema).safeParse(response.structuredContent.agents);
     if (!parsed.success) {
@@ -6668,6 +7034,81 @@ describe("agent snapshot MCP serialization", () => {
         },
       },
     ]);
+  });
+
+  describe("respond_to_permission answers", () => {
+    const questionRequest = {
+      id: "perm-question",
+      provider: "claude" as const,
+      name: "AskUserQuestion",
+      kind: "question" as const,
+      input: {
+        questions: [
+          {
+            header: "Database",
+            question: "Which database?",
+            options: [{ label: "Postgres" }, { label: "SQLite, embedded" }],
+            multiSelect: false,
+          },
+          {
+            header: "Extras",
+            question: "Which extras?",
+            options: [{ label: "Backups" }, { label: "Metrics" }],
+            multiSelect: true,
+          },
+        ],
+      },
+    };
+
+    async function respond(args: Record<string, unknown>) {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({
+          id: "asker",
+          provider: "claude",
+          pendingPermissions: new Map([[questionRequest.id, questionRequest]]),
+        }),
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        logger,
+        providerSnapshotManager: createClaudeOnlyManager(),
+      });
+      const response = await registeredTool(server, "respond_to_permission").handler({
+        agentId: "asker",
+        requestId: questionRequest.id,
+        ...args,
+      });
+      return { response, respondToPermission: spies.agentManager.respondToPermission };
+    }
+
+    it("answers a question box the way the app's question card does", async () => {
+      const { respondToPermission } = await respond({
+        answers: { Database: ["SQLite, embedded"], Extras: ["Backups", "Metrics"] },
+      });
+
+      expect(respondToPermission).toHaveBeenCalledWith("asker", "perm-question", {
+        behavior: "allow",
+        updatedInput: {
+          ...questionRequest.input,
+          answers: { Database: "SQLite, embedded", Extras: "Backups, Metrics" },
+          answerLists: { Database: ["SQLite, embedded"], Extras: ["Backups", "Metrics"] },
+        },
+      });
+    });
+
+    it("names the real headers when an answer uses an unknown one", async () => {
+      await expect(respond({ answers: { DB: ["Postgres"], Extras: [] } })).rejects.toThrow(
+        'Unknown question header "DB". Headers: "Database", "Extras".',
+      );
+    });
+
+    it("refuses a partial answer instead of submitting it", async () => {
+      await expect(respond({ answers: { Database: ["Postgres"] } })).rejects.toThrow(
+        'Answer every question. Missing: "Extras".',
+      );
+    });
   });
 
   it("loads archived agents before reading get_agent_activity", async () => {
@@ -6930,6 +7371,246 @@ describe("local durable finish subscription MCP wiring", () => {
     } finally {
       await mcp?.close();
       await removeAgentStateDir(manager, storage, workdir);
+    }
+  });
+});
+
+describe("agent history MCP tools", () => {
+  const logger = createTestLogger();
+
+  async function createHarness(options?: { workspaces?: PersistedWorkspaceRecord[] }) {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-agent-history-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const manager = new AgentManager({
+      clients: createTestAgentClients(),
+      registry: storage,
+      logger,
+    });
+    const workspaces = new Map(
+      (options?.workspaces ?? []).map((workspace) => [workspace.workspaceId, workspace]),
+    );
+    const restored: string[] = [];
+    const server = await createAgentMcpServer({
+      agentManager: manager,
+      agentStorage: storage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      workspaceRegistry: {
+        get: async (workspaceId) => workspaces.get(workspaceId) ?? null,
+        list: async () => [...workspaces.values()],
+        upsert: async (record) => {
+          workspaces.set(record.workspaceId, record);
+        },
+      },
+      restoreArchivedWorkspace: async (workspace) => {
+        restored.push(workspace.workspaceId);
+        workspaces.set(workspace.workspaceId, { ...workspace, archivedAt: null });
+      },
+      logger,
+    });
+    return { workdir, storage, manager, server, workspaces, restored };
+  }
+
+  function archivedWorkspace(workspaceId: string, cwd: string): PersistedWorkspaceRecord {
+    return {
+      ...createPersistedWorkspaceRecord({
+        workspaceId,
+        projectId: "prj_history",
+        cwd,
+        kind: "local_checkout",
+        displayName: "main",
+        createdAt: "2026-11-01T00:00:00.000Z",
+        updatedAt: "2026-11-01T00:00:00.000Z",
+      }),
+      archivedAt: "2026-11-01T01:00:00.000Z",
+    };
+  }
+
+  it("unarchives an agent and its archived workspace, publishing the agent again", async () => {
+    const cwd = process.cwd();
+    const harness = await createHarness({
+      workspaces: [archivedWorkspace("wks_history", cwd)],
+    });
+    try {
+      const agent = await harness.manager.createAgent({ provider: "codex", cwd }, undefined, {
+        workspaceId: "wks_history",
+      });
+      await harness.manager.archiveAgent(agent.id);
+      const published: string[] = [];
+      const unsubscribe = harness.manager.subscribe(
+        (event) => {
+          if (event.type === "agent_state") published.push(event.agent.id);
+        },
+        { replayState: false },
+      );
+
+      const response = await invokeToolWithParsedInput(
+        registeredTool(harness.server, "unarchive_agent"),
+        { agentId: agent.id },
+      );
+      unsubscribe();
+
+      expect(response.structuredContent).toEqual({
+        agentId: agent.id,
+        wasArchived: true,
+        workspaceId: "wks_history",
+        workspaceRestored: true,
+        warning: null,
+      });
+      expect((await harness.storage.get(agent.id))?.archivedAt).toBeNull();
+      expect(harness.restored).toEqual(["wks_history"]);
+      expect(published).toContain(agent.id);
+      expect(harness.manager.getAgent(agent.id)).toBeNull();
+    } finally {
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("is a no-op for an agent that is not archived", async () => {
+    const harness = await createHarness();
+    try {
+      const agent = await harness.manager.createAgent(
+        { provider: "codex", cwd: process.cwd() },
+        undefined,
+        { workspaceId: "wks_none" },
+      );
+
+      const tool = registeredTool(harness.server, "unarchive_agent");
+      const response = await invokeToolWithParsedInput(tool, { agentId: agent.id });
+
+      expect(response.structuredContent).toMatchObject({
+        wasArchived: false,
+        workspaceRestored: false,
+        warning: null,
+      });
+      expect(harness.manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+    } finally {
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("unarchives the agent but warns and leaves the workspace archived when its directory is gone", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "mcp-agent-history-gone-"));
+    const harness = await createHarness({ workspaces: [archivedWorkspace("wks_gone", cwd)] });
+    try {
+      const agent = await harness.manager.createAgent({ provider: "codex", cwd }, undefined, {
+        workspaceId: "wks_gone",
+      });
+      await harness.manager.archiveAgent(agent.id);
+      await rm(cwd, { recursive: true, force: true });
+
+      const response = await invokeToolWithParsedInput(
+        registeredTool(harness.server, "unarchive_agent"),
+        { agentId: agent.id },
+      );
+
+      expect(response.structuredContent).toMatchObject({
+        wasArchived: true,
+        workspaceId: "wks_gone",
+        workspaceRestored: false,
+        warning: expect.stringContaining(cwd),
+      });
+      expect((await harness.storage.get(agent.id))?.archivedAt).toBeNull();
+      expect(harness.restored).toEqual([]);
+      expect(harness.workspaces.get("wks_gone")?.archivedAt).not.toBeNull();
+    } finally {
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("rejects an unknown agent as tool input", async () => {
+    const harness = await createHarness();
+    const mcp = await connectInMemoryMcpClient(harness.server);
+    try {
+      const result = await mcp.callTool({
+        name: "unarchive_agent",
+        arguments: { agentId: "00000000-0000-4000-8000-000000000000" },
+      });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain("Agent not found");
+    } finally {
+      await mcp.close();
+      await removeAgentStateDir(harness.manager, harness.storage, harness.workdir);
+    }
+  });
+
+  it("finds an archived agent by its conversation after a restart without loading its runtime", async () => {
+    const cwd = process.cwd();
+    const first = await createHarness();
+    let agentId: string;
+    try {
+      const agent = await first.manager.createAgent({ provider: "codex", cwd }, undefined, {
+        workspaceId: "wks_search",
+      });
+      agentId = agent.id;
+      await first.manager.runAgent(
+        agent.id,
+        // The fake provider answers this prompt with a sentence ending "the fox ran away."
+        "Investigate the flaky payment webhook retry, then tell me about the quick brown fox and the lazy dog",
+        { clientMessageId: randomUUID() },
+      );
+      await first.manager.archiveAgent(agent.id);
+      await first.manager.flush();
+      await first.storage.flush();
+    } catch (error) {
+      await removeAgentStateDir(first.manager, first.storage, first.workdir);
+      throw error;
+    }
+
+    // A fresh manager over the same storage: the archived agent exists only on disk.
+    const storage = new AgentStorage(join(first.workdir, "agents"), logger);
+    const clients = createTestAgentClients();
+    const createSession = vi.spyOn(clients.codex!, "createSession");
+    const resumeSession = vi.spyOn(clients.codex!, "resumeSession");
+    const manager = new AgentManager({ clients, registry: storage, logger });
+    const server = await createAgentMcpServer({
+      agentManager: manager,
+      agentStorage: storage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+    try {
+      const tool = registeredTool(server, "search_agents");
+      const byPrompt = await invokeToolWithParsedInput(tool, { query: "Payment WEBHOOK" });
+      const byReply = await invokeToolWithParsedInput(tool, { query: "ran away" });
+      const activeOnly = await invokeToolWithParsedInput(tool, {
+        query: "payment webhook",
+        includeArchived: false,
+      });
+
+      expect(byPrompt.structuredContent).toMatchObject({
+        results: [
+          {
+            agentId,
+            archivedAt: expect.any(String),
+            workspaceId: "wks_search",
+            cwd,
+            provider: "codex",
+            matchedFields: ["firstUserMessage"],
+            snippet: {
+              field: "firstUserMessage",
+              text: expect.stringContaining("flaky payment webhook retry"),
+            },
+          },
+        ],
+        truncated: false,
+      });
+      expect(byReply.structuredContent).toMatchObject({
+        results: [
+          {
+            agentId,
+            snippet: {
+              field: "lastAssistantMessage",
+              text: "The quick brown fox jumps over the lazy dog. Then the fox ran away.",
+            },
+          },
+        ],
+      });
+      expect(activeOnly.structuredContent).toMatchObject({ results: [] });
+      expect(manager.listAgents()).toEqual([]);
+      expect(createSession).not.toHaveBeenCalled();
+      expect(resumeSession).not.toHaveBeenCalled();
+    } finally {
+      await removeAgentStateDir(manager, storage, first.workdir);
     }
   });
 });

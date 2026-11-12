@@ -6,6 +6,7 @@ import {
   setProjectCollapsed,
   togglePinnedCollapsed,
   toggleProjectCollapsed,
+  toggleThreadExpanded,
   toggleWorkspaceGroupCollapsed,
 } from "@/stores/sidebar-collapsed-sections-store/state";
 
@@ -14,10 +15,24 @@ function emptyState(): CollapsedProjectsState {
     collapsedProjectKeys: new Set(),
     collapsedWorkspaceGroupKeys: new Set(),
     collapsedPinned: false,
+    expandedThreadKeys: new Set(),
   };
 }
 
 describe("sidebar collapsed projects transitions", () => {
+  it("starts threads folded and remembers the ones the user unfolds", () => {
+    let state = toggleThreadExpanded(emptyState(), "srv:a");
+    state = toggleThreadExpanded(state, "srv:b");
+    state = toggleThreadExpanded(state, "srv:a");
+
+    expect(Array.from(state.expandedThreadKeys)).toEqual(["srv:b"]);
+    const restored = mergePersistedCollapsedProjects(
+      serializeCollapsedProjects(state),
+      emptyState(),
+    );
+    expect(Array.from(restored.expandedThreadKeys)).toEqual(["srv:b"]);
+  });
+
   it("tracks collapsed project keys as a Set", () => {
     let state = emptyState();
 
@@ -35,12 +50,14 @@ describe("sidebar collapsed projects transitions", () => {
       collapsedProjectKeys: new Set(["project-a", "project-b"]),
       collapsedWorkspaceGroupKeys: new Set(["running"]),
       collapsedPinned: true,
+      expandedThreadKeys: new Set(["srv:thread"]),
     };
 
     expect(serializeCollapsedProjects(state)).toEqual({
       collapsedProjectKeys: ["project-a", "project-b"],
       collapsedWorkspaceGroupKeys: ["running"],
       collapsedPinned: true,
+      expandedThreadKeys: ["srv:thread"],
     });
   });
 
