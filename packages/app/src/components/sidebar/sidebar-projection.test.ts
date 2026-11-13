@@ -5,7 +5,7 @@ import type {
   SidebarWorkspaceEntry,
   SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
-import { buildSidebarProjection } from "./sidebar-projection";
+import { buildSidebarProjection, type SidebarProjection } from "./sidebar-projection";
 
 function makeWorkspace(
   id: string,
@@ -38,6 +38,7 @@ function makeWorkspace(
     archiveUnpushedCommitCount: null,
     scripts: [],
     hasRunningScripts: false,
+    workingSubagentCount: 0,
     labels,
   };
   return { placement, entry };
@@ -86,6 +87,8 @@ function projectionInput(options?: {
     pinnedCollapsed: options?.pinnedCollapsed ?? false,
     collapsedProjectKeys: new Set<string>(),
     collapsedWorkspaceGroupKeys: new Set<string>(),
+    parentKeyByWorkspaceKey: new Map<string, string>(),
+    expandedThreadKeys: new Set<string>(),
     t: i18n.t,
   };
 }
@@ -110,6 +113,45 @@ function twoProjectInput(groupMode: "project" | "status") {
       ["other-project", "Other project"],
     ]),
   };
+}
+
+/** An orchestrator workspace with one subagent workspace and an unrelated sibling. */
+function nestedInput(options: {
+  groupMode: "project" | "status";
+  pinnedIds?: string[];
+  childStatus?: SidebarWorkspaceEntry["statusBucket"];
+  /** Whether the user unfolded the parent thread. Defaults to unfolded. */
+  expanded?: boolean;
+}) {
+  const parent = makeWorkspace("parent", "running");
+  const sibling = makeWorkspace("sibling", "running");
+  const child = makeWorkspace("child", options.childStatus ?? "running");
+  const pinnedIds = options.pinnedIds ?? [];
+  return {
+    ...projectionInput({ groupMode: options.groupMode }),
+    // Stored order puts the child first, the way a newly created workspace lands in a project.
+    projects: [makeProject([child.placement, parent.placement, sibling.placement])],
+    pinnedKeys: {
+      pinnedWorkspaceKeys: pinnedIds.map((id) => `srv:${id}`),
+      pinnedAtByKey: Object.fromEntries(
+        pinnedIds.map((id) => [`srv:${id}`, "2026-07-12T12:00:00.000Z"]),
+      ),
+    },
+    workspaceEntriesByKey: new Map([
+      [child.entry.workspaceKey, child.entry],
+      [parent.entry.workspaceKey, parent.entry],
+      [sibling.entry.workspaceKey, sibling.entry],
+    ]),
+    parentKeyByWorkspaceKey: new Map([["srv:child", "srv:parent"]]),
+    expandedThreadKeys: new Set(options.expanded === false ? [] : ["srv:parent"]),
+  };
+}
+
+function statusGroupRows(projection: SidebarProjection) {
+  return projection.workspaceGroups.map((group) => [
+    group.key,
+    group.rows.map((entry) => entry.workspaceId),
+  ]);
 }
 
 describe("buildSidebarProjection", () => {
@@ -175,4 +217,77 @@ describe("buildSidebarProjection", () => {
       { serverId: "srv", workspaceId: "unpinned" },
     ]);
   });
+
+  it("lists a subagent workspace under its parent row in project mode", () => {
+    const projection = buildSidebarProjection(nestedInput({ groupMode: "project" }));
+
+    expect(
+      projection.pinnedGroups.unpinnedProjects[0]?.workspaces.map((entry) => entry.workspaceId),
+    ).toEqual(["parent", "child", "sibling"]);
+    expect([...projection.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
+    expect(projection.shortcutModel.shortcutTargets.map((target) => target.workspaceId)).toEqual([
+      "parent",
+      "child",
+      "sibling",
+    ]);
+  });
+
+  it("moves a subagent workspace into Pinned with its pinned parent", () => {
+    const projection = buildSidebarProjection(
+      nestedInput({ groupMode: "project", pinnedIds: ["parent"] }),
+    );
+
+    expect(projection.pinnedGroups.pinnedChats.map((entry) => entry.workspaceId)).toEqual([
+      "parent",
+      "child",
+    ]);
+    expect(
+      projection.pinnedGroups.unpinnedProjects[0]?.workspaces.map((entry) => entry.workspaceId),
+    ).toEqual(["sibling"]);
+    expect(projection.nestingDepthByWorkspaceKey.get("srv:child")).toBe(1);
+  });
+
+  it("keeps a pinned subagent workspace as a top-level pinned row when its parent is not pinned", () => {
+    const projection = buildSidebarProjection(
+      nestedInput({ groupMode: "project", pinnedIds: ["child"] }),
+    );
+
+    expect(projection.pinnedGroups.pinnedChats.map((entry) => entry.workspaceId)).toEqual([
+      "child",
+    ]);
+    expect(
+      projection.pinnedGroups.unpinnedProjects[0]?.workspaces.map((entry) => entry.workspaceId),
+    ).toEqual(["parent", "sibling"]);
+    expect(projection.nestingDepthByWorkspaceKey.size).toBe(0);
+  });
+
+  it("keeps a subagent workspace under its parent in status mode, whatever its own status", () => {
+    const sameGroup = buildSidebarProjection(nestedInput({ groupMode: "status" }));
+    expect(statusGroupRows(sameGroup)).toEqual([["running", ["parent", "child", "sibling"]]]);
+    expect([...sameGroup.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
+
+    const otherStatus = buildSidebarProjection(
+      nestedInput({ groupMode: "status", childStatus: "needs_input" }),
+    );
+    expect(statusGroupRows(otherStatus)).toEqual([["running", ["parent", "child", "sibling"]]]);
+    expect([...otherStatus.nestingDepthByWorkspaceKey]).toEqual([["srv:child", 1]]);
+  });
+
+  for (const groupMode of ["project", "status"] as const) {
+    it(`folds a thread's subagent workspaces until it is unfolded in ${groupMode} mode`, () => {
+      const projection = buildSidebarProjection(nestedInput({ groupMode, expanded: false }));
+      const rows =
+        groupMode === "project"
+          ? projection.pinnedGroups.unpinnedProjects[0]?.workspaces
+          : projection.workspaceGroups.flatMap((group) => group.rows);
+
+      expect(rows?.map((entry) => entry.workspaceId)).toEqual(["parent", "sibling"]);
+      expect([...projection.childWorkspaceCountByWorkspaceKey]).toEqual([["srv:parent", 1]]);
+      expect(projection.nestingDepthByWorkspaceKey.size).toBe(0);
+      expect(projection.shortcutModel.shortcutTargets.map((target) => target.workspaceId)).toEqual([
+        "parent",
+        "sibling",
+      ]);
+    });
+  }
 });

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createPreferredEditorPreference, resolvePreferredEditorId } from "./use-preferred-editor";
+import {
+  createDefaultEditorPreference,
+  createPreferredEditorPreference,
+  resolvePreferredEditorId,
+} from "./use-preferred-editor";
 
 describe("resolvePreferredEditorId", () => {
   it("keeps the stored editor when it is still available", () => {
@@ -104,6 +108,30 @@ describe("project editor preferences", () => {
     expect(await queryClient.fetchQuery(preference.queryOptions)).toBe("vscode");
     await expect(preference.update("cursor")).rejects.toThrow("Storage is full");
     expect(await queryClient.fetchQuery(preference.queryOptions)).toBe("vscode");
+    queryClient.clear();
+  });
+
+  it("a new default editor reaches projects without their own choice, not projects with one", async () => {
+    await AsyncStorage.clear();
+    const queryClient = new QueryClient();
+    const defaults = createDefaultEditorPreference({ queryClient, storage: AsyncStorage });
+    const unset = createPreferredEditorPreference({
+      scope: { serverId: "host", projectId: "unset" },
+      queryClient,
+      storage: AsyncStorage,
+    });
+    const chosen = createPreferredEditorPreference({
+      scope: { serverId: "host", projectId: "chosen" },
+      queryClient,
+      storage: AsyncStorage,
+    });
+    await chosen.update("zed");
+    expect(await queryClient.fetchQuery(unset.queryOptions)).toBeNull();
+
+    await defaults.update("cursor");
+    expect(await queryClient.fetchQuery(defaults.queryOptions)).toBe("cursor");
+    expect(await queryClient.fetchQuery(unset.queryOptions)).toBe("cursor");
+    expect(await queryClient.fetchQuery(chosen.queryOptions)).toBe("zed");
     queryClient.clear();
   });
 });

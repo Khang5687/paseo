@@ -38,6 +38,7 @@ export type ForkAgentSource = Pick<
   | "runtimeInfo"
   | "features"
   | "projectPlacement"
+  | "capabilities"
 >;
 
 /**
@@ -118,6 +119,36 @@ function buildForkDraftTabTarget(
 }
 
 /**
+ * A provider with native session fork continues the conversation itself, so the fork becomes a
+ * new agent in the same workspace right away. A new workspace still starts from a draft, and so
+ * does a provider without native fork. Returns false when the caller should use the draft path.
+ */
+async function forkNatively(input: {
+  enabled: boolean;
+  client: DaemonClient | null;
+  serverId: string;
+  agentId: string;
+  agent: ForkAgentSource;
+  workspaceId: string | undefined;
+  target: AssistantForkTarget;
+  boundary: ForkAgentBoundary | undefined;
+}): Promise<boolean> {
+  const { client, workspaceId } = input;
+  const native =
+    input.enabled &&
+    input.target === "tab" &&
+    input.agent.capabilities?.supportsNativeFork === true;
+  if (!native || !client || !workspaceId) return false;
+  const forked = await client.forkAgent(input.agentId, input.boundary);
+  navigateToWorkspace({
+    serverId: input.serverId,
+    workspaceId,
+    target: { kind: "agent", agentId: forked.forkedAgentId },
+  });
+  return true;
+}
+
+/**
  * Shared fork driver behind both turn-footer fork affordances: the completed
  * turn's footer (which supplies a boundary pinned to that turn) and the
  * in-flight turn's footer next to the progress loader (which omits the boundary
@@ -131,9 +162,23 @@ export function useForkAgent(
   const router = useRouter();
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const supportsAgentForkContext = useHostFeature(serverId, "agentForkContext") && !readOnly;
+  // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03. Hosts without it fork
+  // through the chat-history draft below.
+  const supportsAgentFork = useHostFeature(serverId, "agentFork") && !readOnly;
 
   return useStableEvent(async ({ agentId, agent, workspaceId, target, boundary }) => {
     try {
+      const forkedNatively = await forkNatively({
+        enabled: supportsAgentFork,
+        client,
+        serverId,
+        agentId,
+        agent,
+        workspaceId,
+        target,
+        boundary,
+      });
+      if (forkedNatively) return;
       if (!supportsAgentForkContext) {
         toast?.error(t("message.actions.forkUnavailable"));
         return;

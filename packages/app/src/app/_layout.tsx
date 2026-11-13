@@ -25,6 +25,7 @@ import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-ha
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { AppearanceProvider } from "@/appearance/provider";
+import { SkinBackdrop } from "@/skins";
 import { CommandCenter } from "@/command-center/command-center";
 import { CommandCenterRootActions } from "@/command-center/root-registration";
 import { CommandCenterProvider } from "@/command-center/provider";
@@ -34,6 +35,7 @@ import { AddProjectFlowHost } from "@/components/add-project-flow-host";
 import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
 import { DownloadToast } from "@/components/download-toast";
 import { QuittingOverlay } from "@/components/quitting-overlay";
+import { QuitConfirmToast } from "@/components/quit-confirm-toast";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
 import { ChangelogHost } from "@/changelog";
 import { AppDiagnosticHost } from "@/components/app-diagnostic-host";
@@ -51,6 +53,7 @@ import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-short
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
 import { HostConfirmationSheet } from "@/hosts/host-confirmation-sheet";
+import { NoteComposerHost } from "@/notes/composer/note-composer-host";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import {
   canDesktopAppSidebarShare,
@@ -130,6 +133,8 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
+import { NoteRemindersHost } from "@/notes/reminders-host";
+import { ChatNoteBadgesHost } from "@/notes/chat-badges-store";
 import { ensureOsNotificationPermission } from "@/utils/os-notifications";
 
 polyfillCrypto();
@@ -465,6 +470,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   // Their tracked styles update in place; web numeric styles still need remounting.
   const surface = (
     <View style={layoutStyles.surfaceFill}>
+      <SkinBackdrop />
       {workspaceChrome}
       <AddHostFlowHost />
       <AppearanceStyleBoundary>
@@ -499,11 +505,13 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <AddProjectFlowHost />
         <HostChooserModal />
         <HostConfirmationSheet />
+        <NoteComposerHost />
         <ProviderSettingsHost />
         <WorkspaceSetupDialog />
         <KeyboardShortcutsDialog />
         <AppDiagnosticHost />
         <ChangelogHost />
+        <QuitConfirmToast />
         <QuittingOverlay />
       </AppearanceStyleBoundary>
     </View>
@@ -775,6 +783,7 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/new" ||
       pathname === "/sessions" ||
       pathname === "/schedules" ||
+      pathname === "/notes" ||
       routeHasKnownHost);
 
   return <AppContainer chromeEnabled={shouldShowAppChrome}>{children}</AppContainer>;
@@ -807,6 +816,7 @@ function RootStack() {
         <Stack.Screen name="open-project" />
         <Stack.Screen name="sessions" />
         <Stack.Screen name="schedules" />
+        <Stack.Screen name="notes" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />
       <Stack.Screen name="settings/hosts/[serverId]/index" />
@@ -855,6 +865,8 @@ function RuntimeProviders({ children }: { children: ReactNode }) {
   return (
     <HostRuntimeBootstrapProvider>
       <NotificationOpenBridge />
+      <NoteRemindersHost />
+      <ChatNoteBadgesHost />
       <SidebarCalloutProvider>
         <ProvidersWrapper>{children}</ProvidersWrapper>
       </SidebarCalloutProvider>

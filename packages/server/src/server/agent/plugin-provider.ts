@@ -13,6 +13,7 @@ import {
   type ProviderStatus,
   type ProviderLaunch,
   requireProviderCapabilities,
+  type ProviderCommand,
   type ProviderCapability,
   type ProviderConfigChanges,
   type ProviderConfigState,
@@ -605,7 +606,7 @@ class ProviderRuntimeSession {
   private terminal = false;
   private closePromise: Promise<void> | null = null;
   config: ProviderConfigState = { models: [], modes: [], thinkingOptions: [], settings: [] };
-  commands: Array<{ name: string; description: string; argumentHint?: string }> = [];
+  commands: ProviderCommand[] = [];
   persistence: ProviderPersistence | null = null;
 
   constructor(

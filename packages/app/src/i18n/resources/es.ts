@@ -117,6 +117,12 @@ export const es: TranslationResources = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restaurar borrador",
+      attachmentsOnly: "(solo adjuntos)",
+      attachments_one: "{{count}} adjunto",
+      attachments_other: "{{count}} adjuntos",
+    },
     placeholders: {
       desktop: "Envíe un mensaje al agente, etiquete@fileso use/commandsy/skills",
       mobile: "Mensaje,@files,/commands",
@@ -136,7 +142,8 @@ export const es: TranslationResources = {
       sendAndSteer: "Enviar y orientar",
       sendMessage: "enviar mensaje",
       longPressToQueue: "Mantén pulsado para poner en cola",
-      longPressToSendNow: "Mantén pulsado para enviar ahora",
+      longPressToInterrupt: "Mantén pulsado para interrumpir",
+      longPressToSteer: "Mantén pulsado para dirigir",
       queue: "Cola",
       send: "Enviar",
     },
@@ -167,6 +174,25 @@ export const es: TranslationResources = {
       dropFilesHere: "Drop files here",
       editQueuedMessage: "Editar mensaje en cola",
       sendQueuedMessageNow: "Enviar mensaje en cola ahora",
+      queueHeader: "Cola · {{count}}",
+      queuePausedHeader: "Cola en pausa · {{count}}",
+      queuePauseReason: "No se pudo enviar: {{reason}}",
+      pauseQueue: "Pausar cola",
+      resumeQueue: "Reanudar cola",
+      clearQueue: "Vaciar cola",
+      clearQueueTitle: "Vaciar cola",
+      clearQueueMessage: "Se eliminarán todos los mensajes en cola de este agente.",
+      clearQueueConfirm: "Vaciar",
+      queuedMessageActions: "Acciones del mensaje en cola",
+      editQueuedMessageAction: "Editar",
+      moveQueuedMessageToTop: "Mover al principio",
+      moveQueuedMessageUp: "Subir",
+      moveQueuedMessageDown: "Bajar",
+      deleteQueuedMessage: "Eliminar",
+      reorderQueuedMessage: "Arrastra para reordenar",
+      showMoreQueuedMessages: "Mostrar {{count}} más",
+      showFewerQueuedMessages: "Mostrar menos",
+      queueUpdateFailed: "No se pudo actualizar la cola",
       openImage: "Abrir imagen adjunta",
       removeImage: "Quitar imagen adjunta",
       removeFile: "Remove file attachment",
@@ -193,6 +219,7 @@ export const es: TranslationResources = {
     clientCommands: {
       archiveAgent: "Archivar el agente actual",
       freshDraft: "Archive este agente y comience un nuevo borrador",
+      forkAgent: "Bifurcar este chat en una pestaña nueva",
     },
     github: {
       searching: "Búsqueda...",
@@ -322,6 +349,57 @@ export const es: TranslationResources = {
       hostOffline: "Hostfuera de línea",
       runningAgent: "Este agente todavía está ejecutándose. Archivarlo detendrá al agente.",
       archive: "Archivo",
+    },
+  },
+  codeRun: {
+    run: "Ejecutar",
+    runCommand: "Ejecutar comando",
+    cancel: "Cancelar",
+    commandLabel: "Comando",
+    where: "Se ejecuta en {{host}} · {{folder}}",
+    running: "En ejecución",
+    done: "Listo · código {{code}}",
+    failed: "Error · código {{code}}",
+    stopped: "Detenido",
+    terminalClosed: "Terminal cerrada",
+    close: "Cerrar",
+    expand: "Mostrar salida",
+    collapse: "Ocultar salida",
+    openTerminal: "Abrir en la pestaña Terminal",
+    answerPlaceholder: "Enviar entrada",
+    send: "Enviar",
+    showPassword: "Mostrar contraseña",
+    hidePassword: "Ocultar contraseña",
+    sendToAgent: "Enviar salida al agente",
+    rerun: "Volver a ejecutar",
+    copyOutput: "Copiar salida",
+    copied: "Copiado",
+    noOutput: "Aún no hay salida",
+    noOutputFinished: "Sin salida",
+    startFailed: "No se pudo iniciar el comando",
+    closeFailed: "No se pudo cerrar la terminal",
+    hostOffline: "Host sin conexión. Vuelve a conectarte para ejecutar este comando.",
+    prompt: {
+      sudoPassword: "Contraseña de sudo",
+      password: "Contraseña",
+    },
+    chips: {
+      yes: "Sí",
+      no: "No",
+    },
+    keys: {
+      enter: "Intro",
+      tab: "Tab",
+      interrupt: "Ctrl-C",
+    },
+    risk: {
+      admin: "Se ejecuta como administrador",
+      deletes: "Elimina archivos",
+    },
+    report: {
+      exitStatus: "Código de salida",
+      stopped: "Detenido antes de terminar",
+      truncated: "[salida anterior recortada]",
     },
   },
   message: {
@@ -481,6 +559,8 @@ export const es: TranslationResources = {
       openToSide: "Abrir al lado",
       copyPath: "Copiar ruta",
       copyRelativePath: "Copiar ruta relativa",
+      copyFullPath: "Copiar ruta completa",
+      copyFileName: "Copiar nombre del archivo",
       revealIn: "Mostrar en {{target}}",
       download: "Descargar",
       addToChat: "Añadir al chat",
@@ -702,6 +782,7 @@ export const es: TranslationResources = {
         terminalIdCopiedLabel: "ID del terminal",
         resumeCommandCopiedLabel: "reanudar el comando",
         filePathCopiedLabel: "File path",
+        fileNameCopiedLabel: "Nombre del archivo",
         resumeIdUnavailable: "ReanudarIDno disponible",
         resumeCommandUnavailable: "Comando de reanudación no disponible",
         reloadingAgent: "Agente de recarga...",
@@ -1194,8 +1275,21 @@ export const es: TranslationResources = {
       description: "Comprueba tu conexión e inténtalo de nuevo.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "¿Archivar «{{name}}»?",
+    agentTitleUnnamed: "¿Archivar este agente?",
+    workspaceTitle: "¿Archivar el espacio de trabajo «{{name}}»?",
+    workspaceTitleUnnamed: "¿Archivar este espacio de trabajo?",
+    finishedSubagentsTitle: "¿Archivar los subagentes terminados?",
+    finishedSubagentsCountOne: "¿Archivar 1 subagente terminado?",
+    finishedSubagentsCountMany: "¿Archivar {{count}} subagentes terminados?",
+    message: "Puedes restaurarlo desde el Historial.",
+    confirm: "Archivar",
+    cancel: "Cancelar",
+  },
   sidebar: {
     statusGroupAccessibility: "Grupo {{label}}",
+    unsentDraft: "Borrador sin enviar",
     statusBucket: {
       needsInput: "Necesita datos",
       failed: "Con error",
@@ -1289,6 +1383,7 @@ export const es: TranslationResources = {
       sessions: "Historial",
       search: "Buscar",
       schedules: "Horarios",
+      notes: "Notas",
     },
     worktreeSetup: {
       title: "Configurar secuencias de comandos del árbol de trabajo",
@@ -1325,6 +1420,9 @@ export const es: TranslationResources = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} subagentes trabajando",
+      workingSubagents_one: "{{count}} subagente trabajando",
+      workingSubagents_other: "{{count}} subagentes trabajando",
       status: {
         serviceRunning: "Servicio {{name}} en ejecución",
         serviceUnhealthy: "Servicio {{name}} con fallos",
@@ -1346,6 +1444,7 @@ export const es: TranslationResources = {
         createWorkspaceFor: "Crea un nuevo espacio de trabajo para{{projectName}}",
         copyPath: "Copiar ruta",
         copyBranchName: "Copiar nombre de sucursal",
+        copyAgentId: "Copiar ID del agente",
         rename: "Cambiar nombre del espacio de trabajo",
         pin: "Anclar arriba",
         unpin: "Desanclar",
@@ -1371,6 +1470,8 @@ export const es: TranslationResources = {
         workspacePathUnavailable: "RutaWorkspaceno disponible",
         pathCopied: "Ruta copiada",
         branchNameCopied: "Nombre de la sucursal copiado",
+        agentIdCopied: "ID del agente {{id}}",
+        agentIdCopiedMostRecent: "ID del agente {{id}} (el más reciente de {{count}})",
         hostDisconnected: "Hostno está conectado",
         hideFailed: "No se pudo ocultar el espacio de trabajo",
         archiveFailed: "No se pudo archivar el espacio de trabajo",
@@ -1433,6 +1534,9 @@ export const es: TranslationResources = {
     quitting: {
       title: "Saliendo dePaseo...",
       detail: "Deteniendo el demonio local.",
+    },
+    quitConfirm: {
+      hint: "Mantén ⌘Q o pulsa dos veces para salir",
     },
     daemon: {
       lifecycle: en.desktop.daemon.lifecycle,
@@ -1957,6 +2061,40 @@ export const es: TranslationResources = {
     shareFile: "compartir archivo",
     shareFileNamed: "Compartir{{fileName}}",
   },
+  offlineFiles: {
+    title: "Archivos sin conexión",
+    autoSave: {
+      label: "Guardar archivos del chat automáticamente",
+      description:
+        "Guarda los archivos mencionados en los chats que abres, solo con Wi-Fi, para abrirlos cuando el host no está conectado.",
+    },
+    retentionDays: {
+      label: "Conservar (días)",
+      description: "Se eliminan los archivos guardados más antiguos.",
+    },
+    maxTotalMb: {
+      label: "Límite de almacenamiento (MB)",
+      description: "Al superar este tamaño se eliminan los archivos más antiguos.",
+    },
+    maxFileMb: {
+      label: "Archivo más grande (MB)",
+      description: "Los archivos más grandes no se guardan.",
+    },
+    saved: {
+      label: "Guardados: {{count}} archivos, {{size}}",
+      description: "Abajo aparecen los archivos guardados más recientes.",
+    },
+    clearAll: "Borrar todo",
+    clearConfirmTitle: "¿Borrar los archivos sin conexión?",
+    clearConfirmMessage:
+      "Las copias guardadas se eliminan de este dispositivo. Los archivos del host no cambian.",
+    saveOffline: "Guardar sin conexión",
+    savedToast: "Guardado para usar sin conexión",
+    tooLarge: "El archivo supera el límite de {{size}} MB para archivos sin conexión.",
+    readOnly: "Es una copia guardada. Conéctate al host para editarla.",
+    savedAgo: "Copia sin conexión, guardada {{time}}",
+    share: "Compartir",
+  },
   menu: {
     backdrop: "Fondo del menú",
   },
@@ -1981,6 +2119,8 @@ export const es: TranslationResources = {
     archiveTooltip: "Subagente de archivo",
     archiveFinishedAction: "Archivar subagentes finalizados",
     archiveFinishedRetry: "Reintentar ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "Archivar finalizados ({{count}})",
+    archiveFinishedProgress: "Archivando {{completed}}/{{total}}",
   },
   panels: {
     draft: {
@@ -2140,6 +2280,186 @@ export const es: TranslationResources = {
       saveAccessibility: "Guardar comentario de revisión",
     },
   },
+  ompAccountRouting: {
+    login: {
+      start: "Añadir cuenta de Claude",
+      elsewhere: "Abre Paseo en el ordenador anfitrión para añadir una cuenta.",
+      update: "Actualiza Paseo y Oh My Pi en el anfitrión para añadir cuentas aquí.",
+      inProgress: "Inicio de sesión en curso",
+      continue: "Continuar",
+      cancel: "Cancelar",
+      cancelSignIn: "Cancelar inicio de sesión",
+      done: "Listo",
+      details: "Detalles",
+      tryAgain: "Reintentar",
+      close: "Cerrar",
+      justAdded: "Recién añadida",
+      warning: {
+        body: "Paseo guarda un inicio de sesión por cada cuenta de Claude. Inicia sesión en claude.ai con la cuenta que quieres añadir.",
+        existing: "Ya añadidas: {{accounts}}",
+        alertTitle: "Comprueba qué cuenta usa tu navegador",
+        alertDescription:
+          "Si claude.ai sigue con la sesión de una cuenta ya añadida, cierra sesión o cambia de cuenta antes. Una ventana privada siempre empieza sin sesión.",
+        guard: "Si inicias sesión con una cuenta ya añadida, Paseo se detiene y no cambia nada.",
+      },
+      preparing: "Preparando el enlace de inicio de sesión...",
+      link: {
+        title: "Iniciar sesión en Claude",
+        step: "Abre el enlace e inicia sesión con la cuenta que quieres añadir",
+        open: "Abrir página de inicio de sesión",
+        copy: "Copiar enlace",
+        copied: "Copiado",
+        label: "Enlace de inicio de sesión",
+        hint: "Para usar una ventana privada u otro dispositivo, copia el enlace",
+        waiting: "Esperando al navegador...",
+        pasteInstead: "Pegar la dirección",
+      },
+      paste: {
+        label: "Dirección o código",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "Tras aprobar, el navegador puede mostrar una página que no carga. Copia la dirección completa de la barra de direcciones, o el código que muestra Claude, y pégala aquí.",
+        submit: "Enviar",
+        checking: "Comprobando...",
+        error: {
+          invalid_input: "Eso no es una dirección ni un código de inicio de sesión",
+          wrong_login:
+            "Esa dirección pertenece a un enlace anterior. Usa el enlace que se muestra aquí.",
+          not_waiting: "Este inicio de sesión ya terminó",
+          not_allowed: "Solo Paseo en el ordenador anfitrión puede enviar esto",
+          unreachable: "No se pudo contactar con el anfitrión. Inténtalo de nuevo.",
+        },
+      },
+      verifying: "Comprobando el inicio de sesión...",
+      result: {
+        added: {
+          title: "Añadida {{account}}",
+          titleUnnamed: "Cuenta añadida",
+          description: "{{organization}}. El enrutamiento automático ya puede usarla.",
+          descriptionUnnamed: "El enrutamiento automático ya puede usarla.",
+          billingEnabled:
+            "El uso extra de pago está activado en esta cuenta. El enrutamiento automático la omite hasta que lo desactives en los ajustes de Claude.",
+          billingUnknown:
+            "Asegúrate de que el uso extra de pago esté desactivado para esta cuenta en los ajustes de Claude. El enrutamiento automático omite las cuentas que lo tienen activado.",
+        },
+        alreadyListed: {
+          title: "{{account}} ya está añadida",
+          titleUnnamed: "Esa cuenta ya está añadida",
+          description:
+            "No cambió nada. Tu navegador inició sesión con una cuenta que Paseo ya tiene. Cierra sesión en claude.ai o usa una ventana privada y vuelve a intentarlo.",
+        },
+        replaced: {
+          title: "Inicio de sesión reemplazado para {{account}}",
+          titleUnnamed: "Inicio de sesión guardado reemplazado",
+          description: "No se añadió ninguna cuenta. Se usa el nuevo inicio de sesión.",
+        },
+        failed: "Falló el inicio de sesión",
+        cancelled: "Inicio de sesión cancelado",
+      },
+      failure: {
+        timeout: "El enlace de inicio de sesión caducó tras 10 minutos. No cambió nada.",
+        omp_failed:
+          "Oh My Pi no pudo terminar el inicio de sesión. No cambió nada. Inténtalo de nuevo, o ejecuta omp en una terminal y escribe /login.",
+        spawn_failed: "Paseo no pudo iniciar Oh My Pi en este ordenador.",
+        unreachable:
+          "Se perdió el contacto con el anfitrión. Cuando se reconecte, revisa la lista de cuentas antes de reintentar.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Se aplica a todos los agentes OMP gestionados por Paseo en este host. Otros hosts y terminales independientes no cambian.",
+      account: "Cuenta",
+      automatic: "Automática",
+      useForAuto: "Usar en el enrutamiento automático",
+      auto: "Enrutamiento automático",
+      priority: "Prioridad de reserva",
+      priorityHelp:
+        "Cuando la cuenta actual se agota, Paseo cambia a la cuenta incluida con más uso disponible. Este orden desempata.",
+      addAccountHint:
+        "Para añadir una cuenta, ejecuta omp en una terminal, escribe /login e inicia sesión con otra cuenta de Claude.",
+      current: "Seleccionada",
+      serving: "En uso",
+      lastServed: "Último uso",
+      excluded: "Excluida del enrutamiento automático",
+      missing: "Cuenta guardada no disponible",
+      fiveHour: "5 horas",
+      weekly: "Semanal",
+      tier: "Nivel de suscripción",
+      unknownTier: "Nivel de suscripción desconocido",
+      unknownBudget: "Límite absoluto desconocido",
+      consumed: "Consumido",
+      remaining: "Restante",
+      stale: "Observación desactualizada",
+      unknownOrganization: "Organización desconocida",
+      detailsPending: "Los detalles aparecen cuando un agente de Oh My Pi está en ejecución",
+      search: "Buscar cuentas",
+    },
+    actions: {
+      moveUp: "Subir",
+      moveDown: "Bajar",
+    },
+    status: {
+      loading: "Cargando el enrutamiento de cuentas",
+      empty: "No se han observado cuentas de Claude",
+      noRuntime: "Las cuentas aparecen cuando hay un agente de Oh My Pi en ejecución.",
+      unsupported:
+        "Este host no ha verificado la compatibilidad con el enrutamiento de cuentas de OMP",
+      offline: "Host sin conexión; se muestran los últimos ajustes confirmados",
+      readOnly: "Puedes ver estos ajustes, pero no cambiarlos",
+      pending: "Guardando ajustes",
+      conflict: "Los ajustes cambiaron en otro lugar; se muestra el último estado confirmado",
+      paused: "Esperando una cuenta incluida disponible",
+      recovered: "Cuenta incluida disponible",
+      unknownUsage: "Uso desconocido",
+      summaryPaused: "En pausa: ninguna cuenta incluida tiene uso disponible.",
+      summaryPausedResumes:
+        "En pausa: ninguna cuenta incluida tiene uso disponible. Se reanuda {{time}}",
+      summaryUsing: "Usando {{account}}",
+      summaryAuto: "El modo automático elige la cuenta con más uso disponible",
+    },
+    reason: {
+      no_account: "No hay ninguna cuenta seleccionada",
+      source_changed: "Cambió el origen de credenciales nativo seleccionado",
+      source_inaccessible:
+        "Este entorno de ejecución no puede acceder a la cuenta nativa seleccionada",
+      billing_enabled:
+        "Los créditos de uso de pago están activados; el enrutamiento solo con uso incluido no puede usar esta cuenta",
+      billing_unknown: "Los ajustes de créditos de uso de pago no se han verificado recientemente",
+      quota_blocked: "El uso incluido no está disponible para esta solicitud",
+      entitlement_unavailable:
+        "El acceso al modelo no está disponible o no se ha verificado para esta cuenta",
+      auth_unavailable: "La autenticación de la cuenta nativa no está disponible",
+      unsupported_transport:
+        "Este transporte del proveedor no admite el enrutamiento solo con uso incluido",
+      unsupported_runtime: "Este entorno de ejecución de OMP no admite el enrutamiento gestionado",
+      persistence_failed: "No se pudieron guardar los ajustes de enrutamiento",
+      host_unavailable: "Host de enrutamiento no disponible",
+      cancelled: "Solicitud cancelada",
+      metadata_pending: "Verificando la disponibilidad de la cuenta",
+      all_unavailable: "Ninguna cuenta incluida está disponible ahora",
+      auto_disabled:
+        "El enrutamiento automático está desactivado; selecciona una cuenta o actívalo para continuar",
+      provider_failed: "No se pudo verificar la disponibilidad de la cuenta",
+    },
+    mutationError: {
+      conflict:
+        "Los ajustes cambiaron en otro lugar; revisa el último estado antes de volver a intentarlo",
+      invalid_account: "Esa cuenta nativa ya no está en el catálogo",
+      unsupported: "Los controles de enrutamiento de cuentas no están disponibles en este host",
+      persistence_failed:
+        "No se guardaron los ajustes; se mantienen los últimos ajustes confirmados",
+    },
+    values: {
+      used: "{{percent}}% usado",
+      reset: "se restablece {{time}}",
+      observed: "observado {{time}}",
+      limitReached: "Límite {{window}} alcanzado",
+      limitReachedReset: "Límite {{window}} alcanzado · se restablece {{time}}",
+      account: "Cuenta {{row}}",
+      serving: "{{account}} está atendiendo a {{agent}}",
+      priority: "Prioridad {{position}}",
+    },
+  },
   providerUsage: {
     checkUsage: "Consultar uso",
     checkUsageHint: "Se aplica a {{host}} en todos los dispositivos",
@@ -2210,6 +2530,169 @@ export const es: TranslationResources = {
       hoursAgo: "hace {{value}} h",
       minutesAgo: "hace {{value}} min",
       updated: "Actualizado {{relativeTime}}",
+    },
+  },
+  notes: {
+    addNote: "Añadir nota",
+    offline: "Este host está desconectado.",
+    unsupported: "Actualiza este host para usar notas.",
+    marker: {
+      open: "{{count}} notas",
+      open_one: "{{count}} nota",
+      open_other: "{{count}} notas",
+      waiting: "{{count}} notas en espera",
+      waiting_one: "{{count}} nota en espera",
+      waiting_other: "{{count}} notas en espera",
+      fired: "{{count}} notas activadas",
+      fired_one: "{{count}} nota activada",
+      fired_other: "{{count}} notas activadas",
+      resolved: "{{count}} notas resueltas",
+      resolved_one: "{{count}} nota resuelta",
+      resolved_other: "{{count}} notas resueltas",
+    },
+    composer: {
+      titleNew: "Nueva nota",
+      titleEdit: "Editar nota",
+      quoteLabel: "Texto resaltado",
+      showMore: "Mostrar más",
+      showLess: "Mostrar menos",
+      textLabel: "Nota",
+      textPlaceholder: "¿Qué quieres recordar?",
+      kind: {
+        label: "Tipo",
+        note: "Nota",
+        waiting: "Esperando a",
+      },
+      event: {
+        label: "Esperando a",
+        agent: "Agente",
+        command: "Comando",
+        time: "Hora",
+      },
+      agent: {
+        label: "Cuando el agente termine o necesite una respuesta",
+        placeholder: "Elige un agente",
+        empty: "No hay agentes en este host",
+        search: "Buscar agentes",
+        untitled: "Agente sin título",
+      },
+      command: {
+        terminalLabel: "El comando termina en",
+        placeholder: "Elige una terminal",
+        empty: "No hay terminales en este host",
+        search: "Buscar terminales",
+        untitled: "Terminal",
+        binding:
+          "Se vincula al comando en ejecución o al siguiente. Requiere una terminal de Paseo con zsh o bash.",
+        conditionLabel: "Notificar cuando",
+        any: "Cualquiera",
+        success: "Tenga éxito",
+        failure: "Falle",
+        commandLabel: "Comando",
+        commandPlaceholder: "Etiqueta opcional",
+      },
+      time: {
+        label: "Recordarme",
+        presets: {
+          in30m: "En 30 min",
+          in1h: "En 1 hora",
+          in2h: "En 2 horas",
+          tomorrow9: "Mañana a las 9:00",
+        },
+        inputLabel: "O escribe una hora",
+        inputPlaceholder: "3pm, en 45 min, mañana 9am",
+        invalid: "No se pudo interpretar esa hora",
+        resolvedToday: "Hoy a las {{time}}",
+        resolvedTomorrow: "Mañana a las {{time}}",
+        resolvedOther: "{{date}} a las {{time}}",
+      },
+      actions: {
+        cancel: "Cancelar",
+        add: "Añadir nota",
+        save: "Guardar",
+        resolve: "Resolver",
+        reopen: "Reabrir",
+        delete: "Eliminar",
+      },
+      deleteConfirm: {
+        title: "Eliminar nota",
+        message: "¿Eliminar esta nota? Esta acción no se puede deshacer.",
+        confirm: "Eliminar",
+      },
+      errors: {
+        save: "No se pudo guardar la nota: {{message}}",
+        update: "No se pudo actualizar la nota: {{message}}",
+        delete: "No se pudo eliminar la nota: {{message}}",
+      },
+    },
+    screen: {
+      title: "Notas",
+      loadError: "{{host}}: No se pudieron cargar las notas",
+      unsupportedHosts_one: "{{hosts}} necesita una actualización para mostrar notas",
+      unsupportedHosts_other: "{{hosts}} necesitan una actualización para mostrar notas",
+      filters: {
+        all: "Todas",
+        waiting: "En espera",
+        open: "Abiertas",
+        resolved: "Resueltas",
+      },
+      empty: {
+        all: "Aún no hay notas",
+        allHint: "Resalta texto en un chat o terminal para añadir una nota",
+        waiting: "Nada en espera",
+        open: "No hay notas abiertas",
+        resolved: "No hay notas resueltas",
+      },
+      source: {
+        agent: "Agente",
+        terminal: "Terminal",
+      },
+      wait: {
+        agent: "Esperando a que {{agent}} termine",
+        agentUnnamed: "Esperando a que el agente termine",
+        commandAny: "Esperando a que el comando termine",
+        commandSuccess: "Esperando a que el comando tenga éxito",
+        commandFailure: "Esperando a que el comando falle",
+        namedCommandAny: "Esperando a que {{command}} termine",
+        namedCommandSuccess: "Esperando a que {{command}} tenga éxito",
+        namedCommandFailure: "Esperando a que {{command}} falle",
+        timeToday: "Recordatorio a las {{time}}",
+        timeTomorrow: "Recordatorio mañana a las {{time}}",
+        timeOther: "Recordatorio {{date}} a las {{time}}",
+        inMinutes: "en {{count}} min",
+        inHours: "en {{count}} h",
+        inDays: "en {{count}} d",
+      },
+      status: {
+        waiting: "En espera",
+        done: "Listo",
+        resolved: "Resuelta",
+        unmatched: "Sin coincidencia",
+      },
+      actions: {
+        menu: "Acciones de la nota",
+        edit: "Editar nota",
+        resolve: "Resolver",
+        reopen: "Reabrir",
+        resolving: "Resolviendo...",
+        reopening: "Reabriendo...",
+        delete: "Eliminar nota",
+        deleting: "Eliminando...",
+      },
+      deleteConfirm: {
+        title: "Eliminar nota",
+        message: "¿Eliminar esta nota? Esta acción no se puede deshacer.",
+        confirm: "Eliminar",
+      },
+      openFailed: "Esta terminal ya no está abierta",
+    },
+    chat: {},
+    terminal: {
+      quoteNotFound: "El texto de esta nota ya no está en el historial de la terminal.",
+    },
+    alerts: {
+      reminderTitle: "Listo: {{text}}",
+      reminderBody: "Recordatorio",
     },
   },
   settings: {
@@ -2387,12 +2870,14 @@ export const es: TranslationResources = {
       defaultSend: {
         label: "Envío predeterminado",
         descriptions: {
-          interrupt:
-            "Cuando el agente se está ejecutando, Enter interrumpe. Command/Ctrl+Enter pone en cola.",
-          steer:
-            "Cuando el agente se está ejecutando, Enter dirige el turno activo. Command/Ctrl+Enter pone en cola.",
-          queue:
-            "Cuando el agente se está ejecutando, Enter pone en cola. Command/Ctrl+Enter envía.",
+          interrupt: "Cuando el agente se está ejecutando, Enter interrumpe.",
+          steer: "Cuando el agente se está ejecutando, Enter dirige el turno activo.",
+          queue: "Cuando el agente se está ejecutando, Enter pone en cola.",
+        },
+        touchDescriptions: {
+          interrupt: "Cuando el agente se está ejecutando, tocar Enviar interrumpe.",
+          steer: "Cuando el agente se está ejecutando, tocar Enviar dirige el turno activo.",
+          queue: "Cuando el agente se está ejecutando, tocar Enviar pone en cola.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2408,6 +2893,24 @@ export const es: TranslationResources = {
           queue: "Cola",
         },
       },
+      alternateSend: {
+        label: "Envío alternativo",
+        descriptions: {
+          interrupt:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter o mantener pulsado Enviar interrumpe.",
+          steer:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter o mantener pulsado Enviar dirige el turno activo.",
+          queue:
+            "Cuando el agente se está ejecutando, {{modifier}}+Enter o mantener pulsado Enviar pone en cola.",
+        },
+        longPressDescriptions: {
+          interrupt: "Cuando el agente se está ejecutando, mantener pulsado Enviar interrumpe.",
+          steer:
+            "Cuando el agente se está ejecutando, mantener pulsado Enviar dirige el turno activo.",
+          queue: "Cuando el agente se está ejecutando, mantener pulsado Enviar pone en cola.",
+        },
+      },
+      defaultEditor: "Editor predeterminado",
       sendShortcut: {
         label: "Atajo de envío",
         options: {
@@ -2545,6 +3048,81 @@ export const es: TranslationResources = {
         },
         moveUp: "Mover hacia arriba",
         moveDown: "Mover hacia abajo",
+      },
+      background: {
+        title: "Fondo",
+        applyTo: {
+          title: "Aplicar a",
+          options: {
+            both: "Ambos",
+            light: "Claro",
+            dark: "Oscuro",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Imágenes de fondo",
+          none: "Ninguno",
+          addImage: "Añadir imagen…",
+          importDefaultName: "Imagen",
+        },
+        menu: {
+          actions: "Acciones para {{name}}",
+          edit: "Editar…",
+          delete: "Eliminar",
+          details: "Detalles",
+        },
+        undo: {
+          action: "Deshacer",
+          accessibilityLabel: "Deshacer cambio de fondo",
+        },
+        catalog: {
+          browse: "Explorar",
+          hint: "Instala más fondos desde este complemento",
+        },
+        visibility: {
+          title: "Visibilidad de la imagen",
+          hint: "Incluso al 100 %, Paseo limita la imagen para que el texto siga siendo legible, así que las imágenes claras se ven menos.",
+        },
+        blur: {
+          title: "Desenfoque",
+          off: "Desactivado",
+          value: "{{radius}} px",
+        },
+        showBehindSidebar: "Mostrar detrás de la barra lateral",
+        showBehindContent: "Mostrar detrás del contenido",
+        status: {
+          reducedTransparency:
+            "Oculto porque Reducir transparencia está activado en los ajustes del sistema",
+          forcedColors: "Oculto mientras el modo de alto contraste está activado",
+          error: "No se pudo mostrar el fondo",
+        },
+        errors: {
+          select: "No se pudo aplicar el fondo: {{message}}",
+          import: "No se pudo importar la imagen: {{message}}",
+          update: "No se pudieron guardar los cambios: {{message}}",
+          remove: "No se pudo eliminar el fondo: {{message}}",
+        },
+        edit: {
+          title: "Editar fondo",
+          name: "Nombre",
+          focal: "Punto focal",
+          focalHint: "Toca la parte de la imagen que debe mantenerse visible.",
+          focalAccessibility: "Elegir punto focal",
+          save: "Guardar",
+          saving: "Guardando…",
+        },
+        delete: {
+          title: '¿Eliminar "{{name}}"?',
+          message: "Esto elimina la imagen de este dispositivo.",
+          confirm: "Eliminar",
+        },
+        details: {
+          title: "Detalles",
+          author: "Autor",
+          license: "Licencia",
+          source: "Origen",
+          openSource: "Abrir origen",
+        },
       },
       fonts: {
         title: "Fuentes",
@@ -2808,6 +3386,10 @@ export const es: TranslationResources = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Estilo predeterminado",
+          hint: "Los proveedores pueden cambiarlo",
+        },
         unavailable: "Connect to this host to manage agents",
         resumeOnStartup: {
           title: "Reanudar agentes tras reiniciar",
@@ -2816,6 +3398,15 @@ export const es: TranslationResources = {
           prompt: "Mensaje de reanudación",
           edit: "Editar",
           editAccessibilityLabel: "Editar mensaje",
+        },
+        draftHistory: {
+          title: "Historial de borradores",
+          hint_one:
+            "Los borradores eliminados o sobrescritos se guardan {{count}} día para que puedas restaurarlos desde el editor.",
+          hint_other:
+            "Los borradores eliminados o sobrescritos se guardan {{count}} días para que puedas restaurarlos desde el editor.",
+          days_one: "{{count}} d",
+          days_other: "{{count}} d",
         },
         idleRuntimeCleanup: {
           title: "Liberar agentes inactivos",
@@ -3011,6 +3602,9 @@ export const es: TranslationResources = {
         discovered: "descubierto",
         custom: "Modelos personalizados",
         updated: "{{time}}actualizado",
+        disabledCount: "{{count}} desactivados",
+        toggleModel: "Activar {{model}}",
+        failedToToggle: "No se pudo actualizar {{model}}",
       },
       diagnostic: {
         title: "Diagnóstico",
@@ -3026,6 +3620,12 @@ export const es: TranslationResources = {
         none: "No hay diagnóstico disponible",
         failedToFetch: "No se pudo recuperar el diagnóstico",
         unknownError: "Error desconocido",
+      },
+      featureDefaults: {
+        title: "Valores predeterminados para nuevos agentes",
+        providerDefault: "Predeterminado del proveedor",
+        on: "Activado",
+        off: "Desactivado",
       },
     },
     project: {

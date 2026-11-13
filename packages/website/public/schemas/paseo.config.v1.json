@@ -489,6 +489,13 @@
                   "required": ["id", "label"]
                 }
               },
+              "disabledModels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
               "disallowedTools": {
                 "type": "array",
                 "items": {
@@ -507,6 +514,113 @@
                       "type": "string"
                     }
                   }
+                }
+              },
+              "featureDefaults": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "mcpServers": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "stdio"
+                        },
+                        "command": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "env": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "alwaysLoad": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["type", "command"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "http"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "headers": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "alwaysLoad": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["type", "url"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "sse"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "headers": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "alwaysLoad": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["type", "url"]
+                    }
+                  ]
                 }
               },
               "enabled": {
@@ -556,6 +670,54 @@
                 "required": ["provider"],
                 "additionalProperties": false
               }
+            }
+          },
+          "additionalProperties": false
+        },
+        "featureDefaults": {
+          "description": "Feature values every new agent starts with, e.g. { \"output_style\": \"Concise\" }. A provider's own featureDefaults win.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "askAgent": {
+          "type": "object",
+          "properties": {
+            "maxRounds": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxOpenThreads": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idleTimeoutMs": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 2147483647
+            },
+            "replyCharLimit": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "replyStoreChars": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           "additionalProperties": false

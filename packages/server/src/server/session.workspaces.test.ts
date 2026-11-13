@@ -4,6 +4,7 @@ import {
 } from "./workspace-runtime-store/index.js";
 import { createAgentMessageDeliveryStub } from "./test-utils/session-stubs.js";
 import {
+  createAgentMessageQueueStub,
   createMessageReceiptsStub,
   createTestCreationService,
 } from "./test-utils/session-stubs.js";
@@ -371,6 +372,8 @@ function makeManagedAgent(input: {
     activeForegroundTurnId: input.lifecycle === "running" ? "turn-1" : null,
     activeTurnId: input.activeTurn?.turnId ?? null,
     activeTurnStartedAt: input.activeTurn ? new Date(input.activeTurn.startedAt) : null,
+    queuedMessages: [],
+    queuePaused: false,
   };
 }
 
@@ -660,6 +663,7 @@ function createSessionForWorkspaceTests(
     new Session({
       workspaceRuntimeStore: options.workspaceRuntimeStore ?? createWorkspaceRuntimeStore(),
       messageReceipts: createMessageReceiptsStub(),
+      agentMessageQueue: createAgentMessageQueueStub(),
       agentMessages: createAgentMessageDeliveryStub(),
       creationService: createTestCreationService(),
       clientId: "test-client",
@@ -1024,6 +1028,7 @@ test("create_agent_request keeps requested child cwd when grouped under an exist
       new Session({
         workspaceRuntimeStore: createWorkspaceRuntimeStore(),
         messageReceipts: createMessageReceiptsStub(),
+        agentMessageQueue: createAgentMessageQueueStub(),
         agentMessages: createAgentMessageDeliveryStub(),
         creationService: createTestCreationService(),
         clientId: "test-client",
@@ -1181,6 +1186,7 @@ test("create_agent_request launches from an exact subdirectory in a created work
     const session = new Session({
       workspaceRuntimeStore: createWorkspaceRuntimeStore(),
       messageReceipts: createMessageReceiptsStub(),
+      agentMessageQueue: createAgentMessageQueueStub(),
       agentMessages: createAgentMessageDeliveryStub(),
       creationService: createTestCreationService(),
       clientId: "test-client",
@@ -1322,6 +1328,7 @@ test("create_agent_request does not title an existing workspace from the agent p
       new Session({
         workspaceRuntimeStore: createWorkspaceRuntimeStore(),
         messageReceipts: createMessageReceiptsStub(),
+        agentMessageQueue: createAgentMessageQueueStub(),
         agentMessages: createAgentMessageDeliveryStub(),
         creationService: createTestCreationService(),
         clientId: "test-client",
@@ -1723,6 +1730,7 @@ test("archive emits an authoritative agent_update upsert for subscribed clients"
     new Session({
       workspaceRuntimeStore: createWorkspaceRuntimeStore(),
       messageReceipts: createMessageReceiptsStub(),
+      agentMessageQueue: createAgentMessageQueueStub(),
       agentMessages: createAgentMessageDeliveryStub(),
       creationService: createTestCreationService(),
       clientId: "test-client",
@@ -1916,6 +1924,76 @@ test("workspace clear attention clears stored-only agents and responds", async (
   expect(agentUpdate.payload.kind).toBe("upsert");
   if (agentUpdate.payload.kind === "upsert") {
     expect(agentUpdate.payload.agent.requiresAttention).toBe(false);
+  }
+});
+
+test("workspace clear attention dismisses a stored failed agent that was already read", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: REPO_CWD,
+    projectId: REPO_CWD,
+    cwd: REPO_CWD,
+    kind: "directory",
+    displayName: "repo",
+    createdAt: "2026-03-30T15:00:00.000Z",
+    updatedAt: "2026-03-30T15:00:00.000Z",
+  });
+  const project = createPersistedProjectRecord({
+    projectId: REPO_CWD,
+    rootPath: REPO_CWD,
+    kind: "non_git",
+    displayName: "repo",
+    createdAt: "2026-03-30T15:00:00.000Z",
+    updatedAt: "2026-03-30T15:00:00.000Z",
+  });
+  // Viewing the chat already cleared attention; lifecycle `error` alone keeps the row red.
+  let storedRecord: StoredAgentRecord = {
+    ...makeStoredAgent({
+      id: "stored-agent-1",
+      cwd: REPO_CWD,
+      updatedAt: "2026-03-30T15:00:00.000Z",
+    }),
+    lastStatus: "error",
+    lastError: "boom",
+  };
+  const session = createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) });
+
+  session.workspaceRegistry.list = async () => [workspace];
+  session.workspaceRegistry.get = async (id: string) =>
+    id === workspace.workspaceId ? workspace : null;
+  session.projectRegistry.list = async () => [project];
+  session.projectRegistry.get = async (id: string) => (id === project.projectId ? project : null);
+  session.agentStorage.get = async (agentId: string) =>
+    agentId === storedRecord.id ? storedRecord : null;
+  session.agentStorage.upsert = async (record: unknown) => {
+    storedRecord = record as StoredAgentRecord;
+  };
+  session.listAgentPayloads = async () => [
+    makeAgent({
+      id: storedRecord.id,
+      cwd: storedRecord.cwd,
+      workspaceId: workspace.workspaceId,
+      status: storedRecord.lastStatus,
+      updatedAt: storedRecord.updatedAt,
+    }),
+  ];
+
+  await session.handleMessage({
+    type: "workspace.clear_attention.request",
+    workspaceId: workspace.workspaceId,
+    requestId: "req-1",
+  });
+
+  expect(storedRecord.lastStatus).toBe("idle");
+  expect(storedRecord.lastError).toBe("boom");
+  expect(findByType(emitted, "workspace.clear_attention.response").payload).toMatchObject({
+    clearedAgentIds: [storedRecord.id],
+    success: true,
+  });
+  const agentUpdate = findByType(emitted, "agent_update");
+  expect(agentUpdate.payload.kind).toBe("upsert");
+  if (agentUpdate.payload.kind === "upsert") {
+    expect(agentUpdate.payload.agent.status).toBe("idle");
   }
 });
 
@@ -2209,6 +2287,7 @@ test("close_items_request archives agents and kills terminals in one batch", asy
     new Session({
       workspaceRuntimeStore: createWorkspaceRuntimeStore(),
       messageReceipts: createMessageReceiptsStub(),
+      agentMessageQueue: createAgentMessageQueueStub(),
       agentMessages: createAgentMessageDeliveryStub(),
       creationService: createTestCreationService(),
       clientId: "test-client",
@@ -2381,6 +2460,7 @@ test("close_items_request archives stored agents that are not currently loaded",
     new Session({
       workspaceRuntimeStore: createWorkspaceRuntimeStore(),
       messageReceipts: createMessageReceiptsStub(),
+      agentMessageQueue: createAgentMessageQueueStub(),
       agentMessages: createAgentMessageDeliveryStub(),
       creationService: createTestCreationService(),
       clientId: "test-client",
@@ -2544,6 +2624,7 @@ test("close_items_request continues after an archive failure", async () => {
     new Session({
       workspaceRuntimeStore: createWorkspaceRuntimeStore(),
       messageReceipts: createMessageReceiptsStub(),
+      agentMessageQueue: createAgentMessageQueueStub(),
       agentMessages: createAgentMessageDeliveryStub(),
       creationService: createTestCreationService(),
       clientId: "test-client",
@@ -3803,6 +3884,7 @@ test("workspace update stream keeps persisted workspace visible after agents sto
     new Session({
       workspaceRuntimeStore: createWorkspaceRuntimeStore(),
       messageReceipts: createMessageReceiptsStub(),
+      agentMessageQueue: createAgentMessageQueueStub(),
       agentMessages: createAgentMessageDeliveryStub(),
       creationService: createTestCreationService(),
       clientId: "test-client",

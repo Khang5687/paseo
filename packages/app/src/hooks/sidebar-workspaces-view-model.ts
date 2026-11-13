@@ -55,6 +55,9 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   archiveUnpushedCommitCount: number | null;
   scripts: WorkspaceDescriptor["scripts"];
   hasRunningScripts: boolean;
+  // Subagents still working under a root agent that waits on the user. Zero while
+  // the row already shows running, since the spinner says the same thing.
+  workingSubagentCount: number;
 }
 
 export interface SidebarProjectEntry {
@@ -180,6 +183,8 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
+    workingSubagentCount:
+      effectiveStatus.status === "running" ? 0 : (input.workspace.runningSubagentCount ?? 0),
   };
 }
 

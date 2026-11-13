@@ -63,6 +63,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function inParent(agent: ManagedSubagentSnapshot): boolean {
+  return agent.parentAgentId === "parent";
+}
+
 describe("createArchiveFinishedSubagents", () => {
   it("dismisses provider rows before sequential managed archives and reports combined progress", async () => {
     const first = deferred<void>();
@@ -76,13 +80,14 @@ describe("createArchiveFinishedSubagents", () => {
     const archive = createArchiveFinishedSubagents(
       [provider("native"), paseo("first"), paseo("second", "error"), paseo("resumed")],
       {
-        parentAgentId: "parent",
+        isInScope: inParent,
         getManagedSubagent: ({ agentId: id }) => current.get(id),
         archiveManagedSubagent: ({ agentId: id }) => {
           events.push(`archive:${id}`);
           return id === "first" ? first.promise : second.promise;
         },
-        dismissProviderSubagents: (ids) => events.push(`dismiss:${ids.join(",")}`),
+        dismissProviderSubagents: (rows) =>
+          events.push(`dismiss:${rows.map((row) => row.id).join(",")}`),
       },
     );
     const progress: string[] = [];
@@ -130,7 +135,7 @@ describe("createArchiveFinishedSubagents", () => {
     const responses = [first.promise, second.promise, retry.promise];
     const calls: string[] = [];
     const archive = createArchiveFinishedSubagents([paseo("first"), paseo("second")], {
-      parentAgentId: "parent",
+      isInScope: inParent,
       getManagedSubagent: ({ agentId: id }) => current.get(id),
       archiveManagedSubagent: ({ agentId: id }) => {
         calls.push(id);
@@ -204,7 +209,7 @@ describe("createArchiveFinishedSubagents", () => {
       ["second", managed("second")],
     ]);
     const archive = createArchiveFinishedSubagents([paseo("first"), paseo("second")], {
-      parentAgentId: "parent",
+      isInScope: inParent,
       getManagedSubagent: ({ agentId: id }) => current.get(id),
       archiveManagedSubagent: async ({ agentId: id }) => {
         throw id === "first" ? firstError : secondError;
@@ -230,7 +235,7 @@ describe("createArchiveFinishedSubagents", () => {
   it("clears retry state when the authoritative failed child is running", async () => {
     const current = new Map([["failed", managed("failed")]]);
     const archive = createArchiveFinishedSubagents([paseo("failed")], {
-      parentAgentId: "parent",
+      isInScope: inParent,
       getManagedSubagent: ({ agentId: id }) => current.get(id),
       archiveManagedSubagent: async () => {
         current.set("failed", managed("failed", "running"));
@@ -256,7 +261,7 @@ describe("createArchiveFinishedSubagents", () => {
   it("clears retry state when the authoritative failed child is initializing", async () => {
     const current = new Map([["failed", managed("failed")]]);
     const archive = createArchiveFinishedSubagents([paseo("failed")], {
-      parentAgentId: "parent",
+      isInScope: inParent,
       getManagedSubagent: ({ agentId: id }) => current.get(id),
       archiveManagedSubagent: async () => {
         current.set("failed", managed("failed", "initializing"));
@@ -297,7 +302,7 @@ describe("createArchiveFinishedSubagents", () => {
       const error = new Error("archive failed");
       const current = new Map([["failed", managed("failed")]]);
       const archive = createArchiveFinishedSubagents([paseo("failed")], {
-        parentAgentId: "parent",
+        isInScope: inParent,
         getManagedSubagent: ({ agentId: id }) => current.get(id),
         archiveManagedSubagent: async () => {
           updateSnapshot(current);
@@ -325,7 +330,7 @@ describe("createArchiveFinishedSubagents", () => {
     ]);
     const calls: string[] = [];
     const archive = createArchiveFinishedSubagents([paseo("first"), paseo("second")], {
-      parentAgentId: "parent",
+      isInScope: inParent,
       getManagedSubagent: ({ agentId: id }) => current.get(id),
       archiveManagedSubagent: async ({ agentId: id }) => {
         calls.push(id);
@@ -384,7 +389,7 @@ describe("createArchiveFinishedSubagents", () => {
     ]);
     const archived: string[] = [];
     const archive = createArchiveFinishedSubagents(rows, {
-      parentAgentId: "parent",
+      isInScope: inParent,
       getManagedSubagent: ({ agentId: id }) => current.get(id),
       archiveManagedSubagent: async ({ agentId: id }) => {
         archived.push(id);
@@ -413,10 +418,10 @@ describe("createArchiveFinishedSubagents", () => {
     ]);
     const dismissed: string[][] = [];
     const archive = createArchiveFinishedSubagents([...descriptors.values()], {
-      parentAgentId: "parent",
+      isInScope: inParent,
       getManagedSubagent: () => undefined,
       archiveManagedSubagent: async () => undefined,
-      dismissProviderSubagents: (ids) => dismissed.push(ids),
+      dismissProviderSubagents: (rows) => dismissed.push(rows.map((row) => row.id)),
     });
 
     await expect(archive.archiveFinished()).resolves.toEqual({
@@ -429,5 +434,49 @@ describe("createArchiveFinishedSubagents", () => {
     expect(dismissed).toEqual([["finished"]]);
     expect(descriptors.get("finished")).toBe(finished);
     expect(descriptors.get("running")).toBe(running);
+  });
+
+  it("archives finished agents at every depth of a thread and skips running and foreign ones", async () => {
+    const threadIds = new Set(["child", "grandchild", "busy-child", "errored-grandchild"]);
+    const current = new Map([
+      ["child", managed("child", "idle", { parentAgentId: "root" })],
+      ["grandchild", managed("grandchild", "idle", { parentAgentId: "child" })],
+      ["busy-child", managed("busy-child", "running", { parentAgentId: "root" })],
+      [
+        "errored-grandchild",
+        managed("errored-grandchild", "error", { parentAgentId: "busy-child" }),
+      ],
+      ["foreign", managed("foreign", "idle", { parentAgentId: "elsewhere" })],
+    ]);
+    const ownedProvider = { ...provider("under-child"), parentAgentId: "child" };
+    const runningProvider = provider("still-going", "running");
+    const archived: string[] = [];
+    const dismissed: string[] = [];
+    const archive = createArchiveFinishedSubagents(
+      [
+        paseo("child"),
+        paseo("grandchild"),
+        paseo("busy-child", "running"),
+        paseo("errored-grandchild", "error"),
+        ownedProvider,
+        runningProvider,
+      ],
+      {
+        isInScope: (agent) => threadIds.has(agent.id),
+        getManagedSubagent: ({ agentId: id }) => current.get(id),
+        archiveManagedSubagent: async ({ agentId: id }) => {
+          archived.push(id);
+        },
+        dismissProviderSubagents: (rows) =>
+          dismissed.push(...rows.map((row) => `${row.parentAgentId}/${row.id}`)),
+      },
+    );
+
+    // Running rows never count toward the "Archive N finished subagents?" figure.
+    expect(archive.getState().eligibleCount).toBe(4);
+    await archive.archiveFinished();
+
+    expect(archived).toEqual(["child", "grandchild", "errored-grandchild"]);
+    expect(dismissed).toEqual(["child/under-child"]);
   });
 });

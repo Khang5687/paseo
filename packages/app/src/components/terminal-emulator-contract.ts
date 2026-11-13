@@ -15,6 +15,12 @@ import type { TerminalFile } from "../terminal/file-paste";
 import type { TerminalCharacterWidths } from "../terminal/character-widths";
 import type { PendingTerminalModifiers } from "../utils/terminal-keys";
 import type { TerminalRendererReadyChange } from "../utils/terminal-renderer-readiness";
+import type {
+  TerminalNoteHighlight,
+  TerminalNoteReveal,
+  TerminalSelectionAnchor,
+  TerminalSelectionNoteContext,
+} from "../terminal/notes/terminal-note-types";
 
 export interface TerminalEmulatorHandle {
   find?: TerminalFindHandle;
@@ -26,6 +32,10 @@ export interface TerminalEmulatorHandle {
   claimSize: () => void;
   showKeyboard: () => void;
   blur: () => void;
+  /** The selection an "Add note" draft quotes, or null without a selection. */
+  getSelectionNoteContext: () => TerminalSelectionNoteContext | null;
+  /** Scroll to a note's quote and select it; false when the buffer no longer holds it. */
+  revealNote: (input: TerminalNoteReveal) => boolean;
 }
 
 export interface TerminalEmulatorProps {
@@ -64,12 +74,23 @@ export interface TerminalEmulatorProps {
   onPendingModifiersConsumed?: () => Promise<void> | void;
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
   onSelectionChange?: (hasSelection: boolean) => void;
+  /** Web only: where the selection sits, for a floating action next to it. */
+  onSelectionAnchorChange?: (anchor: TerminalSelectionAnchor | null) => void;
+  /** Web only: notes drawn over their quotes. */
+  noteHighlights?: readonly TerminalNoteHighlight[];
+  /** Electron only: label of the context menu's "Add note" item; omitted hides the item. */
+  contextMenuAddNoteLabel?: string;
+  onContextMenuAddNote?: () => void;
   onResolveLocalFileLink?: (
     source: TerminalLocalFileLinkSource,
   ) => Promise<TerminalLocalFileLinkTarget | null> | TerminalLocalFileLinkTarget | null;
   onOpenLocalFileLink?: (
     target: TerminalLocalFileLinkTarget,
     disposition: "main" | "side",
+  ) => Promise<void> | void;
+  onLocalFileLinkContextMenu?: (
+    target: TerminalLocalFileLinkTarget,
+    point: { x: number; y: number },
   ) => Promise<void> | void;
   onRendererReadyChange?: (change: TerminalRendererReadyChange) => void;
   pendingModifiers?: PendingTerminalModifiers;

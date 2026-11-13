@@ -206,4 +206,4 @@ Z.AI 通过兼容 Anthropic 的端点提供 GLM 模型。把 `ANTHROPIC_BASE_URL
 
 ## 完整参考 {#full-reference}
 
-完整的字段参考（`extends`、`label`、`command`、`env`、`options`、`models`、`additionalModels`、`disallowedTools`、`paseoTools`、`enabled`、`order`）、模型和思考选项的 schema，以及每种套餐更深入的示例，请参见 GitHub 上的 [docs/custom-providers.md](https://github.com/getpaseo/paseo/blob/main/docs/custom-providers.md)。`paseoTools` 的配置见[按 Provider 限制 Paseo 工具](/docs/mcp#limit-paseo-tools-by-provider)。
+完整的字段参考（`extends`、`label`、`command`、`env`、`options`、`mcpServers`、`models`、`additionalModels`、`disallowedTools`、`paseoTools`、`enabled`、`order`）、模型和思考选项的 schema，以及每种套餐更深入的示例，请参见 GitHub 上的 [docs/custom-providers.md](https://github.com/getpaseo/paseo/blob/main/docs/custom-providers.md)。`paseoTools` 的配置见[按 Provider 限制 Paseo 工具](/docs/mcp#limit-paseo-tools-by-provider)。

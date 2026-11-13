@@ -1,6 +1,7 @@
 import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import { createAgentMessageDeliveryStub } from "./test-utils/session-stubs.js";
 import {
+  createAgentMessageQueueStub,
   createMessageReceiptsStub,
   createTestCreationService,
 } from "./test-utils/session-stubs.js";
@@ -111,6 +112,8 @@ class InMemoryAgentManager {
       session: null,
       activeForegroundTurnId: null,
       labels: {},
+      queuedMessages: [],
+      queuePaused: false,
     };
   }
 
@@ -217,6 +220,7 @@ function createSessionForWireCompatTest(options?: {
   const session = new Session({
     workspaceRuntimeStore: createWorkspaceRuntimeStore(),
     messageReceipts: createMessageReceiptsStub(),
+    agentMessageQueue: createAgentMessageQueueStub(),
     agentMessages: createAgentMessageDeliveryStub(),
     creationService: createTestCreationService(),
     clientId: "wire-compat-client",

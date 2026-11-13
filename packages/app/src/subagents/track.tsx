@@ -56,7 +56,10 @@ const IDLE_ARCHIVE_FINISHED_STATUS: ArchiveFinishedStatus = { kind: "idle" };
 
 const ROW_ICON_SIZE = 14;
 
-function useRowPresentation(row: SubagentRow, serverId: string): WorkspaceTabPresentation {
+export function useSubagentRowPresentation(
+  row: SubagentRow,
+  serverId: string,
+): WorkspaceTabPresentation {
   const icon = useProviderIcon(row.provider, serverId);
   const data = buildSubagentRowPresentationData(row);
   return {
@@ -209,7 +212,7 @@ function SubagentsTrackRow({
   const isCompact = useIsCompactFormFactor();
   const rowServerId = row.kind === "paseo" ? row.address.serverId : serverId;
   const hostLabel = useHosts().find((host) => host.serverId === rowServerId)?.label ?? rowServerId;
-  const presentation = useRowPresentation(row, rowServerId);
+  const presentation = useSubagentRowPresentation(row, rowServerId);
   const displayLabel =
     presentation.titleState === "loading" ? t("common.states.loading") : presentation.label;
   const handlePress = useCallback(() => {

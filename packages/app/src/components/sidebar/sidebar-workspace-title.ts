@@ -20,6 +20,8 @@ export function resolveSidebarWorkspaceAccessibilityLabel(input: {
   hostBadgeLabel?: string | null;
   pullRequestLabel?: string | null;
   serviceLabel?: string | null;
+  hasUnsentDraft?: boolean;
+  noteLabels?: readonly string[];
   t: TFunction;
 }): string {
   return [
@@ -31,6 +33,8 @@ export function resolveSidebarWorkspaceAccessibilityLabel(input: {
     input.workspace.statusBucket === "done"
       ? null
       : getStatusBucketLabel(input.workspace.statusBucket, input.t),
+    input.hasUnsentDraft ? input.t("sidebar.unsentDraft") : null,
+    ...(input.noteLabels ?? []),
   ]
     .filter((label): label is string => Boolean(label))
     .join(", ");

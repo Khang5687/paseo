@@ -36,6 +36,7 @@ import { setImmediate as waitForImmediate, setTimeout as delay } from "node:time
 import { stripVTControlCharacters } from "node:util";
 
 const hasZsh = existsSync("/bin/zsh");
+const hasBash = existsSync("/bin/bash");
 
 type TerminalRow = TerminalState["grid"][number];
 
@@ -1218,6 +1219,46 @@ describe.skipIf(isPlatform("win32"))("terminal title", () => {
 
     unsubscribeCommandFinished();
   });
+
+  it.skipIf(!hasBash)(
+    "emits bash shell integration command completion and keeps the user's bashrc",
+    async () => {
+      const homeDir = mkdtempSync(join(tmpdir(), "terminal-bash-command-finished-home-"));
+      temporaryDirs.push(homeDir);
+      writeFileSync(
+        join(homeDir, ".bashrc"),
+        "PS1='$ '\nPROMPT_COMMAND='PASEO_USER_PROMPT_RAN=1;'\n",
+      );
+
+      const session = trackSession(
+        await createTerminal({
+          workspaceId: "ws-test",
+          cwd: homeDir,
+          shell: "/bin/bash",
+          // macOS bash prints a zsh migration banner above the first prompt otherwise.
+          env: { HOME: homeDir, BASH_SILENCE_DEPRECATION_WARNING: "1" },
+        }),
+      );
+      const commandCompletions: Array<number | null> = [];
+      const unsubscribeCommandFinished = session.onCommandFinished((info) => {
+        commandCompletions.push(info.exitCode);
+      });
+
+      await waitForLines(session, ["$"]);
+      session.send({ type: "input", data: "false\r" });
+      await waitForState(session, () => commandCompletions.length === 1);
+      session.send({ type: "input", data: "\r" });
+      session.send({ type: "input", data: "true && echo marker-$PASEO_USER_PROMPT_RAN\r" });
+      await waitForState(session, () => commandCompletions.length === 2);
+
+      expect(commandCompletions).toEqual([1, 0]);
+      const output = getLines(await readTerminalState(session)).join("\n");
+      expect(output).toContain("marker-1");
+      expect(output).not.toContain("633;");
+
+      unsubscribeCommandFinished();
+    },
+  );
 
   it("clears already scheduled OSC title debounce timers when setting a user title", async () => {
     const session = trackSession(
