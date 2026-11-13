@@ -41,6 +41,7 @@ import {
   MIN_FREE_GB,
   planBuilds,
 } from "./fork-build-lib.mjs";
+import { FEATURES_PATH, mergeFeatureRegistry } from "./fork-lib.mjs";
 
 const { values: args } = parseArgs({
   options: {
@@ -217,13 +218,30 @@ for (const pr of prs) {
       allowFail: true,
     }),
   );
-  if (!merge.ok) {
+  if (!merge.ok && !resolveRegistryOnlyConflict()) {
     git(["merge", "--abort"], { allowFail: true });
     skipped.push(`#${pr} ${info.headRefName}: conflicts with main${last ? ` after ${last}` : ""}`);
     continue;
   }
   merged.push(`#${pr} ${info.title}`);
   last = `#${pr}`;
+}
+
+// Every PR appends to the feature registry, so the second PR of a build always conflicts there.
+// When that file is the only conflict, merge it entry by entry and finish the merge commit.
+function resolveRegistryOnlyConflict() {
+  const conflicted = git(["diff", "--name-only", "--diff-filter=U"], { allowFail: true }).out;
+  if (conflicted !== FEATURES_PATH) return false;
+  const stage = (n) =>
+    spawnSync("git", ["show", `:${n}:${FEATURES_PATH}`], { cwd: root, encoding: "utf8" });
+  const [base, ours, theirs] = [1, 2, 3].map(stage);
+  if (![base, ours, theirs].every((side) => side.status === 0)) return false;
+  const text = mergeFeatureRegistry(base.stdout, ours.stdout, theirs.stdout);
+  if (text === null) return false;
+  writeFileSync(path.join(root, FEATURES_PATH), text);
+  git(["add", FEATURES_PATH]);
+  // Same as a clean merge: no pre-commit hook, the message git prepared from -m.
+  return git(["commit", "--quiet", "--no-verify", "--no-edit"], { allowFail: true }).ok;
 }
 if (merged.length > 0) summary.push(`- Merged: ${merged.join("; ")}.`);
 for (const line of skipped) summary.push(`- Skipped ${line}.`);

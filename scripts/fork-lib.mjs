@@ -10,6 +10,53 @@ export function loadFeatures(root) {
   return JSON.parse(readFileSync(path.join(root, FEATURES_PATH), "utf8"));
 }
 
+// Each top-level entry of the formatted registry: "  {" through "  }" at two-space indent.
+function featureBlocks(text) {
+  const blocks = new Map();
+  for (const match of text.matchAll(/^ {2}\{\n[\s\S]*?^ {2}\}/gm)) {
+    blocks.set(JSON.parse(match[0]).pr, match[0]);
+  }
+  return blocks;
+}
+
+function joinFeatureBlocks(blocks) {
+  return `[\n${[...blocks.values()].join(",\n")}\n]\n`;
+}
+
+/**
+ * Every PR appends its entry to the end of the registry, so two PRs merged in one build always
+ * conflict there. Merges the three sides entry by entry, keeping each entry's own text: ours in
+ * order, then entries only theirs has. Returns null when both sides changed the same entry
+ * differently, or a side is not in the formatter's layout (then the merge stays a conflict).
+ */
+export function mergeFeatureRegistry(base, ours, theirs) {
+  const sides = [base, ours, theirs].map(featureBlocks);
+  const [baseBlocks, oursBlocks, theirsBlocks] = sides;
+  for (const [index, text] of [ours, theirs].entries()) {
+    if (joinFeatureBlocks(sides[index + 1]) !== text) return null;
+  }
+  const merged = new Map(oursBlocks);
+  for (const [pr, block] of theirsBlocks) {
+    const own = oursBlocks.get(pr);
+    const was = baseBlocks.get(pr);
+    if (own === undefined) {
+      // Ours deleted an entry theirs left alone: stays deleted.
+      if (was === undefined) merged.set(pr, block);
+      else if (block !== was) return null;
+    } else if (own !== block) {
+      if (own === was) merged.set(pr, block);
+      else if (block !== was) return null;
+    }
+  }
+  for (const [pr, own] of oursBlocks) {
+    if (theirsBlocks.has(pr) || !baseBlocks.has(pr)) continue;
+    // Theirs deleted an entry ours left alone.
+    if (own !== baseBlocks.get(pr)) return null;
+    merged.delete(pr);
+  }
+  return joinFeatureBlocks(merged);
+}
+
 function activeFeatures(features) {
   return features.filter((feature) => feature.retired === undefined);
 }
