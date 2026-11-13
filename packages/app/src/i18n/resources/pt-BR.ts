@@ -742,6 +742,7 @@ export const ptBR: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "Abrir tarefa",
         workspaceActions: "Ações do workspace",
         workspaceActionsUnhealthy: "Ações do workspace, há um serviço com problema",
         newAgent: "Novo agente",

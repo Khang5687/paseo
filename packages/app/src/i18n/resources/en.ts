@@ -733,6 +733,7 @@ export const en = {
     },
     header: {
       actions: {
+        openTask: "Open task",
         workspaceActions: "Workspace actions",
         workspaceActionsUnhealthy: "Workspace actions, a service is unhealthy",
         newAgent: "New agent",

@@ -745,6 +745,7 @@ export const es: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "Abrir tarea",
         workspaceActions: "AccionesWorkspace",
         workspaceActionsUnhealthy: "Acciones del workspace, hay un servicio con problemas",
         newAgent: "Nuevo agente",

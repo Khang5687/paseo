@@ -745,6 +745,7 @@ export const fr: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "Ouvrir la tâche",
         workspaceActions: "Actions de l’espace de travail",
         workspaceActionsUnhealthy:
           "Actions de l’espace de travail, un service est en mauvaise santé",

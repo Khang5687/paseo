@@ -738,6 +738,7 @@ export const ko: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "작업 열기",
         workspaceActions: "워크스페이스 작업",
         workspaceActionsUnhealthy: "워크스페이스 작업, 비정상 서비스가 있습니다",
         newAgent: "새 에이전트",

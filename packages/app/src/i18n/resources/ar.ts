@@ -738,6 +738,7 @@ export const ar: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "فتح المهمة",
         workspaceActions: "إجراءات Workspace",
         workspaceActionsUnhealthy: "إجراءات Workspace، توجد خدمة غير سليمة",
         newAgent: "وكيل جديد",

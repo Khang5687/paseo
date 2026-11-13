@@ -745,6 +745,7 @@ export const ru: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "Открыть задачу",
         workspaceActions: "Действия с рабочим пространством",
         workspaceActionsUnhealthy: "Действия с рабочим пространством, есть неисправный сервис",
         newAgent: "Новый агент",

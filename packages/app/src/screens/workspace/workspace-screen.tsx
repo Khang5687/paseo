@@ -214,6 +214,8 @@ import {
   WorkspaceHeaderMenuMobile,
 } from "@/screens/workspace/workspace-header-menu";
 import { PluginHeaderButtons } from "@/plugins";
+import { useAgentTaskUrl } from "@/screens/workspace/agent-task-link";
+import { AgentTaskLinkButton } from "@/screens/workspace/agent-task-link-button";
 import {
   createWorkspaceFileTabTarget,
   normalizeWorkspaceFileLocation,
@@ -3181,9 +3183,11 @@ function WorkspaceScreenContent({
     workspaceKey: persistenceKey,
   });
 
+  const agentTaskUrl = useAgentTaskUrl(normalizedServerId, activeTabDescriptor);
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
+        {agentTaskUrl ? <AgentTaskLinkButton url={agentTaskUrl} /> : null}
         <PluginHeaderButtons serverId={normalizedServerId} workspaceId={normalizedWorkspaceId} />
         {workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
@@ -3223,6 +3227,7 @@ function WorkspaceScreenContent({
       </View>
     ),
     [
+      agentTaskUrl,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,
@@ -3396,6 +3401,7 @@ function WorkspaceScreenContent({
             normalizedServerId={normalizedServerId}
             normalizedWorkspaceId={normalizedWorkspaceId}
             scripts={compactHeaderScripts}
+            taskUrl={agentTaskUrl}
             currentBranchName={currentBranchName}
             showWorkspaceSetup={showWorkspaceSetup}
             showCreateBrowserTab={showCreateBrowserTab}
@@ -3413,6 +3419,7 @@ function WorkspaceScreenContent({
       ) : null,
     [
       activeTabKey,
+      agentTaskUrl,
       canOpenImportSheet,
       compactHeaderScripts,
       createTerminalDisabled,
