@@ -946,5 +946,10 @@
       "packages/server/src/terminal/terminal.test.ts",
       "packages/server/src/server/daemon-e2e/notes.e2e.test.ts"
     ]
+  },
+  {
+    "pr": 127,
+    "title": "docs(fork): build host setup and subagent spawning rules",
+    "untested": "docs only (CLAUDE.md fork workflow)"
   }
 ]
