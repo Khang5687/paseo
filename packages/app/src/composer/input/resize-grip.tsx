@@ -108,16 +108,15 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: isWeb ? "center" : "flex-start",
     ...(isWeb ? ({ cursor: "row-resize", touchAction: "none", userSelect: "none" } as object) : {}),
   },
-  // Same colour as the border it sits on, so at rest it reads as a thicker
-  // stretch of the edge rather than a separate control.
+  // Muted text colour, so the grip is easy to find without competing with the draft.
   grip: {
     width: 36,
     height: 4,
     marginTop: isWeb ? 0 : -1,
     borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.borderAccent,
+    backgroundColor: theme.colors.foregroundMuted,
   },
   gripActive: {
-    backgroundColor: theme.colors.foregroundMuted,
+    backgroundColor: theme.colors.foreground,
   },
 }));
