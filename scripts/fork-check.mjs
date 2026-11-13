@@ -41,6 +41,14 @@ const logDir = path.join(os.tmpdir(), `fork-check-${Date.now()}`);
 mkdirSync(logDir, { recursive: true });
 const progress = (message) => process.stderr.write(`[fork-check] ${message}\n`);
 
+// Test terminals run the user's real rc files. A .bashrc that attaches to tmux when it sees an
+// SSH session (common on a build host) would put every test terminal into the user's live tmux
+// session and type the tests' input there, so the checks never see an SSH session.
+const SSH_SESSION_VARS = new Set(["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]);
+const baseEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !SSH_SESSION_VARS.has(key)),
+);
+
 // Output goes straight to the log file, so a long step (the e2e run) can be followed with tail -f.
 function run(name, command, commandArgs, { cwd = ".", env = {} } = {}) {
   const logPath = path.join(logDir, `${name}.log`);
@@ -49,7 +57,7 @@ function run(name, command, commandArgs, { cwd = ".", env = {} } = {}) {
   const log = openSync(logPath, "w");
   const result = spawnSync(command, commandArgs, {
     cwd: path.join(root, cwd),
-    env: { ...process.env, ...env },
+    env: { ...baseEnv, ...env },
     stdio: ["ignore", log, log],
   });
   closeSync(log);
