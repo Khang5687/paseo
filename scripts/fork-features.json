@@ -950,6 +950,7 @@
   {
     "pr": 127,
     "title": "docs(fork): build host setup and subagent spawning rules",
-    "untested": "docs only (CLAUDE.md fork workflow)"
+    "untested": "docs only (CLAUDE.md fork workflow)",
+    "tests": []
   }
 ]
