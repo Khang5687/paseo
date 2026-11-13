@@ -204,7 +204,8 @@ for (const pr of prs) {
   const ref = `origin/${info.headRefName}`;
   if (dryRun) {
     // Each PR alone against origin/main; the real run merges them one after another.
-    const probe = git(["merge-tree", "--write-tree", "--quiet", "origin/main", ref], {
+    // No --quiet: git before 2.45 (Ubuntu 24.04 ships 2.43) rejects it; exit code 1 means conflicts.
+    const probe = git(["merge-tree", "--write-tree", "origin/main", ref], {
       allowFail: true,
     });
     if (probe.ok) merged.push(`#${pr} ${info.title} (would merge ${ref})`);
