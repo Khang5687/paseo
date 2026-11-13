@@ -1229,6 +1229,9 @@ describe.skipIf(isPlatform("win32"))("terminal title", () => {
         join(homeDir, ".bashrc"),
         "PS1='$ '\nPROMPT_COMMAND='PASEO_USER_PROMPT_RAN=1;'\n",
       );
+      // Ubuntu's /etc/bash.bashrc prints a sudo hint above the first prompt for sudo-group users
+      // whose home has neither .sudo_as_admin_successful nor .hushlogin.
+      writeFileSync(join(homeDir, ".hushlogin"), "");
 
       const session = trackSession(
         await createTerminal({

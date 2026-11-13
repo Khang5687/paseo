@@ -938,5 +938,13 @@
     "pr": 125,
     "title": "feat(app): select several sidebar workspaces and archive them at once",
     "tests": ["packages/app/src/stores/sidebar-selection-store/state.test.ts"]
+  },
+  {
+    "pr": 126,
+    "title": "test(server): silence Ubuntu sudo hint in the bash prompt tests",
+    "tests": [
+      "packages/server/src/terminal/terminal.test.ts",
+      "packages/server/src/server/daemon-e2e/notes.e2e.test.ts"
+    ]
   }
 ]
