@@ -910,5 +910,10 @@
       "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/composer-file-attachment-send.spec.ts"]
+  },
+  {
+    "pr": 124,
+    "title": "fix(fork): run build it on a Linux build host; the Mac fetches the Mac app",
+    "untested": "build scripts; Mac app cross-build checked by a real fork-mac-app run on the Omen and codesign + packaged smoke on the Mac (PR body)"
   }
 ]
