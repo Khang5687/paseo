@@ -1236,6 +1236,15 @@ export const ja: TranslationResources = {
     pinned: {
       title: "固定済み",
     },
+    selection: {
+      select: "選択",
+      count: "{{count}}件を選択中",
+      cancel: "キャンセル",
+      archiveTitle_one: "{{count}}個のワークスペースをアーカイブしますか？",
+      archiveTitle_other: "{{count}}個のワークスペースをアーカイブしますか？",
+      archiveFailed_one: "{{count}}個のワークスペースをアーカイブできませんでした",
+      archiveFailed_other: "{{count}}個のワークスペースをアーカイブできませんでした",
+    },
     host: {
       noHost: "ホストなし",
       switchTitle: "ホストを切り替え",

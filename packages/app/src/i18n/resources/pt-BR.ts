@@ -1248,6 +1248,15 @@ export const ptBR: TranslationResources = {
     pinned: {
       title: "Fixados",
     },
+    selection: {
+      select: "Selecionar",
+      count: "{{count}} selecionados",
+      cancel: "Cancelar",
+      archiveTitle_one: "Arquivar {{count}} workspace?",
+      archiveTitle_other: "Arquivar {{count}} workspaces?",
+      archiveFailed_one: "Não foi possível arquivar {{count}} workspace",
+      archiveFailed_other: "Não foi possível arquivar {{count}} workspaces",
+    },
     host: {
       noHost: "Nenhum host",
       switchTitle: "Trocar host",

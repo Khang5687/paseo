@@ -1258,6 +1258,15 @@ export const es: TranslationResources = {
     pinned: {
       title: "Anclados",
     },
+    selection: {
+      select: "Seleccionar",
+      count: "{{count}} seleccionados",
+      cancel: "Cancelar",
+      archiveTitle_one: "¿Archivar {{count}} espacio de trabajo?",
+      archiveTitle_other: "¿Archivar {{count}} espacios de trabajo?",
+      archiveFailed_one: "No se pudo archivar {{count}} espacio de trabajo",
+      archiveFailed_other: "No se pudieron archivar {{count}} espacios de trabajo",
+    },
     host: {
       noHost: "Sin anfitrión",
       switchTitle: "Cambiar de anfitrión",

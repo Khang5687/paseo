@@ -1230,6 +1230,15 @@ export const en = {
     pinned: {
       title: "Pinned",
     },
+    selection: {
+      select: "Select",
+      count: "{{count}} selected",
+      cancel: "Cancel",
+      archiveTitle_one: "Archive {{count}} workspace?",
+      archiveTitle_other: "Archive {{count}} workspaces?",
+      archiveFailed_one: "Couldn't archive {{count}} workspace",
+      archiveFailed_other: "Couldn't archive {{count}} workspaces",
+    },
     host: {
       noHost: "No host",
       switchTitle: "Switch host",

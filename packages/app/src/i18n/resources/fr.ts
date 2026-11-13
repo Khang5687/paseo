@@ -1252,6 +1252,15 @@ export const fr: TranslationResources = {
     pinned: {
       title: "Épinglés",
     },
+    selection: {
+      select: "Sélectionner",
+      count: "Sélection : {{count}}",
+      cancel: "Annuler",
+      archiveTitle_one: "Archiver {{count}} espace de travail ?",
+      archiveTitle_other: "Archiver {{count}} espaces de travail ?",
+      archiveFailed_one: "Impossible d’archiver {{count}} espace de travail",
+      archiveFailed_other: "Impossible d’archiver {{count}} espaces de travail",
+    },
     host: {
       noHost: "Aucun hôte",
       switchTitle: "Changer d’hôte",

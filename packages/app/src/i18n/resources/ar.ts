@@ -1222,6 +1222,15 @@ export const ar: TranslationResources = {
     pinned: {
       title: "المثبتة",
     },
+    selection: {
+      select: "تحديد",
+      count: "المحدد: {{count}}",
+      cancel: "إلغاء",
+      archiveTitle_one: "أرشفة {{count}} مساحة عمل؟",
+      archiveTitle_other: "أرشفة {{count}} مساحات عمل؟",
+      archiveFailed_one: "تعذّرت أرشفة {{count}} مساحة عمل",
+      archiveFailed_other: "تعذّرت أرشفة {{count}} مساحات عمل",
+    },
     host: {
       noHost: "لا مضيف",
       switchTitle: "تبديل المضيف",
