@@ -914,6 +914,9 @@
   {
     "pr": 122,
     "title": "feat(app): drag the composer to resize the message box",
-    "tests": ["packages/app/src/composer/input/state.test.ts"]
+    "tests": [
+      "packages/app/src/composer/input/state.test.ts",
+      "packages/app/src/composer/dock/internal/capacity.test.ts"
+    ]
   }
 ]
