@@ -263,7 +263,8 @@ if (dryRun) {
     finish(1);
   }
   const checkArgs = ["scripts/fork-check.mjs", "--report", checkReport];
-  if (!args["no-e2e"]) checkArgs.push("--e2e");
+  // A failed unit check already means nothing is pushed; the e2e run would only add time.
+  if (!args["no-e2e"]) checkArgs.push("--e2e", "--bail");
   const status = step("fork-check", "node", checkArgs);
   const report = existsSync(checkReport)
     ? readFileSync(checkReport, "utf8").trim()

@@ -5,13 +5,14 @@
 //
 //   node scripts/fork-check.mjs                  typecheck + lint + unit tests
 //   node scripts/fork-check.mjs --e2e            also the Playwright specs (starts Metro + daemon)
+//   node scripts/fork-check.mjs --e2e --bail     skip the specs when static or unit checks already failed
 //   node scripts/fork-check.mjs --pr 55 --pr 58  only those features' tests
 //   node scripts/fork-check.mjs --no-static      skip typecheck and lint
 //   node scripts/fork-check.mjs --report <file>  also write the Markdown report there
 //
 // Workspace declarations must be built first (npm run build:server && npm run build:plugin).
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -29,6 +30,7 @@ const { values: args } = parseArgs({
   options: {
     e2e: { type: "boolean", default: false },
     "no-static": { type: "boolean", default: false },
+    bail: { type: "boolean", default: false },
     pr: { type: "string", multiple: true, default: [] },
     report: { type: "string" },
   },
@@ -39,17 +41,18 @@ const logDir = path.join(os.tmpdir(), `fork-check-${Date.now()}`);
 mkdirSync(logDir, { recursive: true });
 const progress = (message) => process.stderr.write(`[fork-check] ${message}\n`);
 
+// Output goes straight to the log file, so a long step (the e2e run) can be followed with tail -f.
 function run(name, command, commandArgs, { cwd = ".", env = {} } = {}) {
   const logPath = path.join(logDir, `${name}.log`);
   const started = Date.now();
   progress(`${name}: ${command} ${commandArgs.join(" ").slice(0, 160)}`);
+  const log = openSync(logPath, "w");
   const result = spawnSync(command, commandArgs, {
     cwd: path.join(root, cwd),
     env: { ...process.env, ...env },
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["ignore", log, log],
   });
-  writeFileSync(logPath, `${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+  closeSync(log);
   const seconds = Math.round((Date.now() - started) / 1000);
   progress(`${name}: exit ${result.status} in ${seconds}s (log ${logPath})`);
   return { ok: result.status === 0, logPath };
@@ -135,7 +138,14 @@ for (const [index, testRun] of planTestRuns(testFiles).entries()) {
   }
 }
 
-if (args.e2e) {
+const failedBeforeE2e =
+  listErrors.length > 0 ||
+  staticResults.some((r) => !r.ok) ||
+  [...results.values()].some((ok) => !ok);
+const e2eSkipped = args.e2e && args.bail && failedBeforeE2e;
+if (e2eSkipped) {
+  progress("e2e: skipped (--bail; static or unit checks already failed)");
+} else if (args.e2e) {
   const specs = [...new Set(active.flatMap((f) => f.e2e ?? []))].filter((f) =>
     existsSync(path.join(root, f)),
   );
@@ -149,7 +159,8 @@ if (args.e2e) {
         "test",
         "--project=browser",
         "--retries=1",
-        "--reporter=json",
+        // list streams each spec to the log as it finishes; json is what the verdicts read.
+        "--reporter=list,json",
         ...specs.map((spec) => path.relative("packages/app", spec)),
       ],
       { cwd: "packages/app", env: { PLAYWRIGHT_JSON_OUTPUT_NAME: jsonPath } },
@@ -173,7 +184,7 @@ const lines = [
   `## Fork check: ${ok ? "PASS" : "FAIL"}`,
   "",
   `Commit ${head.stdout.trim()}. ${passing} of ${verdicts.length} features pass` +
-    `${args.e2e ? " (unit + e2e)" : " (unit only; e2e not run)"}.`,
+    `${e2eSkipped ? " (unit only; e2e skipped after a failure)" : args.e2e ? " (unit + e2e)" : " (unit only; e2e not run)"}.`,
   "",
 ];
 if (staticResults.length > 0) {
