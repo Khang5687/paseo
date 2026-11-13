@@ -21,7 +21,9 @@
 //    merges stay on local main for inspection.
 // 5. Desktop build (fork-update.sh --build-only), remote daemon builds and the APK
 //    (fork-android-apk.mjs) at the same time; the APK waits for the desktop build when the disk
-//    cannot hold both. Nothing is installed and no daemon is restarted.
+//    cannot hold both. Nothing is installed and no daemon is restarted. On Linux the desktop build
+//    is the Mac app tarball (fork-mac-app.mjs), written to the log dir for the Mac to fetch, and a
+//    `local` line in ~/.paseo-fork-remotes builds this machine's own fork daemon.
 //
 // Logs and the summary go to ~/.paseo-fork-build/<time>/. Exit codes: 0 pushed and every build
 // passed, 1 something failed (see the summary), 4 not enough disk.
@@ -286,8 +288,9 @@ const androidPlan = {
   "after-desktop": `after the desktop build (the disk cannot hold both; that needs ${MIN_FREE_GB + ANDROID_MIN_FREE_GB} GB)`,
   "no-disk": `NOT built: it needs ${ANDROID_MIN_FREE_GB} GB free; run \`node scripts/fork-android-apk.mjs\` after freeing space`,
 }[plan.android];
+const desktopPlan = process.platform === "linux" ? "desktop (Mac app tarball)" : "desktop";
 summary.push(
-  `- Builds: desktop, ${hosts.length > 0 ? `remote ${hosts.join(", ")}` : "no remote hosts"}; APK ${androidPlan}.`,
+  `- Builds: ${desktopPlan}, ${hosts.length > 0 ? `remote ${hosts.join(", ")}` : "no remote hosts"}; APK ${androidPlan}.`,
 );
 if (dryRun) {
   step("android (dry run)", "node", ["scripts/fork-android-apk.mjs", "--dry-run"]);
@@ -295,13 +298,17 @@ if (dryRun) {
 }
 
 const started = Date.now();
-function build(name, command, commandArgs) {
+function build(name, command, commandArgs, env = {}) {
   const logPath = path.join(logDir, `${name.replaceAll(" ", "-")}.log`);
   const out = openSync(logPath, "w");
   const t = Date.now();
   log(`${name}: started (log ${logPath})`);
   return new Promise((resolve) => {
-    const child = spawn(command, commandArgs, { cwd: root, stdio: ["ignore", out, out] });
+    const child = spawn(command, commandArgs, {
+      cwd: root,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", out, out],
+    });
     child.on("close", (code) => {
       closeSync(out);
       const seconds = (Date.now() - t) / 1000;
@@ -312,7 +319,10 @@ function build(name, command, commandArgs) {
   });
 }
 
-const desktop = build("desktop", "scripts/fork-update.sh", ["--build-only"]);
+// On Linux the Mac app tarball goes beside this run's logs; the Mac's fork-update.sh fetches it.
+const desktop = build("desktop", "scripts/fork-update.sh", ["--build-only"], {
+  PASEO_FORK_MAC_APP_OUT: logDir,
+});
 const jobs = [
   desktop,
   ...hosts.map((host) => build(`remote ${host}`, "scripts/fork-remote-daemon.sh", [host, "build"])),
@@ -327,11 +337,15 @@ for (const result of results) {
   if (result.name === "android" && result.code === 4) {
     detail = `not enough disk (needs ${ANDROID_MIN_FREE_GB} GB free); run \`node scripts/fork-android-apk.mjs\` after freeing space`;
   }
+  if (result.name === "desktop" && result.ok && process.platform === "linux") {
+    detail = `ok, Mac app ${path.join(logDir, "Paseo-mac-arm64.tgz")}`;
+  }
   summary.push(`  - ${result.name}: ${detail} (log ${result.logPath})`);
 }
 summary.push(
   "",
   `Next: update ~/git/paseo-HANDOFF.md, switch each remote host with \`scripts/fork-remote-daemon.sh <host> restart\`` +
-    " (it switches once nothing on the host is working), and give the owner the install steps.",
+    " (`local` for this machine; it switches once nothing on the host is working), and give the owner" +
+    " the install steps (on the Mac: `scripts/fork-update.sh --install`).",
 );
 finish(results.every((result) => result.ok) && plan.android !== "no-disk" ? 0 : 1);

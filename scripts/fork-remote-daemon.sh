@@ -2,7 +2,8 @@
 # Fork-only (Khang5687/paseo); never upstreamed.
 # Runs fork main's daemon on a Linux SSH host (e.g. Omen) in place of its npm daemon, so agents on
 # that host get the fork's daemon features (the daemon-owned message queue) and keep them while
-# this Mac sleeps. See "Running the fork" in CLAUDE.md.
+# this Mac sleeps. The host `local` is the machine this runs on, without SSH: the build host
+# (Omen) uses it for its own daemon. See "Running the fork" in CLAUDE.md.
 #
 #   scripts/fork-remote-daemon.sh <ssh-host> build                build origin/main on the host
 #   scripts/fork-remote-daemon.sh <ssh-host> restart [--now]      switch the host daemon to the newest build
@@ -41,7 +42,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <ssh-host> build | status | restart [--now] | rollback [--now] | npm [--now] | nightly on|off" >&2
+  echo "usage: $0 <ssh-host|local> build | status | restart [--now] | rollback [--now] | npm [--now] | nightly on|off" >&2
   exit 2
 }
 
@@ -480,6 +481,22 @@ exit $?
 REMOTE
 }
 
+# on_host <command>: runs a shell command on the host. `local` is the machine this runs on (the
+# build host switching its own daemon): the command gets what an SSH login gets, a clean
+# environment from the home directory (so no checkout's PASEO_* or mise config leaks in), and its
+# own systemd scope, so a waiter never sits in the control group of the paseo.service that may be
+# running the caller.
+on_host() {
+  if [[ $host == "local" ]]; then
+    (cd "$HOME" && env -i HOME="$HOME" USER="$USER" LOGNAME="${LOGNAME:-$USER}" \
+      XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" LANG="${LANG:-C.UTF-8}" \
+      PATH=/usr/local/bin:/usr/bin:/bin \
+      systemd-run --user --scope --quiet --collect bash -c "$1")
+  else
+    ssh "$host" "$1"
+  fi
+}
+
 remote_dir='$HOME/paseo-fork/bin'
 # Upload the host side and the idle check, each written beside its target and renamed over it so
 # a waiting switch keeps the file it started from.
@@ -491,9 +508,9 @@ remote_dir='$HOME/paseo-fork/bin'
     echo "FORK_FILE_END"
     echo "mv -f $remote_dir/.$name.tmp $remote_dir/$name"
   done
-} | ssh "$host" "bash -s" || { echo "could not copy the host side to $host" >&2; exit 1; }
+} | on_host "bash -s" || { echo "could not copy the host side to $host" >&2; exit 1; }
 
 # A login shell puts the host's node (mise, nvm) on PATH, the same way paseo.service starts the
 # daemon. ssh joins its arguments into one command line, so each one is quoted (an empty one would
 # otherwise vanish). The host has no credentials for the fork; it clones over public HTTPS.
-ssh "$host" "bash -l $remote_dir/fork-remote-daemon-host.sh $(printf '%q ' "$action" "$now" "$sha" "$origin_url")" </dev/null
+on_host "bash -l $remote_dir/fork-remote-daemon-host.sh $(printf '%q ' "$action" "$now" "$sha" "$origin_url")" </dev/null
