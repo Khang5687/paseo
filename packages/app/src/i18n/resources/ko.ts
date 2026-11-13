@@ -133,6 +133,7 @@ export const ko: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "전체 화면",
       exitFullscreen: "전체 화면 종료",
+      resizeInput: "메시지 입력란 크기 조정",
       focusHint: "{{shortcut}}로 포커스",
       addAttachment: "첨부 추가",
       interruptAgent: "에이전트 중단",

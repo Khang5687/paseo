@@ -133,6 +133,7 @@ export const ar: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "ملء الشاشة",
       exitFullscreen: "الخروج من ملء الشاشة",
+      resizeInput: "تغيير حجم مربع الرسالة",
       focusHint: "{{shortcut}}للتركيز",
       addAttachment: "إضافة مرفق",
       interruptAgent: "عامل المقاطعة",

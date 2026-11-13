@@ -61,7 +61,8 @@ export function resolveInlineComposerCapacity(
 ): number | undefined {
   "worklet";
   if (capacity === undefined) return undefined;
-  return compact ? capacity * 0.6 : capacity;
+  // 80% matches the most a user can drag the message box open (composer/input/state.ts).
+  return compact ? capacity * 0.8 : capacity;
 }
 
 export interface ComposerSlotLayout {

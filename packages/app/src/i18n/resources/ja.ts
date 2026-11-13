@@ -134,6 +134,7 @@ export const ja: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "全画面表示",
       exitFullscreen: "全画面表示を終了",
+      resizeInput: "メッセージ欄のサイズを変更",
       focusHint: "{{shortcut}}でフォーカス",
       addAttachment: "添付ファイルを追加",
       interruptAgent: "エージェントを中断",

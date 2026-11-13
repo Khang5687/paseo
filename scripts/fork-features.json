@@ -915,5 +915,13 @@
     "pr": 121,
     "title": "fix(omp): show OMP's HTML-form ask as question cards",
     "tests": ["packages/server/src/server/agent/providers/omp/ask.test.ts"]
+  },
+  {
+    "pr": 122,
+    "title": "feat(app): drag the composer to resize the message box",
+    "tests": [
+      "packages/app/src/composer/input/state.test.ts",
+      "packages/app/src/composer/dock/internal/capacity.test.ts"
+    ]
   }
 ]
