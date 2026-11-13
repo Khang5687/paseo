@@ -910,5 +910,10 @@
       "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/composer-file-attachment-send.spec.ts"]
+  },
+  {
+    "pr": 123,
+    "title": "feat(app): open an agent's task from its task-url label",
+    "tests": ["packages/app/src/screens/workspace/agent-task-link.test.ts"]
   }
 ]
