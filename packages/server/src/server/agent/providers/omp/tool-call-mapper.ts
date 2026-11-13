@@ -122,6 +122,23 @@ function mapOmpAskDetail(rawArgs: unknown, result: OmpToolResult): ToolCallDetai
   const askedQuestion = isRecord(firstQuestion) ? firstString(firstQuestion.question) : undefined;
   const details =
     result && typeof result !== "string" && isRecord(result.details) ? result.details : {};
+  // `{ html }` asks (OMP 18.18.3+) report each field as { question, answer }.
+  if (Array.isArray(details.answers)) {
+    const fields = details.answers.filter(isRecord);
+    const lines = fields.flatMap((field) => {
+      const question = firstString(field.question);
+      return question ? [`${question}\n${firstString(field.answer) ?? "No answer"}`] : [];
+    });
+    const timedOut =
+      details.timedOut === true
+        ? ["No answer before the timeout; OMP submitted the form's preselected values."]
+        : [];
+    return {
+      type: "plain_text",
+      label: firstString(fields[0]?.question) ?? "Question",
+      text: lines.length ? [...timedOut, ...lines].join("\n\n") : extractTextFromToolResult(result),
+    };
+  }
   const answers = Array.isArray(details.results) ? details.results : [details];
   const lines = answers.flatMap((answer) => {
     if (!isRecord(answer)) return [];

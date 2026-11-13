@@ -910,5 +910,10 @@
       "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/composer-file-attachment-send.spec.ts"]
+  },
+  {
+    "pr": 121,
+    "title": "fix(omp): show OMP's HTML-form ask as question cards",
+    "tests": ["packages/server/src/server/agent/providers/omp/ask.test.ts"]
   }
 ]
