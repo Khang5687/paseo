@@ -224,6 +224,8 @@ export async function closeWorkspaceAgentTab(page: Page, agentId: string): Promi
     visible: true,
   });
   await expect(closeButton.first()).toBeVisible({ timeout: 30_000 });
+  // Closing a root agent tab archives it, which asks first.
+  page.once("dialog", (dialog) => void dialog.accept());
   await closeButton.first().click();
   await expectWorkspaceTabHidden(page, agentId);
 }
@@ -297,8 +299,9 @@ export async function archiveAgentFromSessions(
     throw new Error(`Could not read bounding box for session row ${input.agentId}.`);
   }
 
-  // Long-press the row. Idle agents are archived immediately (no modal).
-  // Running/initializing agents show a confirmation modal instead.
+  // Long-press the row. Idle agents ask for a browser confirm; running/initializing agents show
+  // a confirmation modal instead.
+  page.once("dialog", (dialog) => void dialog.accept());
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.waitForTimeout(900);

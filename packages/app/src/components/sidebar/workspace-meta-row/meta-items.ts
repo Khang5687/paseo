@@ -11,11 +11,16 @@ import type { WorkspaceServiceSummary } from "./service-summary";
  * running, and what someone filed it under. Identity first, then the work, then the work's
  * state, then the labels a person put on it.
  *
+ * Working subagents lead the line when the row's status is not running: the root agent is
+ * waiting on you, and this says work is still going on underneath it. It is not a toggle,
+ * because it is status rather than identity.
+ *
  * Labels are one item rather than one per label: they are drawn as a run of chips with a single
  * separator in front of them, so the line reads as four peers however many labels a workspace
  * carries.
  */
 export type MetaRowItem =
+  | { kind: "subagents"; count: number }
   | { kind: "branch"; name: string }
   | { kind: "project"; name: string }
   | { kind: "host" }
@@ -43,8 +48,10 @@ export function selectMetaRowItems(input: {
   labels: readonly WorkspaceLabelDefinition[];
   visible: SidebarRowItems;
   checksDisplay: SidebarChecksDisplay;
+  workingSubagentCount?: number;
 }): MetaRowItem[] {
   const {
+    workingSubagentCount = 0,
     currentBranch,
     projectName,
     hasHostBadge,
@@ -56,6 +63,9 @@ export function selectMetaRowItems(input: {
   } = input;
   const items: MetaRowItem[] = [];
 
+  if (workingSubagentCount > 0) {
+    items.push({ kind: "subagents", count: workingSubagentCount });
+  }
   if (currentBranch && visible.branch) {
     items.push({ kind: "branch", name: currentBranch });
   }

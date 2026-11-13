@@ -285,6 +285,7 @@ export function ContextWindowMeter({
       </HoverCardTrigger>
       <HoverCardContent
         placement="top"
+        alignment="end"
         offset={8}
         role="dialog"
         accessibilityLabel={t("contextWindow.title")}

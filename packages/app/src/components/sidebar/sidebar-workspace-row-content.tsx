@@ -1,7 +1,7 @@
 import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { CircleAlert, Folder, FolderGit2, Monitor } from "lucide-react-native";
+import { CircleAlert, Folder, FolderGit2, Monitor, PencilLine } from "lucide-react-native";
 import { ProjectStatusIndicator } from "@/components/sidebar/project-leading-visual";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 import {
@@ -16,6 +16,9 @@ import {
   type SidebarWorkspaceTrailing,
 } from "@/components/sidebar/workspace-trailing";
 import { useAppSettings } from "@/hooks/use-settings";
+import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
+import { useWorkspaceNoteBadge } from "@/notes/chat-badges-store";
+import { SidebarNoteBadge } from "@/components/sidebar/sidebar-note-badge";
 import { densityIconBox } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
@@ -29,7 +32,7 @@ import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
-import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 import { SidebarSelectionCheckbox } from "@/components/sidebar/selection/rows";
 
@@ -39,6 +42,12 @@ const needsInputColorMapping = (theme: Theme) => ({
 });
 
 const ThemedCircleAlert = withUnistyles(CircleAlert);
+const ThemedPencilLine = withUnistyles(PencilLine);
+const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+
+// The overlay holds the copy-agent-id and archive buttons beside the kebab: two 18px controls
+// plus their gaps more than the default scrim was sized for.
+const ARCHIVE_AND_KEBAB_SCRIM_WIDTH = SCRIM_WIDTH + 40;
 
 export function SidebarWorkspaceRowFrame({
   workspace,
@@ -125,6 +134,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     settings: { workspaceTitleSource },
   } = useAppSettings();
   const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource });
+  const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
+  const noteBadge = useWorkspaceNoteBadge(workspace.serverId, workspace.workspaceId);
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
@@ -153,6 +164,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         projectViewKey={workspace.projectViewKey}
         statusBucket={workspace.statusBucket}
         backdrop={backdrop}
+        hasUnsentDraft={hasUnsentDraft}
         loading={isLoading}
         testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
       />
@@ -163,6 +175,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         bucket={workspace.statusBucket}
         workspaceKind={workspace.workspaceKind}
         loading={isLoading}
+        hasUnsentDraft={hasUnsentDraft}
         reserveIdleSpace={reserveIdleStatusIndicatorSpace}
       />
     );
@@ -177,7 +190,13 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             <Text style={workspaceBranchTextStyle} numberOfLines={1}>
               {workspaceLabel}
             </Text>
-            <View style={sidebarWorkspaceRowStyles.rowRight}>{children}</View>
+            <View style={sidebarWorkspaceRowStyles.rowRight}>
+              <SidebarNoteBadge
+                badge={noteBadge}
+                testID={`sidebar-workspace-note-badge-${workspace.workspaceKey}`}
+              />
+              {children}
+            </View>
           </View>
           <WorkspaceMetaRow
             currentBranch={workspace.currentBranch}
@@ -186,6 +205,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             prHint={workspace.prHint}
             serviceSummary={serviceSummary}
             labels={labels}
+            workingSubagentCount={workspace.workingSubagentCount}
           />
         </View>
       </View>
@@ -203,11 +223,13 @@ function WorkspaceStatusIndicator({
   workspaceKind,
   loading = false,
   reserveIdleSpace = true,
+  hasUnsentDraft,
 }: {
   bucket: SidebarWorkspaceEntry["statusBucket"];
   workspaceKind: SidebarWorkspaceEntry["workspaceKind"];
   loading?: boolean;
   reserveIdleSpace?: boolean;
+  hasUnsentDraft: boolean;
 }) {
   // Busy is the only status that moves, and it is the ring rather than a dot for the same
   // reason it is a dot elsewhere: every status in the sidebar sits in this one slot, so busy
@@ -246,6 +268,18 @@ function WorkspaceStatusIndicator({
   }
 
   if (bucket === "done") {
+    // A prompt the user started here and walked away from. It takes the idle slot only:
+    // a busy or alerting row already pulls the user back, and they find the draft then.
+    if (hasUnsentDraft) {
+      return (
+        <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-draft">
+          <ThemedPencilLine
+            size={STATUS_INDICATOR_ALERT_SIZE}
+            uniProps={foregroundMutedColorMapping}
+          />
+        </View>
+      );
+    }
     // An idle row still gets a dot rather than an empty slot. Nested rows are marked as
     // workspaces by indentation alone, and with nothing in the leading slot the rail has no
     // edge to read against — a workspace carrying its own glyph starts looking like a project
@@ -302,6 +336,11 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
   rowIndented: {
     paddingLeft: theme.spacing[2] + theme.spacing[2],
   },
+  // A subagent workspace row under its parent row: `level` steps of the same indent, so each
+  // level of nesting is its own rail and a child's status dot lines up under its parent's title.
+  rowNested: (level: number) => ({
+    paddingLeft: theme.spacing[2] + level * (theme.spacing[2] + theme.spacing[2]),
+  }),
   rowRight: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -344,10 +383,24 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     alignItems: "flex-end",
     justifyContent: "flex-start",
   },
+  // Touch shows the copy-agent-id button, the archive button and the kebab permanently, so the
+  // slot holds all three: their compact boxes net of the margins that pull them onto the
+  // trailing rail.
+  trailingActionSlotReservedForActions: {
+    position: "relative",
+    minWidth: { xs: 62, md: 56 },
+    minHeight: 20,
+    flexShrink: 0,
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+  },
   trailingActionOverlay: {
     position: "absolute",
     top: 0,
     right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
   },
 }));
 
@@ -360,6 +413,9 @@ export function SidebarWorkspaceShortcutBadge({ number }: { number: number }) {
 }
 
 export type SidebarWorkspaceTrailingPresentation = "visible" | "hidden" | "absent";
+
+/** What the trailing slot holds width for: nothing, its trailing content, or the touch actions. */
+export type SidebarWorkspaceTrailingSlotReservation = "none" | "content" | "actions";
 
 /**
  * What the trailing slot shows for a row. Derived in one place because three row renderers
@@ -390,7 +446,7 @@ export function resolveTrailingActionVisibility({
   showKebab: boolean;
   showScrim: boolean;
   renderSlot: boolean;
-  reserveSlotWidth: boolean;
+  reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation;
 } {
   const hasTrailing = hasSidebarWorkspaceTrailing({ workspace, trailing });
   const showKebab = Boolean(hasArchiveAction && (isHovered || isTouchPlatform)) && !showShortcut;
@@ -399,6 +455,13 @@ export function resolveTrailingActionVisibility({
   const hasContent = hasTrailing && !(hasArchiveAction && isTouchPlatform);
   let trailingPresentation: SidebarWorkspaceTrailingPresentation = "absent";
   if (hasContent) trailingPresentation = showShortcut ? "hidden" : "visible";
+  // The slot only holds width for something that permanently sits in it. Trailing content
+  // does; the archive button and kebab only do on touch, where there is no hover for them to
+  // appear on and so no scrim to let them overlay the title. Everywhere else the width goes
+  // back to the title and the actions fade in over its tail.
+  let reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation = "none";
+  if (hasContent) reserveSlotWidth = "content";
+  if (hasArchiveAction && isTouchPlatform) reserveSlotWidth = "actions";
   return {
     trailingPresentation,
     showKebab,
@@ -407,11 +470,7 @@ export function resolveTrailingActionVisibility({
     // touch, which shows the kebab without ever hovering, never gets one.
     showScrim: showKebab && isHovered,
     renderSlot: hasArchiveAction || hasTrailing,
-    // The slot only holds width for something that permanently sits in it. Trailing content
-    // does; the kebab only does on touch, where there is no hover for it to appear on and so
-    // no scrim to let it overlay the title. Everywhere else the width goes back to the title
-    // and the kebab fades in over its tail.
-    reserveSlotWidth: hasContent || (hasArchiveAction && isTouchPlatform),
+    reserveSlotWidth,
   };
 }
 
@@ -419,20 +478,15 @@ export function SidebarWorkspaceTrailingActionSlot({
   reserveWidth,
   children,
 }: {
-  reserveWidth: boolean;
+  reserveWidth: SidebarWorkspaceTrailingSlotReservation;
   children: ReactNode;
 }) {
-  return (
-    <View
-      style={
-        reserveWidth
-          ? sidebarWorkspaceRowStyles.trailingActionSlotReserved
-          : sidebarWorkspaceRowStyles.trailingActionSlot
-      }
-    >
-      {children}
-    </View>
-  );
+  let style = sidebarWorkspaceRowStyles.trailingActionSlot;
+  if (reserveWidth === "content") style = sidebarWorkspaceRowStyles.trailingActionSlotReserved;
+  if (reserveWidth === "actions") {
+    style = sidebarWorkspaceRowStyles.trailingActionSlotReservedForActions;
+  }
+  return <View style={style}>{children}</View>;
 }
 
 export function SidebarWorkspaceTrailingActionBase({
@@ -456,7 +510,7 @@ export function SidebarWorkspaceTrailingActionOverlay({
   children,
 }: {
   visible: boolean;
-  /** Fade the row into the kebab when something (the diff stat) is still rendered behind it. */
+  /** Fade the row into the actions when something (the diff stat) is still rendered behind it. */
   scrimBackdrop?: SidebarSurfaceBackdrop;
   children: ReactNode;
 }) {
@@ -464,7 +518,11 @@ export function SidebarWorkspaceTrailingActionOverlay({
   return (
     <>
       {scrimBackdrop ? (
-        <TrailingActionScrim backdrop={scrimBackdrop} testID="sidebar-workspace-trailing-scrim" />
+        <TrailingActionScrim
+          backdrop={scrimBackdrop}
+          width={ARCHIVE_AND_KEBAB_SCRIM_WIDTH}
+          testID="sidebar-workspace-trailing-scrim"
+        />
       ) : null}
       <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>{children}</View>
     </>

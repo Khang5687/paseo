@@ -29,6 +29,7 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { RetainedChatContent } from "./retained-chat-content";
 import { Composer } from "@/composer";
 import { AgentCommandsProvider } from "@/agent-commands";
+import { CodeRunComposerProvider } from "@/code-run/scope";
 import {
   useComposerEditingSession,
   useComposerFullscreen,
@@ -49,6 +50,8 @@ import { COMPACT_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layou
 import { isNative, isWeb } from "@/constants/platform";
 import { useAgentAttentionClear } from "@/hooks/use-agent-attention-clear";
 import { useAgentInputDraft, type AgentInputDraft } from "@/composer/draft/input-draft";
+import { useAgentDraftSync } from "@/composer/draft/use-agent-draft-sync";
+import { DraftHistoryControl } from "@/composer/draft/draft-history-control";
 import {
   type AgentScreenAgent,
   type AgentScreenContinuity,
@@ -57,7 +60,10 @@ import {
   useAgentScreenStateMachine,
   type AgentScreenReadySyncState,
 } from "@/hooks/use-agent-screen-state-machine";
+import { confirmArchive } from "@/utils/archive-confirm";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
+import { useForkAgent } from "@/hooks/use-fork-agent";
+import { useToast } from "@/contexts/toast-context";
 import { useContainerWidthBelow } from "@/hooks/use-container-width";
 import { reconcileMissingAgentStateWithPresentAgent } from "@/panels/agent-panel-load-state";
 import { TimelineSyncStatus } from "@/timeline/sync-status";
@@ -1110,6 +1116,14 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     parentAgentId: agentId,
     rows: subagentRows,
   });
+  const { archiveFinished } = archiveFinishedSubagents;
+  const handleArchiveFinished = useCallback(() => {
+    void (async () => {
+      if (await confirmArchive({ subject: "finishedSubagents" })) {
+        await archiveFinished();
+      }
+    })();
+  }, [archiveFinished]);
   const hasPluginComposerPills = useHasPluginComposerPills(serverId, workspaceId, agentId);
   const hasActiveComposer = !agentState.archivedAt && !isArchivingCurrentAgent;
   const parentAgentId = useParentAgentId(serverId, agentId);
@@ -1122,12 +1136,22 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     archiveFinishedStatus: archiveFinishedSubagents.status,
     hasPluginComposerPills,
   });
-  const rawAgentInputDraft = useAgentInputDraft({
-    draftKey: buildDraftStoreKey({
-      serverId,
-      agentId,
-    }),
+  const agentDraftKey = buildDraftStoreKey({ serverId, agentId });
+  const rawAgentInputDraft = useAgentInputDraft({ draftKey: agentDraftKey });
+  const draftSync = useAgentDraftSync({
+    serverId,
+    agentId,
+    draftKey: agentDraftKey,
+    enabled: showsComposer && hasActiveComposer && isPaneFocused && rawAgentInputDraft.isHydrated,
+    showRemoteText: rawAgentInputDraft.showRemoteText,
   });
+  const draftHistoryControl = useMemo(
+    () =>
+      draftSync.history.length > 0 ? (
+        <DraftHistoryControl history={draftSync.history} onRestore={draftSync.restore} />
+      ) : null,
+    [draftSync.history, draftSync.restore],
+  );
   // Stabilize the agentInputDraft object identity so that memo(AgentComposerSection) can bail out
   // when only toast state changes (which does not affect any draft field).
   const {
@@ -1187,6 +1211,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
         onAttentionPromptSend={onAttentionPromptSend}
         onComposerHeightChange={handleComposerHeightChange}
         onMessageSent={handleMessageSent}
+        composerTopAccessory={draftHistoryControl}
       />
     </RenderProfile>
   ) : (
@@ -1219,7 +1244,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
           subagentRows={subagentRows}
           tasks={tasks}
           archiveFinishedStatus={archiveFinishedSubagents.status}
-          onArchiveFinished={archiveFinishedSubagents.archiveFinished}
+          onArchiveFinished={handleArchiveFinished}
           hasPluginComposerPills={hasPluginComposerPills}
         />
       ) : null}
@@ -1260,6 +1285,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     <RewindComposerRestoreProvider
       textSource={agentInputDraft.textSource}
       setText={agentInputDraft.replaceText}
+      setAttachments={agentInputDraft.setAttachments}
       onRewindComplete={handleRewindComplete}
     >
       <View style={styles.root}>
@@ -1304,7 +1330,9 @@ function wrapAgentCommandProvider({
       editingSession={editingSession}
       enabled={enabled}
     >
-      {children}
+      <CodeRunComposerProvider editingSession={enabled ? editingSession : null}>
+        {children}
+      </CodeRunComposerProvider>
     </AgentCommandsProvider>
   );
 }
@@ -1476,6 +1504,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
   onAttentionPromptSend,
   onComposerHeightChange,
   onMessageSent,
+  composerTopAccessory,
 }: {
   agentId?: string;
   serverId: string;
@@ -1490,6 +1519,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
   onAttentionPromptSend: () => void;
   onComposerHeightChange: (height: number) => void;
   onMessageSent: () => void;
+  composerTopAccessory: ReactNode;
 }) {
   if (!agentId) {
     return null;
@@ -1514,6 +1544,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
       onAttentionPromptSend={onAttentionPromptSend}
       onComposerHeightChange={onComposerHeightChange}
       onMessageSent={onMessageSent}
+      composerTopAccessory={composerTopAccessory}
     />
   );
 });
@@ -1530,6 +1561,7 @@ function ActiveAgentComposer({
   onAttentionPromptSend,
   onComposerHeightChange,
   onMessageSent,
+  composerTopAccessory,
 }: {
   agentId: string;
   serverId: string;
@@ -1542,6 +1574,7 @@ function ActiveAgentComposer({
   onAttentionPromptSend: () => void;
   onComposerHeightChange: (height: number) => void;
   onMessageSent: () => void;
+  composerTopAccessory: ReactNode;
 }) {
   const isCompactFormFactor = useIsCompactFormFactor();
   const { onLayout: onInputAreaLayout, isBelow: isCompactComposerLayout } = useContainerWidthBelow(
@@ -1552,6 +1585,8 @@ function ActiveAgentComposer({
   const openInSidePane = useSettings((settings) => settings.openInSidePane);
   const { workspaceId, tabId, retargetCurrentTab } = paneContext;
   const { archiveAgent } = useArchiveAgent();
+  const toast = useToast();
+  const forkAgent = useForkAgent({ serverId, toast });
   const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
   const hideWorkspaceAgent = useWorkspaceLayoutStore((state) => state.hideAgent);
   const unpinWorkspaceAgent = useWorkspaceLayoutStore((state) => state.unpinAgent);
@@ -1585,6 +1620,15 @@ function ActiveAgentComposer({
         throw new Error("Agent not found");
       }
 
+      if (command.kind === "fork-agent") {
+        await forkAgent({ agentId, agent, workspaceId, target: "tab" });
+        return;
+      }
+
+      if (!(await confirmArchive({ subject: "agent", name: agent.title }))) {
+        return;
+      }
+
       const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
       if (workspaceKey) {
         unpinWorkspaceAgent(workspaceKey, agentId);
@@ -1607,6 +1651,7 @@ function ActiveAgentComposer({
       agentId,
       archiveAgent,
       closeWorkspaceTab,
+      forkAgent,
       hideWorkspaceAgent,
       retargetCurrentTab,
       serverId,
@@ -1643,6 +1688,7 @@ function ActiveAgentComposer({
         onMessageSent={onMessageSent}
         onClientSlashCommand={handleClientSlashCommand}
         isCompactLayout={isCompactComposerLayout}
+        topAccessory={composerTopAccessory}
       />
     </View>
   );
@@ -1734,11 +1780,11 @@ const animatedStaticStyles = RNStyleSheet.create({
 const styles = StyleSheet.create((theme) => ({
   root: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   contentContainer: {
     flex: 1,

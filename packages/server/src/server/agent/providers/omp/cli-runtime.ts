@@ -1,5 +1,7 @@
 import { createExternalProcessEnv } from "../../../paseo-env.js";
+import { realpath, stat } from "node:fs/promises";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import { z } from "zod";
 
@@ -7,8 +9,19 @@ import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
 import {
   JSONL_RPC_NO_TIMEOUT,
   JsonlRpcProcess,
+  JsonlRpcResponseError,
   type JsonlRpcLaunch,
 } from "../jsonl-rpc-process.js";
+import { spawnProcess as spawnCli } from "../../../../utils/spawn.js";
+import { findExecutableWithoutProbing } from "../../../../executable-resolution/executable-resolution.js";
+import {
+  inertRoutingAdapter,
+  memoizeProbe,
+  OmpAccountRoutingBridge,
+  parseOmpCapabilityProbe,
+  type OmpCapabilityProbe,
+} from "./account-routing-bridge.js";
+import { writeOmpConfigOverlay } from "./config-overlay.js";
 import { establishOmpProtocol } from "./protocol-session.js";
 import {
   buildOmpLaunch,
@@ -29,9 +42,19 @@ import {
   OmpPromptAckSchema,
   OmpRpcCommandSchema,
   parseOmpRuntimeEvent,
+  OMP_HOST_ACCOUNT_ROUTING_ENV,
+  OmpGoalCommandResultSchema,
+  OmpLoginRefusalSchema,
+  OmpLoginResultSchema,
+  OmpLogoutAccountsResultSchema,
   OmpSessionStateSchema,
   OmpSessionStatsSchema,
   type OmpThinkingLevel,
+  type OmpGoalAction,
+  type OmpGoalModeState,
+  type OmpLoginExisting,
+  type OmpLoginResult,
+  type OmpLogoutAccount,
   type OmpAgentMessage,
   type OmpModel,
   type OmpPromptAck,
@@ -48,6 +71,11 @@ import {
 
 const DEFAULT_OMP_COMMAND: [string, ...string[]] = [process.env.OMP_COMMAND ?? "omp"];
 const DEFAULT_COMMANDS_RPC_NAME = "get_available_commands";
+const CAPABILITY_PROBE_TIMEOUT_MS = 10_000;
+// OMP's builtin that rediscovers skills and file slash commands. Paseo runs it for OMP builds
+// without `refresh_commands`, and drops its confirmation line so it never reaches the timeline.
+const RELOAD_PLUGINS_COMMAND = "reload-plugins";
+const RELOAD_PLUGINS_OUTPUT = "Plugins reloaded.";
 
 export interface OmpCliRuntimeOptions {
   logger: Logger;
@@ -57,7 +85,18 @@ export interface OmpCliRuntimeOptions {
   readyTimeoutMs?: number;
   requestTimeoutMs?: number;
   spawnProcess?: (launch: OmpRuntimeLaunch) => ChildProcessWithoutNullStreams;
+  /** Test seam: replaces `omp account-routing-capabilities`. Receives the launch the probe vets. */
+  probeCapabilities?: (launch: OmpRuntimeLaunch) => Promise<OmpCapabilityProbe>;
+  /** Kills a capability probe that has not answered by then; it only runs once per binary. */
+  capabilityProbeTimeoutMs?: number;
 }
+
+/** What a routed launch resolved to before any child exists. */
+type RoutingPlan =
+  | { kind: "none" }
+  | { kind: "metadata" }
+  | { kind: "managed"; runtimeInstanceId: string; agentId: string }
+  | { kind: "incomplete"; runtimeInstanceId: string; agentId: string; version: number };
 
 export class OmpCliRuntime implements OmpRuntime {
   private readonly command: [string, ...string[]];
@@ -76,7 +115,15 @@ export class OmpCliRuntime implements OmpRuntime {
       runtimeSettings: this.options.runtimeSettings,
       session: input,
     });
-    launch.env = createExternalProcessEnv(globalThis.process.env, launch.env ?? {});
+    launch.argv.push("--config", writeOmpConfigOverlay());
+    // No await on the independent path: the child must be wired in the same tick it was spawned.
+    const plan: RoutingPlan = input.routing
+      ? await this.planRouting(input.routing, launch)
+      : { kind: "none" };
+    launch.env = createExternalProcessEnv(
+      globalThis.process.env,
+      withRoutingMarker(launch.env ?? {}, plan),
+    );
     const [command, ...args] = launch.argv;
     const processLaunch: JsonlRpcLaunch = {
       command,
@@ -95,39 +142,194 @@ export class OmpCliRuntime implements OmpRuntime {
     const process = new JsonlRpcProcess(processOptions);
     const handleAbort = () => void process.close(input.signal?.reason).catch(() => undefined);
     input.signal?.addEventListener("abort", handleAbort, { once: true });
+    // The bridge listens before the readiness handshake, so nothing the child writes during
+    // startup is missed, and the pending-configure latch is in place before any model call.
+    const routing = input.routing;
+    const bridge =
+      plan.kind === "managed" && routing
+        ? new OmpAccountRoutingBridge({
+            authority: routing.authority,
+            transport: process,
+            logger: this.options.logger,
+            runtimeInstanceId: plan.runtimeInstanceId,
+            agentId: plan.agentId,
+          })
+        : undefined;
+    // An unmarked binary that cannot cover every caller registers as incomplete, so the host reports
+    // the capability as unsupported instead of guessing. It has no control channel to bridge.
+    const incomplete =
+      plan.kind === "incomplete" && routing
+        ? routing.authority.attachRuntime(
+            {
+              runtimeInstanceId: plan.runtimeInstanceId,
+              agentId: plan.agentId,
+              accessibleNamespaces: [],
+              capabilityVersion: plan.version,
+              completeCoverage: false,
+            },
+            inertRoutingAdapter(),
+          )
+        : undefined;
+    const detachRouting = () => {
+      bridge?.close();
+      incomplete?.dispose();
+    };
     try {
       await establishOmpProtocol(process, this.options.logger, {
         readyTimeoutMs: this.options.readyTimeoutMs,
         requestTimeoutMs: this.options.requestTimeoutMs,
       });
       input.signal?.throwIfAborted();
-      return new OmpCliRuntimeSession(process, this.commandsRpcName, launch.env);
+      await bridge?.configure();
+      return new OmpCliRuntimeSession(process, this.commandsRpcName, launch.env, detachRouting);
     } catch (error) {
       const startupError = error instanceof Error ? error : new Error(String(error));
       await process.close(startupError);
+      detachRouting();
       throw startupError;
     } finally {
       input.signal?.removeEventListener("abort", handleAbort);
     }
   }
+
+  /**
+   * Decides, before spawning, how this launch relates to host routing. A managed launch needs a
+   * trusted agent and a binary whose probe reports complete coverage; anything less is never marked.
+   */
+  private async planRouting(
+    routing: NonNullable<OmpStartSessionInput["routing"]>,
+    launch: OmpRuntimeLaunch,
+  ): Promise<RoutingPlan> {
+    if (!routing.agentId) return { kind: "metadata" };
+    const probe = await this.probe(launch);
+    const runtimeInstanceId = randomUUID();
+    return probe.complete
+      ? { kind: "managed", runtimeInstanceId, agentId: routing.agentId }
+      : { kind: "incomplete", runtimeInstanceId, agentId: routing.agentId, version: probe.version };
+  }
+
+  /** Probes the configured binary without starting a session; the same probe every launch uses. */
+  probeConfigured(): Promise<OmpCapabilityProbe> {
+    const launch = buildOmpLaunch({
+      command: this.command,
+      runtimeSettings: this.options.runtimeSettings,
+      session: { cwd: process.cwd() },
+    });
+    return this.probe(launch);
+  }
+
+  private async probe(launch: OmpRuntimeLaunch): Promise<OmpCapabilityProbe> {
+    if (this.options.probeCapabilities) return this.options.probeCapabilities(launch);
+    const settings = this.options.runtimeSettings?.command;
+    const base = settings?.mode === "replace" && settings.argv[0] ? settings.argv : this.command;
+    const [command, ...args] = base;
+    const binary = await identifyBinary(command, launch.env?.PATH);
+    if (!binary) return { complete: false, version: 0, unavailable: true };
+    // The answer belongs to the binary, not to the agent, so the per-agent launch env stays out of
+    // the key: the startup probe and every launch of the same binary share one answer.
+    const key = JSON.stringify([binary, ...args, this.options.runtimeSettings?.env ?? {}]);
+    return memoizeProbe(key, () =>
+      runCapabilityProbe(
+        command,
+        args,
+        launch.env,
+        this.options.capabilityProbeTimeoutMs ?? CAPABILITY_PROBE_TIMEOUT_MS,
+      ),
+    );
+  }
+}
+
+/** The executable's real path, mtime and size; an upgraded or re-linked binary reads as new. */
+async function identifyBinary(
+  command: string,
+  pathEnv: string | undefined,
+): Promise<string | null> {
+  try {
+    const found = await findExecutableWithoutProbing(command, {
+      path: pathEnv,
+      cwd: process.cwd(),
+    });
+    if (!found) return null;
+    const real = await realpath(found);
+    const { mtimeMs, size } = await stat(real);
+    return `${real}:${mtimeMs}:${size}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Runs `omp account-routing-capabilities` with stdin closed: OMP reads a piped stdin as the
+ * prompt and waits for EOF, so an open pipe would hold every probe until the timeout.
+ */
+function runCapabilityProbe(
+  command: string,
+  args: string[],
+  env: Record<string, string> | undefined,
+  timeoutMs: number,
+): Promise<OmpCapabilityProbe> {
+  return new Promise((resolve) => {
+    const child = spawnCli(command, [...args, "account-routing-capabilities", "--mode", "model"], {
+      envOverlay: env,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: timeoutMs,
+    });
+    let stdout = "";
+    child.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    // Nothing was learned about a binary that could not start or was killed at the timeout
+    // (OMP traps SIGTERM and exits 143, so the kill shows up as an exit code too).
+    child.once("error", () => resolve({ complete: false, version: 0, unavailable: true }));
+    child.once("close", (code) => {
+      if (child.killed || code === null || code < 0) {
+        resolve({ complete: false, version: 0, unavailable: true });
+      } else if (code !== 0) {
+        // An older binary rejects the subcommand with an exit code: that is an incomplete runtime.
+        resolve({ complete: false, version: 0 });
+      } else {
+        resolve(parseOmpCapabilityProbe(stdout));
+      }
+    });
+  });
+}
+
+function withRoutingMarker(env: Record<string, string>, plan: RoutingPlan): Record<string, string> {
+  if (plan.kind === "managed") return { ...env, [OMP_HOST_ACCOUNT_ROUTING_ENV]: "1" };
+  if (plan.kind === "metadata") return { ...env, [OMP_HOST_ACCOUNT_ROUTING_ENV]: "metadata" };
+  return env;
 }
 
 class OmpCliRuntimeSession implements OmpRuntimeSession {
   private readonly subscribers = new Set<(event: OmpRuntimeEvent) => void>();
+  private refreshCommandsUnsupported = false;
+  private silentReloads = 0;
   activeBranchEntryId?: string;
 
   constructor(
     private readonly process: JsonlRpcProcess,
     private readonly commandsRpcName: "get_available_commands",
     private readonly launchEnvironment: Record<string, string>,
+    private readonly detachRouting: () => void = () => undefined,
   ) {
     process.onMessage((message) => {
       const event = parseOmpRuntimeEvent(message);
-      if (event) {
-        this.emit(event);
+      if (!event) {
+        return;
       }
+      // OMP writes the builtin's output before its prompt response, so it lands while the reload
+      // is still pending.
+      if (
+        this.silentReloads > 0 &&
+        event.type === "command_output" &&
+        event.text === RELOAD_PLUGINS_OUTPUT
+      ) {
+        return;
+      }
+      this.emit(event);
     });
     process.onExit(({ error }) => {
+      this.detachRouting();
       this.emit({ type: "process_exit", error: error.message });
     });
   }
@@ -168,8 +370,43 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     await this.request({ type: "set_auto_compaction", enabled });
   }
 
+  async goal(action: OmpGoalAction): Promise<OmpGoalModeState | null> {
+    const result = await this.request({ type: "goal", ...action });
+    return OmpGoalCommandResultSchema.parse(result).state;
+  }
+
   async abort(): Promise<void> {
     await this.requestStopWork({ type: "abort" });
+  }
+
+  async login(
+    providerId: string,
+    options: { existing?: OmpLoginExisting } = {},
+  ): Promise<OmpLoginResult> {
+    let data: unknown;
+    try {
+      data = await this.request(
+        { type: "login", providerId, ...(options.existing ? { existing: options.existing } : {}) },
+        JSONL_RPC_NO_TIMEOUT,
+      );
+    } catch (error) {
+      const refusal =
+        error instanceof JsonlRpcResponseError ? OmpLoginRefusalSchema.safeParse(error.data) : null;
+      if (!refusal?.success) throw error;
+      const { rowId, email, orgName } = refusal.data;
+      return { kind: "credential_exists", rowId, email, orgName };
+    }
+    const parsed = OmpLoginResultSchema.safeParse(data);
+    if (!parsed.success) return { kind: "stored" };
+    const { outcome, rowId, email, orgName } = parsed.data;
+    return { kind: "stored", outcome, rowId, email, orgName };
+  }
+
+  async getLogoutAccounts(providerId: string): Promise<OmpLogoutAccount[]> {
+    const data = OmpLogoutAccountsResultSchema.parse(
+      await this.request({ type: "get_logout_accounts", providerId }),
+    );
+    return data.accounts.map(({ credentialId, label, type }) => ({ credentialId, label, type }));
   }
 
   async getState(): Promise<OmpSessionState> {
@@ -236,6 +473,42 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     return data.commands ?? [];
   }
 
+  async refreshCommands(): Promise<OmpRpcSlashCommand[]> {
+    if (!this.refreshCommandsUnsupported) {
+      try {
+        const data = OmpCommandsResultSchema.parse(
+          await this.request({ type: "refresh_commands" }),
+        );
+        return data.commands ?? [];
+      } catch (error) {
+        // COMPAT(ompRefreshCommands): added in v0.11.0, remove after 2027-04-07 once the
+        // minimum supported OMP version answers `refresh_commands`. Older binaries reject it
+        // as an unknown command; rediscover through `/reload-plugins` instead.
+        if (!(error instanceof Error) || error.message !== "Unknown command: refresh_commands") {
+          throw error;
+        }
+        this.refreshCommandsUnsupported = true;
+      }
+    }
+    const known = await this.getCommands();
+    // Only a binary that advertises the builtin runs it locally; anywhere else the text would
+    // reach the model as a user prompt.
+    if (
+      !known.some(
+        (command) => command.name === RELOAD_PLUGINS_COMMAND && command.source === "builtin",
+      )
+    ) {
+      return known;
+    }
+    this.silentReloads += 1;
+    try {
+      await this.request({ type: "prompt", message: `/${RELOAD_PLUGINS_COMMAND}` });
+    } finally {
+      this.silentReloads -= 1;
+    }
+    return await this.getCommands();
+  }
+
   async setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void> {
     await this.request({ type: "set_subagent_subscription", level });
   }
@@ -300,7 +573,9 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
   }
 
   async close(): Promise<void> {
+    // Detach after the child exits: closing stdin makes it report its final outcomes and cancels.
     await this.process.close(new Error("OMP RPC session is closed"));
+    this.detachRouting();
   }
 
   private request(command: OmpRpcCommand, timeoutMs?: number | null): Promise<unknown> {

@@ -55,6 +55,8 @@ started finishes. Re-enabling keeps the existing idle timestamps.
 Foreground runs, permissions and responses, queued deliveries, lifecycle operations, and working
 managed or native descendants prevent collection. Outstanding local or remote finish subscriptions
 also protect their caller, including registration, recovery and notification dispatch acknowledgment.
+A pending subscription to an unreachable host keeps the parent's runtime from idle cleanup until the
+host answers, the host is removed, or the parent is archived.
 An idle managed child can still own background work.
 
 The daemon baseline always applies. An optional provider `canStopRuntime()` adds a veto: false,
@@ -116,9 +118,72 @@ older cancellation from settling a newer turn. If interruption is rejected or ti
 keeps its active foreground turn and replacement, reload, rewind, and Stop report the failure.
 Accepting new work after an ambiguous interruption would create a split-brain session.
 
+### Queued messages
+
+The daemon owns the queue. Each agent record carries `queuedMessages` in the encoded wire form (text,
+base64 images, agent attachments), so the daemon can replay an entry without the client that queued
+it and the queue survives a restart. `AgentMessageQueueDispatcher`
+(`packages/server/src/server/agent/agent-message-queue.ts`) pops the head on every transition to
+`idle` and sends it through the same path as `send_agent_message`, one entry per turn. Adding while
+the agent is already idle dispatches immediately. `send_now` pops a specific entry and sends it into
+the active turn with the caller's steer/interrupt behavior.
+
+An entry is never dropped. The pop is persisted before the send, so a send that throws before the
+provider admitted the prompt (load failure, refused steer, provider error) puts the same entry, id
+and bytes included, back at the head in one write. After an automatic drain the daemon also pauses
+the queue with the error as `queuePauseReason`, writes a `[System Error]` row to the timeline, and
+flags the agent with `error` attention: nobody may be watching, and retrying on every idle would
+loop. A failed `send_now` only restores the entry; its caller already gets the error. Once
+`sendPromptToAgent` returns, the prompt belongs to the provider: a run-start wait that times out or
+fails is treated as sent, because requeueing would deliver it twice (a rejected start already shows
+as a rejected message in the timeline).
+
+A queue must drain without a client. After start, the daemon loads every non-archived stored agent
+whose queue is non-empty and not paused, one at a time and in the background, and drains it. Idle
+runtime cleanup does not unload an agent whose queue would drain, since unloading strands it until
+something loads the agent again; a paused queue does not pin the runtime.
+
+`queuePaused` on the record stops the automatic drain and survives a restart; `send_now` still
+works while paused, and resuming drains the head if the agent is idle. Pausing or resuming clears
+`queuePauseReason`; the reason only exists for a pause the daemon made.
+
+Snapshots carry summaries only (`id`, `text`, counts, `createdAt`) plus `queuePaused` and
+`queuePauseReason` when set; the
+bytes stay on the record. Every client renders the same list from its agent subscription and edits
+it through the `agent.queue.*` RPCs: `add`, `update`, `remove`, `move`, `clear`, `set_paused`,
+`send_now`. `remove` returns the full entry so the caller can put it back in a composer. `move`
+clamps the target index to the end of the list.
+
+The app keeps a per-client mirror of the entries it queued itself, keyed by the daemon's id
+(`packages/app/src/composer/daemon-queue.ts`). The daemon holds the wire form, which cannot be turned
+back into forge, workspace-file, or plugin composer attachments; a same-client edit restores from the
+mirror instead. Cross-client edits restore text, images, and uploaded files and drop the rest.
+
+The mirror is also the only thing that keeps queued images on this client. Attachment cleanup
+deletes image bytes no draft, mirror entry, or timeline row references, and the composer clears its
+draft before the `add` RPC answers, so `queueMessageOnDaemon` retains the images until its mirror
+entry exists. The daemon never echoes images on user messages, so a dispatched entry's row shows
+images only if this client hands its copy over. The queue snapshot drops the entry before that row
+arrives: the mirror keeps it until a timeline row with the entry id appears, then hands its images to
+that row. An entry with no row after `DISPATCH_ECHO_WAIT_MS` was removed on another client and is
+dropped.
+
+The composer shows a reorder before the daemon confirms it. The optimistic order holds only while the
+daemon still lists the order it was applied over, not until the RPC resolves: the `move` response and
+the snapshot that carries the new order can arrive in either order, and unrelated agent updates
+resend an unchanged queue. Once the daemon lists any other order, the optimistic one is dropped for
+good. A failed `move` reverts and toasts. On phones the row menu is the reorder path; the drag handle
+(long press on native) is a shortcut.
+
+Hosts without `features.messageQueue` fall back to the client-local queue the app shipped before
+(`// COMPAT(messageQueue)` marks both branches). Hosts without `features.messageQueueControls` lack
+`move`, `clear`, and `set_paused`; the app hides those controls (`// COMPAT(messageQueueControls)`).
+Older hosts never send `queuePauseReason`, so the queue header shows a reason only when one arrives
+and needs no feature gate (`// COMPAT(queuePauseReason)`).
+
 ## Relationships
 
-Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and always stamps `paseo.parent-agent-id`, pointing back at the caller. Omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.
+Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and stamps `paseo.parent-agent-id`, pointing back at the caller, unless the call passes `detached: true`. Detached creation never writes the parent labels: the new agent is a root agent from the start and `notifyOnFinish` defaults to `false`. Without `workspaceId` it also mints a new local workspace in the caller's directory, because the sidebar shows one row per workspace and a root agent left in the caller's workspace would only be a tab there. Use it when the user asks for a separate or main agent; `fork_agent` is the tool for a new agent that needs the caller's conversation. Otherwise omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.
 
 - **Subagents** — exist as part of the creating agent's work, appear in that agent's subagent track, and are archived with it.
 - **Detached agents** — stand on their own after an explicit detach transition, do not appear in the former parent's subagent track, and are not archived with it.
@@ -139,9 +204,9 @@ Runtime ownership is resolved from explicit workspace ID and caller context, nev
 
 Setup belongs to the workspace, including combined workspace-plus-agent creation and the supported agent `worktree` request. Run setup through the workspace workflow before launching configured terminals or scripts. Setup output is read in the Setup panel from per-command snapshots; never produce setup chat timeline rows or concatenate command logs. Legacy agent `git`/`worktreeName` inputs and hidden MCP worktree placement are rejected with workspace-creation guidance. Existing wire schemas retain an empty combined-log string for parsing compatibility.
 
-Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an agent-facing MCP tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
+Users can also detach an existing subagent from the subagents track. After creation, detach is a manual lifecycle gesture, not an agent-facing MCP tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
 
-`notifyOnFinish` defaults to `true` for agent-scoped creation and prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` for explicit reporting or no completion callback.
+`notifyOnFinish` defaults to `true` for agent-scoped creation (`false` when `detached`) and prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` for explicit reporting or no completion callback.
 
 Agent-originated messages and automatic notifications share a recipient-daemon delivery module. A queued receipt acknowledges admission before provider dispatch, allowing a child to report and finish in the same two-second quiet window. Human prompts dispatch directly. Conflicting explicit interruption or session-mode choices retain separate ordered dispatches.
 
@@ -176,12 +241,6 @@ Permission requests are notification checkpoints, not the end of that subscripti
 The permission notification includes the normalized request plus the child and request IDs, so the caller can inspect it and respond without fetching agent status.
 A watched child that closes before its finish event also notifies the caller so delegated work cannot disappear silently during archive or workspace teardown.
 
-## Provider-managed child agents
-
-Some providers can create their own child sessions inside one provider runtime. OMP's task tool reports these with `child_session` events; `AgentManager` imports the live provider handle, stamps `paseo.parent-agent-id`, and surfaces the result as a normal subagent in the parent's subagents track.
-
-The provider still owns the underlying runtime. Paseo keeps an agent record so the child can be opened, tracked, archived, and cascaded with the parent, but prompts and history hydration route through the provider adapter for that native child handle.
-
 ## Background workspaces
 
 `workspace.background` controls discovery only. Background workspaces contain ordinary durable
@@ -207,6 +266,50 @@ Branch-name and commit-message generators still use private disposable internal 
 discovery and plugin hooks, and drops their timelines on archive. An archived helper retains
 its exact-ID result briefly to cover completion before a waiter attaches. This internal
 lifecycle is separate from public workspace visibility and is not a public creation option.
+
+### ask_agent copies
+
+`ask_agent` keeps an internal copy of the asked agent alive between rounds, one open thread per
+(asker, target). The copy is a normal internal agent: its agent record is never persisted and the
+idle-runtime reaper skips it, so `AskAgentThreads` (`agent/ask-agent.ts`) owns its lifetime
+instead. Only an identified asker (an agent id) gets a thread; a caller with no identity, such as
+an old client, gets a one-shot ask that deletes the copy after one round.
+A thread closes at the round cap, on idle, when the asker or target is archived, when the asker
+closes it, or when the daemon stops. Close deletes the copy and its provider fork. The thread
+answers "closed" from the moment a close starts but keeps its slot and its fork record until the
+fork is gone; a close that arrives while the copy is still being made waits for that and undoes it.
+
+A daemon that dies mid-thread cannot run that cleanup. The provider's fork is durable, so open
+fork handles are written to `$PASEO_HOME/ask-agent-open-forks.json` and deleted from their handles
+in the background at the next startup, bounded per record and given up on after five failed
+starts. That is why `AgentClient.discardNativeFork(handle)` exists beside
+`ForkedNativeSession.discard`; it validates the handle because the file is on disk. A fork whose
+`discard` fails at close keeps its record for the same retry.
+
+A copy keeps the same Paseo tool list as its source, because the tool list is part of the prompt
+cache prefix. Calls are refused at execution time instead: only the reads in
+`COPY_READ_ONLY_TOOLS` (`agent/tools/paseo-tools.ts`) work for a copy. Add a new read-only tool
+there if copies should have it; a new mutating tool is blocked with no change. The guard covers
+Paseo tools only: a copy still has the source's third-party MCP servers, and for those it relies on
+the provider's read-only mode and auto-denied approvals. A user's own allow rules can approve some
+of those calls.
+
+The limits (`maxRounds`, `maxOpenThreads`, `idleTimeoutMs`, `replyCharLimit`, `replyStoreChars`)
+come from `agents.askAgent` in `config.json` and apply at daemon start.
+
+A reply longer than `replyCharLimit` code points is saved whole in memory (`agent/ask-reply-store.ts`)
+and served in pages by an opaque cursor, with no model call and no round. Page boundaries are
+frozen when the reply is stored. Saved replies live 30 minutes from when the answer completes,
+independent of the thread: closing, compaction and idle close free the copy but not its replies,
+and reads never extend the 30 minutes. They are not persisted, so a daemon restart drops them.
+`replyStoreChars` bounds the stored text; the oldest replies go first. A cursor works only for the
+asker that got the reply (an anonymous one-shot caller is identified by its connection) and the
+same agent. Clients opt in with `replyPaging` on the request and gate cursor reads on
+`features.agentAskReplyPaging`; a client without it gets page 1 and a fixed note.
+
+A thread an agent here opens on another host is closed there (best effort) when that agent is
+archived. If the daemon stops, or the host is unreachable, the remote thread lives until the remote
+host's idle timeout closes it.
 
 ## Archive
 
@@ -237,6 +340,20 @@ History navigation opens the selected agent without changing either archive stat
 **Restore** recovers only the workspace; the selected archived agent stays open with its callout.
 The agent's **Unarchive** runs the provider's native unarchive hook before interactive resume and
 history hydration. Other archived agents stay archived.
+
+Agents unarchive another agent with the `unarchive_agent` tool; `paseo agent unarchive` and the
+`agent.unarchive.request` RPC do the same. Unlike the app's Unarchive it starts no turn and loads
+no runtime: it runs the native unarchive hook, clears `archivedAt`, and publishes the stored record
+so the agent reappears in every client's lists. It restores the agent's archived workspace first
+when the workspace directory exists. When the directory is gone it leaves the workspace archived,
+since workspace **Restore** can recreate a removed worktree, and returns a warning: the agent cannot
+run until its directory exists again.
+
+`search_agents` finds archived and active agents by their title, labels, first user message, and
+latest assistant message. The daemon keeps timelines only in memory, so the agent record carries
+truncated copies of those two messages (`firstUserMessage`, `lastAssistantMessage`), refreshed on
+every snapshot write. Agents last written before those fields existed match on title and labels
+only. Search reads records and loaded timelines; it never resumes a provider session.
 
 Opening an agent is a navigation choice, independent of whether its details are cached. The
 layout retains that choice across reload while the panel fetches the agent from the daemon.
@@ -281,20 +398,44 @@ The asymmetry is intentional: a subagent's persistent relationship lives in the 
 
 Agent lifecycle status stays literal: a parent agent is `idle` when its own turn is idle, even if a child is running.
 
-Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. Same-workspace descendants contribute `running` to the nearest ancestor in that workspace; their non-running attention, permission, and error states stay in the parent's subagents track. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
+Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
 
-Running provider-native subagents contribute `running` to the workspace owned by their parent agent. Their completed, failed, and canceled states stay in the parent's subagents track.
+Running same-workspace descendants and running provider-native subagents count toward the workspace that owns their nearest workspace root. The descriptor carries that count as `runningSubagentCount`. A working subagent raises a `done` workspace to `running`. When the root agent waits on the user (`attention`, `needs_input`, `failed`), the workspace keeps that status so a spinner does not hide that the user is needed. The sidebar row then shows "N sub-agents working" under the title. The subagents' other states (attention, permission, error, completed, canceled) stay in the parent's subagents track.
+
+The sidebar uses the same ownership to place workspaces. Workspace W renders as an indented child row under workspace P when every unarchived workspace-root agent in W (an agent whose parent is not in W) is a subagent of an unarchived agent in P. W's own same-workspace helpers do not count. A root agent in W, or subagents of a second workspace, keep W at the top level. Detach and parent archive (which detaches cross-workspace children) return it there without user action. Nesting chains, and a parent cycle still places every row once. The client derives this from its agent list (`packages/app/src/subagents/workspace-parents.ts`); the daemon sends no relationship field.
+
+A child row keeps its own status, actions, and pin. It follows its parent's row: a collapsed project hides both, and pinning the parent brings its children into Pinned beneath it. A child pinned on its own stays a top-level row in Pinned when its parent is not. A child in a different project from its parent stays in its own project. Status grouping sorts only thread heads: a child row follows its parent into the parent's status group, whatever its own status, so a thread reads the same in both groupings. A subagent workspace's status does not roll up into its parent's row, so a folded child that needs input shows only once its thread is unfolded.
+
+### Sidebar thread children
+
+Every thread row in the sidebar carries its subagents behind one fold row ("3 subagents"), folded by default. Unfolding is remembered per thread in the sidebar's persisted collapse state (`expandedThreadKeys`); there is no global toggle. The count covers three kinds of children, all derived from state the client already holds:
+
+- Same-workspace Paseo subagents (and their descendants), using the root rule from [Workspace activity](#workspace-activity): an agent whose parent shares its workspace has no row of its own, so it shows here (`packages/app/src/subagents/thread-children.ts`). Tapping opens it as an agent tab.
+- Provider subagents of any agent in the workspace. They are read-only rows; tapping opens their transcript tab in the thread's workspace. The sidebar issues no list request of its own: a provider subagent shows once its parent has been listed (the subagents track lists the agent you open, and reconnects re-list it) or once the daemon announced it live. A thread whose parent you have not opened since the app started shows only the provider subagents that started meanwhile.
+- Subagent workspace rows nested under this one. They fold with the thread instead of rendering as indented rows.
+
+Detached children have no parent label, so they are top-level rows like any other agent.
+
+Unfolded, the rows are a tree (`buildThreadChildTree`): an agent sits under the agent that spawned it (`paseo.parent-agent-id`), and a provider subagent under the agent that owns it. A row whose parent is not a row here (a root agent, archived, elsewhere) renders at the top level, so nothing is hidden. Indent stops growing after two levels so rows keep their width on a phone. The fold count is the total across every depth; the chat footer chip counts only an agent's direct children, so the two numbers differ for a deep tree.
+
+The fold row's kebab holds **Archive finished (N)** for the whole thread: every idle or errored Paseo subagent at any depth plus every finished provider row, after a confirm that states N. It reuses the track's `archive-finished` engine with a thread scope (`useArchiveFinishedThread`). Running agents are never archived, and subagent workspaces that nest under the thread are not touched (they are rows of their own).
 
 A finished workspace can be marked unread after it has been reviewed. The daemon restores
 `finished` attention on its newest eligible workspace-root agent without sending a new completion
 notification. Opening the workspace clears that attention through the normal focus flow.
 
-Attention is set by the agent finishing or failing and cleared by the client's
-`workspace.clear_attention`, which fires when the user reads the chat. Loading an agent's runtime is
-neither, so resuming carries the stored attention and the stored last-activity time through
-untouched. Forging either makes a background resume look like the user read a workspace and like the
-agent worked in it just now, which rewrites the sidebar timestamp permanently — persisted
-`updatedAt` is what workspace `statusEnteredAt` is re-derived from on the next daemon start.
+Attention is set by the agent finishing or failing. Reading the chat clears it through
+`clear_agent_attention`; "Mark as read" in the sidebar row menu clears it for the whole workspace
+through `workspace.clear_attention`. Lifecycle `error` alone keeps an agent in the failed bucket, so
+reading the chat leaves the row red. "Mark as read" also moves an `error` agent, live or stored, to
+`idle`, so the row stays clear until the next error. The error stays in the timeline and in
+`lastError`. Nothing new goes on the wire, so older clients get the same dismissal.
+
+Loading an agent's runtime neither sets nor clears attention, so resuming carries the stored
+attention and the stored last-activity time through untouched. Forging either makes a background
+resume look like the user read a workspace and like the agent worked in it just now, which rewrites
+the sidebar timestamp permanently — persisted `updatedAt` is what workspace `statusEnteredAt` is
+re-derived from on the next daemon start.
 
 ## The subagents track
 
@@ -308,7 +449,7 @@ The rows combine two kinds of children:
 parentAgentId === thisAgent.id  AND  !archivedAt
 ```
 
-- **Provider subagents** are child executions owned by Claude, Codex, or OpenCode. They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track. A descriptor's optional `parentSubagentId` identifies its direct provider-subagent parent; an absent value identifies a direct child of the managed agent.
+- **Provider subagents** are child executions owned by Claude, Codex, OpenCode, or OMP (its `task` tool, `packages/server/src/server/agent/providers/omp/subagent-index.ts`). They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track and the [sidebar thread](#sidebar-thread-children). A descriptor's optional `parentSubagentId` identifies its direct provider-subagent parent; an absent value identifies a direct child of the managed agent.
 
 Clicking either kind opens a workspace tab. On compact layouts it opens in a [sheet](explorer-sidebar.md#sheets) instead, replacing the subagents list in place (Back returns to the list); the sheet hides the composer and shows the agent's model and thinking as one line in its place (`PaneSubtitle`, the row provider subagents already use), and a Paseo subagent's sheet offers **Open as tab** (the full-screen glyph in the header) to get the composer back. A Paseo subagent tab is a normal interactive agent pane. A provider subagent tab is a read-only timeline pane with no composer, archive, detach, rewind, or fork actions. It shows its own direct children in a subagents track. Every subagent pane links back to its parent (`packages/app/src/subagents/parent/`): a pill above the composer when there is one, a parent box in the composer's place when there is not. Both panes use `AgentStreamView`, so message, reasoning, tool-call, and layout rendering stay identical.
 

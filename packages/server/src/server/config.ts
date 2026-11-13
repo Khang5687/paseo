@@ -596,10 +596,12 @@ export type ResolvedDaemonSettings = Pick<
   | "relayRequireProtectedSecurity"
   | "appBaseUrl"
   | "idleRuntimeCleanup"
+  | "draftHistoryRetentionDays"
   | "resumeOnStartup"
   | "resumePrompt"
   | "providerCatalogRefreshTimeoutMs"
   | "metadataGeneration"
+  | "featureDefaults"
   | "providerOverrides"
 >;
 
@@ -629,6 +631,7 @@ export function resolveConfigFromPersisted(
     desktopManaged: env.PASEO_DESKTOP_MANAGED === "1",
     worktreesRoot: resolveWorktreesRoot(paseoHome, persisted),
     pluginRegistries: persisted.pluginRegistries,
+    askAgent: persisted.agents?.askAgent,
     pluginRegistryUrl: env.PASEO_PLUGIN_REGISTRY,
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",
@@ -684,10 +687,8 @@ export function resolveReloadableConfig(
     plugins: persisted.plugins,
     relayEnabled: relay.enabled,
     relayRequireProtectedSecurity: relay.requireProtectedSecurity,
-    idleRuntimeCleanup: persisted.agents?.idleRuntimeCleanup ?? true,
+    ...resolveAgentRuntimeConfig(persisted.agents),
     ...resolveRestartRecoveryConfig(persisted.agents),
-    providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
-    metadataGeneration: persisted.agents?.metadataGeneration,
     providerOverrides: extractProviderOverrides(
       persisted.agents?.providers as Record<string, unknown> | undefined,
     ),
@@ -835,6 +836,16 @@ function resolveSpeechOverrideControlledPaths(
   if (env.PASEO_VOICE_LLM_PROVIDER !== undefined) paths.push("features.voiceMode.llm.provider");
   if (env.PASEO_LOCAL_MODELS_DIR !== undefined) paths.push("providers.local.modelsDir");
   return paths;
+}
+
+function resolveAgentRuntimeConfig(agents: PersistedConfig["agents"]) {
+  return {
+    idleRuntimeCleanup: agents?.idleRuntimeCleanup ?? true,
+    providerCatalogRefreshTimeoutMs: agents?.catalogRefreshTimeoutMs,
+    metadataGeneration: agents?.metadataGeneration,
+    featureDefaults: agents?.featureDefaults,
+    draftHistoryRetentionDays: agents?.draftHistoryRetentionDays,
+  };
 }
 
 function resolveRestartRecoveryConfig(agents: PersistedConfig["agents"]) {

@@ -1,6 +1,8 @@
 import { isSameOrDescendantPath } from "../path-utils.js";
 import type {
   AgentListItemPayload,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
   AgentSnapshotPayload,
   RecentProviderSessionDescriptorPayload,
 } from "../messages.js";
@@ -107,6 +109,11 @@ export function toStoredAgentRecord(
       : null,
     internal: options?.internal,
     owner: agent.owner,
+    queuedMessages: agent.queuedMessages,
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.queuePaused && agent.queuePauseReason
+      ? { queuePauseReason: agent.queuePauseReason }
+      : {}),
   } satisfies StoredAgentRecord;
 }
 
@@ -149,6 +156,11 @@ export function toAgentPayload(
     title: options?.title ?? null,
     labels: agent.labels,
     archivedAt: options?.archivedAt ?? null,
+    queuedMessages: agent.queuedMessages.map(summarizeQueuedMessage),
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.queuePaused && agent.queuePauseReason
+      ? { queuePauseReason: agent.queuePauseReason }
+      : {}),
     ...(agent.internal ? { internal: true } : {}),
   };
 
@@ -260,8 +272,35 @@ export function buildStoredAgentPayload(
     archivedAt: record.archivedAt ?? null,
     ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),
+    ...projectStoredQueue(record),
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
+  };
+}
+
+function projectStoredQueue(
+  record: Pick<StoredAgentRecord, "queuedMessages" | "queuePaused" | "queuePauseReason">,
+): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused" | "queuePauseReason"> {
+  return {
+    queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
+    ...(record.queuePaused ? { queuePaused: true } : {}),
+    ...(record.queuePaused && record.queuePauseReason
+      ? { queuePauseReason: record.queuePauseReason }
+      : {}),
+  };
+}
+
+// Snapshots carry summaries only: image bytes stay in the record and are
+// replayed by the daemon on dispatch.
+export function summarizeQueuedMessage(
+  message: AgentQueuedMessagePayload,
+): AgentQueuedMessageSummaryPayload {
+  return {
+    id: message.id,
+    text: message.text,
+    imageCount: message.images.length,
+    attachmentCount: message.attachments.length,
+    createdAt: message.createdAt,
   };
 }
 
@@ -276,6 +315,7 @@ export function toAgentListItemPayload(agent: AgentSnapshotPayload): AgentListIt
     effectiveThinkingOptionId: agent.effectiveThinkingOptionId,
     status: agent.status,
     cwd: agent.cwd,
+    ...(agent.workspaceId ? { workspaceId: agent.workspaceId } : {}),
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
     lastUserMessageAt: agent.lastUserMessageAt,
@@ -328,24 +368,33 @@ function compareAgentListItems(a: AgentListItemPayload, b: AgentListItemPayload)
   return resolveAgentListActivityTime(b) - resolveAgentListActivityTime(a);
 }
 
-export function selectAgentListItems(
+export const DEFAULT_AGENT_LIST_LIMIT = 20;
+
+export interface AgentListSelection {
+  cwd?: string;
+  statuses?: AgentSnapshotPayload["status"][];
+  sinceHours?: number;
+  limit?: number;
+  /** Case-insensitive substring of the agent title. */
+  query?: string;
+}
+
+export function selectAgentListPage(
   agents: readonly AgentSnapshotPayload[],
-  options: {
-    cwd?: string;
-    statuses?: AgentSnapshotPayload["status"][];
-    sinceHours?: number;
-    limit?: number;
-  } = {},
-): AgentListItemPayload[] {
+  options: AgentListSelection = {},
+): { agents: AgentListItemPayload[]; more: number } {
   const statusFilter = options.statuses?.length ? new Set(options.statuses) : null;
   const sinceMs = Date.now() - (options.sinceHours ?? 48) * 60 * 60 * 1000;
-  return agents
+  const query = options.query?.trim().toLowerCase();
+  const limit = options.limit ?? DEFAULT_AGENT_LIST_LIMIT;
+  const matches = agents
     .map(toAgentListItemPayload)
     .filter((agent) => !options.cwd || isSameOrDescendantPath(options.cwd, agent.cwd))
     .filter((agent) => !statusFilter || statusFilter.has(agent.status))
+    .filter((agent) => !query || (agent.title ?? "").toLowerCase().includes(query))
     .filter((agent) => !agent.archivedAt || resolveAgentListActivityTime(agent) >= sinceMs)
-    .sort(compareAgentListItems)
-    .slice(0, options.limit ?? 50);
+    .sort(compareAgentListItems);
+  return { agents: matches.slice(0, limit), more: Math.max(0, matches.length - limit) };
 }
 
 export function toRecentProviderSessionDescriptorPayload(

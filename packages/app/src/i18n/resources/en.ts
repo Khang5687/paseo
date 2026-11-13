@@ -112,6 +112,12 @@ export const en = {
     },
   },
   composer: {
+    draftHistory: {
+      restore: "Restore draft",
+      attachmentsOnly: "(attachments only)",
+      attachments_one: "{{count}} attachment",
+      attachments_other: "{{count}} attachments",
+    },
     placeholders: {
       desktop: "Message the agent, tag @files, or use /commands and /skills",
       mobile: "Message, @files, /commands",
@@ -131,7 +137,8 @@ export const en = {
       sendAndSteer: "Send and steer",
       sendMessage: "Send message",
       longPressToQueue: "Long press to queue",
-      longPressToSendNow: "Long press to send now",
+      longPressToInterrupt: "Long press to interrupt",
+      longPressToSteer: "Long press to steer",
       queue: "Queue",
       send: "Send",
     },
@@ -162,6 +169,25 @@ export const en = {
       dropFilesHere: "Drop files here",
       editQueuedMessage: "Edit queued message",
       sendQueuedMessageNow: "Send queued message now",
+      queueHeader: "Queue · {{count}}",
+      queuePausedHeader: "Queue paused · {{count}}",
+      queuePauseReason: "Couldn't send: {{reason}}",
+      pauseQueue: "Pause queue",
+      resumeQueue: "Resume queue",
+      clearQueue: "Clear queue",
+      clearQueueTitle: "Clear queue",
+      clearQueueMessage: "Every queued message for this agent will be removed.",
+      clearQueueConfirm: "Clear",
+      queuedMessageActions: "Queued message actions",
+      editQueuedMessageAction: "Edit",
+      moveQueuedMessageToTop: "Move to top",
+      moveQueuedMessageUp: "Move up",
+      moveQueuedMessageDown: "Move down",
+      deleteQueuedMessage: "Delete",
+      reorderQueuedMessage: "Drag to reorder",
+      showMoreQueuedMessages: "Show {{count}} more",
+      showFewerQueuedMessages: "Show less",
+      queueUpdateFailed: "Unable to update queue",
       openImage: "Open image attachment",
       removeImage: "Remove image attachment",
       removeFile: "Remove file attachment",
@@ -187,6 +213,7 @@ export const en = {
     clientCommands: {
       archiveAgent: "Archive the current agent",
       freshDraft: "Archive this agent and start a fresh draft",
+      forkAgent: "Fork this chat into a new tab",
     },
     github: {
       searching: "Searching...",
@@ -314,6 +341,57 @@ export const en = {
       hostOffline: "Host offline",
       runningAgent: "This agent is still running. Archiving it will stop the agent.",
       archive: "Archive",
+    },
+  },
+  codeRun: {
+    run: "Run",
+    runCommand: "Run command",
+    cancel: "Cancel",
+    commandLabel: "Command",
+    where: "Runs on {{host}} · {{folder}}",
+    running: "Running",
+    done: "Done · exit {{code}}",
+    failed: "Failed · exit {{code}}",
+    stopped: "Stopped",
+    terminalClosed: "Terminal closed",
+    close: "Close",
+    expand: "Show output",
+    collapse: "Hide output",
+    openTerminal: "Open in Terminal tab",
+    answerPlaceholder: "Send input",
+    send: "Send",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
+    sendToAgent: "Send output to agent",
+    rerun: "Re-run",
+    copyOutput: "Copy output",
+    copied: "Copied",
+    noOutput: "No output yet",
+    noOutputFinished: "No output",
+    startFailed: "Unable to start the command",
+    closeFailed: "Unable to close the terminal",
+    hostOffline: "Host offline. Reconnect to run this command.",
+    prompt: {
+      sudoPassword: "sudo password",
+      password: "Password",
+    },
+    chips: {
+      yes: "Yes",
+      no: "No",
+    },
+    keys: {
+      enter: "Enter",
+      tab: "Tab",
+      interrupt: "Ctrl-C",
+    },
+    risk: {
+      admin: "Runs as admin",
+      deletes: "Deletes files",
+    },
+    report: {
+      exitStatus: "Exit status",
+      stopped: "Stopped before it finished",
+      truncated: "[earlier output cut]",
     },
   },
   message: {
@@ -472,6 +550,8 @@ export const en = {
       openToSide: "Open to the side",
       copyPath: "Copy path",
       copyRelativePath: "Copy relative path",
+      copyFullPath: "Copy full path",
+      copyFileName: "Copy file name",
       revealIn: "Reveal in {{target}}",
       download: "Download",
       addToChat: "Add to chat",
@@ -692,6 +772,7 @@ export const en = {
         terminalIdCopiedLabel: "Terminal ID",
         resumeCommandCopiedLabel: "resume command",
         filePathCopiedLabel: "File path",
+        fileNameCopiedLabel: "File name",
         resumeIdUnavailable: "Resume ID not available",
         resumeCommandUnavailable: "Resume command not available",
         reloadingAgent: "Reloading agent...",
@@ -1165,8 +1246,21 @@ export const en = {
       description: "Check your connection and try again.",
     },
   },
+  archiveConfirm: {
+    agentTitle: "Archive “{{name}}”?",
+    agentTitleUnnamed: "Archive this agent?",
+    workspaceTitle: "Archive workspace “{{name}}”?",
+    workspaceTitleUnnamed: "Archive this workspace?",
+    finishedSubagentsTitle: "Archive finished subagents?",
+    finishedSubagentsCountOne: "Archive 1 finished subagent?",
+    finishedSubagentsCountMany: "Archive {{count}} finished subagents?",
+    message: "You can restore it from History.",
+    confirm: "Archive",
+    cancel: "Cancel",
+  },
   sidebar: {
     statusGroupAccessibility: "{{label}} group",
+    unsentDraft: "Unsent draft",
     statusBucket: {
       needsInput: "Needs input",
       failed: "Failed",
@@ -1269,6 +1363,7 @@ export const en = {
       sessions: "History",
       search: "Search",
       schedules: "Schedules",
+      notes: "Notes",
     },
     worktreeSetup: {
       title: "Set up worktree scripts",
@@ -1305,6 +1400,9 @@ export const en = {
       },
     },
     workspace: {
+      workingSubagents: "{{count}} sub-agents working",
+      workingSubagents_one: "{{count}} sub-agent working",
+      workingSubagents_other: "{{count}} sub-agents working",
       status: {
         serviceRunning: "Service {{name}} running",
         serviceUnhealthy: "Service {{name}} unhealthy",
@@ -1326,6 +1424,7 @@ export const en = {
         createWorkspaceFor: "Create a new workspace for {{projectName}}",
         copyPath: "Copy path",
         copyBranchName: "Copy branch name",
+        copyAgentId: "Copy agent ID",
         rename: "Rename workspace",
         pin: "Pin to top",
         unpin: "Unpin",
@@ -1351,6 +1450,8 @@ export const en = {
         workspacePathUnavailable: "Workspace path not available",
         pathCopied: "Path copied",
         branchNameCopied: "Branch name copied",
+        agentIdCopied: "Agent ID {{id}}",
+        agentIdCopiedMostRecent: "Agent ID {{id}} (most recent of {{count}})",
         hostDisconnected: "Host is not connected",
         hideFailed: "Failed to hide workspace",
         archiveFailed: "Failed to archive workspace",
@@ -1413,6 +1514,9 @@ export const en = {
     quitting: {
       title: "Quitting Paseo...",
       detail: "Stopping the local daemon.",
+    },
+    quitConfirm: {
+      hint: "Hold ⌘Q or press twice to quit",
     },
     daemon: {
       title: "Daemon",
@@ -1942,6 +2046,40 @@ export const en = {
     shareFile: "Share file",
     shareFileNamed: "Share {{fileName}}",
   },
+  offlineFiles: {
+    title: "Offline files",
+    autoSave: {
+      label: "Save chat files automatically",
+      description:
+        "Save files mentioned in chats you open, on Wi-Fi only, so they open while the host is offline.",
+    },
+    retentionDays: {
+      label: "Keep for (days)",
+      description: "Saved files older than this are removed.",
+    },
+    maxTotalMb: {
+      label: "Storage limit (MB)",
+      description: "The oldest saved files are removed past this size.",
+    },
+    maxFileMb: {
+      label: "Largest file (MB)",
+      description: "Larger files are not saved.",
+    },
+    saved: {
+      label: "Saved: {{count}} files, {{size}}",
+      description: "The newest saved files are listed below.",
+    },
+    clearAll: "Clear all",
+    clearConfirmTitle: "Clear offline files?",
+    clearConfirmMessage:
+      "Saved copies are deleted from this device. Files on the host are not touched.",
+    saveOffline: "Save offline",
+    savedToast: "Saved for offline use",
+    tooLarge: "The file is over the {{size}} MB limit for offline files.",
+    readOnly: "This is a saved copy. Connect to the host to edit it.",
+    savedAgo: "Offline copy, saved {{time}}",
+    share: "Share",
+  },
   menu: {
     backdrop: "Menu backdrop",
   },
@@ -1966,6 +2104,8 @@ export const en = {
     archiveTooltip: "Archive subagent",
     archiveFinishedAction: "Archive finished subagents",
     archiveFinishedRetry: "Retry ({{failed}}/{{total}})",
+    archiveFinishedCountAction: "Archive finished ({{count}})",
+    archiveFinishedProgress: "Archiving {{completed}}/{{total}}",
   },
   panels: {
     draft: {
@@ -2125,6 +2265,178 @@ export const en = {
       saveAccessibility: "Save review comment",
     },
   },
+  ompAccountRouting: {
+    login: {
+      start: "Add Claude account",
+      elsewhere: "Open Paseo on the host computer to add an account.",
+      update: "Update Paseo and Oh My Pi on the host to add accounts here.",
+      inProgress: "Sign-in in progress",
+      continue: "Continue",
+      cancel: "Cancel",
+      cancelSignIn: "Cancel sign-in",
+      done: "Done",
+      details: "Details",
+      tryAgain: "Try again",
+      close: "Close",
+      justAdded: "Just added",
+      warning: {
+        body: "Paseo saves one sign-in per Claude account. Sign in to claude.ai as the account you want to add.",
+        existing: "Already added: {{accounts}}",
+        alertTitle: "Check which account your browser uses",
+        alertDescription:
+          "If claude.ai is still signed in as an account that is already added, sign out or switch accounts first. A private window always starts signed out.",
+        guard:
+          "If you sign in as an account that is already added, Paseo stops and changes nothing.",
+      },
+      preparing: "Preparing sign-in link...",
+      link: {
+        title: "Sign in to Claude",
+        step: "Open the link and sign in as the account you want to add",
+        open: "Open sign-in page",
+        copy: "Copy link",
+        copied: "Copied",
+        label: "Sign-in link",
+        hint: "To use a private window or another device, copy the link instead",
+        waiting: "Waiting for the browser...",
+        pasteInstead: "Paste address instead",
+      },
+      paste: {
+        label: "Address or code",
+        placeholder: "http://localhost:54545/callback?code=...",
+        hint: "After you approve, the browser may land on a page that does not load. Copy the full address from the address bar, or the code Claude shows, and paste it here.",
+        submit: "Submit",
+        checking: "Checking...",
+        error: {
+          invalid_input: "That is not a sign-in address or code",
+          wrong_login: "That address belongs to an older sign-in link. Use the link shown here.",
+          not_waiting: "This sign-in already finished",
+          not_allowed: "Only Paseo on the host computer can send this",
+          unreachable: "Could not reach the host. Try again.",
+        },
+      },
+      verifying: "Checking the sign-in...",
+      result: {
+        added: {
+          title: "Added {{account}}",
+          titleUnnamed: "Account added",
+          description: "{{organization}}. Auto-routing can use it now.",
+          descriptionUnnamed: "Auto-routing can use it now.",
+          billingEnabled:
+            "Paid extra usage is on for this account. Auto-routing skips it until you turn that off in Claude settings.",
+          billingUnknown:
+            "Make sure paid extra usage is off for this account in Claude settings. Auto-routing skips accounts that have it on.",
+        },
+        alreadyListed: {
+          title: "{{account}} is already added",
+          titleUnnamed: "That account is already added",
+          description:
+            "Nothing changed. Your browser signed in as an account Paseo already has. Sign out of claude.ai or use a private window, then try again.",
+        },
+        replaced: {
+          title: "Replaced the sign-in for {{account}}",
+          titleUnnamed: "Replaced a saved sign-in",
+          description: "No account was added. The new sign-in is in use.",
+        },
+        failed: "Sign-in failed",
+        cancelled: "Sign-in cancelled",
+      },
+      failure: {
+        timeout: "The sign-in link expired after 10 minutes. Nothing changed.",
+        omp_failed:
+          "Oh My Pi could not finish signing in. Nothing changed. Try again, or run omp in a terminal and type /login.",
+        spawn_failed: "Paseo could not start Oh My Pi on this computer.",
+        unreachable:
+          "Lost contact with the host. When it reconnects, check the account list before you try again.",
+      },
+    },
+    labels: {
+      title: "Claude accounts (Oh My Pi)",
+      scope:
+        "Applies to all Paseo-managed OMP agents on this host. Other hosts and standalone terminals are unchanged.",
+      account: "Account",
+      automatic: "Automatic",
+      useForAuto: "Use for auto-routing",
+      auto: "Auto-routing",
+      priority: "Fallback priority",
+      priorityHelp:
+        "When the current account runs out, Paseo switches to the included account with the most usage left. This order breaks ties.",
+      addAccountHint:
+        "To add an account, run omp in a terminal and type /login, then sign in with a different Claude account.",
+      current: "Selected",
+      serving: "Serving",
+      lastServed: "Last served",
+      excluded: "Excluded from auto-routing",
+      missing: "Saved account unavailable",
+      fiveHour: "5-hour",
+      weekly: "Weekly",
+      tier: "Subscription tier",
+      unknownTier: "Subscription tier unknown",
+      unknownBudget: "Absolute allowance unknown",
+      consumed: "Consumed",
+      remaining: "Remaining",
+      stale: "Stale observation",
+      unknownOrganization: "Organization unknown",
+      detailsPending: "Details appear when an Oh My Pi agent is running",
+      search: "Search accounts",
+    },
+    actions: {
+      moveUp: "Move up",
+      moveDown: "Move down",
+    },
+    status: {
+      loading: "Loading account routing",
+      empty: "No Claude accounts observed",
+      noRuntime: "Accounts appear when an Oh My Pi agent is running.",
+      unsupported: "This host has not verified OMP account-routing support",
+      offline: "Host offline; showing last confirmed settings",
+      readOnly: "You can view these settings but cannot change them",
+      pending: "Saving settings",
+      conflict: "Settings changed elsewhere; showing the latest confirmed state",
+      paused: "Waiting for an available included account",
+      recovered: "Included account available",
+      unknownUsage: "Usage unknown",
+      summaryPaused: "Paused: no included account has usage left.",
+      summaryPausedResumes: "Paused: no included account has usage left. Resumes {{time}}",
+      summaryUsing: "Using {{account}}",
+      summaryAuto: "Auto picks the account with the most usage left",
+    },
+    reason: {
+      no_account: "No account is selected",
+      source_changed: "The selected native credential source changed",
+      source_inaccessible: "This runtime cannot access the selected native account",
+      billing_enabled:
+        "Paid usage credits are enabled; included-only routing cannot use this account",
+      billing_unknown: "Paid usage-credit settings are not freshly verified",
+      quota_blocked: "Included usage is unavailable for this request",
+      entitlement_unavailable: "Model access is unavailable or not verified for this account",
+      auth_unavailable: "Native account authentication is unavailable",
+      unsupported_transport: "This provider transport does not support included-only routing",
+      unsupported_runtime: "This OMP runtime does not support managed routing",
+      persistence_failed: "Routing settings could not be saved",
+      host_unavailable: "Routing host unavailable",
+      cancelled: "Request cancelled",
+      metadata_pending: "Verifying account availability",
+      all_unavailable: "No included account is currently available",
+      auto_disabled: "Auto-routing is off; select an account or enable it to continue",
+      provider_failed: "Account availability could not be verified",
+    },
+    mutationError: {
+      conflict: "Settings changed elsewhere; review the latest state before trying again",
+      invalid_account: "That native account is no longer in the catalog",
+      unsupported: "Account-routing controls are unavailable on this host",
+      persistence_failed: "Settings were not saved; the previous confirmed settings remain",
+    },
+    values: {
+      used: "{{percent}}% used",
+      reset: "resets {{time}}",
+      observed: "observed {{time}}",
+      limitReached: "{{window}} limit reached",
+      limitReachedReset: "{{window}} limit reached · resets {{time}}",
+      account: "Account {{row}}",
+      serving: "{{account}} is serving {{agent}}",
+      priority: "Priority {{position}}",
+    },
+  },
   providerUsage: {
     checkUsage: "Check usage",
     checkUsageHint: "Applies to {{host}} on every device",
@@ -2195,6 +2507,169 @@ export const en = {
       hoursAgo: "{{value}}h ago",
       minutesAgo: "{{value}}m ago",
       updated: "Updated {{relativeTime}}",
+    },
+  },
+  notes: {
+    addNote: "Add note",
+    offline: "This host is offline.",
+    unsupported: "Update this host to use notes.",
+    marker: {
+      open: "{{count}} notes",
+      open_one: "{{count}} note",
+      open_other: "{{count}} notes",
+      waiting: "{{count}} notes waiting",
+      waiting_one: "{{count}} note waiting",
+      waiting_other: "{{count}} notes waiting",
+      fired: "{{count}} notes fired",
+      fired_one: "{{count}} note fired",
+      fired_other: "{{count}} notes fired",
+      resolved: "{{count}} resolved notes",
+      resolved_one: "{{count}} resolved note",
+      resolved_other: "{{count}} resolved notes",
+    },
+    composer: {
+      titleNew: "New note",
+      titleEdit: "Edit note",
+      quoteLabel: "Highlighted text",
+      showMore: "Show more",
+      showLess: "Show less",
+      textLabel: "Note",
+      textPlaceholder: "What do you want to remember?",
+      kind: {
+        label: "Type",
+        note: "Note",
+        waiting: "Waiting on",
+      },
+      event: {
+        label: "Waiting on",
+        agent: "Agent",
+        command: "Command",
+        time: "Time",
+      },
+      agent: {
+        label: "Agent finishes or needs input",
+        placeholder: "Choose an agent",
+        empty: "No agents on this host",
+        search: "Search agents",
+        untitled: "Untitled agent",
+      },
+      command: {
+        terminalLabel: "Command finishes in",
+        placeholder: "Choose a terminal",
+        empty: "No terminals on this host",
+        search: "Search terminals",
+        untitled: "Terminal",
+        binding:
+          "Binds to the command running now or the next one. Needs a Paseo terminal running zsh or bash.",
+        conditionLabel: "Notify when it",
+        any: "Any",
+        success: "Succeeds",
+        failure: "Fails",
+        commandLabel: "Command",
+        commandPlaceholder: "Optional label",
+      },
+      time: {
+        label: "Remind me",
+        presets: {
+          in30m: "In 30 min",
+          in1h: "In 1 hour",
+          in2h: "In 2 hours",
+          tomorrow9: "Tomorrow 9:00",
+        },
+        inputLabel: "Or type a time",
+        inputPlaceholder: "3pm, in 45 min, tomorrow 9am",
+        invalid: "Couldn't read that time",
+        resolvedToday: "Today at {{time}}",
+        resolvedTomorrow: "Tomorrow at {{time}}",
+        resolvedOther: "{{date}} at {{time}}",
+      },
+      actions: {
+        cancel: "Cancel",
+        add: "Add note",
+        save: "Save",
+        resolve: "Resolve",
+        reopen: "Reopen",
+        delete: "Delete",
+      },
+      deleteConfirm: {
+        title: "Delete note",
+        message: "Delete this note? This cannot be undone.",
+        confirm: "Delete",
+      },
+      errors: {
+        save: "Couldn't save the note: {{message}}",
+        update: "Couldn't update the note: {{message}}",
+        delete: "Couldn't delete the note: {{message}}",
+      },
+    },
+    screen: {
+      title: "Notes",
+      loadError: "{{host}}: Could not load notes",
+      unsupportedHosts_one: "{{hosts}} needs an update to show notes",
+      unsupportedHosts_other: "{{hosts}} need an update to show notes",
+      filters: {
+        all: "All",
+        waiting: "Waiting",
+        open: "Open",
+        resolved: "Resolved",
+      },
+      empty: {
+        all: "No notes yet",
+        allHint: "Highlight text in a chat or terminal to add a note",
+        waiting: "Nothing waiting",
+        open: "No open notes",
+        resolved: "No resolved notes",
+      },
+      source: {
+        agent: "Agent",
+        terminal: "Terminal",
+      },
+      wait: {
+        agent: "Waiting for {{agent}} to finish",
+        agentUnnamed: "Waiting for the agent to finish",
+        commandAny: "Waiting for command to finish",
+        commandSuccess: "Waiting for command to succeed",
+        commandFailure: "Waiting for command to fail",
+        namedCommandAny: "Waiting for {{command}} to finish",
+        namedCommandSuccess: "Waiting for {{command}} to succeed",
+        namedCommandFailure: "Waiting for {{command}} to fail",
+        timeToday: "Reminder at {{time}}",
+        timeTomorrow: "Reminder tomorrow at {{time}}",
+        timeOther: "Reminder {{date}} at {{time}}",
+        inMinutes: "in {{count}}m",
+        inHours: "in {{count}}h",
+        inDays: "in {{count}}d",
+      },
+      status: {
+        waiting: "Waiting",
+        done: "Done",
+        resolved: "Resolved",
+        unmatched: "Not matched",
+      },
+      actions: {
+        menu: "Note actions",
+        edit: "Edit note",
+        resolve: "Resolve",
+        reopen: "Reopen",
+        resolving: "Resolving...",
+        reopening: "Reopening...",
+        delete: "Delete note",
+        deleting: "Deleting...",
+      },
+      deleteConfirm: {
+        title: "Delete note",
+        message: "Delete this note? This cannot be undone.",
+        confirm: "Delete",
+      },
+      openFailed: "This terminal is no longer open",
+    },
+    chat: {},
+    terminal: {
+      quoteNotFound: "This note's text is no longer in the terminal's scrollback.",
+    },
+    alerts: {
+      reminderTitle: "Done: {{text}}",
+      reminderBody: "Reminder",
     },
   },
   settings: {
@@ -2470,10 +2945,14 @@ export const en = {
       defaultSend: {
         label: "Default send",
         descriptions: {
-          interrupt: "When the agent is running, Enter interrupts. Command/Ctrl+Enter queues.",
-          steer:
-            "When the agent is running, Enter steers the active turn. Command/Ctrl+Enter queues.",
-          queue: "When the agent is running, Enter queues. Command/Ctrl+Enter submits.",
+          interrupt: "When the agent is running, Enter interrupts.",
+          steer: "When the agent is running, Enter steers the active turn.",
+          queue: "When the agent is running, Enter queues.",
+        },
+        touchDescriptions: {
+          interrupt: "When the agent is running, tapping Send interrupts.",
+          steer: "When the agent is running, tapping Send steers the active turn.",
+          queue: "When the agent is running, tapping Send queues.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2488,6 +2967,22 @@ export const en = {
           queue: "Queue",
         },
       },
+      alternateSend: {
+        label: "Alternate send",
+        descriptions: {
+          interrupt:
+            "When the agent is running, {{modifier}}+Enter or a long press on Send interrupts.",
+          steer:
+            "When the agent is running, {{modifier}}+Enter or a long press on Send steers the active turn.",
+          queue: "When the agent is running, {{modifier}}+Enter or a long press on Send queues.",
+        },
+        longPressDescriptions: {
+          interrupt: "When the agent is running, a long press on Send interrupts.",
+          steer: "When the agent is running, a long press on Send steers the active turn.",
+          queue: "When the agent is running, a long press on Send queues.",
+        },
+      },
+      defaultEditor: "Default editor",
       sendShortcut: {
         label: "Send shortcut",
         options: {
@@ -2623,6 +3118,80 @@ export const en = {
         },
         moveUp: "Move up",
         moveDown: "Move down",
+      },
+      background: {
+        title: "Background",
+        applyTo: {
+          title: "Apply to",
+          options: {
+            both: "Both",
+            light: "Light",
+            dark: "Dark",
+          },
+        },
+        gallery: {
+          accessibilityLabel: "Background images",
+          none: "None",
+          addImage: "Add image…",
+          importDefaultName: "Image",
+        },
+        menu: {
+          actions: "Actions for {{name}}",
+          edit: "Edit…",
+          delete: "Delete",
+          details: "Details",
+        },
+        undo: {
+          action: "Undo",
+          accessibilityLabel: "Undo background change",
+        },
+        catalog: {
+          browse: "Browse",
+          hint: "Install more skins from this plugin",
+        },
+        visibility: {
+          title: "Art visibility",
+          hint: "Even at 100%, Paseo caps the art so text stays readable. Bright images show less.",
+        },
+        blur: {
+          title: "Blur",
+          off: "Off",
+          value: "{{radius}} px",
+        },
+        showBehindSidebar: "Show behind sidebar",
+        showBehindContent: "Show behind content",
+        status: {
+          reducedTransparency: "Hidden because Reduce transparency is on in your system settings",
+          forcedColors: "Hidden while high contrast mode is on",
+          error: "The background could not be shown",
+        },
+        errors: {
+          select: "Could not apply background: {{message}}",
+          import: "Could not import image: {{message}}",
+          update: "Could not save changes: {{message}}",
+          remove: "Could not delete background: {{message}}",
+        },
+        edit: {
+          title: "Edit background",
+          name: "Name",
+          focal: "Focal point",
+          focalHint: "Tap the part of the image that should stay in view.",
+          focalAccessibility: "Choose focal point",
+          save: "Save",
+          saving: "Saving…",
+        },
+        delete: {
+          title: 'Delete "{{name}}"?',
+          message: "This removes the image from this device.",
+          confirm: "Delete",
+        },
+        details: {
+          title: "Details",
+          author: "Author",
+          license: "License",
+          source: "Source",
+          openSource: "Open source",
+        },
       },
       fonts: {
         title: "Fonts",
@@ -2886,6 +3455,10 @@ export const en = {
         },
       },
       agents: {
+        defaultStyle: {
+          title: "Default style",
+          hint: "Providers can override it",
+        },
         unavailable: "Connect to this host to manage agents",
         resumeOnStartup: {
           title: "Resume agents after restart",
@@ -2894,6 +3467,15 @@ export const en = {
           prompt: "Resume prompt",
           edit: "Edit",
           editAccessibilityLabel: "Edit prompt",
+        },
+        draftHistory: {
+          title: "Draft history",
+          hint_one:
+            "Deleted or overwritten drafts are kept for {{count}} day so you can restore them from the composer.",
+          hint_other:
+            "Deleted or overwritten drafts are kept for {{count}} days so you can restore them from the composer.",
+          days_one: "{{count}}d",
+          days_other: "{{count}}d",
         },
         idleRuntimeCleanup: {
           title: "Release idle agents",
@@ -3086,6 +3668,9 @@ export const en = {
         discovered: "Discovered",
         custom: "Custom models",
         updated: "Updated {{time}}",
+        disabledCount: "{{count}} disabled",
+        toggleModel: "Enable {{model}}",
+        failedToToggle: "Failed to update {{model}}",
       },
       diagnostic: {
         title: "Diagnostic",
@@ -3101,6 +3686,12 @@ export const en = {
         none: "No diagnostic available",
         failedToFetch: "Failed to fetch diagnostic",
         unknownError: "Unknown error",
+      },
+      featureDefaults: {
+        title: "Defaults for new agents",
+        providerDefault: "Provider default",
+        on: "On",
+        off: "Off",
       },
     },
     project: {
@@ -3203,6 +3794,8 @@ type TranslationResourcesBase = WidenStringLeaves<typeof en>;
 type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
 type DurationPluralKey = `${"days" | "hours" | "minutes"}_${PluralCategory}`;
 type AgoPluralKey = `${"daysAgo" | "hoursAgo" | "minutesAgo"}_${PluralCategory}`;
+type WorkingSubagentsPluralKey = `workingSubagents_${PluralCategory}`;
+type NoteMarkerPluralKey = `${"open" | "waiting" | "fired" | "resolved"}_${PluralCategory}`;
 
 // i18next plural categories differ by locale, so locale catalogs may add the
 // explicit v4 suffixes they need while retaining the canonical fallback keys.
@@ -3212,5 +3805,13 @@ export type TranslationResources = TranslationResourcesBase & {
       Partial<Record<DurationPluralKey, string>>;
     timing: TranslationResourcesBase["providerUsage"]["timing"] &
       Partial<Record<AgoPluralKey, string>>;
+  };
+  sidebar: TranslationResourcesBase["sidebar"] & {
+    workspace: TranslationResourcesBase["sidebar"]["workspace"] &
+      Partial<Record<WorkingSubagentsPluralKey, string>>;
+  };
+  notes: TranslationResourcesBase["notes"] & {
+    marker: TranslationResourcesBase["notes"]["marker"] &
+      Partial<Record<NoteMarkerPluralKey, string>>;
   };
 };

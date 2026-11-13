@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 
 import { beforeEach, afterEach, describe, expect, test } from "vitest";
 
@@ -501,6 +501,28 @@ describe("workspace registries", () => {
     });
     expect(await workspaceRegistry.get("/tmp/repo")).toBeNull();
     expect(await workspaceRegistry.list()).toEqual([]);
+  });
+
+  test("loads a workspace record that still carries the removed settledAt field", async () => {
+    // Daemons that shipped the Settle feature wrote `settledAt` on workspace records.
+    const filePath = path.join(tmpDir, "projects", "workspaces.json");
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    const record = createPersistedWorkspaceRecord({
+      workspaceId: "/tmp/repo",
+      projectId: "remote:github.com/acme/repo",
+      cwd: "/tmp/repo",
+      kind: "local_checkout",
+      displayName: "main",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    });
+    await writeJsonFileAtomic(filePath, [{ ...record, settledAt: "2026-03-02T00:00:00.000Z" }]);
+
+    await workspaceRegistry.initialize();
+
+    expect(await workspaceRegistry.get("/tmp/repo")).toEqual(record);
+    await workspaceRegistry.update("/tmp/repo", (current) => ({ ...current, title: "Renamed" }));
+    expect(JSON.parse(readFileSync(filePath, "utf8"))).toEqual([{ ...record, title: "Renamed" }]);
   });
 
   test("preserves the first workspace archive and reports whether a queued archive applied", async () => {

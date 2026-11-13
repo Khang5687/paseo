@@ -1,7 +1,7 @@
 import type { WaitForFinishResult } from "@getpaseo/client/internal/daemon-client";
 
 export type FinishObservationResult = WaitForFinishResult & {
-  reason?: "was canceled" | "host unreachable" | "host removed";
+  reason?: "was canceled" | "host removed";
 };
 
 /** Coalesces duplicate checkpoints and retains one terminal result while delivery is pending. */
