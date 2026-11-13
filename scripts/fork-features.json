@@ -923,5 +923,10 @@
       "packages/app/src/composer/input/state.test.ts",
       "packages/app/src/composer/dock/internal/capacity.test.ts"
     ]
+  },
+  {
+    "pr": 123,
+    "title": "feat(app): open an agent's task from its task-url label",
+    "tests": ["packages/app/src/screens/workspace/agent-task-link.test.ts"]
   }
 ]

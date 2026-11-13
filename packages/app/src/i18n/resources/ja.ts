@@ -824,6 +824,7 @@ export const ja: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "タスクを開く",
         workspaceActions: "ワークスペースアクション",
         workspaceActionsUnhealthy: "ワークスペースアクション、異常なサービスがあります",
         newAgent: "新しいエージェント",

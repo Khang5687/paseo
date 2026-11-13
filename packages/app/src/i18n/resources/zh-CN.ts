@@ -816,6 +816,7 @@ export const zhCN: TranslationResources = {
     },
     header: {
       actions: {
+        openTask: "打开任务",
         workspaceActions: "Workspace 操作",
         workspaceActionsUnhealthy: "Workspace 操作，有服务异常",
         newAgent: "新建 Agent",
