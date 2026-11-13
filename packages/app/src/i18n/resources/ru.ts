@@ -1336,6 +1336,15 @@ export const ru: TranslationResources = {
     pinned: {
       title: "Закреплённые",
     },
+    selection: {
+      select: "Выбрать",
+      count: "Выбрано: {{count}}",
+      cancel: "Отмена",
+      archiveTitle_one: "Архивировать {{count}} рабочее пространство?",
+      archiveTitle_other: "Архивировать рабочие пространства ({{count}})?",
+      archiveFailed_one: "Не удалось архивировать {{count}} рабочее пространство",
+      archiveFailed_other: "Не удалось архивировать рабочие пространства ({{count}})",
+    },
     host: {
       noHost: "Нет хоста",
       switchTitle: "Сменить хост",

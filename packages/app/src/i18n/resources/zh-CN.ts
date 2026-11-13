@@ -1310,6 +1310,15 @@ export const zhCN: TranslationResources = {
     pinned: {
       title: "已置顶",
     },
+    selection: {
+      select: "选择",
+      count: "已选择 {{count}} 个",
+      cancel: "取消",
+      archiveTitle_one: "归档 {{count}} 个工作区？",
+      archiveTitle_other: "归档 {{count}} 个工作区？",
+      archiveFailed_one: "无法归档 {{count}} 个工作区",
+      archiveFailed_other: "无法归档 {{count}} 个工作区",
+    },
     host: {
       noHost: "没有 Host",
       switchTitle: "切换 Host",

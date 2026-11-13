@@ -933,5 +933,10 @@
     "pr": 124,
     "title": "fix(fork): run build it on a Linux build host; the Mac fetches the Mac app",
     "tests": ["scripts/fork-lib.test.mjs"]
+  },
+  {
+    "pr": 125,
+    "title": "feat(app): select several sidebar workspaces and archive them at once",
+    "tests": ["packages/app/src/stores/sidebar-selection-store/state.test.ts"]
   }
 ]

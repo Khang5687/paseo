@@ -1325,6 +1325,15 @@ export const ko: TranslationResources = {
     pinned: {
       title: "고정됨",
     },
+    selection: {
+      select: "선택",
+      count: "{{count}}개 선택됨",
+      cancel: "취소",
+      archiveTitle_one: "워크스페이스 {{count}}개를 보관할까요?",
+      archiveTitle_other: "워크스페이스 {{count}}개를 보관할까요?",
+      archiveFailed_one: "워크스페이스 {{count}}개를 보관하지 못했습니다",
+      archiveFailed_other: "워크스페이스 {{count}}개를 보관하지 못했습니다",
+    },
     host: {
       noHost: "호스트 없음",
       switchTitle: "호스트 전환",

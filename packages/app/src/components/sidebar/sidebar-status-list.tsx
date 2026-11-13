@@ -84,6 +84,7 @@ import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pi
 import { DraggableList, type DraggableRenderItemInfo } from "@/components/draggable-list";
 import type { DraggableListDragHandleProps } from "@/components/draggable-list.types";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
+import { useSidebarRowSelection } from "@/components/sidebar/selection/rows";
 
 // Themed icon wrappers
 const mutedGroupIconProps = densityIconProps("sm", (theme) => ({
@@ -669,6 +670,14 @@ function StatusWorkspaceRowWithMenu({
   const [isHidingWorkspace, setIsHidingWorkspace] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const isArchiving = workspace.archivingAt !== null || isHidingWorkspace;
+  const rowSelection = useSidebarRowSelection(workspace.workspaceKey);
+  const handleRowPress = useCallback(
+    (event: GestureResponderEvent) => {
+      if (rowSelection.handlePress(event)) return;
+      onPress();
+    },
+    [onPress, rowSelection],
+  );
 
   const redirectAfterArchive = useCallback(() => {
     redirectIfArchivingActiveWorkspace({
@@ -750,7 +759,7 @@ function StatusWorkspaceRowWithMenu({
         selected={selected}
         shortcutNumber={shortcutNumber}
         showShortcutBadge={showShortcutBadge}
-        onPress={onPress}
+        onPress={handleRowPress}
         isArchiving={isArchiving}
         archiveLabel={t("sidebar.workspace.actions.archive")}
         archiveStatus={isArchiving ? "pending" : "idle"}
@@ -765,6 +774,8 @@ function StatusWorkspaceRowWithMenu({
         isPinned={isPinned}
         onTogglePin={onTogglePin}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+        selectionChecked={rowSelection.checked}
+        onStartSelection={rowSelection.startSelecting}
         inStatusGroup={inStatusGroup}
         nestingDepth={nestingDepth}
         drag={drag}
@@ -789,7 +800,7 @@ interface StatusWorkspaceRowInnerProps {
   selected: boolean;
   shortcutNumber: number | null;
   showShortcutBadge: boolean;
-  onPress: () => void;
+  onPress: (event: GestureResponderEvent) => void;
   isArchiving: boolean;
   archiveLabel?: string;
   archiveStatus?: "idle" | "pending" | "success";
@@ -804,6 +815,9 @@ interface StatusWorkspaceRowInnerProps {
   isPinned?: boolean;
   onTogglePin?: () => void;
   reserveIdleStatusIndicatorSpace?: boolean;
+  /** Whether the row is ticked while sidebar selection is on; null while it is off. */
+  selectionChecked: boolean | null;
+  onStartSelection?: () => void;
   /** Pinned rows are flat under their own header; status-group rows indent from theirs. */
   inStatusGroup?: boolean;
   nestingDepth: number;
@@ -852,6 +866,8 @@ function StatusWorkspaceRowInnerContent({
   isPinned,
   onTogglePin,
   reserveIdleStatusIndicatorSpace = true,
+  selectionChecked,
+  onStartSelection,
   inStatusGroup = true,
   nestingDepth,
   isDragging = false,
@@ -874,18 +890,22 @@ function StatusWorkspaceRowInnerContent({
   const isDesktop = !isTouchPlatform;
   const serviceSummary = isDesktop ? selectWorkspaceServiceSummary(workspace.scripts) : null;
 
+  const isSelecting = selectionChecked !== null;
   const accessibilityState = useMemo(() => ({ selected }), [selected]);
   const didLongPressRef = dragInteraction?.didLongPressRef;
   const startDragPress = dragInteraction?.handlePressIn;
   const moveDragPress = dragInteraction?.handleTouchMove;
   const endDragPress = dragInteraction?.handlePressOut;
-  const handlePress = useCallback(() => {
-    if (didLongPressRef?.current) {
-      didLongPressRef.current = false;
-      return;
-    }
-    onPress();
-  }, [didLongPressRef, onPress]);
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      if (didLongPressRef?.current) {
+        didLongPressRef.current = false;
+        return;
+      }
+      onPress(event);
+    },
+    [didLongPressRef, onPress],
+  );
   const handlePressIn = useCallback(
     (event: GestureResponderEvent) => {
       setIsPressed(true);
@@ -911,7 +931,7 @@ function StatusWorkspaceRowInnerContent({
         } = resolveTrailingActionVisibility({
           workspace,
           trailing,
-          hasArchiveAction: Boolean(onArchive),
+          hasArchiveAction: Boolean(onArchive) && !isSelecting,
           isHovered,
           isTouchPlatform,
           showShortcut,
@@ -954,9 +974,11 @@ function StatusWorkspaceRowInnerContent({
               isPinned={isPinned}
               onTogglePin={onTogglePin}
               openInFileManagerPath={workspace.workspaceDirectory}
+              onStartSelection={onStartSelection}
               disabled={isArchiving}
               draggable={Boolean(dragInteraction)}
-              accessibilityRole="button"
+              accessibilityRole={isSelecting ? "checkbox" : "button"}
+              aria-checked={selectionChecked ?? undefined}
               accessibilityState={accessibilityState}
               style={workspaceRowStyle}
               highlightStyle={styles.workspaceRowPressed}
@@ -978,6 +1000,7 @@ function StatusWorkspaceRowInnerContent({
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
                 reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+                selectionChecked={selectionChecked}
               >
                 {renderSlot ? (
                   <StatusWorkspaceActionSlot
@@ -995,11 +1018,12 @@ function StatusWorkspaceRowInnerContent({
                     onRename={onRename}
                     onMarkAsRead={onMarkAsRead}
                     onMarkAsUnread={onMarkAsUnread}
-                    onArchive={onArchive}
+                    onArchive={isSelecting ? undefined : onArchive}
                     archiveLabel={archiveLabel}
                     archiveStatus={archiveStatus}
                     archivePendingLabel={archivePendingLabel}
                     archiveShortcutKeys={archiveShortcutKeys}
+                    onStartSelection={onStartSelection}
                   />
                 ) : null}
               </SidebarWorkspaceRowContent>
@@ -1031,6 +1055,7 @@ function StatusWorkspaceActionSlot({
   archiveStatus,
   archivePendingLabel,
   archiveShortcutKeys,
+  onStartSelection,
 }: {
   workspace: SidebarWorkspaceEntry;
   backdrop: SidebarSurfaceBackdrop;
@@ -1051,6 +1076,7 @@ function StatusWorkspaceActionSlot({
   archiveStatus?: "idle" | "pending" | "success";
   archivePendingLabel?: string;
   archiveShortcutKeys?: ShortcutKey[][] | null;
+  onStartSelection?: () => void;
 }) {
   const kebab = useOpenKebabMenuVisibility(showKebab);
   return (
@@ -1092,6 +1118,7 @@ function StatusWorkspaceActionSlot({
               archiveShortcutKeys={archiveShortcutKeys}
               isPinned={isPinned}
               onTogglePin={onTogglePin}
+              onStartSelection={onStartSelection}
             />
           </>
         ) : null}
