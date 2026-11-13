@@ -179,12 +179,14 @@ const staticFailures = staticResults.filter((r) => !r.ok);
 const ok = listErrors.length === 0 && staticFailures.length === 0 && failing.length === 0;
 const passing = verdicts.filter((v) => v.status === "pass").length;
 const head = spawnSync("git", ["log", "-1", "--format=%h %s"], { cwd: root, encoding: "utf8" });
+let scope = " (unit only; e2e not run)";
+if (e2eSkipped) scope = " (unit only; e2e skipped after a failure)";
+else if (args.e2e) scope = " (unit + e2e)";
 
 const lines = [
   `## Fork check: ${ok ? "PASS" : "FAIL"}`,
   "",
-  `Commit ${head.stdout.trim()}. ${passing} of ${verdicts.length} features pass` +
-    `${e2eSkipped ? " (unit only; e2e skipped after a failure)" : args.e2e ? " (unit + e2e)" : " (unit only; e2e not run)"}.`,
+  `Commit ${head.stdout.trim()}. ${passing} of ${verdicts.length} features pass${scope}.`,
   "",
 ];
 if (staticResults.length > 0) {
