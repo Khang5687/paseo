@@ -205,6 +205,7 @@ When the owner says "build it", one agent integrates. That agent is the only one
 
 1. Check disk first: `df -h /` needs at least 8 GB free. Below that, stop and ask the owner to free space; agents do not delete the owner's files to make room. Then read `~/git/paseo-HANDOFF.md`. Take every `## Open` entry with `status: ready`. Read each entry's `note:` line: it carries integration instructions (merge order, tests to register in `scripts/fork-features.json`, checks to run after the build).
 2. On the build host (the Omen, main checkout `~/git/paseo`), on `main` with a clean tree, run the build with the PRs in stack order, otherwise by PR number. `--dry-run` first shows what it would do and changes nothing.
+   Build host setup, once per host: run `mise trust` in the checkout and run every fork script as `mise exec -- <cmd>`, because a non-interactive SSH shell gets mise's global Node 26, whose npm skips install scripts (the APK then fails on missing tree-sitter grammars, and Playwright hangs installing its browser); and add `.scratch/` and `packages/app/.vitest-attachments/` to `.git/info/exclude`, because the e2e specs write there mid-run and the Mac app built after them is marked dirty, which `--install` skips.
    ```bash
    git checkout main
    node scripts/fork-build.mjs --pr <N> --pr <M>
@@ -239,7 +240,7 @@ Give every agent the same shape of brief. One job, one branch, one PR:
 ```
 Task: <one sentence: what is broken or missing, and what done looks like>.
 Branch: <type>/<area>-<what>, cut from upstream/main (or "stacked on <branch>").
-Worktree: already created if you were launched as a Paseo worktree workspace; otherwise `git worktree add ../paseo-<slug> <branch>`.
+Worktree: ../paseo-<slug>; if it does not exist yet, `git worktree add ../paseo-<slug> -b <branch> upstream/main`.
 Scope: only this. Note anything else you find in the PR body under "Seen but not fixed".
 Mobile: check the change in the web app at phone width (390×844), reached by tapping, and fill in the docs/qa.md platform table in the PR body.
 Done: draft PR against Khang5687/paseo main, body upstream-ready, marked ready for review. Do not merge.
@@ -248,7 +249,7 @@ Fork check: add your entry to scripts/fork-features.json with the tests that pro
 Read CLAUDE.md "Fork workflow" first.
 ```
 
-When launching from Paseo, use a worktree workspace (`create_workspace` with `isolation: worktree`, `baseBranch: upstream/main`, `branchName: <type>/<area>-<what>`) so the branch and worktree exist before the agent starts; the brief then only names them. Five agents with five such briefs produce five independent PRs and five handoff entries. The integrator merges the ready ones on "build it", and the owner opens upstream PRs from the same branches later.
+Start each one as a subagent in your own workspace (or an existing workspace of this repo on the host that runs it), never in a new Paseo workspace: `create_workspace` and `detached` agents make a sidebar chat of their own, and only a main agent the owner asked for gets one. Create the branch and worktree before the agent starts, or let it run the `git worktree add` line itself; the brief names them. Five agents with five such briefs produce five independent PRs and five handoff entries. The integrator merges the ready ones on "build it", and the owner opens upstream PRs from the same branches later.
 
 ### Fork features and fork-check
 
