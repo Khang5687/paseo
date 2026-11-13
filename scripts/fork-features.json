@@ -910,5 +910,13 @@
       "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/composer-file-attachment-send.spec.ts"]
+  },
+  {
+    "pr": 126,
+    "title": "test(server): silence Ubuntu sudo hint in the bash prompt tests",
+    "tests": [
+      "packages/server/src/terminal/terminal.test.ts",
+      "packages/server/src/server/daemon-e2e/notes.e2e.test.ts"
+    ]
   }
 ]
