@@ -4,6 +4,7 @@ import {
   conflictBlocks,
   featureVerdicts,
   forkOwnersAt,
+  mergeFeatureRegistry,
   parseBlameOwners,
   parseHunks,
   parseNameStatusLog,
@@ -264,4 +265,44 @@ test("the risk report groups touches by fork owner, most-touched first", () => {
     },
     { owner: 57, commits: [{ sha: "abc", subject: "one", files: ["b.ts"] }] },
   ]);
+});
+
+const registry = (...entries) =>
+  `[\n${entries.map((entry) => JSON.stringify(entry, null, 2).replace(/^/gm, "  ")).join(",\n")}\n]\n`;
+
+test("two PRs that each append an entry merge to both entries", () => {
+  const base = registry(docs);
+  const merged = mergeFeatureRegistry(base, registry(docs, queue), registry(docs, relay));
+  assert.equal(merged, registry(docs, queue, relay));
+  assert.deepEqual(
+    JSON.parse(merged).map((entry) => entry.pr),
+    [8, 58, 57],
+  );
+});
+
+test("a registry edit on one side is kept, and a clash on one entry stays a conflict", () => {
+  const retired = { ...docs, retired: "upstream shipped it" };
+  const base = registry(docs);
+  assert.equal(
+    mergeFeatureRegistry(base, registry(docs, queue), registry(retired)),
+    registry(retired, queue),
+  );
+  const otherRetired = { ...docs, retired: "replaced" };
+  assert.equal(mergeFeatureRegistry(base, registry(retired), registry(otherRetired)), null);
+});
+
+test("an entry one side deleted stays deleted", () => {
+  const base = registry(docs, relay);
+  assert.equal(
+    mergeFeatureRegistry(base, registry(docs), registry(docs, relay, queue)),
+    registry(docs, queue),
+  );
+});
+
+test("a registry not in the formatter's layout is left as a conflict", () => {
+  const base = registry(docs);
+  assert.equal(
+    mergeFeatureRegistry(base, JSON.stringify([docs, queue]), registry(docs, relay)),
+    null,
+  );
 });
