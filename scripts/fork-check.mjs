@@ -149,7 +149,18 @@ if (e2eSkipped) {
   const specs = [...new Set(active.flatMap((f) => f.e2e ?? []))].filter((f) =>
     existsSync(path.join(root, f)),
   );
-  if (specs.length > 0) {
+  // The browser binary lives outside node_modules (~/.cache/ms-playwright) and npm ci does not
+  // fetch it; without it every spec fails at launch. A no-op when this version is installed.
+  const browser =
+    specs.length > 0
+      ? run("playwright-install", "npx", ["playwright", "install", "chromium"], {
+          cwd: "packages/app",
+        })
+      : { ok: true };
+  if (!browser.ok) {
+    progress("e2e: not run (playwright install chromium failed); every spec counts as failed");
+    for (const spec of specs) results.set(spec, false);
+  } else if (specs.length > 0) {
     const jsonPath = path.join(logDir, "e2e.json");
     run(
       "e2e",
