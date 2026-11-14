@@ -696,7 +696,8 @@ const styles = StyleSheet.create((theme) => ({
     width: STATUS_INDICATOR_FILLED_DOT_SIZE,
     height: STATUS_INDICATOR_FILLED_DOT_SIZE,
     borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.accent,
+    // The palette purple, not the green accent: the owner's pick for the New dot.
+    backgroundColor: theme.colors.palette.purple[500],
   },
   statusDotNeedsInput: {
     backgroundColor: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
