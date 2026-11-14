@@ -8524,9 +8524,7 @@ export class Session {
           (agent.pendingPermissions?.length ?? 0) > 0 || agent.attentionReason === "permission";
         const clearableAgentIds = workspaceAgents
           // New main agents not opened yet are cleared too, so they stop being new.
-          .filter(
-            (agent) => agent.requiresAttention === true || isUnseenAgentLabels(agent.labels),
-          )
+          .filter((agent) => agent.requiresAttention === true || isUnseenAgentLabels(agent.labels))
           .filter((agent) => !isWaitingOnPermission(agent))
           .map((agent) => agent.id);
         // A new main agent waiting on a permission only stops being new: the permission still

@@ -190,6 +190,7 @@ describe("workspace agent activity index", () => {
       agentId: "root",
       status: "done",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
+      hasUnseenAgent: false,
     });
   });
 
