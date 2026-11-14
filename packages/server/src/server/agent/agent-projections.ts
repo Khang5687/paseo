@@ -105,13 +105,7 @@ export function toStoredAgentRecord(
     controls: normalizeControls(agent.controls),
     persistence,
     lastError: agent.lastError ?? undefined,
-    requiresAttention: agent.attention.requiresAttention,
-    attentionReason: agent.attention.requiresAttention ? agent.attention.attentionReason : null,
-    attentionTimestamp: agent.attention.requiresAttention
-      ? agent.attention.attentionTimestamp.toISOString()
-      : null,
-    awaitingAnswer:
-      agent.attention.requiresAttention && agent.attention.awaitingAnswer ? true : undefined,
+    ...projectAttention(agent.attention),
     internal: options?.internal,
     ...(agent.background ? { background: true } : {}),
     owner: agent.owner,
