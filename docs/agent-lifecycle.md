@@ -490,6 +490,15 @@ new turn outranks it until it finishes and the flag is recomputed. The workspace
 result, so older apps show it too. Marking a stored agent unread restores plain `finished`
 attention, because the stored reply is a truncated preview.
 
+A new main agent (labels `role=main`) also counts as unread until the user opens it. The daemon
+stamps the label `paseo.unseen=true` when it creates such an agent; internal agents, helpers and
+later `update_agent` label changes never get it. Any root agent carrying the label gives its
+workspace row a "New" badge and a bold title, on every form factor. Reading the chat drops the label
+through `clear_agent_attention`, and "Mark as read" drops it through `workspace.clear_attention`. An
+agent waiting on a permission loses only the label there, since its attention clears only when the
+permission is answered. The state is a label rather than a wire field so it persists and reloads with
+the agent, and old clients ignore it.
+
 Loading an agent's runtime neither sets nor clears attention, so resuming carries the stored
 attention and the stored last-activity time through untouched. Forging either makes a background
 resume look like the user read a workspace and like the agent worked in it just now, which rewrites

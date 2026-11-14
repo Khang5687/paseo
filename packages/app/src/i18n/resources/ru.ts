@@ -1454,6 +1454,7 @@ export const ru: TranslationResources = {
       workingSubagents_few: "{{count}} субагента работают",
       workingSubagents_many: "{{count}} субагентов работают",
       workingSubagents_other: "{{count}} субагента работают",
+      newAgent: "Новый",
       status: {
         serviceRunning: "Сервис {{name}} запущен",
         serviceUnhealthy: "Сервис {{name}} работает некорректно",

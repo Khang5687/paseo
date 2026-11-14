@@ -58,6 +58,8 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   // Subagents still working under a root agent that waits on the user. Zero while
   // the row already shows running, since the spinner says the same thing.
   workingSubagentCount: number;
+  // A new main agent here that the user has not opened yet: the row shows a "New" tag.
+  isNew?: boolean;
 }
 
 export interface SidebarProjectEntry {
@@ -184,6 +186,7 @@ export function createSidebarWorkspaceEntry(input: {
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
     workingSubagentCount: input.workspace.runningSubagentCount ?? 0,
+    isNew: input.workspaceAgentActivity?.get(input.workspace.id)?.hasUnseenAgent ?? false,
   };
 }
 

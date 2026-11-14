@@ -102,7 +102,7 @@ import { getErrorMessage, getErrorMessageOr } from "@getpaseo/protocol/error-uti
 import { searchAgents } from "./agent/agent-search.js";
 import { expandUserPath } from "./path-utils.js";
 import { getAgentStatusPriority } from "@getpaseo/protocol/agent-state-bucket";
-import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
+import { getParentAgentIdFromLabels, isUnseenAgentLabels } from "@getpaseo/protocol/agent-labels";
 import { applyRecordPatch } from "./record-patch.js";
 import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
 import type { ProjectUpdate } from "./workspace-reconciliation-service.js";
@@ -8517,13 +8517,25 @@ export class Session {
         // Clearing attention is scoped to the workspace that OWNS the agent, by
         // workspaceId — never by comparing cwd strings. A sibling workspace
         // sharing the same directory keeps its own agents' attention.
-        const clearableAgentIds = agents
+        const workspaceAgents = agents
           .filter((agent) => !agent.archivedAt)
-          .filter((agent) => agent.workspaceId === workspace.workspaceId)
-          .filter((agent) => agent.requiresAttention === true)
-          .filter((agent) => (agent.pendingPermissions?.length ?? 0) === 0)
-          .filter((agent) => agent.attentionReason !== "permission")
+          .filter((agent) => agent.workspaceId === workspace.workspaceId);
+        const isWaitingOnPermission = (agent: AgentSnapshotPayload) =>
+          (agent.pendingPermissions?.length ?? 0) > 0 || agent.attentionReason === "permission";
+        const clearableAgentIds = workspaceAgents
+          // New main agents not opened yet are cleared too, so they stop being new.
+          .filter((agent) => agent.requiresAttention === true || isUnseenAgentLabels(agent.labels))
+          .filter((agent) => !isWaitingOnPermission(agent))
           .map((agent) => agent.id);
+        // A new main agent waiting on a permission only stops being new: the permission still
+        // needs an answer, so its attention stays.
+        const seenOnlyAgentIds = workspaceAgents
+          .filter((agent) => isUnseenAgentLabels(agent.labels) && isWaitingOnPermission(agent))
+          .map((agent) => agent.id);
+
+        for (const agentId of seenOnlyAgentIds) {
+          await this.agentManager.markAgentSeen(agentId);
+        }
 
         for (const agentId of clearableAgentIds) {
           const liveAgent = this.agentManager.getAgent(agentId);
@@ -8538,7 +8550,7 @@ export class Session {
             !record ||
             record.internal ||
             record.archivedAt ||
-            record.requiresAttention !== true
+            (record.requiresAttention !== true && !isUnseenAgentLabels(record.labels))
           ) {
             continue;
           }
