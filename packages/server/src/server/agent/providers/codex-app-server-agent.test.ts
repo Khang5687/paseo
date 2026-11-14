@@ -2479,14 +2479,13 @@ describe("Codex app-server provider", () => {
     handlers: Record<string, (params: unknown) => unknown>,
   ) {
     const appServers: FakeCodexAppServer[] = [];
-    const provider = new CodexAppServerAgentClient(createTestLogger());
-    castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
-      provider,
-    ).spawnAppServer = async () => {
-      const appServer = createFakeCodexAppServer(handlers);
-      appServers.push(appServer);
-      return appServer.child;
-    };
+    const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+      appServerProcess: createFakeCodexAppServerProcess(() => {
+        const appServer = createFakeCodexAppServer(handlers);
+        appServers.push(appServer);
+        return appServer.child;
+      }),
+    });
     const threadRequests = () =>
       appServers.flatMap((appServer) =>
         appServer

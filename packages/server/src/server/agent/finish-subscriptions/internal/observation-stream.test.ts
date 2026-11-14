@@ -193,6 +193,7 @@ test("a finish that happened before the observation opened is reported from the 
           updatedAt: "2026-01-01",
         },
         ["codex"],
+        (_provider, own) => own ?? {},
       ),
       lastMessage: "Finished while away",
       error: null,

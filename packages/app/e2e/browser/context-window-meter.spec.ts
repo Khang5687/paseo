@@ -503,6 +503,8 @@ for (const viewport of [DESKTOP, { width: 700, height: 800 }]) {
     expect(box.y + box.height).toBeLessThanOrEqual(ring.y);
     expect(box.y + box.height).toBeGreaterThan(ring.y - 24);
     expect(Math.abs(box.x + box.width - (ring.x + ring.width))).toBeLessThanOrEqual(2);
+    // An open card asks for usage again; leaving it keeps the test to the one scripted answer.
+    await leaveContextWindowMeter(page);
   });
 }
 
