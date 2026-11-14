@@ -33,6 +33,11 @@ import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import {
+  ARCHIVE_BUTTON_FOOTPRINT,
+  SidebarWorkspaceArchiveButton,
+} from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 import { SidebarSelectionCheckbox } from "@/components/sidebar/selection/rows";
 
@@ -45,17 +50,21 @@ const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedPencilLine = withUnistyles(PencilLine);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-// The overlay holds the copy-agent-id and archive buttons beside the kebab: two 18px controls
-// plus their gaps more than the default scrim was sized for.
-const ARCHIVE_AND_KEBAB_SCRIM_WIDTH = SCRIM_WIDTH + 40;
+// The copy-agent-id button leads the overlay's actions; the scrim widens by its pointer box and
+// the gap after it.
+const COPY_AGENT_ID_BUTTON_GAP = 2;
+const COPY_AGENT_ID_BUTTON_FOOTPRINT = 18 + COPY_AGENT_ID_BUTTON_GAP;
 
 export function SidebarWorkspaceRowFrame({
   workspace,
   isDragging = false,
+  isEditingTitle = false,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
   isDragging?: boolean;
+  /** Hover would fade the kebab in over the title being edited and open the hover card. */
+  isEditingTitle?: boolean;
   children: (input: {
     isHovered: boolean;
     contextMenuOpen: boolean;
@@ -83,10 +92,10 @@ export function SidebarWorkspaceRowFrame({
       workspace={workspace}
       prHint={workspace.prHint}
       isDragging={isDragging}
-      disabled={contextMenuOpen}
+      disabled={contextMenuOpen || isEditingTitle}
     >
       {children({
-        isHovered: isHovered && !contextMenuOpen && !isDragging,
+        isHovered: isHovered && !contextMenuOpen && !isDragging && !isEditingTitle,
         contextMenuOpen,
         onContextMenuOpenChange: handleContextMenuOpenChange,
         hoverHandlers,
@@ -109,6 +118,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   showShortcutBadge = false,
   reserveIdleStatusIndicatorSpace = true,
   selectionChecked = null,
+  titleEditor = null,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
@@ -128,6 +138,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   reserveIdleStatusIndicatorSpace?: boolean;
   /** Whether the row is ticked while sidebar selection is on; null while it is off. */
   selectionChecked?: boolean | null;
+  /** Takes the title's place, in a box exactly one title line tall, while renaming in place. */
+  titleEditor?: ReactNode;
   children?: ReactNode;
 }) {
   const {
@@ -187,9 +199,17 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         {leadingVisual}
         <View style={styles.workspaceContentColumn}>
           <View style={styles.workspaceTitleRow}>
-            <Text style={workspaceBranchTextStyle} numberOfLines={1}>
-              {workspaceLabel}
-            </Text>
+            {titleEditor ? (
+              <View style={styles.workspaceTitleEditorSlot}>{titleEditor}</View>
+            ) : (
+              <Text
+                style={workspaceBranchTextStyle}
+                numberOfLines={1}
+                testID={`sidebar-workspace-title-${workspace.workspaceKey}`}
+              >
+                {workspaceLabel}
+              </Text>
+            )}
             <View style={sidebarWorkspaceRowStyles.rowRight}>
               <SidebarNoteBadge
                 badge={noteBadge}
@@ -199,6 +219,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             </View>
           </View>
           <WorkspaceMetaRow
+            backdrop={backdrop}
             currentBranch={workspace.currentBranch}
             projectName={leadingProjectName}
             hostBadge={hostBadge ?? null}
@@ -206,6 +227,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             serviceSummary={serviceSummary}
             labels={labels}
             workingSubagentCount={workspace.workingSubagentCount}
+            workspace={workspace}
           />
         </View>
       </View>
@@ -399,8 +421,8 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     top: 0,
     right: 0,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
+    alignItems: "flex-start",
+    gap: COPY_AGENT_ID_BUTTON_GAP,
   },
 }));
 
@@ -444,6 +466,7 @@ export function resolveTrailingActionVisibility({
 }): {
   trailingPresentation: SidebarWorkspaceTrailingPresentation;
   showKebab: boolean;
+  showArchiveButton: boolean;
   showScrim: boolean;
   renderSlot: boolean;
   reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation;
@@ -465,6 +488,9 @@ export function resolveTrailingActionVisibility({
   return {
     trailingPresentation,
     showKebab,
+    // One-click archive is a pointer affordance: on touch it would sit a few pixels from the
+    // kebab and turn a miss into an archive.
+    showArchiveButton: showKebab && isHovered && !isTouchPlatform,
     // The scrim paints the row's own hover background, so it can only be drawn on a hovered
     // row — over an unhovered one the gradient fades to the wrong color. That is also why
     // touch, which shows the kebab without ever hovering, never gets one.
@@ -507,24 +533,57 @@ export function SidebarWorkspaceTrailingActionBase({
 export function SidebarWorkspaceTrailingActionOverlay({
   visible,
   scrimBackdrop,
+  workspaceKey,
+  serverId,
+  workspaceId,
+  onArchiveButtonPress,
   children,
 }: {
   visible: boolean;
   /** Fade the row into the actions when something (the diff stat) is still rendered behind it. */
   scrimBackdrop?: SidebarSurfaceBackdrop;
+  workspaceKey: string;
+  /** With both set, shows the copy-agent-id button first, ahead of the archive button. */
+  serverId?: string;
+  workspaceId?: string;
+  /**
+   * Shows the archive button left of the kebab. It overlays the title like the kebab does, so
+   * the scrim widens to cover it rather than the slot reserving its width.
+   */
+  onArchiveButtonPress?: () => void;
   children: ReactNode;
 }) {
   if (!visible || !children) return null;
+  const showCopyAgentId = serverId !== undefined && workspaceId !== undefined;
   return (
     <>
       {scrimBackdrop ? (
         <TrailingActionScrim
           backdrop={scrimBackdrop}
-          width={ARCHIVE_AND_KEBAB_SCRIM_WIDTH}
+          width={
+            SCRIM_WIDTH +
+            (showCopyAgentId ? COPY_AGENT_ID_BUTTON_FOOTPRINT : 0) +
+            (onArchiveButtonPress ? ARCHIVE_BUTTON_FOOTPRINT : 0)
+          }
           testID="sidebar-workspace-trailing-scrim"
         />
       ) : null}
-      <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>{children}</View>
+      <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>
+        {showCopyAgentId ? (
+          <SidebarWorkspaceCopyAgentIdButton
+            workspaceKey={workspaceKey}
+            serverId={serverId}
+            workspaceId={workspaceId}
+          />
+        ) : null}
+        {onArchiveButtonPress ? (
+          <SidebarWorkspaceArchiveButton
+            workspaceKey={workspaceKey}
+            onArchive={onArchiveButtonPress}
+          />
+        ) : null}
+        {children}
+      </View>
     </>
   );
 }
@@ -596,6 +655,11 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: "400",
     lineHeight: TITLE_LINE_HEIGHT,
     opacity: 0.76,
+    flex: 1,
+    minWidth: 0,
+  },
+  workspaceTitleEditorSlot: {
+    height: TITLE_LINE_HEIGHT,
     flex: 1,
     minWidth: 0,
   },

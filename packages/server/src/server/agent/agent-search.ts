@@ -40,7 +40,7 @@ export interface AgentSearchResult {
 
 export interface AgentSearchSource {
   manager: Pick<AgentManager, "listAgents" | "getSearchableMessages">;
-  storage: Pick<AgentStorage, "list">;
+  storage: Pick<AgentStorage, "listAll">;
   projectLive(agent: ManagedAgent): Promise<AgentSnapshotPayload>;
   projectStored(record: StoredAgentRecord): AgentSnapshotPayload;
 }
@@ -163,7 +163,7 @@ export async function searchAgents(
   const now = options.now ?? Date.now();
   const since = options.sinceHours !== undefined ? now - options.sinceHours * 60 * 60 * 1000 : null;
 
-  const records = await source.storage.list();
+  const records = await source.storage.listAll();
   const recordsById = new Map(records.map((record) => [record.id, record]));
   const live = source.manager.listAgents().filter((agent) => !agent.internal);
   const liveIds = new Set(live.map((agent) => agent.id));

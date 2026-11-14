@@ -329,7 +329,7 @@ function ControlledQueueTrack({
       {isCollapsible ? (
         <Button
           variant="ghost"
-          size="xs"
+          size="sm"
           onPress={handleToggleExpanded}
           style={styles.queueToggle}
           testID="composer-queue-collapse-toggle"

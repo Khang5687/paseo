@@ -38,7 +38,7 @@ function source(
           : null;
       },
     },
-    storage: { list: async () => records },
+    storage: { listAll: async () => records },
     projectLive: async (agent) => ({ id: agent.id, title: "live" }) as AgentSnapshotPayload,
     projectStored: (stored) => ({ id: stored.id, title: stored.title }) as AgentSnapshotPayload,
   };

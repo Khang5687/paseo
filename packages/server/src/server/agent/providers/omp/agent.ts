@@ -1,3 +1,4 @@
+import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { mapCustomMessageToToolCall } from "../custom-message.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -11,9 +12,10 @@ import stripAnsi from "strip-ansi";
 import {
   type AgentCapabilityFlags,
   type AgentClient,
-  type AgentFeature,
+  type AgentDraftControls,
   type AgentForkSessionInput,
   type AgentForkSessionResult,
+  type AgentOptionControl,
   type AgentLaunchContext,
   type AgentMetadata,
   type AgentMode,
@@ -60,7 +62,7 @@ import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
 import { composeSystemPromptParts } from "../../system-prompt.js";
 import {
   APPENDED_BUILTIN_OUTPUT_STYLES,
-  buildOutputStyleFeature,
+  buildOutputStyleControl,
   DEFAULT_OUTPUT_STYLE,
   discoverOutputStyleFiles,
   mergeOutputStyles,
@@ -84,9 +86,12 @@ import {
   resolveOmpLaunchMode,
   resolveOmpProviderOptions,
   OMP_MODES,
+  OmpProviderOptionsSchema,
   type OmpRuntimeOptions,
 } from "./provider-config.js";
 export { formatOmpVersionSupport, resolveOmpDiagnosticPaths } from "./provider-config.js";
+import { applyProviderOptionsPatch } from "../../option-controls.js";
+import { assertChangesAreLive, validateProviderOptions } from "../../provider-options.js";
 import { OmpSubagentCardTracker } from "./subagent-card-tracker.js";
 import { ompSkillPromptUserText, shouldDisplayOmpCustomMessage } from "./custom-message.js";
 import { getUserMessageText } from "./message-history.js";
@@ -505,16 +510,8 @@ function buildResumeStartInput(input: {
   };
 }
 
-function buildOmpOutputStyleFeatures(
-  outputStyles: readonly OutputStyle[],
-  config: AgentSessionConfig,
-): AgentFeature[] {
-  return [
-    buildOutputStyleFeature({
-      styles: outputStyles,
-      value: readOutputStyleValue(config.featureValues) ?? DEFAULT_OUTPUT_STYLE,
-    }),
-  ];
+function buildOmpOutputStyleControls(outputStyles: readonly OutputStyle[]): AgentOptionControl[] {
+  return [buildOutputStyleControl({ styles: outputStyles, defaultValue: DEFAULT_OUTPUT_STYLE })];
 }
 
 // OMP has no output-style setting, so the selected style's text rides on --append-system-prompt.
@@ -522,7 +519,7 @@ function composeOmpSystemPrompt(
   config: AgentSessionConfig,
   outputStyles: readonly OutputStyle[],
 ): string | undefined {
-  const selected = readOutputStyleValue(config.featureValues);
+  const selected = readOutputStyleValue(config.providerOptions);
   return composeSystemPromptParts(
     config.systemPrompt,
     config.daemonAppendSystemPrompt,
@@ -855,6 +852,10 @@ export class OmpAgentSession implements AgentSession {
     this.restartRuntime = options.restartRuntime;
     this.config = options.config;
     this.state = options.initialState;
+    this.openOptionsPatch = this.fastModeDifference(options.config.providerOptions?.fast_mode);
+    // A replacement runtime starts from the Fast this one opened with, not the one it was asked for.
+    if (typeof this.openOptionsPatch.fast_mode === "boolean")
+      this.rememberFastMode(this.openOptionsPatch.fast_mode);
     this.currentModeId = options.currentModeId ?? null;
     this.logger = options.logger;
     this.live = options.live ?? true;
@@ -912,61 +913,92 @@ export class OmpAgentSession implements AgentSession {
     return this.state.sessionId;
   }
 
-  get features(): AgentFeature[] {
-    const outputStyleFeatures = buildOmpOutputStyleFeatures(this.outputStyles, this.config);
-    if (!hasOmpFastMode(this.state)) return outputStyleFeatures;
+  get controls(): AgentOptionControl[] {
+    const outputStyleControls = buildOmpOutputStyleControls(this.outputStyles);
+    if (!hasOmpFastMode(this.state)) return outputStyleControls;
     return [
       {
         type: "toggle",
-        id: "fast_mode",
+        key: "fast_mode",
         label: "Fast",
         icon: "zap",
-        value: this.state.fastModeEnabled === true,
         ...(this.state.fastModeEnabled && !this.state.fastModeActive
           ? { description: OMP_FAST_INACTIVE_MESSAGE, tooltip: OMP_FAST_INACTIVE_MESSAGE }
           : {}),
       },
-      ...outputStyleFeatures,
+      ...outputStyleControls,
     ];
   }
 
-  async setFeature(featureId: string, value: unknown): Promise<void> {
-    if (featureId === OUTPUT_STYLE_FEATURE_ID) {
-      await this.setOutputStyle(value);
-      return;
+  async applyOptions(options: ProviderOptions): Promise<Record<string, unknown>> {
+    assertChangesAreLive({
+      provider: "omp",
+      patch: options,
+      current: this.config.providerOptions,
+      live: ["fast_mode", OUTPUT_STYLE_FEATURE_ID],
+    });
+    const next = validateProviderOptions(
+      "omp",
+      OmpProviderOptionsSchema,
+      applyProviderOptionsPatch({ options: this.config.providerOptions, patch: options }),
+    );
+    if (options[OUTPUT_STYLE_FEATURE_ID] !== undefined) {
+      await this.setOutputStyle(readOutputStyleValue(next) ?? DEFAULT_OUTPUT_STYLE);
     }
-    if (featureId !== "fast_mode") throw new Error(`Unknown OMP feature: ${featureId}`);
-    if (typeof value !== "boolean") throw new Error("OMP fast mode requires a boolean");
+    if (options.fast_mode === undefined) return {};
+    const requested = next?.fast_mode ?? false;
     if (!hasOmpFastMode(this.state)) throw new Error("OMP fast mode is unavailable");
-    const result = await this.runtimeSession.setFastMode(value);
-    this.state = {
-      ...this.state,
-      fastModeEnabled: result.enabled,
-      fastModeActive: result.active,
-    };
-    this.config.featureValues = { ...this.config.featureValues, fast_mode: result.enabled };
+    if (requested !== this.state.fastModeEnabled) {
+      const result = await this.runtimeSession.setFastMode(requested);
+      this.state = {
+        ...this.state,
+        fastModeEnabled: result.enabled,
+        fastModeActive: result.active,
+      };
+    }
+    if (typeof this.state.fastModeEnabled === "boolean") {
+      this.rememberFastMode(this.state.fastModeEnabled);
+    }
+    return this.fastModeDifference(requested);
+  }
+
+  /** A replacement runtime starts from the Fast the session has now, not the one it opened with. */
+  private rememberFastMode(enabled: boolean): void {
+    this.config.providerOptions = { ...this.config.providerOptions, fast_mode: enabled };
   }
 
   // The style is part of the launch-time system prompt, so changing it restarts OMP on the same
   // session file, as an approval-mode change does.
-  private async setOutputStyle(value: unknown): Promise<void> {
-    if (typeof value !== "string" || !this.outputStyles.some((style) => style.name === value)) {
-      throw new Error(`OMP output style '${String(value)}' is not available`);
+  private async setOutputStyle(value: string): Promise<void> {
+    if (!this.outputStyles.some((style) => style.name === value)) {
+      throw new Error(`OMP output style '${value}' is not available`);
     }
-    if (value === (readOutputStyleValue(this.config.featureValues) ?? DEFAULT_OUTPUT_STYLE)) return;
+    if (value === (readOutputStyleValue(this.config.providerOptions) ?? DEFAULT_OUTPUT_STYLE)) {
+      return;
+    }
     if (this.activeTurnId || this.state.isStreaming || this.state.isCompacting) {
       throw new Error("Change the output style once the current turn ends");
     }
     if (!this.currentModeId) throw new Error("OMP session has no approval mode to relaunch with");
-    const previous = this.config.featureValues;
-    this.config.featureValues = { ...previous, [OUTPUT_STYLE_FEATURE_ID]: value };
+    const previous = this.config.providerOptions;
+    this.config.providerOptions = { ...previous, [OUTPUT_STYLE_FEATURE_ID]: value };
     try {
       await this.replaceRuntime(this.currentModeId);
     } catch (error) {
-      this.config.featureValues = previous;
+      this.config.providerOptions = previous;
       throw error;
     }
   }
+
+  /** The option patch when the runtime's fast mode is not what `given` stands for; unset is off. */
+  private fastModeDifference(given: unknown): Record<string, unknown> {
+    if (!hasOmpFastMode(this.state)) return {};
+    const enabled = this.state.fastModeEnabled === true;
+    return (given ?? false) === enabled ? {} : { fast_mode: enabled };
+  }
+
+  /** How the opened session differs from the options it was given. */
+  readonly openOptionsPatch: Record<string, unknown>;
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
     return runProviderTurn({
@@ -1216,7 +1248,7 @@ export class OmpAgentSession implements AgentSession {
         this.pendingPromptResults.clear();
         this.runtimeSession = next;
         this.hostTools = restarted.hostTools;
-        this.state = state;
+        this.installState(state);
         this.currentModeId = modeId;
         this.config.modeId = modeId;
         this.runtimeDead = false;
@@ -1497,10 +1529,10 @@ export class OmpAgentSession implements AgentSession {
     return null;
   }
 
-  async setModel(modelId: string | null): Promise<void> {
+  async setModel(modelId: string | null): Promise<{ model: string | null }> {
     const parsedReference = parseModelReference(modelId);
     if (!parsedReference) {
-      return;
+      return { model: modelToId(this.state.model) };
     }
     if (!parsedReference.provider) {
       throw new Error(`OMP model id must include a provider: ${modelId}`);
@@ -1509,6 +1541,7 @@ export class OmpAgentSession implements AgentSession {
     const model = await this.runtimeSession.setModel(parsedReference.provider, parsedReference.id);
     this.config.model = `${model.provider}/${model.id}`;
     await this.refreshState();
+    return { model: modelToId(this.state.model) };
   }
 
   async setThinkingOption(thinkingOptionId: string | null): Promise<void> {
@@ -2526,7 +2559,7 @@ export class OmpAgentSession implements AgentSession {
       }
       try {
         const state = await this.runtimeSession.getState();
-        this.state = state;
+        this.installState(state);
         if (
           this.closed ||
           !this.activeTurnStarted ||
@@ -2557,7 +2590,22 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private async refreshState(): Promise<void> {
-    this.state = await this.runtimeSession.getState();
+    this.installState(await this.runtimeSession.getState());
+  }
+
+  // The runtime owns Fast: whatever it reports is what the session now runs with, so every state
+  // read from the runtime is installed here and a difference is published once.
+  private installState(state: OmpSessionState): void {
+    const before = this.state.fastModeEnabled;
+    this.state = state;
+    if (this.state.fastModeEnabled !== before && typeof this.state.fastModeEnabled === "boolean") {
+      this.rememberFastMode(this.state.fastModeEnabled);
+      this.emit({
+        type: "options_changed",
+        provider: this.provider,
+        patch: { fast_mode: this.state.fastModeEnabled },
+      });
+    }
   }
 
   private async refreshAfterTurn(finalUsage: Promise<void>): Promise<void> {
@@ -2664,7 +2712,7 @@ export class OmpAgentClient implements AgentClient {
     config: AgentSessionConfig,
     state: OmpSessionState,
   ): Promise<OmpSessionState> {
-    const value = config.featureValues?.fast_mode;
+    const value = config.providerOptions?.fast_mode;
     if (typeof value !== "boolean" || !hasOmpFastMode(state) || value === state.fastModeEnabled)
       return state;
     const result = await runtimeSession.setFastMode(value);
@@ -3030,8 +3078,11 @@ export class OmpAgentClient implements AgentClient {
     }
   }
 
-  async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
-    return buildOmpOutputStyleFeatures(await this.listOutputStyles(config.cwd), config);
+  async listControls(config: AgentSessionConfig): Promise<AgentDraftControls> {
+    return {
+      controls: buildOmpOutputStyleControls(await this.listOutputStyles(config.cwd)),
+      options: config.providerOptions ?? {},
+    };
   }
 
   async listImportableSessions(

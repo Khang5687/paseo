@@ -500,7 +500,7 @@ describe("workspace registries", () => {
       workspace: archived,
     });
     expect(await workspaceRegistry.get("/tmp/repo")).toBeNull();
-    expect(await workspaceRegistry.list()).toEqual([]);
+    expect(await workspaceRegistry.listAll()).toEqual([]);
   });
 
   test("loads a workspace record that still carries the removed settledAt field", async () => {

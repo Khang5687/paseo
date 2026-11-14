@@ -291,7 +291,7 @@ function RunSession({ runKey, scope, record, client, onClose }: RunSessionProps)
         <View style={styles.headerActions}>
           <Button
             variant="ghost"
-            size="xs"
+            size="sm"
             leftIcon={SquareTerminal}
             disabled={terminalClosed}
             onPress={openTerminal}
@@ -477,13 +477,13 @@ function RunControls({ runKey, record, client, lines }: RunControlsProps) {
         <AnswerField key={prompt?.kind ?? "input"} prompt={prompt} onAnswer={answer} />
       )}
       <View style={styles.keyRow}>
-        <Button variant="ghost" size="xs" onPress={pressEnter} testID="code-run-key-enter">
+        <Button variant="ghost" size="sm" onPress={pressEnter} testID="code-run-key-enter">
           {t("codeRun.keys.enter")}
         </Button>
-        <Button variant="ghost" size="xs" onPress={pressTab} testID="code-run-key-tab">
+        <Button variant="ghost" size="sm" onPress={pressTab} testID="code-run-key-tab">
           {t("codeRun.keys.tab")}
         </Button>
-        <Button variant="outline" size="xs" onPress={interrupt} testID="code-run-stop">
+        <Button variant="outline" size="sm" onPress={interrupt} testID="code-run-stop">
           {t("codeRun.keys.interrupt")}
         </Button>
       </View>

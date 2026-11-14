@@ -52,10 +52,7 @@ import {
 } from "../terminal/native-renderer/terminal-selection-controller";
 import { locateNativeNote, nativeSelectionNoteContext } from "../terminal/notes/native-notes";
 import { resolveNativeTerminalMountAction } from "../terminal/native-renderer/terminal-mount-policy";
-import {
-  forwardNativeTerminalKey,
-  type NativeTerminalKey,
-} from "../terminal/native-renderer/terminal-key-events";
+import { type NativeTerminalKeyEvent } from "../terminal/native-renderer/terminal-key-events";
 import {
   TerminalInput,
   type TerminalInputHandle,
@@ -549,9 +546,9 @@ function NativeTerminalEmulator({
   );
 
   const handleNativeTerminalKey = useCallback(
-    (key: NativeTerminalKey) => {
+    (event: NativeTerminalKeyEvent) => {
       claimActiveTerminalSizeForAction("key");
-      forwardNativeTerminalKey({ key, onTerminalKey: callbacksRef.current.onTerminalKey });
+      callbacksRef.current.onTerminalKey?.(event);
     },
     [claimActiveTerminalSizeForAction],
   );

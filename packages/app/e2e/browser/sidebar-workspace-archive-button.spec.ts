@@ -41,7 +41,9 @@ function workspaceRow(page: Page, workspace: SeededWorkspace) {
 }
 
 function archiveButton(page: Page, workspace: SeededWorkspace) {
-  return page.getByTestId(`sidebar-workspace-archive-${getServerId()}:${workspace.workspaceId}`);
+  return page.getByTestId(
+    `sidebar-workspace-archive-button-${getServerId()}:${workspace.workspaceId}`,
+  );
 }
 
 test.describe("Sidebar workspace archive button", () => {

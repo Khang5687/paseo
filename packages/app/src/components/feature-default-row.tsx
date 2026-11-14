@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { type FieldControlSize } from "@/components/ui/control-geometry";
+import { type ControlSize } from "@/components/ui/control-geometry";
 import {
   SelectField,
   type SelectFieldDisplay,
@@ -53,7 +53,7 @@ export function FeatureDefaultRow({
   stored: boolean | string | undefined;
   isFirst: boolean;
   disabled: boolean;
-  size: FieldControlSize;
+  size: ControlSize;
   /** Row title; the feature's label when absent. */
   title?: string;
   /** Row hint; the feature's description when absent. */
