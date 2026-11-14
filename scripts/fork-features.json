@@ -960,5 +960,11 @@
       "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
       "packages/app/src/subagents/track-presentation.test.ts"
     ]
+  },
+  {
+    "pr": 127,
+    "title": "docs(fork): build host setup and subagent spawning rules",
+    "untested": "docs only (CLAUDE.md fork workflow)",
+    "tests": []
   }
 ]
