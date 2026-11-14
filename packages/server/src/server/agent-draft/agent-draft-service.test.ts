@@ -47,24 +47,20 @@ describe("applyDraftSet", () => {
     expect(fields.draftHistory?.[0]?.text).toBe("draft number 11");
   });
 
-  test("keeps file uploads that went out with a sent message", () => {
+  test("an edit that drops attachments releases image uploads but never file uploads", () => {
+    const image = { kind: "image", uploadId: "upload_i", value: {} };
     const file = { kind: "file", uploadId: "upload_f", value: {} };
+    const text = "[Image #1] logo [File #2] assets";
     const before: StoredAgentDraftFields = {
-      draft: { text: "", attachments: [file], revision: 1, updatedAt: 0, updatedBy: "mac" },
+      draft: { text, attachments: [image, file], revision: 1, updatedAt: 0, updatedBy: "mac" },
     };
+    // What the composer pushes while its send is in flight: same text, no attachments.
     const after = applyDraftSet(
       before,
-      {
-        text: "",
-        attachments: [],
-        updatedAt: policy.now,
-        baseRevision: 1,
-        reason: "sent",
-        clientId: "mac",
-      },
+      { text, attachments: [], updatedAt: policy.now, baseRevision: 1, clientId: "mac" },
       policy,
     ).fields;
-    expect(after.sentDraftUploadIds).toEqual(["upload_f"]);
-    expect(releasedUploadIds(before, { ...after, draftHistory: [] })).toEqual([]);
+    expect(after.draftHistory).toEqual([]);
+    expect(releasedUploadIds(before, after)).toEqual(["upload_i"]);
   });
 });

@@ -97,7 +97,6 @@ async function set(
       attachments: request.attachments,
       updatedAt: request.updatedAt,
       baseRevision: request.baseRevision,
-      reason: request.reason,
       clientId: deps.clientId,
     });
     if (!result) throw new Error(`Agent not found: ${request.agentId}`);

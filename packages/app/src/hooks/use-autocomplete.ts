@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  getAutocompleteFallbackIndex,
   getAutocompleteNextIndex,
   resolveAutocompleteSelectedIndex,
+  type AutocompleteChoice,
   type AutocompleteOptionsPosition,
 } from "@/components/ui/autocomplete-utils";
 
@@ -33,41 +33,32 @@ interface UseAutocompleteResult<TKeyPressEvent extends AutocompleteKeyPressEvent
   onKeyPress: (event: TKeyPressEvent) => boolean;
 }
 
+const NO_OPTIONS: readonly never[] = [];
+
 export function useAutocomplete<
   TOption extends { id: string },
   TKeyPressEvent extends AutocompleteKeyPressEvent = AutocompleteKeyPressEvent,
 >(input: UseAutocompleteInput<TOption, TKeyPressEvent>): UseAutocompleteResult<TKeyPressEvent> {
-  const [selectedIndex, setSelectedIndex] = useState(-1);
-  const previousQueryRef = useRef("");
-  const navigatedRef = useRef(false);
-  const previousOptionsRef = useRef<readonly TOption[]>([]);
+  // The user's choice, tied to the query it was made for. The shown index is resolved from it
+  // during render, so a list never paints its first frame without a selection: the popover only
+  // measures once a non-empty list has one.
+  const [choice, setChoice] = useState<AutocompleteChoice | null>(null);
+  const shownOptions = input.isVisible ? input.options : NO_OPTIONS;
+  const selectedIndex = resolveAutocompleteSelectedIndex({
+    choice,
+    query: input.query,
+    options: shownOptions,
+    position: input.optionsPosition,
+  });
+  const isChosen =
+    choice !== null &&
+    choice.query === input.query &&
+    shownOptions[selectedIndex]?.id === choice.id;
 
+  // A choice belongs to one search. Until this clears it, the query check above ignores it.
   useEffect(() => {
-    if (!input.isVisible) {
-      previousQueryRef.current = input.query;
-      navigatedRef.current = false;
-      setSelectedIndex(-1);
-      return;
-    }
-
-    const queryChanged = previousQueryRef.current !== input.query;
-    previousQueryRef.current = input.query;
-    if (queryChanged) {
-      navigatedRef.current = false;
-    }
-    const previousOptions = previousOptionsRef.current;
-    previousOptionsRef.current = input.options;
-
-    setSelectedIndex((current) =>
-      resolveAutocompleteSelectedIndex({
-        previousOptions,
-        previousIndex: current,
-        options: input.options,
-        queryChanged,
-        position: input.optionsPosition,
-      }),
-    );
-  }, [input.isVisible, input.options, input.query, input.optionsPosition]);
+    setChoice(null);
+  }, [input.isVisible, input.query]);
 
   const onKeyPress = useCallback(
     (event: TKeyPressEvent) => {
@@ -75,47 +66,25 @@ export function useAutocomplete<
         return false;
       }
 
-      if (event.key === "ArrowUp") {
-        navigatedRef.current = true;
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
         event.preventDefault();
-        setSelectedIndex((current) =>
-          getAutocompleteNextIndex({
-            currentIndex: current,
-            itemCount: input.options.length,
-            key: "ArrowUp",
-          }),
-        );
+        const nextIndex = getAutocompleteNextIndex({
+          currentIndex: selectedIndex,
+          itemCount: input.options.length,
+          key: event.key,
+        });
+        const nextOption = input.options[nextIndex];
+        setChoice(nextOption ? { id: nextOption.id, query: input.query } : null);
         return true;
       }
 
-      if (event.key === "ArrowDown") {
-        navigatedRef.current = true;
-        event.preventDefault();
-        setSelectedIndex((current) =>
-          getAutocompleteNextIndex({
-            currentIndex: current,
-            itemCount: input.options.length,
-            key: "ArrowDown",
-          }),
-        );
-        return true;
-      }
-
-      if (event.key === "Enter" && input.enterSelects === false && !navigatedRef.current) {
+      if (event.key === "Enter" && input.enterSelects === false && !isChosen) {
         return false;
       }
 
       if (event.key === "Tab" || event.key === "Enter") {
         event.preventDefault();
-        const fallbackIndex = getAutocompleteFallbackIndex(
-          input.options.length,
-          input.optionsPosition,
-        );
-        const resolvedIndex =
-          selectedIndex >= 0 && selectedIndex < input.options.length
-            ? selectedIndex
-            : fallbackIndex;
-        const selectedOption = input.options[resolvedIndex];
+        const selectedOption = input.options[selectedIndex];
         if (selectedOption) {
           input.onSelectOption(selectedOption, event);
         }
@@ -130,7 +99,7 @@ export function useAutocomplete<
 
       return false;
     },
-    [input, selectedIndex],
+    [input, isChosen, selectedIndex],
   );
 
   return {

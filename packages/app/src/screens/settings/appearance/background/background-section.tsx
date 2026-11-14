@@ -127,7 +127,7 @@ export function BackgroundSection() {
       gallery.canUndo ? (
         <Button
           variant="ghost"
-          size="xs"
+          size="sm"
           onPress={gallery.undo}
           accessibilityLabel={undoLabel}
           testID="settings-background-undo"

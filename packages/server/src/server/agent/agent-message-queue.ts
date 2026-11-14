@@ -95,7 +95,7 @@ export class AgentMessageQueueDispatcher {
    * the providers. A failed load leaves the queue in the record.
    */
   async drainStoredQueues(): Promise<void> {
-    const records = await this.agentStorage.list();
+    const records = await this.agentStorage.listActive();
     for (const record of records) {
       if (record.archivedAt || record.internal || record.queuePaused) continue;
       if (!record.queuedMessages?.length) continue;

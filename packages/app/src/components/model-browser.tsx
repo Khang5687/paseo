@@ -106,26 +106,73 @@ function ProviderSettingsAction({
   );
 }
 
-function AgentProfilesEditAction({ onPress }: { onPress: () => void }) {
-  const { t } = useTranslation();
+/**
+ * An icon button that explains itself in a tooltip on desktop hover. Tooltips
+ * never open on mobile, so native renders the shared gesture-aware pressable
+ * instead of a plain Pressable: inside the model list's independent scroll
+ * viewport (Android, wide windows) the native scroll gesture cancels a plain
+ * Pressable's touches and the button would never fire.
+ */
+function IconActionButton({
+  accessibilityLabel,
+  testID,
+  onPress,
+  style,
+  children,
+}: {
+  accessibilityLabel: string;
+  testID: string;
+  onPress: () => void;
+  style?:
+    | StyleProp<ViewStyle>
+    | ((state: PressableStateCallbackType & { hovered?: boolean }) => StyleProp<ViewStyle>);
+  children: React.ReactNode;
+}) {
+  if (isNative) {
+    return (
+      <ModelBrowserPressable
+        onPress={onPress}
+        hitSlop={8}
+        style={style}
+        accessibilityLabel={accessibilityLabel}
+        testID={testID}
+      >
+        {children}
+      </ModelBrowserPressable>
+    );
+  }
   return (
     <Tooltip delayDuration={250} enabledOnDesktop enabledOnMobile={false}>
       <TooltipTrigger asChild>
         <Pressable
           onPress={onPress}
           hitSlop={8}
-          style={iconButtonStyle}
+          style={style}
           accessibilityRole="button"
-          accessibilityLabel={t("modelSelector.editProfilesLabel")}
-          testID="model-profiles-edit"
+          accessibilityLabel={accessibilityLabel}
+          testID={testID}
         >
-          <ThemedPencil size={ICON_SIZE.xs} uniProps={foregroundExtraMutedMapping} />
+          {children}
         </Pressable>
       </TooltipTrigger>
       <TooltipContent side="top" align="center" offset={8}>
-        <Text style={styles.tooltipText}>{t("modelSelector.editProfilesLabel")}</Text>
+        <Text style={styles.tooltipText}>{accessibilityLabel}</Text>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function AgentProfilesEditAction({ onPress }: { onPress: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <IconActionButton
+      onPress={onPress}
+      style={iconButtonStyle}
+      accessibilityLabel={t("modelSelector.editProfilesLabel")}
+      testID="model-profiles-edit"
+    >
+      <ThemedPencil size={ICON_SIZE.xs} uniProps={foregroundExtraMutedMapping} />
+    </IconActionButton>
   );
 }
 
@@ -216,17 +263,19 @@ export function ModelProviderGlyph({
   provider,
   serverId,
   size,
+  strokeWidth,
   tone = "muted",
 }: {
   provider: string;
   serverId: string | null;
   size: number;
+  strokeWidth?: number;
   tone?: ProviderGlyphTone;
 }) {
   const Icon = useProviderIcon(provider, serverId);
   const color =
     tone === "foreground" ? styles.providerIconForeground.color : styles.providerIconMuted.color;
-  return <Icon size={size} color={color} />;
+  return <Icon size={size} strokeWidth={strokeWidth} color={color} />;
 }
 
 function HeaderSettingsIcon({ disabled }: { disabled: boolean }) {
@@ -635,24 +684,14 @@ function ModelRowProfileAction({
     [visible],
   );
   return (
-    <Tooltip delayDuration={250} enabledOnDesktop enabledOnMobile={false}>
-      <TooltipTrigger asChild>
-        <Pressable
-          onPress={onPress}
-          hitSlop={8}
-          style={pressableStyle}
-          pointerEvents={visible ? "auto" : "none"}
-          accessibilityRole="button"
-          accessibilityLabel={label}
-          testID={testID}
-        >
-          {children}
-        </Pressable>
-      </TooltipTrigger>
-      <TooltipContent side="top" align="center" offset={8}>
-        <Text style={styles.tooltipText}>{label}</Text>
-      </TooltipContent>
-    </Tooltip>
+    <IconActionButton
+      onPress={onPress}
+      style={pressableStyle}
+      accessibilityLabel={label}
+      testID={testID}
+    >
+      {children}
+    </IconActionButton>
   );
 }
 
@@ -1235,7 +1274,7 @@ function ProviderErrorEmptyState({
       <ThemedAlertTriangle size={ICON_SIZE.md} uniProps={foregroundMutedMapping} />
       <Text style={styles.emptyStateText}>{message}</Text>
       {onRetryProvider ? (
-        <Button variant="default" size="sm" onPress={handleRetry} disabled={isRetryingProvider}>
+        <Button variant="default" onPress={handleRetry} disabled={isRetryingProvider}>
           {isRetryingProvider ? t("modelSelector.retrying") : t("modelSelector.retry")}
         </Button>
       ) : null}
@@ -1688,8 +1727,10 @@ const styles = StyleSheet.create((theme) => ({
   rowIconButtonPressed: {
     backgroundColor: theme.colors.surface1,
   },
+  // Hidden in style so every pressable branch that applies the style also stops taking taps.
   profileActionHidden: {
     opacity: 0,
+    pointerEvents: "none",
   },
   emptyState: {
     padding: theme.spacing[4],

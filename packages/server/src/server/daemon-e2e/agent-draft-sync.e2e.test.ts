@@ -139,6 +139,48 @@ test("another client fetches a draft image, and removing it deletes the upload",
   await expect(clientB.getAgentDraftUpload(agent.id, uploadId)).rejects.toThrow();
 });
 
+test("a file attachment's upload survives the composer dropping it from the draft", async () => {
+  const agent = await ctx.client.createAgent({ provider: "codex", cwd, title: "Draft file" });
+  const uploaded = await ctx.client.uploadFile({
+    fileName: "Archive.zip",
+    mimeType: "application/zip",
+    bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]),
+  });
+  const file = uploaded.file!;
+  const text = "[File #1] has the assets";
+  const first = await ctx.client.setAgentDraft({
+    agentId: agent.id,
+    text,
+    attachments: [{ kind: "file", uploadId: file.id, value: { kind: "file", attachment: file } }],
+    updatedAt: Date.now(),
+    baseRevision: null,
+  });
+  // The composer clears attachments before the send reply arrives; the message names this path.
+  await ctx.client.setAgentDraft({
+    agentId: agent.id,
+    text,
+    attachments: [],
+    updatedAt: Date.now(),
+    baseRevision: first.state?.draft?.revision ?? null,
+  });
+  expect(existsSync(file.path)).toBe(true);
+});
+
+test("sending a message whose uploaded file is gone fails instead of handing over the path", async () => {
+  const agent = await ctx.client.createAgent({ provider: "codex", cwd, title: "Missing upload" });
+  const uploaded = await ctx.client.uploadFile({
+    fileName: "Archive.zip",
+    mimeType: "application/zip",
+    bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+  });
+  const file = uploaded.file!;
+  rmSync(path.dirname(file.path), { recursive: true, force: true });
+
+  await expect(
+    ctx.client.sendAgentMessage(agent.id, "[File #1] has the assets", { attachments: [file] }),
+  ).rejects.toThrow('Attached file "Archive.zip" is no longer on this host');
+});
+
 test("archiving an agent deletes its draft, history and uploads", async () => {
   const agent = await ctx.client.createAgent({ provider: "codex", cwd, title: "Draft archive" });
   const uploaded = await ctx.client.uploadFile({

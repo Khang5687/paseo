@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useFetchQuery } from "@/data/query";
 import { useTranslation } from "react-i18next";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -8,7 +9,7 @@ import { useShallow } from "zustand/shallow";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import {
   agentCommandsQueryKey,
-  sessionCommandQueryPolicy,
+  agentCommandQueryPolicy,
   type AgentCommandsDraftConfig,
 } from "./cache";
 
@@ -95,6 +96,7 @@ export function useAgentCommandsQuery({
     }),
   );
 
+  const queryClient = useQueryClient();
   const query = useFetchQuery({
     queryKey: agentCommandsQueryKey({ serverId, agentId, draftConfig }),
     queryFn: async () => {
@@ -109,7 +111,7 @@ export function useAgentCommandsQuery({
       agentCommandProvider: draftConfig?.provider ?? provider,
       agentCommandCwd: draftConfig?.cwd ?? cwd,
     },
-    ...sessionCommandQueryPolicy,
+    ...agentCommandQueryPolicy,
     staleTimeMs: COMMANDS_STALE_TIME,
     subscribed: panelActive,
     retry: 3,
@@ -128,6 +130,15 @@ export function useAgentCommandsQuery({
     void refetch();
   }, [queryEnabled, isFetching, dataUpdatedAt, refetch]);
 
+  // Reset rather than refetch: a refetch keeps the error status while it runs, and the menu
+  // shows loading for the retry.
+  const retry = useCallback(() => {
+    void queryClient.resetQueries({
+      queryKey: agentCommandsQueryKey({ serverId, agentId, draftConfig }),
+      exact: true,
+    });
+  }, [agentId, draftConfig, queryClient, serverId]);
+
   return {
     commands: query.data ?? [],
     isLoading,
@@ -136,5 +147,6 @@ export function useAgentCommandsQuery({
     isError: query.isError && query.data === undefined,
     error: query.data === undefined ? query.error : null,
     revalidateForMiss,
+    retry,
   };
 }

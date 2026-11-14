@@ -1,13 +1,14 @@
-// E2E fixture daemon for question cards and the Style feature. The stock mock provider asks
-// only multi-question forms and advertises no features; this one asks a single formatted
+// E2E fixture daemon for question cards and the Style control. The stock mock provider asks
+// only multi-question forms and advertises no controls; this one asks a single formatted
 // question (the one-tap card) and offers an output_style select, and reports over IPC what
-// the daemon hands the provider: question responses and the feature values a session starts with.
+// the daemon hands the provider: question responses and the provider options a session starts with.
 import { randomUUID } from "node:crypto";
-import type { AgentFeature } from "@getpaseo/protocol/agent-types";
+import type { AgentOptionSelectControl } from "@getpaseo/protocol/agent-types";
 import {
   MockLoadTestAgentClient,
   MockLoadTestAgentSession,
 } from "../agent/providers/mock-load-test-agent.js";
+import type { AgentDraftControls, AgentSessionConfig } from "../agent/agent-sdk-types.js";
 import { createTestPaseoDaemon } from "./paseo-daemon.js";
 
 export const ONE_TAP_QUESTION = {
@@ -17,15 +18,15 @@ export const ONE_TAP_QUESTION = {
   multiSelect: false,
 };
 
-export const OUTPUT_STYLE_FEATURE: AgentFeature = {
+export const OUTPUT_STYLE_CONTROL: AgentOptionSelectControl = {
   type: "select",
-  id: "output_style",
+  key: "output_style",
   label: "Style",
-  value: "default",
-  options: [
-    { id: "default", label: "Default" },
-    { id: "explanatory", label: "Explanatory" },
-    { id: "learning", label: "Learning" },
+  defaultValue: "default",
+  choices: [
+    { value: "default", label: "Default" },
+    { value: "explanatory", label: "Explanatory" },
+    { value: "learning", label: "Learning" },
   ],
 };
 
@@ -52,12 +53,12 @@ class ForkUiSession extends MockLoadTestAgentSession {
 
 class ForkUiClient extends MockLoadTestAgentClient {
   override async createSession(config: Parameters<MockLoadTestAgentClient["createSession"]>[0]) {
-    process.send?.({ type: "session-created", featureValues: config.featureValues ?? {} });
+    process.send?.({ type: "session-created", providerOptions: config.providerOptions ?? {} });
     return new ForkUiSession({ config, sessionId: randomUUID() });
   }
 
-  async listFeatures(): Promise<AgentFeature[]> {
-    return [OUTPUT_STYLE_FEATURE];
+  async listControls(config: AgentSessionConfig): Promise<AgentDraftControls> {
+    return { controls: [OUTPUT_STYLE_CONTROL], options: config.providerOptions ?? {} };
   }
 }
 

@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { AgentFeatureSelect } from "./agent-sdk-types.js";
+import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
+import type { AgentOptionSelectControl } from "./agent-sdk-types.js";
 import { claudeConfigDir } from "./providers/claude/project-dir.js";
 
 export const OUTPUT_STYLE_FEATURE_ID = "output_style";
@@ -189,10 +190,8 @@ export const discoverOutputStyleFiles: DiscoverOutputStyles = async ({ cwd, env 
   return [...byName.values()];
 };
 
-export function readOutputStyleValue(
-  featureValues: Record<string, unknown> | undefined,
-): string | null {
-  const value = featureValues?.[OUTPUT_STYLE_FEATURE_ID];
+export function readOutputStyleValue(options: ProviderOptions | undefined): string | null {
+  const value = options?.[OUTPUT_STYLE_FEATURE_ID];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
@@ -205,21 +204,21 @@ export function mergeOutputStyles(
   return [...builtins.filter((style) => !customNames.has(style.name)), ...custom];
 }
 
-export function buildOutputStyleFeature(input: {
+export function buildOutputStyleControl(input: {
   styles: readonly OutputStyle[];
-  value: string | null;
-}): AgentFeatureSelect {
+  defaultValue?: string;
+}): AgentOptionSelectControl {
   return {
     type: "select",
-    id: OUTPUT_STYLE_FEATURE_ID,
+    key: OUTPUT_STYLE_FEATURE_ID,
     label: "Style",
     description: "How the agent writes its replies to you",
     tooltip: "Select output style",
     icon: "message-square-text",
     desktopTrigger: "icon",
-    value: input.value,
-    options: input.styles.map((style) => ({
-      id: style.name,
+    ...(input.defaultValue ? { defaultValue: input.defaultValue } : {}),
+    choices: input.styles.map((style) => ({
+      value: style.name,
       label: style.name === DEFAULT_OUTPUT_STYLE ? "Default" : style.name,
       ...(style.description ? { description: style.description } : {}),
     })),
