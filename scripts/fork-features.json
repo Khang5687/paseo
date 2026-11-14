@@ -620,7 +620,8 @@
     "tests": [
       "packages/server/src/server/agent/agent-manager.test.ts",
       "packages/server/src/server/session.workspaces.test.ts"
-    ]
+    ],
+    "retired": "upstream #8831 (59be8975a) makes the failed bucket follow unread error attention, so reading dismisses it; fork markAgentRead (error to idle) removed in the upstream sync"
   },
   {
     "pr": 79,
@@ -775,7 +776,8 @@
     "pr": 26,
     "title": "feat(app): one-press archive button on sidebar workspace rows",
     "tests": [],
-    "e2e": ["packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"]
+    "e2e": ["packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"],
+    "retired": "upstream #8904 ships its own hover archive button on sidebar rows; the fork button was removed in the upstream sync (spec kept under #102)"
   },
   {
     "pr": 99,
@@ -901,6 +903,51 @@
     "pr": 116,
     "title": "feat(server): serverId on archive, cancel, kill, set mode, update and search agent tools",
     "tests": ["packages/server/src/server/connected-hosts/hosts.e2e.test.ts"]
+  },
+  {
+    "pr": 120,
+    "title": "fix(server): keep file attachment uploads when the composer drops them from the draft",
+    "tests": [
+      "packages/server/src/server/agent-draft/agent-draft-service.test.ts",
+      "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/composer-file-attachment-send.spec.ts"]
+  },
+  {
+    "pr": 121,
+    "title": "fix(omp): show OMP's HTML-form ask as question cards",
+    "tests": ["packages/server/src/server/agent/providers/omp/ask.test.ts"]
+  },
+  {
+    "pr": 122,
+    "title": "feat(app): drag the composer to resize the message box",
+    "tests": [
+      "packages/app/src/composer/input/state.test.ts",
+      "packages/app/src/composer/dock/internal/capacity.test.ts"
+    ]
+  },
+  {
+    "pr": 123,
+    "title": "feat(app): open an agent's task from its task-url label",
+    "tests": ["packages/app/src/screens/workspace/agent-task-link.test.ts"]
+  },
+  {
+    "pr": 124,
+    "title": "fix(fork): run build it on a Linux build host; the Mac fetches the Mac app",
+    "tests": ["scripts/fork-lib.test.mjs"]
+  },
+  {
+    "pr": 125,
+    "title": "feat(app): select several sidebar workspaces and archive them at once",
+    "tests": ["packages/app/src/stores/sidebar-selection-store/state.test.ts"]
+  },
+  {
+    "pr": 126,
+    "title": "test(server): silence Ubuntu sudo hint in the bash prompt tests",
+    "tests": [
+      "packages/server/src/terminal/terminal.test.ts",
+      "packages/server/src/server/daemon-e2e/notes.e2e.test.ts"
+    ]
   },
   {
     "pr": 118,

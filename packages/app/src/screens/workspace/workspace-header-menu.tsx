@@ -1,8 +1,16 @@
+import type { WorkspaceCompactHeaderActions } from "./adaptive-workspace-chrome";
 import React, { useCallback, useMemo } from "react";
 import { View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { Copy, Ellipsis, Globe, Import as ImportIcon, Settings } from "lucide-react-native";
+import {
+  Copy,
+  Ellipsis,
+  ExternalLink,
+  Globe,
+  Import as ImportIcon,
+  Settings,
+} from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { TerminalProfile } from "@getpaseo/protocol/messages";
 import {
@@ -32,9 +40,11 @@ import {
   type UseWorkspaceScriptsMenuPagesInput,
 } from "@/screens/workspace/scripts";
 import { usePluginWorkspaceMenu } from "@/plugins";
+import { openExternalUrl } from "@/utils/open-external-url";
 
 const ThemedEllipsis = withUnistyles(Ellipsis);
 const ThemedCopy = withUnistyles(Copy);
+const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedImport = withUnistyles(ImportIcon);
 const ThemedSettings = withUnistyles(Settings);
@@ -42,6 +52,7 @@ const ThemedSettings = withUnistyles(Settings);
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const MENU_NEW_BROWSER_ICON = <ThemedGlobe size={16} uniProps={mutedColorMapping} />;
+const MENU_OPEN_TASK_ICON = <ThemedExternalLink size={16} uniProps={mutedColorMapping} />;
 const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />;
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
@@ -206,13 +217,17 @@ function HeaderMenuProfileItem({
 }
 
 export interface WorkspaceHeaderMenuMobileProps extends WorkspaceHeaderWorkspaceActions {
+  pane?: WorkspaceCompactHeaderActions["pane"];
+  onExitFocusMode?: () => void;
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   scripts: UseWorkspaceScriptsMenuPagesInput;
+  /** Board task of the active agent tab, when it has one. */
+  taskUrl: string | null;
   showCreateBrowserTab: boolean;
   createTerminalDisabled: boolean;
-  onCreateTerminalWithProfile: (profile: TerminalProfile) => void;
-  onCreateBrowser: () => void;
+  onCreateTerminalWithProfile: (profile: TerminalProfile, paneId?: string) => void;
+  onCreateBrowser: (input?: { paneId?: string }) => void;
 }
 
 /**
@@ -227,12 +242,24 @@ export function WorkspaceHeaderMenuMobile({
   normalizedServerId,
   normalizedWorkspaceId,
   scripts,
+  taskUrl,
   showCreateBrowserTab,
   createTerminalDisabled,
   onCreateTerminalWithProfile,
   onCreateBrowser,
+  pane,
+  onExitFocusMode,
   ...workspaceActions
 }: WorkspaceHeaderMenuMobileProps) {
+  const paneId = pane?.id;
+  const handleCreateBrowser = useCallback(
+    () => onCreateBrowser({ paneId }),
+    [onCreateBrowser, paneId],
+  );
+  const handleCreateTerminalWithProfile = useCallback(
+    (profile: TerminalProfile) => onCreateTerminalWithProfile(profile, paneId),
+    [onCreateTerminalWithProfile, paneId],
+  );
   const { t } = useTranslation();
   const router = useRouter();
   const triggerStyle = useIconButtonChromeStyle({ size: "large" });
@@ -245,6 +272,9 @@ export function WorkspaceHeaderMenuMobile({
   const handleEditProfiles = useCallback(() => {
     router.push(buildSettingsHostSectionRoute(normalizedServerId, "terminals") as Href);
   }, [normalizedServerId, router]);
+  const handleOpenTask = useCallback(() => {
+    if (taskUrl) void openExternalUrl(taskUrl).catch(console.error);
+  }, [taskUrl]);
   const scriptsMenu = useWorkspaceScriptsMenuPages(scripts);
   const pluginMenu = usePluginWorkspaceMenu(normalizedServerId, normalizedWorkspaceId);
   const pages = useMemo(
@@ -278,6 +308,39 @@ export function WorkspaceHeaderMenuMobile({
         pages={pages}
         sheetTitle={t("workspace.header.actions.workspaceActions")}
       >
+        {taskUrl ? (
+          <DropdownMenuItem
+            testID="workspace-header-open-task"
+            leading={MENU_OPEN_TASK_ICON}
+            onSelect={handleOpenTask}
+          >
+            {t("workspace.header.actions.openTask")}
+          </DropdownMenuItem>
+        ) : null}
+        {onExitFocusMode ? (
+          <DropdownMenuItem onSelect={onExitFocusMode}>
+            {t("workspace.tabs.actions.exitFocusMode")}
+          </DropdownMenuItem>
+        ) : null}
+        {pane?.splitRight ? (
+          <DropdownMenuItem onSelect={pane.splitRight}>
+            {t("workspace.tabs.actions.splitRight")}
+          </DropdownMenuItem>
+        ) : null}
+        {pane?.splitDown ? (
+          <DropdownMenuItem onSelect={pane.splitDown}>
+            {t("workspace.tabs.actions.splitDown")}
+          </DropdownMenuItem>
+        ) : null}
+        {pane?.toggleMaximized ? (
+          <DropdownMenuItem onSelect={pane.toggleMaximized}>
+            {t(
+              pane.maximized
+                ? "workspace.tabs.actions.restorePane"
+                : "workspace.tabs.actions.maximizePane",
+            )}
+          </DropdownMenuItem>
+        ) : null}
         {scriptsMenu.trigger}
         {pluginMenu.rows}
         {pluginMenu.rows.length > 0 ? <DropdownMenuSeparator /> : null}
@@ -285,7 +348,7 @@ export function WorkspaceHeaderMenuMobile({
           <DropdownMenuItem
             testID="workspace-header-new-browser"
             leading={MENU_NEW_BROWSER_ICON}
-            onSelect={onCreateBrowser}
+            onSelect={handleCreateBrowser}
           >
             {t("workspace.header.actions.newBrowser")}
           </DropdownMenuItem>
@@ -298,7 +361,7 @@ export function WorkspaceHeaderMenuMobile({
             key={profile.id}
             profile={profile}
             disabled={createTerminalDisabled}
-            onCreateTerminalWithProfile={onCreateTerminalWithProfile}
+            onCreateTerminalWithProfile={handleCreateTerminalWithProfile}
           />
         ))}
         <DropdownMenuSeparator />

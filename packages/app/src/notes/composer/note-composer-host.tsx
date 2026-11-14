@@ -19,7 +19,7 @@ import {
   type SheetHeader,
 } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
-import type { FieldControlSize } from "@/components/ui/control-geometry";
+import type { ControlSize } from "@/components/ui/control-geometry";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import type { EditingTextInputHandle } from "@/components/ui/text-input";
 import { PressHighlight } from "@/components/ui/press-highlight";
@@ -29,7 +29,6 @@ import {
   type SelectFieldDisplay,
   type SelectFieldOption,
 } from "@/components/ui/select-field";
-import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useFetchQuery } from "@/data/query";
 import { queryClient } from "@/data/query-client";
@@ -215,7 +214,8 @@ function NoteComposerSheet({
   const { t } = useTranslation();
   const toast = useToast();
   const close = useNoteComposerStore((state) => state.close);
-  const controlSize: FieldControlSize = useIsCompactFormFactor() ? "md" : "sm";
+  // The default size already grows to a full touch target in the compact layout.
+  const controlSize: ControlSize = "md";
   const now = useClock();
   const agents = useSessionStore((state) => state.sessions[serverId]?.agents ?? null);
   const agentOptions = useAgentOptions(agents, anchor.workspaceId);
@@ -498,7 +498,7 @@ interface WaitFieldsProps {
   initialForm: NoteComposerForm;
   setForm: SetForm;
   now: Date;
-  controlSize: FieldControlSize;
+  controlSize: ControlSize;
   agents: HostAgents;
   agentOptions: SelectFieldOption<string>[];
   terminalOptions: SelectFieldOption<string>[];
@@ -606,7 +606,7 @@ function AgentWaitField({
 }: {
   form: NoteComposerForm;
   setForm: SetForm;
-  controlSize: FieldControlSize;
+  controlSize: ControlSize;
   agents: HostAgents;
   options: SelectFieldOption<string>[];
 }) {
@@ -651,7 +651,7 @@ function CommandWaitFields({
 }: {
   form: NoteComposerForm;
   setForm: SetForm;
-  controlSize: FieldControlSize;
+  controlSize: ControlSize;
   options: SelectFieldOption<string>[];
   loading: boolean;
 }) {
@@ -757,7 +757,7 @@ function TimeWaitFields({
   initialForm: NoteComposerForm;
   setForm: SetForm;
   now: Date;
-  controlSize: FieldControlSize;
+  controlSize: ControlSize;
 }) {
   const { t } = useTranslation();
   const [inputResetKey, setInputResetKey] = useState(0);

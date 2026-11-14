@@ -814,9 +814,9 @@ describe("OMP agent client and session", () => {
     expect(omp.requireSession().describePersistence()?.metadata?.model).toBe(
       "openrouter/google/gemini-3.8-flash",
     );
-    expect(omp.requireSession().features.filter((feature) => feature.id === "fast_mode")).toEqual([
+    expect(omp.requireSession().controls.filter((control) => control.key === "fast_mode")).toEqual([
       expect.objectContaining({
-        value: true,
+        key: "fast_mode",
         description: expect.stringMatching(/does not apply/i),
       }),
     ]);
@@ -827,16 +827,88 @@ describe("OMP agent client and session", () => {
     await omp.start({ model: "openrouter/google/gemini-3.8-flash" });
     const session = omp.requireSession();
     omp.runtime().fastModeResult = { enabled: true, active: false };
-    await session.setFeature?.("fast_mode", true);
+    await session.applyOptions?.({ fast_mode: true });
     expect(omp.runtime().setFastModeRequests).toEqual([true]);
-    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([
+    expect(session.controls.filter((control) => control.key === "fast_mode")).toEqual([
       expect.objectContaining({
-        id: "fast_mode",
-        value: true,
+        key: "fast_mode",
         description: expect.stringMatching(/does not apply to this model/i),
         tooltip: expect.stringMatching(/does not apply to this model/i),
       }),
     ]);
+  });
+
+  test("applies only the options it is given and leaves the runtime alone otherwise", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    const session = omp.requireSession();
+
+    omp.runtime().fastModeResult = { enabled: true, active: true };
+    await session.applyOptions?.({ fast_mode: true });
+    expect(omp.runtime().setFastModeRequests).toEqual([true]);
+
+    // A patch without the key leaves the runtime alone.
+    await session.applyOptions?.({});
+    expect(omp.runtime().setFastModeRequests).toEqual([true]);
+  });
+
+  test("rejects a live option the creation schema would reject, and sends nothing", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    const session = omp.requireSession();
+
+    await expect(session.applyOptions?.({ sandbox_mode: "read-only" })).rejects.toThrow(/omp/i);
+    await expect(session.applyOptions?.({ fast_mode: "yes" })).rejects.toThrow(/omp/i);
+    expect(omp.runtime().setFastModeRequests).toEqual([]);
+  });
+
+  test("a removal turns Fast off, and a Fast the runtime keeps is returned", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    const session = omp.requireSession();
+    omp.runtime().fastModeResult = { enabled: true, active: true };
+    await session.applyOptions?.({ fast_mode: true });
+
+    omp.runtime().fastModeResult = { enabled: false, active: false };
+    await expect(session.applyOptions?.({ fast_mode: null })).resolves.toEqual({});
+    expect(omp.runtime().setFastModeRequests).toEqual([true, false]);
+
+    omp.runtime().fastModeResult = { enabled: false, active: false };
+    await expect(session.applyOptions?.({ fast_mode: true })).resolves.toEqual({
+      fast_mode: false,
+    });
+    expect(omp.eventTypes()).not.toContain("options_changed");
+  });
+
+  test("a session opened without the Fast it was given says so in its open patch", async () => {
+    const omp = new OmpHarness();
+    // The fake runtime answers the open-time Fast request with Fast off.
+    await omp.start({ providerOptions: { fast_mode: true } });
+
+    expect(omp.requireSession().openOptionsPatch).toEqual({ fast_mode: false });
+    expect(omp.eventTypes()).not.toContain("options_changed");
+  });
+
+  test("reports a Fast change the runtime made on its own", async () => {
+    const omp = new OmpHarness();
+    await omp.start();
+    const session = omp.requireSession();
+    omp.runtime().fastModeResult = { enabled: true, active: true };
+    await session.applyOptions?.({ fast_mode: true });
+    expect(omp.eventTypes()).not.toContain("options_changed");
+
+    omp.runtime().setModelResult = { provider: "openrouter", id: "other/model" };
+    omp.runtime().queueStateReports([
+      {
+        ...omp.runtime().state,
+        model: omp.runtime().setModelResult,
+        fastModeEnabled: false,
+        fastModeActive: false,
+      },
+    ]);
+    await session.setModel?.("openrouter/other/model");
+
+    expect(omp.eventTypes().filter((type) => type === "options_changed")).toHaveLength(1);
   });
 
   test("shows Fast only when OMP reports its state fields", async () => {
@@ -850,11 +922,11 @@ describe("OMP agent client and session", () => {
     } = omp.runtime().state;
     omp.runtime().state = olderState;
     await session.getRuntimeInfo();
-    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([]);
-    await expect(session.setFeature?.("fast_mode", true)).rejects.toThrow(/unavailable/i);
+    expect(session.controls.filter((control) => control.key === "fast_mode")).toEqual([]);
+    await expect(session.applyOptions?.({ fast_mode: true })).rejects.toThrow(/unavailable/i);
     omp.runtime().state = { ...olderState, fastModeEnabled: false, fastModeActive: false };
     await session.getRuntimeInfo();
-    expect(session.features.filter((feature) => feature.id === "fast_mode")).toHaveLength(1);
+    expect(session.controls.filter((control) => control.key === "fast_mode")).toHaveLength(1);
   });
 
   test("switching model refreshes whether Fast applies", async () => {
@@ -862,10 +934,7 @@ describe("OMP agent client and session", () => {
     await omp.start({ model: "openrouter/google/gemini-3.8-flash" });
     const session = omp.requireSession();
     omp.runtime().fastModeResult = { enabled: true, active: true };
-    await session.setFeature?.("fast_mode", true);
-    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([
-      expect.objectContaining({ value: true }),
-    ]);
+    await session.applyOptions?.({ fast_mode: true });
 
     omp.runtime().setModelResult = { provider: "openrouter", id: "other/model" };
     omp.runtime().queueStateReports([
@@ -877,24 +946,79 @@ describe("OMP agent client and session", () => {
       },
     ]);
     await session.setModel?.("openrouter/other/model");
-    expect(session.features.filter((feature) => feature.id === "fast_mode")).toEqual([
+    expect(session.controls.filter((control) => control.key === "fast_mode")).toEqual([
       expect.objectContaining({
-        value: true,
+        key: "fast_mode",
         description: expect.stringMatching(/does not apply/i),
       }),
     ]);
   });
 
+  test("a replacement runtime starts with the Fast the session has now, not the one it opened with", async () => {
+    const omp = new OmpHarness();
+    await omp.start({ modeId: "full", providerOptions: { fast_mode: true } });
+    const session = omp.requireSession();
+    omp.runtime().fastModeResult = { enabled: false, active: false };
+    await session.applyOptions?.({ fast_mode: false });
+
+    await omp.setMode("ask");
+
+    // The approval-mode restart starts a second runtime; it must not turn Fast back on.
+    expect(omp.runtimeLaunches()).toHaveLength(2);
+    expect(omp.runtime().setFastModeRequests).toEqual([]);
+  });
+
+  test("a replacement runtime starts with the Fast the session opened with, not the one it was asked for", async () => {
+    const omp = new OmpHarness();
+    // The fake runtime answers the open-time Fast request with Fast off.
+    await omp.start({ modeId: "full", providerOptions: { fast_mode: true } });
+    expect(omp.requireSession().openOptionsPatch).toEqual({ fast_mode: false });
+    omp.runtime().fastModeResult = { enabled: true, active: true };
+
+    await omp.setMode("ask");
+
+    expect(omp.runtimeLaunches()).toHaveLength(2);
+    expect(omp.runtime().setFastModeRequests).toEqual([]);
+  });
+
+  test("a replacement runtime that refuses the Fast the session had publishes what it accepted", async () => {
+    const omp = new OmpHarness();
+    omp.acceptFastOnNextRuntime();
+    await omp.start({ modeId: "full", providerOptions: { fast_mode: true } });
+    expect(omp.requireSession().openOptionsPatch).toEqual({});
+
+    // The approval-mode restart starts a second runtime, which refuses Fast.
+    await omp.setMode("ask");
+
+    expect(omp.optionsChanges()).toEqual([{ fast_mode: false }]);
+  });
+
+  test("a Fast change the runtime reports when a turn completes is published", async () => {
+    const omp = new OmpHarness();
+    omp.acceptFastOnNextRuntime();
+    await omp.start({ modeId: "full", providerOptions: { fast_mode: true } });
+    omp.runtime().state = { ...omp.runtime().state, fastModeEnabled: false, fastModeActive: false };
+
+    const { completion } = await omp.startPromptUntilProviderIdle("hello", "done", {
+      isStreaming: false,
+      isCompacting: false,
+    });
+    await completion;
+    await omp.requireSession().getRuntimeInfo();
+
+    expect(omp.optionsChanges()).toEqual([{ fast_mode: false }]);
+  });
+
   test("restores Fast from the initial OMP state on create and resume", async () => {
     const created = new OmpHarness();
-    await created.start({ featureValues: { fast_mode: true } });
+    await created.start({ providerOptions: { fast_mode: true } });
     expect(created.runtime().setFastModeRequests).toEqual([true]);
     expect(created.runtime().getStateRequestCount).toBe(1);
 
     const resumed = new OmpHarness();
     await resumed.resume(
       { user: { id: "user-1", text: "hello" }, assistant: { id: "assistant-1", text: "hi" } },
-      { featureValues: { fast_mode: true } },
+      { providerOptions: { fast_mode: true } },
     );
     expect(resumed.runtime().setFastModeRequests).toEqual([true]);
     expect(resumed.runtime().getStateRequestCount).toBe(1);
@@ -1660,46 +1784,44 @@ describe("OMP agent client and session", () => {
     });
     await omp.start({ modeId: "full", systemPrompt: "Paseo prompt" });
     const session = omp.requireSession();
-    const outputStyleFeature = () =>
-      session.features.find((feature) => feature.id === "output_style");
-    expect(outputStyleFeature()).toMatchObject({
-      value: "default",
-      options: [
-        { id: "default", label: "Default" },
-        { id: "Proactive" },
-        { id: "Concise" },
-        { id: "Explanatory" },
-        { id: "Learning" },
-        { id: "ELI5", label: "ELI5", description: "keep it simple pls" },
+    expect(session.controls.find((control) => control.key === "output_style")).toMatchObject({
+      type: "select",
+      defaultValue: "default",
+      choices: [
+        { value: "default", label: "Default" },
+        { value: "Proactive" },
+        { value: "Concise" },
+        { value: "Explanatory" },
+        { value: "Learning" },
+        { value: "ELI5", label: "ELI5", description: "keep it simple pls" },
       ],
     });
     expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("Paseo prompt");
     const sessionFile = omp.runtime().state.sessionFile;
 
-    await session.setFeature?.("output_style", "ELI5");
+    await session.applyOptions?.({ output_style: "ELI5" });
     const relaunch = omp.runtimeLaunches()[1];
     expect(relaunch?.systemPrompt).toBe("Paseo prompt\n\n# Output style: ELI5\n\nSmall words.");
     expect(relaunch?.session).toBe(sessionFile);
     expect(relaunch?.argv).toContain("yolo");
-    expect(outputStyleFeature()?.value).toBe("ELI5");
 
-    await expect(session.setFeature?.("output_style", "Pirate")).rejects.toThrow(
+    await expect(session.applyOptions?.({ output_style: "Pirate" })).rejects.toThrow(
       "OMP output style 'Pirate' is not available",
     );
     expect(omp.runtimeLaunches()).toHaveLength(2);
   });
 
-  test("starts with the output style from the agent's feature values", async () => {
+  test("starts with the output style from the agent's provider options", async () => {
     const omp = new OmpHarness({
       outputStyles: [{ name: "ELI5", body: "Small words." }],
     });
-    await omp.start({ featureValues: { output_style: "ELI5" } });
+    await omp.start({ providerOptions: { output_style: "ELI5" } });
     expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("# Output style: ELI5\n\nSmall words.");
   });
 
   test("offers Paseo's built-in styles, and a custom style of the same name replaces one", async () => {
     const builtin = new OmpHarness();
-    await builtin.start({ featureValues: { output_style: "Concise" } });
+    await builtin.start({ providerOptions: { output_style: "Concise" } });
     expect(builtin.runtimeLaunches()[0]?.systemPrompt).toMatch(
       /^# Output style: Concise\n\nKeep replies short\./,
     );
@@ -1707,20 +1829,16 @@ describe("OMP agent client and session", () => {
     const shadowed = new OmpHarness({
       outputStyles: [{ name: "Concise", description: "Mine", body: "Three words max." }],
     });
-    await shadowed.start({ featureValues: { output_style: "Concise" } });
+    await shadowed.start({ providerOptions: { output_style: "Concise" } });
     expect(shadowed.runtimeLaunches()[0]?.systemPrompt).toBe(
       "# Output style: Concise\n\nThree words max.",
     );
-    const options = shadowed
+    const control = shadowed
       .requireSession()
-      .features.find((feature) => feature.id === "output_style");
-    expect(options?.type === "select" ? options.options.map((option) => option.id) : []).toEqual([
-      "default",
-      "Proactive",
-      "Explanatory",
-      "Learning",
-      "Concise",
-    ]);
+      .controls.find((candidate) => candidate.key === "output_style");
+    expect(control?.type === "select" ? control.choices.map((choice) => choice.value) : []).toEqual(
+      ["default", "Proactive", "Explanatory", "Learning", "Concise"],
+    );
   });
 
   describe("command refresh", () => {

@@ -62,13 +62,42 @@ if (missingSecrets.length > 0) {
   log(`${message} (dry run continues)`);
 }
 
+// The Mac uses Homebrew's JDK and Android Studio's SDK; Linux (the build host) uses the mise
+// installs .tool-versions pins, where .mise.toml points ANDROID_HOME.
+function misePin(tool) {
+  const pin = readFileSync(path.join(root, ".tool-versions"), "utf8")
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .find(([name]) => name === tool)?.[1];
+  if (!pin) fail(`.tool-versions pins no ${tool}`);
+  return pin;
+}
+const miseInstall = (tool) =>
+  path.join(os.homedir(), ".local/share/mise/installs", tool, misePin(tool));
+const linux = process.platform === "linux";
 const env = {
   ...process.env,
-  JAVA_HOME: process.env.JAVA_HOME ?? "/opt/homebrew/opt/openjdk@21",
-  ANDROID_HOME: process.env.ANDROID_HOME ?? path.join(os.homedir(), "Library/Android/sdk"),
+  JAVA_HOME:
+    process.env.JAVA_HOME ?? (linux ? miseInstall("java") : "/opt/homebrew/opt/openjdk@21"),
+  ANDROID_HOME:
+    process.env.ANDROID_HOME ??
+    (linux ? miseInstall("android-sdk") : path.join(os.homedir(), "Library/Android/sdk")),
   APP_VARIANT: "development",
   NODE_ENV: "production",
 };
+// Gradle installs the platform, build tools and NDK the app needs into ANDROID_HOME, but only
+// once their licenses are accepted there. mise's SDK starts with cmdline-tools alone.
+if (linux && !existsSync(path.join(env.ANDROID_HOME, "licenses"))) {
+  const sdkmanager = path.join(
+    env.ANDROID_HOME,
+    "cmdline-tools",
+    misePin("android-sdk"),
+    "bin/sdkmanager",
+  );
+  const message = `no accepted SDK licenses in ${env.ANDROID_HOME}; run: yes | ${sdkmanager} --sdk_root=${env.ANDROID_HOME} --licenses`;
+  if (!dryRun) fail(message);
+  log(`${message} (dry run continues)`);
+}
 
 const free = freeGb();
 if (free < ANDROID_MIN_FREE_GB) {

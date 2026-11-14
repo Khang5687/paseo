@@ -10,6 +10,7 @@ import { useFileLink } from "@/assistant-file-links";
 import { CodeFence } from "@/code-run/fence";
 import { FileLinkContextMenu } from "@/assistant-file-links/context-menu";
 import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
+import { useForgeShorthand } from "@/git/forge-shorthand";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { MermaidFence } from "./fence/mermaid";
 import { markdownLinkSource } from "./source";
@@ -23,11 +24,15 @@ function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
 const LINK_HOVER_STYLE = { textDecoration: "underline" } as const;
 
 function WebLink({ link, anchorProps, children }: LinkRendererProps) {
+  const forgeShorthand = useForgeShorthand();
+  // A forge reference like `#12` carries its web URL so hover, copy and new-tab opens work.
+  const forgeUrl = link.sourceType === "text" ? forgeShorthand?.resolve(link.url) : null;
   const source = useMemo(
-    () => markdownLinkSource(link.url, link.sourceType),
-    [link.url, link.sourceType],
+    () => (forgeUrl ? markdownLinkSource(forgeUrl) : markdownLinkSource(link.url, link.sourceType)),
+    [forgeUrl, link.url, link.sourceType],
   );
   const { tooltipPath, fileCandidate, onHoverIn, resolveFile } = useFileLink(source);
+  const tooltip = forgeUrl ?? tooltipPath;
   const saveFileLinkOffline = useSaveFileLinkOffline();
   const saveOffline = useCallback(() => saveFileLinkOffline(source), [saveFileLinkOffline, source]);
   const [hovered, setHovered] = useState(false);
@@ -44,6 +49,7 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
   const anchor = (
     <a
       {...anchorProps}
+      href={forgeUrl ?? anchorProps.href}
       style={anchorStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -68,10 +74,10 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
           )}
         </InlineLinkTrigger>
       </TooltipTrigger>
-      {tooltipPath ? (
+      {tooltip ? (
         <TooltipContent side="top" align="start" maxWidth={520}>
           <Text selectable={false} style={styles.tooltipPath}>
-            {tooltipPath}
+            {tooltip}
           </Text>
         </TooltipContent>
       ) : null}

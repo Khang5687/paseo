@@ -58,6 +58,9 @@ import { SIDEBAR_ROW_ITEMS, type SidebarRowItem } from "./row-items";
 import { useWorkspaceLabelProjection } from "@/workspace-labels";
 import { WorkspaceLabelDot } from "@/workspace-labels/swatch";
 import { WorkspaceLabelManagerModal } from "@/workspace-labels/manager-modal";
+import { useSidebarSelectionStore } from "@/stores/sidebar-selection-store";
+import { PluginIconView } from "@/plugins/icons";
+import type { PluginWorkspaceRowBadgeItemGroup } from "@/plugins/workspace-row-badge-items";
 
 const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
@@ -65,6 +68,7 @@ const ThemedSettings2 = withUnistyles(Settings2);
 /** CI's mark: the subject of the checks row, and the shape the icon-only option leaves behind. */
 const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedCircle = withUnistyles(Circle);
+const ThemedPluginIconView = withUnistyles(PluginIconView);
 
 /** Fits the item's 16pt leading slot with a hair of room, matching the trailing check. */
 const OPTION_ICON_SIZE = 14;
@@ -172,6 +176,7 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
   const [managerOpen, setManagerOpen] = useState(false);
   const openManager = useCallback(() => setManagerOpen(true), []);
   const closeManager = useCallback(() => setManagerOpen(false), []);
+  const enterSelection = useSidebarSelectionStore((state) => state.enter);
 
   const triggerStyle = useCallback(
     ({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -390,6 +395,12 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
           >
             {t("sidebar.display.showBackground")}
           </MenuItem>
+          {/* An action among display settings: it is the one row that changes what a row press
+            does, and the Workspaces header has no other menu to hold it. */}
+          <MenuSeparator />
+          <MenuItem onSelect={enterSelection} testID="sidebar-display-select">
+            {t("sidebar.selection.select")}
+          </MenuItem>
         </MenuSurface>
       </MenuRoot>
       <WorkspaceLabelManagerModal visible={managerOpen} onClose={closeManager} />
@@ -607,9 +618,9 @@ function OptionList<Value extends string>({
 }
 
 /**
- * Two groups, split by the separator. Above it, what a row may say about a workspace — each one
- * independent. Below it, the one thing the slot to the right of the title holds, so picking the
- * one already showing empties the slot and gives the width back to the title.
+ * Three groups: Paseo's own row items, plugin badge items, then the one thing the slot to the
+ * right of the title holds. Picking the trailing choice already showing empties the slot and
+ * gives the width back to the title.
  *
  * CI is the one item above the separator with three answers rather than two, so it opens a page
  * instead of ticking, and it goes last: a row that navigates does not belong in the middle of a
@@ -632,6 +643,12 @@ function ShowPage({ preferences }: { preferences: Preferences }): ReactElement {
         />
       ))}
       <ChecksSubTrigger />
+      {preferences.pluginRowBadgeItems.length > 0 ? (
+        <MenuSeparator testID="sidebar-plugin-row-badge-items-separator" />
+      ) : null}
+      {preferences.pluginRowBadgeItems.map((item) => (
+        <PluginRowBadgeItemOption key={item.key} item={item} preferences={preferences} />
+      ))}
       <MenuSeparator />
       {TRAILING_CHOICES.map((choice) => (
         <OptionItem
@@ -646,6 +663,37 @@ function ShowPage({ preferences }: { preferences: Preferences }): ReactElement {
         />
       ))}
     </>
+  );
+}
+
+/** A plugin's workspace row badge item, toggled like the row's own. */
+function PluginRowBadgeItemOption({
+  item,
+  preferences,
+}: {
+  item: PluginWorkspaceRowBadgeItemGroup;
+  preferences: Preferences;
+}): ReactElement {
+  const handleSelect = useCallback(
+    () => preferences.togglePluginRowBadgeItem(item.key),
+    [item.key, preferences],
+  );
+  const leading = useMemo(
+    () => (
+      <ThemedPluginIconView icon={item.icon} size={OPTION_ICON_SIZE} uniProps={mutedIconMapping} />
+    ),
+    [item.icon],
+  );
+  return (
+    <MenuItem
+      selected={preferences.isPluginRowBadgeItemVisible(item.key)}
+      leading={leading}
+      closeOnSelect={false}
+      onSelect={handleSelect}
+      testID={`sidebar-row-badge-item-plugin-${item.pluginId}-${item.itemId}`}
+    >
+      {item.title}
+    </MenuItem>
   );
 }
 

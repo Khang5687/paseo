@@ -16,15 +16,15 @@ async function pickStyle(page: Page, prefix: string, styleId: string, styleLabel
 }
 
 async function expectNewAgentStyle(daemon: ForkAgentUiDaemon, styleId: string) {
-  const before = daemon.createdFeatureValues.length;
+  const before = daemon.createdProviderOptions.length;
   const session = await seedMockAgentWorkspace({
     port: daemon.port,
     repoPrefix: "output-style-",
     title: "Output style e2e",
   });
   try {
-    await expect.poll(() => daemon.createdFeatureValues.length).toBeGreaterThan(before);
-    expect(daemon.createdFeatureValues.at(-1)).toMatchObject({ output_style: styleId });
+    await expect.poll(() => daemon.createdProviderOptions.length).toBeGreaterThan(before);
+    expect(daemon.createdProviderOptions.at(-1)).toMatchObject({ output_style: styleId });
   } finally {
     await session.cleanup();
   }

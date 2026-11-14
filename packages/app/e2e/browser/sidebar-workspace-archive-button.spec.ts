@@ -41,7 +41,9 @@ function workspaceRow(page: Page, workspace: SeededWorkspace) {
 }
 
 function archiveButton(page: Page, workspace: SeededWorkspace) {
-  return page.getByTestId(`sidebar-workspace-archive-${getServerId()}:${workspace.workspaceId}`);
+  return page.getByTestId(
+    `sidebar-workspace-archive-button-${getServerId()}:${workspace.workspaceId}`,
+  );
 }
 
 test.describe("Sidebar workspace archive button", () => {
@@ -82,6 +84,9 @@ test.describe("Sidebar workspace archive button", () => {
       await archiveButton(page, workspace).click();
 
       await expectWorkspaceAbsentFromSidebar(page, workspace.workspaceId);
+      // The archive commits when the undo toast closes; its "Workspace archived" text would
+      // also clash with the archived workspace screen the restore helper looks for.
+      await expect(page.getByTestId("app-toast-message")).toHaveCount(0, { timeout: 30_000 });
 
       await openSessions(page);
       await expectSessionRowArchived(page, agent.title);
