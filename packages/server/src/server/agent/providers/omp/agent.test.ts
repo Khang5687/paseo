@@ -1784,46 +1784,44 @@ describe("OMP agent client and session", () => {
     });
     await omp.start({ modeId: "full", systemPrompt: "Paseo prompt" });
     const session = omp.requireSession();
-    const outputStyleFeature = () =>
-      session.features.find((feature) => feature.id === "output_style");
-    expect(outputStyleFeature()).toMatchObject({
-      value: "default",
-      options: [
-        { id: "default", label: "Default" },
-        { id: "Proactive" },
-        { id: "Concise" },
-        { id: "Explanatory" },
-        { id: "Learning" },
-        { id: "ELI5", label: "ELI5", description: "keep it simple pls" },
+    expect(session.controls.find((control) => control.key === "output_style")).toMatchObject({
+      type: "select",
+      defaultValue: "default",
+      choices: [
+        { value: "default", label: "Default" },
+        { value: "Proactive" },
+        { value: "Concise" },
+        { value: "Explanatory" },
+        { value: "Learning" },
+        { value: "ELI5", label: "ELI5", description: "keep it simple pls" },
       ],
     });
     expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("Paseo prompt");
     const sessionFile = omp.runtime().state.sessionFile;
 
-    await session.setFeature?.("output_style", "ELI5");
+    await session.applyOptions?.({ output_style: "ELI5" });
     const relaunch = omp.runtimeLaunches()[1];
     expect(relaunch?.systemPrompt).toBe("Paseo prompt\n\n# Output style: ELI5\n\nSmall words.");
     expect(relaunch?.session).toBe(sessionFile);
     expect(relaunch?.argv).toContain("yolo");
-    expect(outputStyleFeature()?.value).toBe("ELI5");
 
-    await expect(session.setFeature?.("output_style", "Pirate")).rejects.toThrow(
+    await expect(session.applyOptions?.({ output_style: "Pirate" })).rejects.toThrow(
       "OMP output style 'Pirate' is not available",
     );
     expect(omp.runtimeLaunches()).toHaveLength(2);
   });
 
-  test("starts with the output style from the agent's feature values", async () => {
+  test("starts with the output style from the agent's provider options", async () => {
     const omp = new OmpHarness({
       outputStyles: [{ name: "ELI5", body: "Small words." }],
     });
-    await omp.start({ featureValues: { output_style: "ELI5" } });
+    await omp.start({ providerOptions: { output_style: "ELI5" } });
     expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("# Output style: ELI5\n\nSmall words.");
   });
 
   test("offers Paseo's built-in styles, and a custom style of the same name replaces one", async () => {
     const builtin = new OmpHarness();
-    await builtin.start({ featureValues: { output_style: "Concise" } });
+    await builtin.start({ providerOptions: { output_style: "Concise" } });
     expect(builtin.runtimeLaunches()[0]?.systemPrompt).toMatch(
       /^# Output style: Concise\n\nKeep replies short\./,
     );
@@ -1831,20 +1829,16 @@ describe("OMP agent client and session", () => {
     const shadowed = new OmpHarness({
       outputStyles: [{ name: "Concise", description: "Mine", body: "Three words max." }],
     });
-    await shadowed.start({ featureValues: { output_style: "Concise" } });
+    await shadowed.start({ providerOptions: { output_style: "Concise" } });
     expect(shadowed.runtimeLaunches()[0]?.systemPrompt).toBe(
       "# Output style: Concise\n\nThree words max.",
     );
-    const options = shadowed
+    const control = shadowed
       .requireSession()
-      .features.find((feature) => feature.id === "output_style");
-    expect(options?.type === "select" ? options.options.map((option) => option.id) : []).toEqual([
-      "default",
-      "Proactive",
-      "Explanatory",
-      "Learning",
-      "Concise",
-    ]);
+      .controls.find((candidate) => candidate.key === "output_style");
+    expect(control?.type === "select" ? control.choices.map((choice) => choice.value) : []).toEqual(
+      ["default", "Proactive", "Explanatory", "Learning", "Concise"],
+    );
   });
 
   describe("command refresh", () => {

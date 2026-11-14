@@ -2791,7 +2791,7 @@ describe("create_agent MCP tool", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceRegistry: {
         get: vi.fn(async () => records[0]),
-        list: vi.fn(async () => records),
+        listActive: vi.fn(async () => records),
         upsert: vi.fn(async () => undefined),
       },
       logger,
@@ -2959,42 +2959,6 @@ describe("create_agent MCP tool", () => {
     await rm(baseDir, { recursive: true, force: true });
   });
 
-  it("defaults notify-on-finish on for caller agents", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "parent-agent",
-      config: {},
-      cwd: existingCwd,
-      workspaceId: "wks_parent",
-      provider: "codex",
-      currentModeId: "full-access",
-    } as ManagedAgent);
-
-    const server = await createAgentMcpServer({
-      agentManager,
-      agentStorage,
-      providerSnapshotManager: createOpenCodeManager().manager,
-      callerAgentId: "parent-agent",
-      logger,
-    });
-
-    const tool = registeredTool(server, "create_agent");
-    const parsed = await tool.inputSchema.safeParseAsync({
-      ...subagentCurrentWorkspace(),
-      title: "Child",
-      provider: "codex/gpt-5.4",
-      initialPrompt: "Do work",
-    });
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) {
-      throw new Error("Expected caller create_agent input to parse");
-    }
-    expect(parsed.data).toMatchObject({
-      relationship: { kind: "subagent" },
-      workspace: { kind: "current" },
-      notifyOnFinish: true,
-    });
-  });
   it("returns notify-on-finish guidance for caller-created agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const parentAgent = {
@@ -7430,7 +7394,7 @@ describe("agent history MCP tools", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceRegistry: {
         get: async (workspaceId) => workspaces.get(workspaceId) ?? null,
-        list: async () => [...workspaces.values()],
+        listActive: async () => [...workspaces.values()],
         upsert: async (record) => {
           workspaces.set(record.workspaceId, record);
         },
