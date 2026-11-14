@@ -2211,6 +2211,7 @@ export const ru: TranslationResources = {
     pillLabelOne: "1 субагент",
     pillLabelMany: "Субагентов: {{count}}",
     pillLabelWorking: "{{count}} в работе",
+    pillLabelYourTurnWorking: "Ваш ход · {{count}} в работе",
     pillLabelFailed: "{{count}} с ошибкой",
     pillLabelNeedsInputOne: "1 ожидает ввода",
     pillLabelNeedsInputMany: "{{count}} ожидают ввода",

@@ -107,6 +107,7 @@ const RAW_STORED_AGENT_SCHEMA = z.object({
   requiresAttention: z.boolean().optional(),
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),
   attentionTimestamp: z.string().nullable().optional(),
+  awaitingAnswer: z.boolean().optional(),
   internal: z.boolean().optional(),
   // Daemon-owned message queue. Full payloads (image bytes, attachments) so the
   // daemon can replay a queued message without the client that queued it.

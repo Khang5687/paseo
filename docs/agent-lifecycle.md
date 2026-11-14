@@ -450,7 +450,7 @@ Agent lifecycle status stays literal: a parent agent is `idle` when its own turn
 
 Workspace status is an aggregate activity signal computed **per `workspaceId`**. Ownership is never derived from `cwd` — many workspaces may share one directory, and same-`cwd` siblings do not clump under one status. Root agents and cross-workspace subagents contribute their normal state bucket to their own workspace. This makes a cross-workspace subagent behave like a detached agent for workspace visibility and status without removing its parent relationship.
 
-Running same-workspace descendants and running provider-native subagents count toward the workspace that owns their nearest workspace root. The descriptor carries that count as `runningSubagentCount`. A working subagent raises a `done` workspace to `running`. When the root agent waits on the user (`attention`, `needs_input`, `failed`), the workspace keeps that status so a spinner does not hide that the user is needed. The sidebar row then shows "N sub-agents working" under the title. The subagents' other states (attention, permission, error, completed, canceled) stay in the parent's subagents track.
+Running same-workspace descendants and running provider-native subagents count toward the workspace that owns their nearest workspace root. The descriptor carries that count as `runningSubagentCount`. The count never changes the workspace status: the row follows its root agents, so when the root's turn ends the spinner stops even while subagents keep working. The sidebar row shows "N sub-agents working" under the title whenever the count is above zero, and the chat's subagents pill reads "Your turn · N working" once the root's turn has ended. The subagents' other states (attention, permission, error, completed, canceled) stay in the parent's subagents track.
 
 The sidebar uses the same ownership to place workspaces. Workspace W renders as an indented child row under workspace P when every unarchived workspace-root agent in W (an agent whose parent is not in W) is a subagent of an unarchived agent in P. W's own same-workspace helpers do not count. A root agent in W, or subagents of a second workspace, keep W at the top level. Detach and parent archive (which detaches cross-workspace children) return it there without user action. Nesting chains, and a parent cycle still places every row once. The client derives this from its agent list (`packages/app/src/subagents/workspace-parents.ts`); the daemon sends no relationship field.
 
@@ -481,6 +481,14 @@ interaction with its chat, including repeat clicks in an already focused pane. A
 arriving while focused stays unread until the next interaction; leaving does not acknowledge it.
 "Mark as read" in the sidebar row menu clears it for the whole workspace through
 `workspace.clear_attention`.
+
+When a turn ends with an assistant reply that has a line starting with `❓`, the daemon flags the
+finished attention with `awaitingAnswer` (`packages/server/src/server/agent/awaiting-answer.ts`) and
+the agent's bucket becomes `needs_input`, so the row shows the question icon instead of the unread
+dot. The flag lives and clears with the attention: reading the chat or "Mark as read" drops it, and a
+new turn outranks it until it finishes and the flag is recomputed. The workspace status carries the
+result, so older apps show it too. Marking a stored agent unread restores plain `finished`
+attention, because the stored reply is a truncated preview.
 
 A new main agent (labels `role=main`) also counts as unread until the user opens it. The daemon
 stamps the label `paseo.unseen=true` when it creates such an agent; internal agents, helpers and

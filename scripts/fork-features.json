@@ -950,6 +950,24 @@
     ]
   },
   {
+    "pr": 118,
+    "title": "fix(app): sidebar status follows the main chat; ❓ replies need input",
+    "tests": [
+      "packages/server/src/server/agent/awaiting-answer.test.ts",
+      "packages/server/src/server/workspace-directory.test.ts",
+      "packages/server/src/server/agent/agent-manager.test.ts",
+      "packages/protocol/src/agent-state-bucket.test.ts",
+      "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
+      "packages/app/src/subagents/track-presentation.test.ts"
+    ]
+  },
+  {
+    "pr": 127,
+    "title": "docs(fork): build host setup and subagent spawning rules",
+    "untested": "docs only (CLAUDE.md fork workflow)",
+    "tests": []
+  },
+  {
     "pr": 119,
     "title": "feat(app): highlight newly spawned main agents in the sidebar",
     "tests": [
