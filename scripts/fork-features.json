@@ -948,5 +948,17 @@
       "packages/server/src/terminal/terminal.test.ts",
       "packages/server/src/server/daemon-e2e/notes.e2e.test.ts"
     ]
+  },
+  {
+    "pr": 118,
+    "title": "fix(app): sidebar status follows the main chat; ❓ replies need input",
+    "tests": [
+      "packages/server/src/server/agent/awaiting-answer.test.ts",
+      "packages/server/src/server/workspace-directory.test.ts",
+      "packages/server/src/server/agent/agent-manager.test.ts",
+      "packages/protocol/src/agent-state-bucket.test.ts",
+      "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
+      "packages/app/src/subagents/track-presentation.test.ts"
+    ]
   }
 ]

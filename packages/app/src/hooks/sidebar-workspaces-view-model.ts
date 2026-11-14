@@ -183,8 +183,7 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
-    workingSubagentCount:
-      effectiveStatus.status === "running" ? 0 : (input.workspace.runningSubagentCount ?? 0),
+    workingSubagentCount: input.workspace.runningSubagentCount ?? 0,
   };
 }
 
