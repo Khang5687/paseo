@@ -4,6 +4,7 @@ import {
   type AssistantFileLinkClassification,
   type InlinePathTarget,
 } from "./parse";
+import { bareWebAddressUrl } from "./web-address";
 import { i18n } from "@/i18n/i18next";
 import { isAbsolutePath } from "@/utils/path";
 
@@ -174,6 +175,13 @@ export function classifyForResolution(
   const token = tokenInfo.token.trim();
   if (!token) {
     return { kind: "resolved", value: { kind: "ignored" } };
+  }
+
+  // The renderer links schemeless addresses like `github.com/owner/repo`; open them on the web.
+  // An authored Markdown href keeps its file meaning: `[guides](example.com/guides)`.
+  const webUrl = isLinkifiedSource(source) ? bareWebAddressUrl(token) : null;
+  if (webUrl) {
+    return { kind: "resolved", value: { kind: "external", url: webUrl } };
   }
 
   const classification = classifyAssistantFileLink(token, {

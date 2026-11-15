@@ -120,6 +120,14 @@ it.each([
   });
 });
 
+it("opens a linkified schemeless web address on the web", () => {
+  const text = "github.com/Khang5687/throwback32";
+  expect(classifyForResolution({ href: text, text, markup: "linkify" }, CONTEXT)).toEqual({
+    kind: "resolved",
+    value: { kind: "external", url: `https://${text}` },
+  });
+});
+
 it("opens the existing non-ASCII file named by a rendered markdown link", async () => {
   const workspaceRoot = await mkdtemp(path.join(tmpdir(), "assistant-file-link-"));
   try {
