@@ -918,5 +918,10 @@
       "packages/app/src/composer/input/state.test.ts",
       "packages/app/src/composer/dock/internal/capacity.test.ts"
     ]
+  },
+  {
+    "pr": 131,
+    "title": "fix(app): the composer grip crashes the app on Android and iOS",
+    "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
   }
 ]
