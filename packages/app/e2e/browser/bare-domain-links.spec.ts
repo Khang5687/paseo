@@ -20,10 +20,15 @@ test("bare web address opens on tap at phone width; host-led path is plain text"
     await session.client.waitForFinish(session.agentId, 30_000);
     await openAgentRoute(page, session);
     const message = page.getByTestId("assistant-message");
-    const link = message.getByRole("link", { name: "github.com/Khang5687/throwback32", exact: true });
+    const link = message.getByRole("link", {
+      name: "github.com/Khang5687/throwback32",
+      exact: true,
+    });
     await expect(link).toBeVisible();
     await expect(message.getByRole("link", { name: "v1.2/build/out", exact: true })).toHaveCount(0);
-    await expect(message.getByRole("link", { name: "Node.js/Bun/Deno", exact: true })).toHaveCount(0);
+    await expect(message.getByRole("link", { name: "Node.js/Bun/Deno", exact: true })).toHaveCount(
+      0,
+    );
     await page.screenshot({ path: test.info().outputPath("bare-domain-link.png") });
     const popup = context.waitForEvent("page");
     await link.tap();
