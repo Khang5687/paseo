@@ -73,6 +73,9 @@ $PASEO_HOME/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
 ├── notes.json                           # Notes on chat/terminal selections (see docs/notes.md)
+├── file-copies/                         # Copies of files other hosts' agents mentioned (6b)
+│   ├── manifest.json
+│   └── blobs/{sha256(serverId, path)}-{uuid}
 └── push-tokens.json                     # Expo push notification tokens
 ```
 
@@ -227,6 +230,14 @@ snapshot so a mixed edit can apply its live subset and still name the paths that
     servicePorts?: {         // optional dynamic service port allocation policy
       range?: string         // inclusive range, e.g. "3000-4000"
       portScript?: string    // executable that receives service/workspace context and prints one TCP port
+    }
+  },
+  files?: {
+    copies?: {               // see 6b; read on every use, so edits apply without a restart
+      targetServerId?: string // host that keeps copies of files this host's agents mention
+      keepDays?: number      // 30; dropped this long after the last mention
+      maxTotalBytes?: number // 5 GiB; least recently mentioned go first
+      maxFileBytes?: number  // 64 MiB; bigger files are never sent
     }
   },
   providers: {
@@ -551,6 +562,16 @@ Simple set of Expo push notification tokens. Loaded with permissive parsing (fil
 **Path:** `$PASEO_HOME/notes.json`
 
 `{ "notes": Note[] }`, where `Note` is `NoteSchema` in `packages/protocol/src/notes/schemas.ts`. Each entry is parsed on its own at load, so one invalid note is skipped and logged instead of dropping the file. Written atomically on every change. What the fields mean and how waiting-on notes fire is in [notes.md](notes.md).
+
+---
+
+## 6b. File copies
+
+**Path:** `$PASEO_HOME/file-copies/` (written by `FileCopyStore` in `packages/server/src/server/file-copies/store.ts`)
+
+A host keeps copies of files that agents on other hosts named in their final replies, so a phone can open a Mac's file while the Mac sleeps. `manifest.json` maps `(sourceServerId, absolute path)` to a `FileCopyEntry` (`packages/protocol/src/file-copies/schemas.ts`) plus its blob name, and records each source's home directory so a `~/…` path resolves. Blobs are immutable: a new revision is written under a new name and the old blob is deleted after the manifest commits. On start, blobs the manifest does not list and entries whose blob is missing are dropped.
+
+Pruning runs on start, hourly, after every put and on a limit change: expired entries and entries over `maxFileBytes` go first, then the least recently mentioned until the total fits `maxTotalBytes`. A mention of an unchanged revision only refreshes `lastMentionedAt`. How copies arrive is in [connected-hosts.md](connected-hosts.md#file-copies).
 
 ---
 

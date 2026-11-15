@@ -100,6 +100,22 @@ import {
   NotesListResponseSchema,
 } from "./notes/schemas.js";
 import {
+  FileCopiesGetSettingsRequestSchema,
+  FileCopiesGetSettingsResponseSchema,
+  FileCopiesListRequestSchema,
+  FileCopiesListResponseSchema,
+  FileCopiesPutRequestSchema,
+  FileCopiesPutResponseSchema,
+  FileCopiesReadRequestSchema,
+  FileCopiesReadResponseSchema,
+  FileCopiesRecordMentionsRequestSchema,
+  FileCopiesRecordMentionsResponseSchema,
+  FileCopiesRemoveRequestSchema,
+  FileCopiesRemoveResponseSchema,
+  FileCopiesUpdateSettingsRequestSchema,
+  FileCopiesUpdateSettingsResponseSchema,
+} from "./file-copies/schemas.js";
+import {
   SpeechLocalModelsDeleteRequestSchema,
   SpeechLocalModelsDeleteResponseSchema,
   SpeechLocalModelsDownloadRequestSchema,
@@ -4443,6 +4459,13 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   NotesCreateRequestSchema,
   NotesEditRequestSchema,
   NotesDeleteRequestSchema,
+  FileCopiesRecordMentionsRequestSchema,
+  FileCopiesPutRequestSchema,
+  FileCopiesReadRequestSchema,
+  FileCopiesListRequestSchema,
+  FileCopiesRemoveRequestSchema,
+  FileCopiesGetSettingsRequestSchema,
+  FileCopiesUpdateSettingsRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -4645,6 +4668,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceLabels: z.boolean().optional(),
         // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
         notes: z.boolean().optional(),
+        // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.
+        fileCopies: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
         workspaceBaseBranch: z.boolean().optional(),
@@ -8613,6 +8638,13 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   NotesCreateResponseSchema,
   NotesEditResponseSchema,
   NotesDeleteResponseSchema,
+  FileCopiesRecordMentionsResponseSchema,
+  FileCopiesPutResponseSchema,
+  FileCopiesReadResponseSchema,
+  FileCopiesListResponseSchema,
+  FileCopiesRemoveResponseSchema,
+  FileCopiesGetSettingsResponseSchema,
+  FileCopiesUpdateSettingsResponseSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;

@@ -1126,6 +1126,29 @@ type NotesEditRequest = Extract<SessionInboundMessage, { type: "notes.edit.reque
 export type CreateNoteOptions = Omit<NotesCreateRequest, "type" | "requestId">;
 export type EditNoteOptions = Omit<NotesEditRequest, "type" | "requestId">;
 export type NoteRecord = NotesListPayload["notes"][number];
+export type FileCopyEntry = NonNullable<
+  Extract<SessionOutboundMessage, { type: "files.copies.put.response" }>["payload"]["entry"]
+>;
+export type FileCopiesSettingsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "files.copies.get_settings.response" }
+>["payload"];
+export type FileCopiesListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "files.copies.list.response" }
+>["payload"];
+type FileCopiesPutRequest = Extract<SessionInboundMessage, { type: "files.copies.put.request" }>;
+type FileCopiesListRequest = Extract<SessionInboundMessage, { type: "files.copies.list.request" }>;
+type FileCopiesUpdateSettingsRequest = Extract<
+  SessionInboundMessage,
+  { type: "files.copies.update_settings.request" }
+>;
+export type PutFileCopyOptions = Omit<FileCopiesPutRequest, "type" | "requestId">;
+export type ListFileCopiesOptions = Omit<FileCopiesListRequest, "type" | "requestId">;
+export type UpdateFileCopySettingsOptions = Omit<
+  FileCopiesUpdateSettingsRequest,
+  "type" | "requestId"
+>;
 type ProjectListRequest = Extract<SessionInboundMessage, { type: "project.list.request" }>;
 export type ProjectListOptions = Omit<ProjectListRequest, "type" | "requestId"> & {
   requestId?: string;
@@ -1255,6 +1278,9 @@ interface PendingBinaryFileRead {
   cwd: string;
   path: string;
   maxBytes?: number;
+  // A `files.copies.read` transfer completes through its own JSON response, not a synthesized
+  // `file_explorer_response`.
+  fileCopy?: true;
 }
 
 interface BinaryFileTransferState extends PendingBinaryFileRead {
@@ -3817,6 +3843,129 @@ export class DaemonClient {
       requestId: payload.requestId,
       requestType,
       error: payload.error ?? "Note request failed",
+    });
+  }
+
+  // ============================================================================
+  // File copies (gate on server_info.features.fileCopies)
+  // ============================================================================
+
+  /** Returns the mentioned paths the host has no copy of at the sent revision. */
+  recordFileCopyMentions(options: {
+    sourceHome: string;
+    files: { path: string; revision: string }[];
+  }): Promise<string[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<
+      "files.copies.record_mentions.response",
+      string[]
+    >({
+      message: { type: "files.copies.record_mentions.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error)
+          throw this.fileCopyError("files.copies.record_mentions.request", payload);
+        return payload.needed;
+      },
+    });
+  }
+
+  /** Stores a copy from bytes already sent with `uploadFile`. */
+  putFileCopy(options: PutFileCopyOptions): Promise<FileCopyEntry> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.put.response", FileCopyEntry>({
+      message: { type: "files.copies.put.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.entry) throw this.fileCopyError("files.copies.put.request", payload);
+        return payload.entry;
+      },
+    });
+  }
+
+  /** Reads the copy this host keeps of `path` on `sourceServerId` (absolute, or `~/…`). */
+  async readFileCopy(options: {
+    sourceServerId: string;
+    path: string;
+    timeout?: number;
+  }): Promise<FileReadResult & { entry: FileCopyEntry }> {
+    const requestId = this.createRequestId();
+    this.pendingBinaryFileReads.set(requestId, { cwd: "", path: options.path, fileCopy: true });
+    try {
+      const entry = await this.sendNamespacedCorrelatedSessionRequest<
+        "files.copies.read.response",
+        FileCopyEntry
+      >({
+        requestId,
+        message: {
+          type: "files.copies.read.request",
+          sourceServerId: options.sourceServerId,
+          path: options.path,
+        },
+        timeout: options.timeout,
+        selectPayload: (payload) => {
+          if (!payload.entry) throw this.fileCopyError("files.copies.read.request", payload);
+          return payload.entry;
+        },
+      });
+      const file = this.completedBinaryFileReads.get(requestId);
+      if (!file) throw new Error("File copy transfer did not arrive.");
+      return { ...file, path: entry.path, entry };
+    } finally {
+      this.pendingBinaryFileReads.delete(requestId);
+      this.activeBinaryFileTransfers.delete(requestId);
+      this.completedBinaryFileReads.delete(requestId);
+    }
+  }
+
+  listFileCopies(options: ListFileCopiesOptions = {}): Promise<FileCopiesListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.list.response">({
+      message: { type: "files.copies.list.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.list.request", payload);
+        return payload;
+      },
+    });
+  }
+
+  removeFileCopy(options: { sourceServerId: string; path: string }): Promise<boolean> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.remove.response", boolean>({
+      message: { type: "files.copies.remove.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.remove.request", payload);
+        return payload.removed;
+      },
+    });
+  }
+
+  getFileCopySettings(): Promise<FileCopiesSettingsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.get_settings.response">({
+      message: { type: "files.copies.get_settings.request" },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.get_settings.request", payload);
+        return payload;
+      },
+    });
+  }
+
+  updateFileCopySettings(
+    options: UpdateFileCopySettingsOptions,
+  ): Promise<FileCopiesSettingsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.update_settings.response">({
+      message: { type: "files.copies.update_settings.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) {
+          throw this.fileCopyError("files.copies.update_settings.request", payload);
+        }
+        return payload;
+      },
+    });
+  }
+
+  private fileCopyError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "File copy request failed",
     });
   }
 
@@ -8544,6 +8693,7 @@ export class DaemonClient {
       modifiedAt: transfer.modifiedAt,
       revision: transfer.revision,
     });
+    if (transfer.fileCopy) return;
     this.handleSessionMessage({
       type: "file_explorer_response",
       payload: {

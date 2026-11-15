@@ -3,6 +3,7 @@ import {
   savePersistedConfigAsync,
   loadPersistedConfigAsync,
   type PersistedConfig,
+  type PersistedFileCopiesConfig,
 } from "./persisted-config.js";
 import { ProviderOverrideSchema } from "./agent/provider-launch-config.js";
 import {
@@ -56,6 +57,11 @@ interface LoggerLike {
   child(bindings: Record<string, unknown>): LoggerLike;
   info(...args: unknown[]): void;
 }
+
+/** A change to `files.copies`; `null` clears a key back to its default. */
+export type FileCopiesConfigPatch = {
+  [Key in keyof PersistedFileCopiesConfig]?: PersistedFileCopiesConfig[Key] | null;
+};
 
 export interface DaemonConfigChangeDetails {
   removedProviders: readonly string[];
@@ -650,6 +656,8 @@ export class DaemonConfigStore {
       diffPaths(this.startupPersisted, persisted).filter((path) => {
         if (path === "$schema" || path === "version") return false;
         if (RELOADABLE_PATHS.some((owner) => pathBelongsTo(path, owner))) return false;
+        // The file copy service reads `files.copies` from disk on use; no restart needed.
+        if (pathBelongsTo(path, "files.copies")) return false;
         if (this.speechOwner && SPEECH_PERSISTED_PATHS.some((owner) => pathBelongsTo(path, owner)))
           return false;
         return !resolved.overrideControlledPaths.some((owner) => pathBelongsTo(path, owner));
@@ -790,6 +798,27 @@ export class DaemonConfigStore {
       async () =>
         (await loadPersistedConfigAsync(this.paseoHome, this.logger)).worktrees?.servicePorts,
     );
+  }
+
+  public readFileCopies(): Promise<PersistedFileCopiesConfig> {
+    return this.enqueue(
+      async () => (await loadPersistedConfigAsync(this.paseoHome, this.logger)).files?.copies ?? {},
+    );
+  }
+
+  public updateFileCopies(patch: FileCopiesConfigPatch): Promise<PersistedFileCopiesConfig> {
+    return this.enqueue(async () => {
+      const persisted = await loadPersistedConfigAsync(this.paseoHome, this.logger);
+      const copies: Record<string, unknown> = { ...persisted.files?.copies };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete copies[key];
+        else if (value !== undefined) copies[key] = value;
+      }
+      const files = { ...persisted.files, copies: copies as PersistedFileCopiesConfig };
+      await savePersistedConfigAsync(this.paseoHome, { ...persisted, files }, this.logger);
+      this.lastKnownPersisted = { ...this.lastKnownPersisted, files };
+      return files.copies;
+    });
   }
 
   private async persistConfig(
