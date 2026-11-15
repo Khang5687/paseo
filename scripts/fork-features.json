@@ -982,5 +982,10 @@
     "pr": 129,
     "title": "fix(omp): stamp the replayed todo snapshot with session time (fork port of #128)",
     "tests": ["packages/server/src/server/agent/providers/omp/agent.history-purpose.test.ts"]
+  },
+  {
+    "pr": 131,
+    "title": "fix(app): the composer grip crashes the app on Android and iOS",
+    "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
   }
 ]
