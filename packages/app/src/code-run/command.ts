@@ -155,7 +155,7 @@ const CONFIRM_PROMPT = /\[y\/n\]|\(y\/n\)|\[yes\/no\]|\(yes\/no\)|continue\?/i;
  */
 export function readRunPrompt(lines: readonly string[], screen = false): RunPrompt {
   const textLines = lines.filter((line) => line.trim() !== "");
-  const candidates = screen ? textLines.slice(-2).reverse() : textLines.slice(-1);
+  const candidates = screen ? textLines.slice(-2).toReversed() : textLines.slice(-1);
   for (const line of candidates) {
     if (PASSWORD_PROMPT.test(line)) return { kind: "password", sudo: /\[sudo\]/i.test(line) };
     if (CONFIRM_PROMPT.test(line)) return { kind: "confirm" };
