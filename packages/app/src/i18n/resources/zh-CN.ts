@@ -386,6 +386,7 @@ export const zhCN: TranslationResources = {
     copied: "已复制",
     noOutput: "暂无输出",
     noOutputFinished: "没有输出",
+    fullScreen: "此命令绘制了全屏界面。这里显示当前画面；在终端标签页中打开即可操作。",
     startFailed: "无法启动命令",
     closeFailed: "无法关闭终端",
     hostOffline: "主机离线。重新连接后即可运行此命令。",

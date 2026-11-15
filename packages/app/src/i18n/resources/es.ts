@@ -391,6 +391,8 @@ export const es: TranslationResources = {
     copied: "Copiado",
     noOutput: "Aún no hay salida",
     noOutputFinished: "Sin salida",
+    fullScreen:
+      "Este comando dibujó una pantalla completa. Se muestra tal como está ahora; ábrela en la pestaña Terminal para trabajar con ella.",
     startFailed: "No se pudo iniciar el comando",
     closeFailed: "No se pudo cerrar la terminal",
     hostOffline: "Host sin conexión. Vuelve a conectarte para ejecutar este comando.",
