@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { transformSync } from "@babel/core";
+import { type TransformCaller, transformSync } from "@babel/core";
 import { describe, expect, it } from "vitest";
 
 // The worklets Babel plugin turns gesture callbacks into worklets and builds each closure
@@ -14,6 +14,11 @@ const appDir = fileURLToPath(new URL("..", import.meta.url));
 const srcDir = path.join(appDir, "src");
 const DOM_GLOBALS = new Set(["document", "window", "navigator", "localStorage", "HTMLElement"]);
 const GESTURE_BUILDER = /\bGesture\.(Pan|Tap|Hover|Pinch|LongPress|Fling|Rotation|Manual)\(/;
+// babel-preset-expo reads `platform` from the caller; Babel's type does not list it.
+const ANDROID_METRO_CALLER: TransformCaller & { platform: string } = {
+  name: "metro",
+  platform: "android",
+};
 
 function gestureSources(): string[] {
   return readdirSync(srcDir, { recursive: true, encoding: "utf8" })
@@ -26,7 +31,7 @@ function workletClosureNames(file: string): string[] {
   const result = transformSync(readFileSync(file, "utf8"), {
     cwd: appDir,
     filename: file,
-    caller: { name: "metro", platform: "android" },
+    caller: ANDROID_METRO_CALLER,
     envName: "production",
   });
   const names = [...(result?.code ?? "").matchAll(/\.__closure=\{([^}]*)\}/g)].flatMap((match) =>
