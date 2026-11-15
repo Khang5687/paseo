@@ -718,13 +718,15 @@ class OmpHistorySession implements AgentSession {
   }
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
-    yield* streamOmpHistoryWithTodos(
-      { sessionFile: this.sessionFile, provider: this.provider, bridgedTools: this.bridgedTools },
-      async () => {
+    yield* streamOmpHistoryWithTodos({
+      sessionFile: this.sessionFile,
+      provider: this.provider,
+      bridgedTools: this.bridgedTools,
+      readTodos: async () => {
         const todo = await readOmpHistoryTodoState(this.sessionFile);
         return todo ? [todo] : [];
       },
-    );
+    });
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
@@ -1175,15 +1177,13 @@ export class OmpAgentSession implements AgentSession {
   }
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
-    yield* streamOmpHistoryWithTodos(
-      {
-        sessionFile: this.state.sessionFile,
-        runtimeSession: this.runtimeSession,
-        provider: this.provider,
-        bridgedTools: this.hostTools?.bridge?.toolIdentities(),
-      },
-      () => mapOmpTodoState(this.state),
-    );
+    yield* streamOmpHistoryWithTodos({
+      sessionFile: this.state.sessionFile,
+      runtimeSession: this.runtimeSession,
+      provider: this.provider,
+      bridgedTools: this.hostTools?.bridge?.toolIdentities(),
+      readTodos: () => mapOmpTodoState(this.state),
+    });
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
