@@ -108,9 +108,10 @@ describe("readRunOutput", () => {
 
   it("shows the screen a full-screen program drew over the run", () => {
     // tmux on the alternate screen: sudo's prompt above tmux's status bar, no wrapper lines.
-    const tmux = ["[sudo] password for k:", "", "", '[chain] 0:sudo*          "omen" 06:12 15-Nov'];
+    const bar = '[chain] 0:sudo*          "omen" 06:12 15-Nov';
+    const tmux = ["[sudo] password for k:", ...Array<string>(21).fill(""), bar, ""];
     expect(read(tmux)).toEqual({
-      lines: tmux,
+      lines: ["[sudo] password for k:", "", bar],
       exitCode: null,
       durationSeconds: null,
       screen: true,

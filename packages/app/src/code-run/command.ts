@@ -132,12 +132,13 @@ export function readRunOutput(input: {
     // once the status line is back, the text above it is ordinary output.
     const end = statusIndex === -1 ? lines.length : statusIndex;
     const drawn = trimBlankLines(lines.slice(0, end));
-    return {
-      lines: drawn,
-      exitCode,
-      durationSeconds,
-      screen: exitCode === null && drawn.length > 0,
-    };
+    if (exitCode !== null) return { lines: drawn, exitCode, durationSeconds, screen: false };
+    // A full screen pads its rows with blanks (tmux keeps its status bar on the last row);
+    // the card follows the bottom, so long gaps would scroll the prompt out of view.
+    const screen = drawn.filter(
+      (line, index) => line.trim() !== "" || drawn[index - 1]?.trim() !== "",
+    );
+    return { lines: screen, exitCode, durationSeconds, screen: screen.length > 0 };
   }
   const end = statusIndex === -1 ? lines.length : statusIndex;
   const output = trimBlankLines(lines.slice(echoEnd + 1, end));
