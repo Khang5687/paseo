@@ -139,17 +139,18 @@ export function AttachmentThumbnail({
   metadata: AttachmentMetadata;
   badge?: string;
 }) {
-  const uri = useAttachmentPreviewUrl(metadata);
-  const source = useMemo(() => ({ uri: uri ?? "" }), [uri]);
-  const preview = uri ? (
+  const preview = useAttachmentPreviewUrl(metadata);
+  const uri = preview.status === "ready" ? preview.url : null;
+  const source = useMemo(() => (uri ? { uri } : null), [uri]);
+  const body = source ? (
     <Image source={source} style={styles.thumbnail} />
   ) : (
     <View style={styles.thumbnailPlaceholder} />
   );
-  if (!badge) return preview;
+  if (!badge) return body;
   return (
     <View>
-      {preview}
+      {body}
       <View style={styles.thumbnailBadge} pointerEvents="none">
         <Text style={styles.thumbnailBadgeText}>{badge}</Text>
       </View>

@@ -336,6 +336,7 @@ type ProviderSubagentManagerEvent = Extract<
 // Clients before 0.1.45 validate providers with z.enum(["claude", "codex", "opencode"]) and reject
 // the entire session message if they encounter an unknown provider.
 const LEGACY_PROVIDER_IDS = new Set(["claude", "codex", "opencode"]);
+const FULL_AGENT_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const MIN_VERSION_ALL_PROVIDERS = "0.1.45";
 const MIN_VERSION_EXPLICIT_WORKSPACE_RECOVERY = "0.1.105";
 function errorToFriendlyMessage(error: unknown): string {
@@ -5705,15 +5706,11 @@ export class Session {
     const agentIds = Array.isArray(agentId) ? agentId : [agentId];
 
     try {
-      await Promise.all(
-        agentIds.map((id) =>
-          ensureAgentLoaded(id, {
-            agentManager: this.agentManager,
-            agentStorage: this.agentStorage,
-            logger: this.sessionLogger,
-          }),
-        ),
-      );
+      for (const id of agentIds) {
+        if (!this.agentManager.getAgent(id) && !(await this.agentStorage.get(id))) {
+          throw new Error(`Agent not found: ${id}`);
+        }
+      }
       await Promise.all(agentIds.map((id) => this.agentManager.clearAgentAttention(id)));
       if (requestId) {
         const agents = (
@@ -6077,6 +6074,12 @@ export class Session {
 
     if (knownIds.has(trimmed)) {
       return { ok: true, agentId: trimmed };
+    }
+
+    // A complete agent ID names one agent. When none has it, no prefix or
+    // title answers for it, so a command never acts on a different agent.
+    if (FULL_AGENT_ID_PATTERN.test(trimmed)) {
+      return { ok: false, notFound: true, error: `Agent not found: ${trimmed}` };
     }
 
     const prefixMatches = Array.from(knownIds).filter((id) => id.startsWith(trimmed));

@@ -379,6 +379,8 @@ describe("loadAppSettingsFromStorage", () => {
       displayAs: "used",
       pins: null,
       serverId: null,
+      cardOrder: [],
+      cardsOff: [],
     });
 
     const deps = makeDeps({
@@ -403,6 +405,8 @@ describe("loadAppSettingsFromStorage", () => {
         { sourceId: "claude", windowId: "five-hour" },
       ],
       serverId: "server",
+      cardOrder: [],
+      cardsOff: [],
     });
   });
 
@@ -418,6 +422,8 @@ describe("loadAppSettingsFromStorage", () => {
       displayAs: "remaining",
       pins: [],
       serverId: "server",
+      cardOrder: [],
+      cardsOff: [],
     });
   });
 
@@ -438,6 +444,8 @@ describe("loadAppSettingsFromStorage", () => {
       displayAs: "used",
       pins: [{ sourceId: "claude", windowId: "weekly" }],
       serverId: null,
+      cardOrder: [],
+      cardsOff: [],
     });
   });
 

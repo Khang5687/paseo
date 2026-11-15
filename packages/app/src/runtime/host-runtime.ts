@@ -924,6 +924,24 @@ export class HostRuntimeController {
     this.activeClient?.ensureConnected({ verify: true });
   }
 
+  async reconnectVia(originServerId: string): Promise<void> {
+    const routes = this.host.connections.filter(
+      (connection) =>
+        connection.type === "routed" &&
+        connection.originServerId === originServerId &&
+        !this.authRejectedConnectionIds.has(connection.id),
+    );
+    // A suspended host stays closed until resume() reconnects it.
+    if (routes.length === 0 || !this.started || this.suspended) return;
+    if (isHostRuntimeConnected(this.snapshot)) return;
+    if (routes.some((route) => route.id === this.snapshot.activeConnectionId))
+      this.ensureConnected();
+    await this.probeCycleInFlight;
+    if (!this.started || this.suspended || this.snapshot.connectionStatus === "online") return;
+    for (const route of routes) this.connectionLastProbedAt.delete(route.id);
+    await this.runProbeCycleNow();
+  }
+
   markAgentDirectorySyncLoading(): void {
     const status = this.snapshot.hasEverLoadedAgentDirectory ? "revalidating" : "initial_loading";
     this.updateSnapshot({
@@ -2661,6 +2679,7 @@ export class HostRuntimeStore {
       snapshot.connectionStatus === "online" && previousStatus !== "online";
     if (didTransitionOnline) {
       useSessionStore.getState().bumpHistorySyncGeneration(serverId);
+      for (const child of this.controllers.values()) void child.reconnectVia(serverId);
       // Checkout git data is push-driven; pushes emitted while disconnected are gone for
       // good (the daemon dedupes by snapshot fingerprint). Mark the caches stale so active
       // queries refetch now and evicted ones on their next mount.
