@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
@@ -7,11 +7,16 @@ import { createDaemonTestContext, type DaemonTestContext } from "../test-utils/i
 
 let ctx: DaemonTestContext;
 let cwd: string;
+let homeDir: string;
 
 beforeEach(async () => {
   // Command events need Paseo's shell integration; bash is the shell present on every CI host.
   vi.stubEnv("SHELL", "/bin/bash");
   vi.stubEnv("BASH_SILENCE_DEPRECATION_WARNING", "1");
+  // A clean home: no user rc files, and .hushlogin stops Ubuntu's /etc/bash.bashrc sudo hint.
+  homeDir = mkdtempSync(path.join(tmpdir(), "daemon-notes-e2e-home-"));
+  writeFileSync(path.join(homeDir, ".hushlogin"), "");
+  vi.stubEnv("HOME", homeDir);
   ctx = await createDaemonTestContext();
   cwd = mkdtempSync(path.join(tmpdir(), "daemon-notes-e2e-"));
 });
@@ -20,6 +25,7 @@ afterEach(async () => {
   await ctx.cleanup();
   vi.unstubAllEnvs();
   rmSync(cwd, { recursive: true, force: true });
+  rmSync(homeDir, { recursive: true, force: true });
 }, 60000);
 
 async function waitFor<T>(read: () => T | undefined, timeoutMs = 15000): Promise<T> {

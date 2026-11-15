@@ -88,6 +88,8 @@ export interface TerminalActivityTransition {
 }
 
 export interface TerminalSession {
+  /** Absent on terminal workers started before creation timestamps were tracked. */
+  createdAt?: string;
   id: string;
   name: string;
   cwd: string;
@@ -1400,6 +1402,7 @@ export async function createTerminal(
 
   return {
     id,
+    createdAt: new Date().toISOString(),
     pid: ptyProcess.pid,
     name,
     cwd,

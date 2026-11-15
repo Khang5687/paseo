@@ -74,10 +74,13 @@ export interface WorkspaceDirectoryDeps {
     list(): Promise<PersistedProjectRecord[]>;
   };
   workspaceRegistry: {
-    list(): Promise<PersistedWorkspaceRecord[]>;
+    listActive(): Promise<PersistedWorkspaceRecord[]>;
+    get(id: string): Promise<PersistedWorkspaceRecord | null>;
   };
-  listAgentPayloads(): Promise<AgentSnapshotPayload[]>;
-  workspaceLastUserMessageTimes(): Promise<ReadonlyMap<string, string>>;
+  listAgentPayloads(workspaceIds?: Iterable<string>): Promise<AgentSnapshotPayload[]>;
+  workspaceLastUserMessageTimes(
+    workspaceIds?: Iterable<string>,
+  ): Promise<ReadonlyMap<string, string>>;
   listProviderSubagentActivity(): Promise<ProviderSubagentWorkspaceActivity[]>;
   listTerminalActivityContributions(): Promise<
     Array<{ cwd: string; workspaceId?: string; activity: TerminalActivity | null }>
@@ -217,6 +220,7 @@ export class WorkspaceDirectory {
     includeGitData: boolean;
     workspaceIds?: Iterable<string>;
   }): Promise<Map<string, WorkspaceDescriptorPayload>> {
+    const requestedIds = options.workspaceIds ? new Set(options.workspaceIds) : undefined;
     const [
       agents,
       lastUserMessageTimes,
@@ -225,10 +229,15 @@ export class WorkspaceDirectory {
       persistedProjects,
       terminalContributions,
     ] = await Promise.all([
-      this.deps.listAgentPayloads(),
-      this.deps.workspaceLastUserMessageTimes(),
+      this.deps.listAgentPayloads(requestedIds),
+      this.deps.workspaceLastUserMessageTimes(requestedIds),
       this.deps.listProviderSubagentActivity(),
-      this.deps.workspaceRegistry.list(),
+      requestedIds
+        ? Promise.all(Array.from(requestedIds, (id) => this.deps.workspaceRegistry.get(id))).then(
+            (records) =>
+              records.filter((record): record is PersistedWorkspaceRecord => record !== null),
+          )
+        : this.deps.workspaceRegistry.listActive(),
       this.deps.projectRegistry.list(),
       this.deps.listTerminalActivityContributions(),
     ]);
@@ -240,7 +249,7 @@ export class WorkspaceDirectory {
     );
     const activeRecords = activeWorkspaceRecords(persistedWorkspaces, persistedProjects);
     const descriptorsByWorkspaceId = new Map<string, WorkspaceDescriptorPayload>();
-    const workspaceIds = options.workspaceIds ? new Set(options.workspaceIds) : null;
+    const workspaceIds = requestedIds ? new Set(requestedIds) : null;
     const activeWorkspaceIds = new Set(activeRecords.map((workspace) => workspace.workspaceId));
     const includedWorkspaces = activeRecords.filter(
       (workspace) => !workspaceIds || workspaceIds.has(workspace.workspaceId),
@@ -267,8 +276,12 @@ export class WorkspaceDirectory {
       });
     }
 
+    // Background agents report to their creator; they never move the workspace's status.
     const activeAgents = agents.filter(
-      (agent) => !agent.archivedAt && this.deps.isProviderVisibleToClient(agent.provider),
+      (agent) =>
+        !agent.archivedAt &&
+        !agent.background &&
+        this.deps.isProviderVisibleToClient(agent.provider),
     );
     this.applyAgentBucketContributions({
       activeAgents,
@@ -284,7 +297,6 @@ export class WorkspaceDirectory {
       activeAgents,
       providerSubagentActivity,
       descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
     });
 
     const contributingAgentsByWorkspaceId = groupAgentsByWorkspaceId(
@@ -319,38 +331,30 @@ export class WorkspaceDirectory {
   }
 
   // Count running subagents per workspace: same-workspace Paseo descendants and
-  // provider-native subagents, both owned by the nearest workspace root. Runs
-  // after the root and terminal contributions because a working subagent only
-  // turns a `done` workspace into `running`. A root waiting on the user
-  // (attention, needs_input, failed) keeps its status and the count tells the
-  // client that work is still going on underneath it.
+  // provider-native subagents, both owned by the nearest workspace root. The
+  // count never changes the workspace status: the status follows the root
+  // agents, so a root whose turn ended reads `done` (or waits on the user)
+  // while its subagents keep working, and the client shows the count beside it.
   private applySubagentContributions(params: {
     activeAgents: AgentSnapshotPayload[];
     providerSubagentActivity: ProviderSubagentWorkspaceActivity[];
     descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>;
-    activityEntriesByWorkspaceId: Map<string, WorkspaceBucketTimestampEntry[]>;
   }): void {
-    const {
-      activeAgents,
-      providerSubagentActivity,
-      descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
-    } = params;
+    const { activeAgents, providerSubagentActivity, descriptorsByWorkspaceId } = params;
     const activeAgentsById = new Map(activeAgents.map((agent) => [agent.id, agent] as const));
     const runningCountByWorkspaceId = new Map<string, number>();
     const countRunning = (workspaceId: string | undefined) => {
       if (!workspaceId || !descriptorsByWorkspaceId.has(workspaceId)) {
-        return false;
+        return;
       }
       runningCountByWorkspaceId.set(
         workspaceId,
         (runningCountByWorkspaceId.get(workspaceId) ?? 0) + 1,
       );
-      return true;
     };
 
     for (const agent of activeAgents) {
-      if (agent.status !== "running") {
+      if (agent.status !== "running" && !agent.backgroundWork?.count) {
         continue;
       }
       const workspaceAgent = resolveWorkspaceRootAgent(agent, activeAgentsById);
@@ -367,13 +371,7 @@ export class WorkspaceDirectory {
       if (!parent) {
         continue;
       }
-      const workspaceId = resolveWorkspaceRootAgent(parent, activeAgentsById)?.workspaceId;
-      if (!workspaceId || !countRunning(workspaceId)) {
-        continue;
-      }
-      const entries = activityEntriesByWorkspaceId.get(workspaceId) ?? [];
-      entries.push({ bucket: "running", changedAtIso: subagent.updatedAt });
-      activityEntriesByWorkspaceId.set(workspaceId, entries);
+      countRunning(resolveWorkspaceRootAgent(parent, activeAgentsById)?.workspaceId);
     }
 
     for (const [workspaceId, count] of runningCountByWorkspaceId) {
@@ -382,9 +380,6 @@ export class WorkspaceDirectory {
         continue;
       }
       descriptor.runningSubagentCount = count;
-      if (descriptor.status === "done") {
-        descriptor.status = "running";
-      }
     }
   }
 
@@ -413,6 +408,8 @@ export class WorkspaceDirectory {
         pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
         requiresAttention: agent.requiresAttention,
         attentionReason: agent.attentionReason ?? null,
+        awaitingAnswer: agent.awaitingAnswer,
+        backgroundWork: agent.backgroundWork,
       });
 
       const workspaceId = workspaceAgent.workspaceId;
@@ -561,6 +558,8 @@ export class WorkspaceDirectory {
           pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
           requiresAttention: agent.requiresAttention,
           attentionReason: agent.attentionReason ?? null,
+          awaitingAnswer: agent.awaitingAnswer,
+          backgroundWork: agent.backgroundWork,
         });
         return derived === winningBucket;
       })
@@ -590,7 +589,7 @@ export class WorkspaceDirectory {
     includeBackground?: boolean;
   }): Promise<WorkspaceProjectDescriptor[]> {
     const [persistedWorkspaces, persistedProjects] = await Promise.all([
-      this.deps.workspaceRegistry.list(),
+      this.deps.workspaceRegistry.listActive(),
       this.deps.projectRegistry.list(),
     ]);
     // A project whose only workspaces are hidden reads as empty to that caller.
@@ -621,7 +620,7 @@ export class WorkspaceDirectory {
     Pick<WorkspaceDescriptorPayload, "id" | "workspaceDirectory" | "workspaceKind">[]
   > {
     const [workspaces, projects] = await Promise.all([
-      this.deps.workspaceRegistry.list(),
+      this.deps.workspaceRegistry.listActive(),
       this.deps.projectRegistry.list(),
     ]);
     return activeWorkspaceRecords(workspaces, projects).map((workspace) => ({

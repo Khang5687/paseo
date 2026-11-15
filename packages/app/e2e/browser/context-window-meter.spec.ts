@@ -21,6 +21,7 @@ import {
   openAgent,
   pressContextWindowMeter,
   qaScreenshot,
+  recordContextWindowFrames,
   refreshUsageCard,
   reloadAgent,
   scriptAgentUsage,
@@ -299,9 +300,10 @@ for (const theme of ["light", "dark"] as const) {
       const slowSource = gate();
       usage.answerNext({ stream: [slowSource.promise, onWorkLogin(claude!)] });
       const closedEarly = await hoverContextWindowMeter(page);
-      await expect(closedEarly.getByText("Loading usage...", { exact: true })).toBeVisible();
+      await expect(usageCard(closedEarly, "claude:work").getByText(LOGIN_EXPIRED)).toBeVisible();
       await leaveContextWindowMeter(page);
 
+      await usage.resumeAgent(agent);
       const resumed = gate();
       const finished = gate();
       usage.answerNext({
@@ -385,6 +387,58 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
+test("an open with loaded usage paints it in its first frame and never moves", async ({
+  page,
+  agent,
+}) => {
+  const [claude] = claudeAndCodexReports();
+  const usage = await scriptAgentUsage(page);
+  await page.setViewportSize(DESKTOP);
+  await openAgent(page, agent);
+  usage.answerNext([onWorkLogin(claude!)]);
+  const loaded = await hoverContextWindowMeter(page);
+  await expect(usageCard(loaded, "claude:work")).toBeVisible();
+  await leaveContextWindowMeter(page);
+
+  // The reopen's own request stays unanswered until the card has been on screen a while.
+  const refetch = gate();
+  usage.answerNext({ stream: [refetch.promise, onWorkLogin(claude!)] });
+  const recording = await recordContextWindowFrames(page);
+  const reopened = await hoverContextWindowMeter(page);
+  await page.waitForTimeout(300);
+  refetch.open();
+  await page.waitForTimeout(300);
+  await expect(usageCard(reopened, "claude:work")).toBeVisible();
+  const frames = (await recording.stop()).filter((frame) => frame.mounted);
+  await leaveContextWindowMeter(page);
+
+  expect(frames.filter((frame) => frame.loading)).toEqual([]);
+  expect(frames.filter((frame) => frame.usageCards !== 1)).toEqual([]);
+  expect(new Set(frames.map((frame) => frame.bottom)).size).toBe(1);
+});
+
+test("usage arriving after the card opens never moves its bottom edge", async ({ page, agent }) => {
+  const [claude] = claudeAndCodexReports();
+  const usage = await scriptAgentUsage(page);
+  await page.setViewportSize(DESKTOP);
+  await openAgent(page, agent);
+
+  const arrival = gate();
+  usage.answerNext({ stream: [arrival.promise, onWorkLogin(claude!)] });
+  const recording = await recordContextWindowFrames(page);
+  const card = await hoverContextWindowMeter(page);
+  await expect(card.getByText("Loading usage...", { exact: true })).toBeVisible();
+  arrival.open();
+  await expect(usageCard(card, "claude:work")).toBeVisible();
+  await page.waitForTimeout(300);
+  const frames = (await recording.stop()).filter((frame) => frame.mounted);
+  await leaveContextWindowMeter(page);
+
+  expect(frames.some((frame) => frame.loading)).toBe(true);
+  expect(frames.at(-1)?.usageCards).toBe(1);
+  expect(new Set(frames.map((frame) => frame.bottom)).size).toBe(1);
+});
+
 test("context details support keyboard entry and dismiss when the viewport moves", async ({
   page,
   agent,
@@ -449,8 +503,36 @@ for (const viewport of [DESKTOP, { width: 700, height: 800 }]) {
     expect(box.y + box.height).toBeLessThanOrEqual(ring.y);
     expect(box.y + box.height).toBeGreaterThan(ring.y - 24);
     expect(Math.abs(box.x + box.width - (ring.x + ring.width))).toBeLessThanOrEqual(2);
+    // An open card asks for usage again; leaving it keeps the test to the one scripted answer.
+    await leaveContextWindowMeter(page);
   });
 }
+
+test("context details stay open while the chat streams", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize(DESKTOP);
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "context-window-streaming-",
+    title: "Context details while streaming",
+    model: "ten-second-stream",
+  });
+  try {
+    await openAgentRoute(page, session);
+    await expectComposerVisible(page);
+    await submitMessageWithButton(page, "Stream while the context details are open.");
+    const stop = page.getByRole("button", { name: /stop|cancel/i }).first();
+    await expect(stop).toBeVisible();
+    const details = await pressContextWindowMeter(page, /^Context window/);
+    await expect(stop).toBeVisible();
+    await qaScreenshot(page, "context-details-while-streaming");
+
+    await expect(stop).toHaveCount(0, { timeout: 30_000 });
+    await expect(details).toBeVisible();
+    await qaScreenshot(page, "context-details-after-streaming");
+  } finally {
+    await session.cleanup();
+  }
+});
 
 test("pointer hovering context details preserves composer focus", async ({ page, agent }) => {
   const usage = await scriptAgentUsage(page);

@@ -1,7 +1,7 @@
 import type { AgentAddress } from "@getpaseo/protocol/addresses";
-import { memo, useCallback, type ReactElement } from "react";
+import { memo, useCallback, useMemo, type ReactElement } from "react";
+import { BackgroundWorkTrack, createHostBackgroundWorkModel } from "@/background-work";
 import { WorkspaceDiffStatPill } from "@/composer/diff-stat-pill";
-import { useWorkspaceHasDiffStat } from "@/composer/workspace-diff-stat";
 import { AgentTaskList } from "@/composer/task-list";
 import { ComposerTrackBar } from "@/composer/tracks";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -10,15 +10,16 @@ import { useSettings } from "@/hooks/use-settings";
 import { PluginComposerPills } from "@/plugins";
 import { useSessionStore } from "@/stores/session-store";
 import {
-  type ArchiveFinishedStatus,
+  useArchiveFinishedSubagents,
   useArchiveSubagent,
   useDetachSubagent,
   useSubagentSheetTab,
-  type SubagentRow,
+  useSubagentsForParent,
 } from "@/subagents";
 import { ParentAgentPill } from "@/subagents/parent";
 import { SubagentsTrack } from "@/subagents/track";
 import type { TodoEntry } from "@/types/stream";
+import { confirmArchive } from "@/utils/archive-confirm";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { buildWorkspaceTabPersistenceKey, type WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { openPreferredWorkspaceTarget } from "@/workspace-tabs/open-beside";
@@ -36,30 +37,51 @@ export const AgentTracks = memo(function AgentTracks({
   workspaceId,
   agentId,
   parentAgentId,
-  subagentRows,
-  tasks,
-  archiveFinishedStatus,
-  onArchiveFinished,
-  hasPluginComposerPills,
 }: {
   serverId: string;
   workspaceId: string;
   agentId: string;
   parentAgentId: string | null;
-  subagentRows: SubagentRow[];
-  tasks: TodoEntry[] | undefined;
-  archiveFinishedStatus: ArchiveFinishedStatus;
-  onArchiveFinished: () => void;
-  hasPluginComposerPills: boolean;
-}): ReactElement | null {
+}): ReactElement {
+  const subagentRows = useSubagentsForParent({ serverId, parentAgentId: agentId });
+  const tasks = useSessionStore((state): TodoEntry[] | undefined =>
+    state.sessions[serverId]?.agentTasks.get(agentId),
+  );
+  const archiveFinishedSubagents = useArchiveFinishedSubagents({
+    serverId,
+    parentAgentId: agentId,
+    rows: subagentRows,
+  });
+  const { archiveFinished } = archiveFinishedSubagents;
+  const handleArchiveFinished = useCallback(() => {
+    void (async () => {
+      if (await confirmArchive({ subject: "finishedSubagents" })) {
+        await archiveFinished();
+      }
+    })();
+  }, [archiveFinished]);
   const { tabId } = usePaneContext();
-  const hasWorkspaceDiffStat = useWorkspaceHasDiffStat(serverId, workspaceId);
+  const backgroundWorkCount = useSessionStore((state) => {
+    const session = state.sessions[serverId];
+    const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+    return agent?.backgroundWork?.count ?? 0;
+  });
+  const backgroundModel = useMemo(
+    () => createHostBackgroundWorkModel(serverId, agentId),
+    [serverId, agentId],
+  );
   const isCompact = useIsCompactFormFactor();
   const openInSidePane = useSettings((settings) => settings.openInSidePane);
   const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
   const canDetachSubagents = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.agentDetach === true,
   );
+  // Same rule as the sidebar's root activity: an open turn is the agent working, whatever the
+  // lifecycle says while a turn closes.
+  const yourTurn = useSessionStore((state) => {
+    const agent = state.sessions[serverId]?.agents.get(agentId);
+    return agent ? agent.turn.phase !== "open" && agent.status !== "initializing" : false;
+  });
   const archiveSubagent = useArchiveSubagent();
   const detachSubagent = useDetachSubagent();
   const openSubagentTarget = useCallback(
@@ -112,32 +134,21 @@ export const AgentTracks = memo(function AgentTracks({
     });
   }, [isCompact, openInSidePane, workspaceKey]);
 
-  if (
-    !hasWorkspaceDiffStat &&
-    !hasAgentTracks({
-      parentAgentId,
-      subagentRows,
-      tasks,
-      archiveFinishedStatus,
-      hasPluginComposerPills,
-    })
-  ) {
-    return null;
-  }
-
   return (
     <ComposerTrackBar>
+      <BackgroundWorkTrack model={backgroundModel} count={backgroundWorkCount} />
       {parentAgentId ? <ParentAgentPill serverId={serverId} parentAgentId={parentAgentId} /> : null}
       <AgentTaskList tasks={tasks} />
       <SubagentsTrack
         serverId={serverId}
         rows={subagentRows}
+        yourTurn={yourTurn}
         onOpenSubagent={handleOpenSubagent}
         onOpenProviderSubagent={handleOpenProviderSubagent}
         sheetTabFor={sheetTabFor}
         onArchiveSubagent={archiveSubagent}
-        onArchiveFinished={onArchiveFinished}
-        archiveFinishedStatus={archiveFinishedStatus}
+        onArchiveFinished={handleArchiveFinished}
+        archiveFinishedStatus={archiveFinishedSubagents.status}
         onDetachSubagent={canDetachSubagents ? detachSubagent : undefined}
       />
       <PluginComposerPills
@@ -154,25 +165,3 @@ export const AgentTracks = memo(function AgentTracks({
     </ComposerTrackBar>
   );
 });
-
-export function hasAgentTracks({
-  parentAgentId,
-  subagentRows,
-  tasks,
-  archiveFinishedStatus,
-  hasPluginComposerPills = false,
-}: {
-  parentAgentId: string | null;
-  subagentRows: readonly SubagentRow[];
-  tasks: readonly TodoEntry[] | undefined;
-  archiveFinishedStatus: ArchiveFinishedStatus;
-  hasPluginComposerPills?: boolean;
-}): boolean {
-  return (
-    parentAgentId !== null ||
-    subagentRows.length > 0 ||
-    Boolean(tasks?.length) ||
-    archiveFinishedStatus.kind !== "idle" ||
-    hasPluginComposerPills
-  );
-}

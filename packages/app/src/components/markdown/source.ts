@@ -42,11 +42,13 @@ const DIRECTORY_FILE_NAME = String.raw`(?:${PATH_SEGMENT}\.(?:[a-z][a-z0-9]{0,9}
 // Bare prose paths need a known extension, a line suffix, or at least two separators.
 const PROSE_PATH = String.raw`(?:${PATH_PREFIX}${HAS_PATH_LETTER}${SEPARATED_PATH}|(?:~|\.{1,2})\/${HAS_PATH_LETTER}${PATH_SEGMENT}|${HAS_PATH_LETTER}(?:${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})*[\\/]${DIRECTORY_FILE_NAME}|${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT}){2,}|${SEPARATED_PATH}(?=:\d)))`;
 
-function createFilePattern(path: string): RegExp {
+function createTextPattern(path: string, forgeReferencePattern?: string): RegExp {
+  // Forge references come before paths so `group/project#12` is not read as a path.
+  const forgeReference = forgeReferencePattern ? `|${forgeReferencePattern}` : "";
   // The native adapter mistakes a literal + in lookbehind for a quantifier; use its hex escape.
   return new RegExp(
     // A colon ends a path only before a line number or a space: `src/app.ts:12`, `src/app.ts: …`.
-    String.raw`(?:${BARE_URL}|(?<![a-zA-Z0-9${NON_ASCII}_@.%\x2b~:/\\-])(?:${path}|${FILE_NAME}|${BARE_NAMED_FILE}|${DOTFILE})${LINE_SUFFIX}(?![a-zA-Z0-9${NON_ASCII}_@%+/\\-]|:(?!\s|$)|\.${PATH_CHARACTER}))`,
+    String.raw`(?:${BARE_URL}${forgeReference}|(?<![a-zA-Z0-9${NON_ASCII}_@.%\x2b~:/\\-])(?:${path}|${FILE_NAME}|${BARE_NAMED_FILE}|${DOTFILE})${LINE_SUFFIX}(?![a-zA-Z0-9${NON_ASCII}_@%+/\\-]|:(?!\s|$)|\.${PATH_CHARACTER}))`,
     "g",
   );
 }
@@ -57,8 +59,20 @@ const URL_CHARACTER = String.raw`[^\s<>()"'\x60]`;
 const URL_GROUP = String.raw`\(${URL_CHARACTER}*\)`;
 const BARE_URL = String.raw`https?://(?:${URL_CHARACTER}|${URL_GROUP})*(?:[^\s<>()"'\x60.,;:!?]|${URL_GROUP})`;
 
-const FILE_PATTERN = createFilePattern(PROSE_PATH);
-function linkMetadata(inlineCodePaths: ReadonlySet<string>) {
+const TEXT_PATTERN = createTextPattern(PROSE_PATH);
+// One entry per distinct workspace forge remote; reuse keeps the engine's regex identity stable.
+const textPatternsByForgeReference = new Map<string, RegExp>();
+function textPattern(forgeReferencePattern?: string): RegExp {
+  if (!forgeReferencePattern) return TEXT_PATTERN;
+  let pattern = textPatternsByForgeReference.get(forgeReferencePattern);
+  if (!pattern) {
+    pattern = createTextPattern(PROSE_PATH, forgeReferencePattern);
+    textPatternsByForgeReference.set(forgeReferencePattern, pattern);
+  }
+  return pattern;
+}
+
+function linkMetadata(inlineCodePaths: ReadonlySet<string>, forgeReferencePattern?: string) {
   // The engine accepts regexes on both platforms. Classify complete code spans
   // first, then pass literal matches rather than maintaining a second path grammar.
   const alternatives = [...inlineCodePaths].map((path) =>
@@ -66,7 +80,7 @@ function linkMetadata(inlineCodePaths: ReadonlySet<string>) {
   );
   return {
     linkRecognition: {
-      text: FILE_PATTERN,
+      text: textPattern(forgeReferencePattern),
       inlineCode: new RegExp(
         String.raw`^(?:https?://[^\s<>]+${alternatives.length ? `|${alternatives.join("|")}` : ""})$`,
       ),
@@ -133,7 +147,7 @@ export function collectFileMentions(
 ): FileMention[] {
   const prose = source.replace(FENCED_CODE, "");
   const candidates = [
-    ...[...prose.matchAll(FILE_PATTERN)].map((match) => markdownLinkSource(match[0], "text")),
+    ...[...prose.matchAll(TEXT_PATTERN)].map((match) => markdownLinkSource(match[0], "text")),
     ...[...collectInlineCodePaths(prose, context.workspaceRoot)].map((path) =>
       markdownLinkSource(path, "inline-code"),
     ),
@@ -176,7 +190,12 @@ function workspaceHoverTitle(link: Link, markup: string, workspaceRoot?: string)
 export function prepareMarkdownSource(
   source: string,
   workspaceRoot?: string,
-  options: { supportsSvg?: boolean; commandNames?: ReadonlySet<string> } = {},
+  options: {
+    supportsSvg?: boolean;
+    commandNames?: ReadonlySet<string>;
+    /** Regex source for forge references such as `#12`; see `@/git/forge-shorthand`. */
+    forgeReferencePattern?: string;
+  } = {},
 ) {
   source = normalizeMarkdownHtml(source);
   const images: MarkdownImage[] = [];
@@ -200,7 +219,11 @@ export function prepareMarkdownSource(
     ) &&
     !(workspaceRoot && source.includes("]("))
   ) {
-    return { images, ...linkMetadata(inlineCodePaths), render: () => source };
+    return {
+      images,
+      ...linkMetadata(inlineCodePaths, options.forgeReferencePattern),
+      render: () => source,
+    };
   }
 
   const definitions = new Map<string, { url: string; title?: string | null }>();
@@ -373,7 +396,7 @@ export function prepareMarkdownSource(
   visit(getTree());
   return {
     images,
-    ...linkMetadata(inlineCodePaths),
+    ...linkMetadata(inlineCodePaths, options.forgeReferencePattern),
     render(
       urls: ReadonlyMap<string, string> = new Map(),
       unavailableImages: ReadonlySet<string> = new Set(),

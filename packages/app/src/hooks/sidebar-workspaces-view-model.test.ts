@@ -1,3 +1,4 @@
+import { UNSEEN_AGENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import { describe, expect, it } from "vitest";
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import type { WorkspaceStructureProject } from "@/projects/workspace-structure";
@@ -80,20 +81,56 @@ describe("createSidebarWorkspaceEntry working subagents", () => {
     });
   }
 
-  it("counts working subagents while the root agent waits on the user", () => {
-    expect(entryFor("attention", 3)).toMatchObject({
-      statusBucket: "attention",
+  it("counts working subagents beside whatever the root agent's status is", () => {
+    expect(entryFor("done", 3)).toMatchObject({
+      statusBucket: "done",
       workingSubagentCount: 3,
     });
     expect(entryFor("needs_input", 1).workingSubagentCount).toBe(1);
-  });
-
-  it("shows no count when the row already reports running", () => {
-    expect(entryFor("running", 2).workingSubagentCount).toBe(0);
+    expect(entryFor("running", 2)).toMatchObject({
+      statusBucket: "running",
+      workingSubagentCount: 2,
+    });
   });
 
   it("shows no count when an old daemon omits it", () => {
     expect(entryFor("attention").workingSubagentCount).toBe(0);
+  });
+});
+
+describe("createSidebarWorkspaceEntry new main agent", () => {
+  function entryWith(agents: Agent[]) {
+    return createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42"),
+      workspaceAgentActivity: buildWorkspaceAgentActivityIndex(
+        new Map(agents.map((entry) => [entry.id, entry])),
+      ),
+    });
+  }
+
+  it("marks the row new while its main agent is unopened", () => {
+    const labels = { role: "main", [UNSEEN_AGENT_LABEL]: "true" };
+    expect(
+      entryWith([agent({ id: "a", workspaceId: "ws-1", status: "running", labels })]).isNew,
+    ).toBe(true);
+  });
+
+  it("does not mark the row once the agent was opened, or for a helper", () => {
+    const opened = agent({
+      id: "a",
+      workspaceId: "ws-1",
+      status: "idle",
+      labels: { role: "main" },
+    });
+    const helper = agent({
+      id: "h",
+      workspaceId: "ws-1",
+      status: "idle",
+      labels: { role: "helper" },
+    });
+    expect(entryWith([opened, helper]).isNew).toBe(false);
+    expect(entryWith([]).isNew).toBe(false);
   });
 });
 
@@ -747,6 +784,7 @@ function agent(input: {
   updatedAt?: Date;
   parentAgentId?: string | null;
   archivedAt?: Date | null;
+  labels?: Record<string, string>;
 }): Agent {
   return {
     serverId: "srv",
@@ -772,7 +810,7 @@ function agent(input: {
     model: null,
     parentAgentId: input.parentAgentId ?? null,
     archivedAt: input.archivedAt ?? null,
-    labels: {},
+    labels: input.labels ?? {},
   };
 }
 

@@ -3,8 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 import { FEATURE_DEFAULTS_CWD, FeatureDefaultRow } from "@/components/feature-default-row";
-import { type FieldControlSize } from "@/components/ui/control-geometry";
-import { useIsCompactFormFactor } from "@/constants/layout";
+import { type ControlSize } from "@/components/ui/control-geometry";
 import { useToast } from "@/contexts/toast-context";
 import { useFetchQuery } from "@/data/query";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
@@ -32,7 +31,7 @@ export function DefaultOutputStyleCard({ serverId }: { serverId: string }) {
   const supportsGlobalDefaults = useHostFeature(serverId, "globalFeatureDefaults");
   const { config, patchConfig } = useDaemonConfig(serverId);
   const { entries } = useProvidersSnapshot(serverId, { enabled: supportsGlobalDefaults });
-  const controlSize: FieldControlSize = useIsCompactFormFactor() ? "md" : "sm";
+  const controlSize: ControlSize = "md";
   const [isSaving, setIsSaving] = useState(false);
 
   const readyProviders = useMemo(

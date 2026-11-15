@@ -22,25 +22,28 @@ export function getAutocompleteFallbackIndex(
   return position === "above-input" ? itemCount - 1 : 0;
 }
 
-// Keeps the highlight on the same option when the list changes under it (for
-// example when provider commands arrive after the built-ins), so the row the
-// user sees highlighted is the one Enter applies. A new query starts over.
+/** An arrow-key choice: the option it picked and the query it was made for. */
+export interface AutocompleteChoice {
+  id: string;
+  query: string;
+}
+
+// Keeps the highlight on the chosen option when the list changes under it (for
+// example when a refetch adds commands above it), so the row the user sees
+// highlighted is the one Enter applies. A choice made for another query, or whose
+// option is gone, falls back to the option nearest the input.
 export function resolveAutocompleteSelectedIndex<TOption extends { id: string }>(args: {
-  previousOptions: readonly TOption[];
-  previousIndex: number;
+  choice: AutocompleteChoice | null;
+  query: string;
   options: readonly TOption[];
-  queryChanged: boolean;
   position?: AutocompleteOptionsPosition;
 }): number {
   const fallbackIndex = getAutocompleteFallbackIndex(args.options.length, args.position);
-  if (args.queryChanged) {
+  const { choice } = args;
+  if (!choice || choice.query !== args.query) {
     return fallbackIndex;
   }
-  const selectedId = args.previousOptions[args.previousIndex]?.id;
-  if (selectedId === undefined) {
-    return fallbackIndex;
-  }
-  const index = args.options.findIndex((option) => option.id === selectedId);
+  const index = args.options.findIndex((option) => option.id === choice.id);
   return index >= 0 ? index : fallbackIndex;
 }
 

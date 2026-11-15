@@ -6,7 +6,7 @@ import { buildSeededHost } from "../support/helpers/daemon-registry";
 import { killProcessTree } from "../support/helpers/spawn-node";
 
 // Drives packages/server/src/server/test-utils/fork-agent-ui-daemon.ts: a daemon whose mock
-// provider asks one formatted question and offers an output_style select feature.
+// provider asks one formatted question and offers an output_style select control.
 
 const daemonMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ready"), port: z.number(), serverId: z.string() }),
@@ -18,7 +18,7 @@ const daemonMessage = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("session-created"),
-    featureValues: z.record(z.string(), z.unknown()),
+    providerOptions: z.record(z.string(), z.unknown()),
   }),
   z.object({ type: z.literal("error"), error: z.string() }),
 ]);
@@ -27,7 +27,7 @@ export interface ForkAgentUiDaemon {
   port: number;
   serverId: string;
   questionResponses: unknown[];
-  createdFeatureValues: Record<string, unknown>[];
+  createdProviderOptions: Record<string, unknown>[];
   output: string[];
   /** Saves the daemon as the browser's only extra host; call before navigating to its routes. */
   registerHost(page: Page): Promise<void>;
@@ -46,12 +46,12 @@ export async function startForkAgentUiDaemon(): Promise<ForkAgentUiDaemon> {
   child.stderr?.on("data", (data: Buffer) => output.push(data.toString()));
   const ready = Promise.withResolvers<{ port: number; serverId: string }>();
   const questionResponses: unknown[] = [];
-  const createdFeatureValues: Record<string, unknown>[] = [];
+  const createdProviderOptions: Record<string, unknown>[] = [];
   child.on("message", (message: unknown) => {
     const parsed = daemonMessage.parse(message);
     if (parsed.type === "ready") ready.resolve(parsed);
     if (parsed.type === "question-response") questionResponses.push(parsed.response);
-    if (parsed.type === "session-created") createdFeatureValues.push(parsed.featureValues);
+    if (parsed.type === "session-created") createdProviderOptions.push(parsed.providerOptions);
     if (parsed.type === "error") ready.reject(new Error(parsed.error));
   });
   child.once("exit", (code) => ready.reject(new Error(`Fork UI daemon exited with ${code}`)));
@@ -65,7 +65,7 @@ export async function startForkAgentUiDaemon(): Promise<ForkAgentUiDaemon> {
       port,
       serverId,
       questionResponses,
-      createdFeatureValues,
+      createdProviderOptions,
       output,
       async registerHost(page) {
         await page.goto("/", { waitUntil: "commit" });

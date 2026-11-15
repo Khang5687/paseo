@@ -30,25 +30,23 @@ describe("getAutocompleteFallbackIndex", () => {
 });
 
 describe("resolveAutocompleteSelectedIndex", () => {
-  const builtIns = [{ id: "clear" }, { id: "exit" }];
-  // Provider commands arrive later and land above the built-ins (above-input order).
-  const withProvider = [{ id: "tdd" }, { id: "help" }, { id: "clear" }, { id: "exit" }];
+  const fewer = [{ id: "clear" }, { id: "exit" }];
+  // A refetch adds commands above the chosen one (above-input order).
+  const more = [{ id: "tdd" }, { id: "help" }, { id: "clear" }, { id: "exit" }];
 
-  it("keeps the highlighted option when more options arrive for the same query", () => {
+  it("keeps the chosen option when more options arrive for the same query", () => {
     expect(
       resolveAutocompleteSelectedIndex({
-        previousOptions: builtIns,
-        previousIndex: 0,
-        options: withProvider,
-        queryChanged: false,
+        choice: { id: "clear", query: "" },
+        query: "",
+        options: more,
       }),
     ).toBe(2);
     expect(
       resolveAutocompleteSelectedIndex({
-        previousOptions: builtIns,
-        previousIndex: 1,
-        options: withProvider,
-        queryChanged: false,
+        choice: { id: "exit", query: "" },
+        query: "",
+        options: more,
       }),
     ).toBe(3);
   });
@@ -56,37 +54,33 @@ describe("resolveAutocompleteSelectedIndex", () => {
   it("moves to the option nearest the input when the query changes", () => {
     expect(
       resolveAutocompleteSelectedIndex({
-        previousOptions: withProvider,
-        previousIndex: 0,
-        options: withProvider,
-        queryChanged: true,
+        choice: { id: "tdd", query: "" },
+        query: "t",
+        options: more,
       }),
     ).toBe(3);
   });
 
-  it("falls back when the highlighted option is gone or nothing was highlighted", () => {
+  it("falls back when the chosen option is gone or nothing was chosen", () => {
     expect(
       resolveAutocompleteSelectedIndex({
-        previousOptions: withProvider,
-        previousIndex: 0,
-        options: builtIns,
-        queryChanged: false,
+        choice: { id: "tdd", query: "" },
+        query: "",
+        options: fewer,
       }),
     ).toBe(1);
     expect(
       resolveAutocompleteSelectedIndex({
-        previousOptions: [],
-        previousIndex: -1,
-        options: builtIns,
-        queryChanged: false,
+        choice: null,
+        query: "",
+        options: fewer,
       }),
     ).toBe(1);
     expect(
       resolveAutocompleteSelectedIndex({
-        previousOptions: builtIns,
-        previousIndex: 1,
+        choice: { id: "exit", query: "" },
+        query: "",
         options: [],
-        queryChanged: false,
       }),
     ).toBe(-1);
   });

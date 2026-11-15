@@ -13,6 +13,8 @@ import {
 } from "@/assistant-file-links";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { matchCommandLink, useAgentCommandHints, type CommandHints } from "@/agent-commands";
+import { useForgeShorthand } from "@/git/forge-shorthand";
+import { openExternalUrl } from "@/utils/open-external-url";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
 import { isNative, isWeb } from "@/constants/platform";
@@ -101,6 +103,7 @@ const MarkdownPart = memo(function MarkdownPart({
 }: MarkdownRendererProps & { commandHints?: CommandHints | null }) {
   const environment = useAssistantFileLinkEnvironment();
   const actions = useAssistantFileLinkActions();
+  const forgeShorthand = useForgeShorthand();
   const client =
     imageContext.client ??
     (environment.client?.readFile
@@ -114,13 +117,18 @@ const MarkdownPart = memo(function MarkdownPart({
       ...imageContext,
       client,
     },
-    commandHints?.names,
+    { commandNames: commandHints?.names, forgeReferencePattern: forgeShorthand?.pattern },
   );
   const [image, setImage] = useState<ImageLightboxSource | null>(null);
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
     const command = commandHints && matchCommandLink(url, sourceType, commandHints.names);
     if (command) {
       commandHints.insert(command);
+      return;
+    }
+    const forgeUrl = sourceType === "text" ? forgeShorthand?.resolve(url) : null;
+    if (forgeUrl) {
+      void openExternalUrl(forgeUrl);
       return;
     }
     const source = linkSource(url, sourceType);
