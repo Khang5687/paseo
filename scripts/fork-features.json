@@ -994,6 +994,7 @@
     "tests": [
       "packages/app/src/components/markdown/renderer.test.ts",
       "packages/app/src/assistant-file-links/resolver.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/bare-domain-links.spec.ts"]
   }
 ]
