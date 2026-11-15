@@ -12,13 +12,14 @@ import { describe, expect, it } from "vitest";
 
 const appDir = fileURLToPath(new URL("..", import.meta.url));
 const srcDir = path.join(appDir, "src");
-const DOM_GLOBALS = ["document", "window", "navigator", "localStorage", "HTMLElement"];
+const DOM_GLOBALS = new Set(["document", "window", "navigator", "localStorage", "HTMLElement"]);
+const GESTURE_BUILDER = /\bGesture\.(Pan|Tap|Hover|Pinch|LongPress|Fling|Rotation|Manual)\(/;
 
 function gestureSources(): string[] {
   return readdirSync(srcDir, { recursive: true, encoding: "utf8" })
     .filter((file) => /\.tsx?$/.test(file) && !/\.(test|web|electron)\.|\.d\.ts$/.test(file))
     .map((file) => path.join(srcDir, file))
-    .filter((file) => /\bGesture\.(Pan|Tap|Hover|Pinch|LongPress|Fling|Rotation|Manual)\(/.test(readFileSync(file, "utf8")));
+    .filter((file) => GESTURE_BUILDER.test(readFileSync(file, "utf8")));
 }
 
 function workletClosureNames(file: string): string[] {
@@ -44,7 +45,7 @@ describe("native gesture worklets", () => {
   it.each(files.map((file) => [path.relative(appDir, file), file]))(
     "%s: no gesture callback captures a DOM global",
     (_name, file) => {
-      const captured = workletClosureNames(file).filter((name) => DOM_GLOBALS.includes(name));
+      const captured = workletClosureNames(file).filter((name) => DOM_GLOBALS.has(name));
       expect(captured).toEqual([]);
     },
   );
