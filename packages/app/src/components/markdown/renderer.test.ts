@@ -588,6 +588,23 @@ describe("bare URL sentence punctuation", () => {
   );
 });
 
+it("links schemeless web addresses and leaves host-led paths it cannot open as text", () => {
+  const source =
+    "Repo: github.com/Khang5687/throwback32 (private), guide at docs.example.org/guide/start. " +
+    "Built v1.2/build/out with Node.js/Bun/Deno; open src/app/index.ts and packages/app/src.";
+  const prepared = prepareMarkdownSource(source);
+  expect([...source.matchAll(prepared.linkRecognition.text)].map(([text]) => text)).toEqual([
+    "github.com/Khang5687/throwback32",
+    "docs.example.org/guide/start",
+    "src/app/index.ts",
+    "packages/app/src",
+  ]);
+  expect(toNativeLinkRecognition(prepared.linkRecognition).text).toMatchObject({
+    isDisabled: false,
+    isDefault: false,
+  });
+});
+
 it("requires workspace context for relative inline paths and escapes literal regex characters", () => {
   const source = "`src/app/[id].tsx` and `src/a+b.ts` and `README.md` and `/tmp/file.ts`";
   const withoutWorkspace = prepareMarkdownSource(source).linkRecognition.inlineCode;

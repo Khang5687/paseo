@@ -3,6 +3,11 @@ import {
   ASSISTANT_EXTENSIONLESS_FILE_NAMES,
   ASSISTANT_FILE_EXTENSIONS,
 } from "@/assistant-file-links/extensions";
+import {
+  BARE_WEB_ADDRESS,
+  DOMAIN_LIKE_SEGMENT,
+  URL_TAIL,
+} from "@/assistant-file-links/web-address";
 import { normalizeMarkdownHtml } from "./html";
 import { gfmTable } from "micromark-extension-gfm-table";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
@@ -40,7 +45,8 @@ const DOTFILE = String.raw`\.(?:env|[a-z][a-z0-9_-]*(?:rc|ignore|config|attribut
 // Under a directory any lowercase extension marks a file: `records/q3/contract.pdf`.
 const DIRECTORY_FILE_NAME = String.raw`(?:${PATH_SEGMENT}\.(?:[a-z][a-z0-9]{0,9}|${FILE_EXTENSIONS})|${NAMED_FILE})`;
 // Bare prose paths need a known extension, a line suffix, or at least two separators.
-const PROSE_PATH = String.raw`(?:${PATH_PREFIX}${HAS_PATH_LETTER}${SEPARATED_PATH}|(?:~|\.{1,2})\/${HAS_PATH_LETTER}${PATH_SEGMENT}|${HAS_PATH_LETTER}(?:${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})*[\\/]${DIRECTORY_FILE_NAME}|${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT}){2,}|${SEPARATED_PATH}(?=:\d)))`;
+// A host-like first segment (`github.com/a/b`, `v1.2/build/out`) is never a workspace path.
+const PROSE_PATH = String.raw`(?:${PATH_PREFIX}${HAS_PATH_LETTER}${SEPARATED_PATH}|(?:~|\.{1,2})\/${HAS_PATH_LETTER}${PATH_SEGMENT}|${HAS_PATH_LETTER}(?!${DOMAIN_LIKE_SEGMENT}[\\/])(?:${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})*[\\/]${DIRECTORY_FILE_NAME}|${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT}){2,}|${SEPARATED_PATH}(?=:\d)))`;
 
 function createTextPattern(path: string, forgeReferencePattern?: string): RegExp {
   // Forge references come before paths so `group/project#12` is not read as a path.
@@ -48,16 +54,13 @@ function createTextPattern(path: string, forgeReferencePattern?: string): RegExp
   // The native adapter mistakes a literal + in lookbehind for a quantifier; use its hex escape.
   return new RegExp(
     // A colon ends a path only before a line number or a space: `src/app.ts:12`, `src/app.ts: …`.
-    String.raw`(?:${BARE_URL}${forgeReference}|(?<![a-zA-Z0-9${NON_ASCII}_@.%\x2b~:/\\-])(?:${path}|${FILE_NAME}|${BARE_NAMED_FILE}|${DOTFILE})${LINE_SUFFIX}(?![a-zA-Z0-9${NON_ASCII}_@%+/\\-]|:(?!\s|$)|\.${PATH_CHARACTER}))`,
+    String.raw`(?:${BARE_URL}${forgeReference}|(?<![a-zA-Z0-9${NON_ASCII}_@.%\x2b~:/\\-])(?:${BARE_WEB_ADDRESS}|(?:${path}|${FILE_NAME}|${BARE_NAMED_FILE}|${DOTFILE})${LINE_SUFFIX}(?![a-zA-Z0-9${NON_ASCII}_@%+/\\-]|:(?!\s|$)|\.${PATH_CHARACTER})))`,
     "g",
   );
 }
 
 // Matches bare URLs that MD4C does not autolink, like single-label or bracketed hosts.
-// Quotes and unbalanced closing parentheses end the URL. Trailing sentence punctuation stays outside.
-const URL_CHARACTER = String.raw`[^\s<>()"'\x60]`;
-const URL_GROUP = String.raw`\(${URL_CHARACTER}*\)`;
-const BARE_URL = String.raw`https?://(?:${URL_CHARACTER}|${URL_GROUP})*(?:[^\s<>()"'\x60.,;:!?]|${URL_GROUP})`;
+const BARE_URL = String.raw`https?://${URL_TAIL}`;
 
 const TEXT_PATTERN = createTextPattern(PROSE_PATH);
 // One entry per distinct workspace forge remote; reuse keeps the engine's regex identity stable.
