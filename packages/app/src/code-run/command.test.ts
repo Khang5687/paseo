@@ -68,43 +68,78 @@ describe("readRunOutput", () => {
     "",
   ];
 
+  const read = (
+    lines: readonly string[],
+    options: { complete?: boolean; settled?: boolean } = {},
+  ) =>
+    readRunOutput({
+      lines,
+      nonce: NONCE,
+      complete: options.complete ?? true,
+      settled: options.settled ?? true,
+    });
+
   it("returns the output between the start and status lines with the host duration", () => {
-    expect(readRunOutput({ lines: screen, nonce: NONCE, complete: true })).toEqual({
+    expect(read(screen)).toEqual({
       lines: ["PASS src/a.test.ts"],
       exitCode: 1,
       durationSeconds: 3,
+      screen: false,
     });
   });
 
   it("reports a running command without a status", () => {
-    expect(readRunOutput({ lines: screen.slice(0, 6), nonce: NONCE, complete: true })).toEqual({
+    expect(read(screen.slice(0, 6))).toEqual({
       lines: ["PASS src/a.test.ts"],
       exitCode: null,
       durationSeconds: null,
+      screen: false,
     });
   });
 
   it("shows nothing before the shell has read the command", () => {
-    expect(readRunOutput({ lines: ["me@host app %", ""], nonce: NONCE, complete: true })).toEqual({
+    expect(read(["me@host app %", ""], { settled: false })).toEqual({
       lines: [],
       exitCode: null,
       durationSeconds: null,
+      screen: false,
+    });
+  });
+
+  it("shows the screen a full-screen program drew over the run", () => {
+    // tmux on the alternate screen: sudo's prompt above tmux's status bar, no wrapper lines.
+    const tmux = ["[sudo] password for k:", "", "", '[chain] 0:sudo*          "omen" 06:12 15-Nov'];
+    expect(read(tmux)).toEqual({
+      lines: tmux,
+      exitCode: null,
+      durationSeconds: null,
+      screen: true,
+    });
+  });
+
+  it("keeps what a command printed after clearing the screen once it ends", () => {
+    expect(read(["total 0", "", `[exit 0 1730000009] ${NONCE}`, "me@host app %"])).toEqual({
+      lines: ["total 0"],
+      exitCode: 0,
+      durationSeconds: null,
+      screen: false,
     });
   });
 
   it("treats a window whose echo scrolled away as all output", () => {
     expect(
-      readRunOutput({
-        lines: ["line 900", "line 901", `[exit 0 1730000009] ${NONCE}`],
-        nonce: NONCE,
-        complete: false,
-      }),
-    ).toEqual({ lines: ["line 900", "line 901"], exitCode: 0, durationSeconds: null });
+      read(["line 900", "line 901", `[exit 0 1730000009] ${NONCE}`], { complete: false }),
+    ).toEqual({
+      lines: ["line 900", "line 901"],
+      exitCode: 0,
+      durationSeconds: null,
+      screen: false,
+    });
   });
 
   it("ignores another run's status line", () => {
     const other = [...screen.slice(0, 6), "[exit 0 1730000003] paseo-run-other"];
-    expect(readRunOutput({ lines: other, nonce: NONCE, complete: true }).exitCode).toBeNull();
+    expect(read(other).exitCode).toBeNull();
   });
 });
 
@@ -129,6 +164,12 @@ describe("readRunPrompt", () => {
   it("only looks at the line being waited on", () => {
     expect(readRunPrompt(["Password:", "Done"])).toBeNull();
     expect(readRunPrompt([])).toBeNull();
+  });
+
+  it("finds a prompt above a full-screen program's status bar", () => {
+    const tmux = ["[sudo] password for k:", "", '[chain] 0:sudo*  "omen" 06:12'];
+    expect(readRunPrompt(tmux, true)).toEqual({ kind: "password", sudo: true });
+    expect(readRunPrompt(tmux)).toBeNull();
   });
 });
 

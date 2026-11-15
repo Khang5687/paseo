@@ -382,6 +382,8 @@ export const ja: TranslationResources = {
     copied: "コピーしました",
     noOutput: "まだ出力はありません",
     noOutputFinished: "出力なし",
+    fullScreen:
+      "このコマンドは全画面を描画しました。現在の画面を表示しています。操作するにはターミナルタブで開いてください。",
     startFailed: "コマンドを開始できませんでした",
     closeFailed: "ターミナルを閉じられませんでした",
     hostOffline: "ホストがオフラインです。再接続するとこのコマンドを実行できます。",

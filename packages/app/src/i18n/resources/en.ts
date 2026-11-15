@@ -374,6 +374,8 @@ export const en = {
     copied: "Copied",
     noOutput: "No output yet",
     noOutputFinished: "No output",
+    fullScreen:
+      "This command drew a full screen. Showing it as it is now; open it in the Terminal tab to work with it.",
     startFailed: "Unable to start the command",
     closeFailed: "Unable to close the terminal",
     hostOffline: "Host offline. Reconnect to run this command.",

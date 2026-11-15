@@ -25,6 +25,12 @@ const ASSISTANT_MARKDOWN = [
   "printf 'Proceed? [y/N] '; read -r answer; echo \"answer=$answer\"",
   "```",
   "",
+  "In a full-screen program:",
+  "",
+  "```sh",
+  "printf '\\033[?1049h\\033[HPassword: '; read -rs secret; printf '\\033[?1049l'; echo \"screen=${#secret}\"",
+  "```",
+  "",
   "Later, as admin:",
   "",
   "```",
@@ -84,8 +90,8 @@ test("runs an untagged one-liner by tap and reattaches after reload", async ({ p
   const agent = await openSeededChat(page);
   try {
     const runButtons = page.getByTestId("code-block-run");
-    // Two untagged commands, sh and bash; the output block and the ts fence get no Run.
-    await expect(runButtons).toHaveCount(4);
+    // Two untagged commands, two sh and one bash; the output block and the ts fence get no Run.
+    await expect(runButtons).toHaveCount(5);
     await expect(page.getByTestId("code-run-risk")).toHaveText("Runs as admin");
     const firstRun = await runButtons.first().boundingBox();
     expect(firstRun?.height).toBeGreaterThanOrEqual(44);
@@ -164,6 +170,29 @@ test("answers a yes/no prompt with a chip", async ({ page }) => {
 
     await expect(card.getByText(/Done · exit 0/)).toBeVisible({ timeout: 20_000 });
     await expect(card.getByTestId("code-run-output")).toContainText("answer=y");
+  } finally {
+    await agent.cleanup();
+  }
+});
+
+test("shows a full-screen program's screen and its prompt", async ({ page }) => {
+  const agent = await openSeededChat(page);
+  try {
+    await page.getByTestId("code-block-run").nth(3).click();
+    await page.getByTestId("code-run-confirm").click();
+
+    const card = page.getByTestId("code-run-card");
+    await expect(card.getByTestId("code-run-full-screen")).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByTestId("code-run-output")).toContainText("Password:");
+    const answer = card.getByTestId("code-run-answer");
+    await expect(answer).toHaveAttribute("type", "password");
+    await shot(page, "code-run-full-screen-390");
+    await answer.fill(SECRET);
+    await answer.press("Enter");
+
+    await expect(card.getByText(/Done · exit 0/)).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByTestId("code-run-output")).toContainText(`screen=${SECRET.length}`);
+    await expect(card.getByTestId("code-run-full-screen")).toHaveCount(0);
   } finally {
     await agent.cleanup();
   }

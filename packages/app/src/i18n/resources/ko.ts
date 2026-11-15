@@ -378,6 +378,8 @@ export const ko: TranslationResources = {
     copied: "복사됨",
     noOutput: "아직 출력이 없습니다",
     noOutputFinished: "출력 없음",
+    fullScreen:
+      "이 명령은 전체 화면을 그렸습니다. 현재 화면을 표시합니다. 조작하려면 터미널 탭에서 여세요.",
     startFailed: "명령을 시작하지 못했습니다",
     closeFailed: "터미널을 닫지 못했습니다",
     hostOffline: "호스트가 오프라인입니다. 다시 연결하면 이 명령을 실행할 수 있습니다.",

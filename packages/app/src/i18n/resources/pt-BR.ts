@@ -381,6 +381,8 @@ export const ptBR: TranslationResources = {
     copied: "Copiado",
     noOutput: "Nenhuma saída ainda",
     noOutputFinished: "Nenhuma saída",
+    fullScreen:
+      "Este comando desenhou uma tela cheia. Ela aparece como está agora; abra-a na aba Terminal para usá-la.",
     startFailed: "Não foi possível iniciar o comando",
     closeFailed: "Não foi possível fechar o terminal",
     hostOffline: "Host offline. Reconecte para executar este comando.",

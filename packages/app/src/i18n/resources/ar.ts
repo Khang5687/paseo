@@ -377,6 +377,8 @@ export const ar: TranslationResources = {
     copied: "تم النسخ",
     noOutput: "لا توجد مخرجات بعد",
     noOutputFinished: "لا توجد مخرجات",
+    fullScreen:
+      "رسم هذا الأمر شاشة كاملة. تُعرض كما هي الآن؛ افتحها في علامة تبويب الطرفية للعمل عليها.",
     startFailed: "تعذر بدء الأمر",
     closeFailed: "تعذر إغلاق الطرفية",
     hostOffline: "المضيف غير متصل. أعد الاتصال لتشغيل هذا الأمر.",
