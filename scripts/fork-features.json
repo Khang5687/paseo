@@ -987,5 +987,13 @@
     "pr": 131,
     "title": "fix(app): the composer grip crashes the app on Android and iOS",
     "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
+  },
+  {
+    "pr": 133,
+    "title": "fix(app): open schemeless web addresses and stop linking host-led paths",
+    "tests": [
+      "packages/app/src/components/markdown/renderer.test.ts",
+      "packages/app/src/assistant-file-links/resolver.test.ts"
+    ]
   }
 ]
