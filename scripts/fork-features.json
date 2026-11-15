@@ -988,5 +988,10 @@
     "title": "fix(app): show a full-screen program's screen in the Run card",
     "tests": ["packages/app/src/code-run/command.test.ts"],
     "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+  },
+  {
+    "pr": 131,
+    "title": "fix(app): the composer grip crashes the app on Android and iOS",
+    "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
   }
 ]

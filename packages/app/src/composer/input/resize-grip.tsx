@@ -14,6 +14,17 @@ interface ComposerResizeGripProps {
   onReset: () => void;
 }
 
+// The worklets Babel plugin turns every gesture callback into a worklet and builds its
+// closure from the callback's free variables when the gesture is created, even with
+// runOnJS(true). A bare `document` in a callback is read at render and throws on native,
+// where it does not exist, so callbacks reach the DOM only through this function.
+/** Sets the page cursor and returns the previous one. Web only. */
+function swapPageCursor(cursor: string): string {
+  const previous = document.body.style.cursor;
+  document.body.style.cursor = cursor;
+  return previous;
+}
+
 /**
  * The grab bar on the composer's top border. Drag sets how tall the input may
  * grow; a double tap or double click goes back to the default.
@@ -41,10 +52,7 @@ export function ComposerResizeGrip(props: ComposerResizeGripProps) {
         state.started = true;
         setDragging(true);
         // The pointer leaves the grip while dragging; keep the resize cursor with it.
-        if (isWeb) {
-          state.cursorBeforeDrag = document.body.style.cursor;
-          document.body.style.cursor = "row-resize";
-        }
+        if (isWeb) state.cursorBeforeDrag = swapPageCursor("row-resize");
         callbacksRef.current.onDragStart();
       })
       .onUpdate((event) =>
@@ -55,7 +63,7 @@ export function ComposerResizeGrip(props: ComposerResizeGripProps) {
         if (!state.started) return;
         state.started = false;
         setDragging(false);
-        if (isWeb) document.body.style.cursor = state.cursorBeforeDrag;
+        if (isWeb) swapPageCursor(state.cursorBeforeDrag);
         callbacksRef.current.onDragEnd();
       });
     const reset = Gesture.Tap()
