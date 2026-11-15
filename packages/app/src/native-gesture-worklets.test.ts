@@ -26,7 +26,7 @@ function workletClosureNames(file: string): string[] {
   const result = transformSync(readFileSync(file, "utf8"), {
     cwd: appDir,
     filename: file,
-    caller: { name: "metro", bundler: "metro", platform: "android" },
+    caller: { name: "metro", platform: "android" },
     envName: "production",
   });
   const names = [...(result?.code ?? "").matchAll(/\.__closure=\{([^}]*)\}/g)].flatMap((match) =>
