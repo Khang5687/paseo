@@ -987,5 +987,10 @@
     "pr": 131,
     "title": "fix(app): the composer grip crashes the app on Android and iOS",
     "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
+  },
+  {
+    "pr": 132,
+    "title": "refactor(omp): pass the todo reader in the history input object (fork port of #128 update)",
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.history-purpose.test.ts"]
   }
 ]
