@@ -2175,7 +2175,7 @@ export const ptBR: TranslationResources = {
     autoSave: {
       label: "Salvar arquivos do chat automaticamente",
       description:
-        "Salva os arquivos citados nos chats que você abre, só no Wi-Fi, para abri-los quando o host estiver offline.",
+        "Salva os arquivos citados nos chats que você abre, para abri-los quando o host estiver offline.",
     },
     retentionDays: {
       label: "Manter por (dias)",
@@ -2191,7 +2191,7 @@ export const ptBR: TranslationResources = {
     },
     saved: {
       label: "Salvos: {{count}} arquivos, {{size}}",
-      description: "Os arquivos salvos mais recentes aparecem abaixo.",
+      description: "Agrupados por host. Toque e segure um arquivo para removê-lo.",
     },
     clearAll: "Limpar tudo",
     clearConfirmTitle: "Limpar arquivos offline?",
@@ -2203,6 +2203,22 @@ export const ptBR: TranslationResources = {
     readOnly: "Esta é uma cópia salva. Conecte-se ao host para editá-la.",
     savedAgo: "Cópia offline, salva {{time}}",
     share: "Compartilhar",
+    wifiOnly: {
+      label: "Salvar só no Wi-Fi",
+      description: "O salvamento automático espera o Wi-Fi para não usar dados móveis.",
+    },
+    search: "Buscar arquivos salvos",
+    noMatches: "Nenhum arquivo salvo corresponde.",
+    remove: "Remover",
+    removeHint: "Toque e segure para remover a cópia salva",
+    removeConfirmTitle: "Remover {{name}}?",
+    removeConfirmMessage: "A cópia salva é apagada deste dispositivo. O arquivo no host não muda.",
+    hostCopies: {
+      title: "Cópias em {{host}}",
+      usage: "{{count}} arquivos, {{size}}",
+      description: "Os arquivos que seus agentes citam são copiados para {{host}}, para abrir enquanto o host deles dorme.",
+      keepDays: "Cópias não citadas de novo por esse número de dias são removidas.",
+    },
   },
   menu: {
     backdrop: "Fundo do menu",

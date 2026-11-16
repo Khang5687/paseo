@@ -2117,7 +2117,7 @@ export const zhCN: TranslationResources = {
     title: "离线文件",
     autoSave: {
       label: "自动保存聊天中的文件",
-      description: "仅在 Wi-Fi 下保存你打开的聊天中提到的文件，主机离线时也能打开。",
+      description: "保存你打开的聊天中提到的文件，主机离线时也能打开。",
     },
     retentionDays: {
       label: "保留天数",
@@ -2133,7 +2133,7 @@ export const zhCN: TranslationResources = {
     },
     saved: {
       label: "已保存：{{count}} 个文件，{{size}}",
-      description: "下方列出最近保存的文件。",
+      description: "按主机分组。长按文件可移除。",
     },
     clearAll: "全部清除",
     clearConfirmTitle: "清除离线文件？",
@@ -2144,6 +2144,22 @@ export const zhCN: TranslationResources = {
     readOnly: "这是已保存的副本。连接主机后才能编辑。",
     savedAgo: "离线副本，保存于 {{time}}",
     share: "分享",
+    wifiOnly: {
+      label: "仅在 Wi-Fi 下保存",
+      description: "自动保存会等待 Wi-Fi，不消耗移动数据。",
+    },
+    search: "搜索已保存的文件",
+    noMatches: "没有匹配的已保存文件。",
+    remove: "移除",
+    removeHint: "长按移除已保存的副本",
+    removeConfirmTitle: "移除 {{name}}？",
+    removeConfirmMessage: "已保存的副本会从此设备删除，主机上的文件不受影响。",
+    hostCopies: {
+      title: "{{host}} 上的副本",
+      usage: "{{count}} 个文件，{{size}}",
+      description: "智能体链接的文件会复制到 {{host}}，原主机休眠时也能打开。",
+      keepDays: "超过此天数未再被链接的副本会被删除。",
+    },
   },
   menu: {
     backdrop: "菜单背景",

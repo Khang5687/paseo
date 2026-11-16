@@ -209,6 +209,14 @@ export function clearOfflineFiles(): Promise<void> {
   });
 }
 
+export function removeOfflineFile(serverId: string, path: string): Promise<void> {
+  return mutate(async (current) => {
+    const removed = current.filter((entry) => sameFile(entry, serverId, path));
+    if (removed.length > 0) await deleteAttachments(removed.map((entry) => entry.attachment));
+    return { next: current.filter((entry) => !sameFile(entry, serverId, path)), result: undefined };
+  });
+}
+
 export function readOfflineFileBytes(entry: OfflineFile): Promise<Uint8Array> {
   return readAttachmentBytes(entry.attachment);
 }

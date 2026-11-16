@@ -2167,7 +2167,7 @@ export const en = {
     autoSave: {
       label: "Save chat files automatically",
       description:
-        "Save files mentioned in chats you open, on Wi-Fi only, so they open while the host is offline.",
+        "Save files mentioned in chats you open, so they open while the host is offline.",
     },
     retentionDays: {
       label: "Keep for (days)",
@@ -2183,7 +2183,7 @@ export const en = {
     },
     saved: {
       label: "Saved: {{count}} files, {{size}}",
-      description: "The newest saved files are listed below.",
+      description: "Grouped by host. Long-press a file to remove it.",
     },
     clearAll: "Clear all",
     clearConfirmTitle: "Clear offline files?",
@@ -2195,6 +2195,22 @@ export const en = {
     readOnly: "This is a saved copy. Connect to the host to edit it.",
     savedAgo: "Offline copy, saved {{time}}",
     share: "Share",
+    wifiOnly: {
+      label: "Save on Wi-Fi only",
+      description: "Automatic saves wait for Wi-Fi so they never use mobile data.",
+    },
+    search: "Search saved files",
+    noMatches: "No saved files match.",
+    remove: "Remove",
+    removeHint: "Long-press to remove the saved copy",
+    removeConfirmTitle: "Remove {{name}}?",
+    removeConfirmMessage: "The saved copy is deleted from this device. The file on the host is not touched.",
+    hostCopies: {
+      title: "Copies on {{host}}",
+      usage: "{{count}} files, {{size}}",
+      description: "Files your agents link are copied to {{host}}, so they open while their own host sleeps.",
+      keepDays: "Copies not linked again for this many days are removed.",
+    },
   },
   menu: {
     backdrop: "Menu backdrop",

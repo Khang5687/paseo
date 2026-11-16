@@ -13,6 +13,8 @@ import { FilePanelPicker, FilePanelView, useFilePanelChoice, type FilePanel } fr
 import { resolveFilePreviewReadTarget } from "@/file-explorer/preview-target";
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
+import { useAppSettings } from "@/hooks/use-settings";
+import { useHostCopy } from "@/offline-files/host-copy";
 import { readOfflineFileBytes, useOfflineFiles, type OfflineFile } from "@/offline-files/store";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { shareFileBytes } from "@/stores/download-store";
@@ -66,7 +68,8 @@ export function FilePane({
   // A hidden tab or a backgrounded app stops observing; observing again reports what changed.
   const isActive = useRetainedPanelActive();
   const isAppVisible = useAppActivelyVisible();
-  // With the host offline, a saved copy stands in for the file.
+  // With the host offline, a saved copy stands in for the file: this device's own, else the one
+  // another host keeps.
   const hostConnected = useHostRuntimeIsConnected(serverId);
   const offlineFiles = useOfflineFiles();
   const offlineCopy = useMemo(
@@ -78,6 +81,12 @@ export function FilePane({
           ) ?? null),
     [absolutePath, connected, hostConnected, offlineFiles, serverId],
   );
+  const hostCopy = useHostCopy({
+    serverId,
+    path: absolutePath,
+    enabled: !(connected && hostConnected) && offlineFiles !== null && !offlineCopy && !!target,
+  });
+  const { settings } = useAppSettings();
   const handle = useFileHandle({
     serverId,
     target,
@@ -108,9 +117,15 @@ export function FilePane({
 
   const offlineBar = offlineCopy ? <OfflineCopyBar entry={offlineCopy} /> : null;
   let body;
-  if (!connected && !offlineCopy && target) {
+  if (hostCopy === "tooLarge") {
+    body = (
+      <Text style={styles.errorText}>
+        {t("offlineFiles.tooLarge", { size: settings.offlineFilesMaxFileMb })}
+      </Text>
+    );
+  } else if (!connected && !offlineCopy && target && hostCopy !== "loading") {
     body = <Text style={styles.errorText}>{t("workspace.terminal.hostDisconnected")}</Text>;
-  } else if (!handle || snapshot.status === "loading") {
+  } else if (!handle || snapshot.status === "loading" || hostCopy === "loading") {
     return (
       <View style={styles.container} testID="workspace-file-pane">
         <FilePanelLoading />

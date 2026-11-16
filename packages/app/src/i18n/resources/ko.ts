@@ -2152,7 +2152,7 @@ export const ko: TranslationResources = {
     autoSave: {
       label: "채팅 파일 자동 저장",
       description:
-        "연 채팅에 언급된 파일을 Wi-Fi에서만 저장해 호스트가 오프라인일 때도 열 수 있게 합니다.",
+        "연 채팅에 언급된 파일을 저장해 호스트가 오프라인일 때도 열 수 있게 합니다.",
     },
     retentionDays: {
       label: "보관 기간(일)",
@@ -2168,7 +2168,7 @@ export const ko: TranslationResources = {
     },
     saved: {
       label: "저장됨: 파일 {{count}}개, {{size}}",
-      description: "최근 저장한 파일이 아래에 표시됩니다.",
+      description: "호스트별로 묶어 표시합니다. 파일을 길게 눌러 삭제합니다.",
     },
     clearAll: "모두 지우기",
     clearConfirmTitle: "오프라인 파일을 지울까요?",
@@ -2179,6 +2179,22 @@ export const ko: TranslationResources = {
     readOnly: "저장된 사본입니다. 수정하려면 호스트에 연결하세요.",
     savedAgo: "오프라인 사본, {{time}} 저장",
     share: "공유",
+    wifiOnly: {
+      label: "Wi-Fi에서만 저장",
+      description: "자동 저장은 Wi-Fi를 기다려 모바일 데이터를 쓰지 않습니다.",
+    },
+    search: "저장된 파일 검색",
+    noMatches: "일치하는 저장 파일이 없습니다.",
+    remove: "삭제",
+    removeHint: "길게 눌러 저장된 사본 삭제",
+    removeConfirmTitle: "{{name}}을(를) 삭제할까요?",
+    removeConfirmMessage: "이 기기에서 저장된 사본을 삭제합니다. 호스트의 파일은 그대로입니다.",
+    hostCopies: {
+      title: "{{host}}의 사본",
+      usage: "파일 {{count}}개, {{size}}",
+      description: "에이전트가 링크한 파일을 {{host}}에 복사해 원래 호스트가 잠들어도 열 수 있게 합니다.",
+      keepDays: "이 기간 동안 다시 링크되지 않은 사본은 삭제됩니다.",
+    },
   },
   menu: {
     backdrop: "메뉴 배경",
