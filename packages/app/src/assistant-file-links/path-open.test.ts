@@ -186,10 +186,10 @@ it("opens a file outside the workspace on the host that has it, and keeps worksp
   const opener = createInlinePathOpener({
     workspaceRoot: "/Users/me/repo",
     client: null,
-    pickHost: async (path) => {
-      asked.push(path);
-      if (path === "~/notes/plan.md") return { kind: "otherHost", serverId: "omen" };
-      if (path === "/tmp/cancelled.md") return { kind: "cancelled" };
+    pickHost: async (filePath) => {
+      asked.push(filePath);
+      if (filePath === "~/notes/plan.md") return { kind: "otherHost", serverId: "omen" };
+      if (filePath === "/tmp/cancelled.md") return { kind: "cancelled" };
       return { kind: "chatHost" };
     },
     openFile: (location) => {
