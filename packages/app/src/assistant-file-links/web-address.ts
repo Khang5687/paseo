@@ -8,10 +8,13 @@ import { ASSISTANT_FILE_EXTENSIONS } from "./extensions";
 export const DOMAIN_LIKE_SEGMENT = String.raw`[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+`;
 
 // Quotes and unbalanced closing parentheses end a URL. Trailing sentence punctuation stays outside.
-const URL_CHARACTER = String.raw`[^\s<>()"'\x60]`;
+// CJK, fullwidth and typographic punctuation (、。，（）【】「」“”…) also ends it; CJK letters do not.
+const URL_BOUNDARY =
+  "\\u2018\\u2019\\u201C\\u201D\\u2026\\u3000-\\u3003\\u3008-\\u3011\\u3014-\\u301F\\uFF01-\\uFF0F\\uFF1A-\\uFF20\\uFF3B-\\uFF40\\uFF5B-\\uFF65";
+const URL_CHARACTER = String.raw`[^\s<>()"'\x60${URL_BOUNDARY}]`;
 const URL_GROUP = String.raw`\(${URL_CHARACTER}*\)`;
 /** Everything after `scheme://` or after a bare host. */
-export const URL_TAIL = String.raw`(?:${URL_CHARACTER}|${URL_GROUP})*(?:[^\s<>()"'\x60.,;:!?]|${URL_GROUP})`;
+export const URL_TAIL = String.raw`(?:${URL_CHARACTER}|${URL_GROUP})*(?:[^\s<>()"'\x60.,;:!?${URL_BOUNDARY}]|${URL_GROUP})`;
 
 // A file extension as the last label is a product name in prose (`Node.js/Deno`), not a host.
 const EXTENSION_LABEL = [...ASSISTANT_FILE_EXTENSIONS]
