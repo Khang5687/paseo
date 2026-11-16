@@ -38,7 +38,7 @@ test.describe("Files named in a chat open from any host", () => {
     const secondaryHome = mkdtempSync(path.join(tmpdir(), "paseo-any-host-secondary-"));
     const secondaryServerId = `srv_anyhost_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const secondary = await startIsolatedHostDaemon(secondaryServerId, {
-      environment: { HOME: secondaryHome, USERPROFILE: secondaryHome },
+      environment: { ...process.env, HOME: secondaryHome, USERPROFILE: secondaryHome },
     });
     const session = await seedMockAgentWorkspace({
       repoPrefix: "assistant-file-link-any-host-",
@@ -61,7 +61,7 @@ test.describe("Files named in a chat open from any host", () => {
       });
       await waitForConnectedHost(page, {
         serverId: secondary.serverId,
-        endpoint: `127.0.0.1:${secondary.port}`,
+        endpoint: `localhost:${secondary.port}`,
       });
 
       // Only the secondary host has it: it opens from there without asking.
