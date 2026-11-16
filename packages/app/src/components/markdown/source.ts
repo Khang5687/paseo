@@ -318,8 +318,10 @@ export function prepareMarkdownSource(
     }
   }
   // A fence that holds nothing but file paths is a list of files, not code. It renders as
-  // inline code, one path per line, so each path gets the link and its menu.
+  // inline code, one path per line, so each path gets the link and its menu. External Markdown
+  // names no files, so its fences stay code.
   function rewritePathFence(start: number, end: number, value: string) {
+    if (external) return;
     const raw = source.slice(start, end);
     const marker = /^(`{3,}|~{3,})/.exec(raw)?.[1];
     // Inside a quote every fence line carries the `>` markers.
@@ -383,7 +385,7 @@ export function prepareMarkdownSource(
       const start = position.start.offset;
       const end = position.end.offset;
       if (node.type === "code") {
-        if (!external) rewritePathFence(start, end, node.value);
+        rewritePathFence(start, end, node.value);
         return;
       }
       if (node.type === "paragraph") splitStandaloneImages(node, start, end);
