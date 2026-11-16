@@ -65,7 +65,10 @@ const useHostChooserStore = create<HostChooserState>((set, get) => ({
  * Asks which of `serverIds` to use, outside React. Resolves null when the chooser closes without
  * a choice. Needs `HostChooserModal` mounted, as the app root does.
  */
-export function chooseHostFrom(input: { title: string; serverIds: string[] }): Promise<string | null> {
+export function chooseHostFrom(input: {
+  title: string;
+  serverIds: string[];
+}): Promise<string | null> {
   // Executor form: no shipped app code relies on Promise.withResolvers under Hermes.
   let resolve!: (serverId: string | null) => void;
   const promise = new Promise<string | null>((settle) => {

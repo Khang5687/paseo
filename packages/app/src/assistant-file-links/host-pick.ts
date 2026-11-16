@@ -73,13 +73,9 @@ export async function pickFileHost(input: {
 }): Promise<FileHostPick> {
   const matches = await findFileHosts({ path: input.path, hosts: input.hosts });
   const serverId =
-    matches.length > 1
-      ? await input.choose(matches)
-      : (matches[0]?.serverId ?? input.chatServerId);
+    matches.length > 1 ? await input.choose(matches) : (matches[0]?.serverId ?? input.chatServerId);
   if (!serverId) return { kind: "cancelled" };
-  return serverId === input.chatServerId
-    ? { kind: "chatHost" }
-    : { kind: "otherHost", serverId };
+  return serverId === input.chatServerId ? { kind: "chatHost" } : { kind: "otherHost", serverId };
 }
 
 function splitParent(path: string): { cwd: string; directory: string; name: string } | null {
@@ -92,17 +88,9 @@ function splitParent(path: string): { cwd: string; directory: string; name: stri
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
   });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
