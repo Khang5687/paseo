@@ -9,6 +9,7 @@ import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../messages.js";
 import { FILE_EXPLORER_STREAM_CHUNK_BYTES } from "../file-explorer/service.js";
 import type { FileCopies } from "./service.js";
+import { copyUploadDir, FILE_COPY_UPLOAD_NAME } from "./uploads.js";
 
 export interface FileCopiesSessionHost {
   emit(msg: SessionOutboundMessage, source?: object): void;
@@ -19,9 +20,6 @@ export interface FileCopiesSessionHost {
 }
 
 type FileCopiesRequest = Extract<SessionInboundMessage, { type: `files.copies.${string}` }>;
-
-// Uploads land in `$PASEO_HOME/uploads/<id>/<name>`; see FileUploadStore.
-const UPLOAD_ID = /^upload_[0-9a-f-]{36}$/;
 
 /** The `files.copies.*` requests of one client session. */
 export class FileCopiesSession {
@@ -67,11 +65,13 @@ export class FileCopiesSession {
       }
       case "files.copies.put.request": {
         const sourceServerId = this.requireProducer();
-        if (!UPLOAD_ID.test(request.uploadId)) throw new Error("Unknown upload");
-        const uploadDir = path.join(this.paseoHome, "uploads", request.uploadId);
+        const uploadDir = copyUploadDir(this.paseoHome, request.uploadId);
+        // Only a copy upload may be taken; another feature's upload is left alone.
+        const names = await fs.readdir(uploadDir).catch(() => null);
+        if (names?.length !== 1 || names[0] !== FILE_COPY_UPLOAD_NAME) {
+          throw new Error("Unknown upload");
+        }
         try {
-          const names = await fs.readdir(uploadDir);
-          if (names.length !== 1) throw new Error("Unknown upload");
           const entry = await store.put({
             sourceServerId,
             sourceHome: request.sourceHome,
@@ -80,7 +80,7 @@ export class FileCopiesSession {
             mimeType: request.mimeType,
             modifiedAt: request.modifiedAt,
             revision: request.revision,
-            file: path.join(uploadDir, names[0]),
+            file: path.join(uploadDir, FILE_COPY_UPLOAD_NAME),
           });
           return { type: "files.copies.put.response", payload: { requestId, entry, error: null } };
         } finally {

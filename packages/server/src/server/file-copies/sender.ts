@@ -11,6 +11,7 @@ import {
 } from "../../utils/directory-suggestions.js";
 import { collectFileMentions } from "./mentions/index.js";
 import type { FileCopies } from "./service.js";
+import { FILE_COPY_UPLOAD_NAME } from "./uploads.js";
 
 export interface FileCopySenderOptions {
   agentManager: Pick<AgentManager, "subscribe" | "getAgent" | "getLastAssistantMessage">;
@@ -110,7 +111,7 @@ export class FileCopySender {
           });
           if (bytes.size > settings.maxFileBytes) continue;
           const upload = await client.uploadFile({
-            fileName: path.basename(file.path),
+            fileName: FILE_COPY_UPLOAD_NAME,
             mimeType: bytes.mimeType,
             bytes: bytes.bytes,
             modifiedAt: bytes.modifiedAt,
@@ -132,8 +133,8 @@ export class FileCopySender {
     });
   }
 
-  /** Existing regular files the reply names, at or under the per-file limit. */
-  private async findMentionedFiles(
+  /** Existing regular files the reply names, at or under the per-file limit, minus secrets. */
+  async findMentionedFiles(
     text: string,
     cwd: string,
     maxFileBytes: number,
@@ -145,7 +146,18 @@ export class FileCopySender {
           ? this.absolutePath(mention.path, cwd)
           : await this.lookUp(mention.ambiguousQuery, cwd);
       if (!candidate || files.has(candidate)) continue;
-      const stats = await fs.stat(candidate, { bigint: true }).catch(() => null);
+      if (isSecretPath(candidate, this.homeDir)) {
+        this.logger.debug({ path: candidate }, "Not copying a secret file");
+        continue;
+      }
+      // A link elsewhere can point into ~/.ssh; check where it really leads too.
+      const target = await fs.realpath(candidate).catch(() => null);
+      if (!target) continue;
+      if (target !== candidate && isSecretPath(target, this.homeDir)) {
+        this.logger.debug({ path: candidate, target }, "Not copying a link to a secret file");
+        continue;
+      }
+      const stats = await fs.stat(target, { bigint: true }).catch(() => null);
       if (!stats?.isFile() || stats.size > BigInt(maxFileBytes)) continue;
       // Same revision format as the file explorer's, so a later read can compare them.
       files.set(candidate, {
@@ -182,4 +194,17 @@ export class FileCopySender {
     }).catch(() => []);
     return match ? path.join(cwd, match.path) : null;
   }
+}
+
+// Owner decision Q62: never copy these, even to the owner's own host.
+const SECRET_NAME = /^(\.env.*|.*\.pem|.*\.key|id_.*)$/i;
+const SECRET_HOME_DIRS = [".ssh", ".paseo"];
+
+/** Keys, env files and anything under `~/.ssh` or `~/.paseo` on this host. */
+export function isSecretPath(absolutePath: string, homeDir: string): boolean {
+  if (SECRET_NAME.test(path.basename(absolutePath))) return true;
+  return SECRET_HOME_DIRS.some((dir) => {
+    const relative = path.relative(path.join(homeDir, dir), absolutePath);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  });
 }

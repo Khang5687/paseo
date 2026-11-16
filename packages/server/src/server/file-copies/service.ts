@@ -3,6 +3,7 @@ import type { FileCopySettings } from "@getpaseo/protocol/file-copies/schemas";
 import type { DaemonConfigStore, FileCopiesConfigPatch } from "../daemon-config-store.js";
 import type { PersistedFileCopiesConfig } from "../persisted-config.js";
 import { DEFAULT_FILE_COPY_LIMITS, FileCopyStore, type FileCopyLimits } from "./store.js";
+import { removeLeftoverCopyUploads } from "./uploads.js";
 
 export type FileCopiesConfigSource = Pick<DaemonConfigStore, "readFileCopies" | "updateFileCopies">;
 
@@ -38,6 +39,11 @@ export class FileCopies {
     });
     await store.start();
     this.started = store;
+    await removeLeftoverCopyUploads(this.options.paseoHome, this.options.logger).catch(
+      (err: unknown) => {
+        this.options.logger.warn({ err }, "Failed to remove leftover file copy uploads");
+      },
+    );
   }
 
   async stop(): Promise<void> {
