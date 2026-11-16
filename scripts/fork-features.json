@@ -987,5 +987,16 @@
     "pr": 131,
     "title": "fix(app): the composer grip crashes the app on Android and iOS",
     "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
+  },
+  {
+    "pr": 134,
+    "title": "feat(server): keep copies of agent-mentioned files on a target host",
+    "tests": [
+      "packages/server/src/server/file-copies/file-copies.e2e.test.ts",
+      "packages/server/src/server/file-copies/store.test.ts",
+      "packages/server/src/server/file-copies/mentions/mentions.test.ts",
+      "packages/server/src/server/file-copies/sender.test.ts",
+      "packages/server/src/server/file-copies/uploads.test.ts"
+    ]
   }
 ]
