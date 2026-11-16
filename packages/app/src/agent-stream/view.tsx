@@ -104,6 +104,7 @@ import { AssistantSelectionCopySurface } from "@/assistant-selection-copy/surfac
 import { ChatNoteRowProvider, ChatNotesProvider } from "@/chat-notes/context";
 import { ChatNotesSurface } from "@/chat-notes/surface";
 import { AssistantFileLinkResolverProvider, createInlinePathOpener } from "@/assistant-file-links";
+import { pickFileHostForChat } from "@/assistant-file-links/host-pick-runtime";
 import { useOfflineAutoSave } from "@/offline-files/use-auto-save";
 import { CodeRunScopeProvider } from "@/code-run/scope";
 import { useOpenOutsideWorkspaceFolder } from "@/workspace/open-in-file-manager/outside-folder";
@@ -485,17 +486,28 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       });
     });
     const openInlineOutsideDirectory = useOpenOutsideWorkspaceFolder(resolvedServerId);
+    const pickInlineFileHost = useStableEvent((path: string) =>
+      pickFileHostForChat({ path, chatServerId: resolvedServerId }),
+    );
     const inlinePathOpener = useMemo(
       () =>
         createInlinePathOpener({
           workspaceRoot,
           resolveRelativeFiles: true,
           client,
+          pickHost: pickInlineFileHost,
           openFile: openInlineFile,
           openDirectory: openInlineDirectory,
           openOutsideDirectory: openInlineOutsideDirectory,
         }),
-      [workspaceRoot, client, openInlineFile, openInlineDirectory, openInlineOutsideDirectory],
+      [
+        workspaceRoot,
+        client,
+        pickInlineFileHost,
+        openInlineFile,
+        openInlineDirectory,
+        openInlineOutsideDirectory,
+      ],
     );
     useEffect(() => {
       if (!isActive) inlinePathOpener.cancel();

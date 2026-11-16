@@ -2265,6 +2265,7 @@ export const ptBR: TranslationResources = {
       documentUnsupported: "Arquivos {{type}} não podem ser exibidos neste dispositivo",
       failedToLoad: "Falha ao carregar arquivo",
       notFound: "Arquivo não encontrado",
+      openFrom: "Abrir de",
       failedToLoadPreview: "Falha ao carregar prévia do arquivo",
       editor: {
         preview: "Prévia",

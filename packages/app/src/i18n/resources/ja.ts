@@ -2251,6 +2251,7 @@ export const ja: TranslationResources = {
       documentUnsupported: "{{type}} ファイルはこのデバイスでは表示できません",
       failedToLoad: "ファイルの読み込みに失敗しました",
       notFound: "ファイルが見つかりません",
+      openFrom: "開く場所",
       failedToLoadPreview: "ファイルプレビューの読み込みに失敗しました",
       editor: {
         preview: "プレビュー",

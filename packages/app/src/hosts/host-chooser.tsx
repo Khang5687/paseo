@@ -32,23 +32,53 @@ interface HostChoiceRequest {
   title: string;
   serverIds: string[];
   onChooseHost: HostChoiceHandler;
+  /** Runs when the chooser closes without a choice, or a newer request replaces it. */
+  onCancel?: () => void;
 }
 
 interface HostChooserState {
   request: HostChoiceRequest | null;
   open: (request: Omit<HostChoiceRequest, "id">) => void;
+  /** Closes without a choice. */
   close: () => void;
+  /** Closes after a choice. */
+  finish: () => void;
 }
 
 let nextRequestId = 1;
 
-const useHostChooserStore = create<HostChooserState>((set) => ({
+const useHostChooserStore = create<HostChooserState>((set, get) => ({
   request: null,
   open: (request) => {
+    get().request?.onCancel?.();
     set({ request: { ...request, id: nextRequestId++ } });
   },
-  close: () => set({ request: null }),
+  close: () => {
+    const request = get().request;
+    set({ request: null });
+    request?.onCancel?.();
+  },
+  finish: () => set({ request: null }),
 }));
+
+/**
+ * Asks which of `serverIds` to use, outside React. Resolves null when the chooser closes without
+ * a choice. Needs `HostChooserModal` mounted, as the app root does.
+ */
+export function chooseHostFrom(input: { title: string; serverIds: string[] }): Promise<string | null> {
+  // Executor form: no shipped app code relies on Promise.withResolvers under Hermes.
+  let resolve!: (serverId: string | null) => void;
+  const promise = new Promise<string | null>((settle) => {
+    resolve = settle;
+  });
+  useHostChooserStore.getState().open({
+    title: input.title,
+    serverIds: input.serverIds,
+    onChooseHost: resolve,
+    onCancel: () => resolve(null),
+  });
+  return promise;
+}
 
 function matchesHostQuery(host: HostProfile, query: string): boolean {
   const normalized = query.trim().toLowerCase();
@@ -139,6 +169,7 @@ export function HostChooserModal() {
   const hosts = useHosts();
   const request = useHostChooserStore((state) => state.request);
   const close = useHostChooserStore((state) => state.close);
+  const finish = useHostChooserStore((state) => state.finish);
   const inputRef = useRef<EditingTextInputHandle>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -176,11 +207,11 @@ export function HostChooserModal() {
   const chooseHost = useCallback(
     (serverId: string) => {
       const currentRequest = request;
-      close();
+      finish();
       if (!currentRequest) return;
       void currentRequest.onChooseHost(serverId);
     },
-    [close, request],
+    [finish, request],
   );
 
   const handleOverlayKeyDown = useCallback(

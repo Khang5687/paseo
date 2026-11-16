@@ -2279,6 +2279,7 @@ export const fr: TranslationResources = {
       documentUnsupported: "Les fichiers {{type}} ne peuvent pas être affichés sur cet appareil",
       failedToLoad: "Impossible de charger le fichier",
       notFound: "Fichier introuvable",
+      openFrom: "Ouvrir depuis",
       failedToLoadPreview: "Impossible de charger l’aperçu du fichier",
       editor: {
         preview: "Aperçu",

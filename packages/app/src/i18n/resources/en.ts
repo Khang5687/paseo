@@ -2257,6 +2257,7 @@ export const en = {
       documentUnsupported: "{{type}} files can't be shown on this device",
       failedToLoad: "Failed to load file",
       notFound: "File not found",
+      openFrom: "Open from",
       failedToLoadPreview: "Failed to load file preview",
       editor: {
         preview: "Preview",
