@@ -68,23 +68,11 @@ export function FilePane({
   // A hidden tab or a backgrounded app stops observing; observing again reports what changed.
   const isActive = useRetainedPanelActive();
   const isAppVisible = useAppActivelyVisible();
-  // With the host offline, a saved copy stands in for the file: this device's own, else the one
-  // another host keeps.
-  const hostConnected = useHostRuntimeIsConnected(serverId);
-  const offlineFiles = useOfflineFiles();
-  const offlineCopy = useMemo(
-    () =>
-      connected && hostConnected
-        ? null
-        : (offlineFiles?.find(
-            (entry) => entry.serverId === serverId && entry.path === absolutePath,
-          ) ?? null),
-    [absolutePath, connected, hostConnected, offlineFiles, serverId],
-  );
-  const hostCopy = useHostCopy({
+  const { offlineCopy, hostCopy } = useOfflineStandIn({
     serverId,
-    path: absolutePath,
-    enabled: !(connected && hostConnected) && offlineFiles !== null && !offlineCopy && !!target,
+    absolutePath,
+    connected,
+    hasTarget: target !== null,
   });
   const { settings } = useAppSettings();
   const handle = useFileHandle({
@@ -174,6 +162,37 @@ export function FilePane({
       <View style={styles.centerState}>{body}</View>
     </View>
   );
+}
+
+/**
+ * With the host offline, a saved copy stands in for the file: this device's own, else the one
+ * another host keeps.
+ */
+function useOfflineStandIn(input: {
+  serverId: string;
+  absolutePath: string;
+  connected: boolean;
+  hasTarget: boolean;
+}) {
+  const { serverId, absolutePath, hasTarget } = input;
+  const hostConnected = useHostRuntimeIsConnected(serverId);
+  const online = input.connected && hostConnected;
+  const offlineFiles = useOfflineFiles();
+  const offlineCopy = useMemo(
+    () =>
+      online
+        ? null
+        : (offlineFiles?.find(
+            (entry) => entry.serverId === serverId && entry.path === absolutePath,
+          ) ?? null),
+    [absolutePath, offlineFiles, online, serverId],
+  );
+  const hostCopy = useHostCopy({
+    serverId,
+    path: absolutePath,
+    enabled: !online && offlineFiles !== null && !offlineCopy && hasTarget,
+  });
+  return { offlineCopy, hostCopy };
 }
 
 /** Says the file is a saved copy and how old it is, and hands it to other apps. */

@@ -30,6 +30,11 @@ interface CopiesClient {
 const PLAN = "notes/plan.md";
 const PLAN_TEXT = "Plan kept while the Mac sleeps";
 
+async function copiedPaths(client: CopiesClient): Promise<string[]> {
+  const { entries } = await client.listFileCopies();
+  return entries.map((entry) => entry.path);
+}
+
 test.describe("Files from a sleeping host", () => {
   test.describe.configure({ timeout: 300_000 });
 
@@ -66,11 +71,7 @@ test.describe("Files from a sleeping host", () => {
         initialPrompt: "Where is the plan?",
         featureValues: { mockAssistantResponse: `The plan is in \`${PLAN}\`.` },
       });
-      await expect
-        .poll(async () => (await omen.listFileCopies()).entries.map((entry) => entry.path), {
-          timeout: 60_000,
-        })
-        .toEqual([planPath]);
+      await expect.poll(() => copiedPaths(omen), { timeout: 60_000 }).toEqual([planPath]);
 
       // The phone has the chat open; the Mac then goes to sleep.
       await page.goto("/");

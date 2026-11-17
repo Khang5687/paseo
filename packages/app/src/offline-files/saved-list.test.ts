@@ -28,6 +28,9 @@ const FILES = [
   saved("srv_gone", "/tmp/old.txt", 10, 9),
 ];
 
+type Group = ReturnType<typeof groupSavedFiles>[number];
+const pathsOf = (group: Group) => group.files.map((file) => file.path);
+
 describe("groupSavedFiles", () => {
   it("groups by host in host order, newest first, with each host's total size", () => {
     const groups = groupSavedFiles(FILES, { query: "", hostOrder: ["srv_mac", "srv_omen"] });
@@ -35,7 +38,7 @@ describe("groupSavedFiles", () => {
       groups.map((group) => ({
         serverId: group.serverId,
         totalBytes: group.totalBytes,
-        paths: group.files.map((file) => file.path),
+        paths: pathsOf(group),
       })),
     ).toEqual([
       {
@@ -51,7 +54,7 @@ describe("groupSavedFiles", () => {
 
   it("keeps only paths containing the search, ignoring case, and drops empty hosts", () => {
     const groups = groupSavedFiles(FILES, { query: " PLAN ", hostOrder: ["srv_mac", "srv_omen"] });
-    expect(groups.map((group) => [group.serverId, group.files.map((file) => file.path)])).toEqual([
+    expect(groups.map((group) => [group.serverId, pathsOf(group)])).toEqual([
       ["srv_mac", ["/Users/k/repo/docs/Plan.md"]],
       ["srv_omen", ["/home/k/notes/plan.md"]],
     ]);

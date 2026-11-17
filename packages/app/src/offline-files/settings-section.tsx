@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@/components/settings";
 import { Button } from "@/components/ui/button";
+import { PressHighlight } from "@/components/ui/press-highlight";
 import { FormTextInput } from "@/components/ui/form-field";
 import {
   OFFLINE_FILE_LIMITS,
@@ -104,14 +105,12 @@ export function OfflineFilesSection() {
           testID="offline-files-wifi-only"
         />
         {LIMIT_KEYS.map(({ key, text }) => (
-          <NumberLimitRow
+          <AppLimitRow
             key={key}
-            label={t(`offlineFiles.${text}.label`)}
-            hint={t(`offlineFiles.${text}.description`)}
+            limitKey={key}
+            text={text}
             value={settings[key]}
-            bounds={LIMIT_BOUNDS[key]}
-            onCommit={(value) => void changeLimit(key, value)}
-            testID={`offline-files-${key}`}
+            onChange={changeLimit}
           />
         ))}
       </SettingsCard>
@@ -169,6 +168,31 @@ export function OfflineFilesSection() {
   );
 }
 
+function AppLimitRow({
+  limitKey,
+  text,
+  value,
+  onChange,
+}: {
+  limitKey: LimitKey;
+  text: (typeof LIMIT_KEYS)[number]["text"];
+  value: number;
+  onChange: (key: LimitKey, value: number) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const commit = useCallback((next: number) => void onChange(limitKey, next), [limitKey, onChange]);
+  return (
+    <NumberLimitRow
+      label={t(`offlineFiles.${text}.label`)}
+      hint={t(`offlineFiles.${text}.description`)}
+      value={value}
+      bounds={LIMIT_BOUNDS[limitKey]}
+      onCommit={commit}
+      testID={`offline-files-${limitKey}`}
+    />
+  );
+}
+
 /** Long-press removes the saved copy, after a confirm. */
 function SavedFileRow({ file }: { file: OfflineFile }) {
   const { t } = useTranslation();
@@ -183,7 +207,7 @@ function SavedFileRow({ file }: { file: OfflineFile }) {
     if (confirmed) await removeOfflineFile(file.serverId, file.path);
   }, [file.path, file.serverId, name, t]);
   return (
-    <Pressable
+    <PressHighlight
       onLongPress={remove}
       accessibilityHint={t("offlineFiles.removeHint")}
       accessibilityActions={[{ name: "remove", label: t("offlineFiles.remove") }]}
@@ -202,7 +226,7 @@ function SavedFileRow({ file }: { file: OfflineFile }) {
       <Text style={styles.fileMeta}>
         {formatFileSize(file.size)} · {formatTimeAgo(new Date(file.savedAt))}
       </Text>
-    </Pressable>
+    </PressHighlight>
   );
 }
 

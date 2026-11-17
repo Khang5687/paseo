@@ -1,11 +1,12 @@
 import { useCallback, useMemo } from "react";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type {
   FileCopiesSettingsPayload,
   UpdateFileCopySettingsOptions,
 } from "@getpaseo/client/internal/daemon-client";
 import { SettingsCard, SettingsRow, SettingsSection } from "@/components/settings";
+import { useFetchQueries } from "@/data/query";
 import {
   getHostRuntimeStore,
   useHostRuntimeConnectionStatuses,
@@ -49,17 +50,18 @@ export function HostCopiesSection() {
       ),
     [hosts, statuses, withFeature],
   );
-  const results = useQueries({
-    queries: holders.map((host) => ({
+  const results = useFetchQueries<FileCopiesSettingsPayload>(
+    holders.map((host) => ({
       queryKey: settingsKey(host.serverId),
       queryFn: async () => {
         const client = getHostRuntimeStore().getClient(host.serverId);
         if (!client) throw new Error(`Host ${host.serverId} is not connected`);
         return client.getFileCopySettings();
       },
-      staleTime: 30_000,
+      dataShape: "value",
+      staleTimeMs: 30_000,
     })),
-  });
+  );
   const targets = new Set(
     results.flatMap((result) => result.data?.settings?.targetServerId ?? []),
   );
@@ -113,6 +115,15 @@ function HostCopiesCard({
     },
     [queryClient, serverId],
   );
+  const commitKeepDays = useCallback((keepDays: number) => void update({ keepDays }), [update]);
+  const commitMaxTotal = useCallback(
+    (mb: number) => void update({ maxTotalBytes: mb * MB }),
+    [update],
+  );
+  const commitMaxFile = useCallback(
+    (mb: number) => void update({ maxFileBytes: mb * MB }),
+    [update],
+  );
   return (
     <SettingsSection
       title={t("offlineFiles.hostCopies.title", { host: label })}
@@ -132,7 +143,7 @@ function HostCopiesCard({
           hint={t("offlineFiles.hostCopies.keepDays")}
           value={settings.keepDays}
           bounds={HOST_COPY_BOUNDS.keepDays}
-          onCommit={(keepDays) => void update({ keepDays })}
+          onCommit={commitKeepDays}
           testID={`host-copies-keep-days-${serverId}`}
         />
         <NumberLimitRow
@@ -140,7 +151,7 @@ function HostCopiesCard({
           hint={t("offlineFiles.maxTotalMb.description")}
           value={Math.round(settings.maxTotalBytes / MB)}
           bounds={HOST_COPY_BOUNDS.maxTotalMb}
-          onCommit={(mb) => void update({ maxTotalBytes: mb * MB })}
+          onCommit={commitMaxTotal}
           testID={`host-copies-max-total-${serverId}`}
         />
         <NumberLimitRow
@@ -148,7 +159,7 @@ function HostCopiesCard({
           hint={t("offlineFiles.maxFileMb.description")}
           value={Math.round(settings.maxFileBytes / MB)}
           bounds={HOST_COPY_BOUNDS.maxFileMb}
-          onCommit={(mb) => void update({ maxFileBytes: mb * MB })}
+          onCommit={commitMaxFile}
           testID={`host-copies-max-file-${serverId}`}
         />
       </SettingsCard>
