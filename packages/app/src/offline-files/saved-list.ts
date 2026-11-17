@@ -31,7 +31,9 @@ export function groupSavedFiles(
     const index = input.hostOrder.indexOf(serverId);
     return index === -1 ? input.hostOrder.length : index;
   };
-  return [...groups.values()]
-    .map((group) => ({ ...group, files: group.files.sort((a, b) => b.savedAt - a.savedAt) }))
-    .sort((a, b) => rank(a.serverId) - rank(b.serverId) || a.serverId.localeCompare(b.serverId));
+  const result = [...groups.values()];
+  for (const group of result) group.files.sort((a, b) => b.savedAt - a.savedAt);
+  return result.sort(
+    (a, b) => rank(a.serverId) - rank(b.serverId) || a.serverId.localeCompare(b.serverId),
+  );
 }

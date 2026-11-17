@@ -103,7 +103,7 @@ export function FilePane({
     [location.lineEnd, location.lineStart, path],
   );
 
-  const offlineBar = offlineCopy ? <OfflineCopyBar entry={offlineCopy} /> : null;
+  const offlineBar = <OfflineCopyBarFor entry={offlineCopy} />;
   let body;
   if (hostCopy === "tooLarge") {
     body = (
@@ -193,6 +193,10 @@ function useOfflineStandIn(input: {
     enabled: !online && offlineFiles !== null && !offlineCopy && hasTarget,
   });
   return { offlineCopy, hostCopy };
+}
+
+function OfflineCopyBarFor({ entry }: { entry: OfflineFile | null }) {
+  return entry ? <OfflineCopyBar entry={entry} /> : null;
 }
 
 /** Says the file is a saved copy and how old it is, and hands it to other apps. */
