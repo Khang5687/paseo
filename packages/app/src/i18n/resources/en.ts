@@ -2204,11 +2204,13 @@ export const en = {
     remove: "Remove",
     removeHint: "Long-press to remove the saved copy",
     removeConfirmTitle: "Remove {{name}}?",
-    removeConfirmMessage: "The saved copy is deleted from this device. The file on the host is not touched.",
+    removeConfirmMessage:
+      "The saved copy is deleted from this device. The file on the host is not touched.",
     hostCopies: {
       title: "Copies on {{host}}",
       usage: "{{count}} files, {{size}}",
-      description: "Files your agents link are copied to {{host}}, so they open while their own host sleeps.",
+      description:
+        "Files your agents link are copied to {{host}}, so they open while their own host sleeps.",
       keepDays: "Copies not linked again for this many days are removed.",
     },
   },

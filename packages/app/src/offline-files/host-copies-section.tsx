@@ -62,9 +62,7 @@ export function HostCopiesSection() {
       staleTimeMs: 30_000,
     })),
   );
-  const targets = new Set(
-    results.flatMap((result) => result.data?.settings?.targetServerId ?? []),
-  );
+  const targets = new Set(results.flatMap((result) => result.data?.settings?.targetServerId ?? []));
   const receivers = holders.flatMap((host, index) => {
     const data = results[index]?.data;
     if (!data?.settings) return [];
@@ -108,7 +106,10 @@ function HostCopiesCard({
       const client = getHostRuntimeStore().getClient(serverId);
       if (!client) return;
       try {
-        queryClient.setQueryData(settingsKey(serverId), await client.updateFileCopySettings(change));
+        queryClient.setQueryData(
+          settingsKey(serverId),
+          await client.updateFileCopySettings(change),
+        );
       } catch {
         await queryClient.invalidateQueries({ queryKey: settingsKey(serverId) });
       }

@@ -107,9 +107,7 @@ test.describe("Files from a sleeping host", () => {
       await keepDays.tap();
       await keepDays.fill("7");
       await keepDays.press("Enter");
-      await expect
-        .poll(async () => (await omen.getFileCopySettings()).settings?.keepDays)
-        .toBe(7);
+      await expect.poll(async () => (await omen.getFileCopySettings()).settings?.keepDays).toBe(7);
 
       const saved = page.getByTestId(`offline-files-host-${mac.serverId}`);
       await expect(saved.getByText("Mac box")).toBeVisible();

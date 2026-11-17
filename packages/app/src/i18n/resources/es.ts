@@ -2227,11 +2227,13 @@ export const es: TranslationResources = {
     remove: "Quitar",
     removeHint: "Mantén pulsado para quitar la copia guardada",
     removeConfirmTitle: "¿Quitar {{name}}?",
-    removeConfirmMessage: "La copia guardada se borra de este dispositivo. El archivo del host no cambia.",
+    removeConfirmMessage:
+      "La copia guardada se borra de este dispositivo. El archivo del host no cambia.",
     hostCopies: {
       title: "Copias en {{host}}",
       usage: "{{count}} archivos, {{size}}",
-      description: "Los archivos que enlazan tus agentes se copian a {{host}}, para abrirlos mientras su host duerme.",
+      description:
+        "Los archivos que enlazan tus agentes se copian a {{host}}, para abrirlos mientras su host duerme.",
       keepDays: "Las copias que no se vuelven a enlazar en estos días se eliminan.",
     },
   },

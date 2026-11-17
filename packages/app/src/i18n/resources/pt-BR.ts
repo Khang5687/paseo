@@ -2216,7 +2216,8 @@ export const ptBR: TranslationResources = {
     hostCopies: {
       title: "Cópias em {{host}}",
       usage: "{{count}} arquivos, {{size}}",
-      description: "Os arquivos que seus agentes citam são copiados para {{host}}, para abrir enquanto o host deles dorme.",
+      description:
+        "Os arquivos que seus agentes citam são copiados para {{host}}, para abrir enquanto o host deles dorme.",
       keepDays: "Cópias não citadas de novo por esse número de dias são removidas.",
     },
   },

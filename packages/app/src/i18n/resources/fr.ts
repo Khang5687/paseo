@@ -2219,18 +2219,21 @@ export const fr: TranslationResources = {
     share: "Partager",
     wifiOnly: {
       label: "Enregistrer en Wi-Fi uniquement",
-      description: "L'enregistrement automatique attend le Wi-Fi pour ne pas consommer de données mobiles.",
+      description:
+        "L'enregistrement automatique attend le Wi-Fi pour ne pas consommer de données mobiles.",
     },
     search: "Rechercher dans les fichiers enregistrés",
     noMatches: "Aucun fichier enregistré ne correspond.",
     remove: "Retirer",
     removeHint: "Appui long pour retirer la copie enregistrée",
     removeConfirmTitle: "Retirer {{name}} ?",
-    removeConfirmMessage: "La copie enregistrée est supprimée de cet appareil. Le fichier sur l'hôte n'est pas modifié.",
+    removeConfirmMessage:
+      "La copie enregistrée est supprimée de cet appareil. Le fichier sur l'hôte n'est pas modifié.",
     hostCopies: {
       title: "Copies sur {{host}}",
       usage: "{{count}} fichiers, {{size}}",
-      description: "Les fichiers cités par vos agents sont copiés sur {{host}}, pour les ouvrir quand leur hôte est en veille.",
+      description:
+        "Les fichiers cités par vos agents sont copiés sur {{host}}, pour les ouvrir quand leur hôte est en veille.",
       keepDays: "Les copies non citées depuis ce nombre de jours sont supprimées.",
     },
   },

@@ -2151,8 +2151,7 @@ export const ko: TranslationResources = {
     title: "오프라인 파일",
     autoSave: {
       label: "채팅 파일 자동 저장",
-      description:
-        "연 채팅에 언급된 파일을 저장해 호스트가 오프라인일 때도 열 수 있게 합니다.",
+      description: "연 채팅에 언급된 파일을 저장해 호스트가 오프라인일 때도 열 수 있게 합니다.",
     },
     retentionDays: {
       label: "보관 기간(일)",
@@ -2192,7 +2191,8 @@ export const ko: TranslationResources = {
     hostCopies: {
       title: "{{host}}의 사본",
       usage: "파일 {{count}}개, {{size}}",
-      description: "에이전트가 링크한 파일을 {{host}}에 복사해 원래 호스트가 잠들어도 열 수 있게 합니다.",
+      description:
+        "에이전트가 링크한 파일을 {{host}}에 복사해 원래 호스트가 잠들어도 열 수 있게 합니다.",
       keepDays: "이 기간 동안 다시 링크되지 않은 사본은 삭제됩니다.",
     },
   },

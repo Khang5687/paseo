@@ -2198,11 +2198,13 @@ export const ja: TranslationResources = {
     remove: "削除",
     removeHint: "長押しで保存コピーを削除",
     removeConfirmTitle: "{{name}} を削除しますか？",
-    removeConfirmMessage: "このデバイスの保存コピーを削除します。ホスト上のファイルは変わりません。",
+    removeConfirmMessage:
+      "このデバイスの保存コピーを削除します。ホスト上のファイルは変わりません。",
     hostCopies: {
       title: "{{host}} のコピー",
       usage: "{{count}} ファイル、{{size}}",
-      description: "エージェントがリンクしたファイルを {{host}} にコピーし、元のホストがスリープ中でも開けるようにします。",
+      description:
+        "エージェントがリンクしたファイルを {{host}} にコピーし、元のホストがスリープ中でも開けるようにします。",
       keepDays: "この日数リンクされなかったコピーは削除されます。",
     },
   },
