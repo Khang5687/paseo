@@ -395,6 +395,10 @@ export const ru: TranslationResources = {
     startFailed: "Не удалось запустить команду",
     closeFailed: "Не удалось закрыть терминал",
     hostOffline: "Хост не в сети. Подключитесь снова, чтобы запустить эту команду.",
+    hostNotConnected: "{{host}} не подключён",
+    hostUnknown: "{{host}} нет среди ваших хостов",
+    homeUnknown: "{{host}} не сообщил свою домашнюю папку",
+    workspaceFailed: "Не удалось открыть рабочее пространство на {{host}}: {{error}}",
     prompt: {
       sudoPassword: "Пароль sudo",
       password: "Пароль",

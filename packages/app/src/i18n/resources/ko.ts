@@ -392,6 +392,10 @@ export const ko: TranslationResources = {
     startFailed: "명령을 시작하지 못했습니다",
     closeFailed: "터미널을 닫지 못했습니다",
     hostOffline: "호스트가 오프라인입니다. 다시 연결하면 이 명령을 실행할 수 있습니다.",
+    hostNotConnected: "{{host}}이(가) 연결되어 있지 않습니다",
+    hostUnknown: "{{host}}은(는) 내 호스트가 아닙니다",
+    homeUnknown: "{{host}}이(가) 홈 폴더를 알려 주지 않았습니다",
+    workspaceFailed: "{{host}}에서 워크스페이스를 열지 못했습니다: {{error}}",
     prompt: {
       sudoPassword: "sudo 비밀번호",
       password: "비밀번호",

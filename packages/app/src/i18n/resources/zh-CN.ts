@@ -390,6 +390,10 @@ export const zhCN: TranslationResources = {
     startFailed: "无法启动命令",
     closeFailed: "无法关闭终端",
     hostOffline: "主机离线。重新连接后即可运行此命令。",
+    hostNotConnected: "{{host}} 未连接",
+    hostUnknown: "{{host}} 不是你的主机",
+    homeUnknown: "{{host}} 未报告其主目录",
+    workspaceFailed: "无法在 {{host}} 上打开工作区：{{error}}",
     prompt: {
       sudoPassword: "sudo 密码",
       password: "密码",

@@ -3,31 +3,37 @@ import type { Code, Definition, RootContent } from "mdast";
 
 type ExtractedFence =
   | { kind: "mermaid"; source: string }
-  | { kind: "shell"; source: string; language: string };
+  /** `meta`: the info string after the language, where a fence names its run host. */
+  | { kind: "shell"; source: string; language: string; meta: string | null };
 
 export type FenceSegment = (ExtractedFence | { kind: "markdown"; source: string }) & { id: string };
 
 /** Decides whether a fence leaves the library to get a Run control. */
-export type IsShellFence = (language: string, code: string) => boolean;
+export type IsShellFence = (language: string, code: string, meta: string | null) => boolean;
 
 /**
  * Native enriched-markdown has no fenced-block override. Diagrams, and shell fences when the
- * message can run them, leave its engine as separate views.
+ * message can run them, leave its engine as separate views. Web keeps diagrams in the engine
+ * (`diagrams: false`) and splits only shell fences whose info string the engine drops.
  */
 export function splitNativeFences(
   markdown: string,
   isShellFence: IsShellFence | null = null,
+  options: { diagrams?: boolean } = {},
 ): FenceSegment[] {
+  const diagrams = options.diagrams ?? true;
   const mayHaveShell = isShellFence !== null && /```|~~~/.test(markdown);
-  if (!/mermaid/i.test(markdown) && !mayHaveShell)
+  if (!(diagrams && /mermaid/i.test(markdown)) && !mayHaveShell)
     return [{ kind: "markdown", id: "0", source: markdown }];
   const segments: FenceSegment[] = [];
   const definitions = new Map<string, Definition>();
   let cursor = 0;
   function extract(node: Code): ExtractedFence | null {
-    if (node.lang?.toLowerCase() === "mermaid") return { kind: "mermaid", source: node.value };
-    if (isShellFence?.(node.lang ?? "", node.value))
-      return { kind: "shell", source: node.value, language: node.lang ?? "" };
+    if (diagrams && node.lang?.toLowerCase() === "mermaid")
+      return { kind: "mermaid", source: node.value };
+    const meta = node.meta ?? null;
+    if (isShellFence?.(node.lang ?? "", node.value, meta))
+      return { kind: "shell", source: node.value, language: node.lang ?? "", meta };
     return null;
   }
   function visit(node: RootContent): void {

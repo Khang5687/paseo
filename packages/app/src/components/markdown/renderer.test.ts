@@ -660,7 +660,7 @@ it("extracts runnable shell fences only when the message can run them", async ()
   expect(splitNativeFences(source)).toEqual([{ kind: "markdown", id: "0", source }]);
   expect(splitNativeFences(source, isRunnableShellFence)).toEqual([
     { kind: "markdown", id: "0", source: "Run:\n\n" },
-    { kind: "shell", id: "1", source: "npm test", language: "bash" },
+    { kind: "shell", id: "1", source: "npm test", language: "bash", meta: null },
     { kind: "markdown", id: "2", source: "\n\n```ts\nconst n = 1;\n```\n\n```sh\n# note\n```" },
   ]);
 });
@@ -671,9 +671,27 @@ it("extracts an untagged fence only when it reads as a command", async () => {
   const source = "Run this:\n```\nsudo bash /tmp/apply.sh\n```\n\nOutput:\n```\nDone in 3s.\n```";
   expect(splitNativeFences(source, isRunnableShellFence)).toEqual([
     { kind: "markdown", id: "0", source: "Run this:\n" },
-    { kind: "shell", id: "1", source: "sudo bash /tmp/apply.sh", language: "" },
+    { kind: "shell", id: "1", source: "sudo bash /tmp/apply.sh", language: "", meta: null },
     { kind: "markdown", id: "2", source: "\n\nOutput:\n```\nDone in 3s.\n```" },
   ]);
+});
+
+it("keeps a fence's host and folder, and web splits out only those fences", async () => {
+  const { splitNativeFences } = await import("./fence/segments");
+  const { isRunnableShellFence, isRunnableTaggedShellFence } = await import("@/code-run/fence");
+  const tagged = "```bash host=mac cwd=~/src\nls\n```";
+  const rest = "\n\n```bash\npwd\n```\n\n```mermaid\ngraph TD\n```";
+  const shell = {
+    kind: "shell",
+    id: "0",
+    source: "ls",
+    language: "bash",
+    meta: "host=mac cwd=~/src",
+  };
+  expect(splitNativeFences(tagged + rest, isRunnableShellFence)[0]).toEqual(shell);
+  expect(splitNativeFences(tagged + rest, isRunnableTaggedShellFence, { diagrams: false })).toEqual(
+    [shell, { kind: "markdown", id: "1", source: rest }],
+  );
 });
 
 it("keeps reference links available across native Mermaid boundaries", async () => {

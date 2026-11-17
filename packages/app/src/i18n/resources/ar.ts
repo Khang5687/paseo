@@ -391,6 +391,10 @@ export const ar: TranslationResources = {
     startFailed: "تعذر بدء الأمر",
     closeFailed: "تعذر إغلاق الطرفية",
     hostOffline: "المضيف غير متصل. أعد الاتصال لتشغيل هذا الأمر.",
+    hostNotConnected: "{{host}} غير متصل",
+    hostUnknown: "{{host}} ليس من مضيفيك",
+    homeUnknown: "لم يُبلغ {{host}} عن مجلد المنزل",
+    workspaceFailed: "تعذر فتح مساحة عمل على {{host}}: {{error}}",
     prompt: {
       sudoPassword: "كلمة مرور sudo",
       password: "كلمة المرور",

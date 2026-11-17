@@ -507,9 +507,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
     );
     const openCodeRunTerminal = useStableEvent(
-      (input: { workspaceId: string; terminalId: string }) => {
+      (input: { serverId: string; workspaceId: string; terminalId: string }) => {
         navigateToWorkspace({
-          serverId: resolvedServerId,
+          serverId: input.serverId,
           workspaceId: input.workspaceId,
           target: { kind: "terminal", terminalId: input.terminalId },
         });

@@ -1,6 +1,10 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { expect, test, type Page } from "../support/fixtures";
 import { composerLocator } from "../support/helpers/composer";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
+import { getServerId } from "../support/helpers/server-id";
 
 const PHONE = { width: 390, height: 844 };
 const SECRET = "hunter2-secret";
@@ -195,5 +199,90 @@ test("shows a full-screen program's screen and its prompt", async ({ page }) => 
     await expect(card.getByTestId("code-run-full-screen")).toHaveCount(0);
   } finally {
     await agent.cleanup();
+  }
+});
+
+test("runs a host= fence in a hidden workspace and opens its terminal", async ({ page }) => {
+  const serverId = getServerId();
+  const folder = await mkdtemp(path.join(tmpdir(), "code-run-host-"));
+  const fence = (cwd: string, command: string) =>
+    [`\`\`\`bash host=${serverId} cwd=${cwd}`, command, "```"].join("\n");
+  const agent = await seedMockAgentWorkspace({
+    repoPrefix: "code-run-host-chat-",
+    title: "Code run host",
+    initialPrompt: "Show the commands.",
+    featureValues: {
+      mockAssistantResponse: [
+        fence(`${folder}-missing`, "pwd"),
+        fence(folder, 'echo "ran in $PWD"'),
+        fence(folder, 'echo "again in $PWD"'),
+      ].join("\n\n"),
+    },
+  });
+  const hiddenWorkspaces = async () =>
+    (await agent.client.fetchWorkspaces({ includeBackground: true })).entries.filter(
+      (entry) => entry.workspaceDirectory === folder,
+    );
+  try {
+    await agent.client.waitForAgentUpsert(
+      agent.agentId,
+      (snapshot) => snapshot.status === "idle",
+      30_000,
+    );
+    await page.setViewportSize(PHONE);
+    await openAgentRoute(page, agent);
+    const runButtons = page.getByTestId("code-block-run");
+    await expect(runButtons).toHaveCount(3);
+    const cards = page.getByTestId("code-run-card");
+
+    // A folder the host cannot open: the card says why and nothing runs anywhere else.
+    await runButtons.first().click();
+    await cards.nth(0).getByTestId("code-run-confirm").click();
+    await expect(cards.nth(0).getByTestId("code-run-start-failed")).toContainText(
+      "Unable to open a workspace on",
+    );
+    await expect(cards.nth(0).getByTestId("code-run-start-failed")).toContainText(
+      "Directory not found",
+    );
+    await expect(cards.nth(0).getByTestId("code-run-status")).toHaveCount(0);
+
+    // The first run opens one hidden workspace at the folder.
+    await runButtons.first().click();
+    await expect(cards.nth(1).getByTestId("code-run-where")).toContainText(path.basename(folder));
+    await cards.nth(1).getByTestId("code-run-confirm").click();
+    await expect(cards.nth(1).getByText(/Done · exit 0/)).toBeVisible({ timeout: 20_000 });
+    await expect(cards.nth(1).getByTestId("code-run-output")).toContainText(`ran in ${folder}`);
+    const [hidden, ...extra] = await hiddenWorkspaces();
+    expect(hidden?.background).toBe(true);
+    expect(extra).toEqual([]);
+    await cards.nth(1).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath("code-run-host-390.png") });
+
+    // The next run in that folder reuses it.
+    await runButtons.first().click();
+    await cards.nth(2).getByTestId("code-run-confirm").click();
+    await expect(cards.nth(2).getByText(/Done · exit 0/)).toBeVisible({ timeout: 20_000 });
+    await expect(cards.nth(2).getByTestId("code-run-output")).toContainText(`again in ${folder}`);
+    expect((await hiddenWorkspaces()).map((entry) => entry.id)).toEqual([hidden!.id]);
+
+    // Hidden means no sidebar row, while the chat's own workspace keeps one.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(
+      page.getByTestId(`sidebar-workspace-row-${serverId}:${agent.workspaceId}`),
+    ).toBeVisible();
+    await expect(page.getByTestId(`sidebar-workspace-row-${serverId}:${hidden!.id}`)).toHaveCount(
+      0,
+    );
+
+    await cards.nth(1).getByTestId("code-run-open-terminal").click();
+    await expect(page).toHaveURL(new RegExp(hidden!.id));
+    await expect(page.locator('[data-testid="terminal-surface"]:visible').first()).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.screenshot({ path: test.info().outputPath("code-run-host-terminal.png") });
+  } finally {
+    for (const entry of await hiddenWorkspaces()) await agent.client.archiveWorkspace(entry.id);
+    await agent.cleanup();
+    await rm(folder, { recursive: true, force: true });
   }
 });

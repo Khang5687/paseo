@@ -395,6 +395,10 @@ export const ptBR: TranslationResources = {
     startFailed: "Não foi possível iniciar o comando",
     closeFailed: "Não foi possível fechar o terminal",
     hostOffline: "Host offline. Reconecte para executar este comando.",
+    hostNotConnected: "{{host}} não está conectado",
+    hostUnknown: "{{host}} não é um dos seus hosts",
+    homeUnknown: "{{host}} não informou sua pasta pessoal",
+    workspaceFailed: "Não foi possível abrir um workspace em {{host}}: {{error}}",
     prompt: {
       sudoPassword: "Senha do sudo",
       password: "Senha",

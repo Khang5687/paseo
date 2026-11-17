@@ -1,7 +1,12 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { ComposerEditingSession } from "@/composer/editing-session";
 
-/** Where a chat message's commands run: the agent's host and workspace. */
+/**
+ * Where a chat message's commands run: the agent's host and workspace. A fence can name
+ * another host and folder in its info string (```` ```bash host=mac cwd=~/src ````); the host
+ * is a host label (case and spaces ignored) or serverId, and the folder defaults to that
+ * host's home. See `target.ts`.
+ */
 export interface CodeRunScope {
   serverId: string;
   agentId: string;
@@ -9,8 +14,8 @@ export interface CodeRunScope {
   cwd: string;
   /** Identifies the message, so the same command in two replies keeps two runs. */
   messageKey: string;
-  /** Shows a run's terminal as a tab of its workspace. */
-  openTerminal: (input: { workspaceId: string; terminalId: string }) => void;
+  /** Shows a run's terminal as a tab of its workspace, on the host the run lives on. */
+  openTerminal: (input: { serverId: string; workspaceId: string; terminalId: string }) => void;
 }
 
 const ScopeContext = createContext<CodeRunScope | null>(null);
@@ -56,6 +61,11 @@ export function useCodeRunComposerInsert(): ((text: string) => void) | null {
   return useContext(ComposerInsertContext);
 }
 
-export function codeRunKey(scope: CodeRunScope, codeHash: string): string {
-  return [scope.serverId, scope.agentId, scope.messageKey, codeHash].join("\u0000");
+/** `serverId` is the host the run lives on, which a fence's `host=` can make another host. */
+export function codeRunKey(
+  serverId: string,
+  scope: Pick<CodeRunScope, "agentId" | "messageKey">,
+  codeHash: string,
+): string {
+  return [serverId, scope.agentId, scope.messageKey, codeHash].join("\u0000");
 }

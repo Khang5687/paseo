@@ -396,6 +396,10 @@ export const ja: TranslationResources = {
     startFailed: "コマンドを開始できませんでした",
     closeFailed: "ターミナルを閉じられませんでした",
     hostOffline: "ホストがオフラインです。再接続するとこのコマンドを実行できます。",
+    hostNotConnected: "{{host}} は接続されていません",
+    hostUnknown: "{{host}} は登録済みのホストではありません",
+    homeUnknown: "{{host}} がホームフォルダーを報告していません",
+    workspaceFailed: "{{host}} でワークスペースを開けませんでした: {{error}}",
     prompt: {
       sudoPassword: "sudo パスワード",
       password: "パスワード",
