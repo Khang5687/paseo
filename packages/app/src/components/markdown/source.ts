@@ -379,6 +379,18 @@ export function prepareMarkdownSource(
     edits.push({ start, end: labelStart, text: "" });
     edits.push({ start: labelEnd, end, text: "" });
   }
+  // MD4C only recognizes a table header on the first line of a paragraph, so a table right
+  // under a paragraph line gets a blank line between them.
+  function separateTableFromParagraph(node: Nodes, previous: Nodes | undefined, start: number) {
+    if (node.type !== "table" || previous?.type !== "paragraph") return;
+    if (previous.position?.end.line !== (node.position?.start.line ?? 0) - 1) return;
+    const lineStart =
+      Math.max(source.lastIndexOf("\n", start - 1), source.lastIndexOf("\r", start - 1)) + 1;
+    const newline = source.slice(lineStart - 2, lineStart).replace(/[^\r\n]/g, "");
+    const blank = source.slice(lineStart, start).replace(/[^>]/g, " ").trimEnd();
+    const boundary = lineStart - newline.length;
+    edits.push({ start: boundary, end: lineStart, text: `${newline}${blank}${newline}` });
+  }
   function visit(node: Nodes, previous?: Nodes) {
     const position = node.position;
     if (position?.start.offset !== undefined && position.end.offset !== undefined) {
@@ -389,19 +401,7 @@ export function prepareMarkdownSource(
         return;
       }
       if (node.type === "paragraph") splitStandaloneImages(node, start, end);
-      if (
-        node.type === "table" &&
-        previous?.type === "paragraph" &&
-        previous.position?.end.line === position.start.line - 1
-      ) {
-        // MD4C only recognizes a table header on the first line of a paragraph.
-        const lineStart =
-          Math.max(source.lastIndexOf("\n", start - 1), source.lastIndexOf("\r", start - 1)) + 1;
-        const newline = source.slice(lineStart - 2, lineStart).replace(/[^\r\n]/g, "");
-        const blank = source.slice(lineStart, start).replace(/[^>]/g, " ").trimEnd();
-        const boundary = lineStart - newline.length;
-        edits.push({ start: boundary, end: lineStart, text: `${newline}${blank}${newline}` });
-      }
+      separateTableFromParagraph(node, previous, start);
       if (external) dropUnsafeDestination(node, start, end);
       if (node.type === "link") {
         const title = workspaceHoverTitle(node, source.slice(start, end), workspaceRoot);
