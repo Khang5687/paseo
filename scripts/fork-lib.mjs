@@ -11,10 +11,18 @@ export function loadFeatures(root) {
 }
 
 // Each top-level entry of the formatted registry: "  {" through "  }" at two-space indent.
-function featureBlocks(text) {
+// `lenient` skips an entry that does not parse instead of throwing.
+function featureBlocks(text, { lenient = false } = {}) {
   const blocks = new Map();
   for (const match of text.matchAll(/^ {2}\{\n[\s\S]*?^ {2}\}/gm)) {
-    blocks.set(JSON.parse(match[0]).pr, match[0]);
+    let entry;
+    try {
+      entry = JSON.parse(match[0]);
+    } catch (error) {
+      if (lenient) continue;
+      throw error;
+    }
+    blocks.set(entry.pr, match[0]);
   }
   return blocks;
 }
@@ -30,7 +38,14 @@ function joinFeatureBlocks(blocks) {
  * differently, or a side is not in the formatter's layout (then the merge stays a conflict).
  */
 export function mergeFeatureRegistry(base, ours, theirs) {
-  const sides = [base, ours, theirs].map(featureBlocks);
+  // With more than one merge base (a PR that already contains other PRs of the build), git merges
+  // the bases into a virtual one, and its registry can hold conflict markers. Entries inside them
+  // are left out of the base, so an entry both sides still have merges as unchanged.
+  const sides = [
+    featureBlocks(base, { lenient: true }),
+    featureBlocks(ours),
+    featureBlocks(theirs),
+  ];
   const [baseBlocks, oursBlocks, theirsBlocks] = sides;
   for (const [index, text] of [ours, theirs].entries()) {
     if (joinFeatureBlocks(sides[index + 1]) !== text) return null;
