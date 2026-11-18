@@ -386,6 +386,7 @@ export const zhCN: TranslationResources = {
     copied: "已复制",
     noOutput: "暂无输出",
     noOutputFinished: "没有输出",
+    fullScreen: "此命令绘制了全屏界面。这里显示当前画面；在终端标签页中打开即可操作。",
     startFailed: "无法启动命令",
     closeFailed: "无法关闭终端",
     hostOffline: "主机离线。重新连接后即可运行此命令。",
@@ -563,8 +564,7 @@ export const zhCN: TranslationResources = {
         archivedTitle: "Workspace 已归档",
         restoreDescription:
           "恢复 {{workspaceName}} 以返回其中的代理。worktree 将使用分支 {{branch}}。",
-        restoreWithoutBranchDescription:
-          "恢复 {{workspaceName}} 以返回其中的代理。新分支将从保存的基准分支或仓库默认分支创建。",
+        restoreWithoutBranchDescription: "恢复 {{workspaceName}} 以返回其中的代理。",
         unarchiveDescription: "{{workspaceName}} 已归档。取消归档以重新打开。",
         restoreAction: "恢复",
         unarchiveAction: "取消归档",
@@ -2110,6 +2110,7 @@ export const zhCN: TranslationResources = {
     hostUnavailable: "下载 Host 不可用。",
     cancelled: "下载已取消。",
     failed: "下载文件失败。",
+    httpFailed: "下载文件失败 (HTTP {{status}}).",
     shareFile: "共享文件",
     shareFileNamed: "共享 {{fileName}}",
   },

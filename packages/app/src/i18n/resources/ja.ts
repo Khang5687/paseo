@@ -391,6 +391,8 @@ export const ja: TranslationResources = {
     copied: "コピーしました",
     noOutput: "まだ出力はありません",
     noOutputFinished: "出力なし",
+    fullScreen:
+      "このコマンドは全画面を描画しました。現在の画面を表示しています。操作するにはターミナルタブで開いてください。",
     startFailed: "コマンドを開始できませんでした",
     closeFailed: "ターミナルを閉じられませんでした",
     hostOffline: "ホストがオフラインです。再接続するとこのコマンドを実行できます。",
@@ -568,8 +570,7 @@ export const ja: TranslationResources = {
         archivedTitle: "ワークスペースはアーカイブ済みです",
         restoreDescription:
           "{{workspaceName}} を復元してエージェントに戻ります。worktree ではブランチ {{branch}} を使用します。",
-        restoreWithoutBranchDescription:
-          "{{workspaceName}} を復元してエージェントに戻ります。保存されたベース、またはリポジトリのデフォルトブランチから新しいブランチを作成します。",
+        restoreWithoutBranchDescription: "{{workspaceName}} を復元してエージェントに戻ります。",
         unarchiveDescription:
           "{{workspaceName}} はアーカイブされています。再度開くにはアーカイブを解除してください。",
         restoreAction: "復元",
@@ -2154,6 +2155,7 @@ export const ja: TranslationResources = {
     hostUnavailable: "ダウンロードホストが利用できません。",
     cancelled: "ダウンロードがキャンセルされました。",
     failed: "ファイルのダウンロードに失敗しました。",
+    httpFailed: "ファイルのダウンロードに失敗しました (HTTP {{status}}).",
     shareFile: "ファイルを共有",
     shareFileNamed: "{{fileName}}を共有",
   },

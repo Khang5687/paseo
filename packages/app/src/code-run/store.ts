@@ -34,7 +34,8 @@ type CodeRunPersistedState = z.infer<typeof CodeRunPersistedStateSchema>;
 export type CodeRunLive =
   | { kind: "starting" }
   | { kind: "startFailed" }
-  | { kind: "output"; lines: string[] }
+  /** `screen`: `lines` is the screen a full-screen command drew, not its printed output. */
+  | { kind: "output"; lines: string[]; screen?: boolean }
   | { kind: "terminalClosed"; lines: string[] };
 
 interface CodeRunState extends CodeRunPersistedState {

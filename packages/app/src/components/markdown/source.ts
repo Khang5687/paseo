@@ -1,8 +1,14 @@
+import { pluginOverviewUrl } from "@getpaseo/protocol/plugin-overview";
 import { classifyAssistantFileLink } from "@/assistant-file-links";
 import {
   ASSISTANT_EXTENSIONLESS_FILE_NAMES,
   ASSISTANT_FILE_EXTENSIONS,
 } from "@/assistant-file-links/extensions";
+import {
+  BARE_WEB_ADDRESS,
+  DOMAIN_LIKE_SEGMENT,
+  URL_TAIL,
+} from "@/assistant-file-links/web-address";
 import { normalizeMarkdownHtml } from "./html";
 import { gfmTable } from "micromark-extension-gfm-table";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
@@ -40,7 +46,8 @@ const DOTFILE = String.raw`\.(?:env|[a-z][a-z0-9_-]*(?:rc|ignore|config|attribut
 // Under a directory any lowercase extension marks a file: `records/q3/contract.pdf`.
 const DIRECTORY_FILE_NAME = String.raw`(?:${PATH_SEGMENT}\.(?:[a-z][a-z0-9]{0,9}|${FILE_EXTENSIONS})|${NAMED_FILE})`;
 // Bare prose paths need a known extension, a line suffix, or at least two separators.
-const PROSE_PATH = String.raw`(?:${PATH_PREFIX}${HAS_PATH_LETTER}${SEPARATED_PATH}|(?:~|\.{1,2})\/${HAS_PATH_LETTER}${PATH_SEGMENT}|${HAS_PATH_LETTER}(?:${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})*[\\/]${DIRECTORY_FILE_NAME}|${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT}){2,}|${SEPARATED_PATH}(?=:\d)))`;
+// A host-like first segment (`github.com/a/b`, `v1.2/build/out`) is never a workspace path.
+const PROSE_PATH = String.raw`(?:${PATH_PREFIX}${HAS_PATH_LETTER}${SEPARATED_PATH}|(?:~|\.{1,2})\/${HAS_PATH_LETTER}${PATH_SEGMENT}|${HAS_PATH_LETTER}(?!${DOMAIN_LIKE_SEGMENT}[\\/])(?:${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT})*[\\/]${DIRECTORY_FILE_NAME}|${PATH_SEGMENT}(?:[\\/]${PATH_SEGMENT}){2,}|${SEPARATED_PATH}(?=:\d)))`;
 
 function createTextPattern(path: string, forgeReferencePattern?: string): RegExp {
   // Forge references come before paths so `group/project#12` is not read as a path.
@@ -48,16 +55,13 @@ function createTextPattern(path: string, forgeReferencePattern?: string): RegExp
   // The native adapter mistakes a literal + in lookbehind for a quantifier; use its hex escape.
   return new RegExp(
     // A colon ends a path only before a line number or a space: `src/app.ts:12`, `src/app.ts: …`.
-    String.raw`(?:${BARE_URL}${forgeReference}|(?<![a-zA-Z0-9${NON_ASCII}_@.%\x2b~:/\\-])(?:${path}|${FILE_NAME}|${BARE_NAMED_FILE}|${DOTFILE})${LINE_SUFFIX}(?![a-zA-Z0-9${NON_ASCII}_@%+/\\-]|:(?!\s|$)|\.${PATH_CHARACTER}))`,
+    String.raw`(?:${BARE_URL}${forgeReference}|(?<![a-zA-Z0-9${NON_ASCII}_@.%\x2b~:/\\-])(?:${BARE_WEB_ADDRESS}|(?:${path}|${FILE_NAME}|${BARE_NAMED_FILE}|${DOTFILE})${LINE_SUFFIX}(?![a-zA-Z0-9${NON_ASCII}_@%+/\\-]|:(?!\s|$)|\.${PATH_CHARACTER})))`,
     "g",
   );
 }
 
 // Matches bare URLs that MD4C does not autolink, like single-label or bracketed hosts.
-// Quotes and unbalanced closing parentheses end the URL. Trailing sentence punctuation stays outside.
-const URL_CHARACTER = String.raw`[^\s<>()"'\x60]`;
-const URL_GROUP = String.raw`\(${URL_CHARACTER}*\)`;
-const BARE_URL = String.raw`https?://(?:${URL_CHARACTER}|${URL_GROUP})*(?:[^\s<>()"'\x60.,;:!?]|${URL_GROUP})`;
+const BARE_URL = String.raw`https?://${URL_TAIL}`;
 
 const TEXT_PATTERN = createTextPattern(PROSE_PATH);
 // One entry per distinct workspace forge remote; reuse keeps the engine's regex identity stable.
@@ -71,6 +75,12 @@ function textPattern(forgeReferencePattern?: string): RegExp {
   }
   return pattern;
 }
+
+// External Markdown links only what its author wrote as an https URL.
+const EXTERNAL_LINKS = {
+  text: new RegExp(BARE_URL.replace("https?", "https"), "g"),
+  inlineCode: /^https:\/\/[^\s<>]+$/,
+};
 
 function linkMetadata(inlineCodePaths: ReadonlySet<string>, forgeReferencePattern?: string) {
   // The engine accepts regexes on both platforms. Classify complete code spans
@@ -195,6 +205,12 @@ export function prepareMarkdownSource(
     commandNames?: ReadonlySet<string>;
     /** Regex source for forge references such as `#12`; see `@/git/forge-shorthand`. */
     forgeReferencePattern?: string;
+    /**
+     * Author-controlled Markdown from outside this host, such as a plugin README. It follows the
+     * registry's overview contract: only absolute https links and images, and nothing is
+     * recognized as a file, forge reference or command.
+     */
+    external?: boolean;
   } = {},
 ) {
   source = normalizeMarkdownHtml(source);
@@ -205,7 +221,15 @@ export function prepareMarkdownSource(
       extensions: [gfmTable()],
       mdastExtensions: [gfmTableFromMarkdown()],
     }));
-  const inlineCodePaths = collectInlineCodePaths(source, workspaceRoot, options.commandNames);
+  const external = options.external === true;
+  // External Markdown names no files; a path fence may still add paths below, so build last.
+  const inlineCodePaths = external
+    ? new Set<string>()
+    : collectInlineCodePaths(source, workspaceRoot, options.commandNames);
+  const metadata = () =>
+    external
+      ? { linkRecognition: EXTERNAL_LINKS, linkSource: markdownLinkSource }
+      : linkMetadata(inlineCodePaths, options.forgeReferencePattern);
   const edits: { start: number; end: number; text: string }[] = [];
   if (
     !source.includes("![") &&
@@ -217,13 +241,10 @@ export function prepareMarkdownSource(
     !/^[\t >]*[^\t >\r\n][^\r\n]*(?:\r\n|\r|\n)[^\r\n]+(?:\r\n|\r|\n)(?=[\t >:|-]*\|)[\t >|]*:?-[-\t :|]*$/m.test(
       source,
     ) &&
-    !(workspaceRoot && source.includes("]("))
+    !(workspaceRoot && source.includes("](")) &&
+    !(external && /\]|<[a-z]+:/i.test(source))
   ) {
-    return {
-      images,
-      ...linkMetadata(inlineCodePaths, options.forgeReferencePattern),
-      render: () => source,
-    };
+    return { images, ...metadata(), render: () => source };
   }
 
   const definitions = new Map<string, { url: string; title?: string | null }>();
@@ -240,9 +261,10 @@ export function prepareMarkdownSource(
   ) {
     const target = node.type === "image" ? node : definitions.get(node.identifier);
     if (
-      target &&
-      options.supportsSvg === false &&
-      /(?:\.svg(?:[?#]|$)|^data:image\/svg\+xml)/i.test(target.url)
+      (external && !pluginOverviewUrl(target?.url)) ||
+      (target &&
+        options.supportsSvg === false &&
+        /(?:\.svg(?:[?#]|$)|^data:image\/svg\+xml)/i.test(target.url))
     ) {
       edits.push({ start, end, text: escapeMarkdownText(node.alt ?? "") });
       return;
@@ -296,8 +318,10 @@ export function prepareMarkdownSource(
     }
   }
   // A fence that holds nothing but file paths is a list of files, not code. It renders as
-  // inline code, one path per line, so each path gets the link and its menu.
+  // inline code, one path per line, so each path gets the link and its menu. External Markdown
+  // names no files, so its fences stay code.
   function rewritePathFence(start: number, end: number, value: string) {
+    if (external) return;
     const raw = source.slice(start, end);
     const marker = /^(`{3,}|~{3,})/.exec(raw)?.[1];
     // Inside a quote every fence line carries the `>` markers.
@@ -340,6 +364,33 @@ export function prepareMarkdownSource(
       text: paths.map(toInlineCode).join(`\n${continuation}`) + after,
     });
   }
+  // An external link to anything but an https URL keeps its label and loses the brackets and
+  // destination around it, so edits inside the label still apply.
+  function dropUnsafeDestination(node: Nodes, start: number, end: number) {
+    if (node.type !== "link" && node.type !== "linkReference") return;
+    const target = node.type === "link" ? node : definitions.get(node.identifier);
+    if (pluginOverviewUrl(target?.url)) return;
+    const labelStart = node.children[0]?.position?.start.offset;
+    const labelEnd = node.children.at(-1)?.position?.end.offset;
+    if (labelStart === undefined || labelEnd === undefined) {
+      edits.push({ start, end, text: "" });
+      return;
+    }
+    edits.push({ start, end: labelStart, text: "" });
+    edits.push({ start: labelEnd, end, text: "" });
+  }
+  // MD4C only recognizes a table header on the first line of a paragraph, so a table right
+  // under a paragraph line gets a blank line between them.
+  function separateTableFromParagraph(node: Nodes, previous: Nodes | undefined, start: number) {
+    if (node.type !== "table" || previous?.type !== "paragraph") return;
+    if (previous.position?.end.line !== (node.position?.start.line ?? 0) - 1) return;
+    const lineStart =
+      Math.max(source.lastIndexOf("\n", start - 1), source.lastIndexOf("\r", start - 1)) + 1;
+    const newline = source.slice(lineStart - 2, lineStart).replace(/[^\r\n]/g, "");
+    const blank = source.slice(lineStart, start).replace(/[^>]/g, " ").trimEnd();
+    const boundary = lineStart - newline.length;
+    edits.push({ start: boundary, end: lineStart, text: `${newline}${blank}${newline}` });
+  }
   function visit(node: Nodes, previous?: Nodes) {
     const position = node.position;
     if (position?.start.offset !== undefined && position.end.offset !== undefined) {
@@ -350,19 +401,8 @@ export function prepareMarkdownSource(
         return;
       }
       if (node.type === "paragraph") splitStandaloneImages(node, start, end);
-      if (
-        node.type === "table" &&
-        previous?.type === "paragraph" &&
-        previous.position?.end.line === position.start.line - 1
-      ) {
-        // MD4C only recognizes a table header on the first line of a paragraph.
-        const lineStart =
-          Math.max(source.lastIndexOf("\n", start - 1), source.lastIndexOf("\r", start - 1)) + 1;
-        const newline = source.slice(lineStart - 2, lineStart).replace(/[^\r\n]/g, "");
-        const blank = source.slice(lineStart, start).replace(/[^>]/g, " ").trimEnd();
-        const boundary = lineStart - newline.length;
-        edits.push({ start: boundary, end: lineStart, text: `${newline}${blank}${newline}` });
-      }
+      separateTableFromParagraph(node, previous, start);
+      if (external) dropUnsafeDestination(node, start, end);
       if (node.type === "link") {
         const title = workspaceHoverTitle(node, source.slice(start, end), workspaceRoot);
         if (title !== null)
@@ -396,7 +436,7 @@ export function prepareMarkdownSource(
   visit(getTree());
   return {
     images,
-    ...linkMetadata(inlineCodePaths, options.forgeReferencePattern),
+    ...metadata(),
     render(
       urls: ReadonlyMap<string, string> = new Map(),
       unavailableImages: ReadonlySet<string> = new Set(),

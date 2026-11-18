@@ -1,4 +1,5 @@
 import { ASSISTANT_EXTENSIONLESS_FILE_NAMES, ASSISTANT_FILE_EXTENSIONS } from "./extensions";
+import { isDomainLikeSegment } from "./web-address";
 import { isAbsolutePath } from "@/utils/path";
 
 function safeDecodeURIComponent(value: string): string {
@@ -624,14 +625,14 @@ function isPlausibleAssistantLocalPath(pathValue: string): boolean {
 
   // A trailing slash names a directory: `src/components/`, `node_modules/`.
   if (normalized.endsWith("/")) {
-    return !isDomainLikePathSegment(firstSegment) && hasPathLetter(lastSegment);
+    return !isDomainLikeSegment(firstSegment) && hasPathLetter(lastSegment);
   }
 
   if (segments.length === 1) {
     return isPlausibleAssistantFileName(firstSegment);
   }
 
-  if (isDomainLikePathSegment(firstSegment)) {
+  if (isDomainLikeSegment(firstSegment)) {
     return false;
   }
 
@@ -684,10 +685,6 @@ function isSpacedAnchoredPath(value: string): boolean {
     !/\s-|\s\s|\s$|[|&;<>$`*]/.test(value) &&
     !/[\\/]s?bin[\\/][^\\/]*$/.test(beforeFirstSpace)
   );
-}
-
-function isDomainLikePathSegment(segment: string): boolean {
-  return /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(segment);
 }
 
 function resolveDocumentRelativePath(relativePath: string, baseDirectory: string): string {

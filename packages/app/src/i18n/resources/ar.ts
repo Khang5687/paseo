@@ -386,6 +386,8 @@ export const ar: TranslationResources = {
     copied: "تم النسخ",
     noOutput: "لا توجد مخرجات بعد",
     noOutputFinished: "لا توجد مخرجات",
+    fullScreen:
+      "رسم هذا الأمر شاشة كاملة. تُعرض كما هي الآن؛ افتحها في علامة تبويب الطرفية للعمل عليها.",
     startFailed: "تعذر بدء الأمر",
     closeFailed: "تعذر إغلاق الطرفية",
     hostOffline: "المضيف غير متصل. أعد الاتصال لتشغيل هذا الأمر.",
@@ -563,8 +565,7 @@ export const ar: TranslationResources = {
         archivedTitle: "مساحة العمل مؤرشفة",
         restoreDescription:
           "استعد {{workspaceName}} للعودة إلى وكلائها. ستستخدم شجرة العمل الفرع {{branch}}.",
-        restoreWithoutBranchDescription:
-          "استعد {{workspaceName}} للعودة إلى وكلائها. سيبدأ فرع جديد من الفرع الأساسي المحفوظ أو الفرع الافتراضي للمستودع.",
+        restoreWithoutBranchDescription: "استعد {{workspaceName}} للعودة إلى وكلائها.",
         unarchiveDescription: "{{workspaceName}} مؤرشفة. ألغِ أرشفتها لفتحها مجددًا.",
         restoreAction: "استعادة",
         unarchiveAction: "إلغاء الأرشفة",
@@ -2137,6 +2138,7 @@ export const ar: TranslationResources = {
     hostUnavailable: "مضيف التنزيل غير متاح.",
     cancelled: "تم إلغاء التنزيل.",
     failed: "فشل تنزيل الملف.",
+    httpFailed: "فشل تنزيل الملف (HTTP {{status}}).",
     shareFile: "مشاركة الملف",
     shareFileNamed: "مشاركة{{fileName}}",
   },

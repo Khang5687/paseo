@@ -21,6 +21,8 @@ const CAPTURE_LINES = 400;
 const CAPTURE_COALESCE_MS = 120;
 /** A shell that prints no prompt still gets the command once its rc files had time to run. */
 const SHELL_READY_TIMEOUT_MS = 3000;
+/** The command is typed by then; a screen still without its wrapper is the command's own. */
+const SCREEN_SETTLE_MS = SHELL_READY_TIMEOUT_MS + 2000;
 const TERMINAL_NAME_LENGTH = 40;
 
 export class CodeRunStartError extends Error {
@@ -125,14 +127,16 @@ async function hasPrompt(
 export function observeCodeRun(input: {
   client: CodeRunClient;
   key: string;
-  record: Pick<CodeRunRecord, "terminalId" | "nonce">;
+  record: Pick<CodeRunRecord, "terminalId" | "nonce" | "startedAt">;
   liveRestore: boolean;
   /** Called once when this observation sees the run end. */
   onFinish: (exitCode: number) => void;
 }): () => void {
   const { client, key, record, liveRestore, onFinish } = input;
+  const settleAt = record.startedAt + SCREEN_SETTLE_MS;
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
   let capturing = false;
   let captureAgain = false;
 
@@ -177,12 +181,19 @@ export function observeCodeRun(input: {
         markClosed();
         return;
       }
+      const settled = Date.now() >= settleAt;
       const output = readRunOutput({
         lines: result.lines,
         nonce: record.nonce,
         complete: result.totalLines <= CAPTURE_LINES,
+        settled,
       });
-      setCodeRunLive(key, { kind: "output", lines: output.lines });
+      setCodeRunLive(key, { kind: "output", lines: output.lines, screen: output.screen });
+      // A program that drew its screen and now waits (a password prompt in tmux) prints
+      // nothing more, so look once more when the screen starts to count as the command's.
+      if (!settled && output.lines.length === 0 && output.exitCode === null && !settleTimer) {
+        settleTimer = setTimeout(scheduleCapture, settleAt - Date.now());
+      }
       if (output.exitCode !== null) {
         const known = useCodeRunStore.getState().records[key]?.exitCode;
         updateCodeRun(key, {
@@ -212,6 +223,7 @@ export function observeCodeRun(input: {
     if (disposed) return;
     disposed = true;
     clearTimeout(timer);
+    clearTimeout(settleTimer);
     void subscription.release().catch(console.error);
   }
 

@@ -109,6 +109,8 @@ function compactAgentCore(agent: JsonRecord): JsonRecord {
     parentServerId: labelValue(agent.labels, PARENT_SERVER_ID_LABEL),
     labelCount: countUserLabels(agent.labels),
     providerUnavailable: agent.providerUnavailable,
+    // An idle agent can still own a running background shell; the parent needs to see it.
+    backgroundWork: agent.backgroundWork,
   };
 }
 

@@ -186,7 +186,7 @@ export class AgentMessageQueueDispatcher {
       // the timeline as a rejected message), so requeueing would duplicate it.
       admitted = true;
       if (result.disposition === "turn_started") {
-        await waitForAgentRunStartWithTimeout(this.agentManager, agentId);
+        await waitForAgentRunStartWithTimeout(this.agentManager, agentId, result.started);
       }
     } catch (error) {
       this.logger.error(

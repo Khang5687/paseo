@@ -984,9 +984,29 @@
     "tests": ["packages/server/src/server/agent/providers/omp/agent.history-purpose.test.ts"]
   },
   {
+    "pr": 130,
+    "title": "fix(app): show a full-screen program's screen in the Run card",
+    "tests": ["packages/app/src/code-run/command.test.ts"],
+    "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+  },
+  {
     "pr": 131,
     "title": "fix(app): the composer grip crashes the app on Android and iOS",
     "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
+  },
+  {
+    "pr": 132,
+    "title": "refactor(omp): pass the todo reader in the history input object (fork port of #128 update)",
+    "tests": ["packages/server/src/server/agent/providers/omp/agent.history-purpose.test.ts"]
+  },
+  {
+    "pr": 133,
+    "title": "fix(app): open schemeless web addresses and stop linking host-led paths",
+    "tests": [
+      "packages/app/src/components/markdown/renderer.test.ts",
+      "packages/app/src/assistant-file-links/resolver.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/bare-domain-links.spec.ts"]
   },
   {
     "pr": 134,
