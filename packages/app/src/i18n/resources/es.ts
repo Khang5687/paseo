@@ -396,6 +396,10 @@ export const es: TranslationResources = {
     startFailed: "No se pudo iniciar el comando",
     closeFailed: "No se pudo cerrar la terminal",
     hostOffline: "Host sin conexión. Vuelve a conectarte para ejecutar este comando.",
+    hostNotConnected: "{{host}} no está conectado",
+    hostUnknown: "{{host}} no es uno de tus hosts",
+    homeUnknown: "{{host}} no informó su carpeta de inicio",
+    workspaceFailed: "No se pudo abrir un espacio de trabajo en {{host}}: {{error}}",
     prompt: {
       sudoPassword: "Contraseña de sudo",
       password: "Contraseña",

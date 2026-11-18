@@ -1,6 +1,6 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { buildRunInput, createRunNonce, readRunOutput } from "./command";
-import type { CodeRunScope } from "./scope";
+import type { RunPlace } from "./target";
 import {
   rememberCodeRun,
   setCodeRunLive,
@@ -34,14 +34,14 @@ export class CodeRunStartError extends Error {
 
 export async function startCodeRun(input: {
   client: CodeRunClient;
-  scope: CodeRunScope;
+  /** The workspace is resolved by now: a terminal cannot open outside one. */
+  place: RunPlace & { workspaceId: string };
   key: string;
   command: string;
 }): Promise<void> {
-  const { client, scope, key, command } = input;
-  setCodeRunLive(key, { kind: "starting" });
-  const payload = await client.createTerminal(scope.cwd, terminalName(command), undefined, {
-    workspaceId: scope.workspaceId,
+  const { client, place, key, command } = input;
+  const payload = await client.createTerminal(place.cwd, terminalName(command), undefined, {
+    workspaceId: place.workspaceId,
     size: RUN_TERMINAL_SIZE,
   });
   if (!payload.terminal) throw new CodeRunStartError(payload.error ?? "Terminal was not created");
@@ -49,7 +49,7 @@ export async function startCodeRun(input: {
   const nonce = createRunNonce();
   rememberCodeRun(key, {
     terminalId,
-    workspaceId: scope.workspaceId,
+    workspaceId: place.workspaceId,
     command,
     nonce,
     startedAt: Date.now(),

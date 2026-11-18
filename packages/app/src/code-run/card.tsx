@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ScrollView,
   Text,
@@ -39,7 +39,8 @@ import type { EditingTextInputHandle } from "@/components/ui/text-input";
 import { isNative } from "@/constants/platform";
 import { useAppVisible } from "@/hooks/use-app-visible";
 import { useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
-import { useSessionStore } from "@/stores/session-store";
+import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
+import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
 import { shortenPath } from "@/utils/shorten-path";
 import {
   commandRisk,
@@ -59,6 +60,8 @@ import {
   type CodeRunClient,
 } from "./runner";
 import { useCodeRunComposerInsert, type CodeRunScope } from "./scope";
+import { targetServerId, type CodeRunTarget, type RunPlace } from "./target";
+import { resolveRunWorkspace, RunWorkspaceError, type RunWorkspaceClient } from "./workspace";
 import {
   forgetCodeRun,
   setCodeRunLive,
@@ -91,36 +94,82 @@ const STATUS_ICON = {
 
 interface CodeRunCardProps {
   runKey: string;
-  scope: CodeRunScope;
+  /** The host and folder the fence runs in; a tagged fence can name another host. */
+  target: CodeRunTarget;
+  openTerminal: CodeRunScope["openTerminal"];
   command: string;
   /** Called after the card's run is forgotten, so the fence can fold the card away. */
   onClose: () => void;
 }
 
 /** Inline card under a shell fence: confirm the command, then follow and answer its run. */
-export function CodeRunCard({ runKey, scope, command, onClose }: CodeRunCardProps) {
+export function CodeRunCard({ runKey, target, openTerminal, command, onClose }: CodeRunCardProps) {
   const record = useCodeRunStore((state) => state.records[runKey]);
-  const client = useSessionStore((state) => state.sessions[scope.serverId]?.client ?? null);
+  const serverId = targetServerId(target);
+  const client = useSessionStore((state) =>
+    serverId === null ? null : (state.sessions[serverId]?.client ?? null),
+  );
+  let body: ReactNode;
+  if (record && serverId !== null)
+    body = (
+      <RunSession
+        runKey={runKey}
+        serverId={serverId}
+        openTerminal={openTerminal}
+        record={record}
+        client={client}
+        onClose={onClose}
+      />
+    );
+  else if (target.kind === "ready")
+    body = (
+      <RunDraft
+        runKey={runKey}
+        place={target.place}
+        command={command}
+        client={client}
+        onClose={onClose}
+      />
+    );
+  else body = <UnreachableTarget runKey={runKey} target={target} onClose={onClose} />;
   return (
     <View style={styles.card} dataSet={markdownCopyDataSet.ignore} testID="code-run-card">
-      {record ? (
-        <RunSession
-          runKey={runKey}
-          scope={scope}
-          record={record}
-          client={client}
-          onClose={onClose}
-        />
-      ) : (
-        <RunDraft
-          runKey={runKey}
-          scope={scope}
-          command={command}
-          client={client}
-          onClose={onClose}
-        />
-      )}
+      {body}
     </View>
+  );
+}
+
+/** A fence that names a host the app cannot run on: say why, and offer no Run. */
+function UnreachableTarget({
+  runKey,
+  target,
+  onClose,
+}: {
+  runKey: string;
+  target: Exclude<CodeRunTarget, { kind: "ready" }>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const cancel = useCallback(() => {
+    forgetCodeRun(runKey);
+    onClose();
+  }, [onClose, runKey]);
+  let reason: string;
+  if (target.kind === "unknownHost") reason = t("codeRun.hostUnknown", { host: target.name });
+  else if (target.kind === "offline")
+    reason = t("codeRun.hostNotConnected", { host: target.hostLabel });
+  else reason = t("codeRun.homeUnknown", { host: target.hostLabel });
+  return (
+    <>
+      <Text style={styles.error} testID="code-run-unreachable">
+        {reason}
+      </Text>
+      <View style={styles.confirmRow}>
+        <Button variant="ghost" size="md" onPress={cancel} testID="code-run-cancel">
+          {t("codeRun.cancel")}
+        </Button>
+      </View>
+    </>
   );
 }
 
@@ -137,41 +186,75 @@ export function CommandRiskLabel({ command }: { command: string }) {
   );
 }
 
+/** The session client: runs a command and, for a `host=` run, opens its hidden workspace. */
+type CardClient = CodeRunClient & RunWorkspaceClient;
+
 interface RunDraftProps {
   runKey: string;
-  scope: CodeRunScope;
+  place: RunPlace;
   command: string;
-  client: CodeRunClient | null;
+  client: CardClient | null;
   onClose: () => void;
 }
 
-function RunDraft({ runKey, scope, command, client, onClose }: RunDraftProps) {
+function storeRunWorkspace(serverId: string, workspace: WorkspaceDescriptorPayload): void {
+  useSessionStore.getState().mergeWorkspaces(serverId, [normalizeWorkspaceDescriptor(workspace)]);
+}
+
+async function startDraftRun(input: {
+  client: CardClient;
+  place: RunPlace;
+  key: string;
+  command: string;
+}): Promise<void> {
+  const { client, place, key, command } = input;
+  setCodeRunLive(key, { kind: "starting" });
+  try {
+    const workspaceId = await resolveRunWorkspace({
+      client,
+      place,
+      onCreated: (workspace) => storeRunWorkspace(place.serverId, workspace),
+    });
+    await startCodeRun({ client, place: { ...place, workspaceId }, key, command });
+  } catch (error) {
+    console.error("Unable to start code run", error);
+    setCodeRunLive(
+      key,
+      error instanceof RunWorkspaceError
+        ? { kind: "startFailed", workspaceError: error.reason }
+        : { kind: "startFailed" },
+    );
+  }
+}
+
+function RunDraft({ runKey, place, command, client, onClose }: RunDraftProps) {
   const { t } = useTranslation();
   const input = useRef<EditingTextInputHandle>(null);
   const live = useCodeRunStore((state) => state.live[runKey]);
-  const connected = useHostRuntimeIsConnected(scope.serverId);
-  const hostLabel = useHosts().find((host) => host.serverId === scope.serverId)?.label;
+  const connected = useHostRuntimeIsConnected(place.serverId);
+  const hostLabel =
+    useHosts().find((host) => host.serverId === place.serverId)?.label ?? place.serverId;
   const [draft, setDraft] = useState(command);
   const starting = live?.kind === "starting";
   const run = useCallback(() => {
     const edited = draft.trim();
     if (!client || edited === "") return;
-    startCodeRun({ client, scope, key: runKey, command: edited }).catch((error: unknown) => {
-      console.error("Unable to start code run", error);
-      setCodeRunLive(runKey, { kind: "startFailed" });
-    });
-  }, [client, draft, runKey, scope]);
+    void startDraftRun({ client, place, key: runKey, command: edited });
+  }, [client, draft, runKey, place]);
   const cancel = useCallback(() => {
     forgetCodeRun(runKey);
     onClose();
   }, [onClose, runKey]);
+  let failure: string | null = null;
+  if (live?.kind === "startFailed")
+    failure =
+      live.workspaceError === undefined
+        ? t("codeRun.startFailed")
+        : t("codeRun.workspaceFailed", { host: hostLabel, error: live.workspaceError });
   return (
     <>
       <Text style={styles.where} numberOfLines={1} ellipsizeMode="middle" testID="code-run-where">
-        {t("codeRun.where", {
-          host: hostLabel ?? scope.serverId,
-          folder: shortenPath(scope.cwd),
-        })}
+        {t("codeRun.where", { host: hostLabel, folder: shortenPath(place.cwd) })}
       </Text>
       <FormTextInput
         ref={input}
@@ -187,9 +270,11 @@ function RunDraft({ runKey, scope, command, client, onClose }: RunDraftProps) {
         testID="code-run-command"
       />
       <CommandRiskLabel command={draft} />
-      {live?.kind === "startFailed" ? (
-        <Text style={styles.error}>{t("codeRun.startFailed")}</Text>
-      ) : null}
+      {failure === null ? null : (
+        <Text style={styles.error} testID="code-run-start-failed">
+          {failure}
+        </Text>
+      )}
       {connected ? null : <Text style={styles.hint}>{t("codeRun.hostOffline")}</Text>}
       <View style={styles.confirmRow}>
         <Button variant="ghost" size="md" onPress={cancel} testID="code-run-cancel">
@@ -214,7 +299,9 @@ function RunDraft({ runKey, scope, command, client, onClose }: RunDraftProps) {
 
 interface RunSessionProps {
   runKey: string;
-  scope: CodeRunScope;
+  /** The host the run's terminal lives on, which may not be the chat's. */
+  serverId: string;
+  openTerminal: CodeRunScope["openTerminal"];
   record: CodeRunRecord;
   client: CodeRunClient | null;
   onClose: () => void;
@@ -222,7 +309,14 @@ interface RunSessionProps {
 
 type CloseState = { kind: "idle" } | { kind: "closing" } | { kind: "failed" };
 
-function RunSession({ runKey, scope, record, client, onClose }: RunSessionProps) {
+function RunSession({
+  runKey,
+  serverId,
+  openTerminal: openWorkspaceTerminal,
+  record,
+  client,
+  onClose,
+}: RunSessionProps) {
   const { t } = useTranslation();
   const live = useCodeRunStore((state) => state.live[runKey]);
   const insert = useCodeRunComposerInsert();
@@ -234,12 +328,15 @@ function RunSession({ runKey, scope, record, client, onClose }: RunSessionProps)
   const [expanded, setExpanded] = useState(status.kind !== "exited" || status.exitCode !== 0);
   const lines = outputLines(live);
   const screen = live?.kind === "output" && live.screen === true;
-  useRunObservation({ runKey, serverId: scope.serverId, record, client, enabled: !terminalClosed });
+  useRunObservation({ runKey, serverId, record, client, enabled: !terminalClosed });
 
-  const { openTerminal: openWorkspaceTerminal } = scope;
   const openTerminal = useCallback(() => {
-    openWorkspaceTerminal({ workspaceId: record.workspaceId, terminalId: record.terminalId });
-  }, [openWorkspaceTerminal, record.terminalId, record.workspaceId]);
+    openWorkspaceTerminal({
+      serverId,
+      workspaceId: record.workspaceId,
+      terminalId: record.terminalId,
+    });
+  }, [openWorkspaceTerminal, record.terminalId, record.workspaceId, serverId]);
 
   const close = useCallback(async () => {
     if (!terminalClosed) {

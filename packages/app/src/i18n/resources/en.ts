@@ -390,6 +390,10 @@ export const en = {
     startFailed: "Unable to start the command",
     closeFailed: "Unable to close the terminal",
     hostOffline: "Host offline. Reconnect to run this command.",
+    hostNotConnected: "{{host}} is not connected",
+    hostUnknown: "{{host}} is not one of your hosts",
+    homeUnknown: "{{host}} did not report its home folder",
+    workspaceFailed: "Unable to open a workspace on {{host}}: {{error}}",
     prompt: {
       sudoPassword: "sudo password",
       password: "Password",

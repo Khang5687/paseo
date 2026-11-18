@@ -29,7 +29,7 @@ import { splitStreamingMarkdown } from "./streaming";
 import { useMarkdownSource, type MarkdownImageContext } from "./images";
 import { useChatNoteContextMenuItems } from "@/chat-notes/context";
 
-import { CodeFence, isRunnableShellFence } from "@/code-run/fence";
+import { CodeFence, isRunnableShellFence, isRunnableTaggedShellFence } from "@/code-run/fence";
 import { useCodeRunScope } from "@/code-run/scope";
 import { MermaidFence } from "./fence/mermaid";
 import { splitNativeFences, type FenceSegment } from "./fence/segments";
@@ -37,6 +37,8 @@ import { MarkdownStreamingContext } from "./streaming-context";
 
 const ThemedMarkdown = withUnistyles(EnrichedMarkdownText);
 const MD4C_FLAGS = { latexMath: false, hardSoftBreaks: true, admonitions: true };
+/** Cheap check before parsing: only a message naming a run host or folder splits on web. */
+const FENCE_RUN_OPTION = /\b(?:host|cwd)=/;
 // A README is written for its forge, where the lines of a paragraph join into one.
 const EXTERNAL_MD4C_FLAGS = { ...MD4C_FLAGS, hardSoftBreaks: false };
 
@@ -177,13 +179,15 @@ const MarkdownPart = memo(function MarkdownPart({
   const contextMenuItems = isWeb ? undefined : noteMenuItems;
   // Shell fences leave the library only where a Run control can work.
   const canRun = useCodeRunScope() !== null;
-  const segments = useMemo<FenceSegment[]>(
-    () =>
-      isWeb
-        ? [{ kind: "markdown", id: "0", source: markdown }]
-        : splitNativeFences(markdown, canRun ? isRunnableShellFence : null),
-    [markdown, canRun],
-  );
+  const segments = useMemo<FenceSegment[]>(() => {
+    if (!isWeb) return splitNativeFences(markdown, canRun ? isRunnableShellFence : null);
+    // The web engine hands a code block only its first info word, so fences naming a run host
+    // or folder leave it to keep `host=`/`cwd=`.
+    const tagged = canRun && FENCE_RUN_OPTION.test(markdown);
+    return splitNativeFences(markdown, tagged ? isRunnableTaggedShellFence : null, {
+      diagrams: false,
+    });
+  }, [markdown, canRun]);
   return (
     <MarkdownStreamingContext.Provider value={streaming}>
       <MarkdownBlockStack imageSources={imageSources}>
@@ -191,7 +195,14 @@ const MarkdownPart = memo(function MarkdownPart({
           const key = `${segment.kind}:${segment.id}`;
           if (segment.kind === "mermaid") return <MermaidFence key={key} code={segment.source} />;
           if (segment.kind === "shell")
-            return <CodeFence key={key} code={segment.source} language={segment.language} />;
+            return (
+              <CodeFence
+                key={key}
+                code={segment.source}
+                language={segment.language}
+                meta={segment.meta}
+              />
+            );
           return (
             <ThemedMarkdown
               key={key}

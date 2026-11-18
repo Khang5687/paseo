@@ -33,7 +33,8 @@ type CodeRunPersistedState = z.infer<typeof CodeRunPersistedStateSchema>;
 /** What the card knows only while it is on screen. Output is never written to storage. */
 export type CodeRunLive =
   | { kind: "starting" }
-  | { kind: "startFailed" }
+  /** `workspaceError`: the host's reason it could not open the run's hidden workspace. */
+  | { kind: "startFailed"; workspaceError?: string }
   /** `screen`: `lines` is the screen a full-screen command drew, not its printed output. */
   | { kind: "output"; lines: string[]; screen?: boolean }
   | { kind: "terminalClosed"; lines: string[] };
