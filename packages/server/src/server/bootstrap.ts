@@ -177,6 +177,7 @@ import {
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
 import { NotesService } from "./notes/notes-service.js";
+import { FileCopies } from "./file-copies/service.js";
 import {
   DaemonConfigStore,
   resolveFeatureDefaults,
@@ -1674,6 +1675,12 @@ export async function createPaseoDaemon(
   const unsubscribeNoteCommandFinished = terminalManager.subscribeTerminalCommandFinished((event) =>
     notesService.handleCommandFinished(event),
   );
+  const fileCopies = new FileCopies({
+    paseoHome: config.paseoHome,
+    logger,
+    config: daemonConfigStore,
+  });
+  await fileCopies.start();
 
   const askThreads = new AskAgentThreads(agentManager, logger, {
     paseoHome: config.paseoHome,
@@ -2147,6 +2154,7 @@ export async function createPaseoDaemon(
               accountLogin,
               notesService,
               agentDrafts,
+              fileCopies,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
@@ -2291,6 +2299,7 @@ export async function createPaseoDaemon(
     if (wsServer) {
       await wsServer.close();
     }
+    await fileCopies.stop().catch(() => undefined);
     await serviceProxy.stopStandalone();
     // Force-drop remaining sockets so httpServer.close() resolves promptly.
     // We've already closed wsServer (which sent ws-layer close frames) and

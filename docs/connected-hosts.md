@@ -70,6 +70,28 @@ failure even if the destination already created the child; inspect it before ret
 See [finish notification lifetime](agent-lifecycle.md#relationships) for registration, acknowledgment,
 and duplicate-delivery semantics. Concurrent prompts gain no turn attribution.
 
+## File copies
+
+A host that sleeps can name an always-on host in `files.copies.targetServerId` (`files.copies.update_settings`
+sets it; nothing infers it from the connected hosts). When one of its agents finishes a turn with assistant text,
+`FileCopySender` (`packages/server/src/server/file-copies/sender.ts`) collects the files that text names, with the
+same grammar the app uses to linkify them (a mirror under `file-copies/mentions/`; keep it in step with
+`packages/app/src/assistant-file-links/`). Only existing regular files within `maxFileBytes` count. Fenced code and
+shell commands inside code spans are not mentions. Secrets never leave the host: names matching `.env*`, `*.pem`,
+`*.key` or `id_*`, and anything under `~/.ssh` or `~/.paseo`, are skipped, and so is a link that resolves to one.
+
+The sender goes through the ordinary routed API to the target, one turn at a time:
+`files.copies.record_mentions` sends paths and revisions and gets back the ones the target lacks at that revision,
+then each of those goes up with `file.upload` under the name `.paseo-file-copy` and is committed with
+`files.copies.put`, which takes only uploads with that name. The target takes the source `serverId` from the routed
+session's producer, never from the request, and refuses both calls from a direct client. A failure is logged and
+never reaches the agent; the next mention of the file tries again. A copy upload whose put never came is deleted
+when the target starts and the upload is a day old. A target without `server_info.features.fileCopies` is skipped
+with a log line.
+
+Any client of the target reads a copy with `files.copies.read` (bytes as file-transfer frames, then the entry) and
+lists them with `files.copies.list`. Storage and limits are in [data-model.md](data-model.md#6b-file-copies).
+
 ## Connections and recovery
 
 The shared Node connector owns the target grammar and each connection attempt, including a fresh

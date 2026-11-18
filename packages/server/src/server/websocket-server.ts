@@ -136,6 +136,8 @@ import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
 import type { AgentDraftService } from "./agent-draft/agent-draft-service.js";
 import type { NoteFiredEvent, NotesService } from "./notes/notes-service.js";
+import type { FileCopies } from "./file-copies/service.js";
+import { FileCopySender } from "./file-copies/sender.js";
 import type { Note } from "@getpaseo/protocol/notes/schemas";
 import type { AccountRoutingAuthority } from "./account-routing/authority.js";
 import type { OmpAccountLogin } from "./account-routing/login.js";
@@ -611,6 +613,8 @@ export class VoiceAssistantWebSocketServer {
   private readonly workspaceLabelService: WorkspaceLabelService | null;
   private readonly agentDrafts: AgentDraftService | undefined;
   private readonly notesService: NotesService | null;
+  private readonly fileCopies: FileCopies | undefined;
+  private readonly detachFileCopySender: () => void;
   private readonly accountRouting: AccountRoutingAuthority | undefined;
   private readonly accountLogin: OmpAccountLogin | undefined;
   // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
@@ -628,6 +632,15 @@ export class VoiceAssistantWebSocketServer {
 
   toolHosts() {
     return createToolHosts(this.connectedHosts);
+  }
+  private attachFileCopySender(agentManager: AgentManager): () => void {
+    if (!this.fileCopies) return () => undefined;
+    return new FileCopySender({
+      agentManager,
+      hosts: this.toolHosts(),
+      fileCopies: this.fileCopies,
+      logger: this.logger,
+    }).attach();
   }
   private readonly passwordHash: string | undefined;
   private readonly credentialSource: DaemonAuthConfig | undefined;
@@ -748,6 +761,7 @@ export class VoiceAssistantWebSocketServer {
     accountLogin?: OmpAccountLogin,
     notesService?: NotesService,
     agentDrafts?: AgentDraftService,
+    fileCopies?: FileCopies,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -848,6 +862,8 @@ export class VoiceAssistantWebSocketServer {
     this.downloadTokenStore = downloadTokenStore;
     this.paseoHome = paseoHome;
     this.connectedHosts = new ConnectedHosts(paseoHome, { serverId, label: getHostName() });
+    this.fileCopies = fileCopies;
+    this.detachFileCopySender = this.attachFileCopySender(agentManager);
     this.passwordHash = auth?.password;
     this.daemonConfigStore = daemonConfigStore;
     this.mcpBaseUrl = mcpBaseUrl;
@@ -1267,6 +1283,7 @@ export class VoiceAssistantWebSocketServer {
     this.prepareForShutdown();
     this.agentMessageQueue.detach();
     await this.agentMessages.close();
+    this.detachFileCopySender();
     await this.connectedHosts.close();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
@@ -1798,6 +1815,7 @@ export class VoiceAssistantWebSocketServer {
       workspaceLabelService: this.workspaceLabelService ?? undefined,
       agentDrafts: this.agentDrafts,
       notesService: this.notesService ?? undefined,
+      fileCopies: this.fileCopies,
       accountRouting: this.accountRouting,
       accountLogin: this.accountLogin,
       isHostLocalSource: (source) => {
@@ -2132,12 +2150,11 @@ export class VoiceAssistantWebSocketServer {
     pluginId?: string,
   ): void {
     if (pluginId) return;
-    const producer = hello.producer;
-    const sourceId =
-      hello.routed && producer
-        ? `route:${[principalId, producer.serverId, producer.sourceId].map(encodeURIComponent).join(":")}`
-        : principalId;
-    connection.session.setHostSource(sourceId);
+    const producer = hello.routed ? hello.producer : undefined;
+    const sourceId = producer
+      ? `route:${[principalId, producer.serverId, producer.sourceId].map(encodeURIComponent).join(":")}`
+      : principalId;
+    connection.session.setHostSource(sourceId, producer?.serverId ?? null);
   }
 
   private buildServerInfoStatusPayload(session: Session): ServerInfoStatusPayload {
@@ -2181,6 +2198,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.agentDrafts ? { agentDraftSync: true } : {}),
         // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
         ...(this.notesService ? { notes: true } : {}),
+        // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.
+        ...(this.fileCopies ? { fileCopies: true } : {}),
         ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
         // The host can open a browser and sign a Claude account in; only advertised with routing.
         ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),

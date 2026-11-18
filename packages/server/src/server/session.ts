@@ -122,6 +122,8 @@ import {
   type WorkspaceLabelService,
 } from "./workspace-labels/index.js";
 import type { NotesService } from "./notes/notes-service.js";
+import type { FileCopies } from "./file-copies/service.js";
+import { FileCopiesSession } from "./file-copies/session.js";
 
 import { AgentManager, AgentRunCancellationError } from "./agent/agent-manager.js";
 import { buildTimelinePromptIndex } from "./agent/timeline-prompt-index.js";
@@ -531,6 +533,7 @@ export interface SessionOptions {
   workspaceLabelService?: WorkspaceLabelService;
   agentDrafts?: AgentDraftService;
   notesService?: NotesService;
+  fileCopies?: FileCopies;
   accountRouting?: AccountRoutingAuthority;
   accountLogin?: OmpAccountLogin;
   /** The source is a direct loopback or local IPC socket: the host's own app. */
@@ -766,12 +769,32 @@ export class Session {
     return this.hostSourceId;
   }
   private hostSourceId: string;
-  setHostSource(sourceId: string): void {
+  // The daemon on the far end of a routed connected-host link; null for direct clients.
+  private producerServerId: string | null = null;
+  setHostSource(sourceId: string, producerServerId: string | null = null): void {
     this.hostSourceId = sourceId;
+    this.producerServerId = producerServerId;
     this.connectedHostSession?.setSource(sourceId);
   }
   setRouted(routed: boolean): void {
     this.routed = routed;
+  }
+  private createFileCopiesSession(
+    fileCopies: FileCopies | undefined,
+    paseoHome: string,
+  ): FileCopiesSession | null {
+    if (!fileCopies) return null;
+    return new FileCopiesSession(
+      {
+        emit: (msg, source) => this.emitForSource(msg, source),
+        emitBinary: (frame, source) => this.emitBinaryReply(frame, source),
+        hasBinaryChannel: () => this.onBinaryMessage !== null,
+        producerServerId: () => (this.routed ? this.producerServerId : null),
+      },
+      fileCopies,
+      paseoHome,
+      this.sessionLogger,
+    );
   }
   readonly delivery = new SessionDelivery(
     (source, message) => {
@@ -869,6 +892,7 @@ export class Session {
   private readonly workspaceLabelService: WorkspaceLabelService | null;
   private readonly agentDrafts: AgentDraftService | undefined;
   private readonly notesService: NotesService | undefined;
+  private readonly fileCopiesSession: FileCopiesSession | null;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -939,6 +963,7 @@ export class Session {
       workspaceLabelService,
       agentDrafts,
       notesService,
+      fileCopies,
       accountRouting,
       accountLogin,
       isHostLocalSource,
@@ -1023,6 +1048,7 @@ export class Session {
       paseoHome,
       logger: this.sessionLogger,
     });
+    this.fileCopiesSession = this.createFileCopiesSession(fileCopies, paseoHome);
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
@@ -3546,7 +3572,7 @@ export class Session {
         this.workspaceFilesSession.handleFileUploadRequest(msg, this.delivery);
         return undefined;
       default:
-        return undefined;
+        return this.fileCopiesSession?.dispatch(msg, source);
     }
   }
 

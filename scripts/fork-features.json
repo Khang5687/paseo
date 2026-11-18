@@ -1007,5 +1007,16 @@
       "packages/app/src/assistant-file-links/resolver.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/bare-domain-links.spec.ts"]
+  },
+  {
+    "pr": 134,
+    "title": "feat(server): keep copies of agent-mentioned files on a target host",
+    "tests": [
+      "packages/server/src/server/file-copies/file-copies.e2e.test.ts",
+      "packages/server/src/server/file-copies/store.test.ts",
+      "packages/server/src/server/file-copies/mentions/mentions.test.ts",
+      "packages/server/src/server/file-copies/sender.test.ts",
+      "packages/server/src/server/file-copies/uploads.test.ts"
+    ]
   }
 ]
