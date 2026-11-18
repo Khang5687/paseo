@@ -6,6 +6,11 @@ export interface WorkspaceFileLocation {
   path: string;
   lineStart?: number;
   lineEnd?: number;
+  /**
+   * The host that holds the file, set only when it is not the workspace's own host: a chat on the
+   * Mac can name a file that lives on the Omen. Such a path is absolute or `~`-relative.
+   */
+  serverId?: string;
 }
 
 export type WorkspaceFileTabTarget = { kind: "file" } & WorkspaceFileLocation;
@@ -29,10 +34,12 @@ export function normalizeWorkspaceFileLocation(
 
   const lineStart = normalizeLineNumber(location.lineStart);
   const lineEnd = normalizeLineNumber(location.lineEnd);
+  const serverId = location.serverId?.trim();
   return {
     path,
     ...(lineStart ? { lineStart } : {}),
     ...(lineStart && lineEnd && lineEnd >= lineStart ? { lineEnd } : {}),
+    ...(serverId ? { serverId } : {}),
   };
 }
 
@@ -41,7 +48,10 @@ export function workspaceFileLocationsEqual(
   right: WorkspaceFileLocation,
 ): boolean {
   return (
-    left.path === right.path && left.lineStart === right.lineStart && left.lineEnd === right.lineEnd
+    left.path === right.path &&
+    left.lineStart === right.lineStart &&
+    left.lineEnd === right.lineEnd &&
+    left.serverId === right.serverId
   );
 }
 

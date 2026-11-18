@@ -2251,6 +2251,7 @@ export const ar: TranslationResources = {
       documentUnsupported: "لا يمكن عرض ملفات {{type}} على هذا الجهاز",
       failedToLoad: "فشل تحميل الملف",
       notFound: "الملف غير موجود",
+      openFrom: "فتح من",
       failedToLoadPreview: "فشل تحميل معاينة الملف",
       editor: {
         preview: "معاينة",

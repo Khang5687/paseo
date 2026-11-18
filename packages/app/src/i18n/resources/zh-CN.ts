@@ -2223,6 +2223,7 @@ export const zhCN: TranslationResources = {
       documentUnsupported: "无法在此设备上显示 {{type}} 文件",
       failedToLoad: "加载文件失败",
       notFound: "找不到文件",
+      openFrom: "打开位置",
       failedToLoadPreview: "加载文件预览失败",
       editor: {
         preview: "预览",

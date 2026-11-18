@@ -104,6 +104,7 @@ import { AssistantSelectionCopySurface } from "@/assistant-selection-copy/surfac
 import { ChatNoteRowProvider, ChatNotesProvider } from "@/chat-notes/context";
 import { ChatNotesSurface } from "@/chat-notes/surface";
 import { AssistantFileLinkResolverProvider, createInlinePathOpener } from "@/assistant-file-links";
+import { pickFileHostForChat } from "@/assistant-file-links/host-pick-runtime";
 import { useOfflineAutoSave } from "@/offline-files/use-auto-save";
 import { CodeRunScopeProvider } from "@/code-run/scope";
 import { useOpenOutsideWorkspaceFolder } from "@/workspace/open-in-file-manager/outside-folder";
@@ -489,12 +490,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // let the file pane fall back to a saved copy or another host's copy.
     const isHostConnected = useHostRuntimeIsConnected(resolvedServerId);
     const lookupClient = isHostConnected ? client : null;
+    const pickInlineFileHost = useStableEvent((path: string) =>
+      pickFileHostForChat({ path, chatServerId: resolvedServerId }),
+    );
     const inlinePathOpener = useMemo(
       () =>
         createInlinePathOpener({
           workspaceRoot,
           resolveRelativeFiles: true,
           client: lookupClient,
+          pickHost: pickInlineFileHost,
           openFile: openInlineFile,
           openDirectory: openInlineDirectory,
           openOutsideDirectory: openInlineOutsideDirectory,
@@ -502,6 +507,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [
         workspaceRoot,
         lookupClient,
+        pickInlineFileHost,
         openInlineFile,
         openInlineDirectory,
         openInlineOutsideDirectory,

@@ -2300,6 +2300,7 @@ export const es: TranslationResources = {
       documentUnsupported: "Los archivos {{type}} no se pueden mostrar en este dispositivo",
       failedToLoad: "No se pudo cargar el archivo",
       notFound: "No se encontró el archivo",
+      openFrom: "Abrir desde",
       failedToLoadPreview: "No se pudo cargar la vista previa del archivo",
       editor: {
         preview: "Vista previa",

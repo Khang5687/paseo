@@ -1027,5 +1027,15 @@
       "packages/app/src/offline-files/store.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/offline-files-host-copy.spec.ts"]
+  },
+  {
+    "pr": 135,
+    "title": "feat(app): open a file a chat names from whichever host has it",
+    "tests": [
+      "packages/app/src/assistant-file-links/host-pick.test.ts",
+      "packages/app/src/assistant-file-links/path-open.test.ts",
+      "packages/app/src/workspace-tabs/identity.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/assistant-file-link-any-host.spec.ts"]
   }
 ]
