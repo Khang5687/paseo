@@ -83,7 +83,7 @@ import { renderStreamRow, type RenderStreamItem } from "./stream-row";
 import { type NearBottom, useIsNearBottom, useNearBottom } from "./near-bottom";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
-import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import { getHostRuntimeStore, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 import {
   CompletedTurnFooterRow,
@@ -485,17 +485,21 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       });
     });
     const openInlineOutsideDirectory = useOpenOutsideWorkspaceFolder(resolvedServerId);
+    // A sleeping host can't answer the folder check, so open the file tab straight away and
+    // let the file pane fall back to a saved copy or another host's copy.
+    const isHostConnected = useHostRuntimeIsConnected(resolvedServerId);
+    const lookupClient = isHostConnected ? client : null;
     const inlinePathOpener = useMemo(
       () =>
         createInlinePathOpener({
           workspaceRoot,
           resolveRelativeFiles: true,
-          client,
+          client: lookupClient,
           openFile: openInlineFile,
           openDirectory: openInlineDirectory,
           openOutsideDirectory: openInlineOutsideDirectory,
         }),
-      [workspaceRoot, client, openInlineFile, openInlineDirectory, openInlineOutsideDirectory],
+      [workspaceRoot, lookupClient, openInlineFile, openInlineDirectory, openInlineOutsideDirectory],
     );
     useEffect(() => {
       if (!isActive) inlinePathOpener.cancel();
