@@ -306,3 +306,18 @@ test("a registry not in the formatter's layout is left as a conflict", () => {
     null,
   );
 });
+
+test("a virtual merge base with conflict markers still merges an appended entry", () => {
+  // Main merged #58 and #57; the PR also merged both before adding its own entry, so git's
+  // virtual base has both entries inside conflict markers.
+  const [queueBlock, relayBlock] = [queue, relay].map((entry) =>
+    JSON.stringify(entry, null, 2).replace(/^/gm, "  "),
+  );
+  const strip = (block) => block.split("\n").slice(1, -1).join("\n");
+  const base = `[\n${JSON.stringify(docs, null, 2).replace(/^/gm, "  ")},\n  {\n<<<<<<<<< Temporary merge branch 1\n${strip(queueBlock)}\n=========\n${strip(relayBlock)}\n>>>>>>>>> Temporary merge branch 2\n  }\n]\n`;
+  const added = { pr: 60, title: "added", tests: ["c.test.ts"] };
+  assert.equal(
+    mergeFeatureRegistry(base, registry(docs, queue, relay), registry(docs, queue, relay, added)),
+    registry(docs, queue, relay, added),
+  );
+});
