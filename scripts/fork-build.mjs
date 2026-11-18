@@ -252,8 +252,10 @@ function mergedPrNumbers() {
   return merged.map((line) => Number(/^#(\d+)/.exec(line)[1]));
 }
 function e2eScopeNote() {
-  const prs = mergedPrNumbers();
-  return prs.length > 0 ? `, specs of ${prs.map((n) => `#${n}`).join(" ")} only` : ", all specs";
+  const mergedNumbers = mergedPrNumbers();
+  return mergedNumbers.length > 0
+    ? `, specs of ${mergedNumbers.map((n) => `#${n}`).join(" ")} only`
+    : ", all specs";
 }
 
 // 4. One check, then push.
@@ -261,7 +263,11 @@ const changed = synced || last !== null;
 const checkReport = path.join(logDir, "fork-check.md");
 if (dryRun) {
   step("prepare", "node", ["scripts/fork-prepare.mjs", "--dry-run"]);
-  timer.record("fork-check", 0, `would run${args["no-e2e"] ? " (no e2e)" : ` with e2e${e2eScopeNote()}`}`);
+  timer.record(
+    "fork-check",
+    0,
+    `would run${args["no-e2e"] ? " (no e2e)" : ` with e2e${e2eScopeNote()}`}`,
+  );
 } else if (!changed) {
   timer.record("fork-check", 0, "skipped: main unchanged since it was pushed");
   summary.push(

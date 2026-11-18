@@ -227,7 +227,9 @@ if (notRun.length > 0) {
   lines.push(`- Not run: ${notRun.map((v) => `#${v.pr}`).join(" ")}`);
 }
 if (deferred.length > 0) {
-  lines.push(`- Browser specs not run here (nightly sync runs them): ${deferred.map((v) => `#${v.pr}`).join(" ")}`);
+  lines.push(
+    `- Browser specs not run here (nightly sync runs them): ${deferred.map((v) => `#${v.pr}`).join(" ")}`,
+  );
 }
 const untested = verdicts.filter((v) => v.status === "untested").map((v) => `#${v.pr}`);
 if (untested.length > 0) lines.push(`- No tests by design: ${untested.join(" ")}`);

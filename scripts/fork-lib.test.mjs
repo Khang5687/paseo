@@ -127,16 +127,27 @@ test("a feature fails when any guard fails and is not-run when none ran", () => 
 });
 
 test("e2e scope: specs of other PRs are skipped without failing their features", () => {
-  const unitOnly = new Map([[queue.tests[0], true], [relay.tests[0], true]]);
+  const unitOnly = new Map([
+    [queue.tests[0], true],
+    [relay.tests[0], true],
+  ]);
   const scope = new Set([57]);
   assert.deepEqual(selectE2eSpecs([queue, relay, docs], scope), []);
   assert.deepEqual(selectE2eSpecs([queue, relay, docs], new Set([58])), queue.e2e);
   assert.deepEqual(selectE2eSpecs([queue, relay], null), queue.e2e);
   assert.deepEqual(
     featureVerdicts([queue, relay], unitOnly, { e2ePrs: scope }).map((v) => [v.pr, v.status]),
-    [[58, "pass"], [57, "pass"]],
+    [
+      [58, "pass"],
+      [57, "pass"],
+    ],
   );
-  const e2eOnly = { pr: 9, title: "spec only", tests: [], e2e: ["packages/app/e2e/browser/x.spec.ts"] };
+  const e2eOnly = {
+    pr: 9,
+    title: "spec only",
+    tests: [],
+    e2e: ["packages/app/e2e/browser/x.spec.ts"],
+  };
   assert.equal(featureVerdicts([e2eOnly], new Map(), { e2ePrs: scope })[0].status, "e2e-deferred");
   assert.equal(featureVerdicts([e2eOnly], new Map(), { e2ePrs: null })[0].status, "not-run");
 });

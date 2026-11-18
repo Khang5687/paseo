@@ -1009,7 +1009,7 @@
     "e2e": ["packages/app/e2e/browser/bare-domain-links.spec.ts"]
   },
   {
-    "pr": 0,
+    "pr": 138,
     "title": "build: browser specs only for the PRs in the build",
     "tests": ["scripts/fork-lib.test.mjs", "scripts/fork-build-lib.test.mjs"]
   }
