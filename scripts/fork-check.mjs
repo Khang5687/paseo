@@ -6,6 +6,7 @@
 //   node scripts/fork-check.mjs                  typecheck + lint + unit tests
 //   node scripts/fork-check.mjs --e2e            also the Playwright specs (starts Metro + daemon)
 //   node scripts/fork-check.mjs --e2e --bail     skip the specs when static or unit checks already failed
+//   node scripts/fork-check.mjs --e2e --e2e-pr 55  with --e2e, run only PR 55's specs (unit tests unchanged)
 //   node scripts/fork-check.mjs --pr 55 --pr 58  only those features' tests
 //   node scripts/fork-check.mjs --no-static      skip typecheck and lint
 //   node scripts/fork-check.mjs --report <file>  also write the Markdown report there
@@ -22,6 +23,7 @@ import {
   mergedForkPrs,
   planTestRuns,
   playwrightFileResults,
+  selectE2eSpecs,
   validateFeatures,
   vitestFileResults,
 } from "./fork-lib.mjs";
@@ -32,6 +34,7 @@ const { values: args } = parseArgs({
     "no-static": { type: "boolean", default: false },
     bail: { type: "boolean", default: false },
     pr: { type: "string", multiple: true, default: [] },
+    "e2e-pr": { type: "string", multiple: true, default: [] },
     report: { type: "string" },
   },
 });
@@ -77,6 +80,8 @@ function readJson(file) {
 const allFeatures = loadFeatures(root);
 const selected = args.pr.length > 0 ? new Set(args.pr.map(Number)) : null;
 const features = selected ? allFeatures.filter((f) => selected.has(f.pr)) : allFeatures;
+
+const e2ePrs = args["e2e-pr"].length > 0 ? new Set(args["e2e-pr"].map(Number)) : null;
 
 const mergedPrs = (() => {
   const log = spawnSync(
@@ -154,9 +159,7 @@ const e2eSkipped = args.e2e && args.bail && failedBeforeE2e;
 if (e2eSkipped) {
   progress("e2e: skipped (--bail; static or unit checks already failed)");
 } else if (args.e2e) {
-  const specs = [...new Set(active.flatMap((f) => f.e2e ?? []))].filter((f) =>
-    existsSync(path.join(root, f)),
-  );
+  const specs = selectE2eSpecs(active, e2ePrs).filter((f) => existsSync(path.join(root, f)));
   // The browser binary lives outside node_modules (~/.cache/ms-playwright) and npm ci does not
   // fetch it; without it every spec fails at launch. A no-op when this version is installed.
   const browser =
@@ -191,15 +194,18 @@ if (e2eSkipped) {
   }
 }
 
-const verdicts = featureVerdicts(features, results);
+const verdicts = featureVerdicts(features, results, { e2ePrs: args.e2e ? e2ePrs : null });
 const failing = verdicts.filter((v) => v.status === "fail");
 const notRun = verdicts.filter((v) => v.status === "not-run");
+const deferred = verdicts.filter((v) => v.status === "e2e-deferred");
 const staticFailures = staticResults.filter((r) => !r.ok);
 const ok = listErrors.length === 0 && staticFailures.length === 0 && failing.length === 0;
 const passing = verdicts.filter((v) => v.status === "pass").length;
 const head = spawnSync("git", ["log", "-1", "--format=%h %s"], { cwd: root, encoding: "utf8" });
 let scope = " (unit only; e2e not run)";
 if (e2eSkipped) scope = " (unit only; e2e skipped after a failure)";
+else if (args.e2e && e2ePrs)
+  scope = ` (unit + e2e specs of ${[...e2ePrs].map((n) => `#${n}`).join(" ")} only)`;
 else if (args.e2e) scope = " (unit + e2e)";
 
 const lines = [
@@ -219,6 +225,11 @@ for (const verdict of failing) {
 }
 if (notRun.length > 0) {
   lines.push(`- Not run: ${notRun.map((v) => `#${v.pr}`).join(" ")}`);
+}
+if (deferred.length > 0) {
+  lines.push(
+    `- Browser specs not run here (nightly sync runs them): ${deferred.map((v) => `#${v.pr}`).join(" ")}`,
+  );
 }
 const untested = verdicts.filter((v) => v.status === "untested").map((v) => `#${v.pr}`);
 if (untested.length > 0) lines.push(`- No tests by design: ${untested.join(" ")}`);
