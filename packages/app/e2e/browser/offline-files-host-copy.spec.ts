@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "../support/fixtures";
-import { openSettings } from "../support/helpers/app";
 import { clickSessionRow, openSessions } from "../support/helpers/archive-tab";
 import { connectDaemonClient } from "../support/helpers/daemon-client-loader";
 import { getE2EDaemonPort } from "../support/helpers/daemon-port";
@@ -101,7 +100,9 @@ test.describe("Files from a sleeping host", () => {
       await page.screenshot({ path: test.info().outputPath("opened-from-omen-copy.png") });
 
       // Settings → Files: the Omen's copies and limits, and the phone's saved copy by host.
-      await openSettings(page);
+      // At phone width the sidebar sits behind the menu button.
+      await page.getByRole("button", { name: "Open menu", exact: true }).first().tap();
+      await page.locator('[data-testid="sidebar-settings"]:visible').first().tap();
       await openSettingsSection(page, "files");
       const copies = page.getByTestId(`host-copies-${omenServerId}`);
       await expect(copies.getByText("Copies on Omen box")).toBeVisible({ timeout: 30_000 });
