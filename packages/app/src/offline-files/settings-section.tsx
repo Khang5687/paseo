@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@/components/settings";
 import { Button } from "@/components/ui/button";
+import { PressHighlight } from "@/components/ui/press-highlight";
 import { FormTextInput } from "@/components/ui/form-field";
 import {
   OFFLINE_FILE_LIMITS,
@@ -14,10 +15,18 @@ import {
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { formatFileSize } from "@/utils/format-file-size";
 import { formatTimeAgo } from "@/utils/time";
-import { clearOfflineFiles, pruneOfflineFiles, useOfflineFiles } from "./store";
+import { useHosts } from "@/runtime/host-runtime";
+import { groupSavedFiles } from "./saved-list";
+import {
+  clearOfflineFiles,
+  pruneOfflineFiles,
+  removeOfflineFile,
+  useOfflineFiles,
+  type OfflineFile,
+} from "./store";
 
-// The newest files are the ones worth listing; the summary row counts the rest.
-const LISTED_FILES = 20;
+// Past this many saved files the list gets a search box.
+const SEARCH_AFTER_FILES = 20;
 
 type LimitKey = "offlineFilesRetentionDays" | "offlineFilesMaxTotalMb" | "offlineFilesMaxFileMb";
 const LIMIT_BOUNDS: Record<LimitKey, { min: number; max: number }> = {
@@ -25,6 +34,11 @@ const LIMIT_BOUNDS: Record<LimitKey, { min: number; max: number }> = {
   offlineFilesMaxTotalMb: OFFLINE_FILE_LIMITS.maxTotalMb,
   offlineFilesMaxFileMb: OFFLINE_FILE_LIMITS.maxFileMb,
 };
+const LIMIT_KEYS = [
+  { key: "offlineFilesRetentionDays", text: "retentionDays" },
+  { key: "offlineFilesMaxTotalMb", text: "maxTotalMb" },
+  { key: "offlineFilesMaxFileMb", text: "maxFileMb" },
+] as const;
 
 /** Saved copies of chat files: the automatic-saving toggle, the limits, and what is saved. */
 export function OfflineFilesSection() {
@@ -33,6 +47,10 @@ export function OfflineFilesSection() {
   const files = useOfflineFiles();
   const changeAutoSave = useCallback(
     (offlineFilesAutoSave: boolean) => void updateSettings({ offlineFilesAutoSave }),
+    [updateSettings],
+  );
+  const changeWifiOnly = useCallback(
+    (offlineFilesWifiOnly: boolean) => void updateSettings({ offlineFilesWifiOnly }),
     [updateSettings],
   );
   const changeLimit = useCallback(
@@ -53,8 +71,22 @@ export function OfflineFilesSection() {
     if (confirmed) await clearOfflineFiles();
   }, [t]);
 
+  const hosts = useHosts();
+  const hostLabels = useMemo(
+    () => new Map(hosts.map((host) => [host.serverId, host.label])),
+    [hosts],
+  );
+  const [query, setQuery] = useState("");
+  const searchable = (files?.length ?? 0) > SEARCH_AFTER_FILES;
+  const groups = useMemo(
+    () =>
+      groupSavedFiles(files ?? [], {
+        query: searchable ? query : "",
+        hostOrder: hosts.map((host) => host.serverId),
+      }),
+    [files, hosts, query, searchable],
+  );
   const totalBytes = files?.reduce((sum, file) => sum + file.size, 0) ?? 0;
-  const newest = [...(files ?? [])].sort((a, b) => b.savedAt - a.savedAt).slice(0, LISTED_FILES);
 
   return (
     <SettingsSection title={t("offlineFiles.title")} testID="offline-files-settings">
@@ -65,27 +97,22 @@ export function OfflineFilesSection() {
           value={settings.offlineFilesAutoSave}
           onValueChange={changeAutoSave}
         />
-        <LimitRow
-          settingKey="offlineFilesRetentionDays"
-          label={t("offlineFiles.retentionDays.label")}
-          hint={t("offlineFiles.retentionDays.description")}
-          value={settings.offlineFilesRetentionDays}
-          onCommit={changeLimit}
+        <SettingsSwitch
+          label={t("offlineFiles.wifiOnly.label")}
+          hint={t("offlineFiles.wifiOnly.description")}
+          value={settings.offlineFilesWifiOnly}
+          onValueChange={changeWifiOnly}
+          testID="offline-files-wifi-only"
         />
-        <LimitRow
-          settingKey="offlineFilesMaxTotalMb"
-          label={t("offlineFiles.maxTotalMb.label")}
-          hint={t("offlineFiles.maxTotalMb.description")}
-          value={settings.offlineFilesMaxTotalMb}
-          onCommit={changeLimit}
-        />
-        <LimitRow
-          settingKey="offlineFilesMaxFileMb"
-          label={t("offlineFiles.maxFileMb.label")}
-          hint={t("offlineFiles.maxFileMb.description")}
-          value={settings.offlineFilesMaxFileMb}
-          onCommit={changeLimit}
-        />
+        {LIMIT_KEYS.map(({ key, text }) => (
+          <AppLimitRow
+            key={key}
+            limitKey={key}
+            text={text}
+            value={settings[key]}
+            onChange={changeLimit}
+          />
+        ))}
       </SettingsCard>
       <SettingsCard>
         <SettingsRow
@@ -106,47 +133,127 @@ export function OfflineFilesSection() {
             {t("offlineFiles.clearAll")}
           </Button>
         </SettingsRow>
-        {newest.map((file) => (
-          <View key={`${file.serverId}\n${file.path}`} style={styles.fileRow}>
-            <View style={styles.fileText}>
-              <Text style={styles.fileName} numberOfLines={1}>
-                {file.path.split(/[\\/]/).pop()}
+        {searchable ? (
+          <View style={styles.searchRow}>
+            <FormTextInput
+              size="sm"
+              initialValue={query}
+              onChangeText={setQuery}
+              placeholder={t("offlineFiles.search")}
+              accessibilityLabel={t("offlineFiles.search")}
+              autoCapitalize="none"
+              autoCorrect={false}
+              testID="offline-files-search"
+            />
+          </View>
+        ) : null}
+        {groups.map((group) => (
+          <View key={group.serverId} testID={`offline-files-host-${group.serverId}`}>
+            <View style={styles.hostRow}>
+              <Text style={styles.hostName} numberOfLines={1}>
+                {hostLabels.get(group.serverId) ?? group.serverId}
               </Text>
-              <Text style={styles.filePath} numberOfLines={1} ellipsizeMode="middle">
-                {file.path}
-              </Text>
+              <Text style={styles.fileMeta}>{formatFileSize(group.totalBytes)}</Text>
             </View>
-            <Text style={styles.fileMeta}>
-              {formatFileSize(file.size)} · {formatTimeAgo(new Date(file.savedAt))}
-            </Text>
+            {group.files.map((file) => (
+              <SavedFileRow key={file.path} file={file} />
+            ))}
           </View>
         ))}
+        {searchable && groups.length === 0 ? (
+          <Text style={[styles.filePath, styles.noMatches]}>{t("offlineFiles.noMatches")}</Text>
+        ) : null}
       </SettingsCard>
     </SettingsSection>
   );
 }
 
-function LimitRow({
-  settingKey,
+function AppLimitRow({
+  limitKey,
+  text,
+  value,
+  onChange,
+}: {
+  limitKey: LimitKey;
+  text: (typeof LIMIT_KEYS)[number]["text"];
+  value: number;
+  onChange: (key: LimitKey, value: number) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const commit = useCallback((next: number) => void onChange(limitKey, next), [limitKey, onChange]);
+  return (
+    <NumberLimitRow
+      label={t(`offlineFiles.${text}.label`)}
+      hint={t(`offlineFiles.${text}.description`)}
+      value={value}
+      bounds={LIMIT_BOUNDS[limitKey]}
+      onCommit={commit}
+      testID={`offline-files-${limitKey}`}
+    />
+  );
+}
+
+/** Long-press removes the saved copy, after a confirm. */
+function SavedFileRow({ file }: { file: OfflineFile }) {
+  const { t } = useTranslation();
+  const name = file.path.split(/[\\/]/).pop() ?? file.path;
+  const remove = useCallback(async () => {
+    const confirmed = await confirmDialog({
+      title: t("offlineFiles.removeConfirmTitle", { name }),
+      message: t("offlineFiles.removeConfirmMessage"),
+      confirmLabel: t("offlineFiles.remove"),
+      destructive: true,
+    });
+    if (confirmed) await removeOfflineFile(file.serverId, file.path);
+  }, [file.path, file.serverId, name, t]);
+  return (
+    <PressHighlight
+      onLongPress={remove}
+      accessibilityHint={t("offlineFiles.removeHint")}
+      accessibilityActions={[{ name: "remove", label: t("offlineFiles.remove") }]}
+      onAccessibilityAction={remove}
+      style={styles.fileRow}
+      testID="offline-files-row"
+    >
+      <View style={styles.fileText}>
+        <Text style={styles.fileName} numberOfLines={1}>
+          {name}
+        </Text>
+        <Text style={styles.filePath} numberOfLines={1} ellipsizeMode="middle">
+          {file.path}
+        </Text>
+      </View>
+      <Text style={styles.fileMeta}>
+        {formatFileSize(file.size)} · {formatTimeAgo(new Date(file.savedAt))}
+      </Text>
+    </PressHighlight>
+  );
+}
+
+/** A whole-number limit, clamped to `bounds` and committed on blur or submit. */
+export function NumberLimitRow({
   label,
   hint,
   value,
+  bounds,
   onCommit,
+  testID,
 }: {
-  settingKey: LimitKey;
   label: string;
   hint: string;
   value: number;
-  onCommit: (key: LimitKey, value: number) => void;
+  bounds: { min: number; max: number };
+  onCommit: (value: number) => void;
+  testID: string;
 }) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   const changeText = useCallback((next: string) => setText(next.replace(/[^\d]/g, "")), []);
   const commit = useCallback(() => {
-    const next = parseClampedFontSize(text, LIMIT_BOUNDS[settingKey]) ?? value;
+    const next = parseClampedFontSize(text, bounds) ?? value;
     setText(String(next));
-    if (next !== value) onCommit(settingKey, next);
-  }, [onCommit, settingKey, text, value]);
+    if (next !== value) onCommit(next);
+  }, [bounds, onCommit, text, value]);
   return (
     <SettingsRow label={label} hint={hint}>
       <FormTextInput
@@ -160,7 +267,7 @@ function LimitRow({
         selectTextOnFocus
         style={styles.numberInput}
         accessibilityLabel={label}
-        testID={`offline-files-${settingKey}`}
+        testID={testID}
       />
     </SettingsRow>
   );
@@ -195,5 +302,33 @@ const styles = StyleSheet.create((theme) => ({
   fileMeta: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+  },
+  searchRow: {
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[2],
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  hostRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[3],
+    paddingHorizontal: theme.spacing[4],
+    paddingTop: theme.spacing[3],
+    paddingBottom: theme.spacing[1],
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  hostName: {
+    flex: 1,
+    minWidth: 0,
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+  },
+  noMatches: {
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
   },
 }));

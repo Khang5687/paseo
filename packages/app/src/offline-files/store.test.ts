@@ -89,4 +89,11 @@ describe("matchOfflineFiles", () => {
       matchOfflineFiles(saved, { serverId: "host", cwd: "/repo", query: "a/notes.txt" }),
     ).toEqual(["a/notes.txt"]);
   });
+
+  it("takes the name as written when no saved file matches", () => {
+    const saved = [file("/repo/a/notes.txt", NOW)];
+    expect(
+      matchOfflineFiles(saved, { serverId: "host", cwd: "/repo", query: "/notes/plan.md" }),
+    ).toEqual(["notes/plan.md"]);
+  });
 });

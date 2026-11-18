@@ -2191,7 +2191,7 @@ export const fr: TranslationResources = {
     autoSave: {
       label: "Enregistrer automatiquement les fichiers du chat",
       description:
-        "Enregistre les fichiers cités dans les chats que vous ouvrez, en Wi-Fi uniquement, pour les ouvrir quand l'hôte est hors ligne.",
+        "Enregistre les fichiers cités dans les chats que vous ouvrez, pour les ouvrir quand l'hôte est hors ligne.",
     },
     retentionDays: {
       label: "Conserver (jours)",
@@ -2206,8 +2206,9 @@ export const fr: TranslationResources = {
       description: "Les fichiers plus gros ne sont pas enregistrés.",
     },
     saved: {
-      label: "Enregistrés : {{count}} fichiers, {{size}}",
-      description: "Les fichiers enregistrés les plus récents sont listés ci-dessous.",
+      label_one: "Enregistré : {{count}} fichier, {{size}}",
+      label_other: "Enregistrés : {{count}} fichiers, {{size}}",
+      description: "Regroupés par hôte. Appui long sur un fichier pour le retirer.",
     },
     clearAll: "Tout effacer",
     clearConfirmTitle: "Effacer les fichiers hors ligne ?",
@@ -2219,6 +2220,26 @@ export const fr: TranslationResources = {
     readOnly: "Ceci est une copie enregistrée. Connectez-vous à l'hôte pour la modifier.",
     savedAgo: "Copie hors ligne, enregistrée {{time}}",
     share: "Partager",
+    wifiOnly: {
+      label: "Enregistrer en Wi-Fi uniquement",
+      description:
+        "L'enregistrement automatique attend le Wi-Fi pour ne pas consommer de données mobiles.",
+    },
+    search: "Rechercher dans les fichiers enregistrés",
+    noMatches: "Aucun fichier enregistré ne correspond.",
+    remove: "Retirer",
+    removeHint: "Appui long pour retirer la copie enregistrée",
+    removeConfirmTitle: "Retirer {{name}} ?",
+    removeConfirmMessage:
+      "La copie enregistrée est supprimée de cet appareil. Le fichier sur l'hôte n'est pas modifié.",
+    hostCopies: {
+      title: "Copies sur {{host}}",
+      usage_one: "{{count}} fichier, {{size}}",
+      usage_other: "{{count}} fichiers, {{size}}",
+      description:
+        "Les fichiers cités par vos agents sont copiés sur {{host}}, pour les ouvrir quand leur hôte est en veille.",
+      keepDays: "Les copies non citées depuis ce nombre de jours sont supprimées.",
+    },
   },
   menu: {
     backdrop: "Arrière-plan du menu",

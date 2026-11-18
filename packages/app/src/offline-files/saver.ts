@@ -39,7 +39,8 @@ let autoTail: Promise<unknown> = Promise.resolve();
 
 /**
  * Saves a file the chat mentions, when automatic saving is on, the app is in the foreground and
- * the device is on Wi-Fi. Automatic saves run one at a time.
+ * the network is allowed (Wi-Fi only, unless the user turned that off). Automatic saves run one
+ * at a time.
  */
 export function autoSaveOfflineFile(request: OfflineAutoSaveRequest): Promise<void> {
   const mentionKey = `${request.serverId}\n${request.workspaceRoot}\n${request.mention}`;
@@ -52,7 +53,7 @@ export function autoSaveOfflineFile(request: OfflineAutoSaveRequest): Promise<vo
     if (
       AppState.currentState !== "active" ||
       !settings.offlineFilesAutoSave ||
-      !(await isOnUnmeteredNetwork())
+      (settings.offlineFilesWifiOnly && !(await isOnUnmeteredNetwork()))
     ) {
       checkedAt.delete(mentionKey);
       return;

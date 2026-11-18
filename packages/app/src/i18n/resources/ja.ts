@@ -2164,7 +2164,7 @@ export const ja: TranslationResources = {
     autoSave: {
       label: "チャットのファイルを自動保存",
       description:
-        "開いたチャットに出てくるファイルを Wi-Fi 接続時のみ保存し、ホストがオフラインでも開けるようにします。",
+        "開いたチャットに出てくるファイルを保存し、ホストがオフラインでも開けるようにします。",
     },
     retentionDays: {
       label: "保存期間（日）",
@@ -2179,8 +2179,9 @@ export const ja: TranslationResources = {
       description: "これより大きいファイルは保存しません。",
     },
     saved: {
-      label: "保存済み: {{count}} ファイル、{{size}}",
-      description: "最近保存したファイルを下に表示します。",
+      label_one: "保存済み: {{count}} ファイル、{{size}}",
+      label_other: "保存済み: {{count}} ファイル、{{size}}",
+      description: "ホストごとに表示します。長押しでファイルを削除します。",
     },
     clearAll: "すべて削除",
     clearConfirmTitle: "オフラインファイルを削除しますか？",
@@ -2191,6 +2192,25 @@ export const ja: TranslationResources = {
     readOnly: "これは保存コピーです。編集するにはホストに接続してください。",
     savedAgo: "オフラインコピー、{{time}}に保存",
     share: "共有",
+    wifiOnly: {
+      label: "Wi-Fi 接続時のみ保存",
+      description: "自動保存は Wi-Fi を待ち、モバイルデータを使いません。",
+    },
+    search: "保存ファイルを検索",
+    noMatches: "一致する保存ファイルはありません。",
+    remove: "削除",
+    removeHint: "長押しで保存コピーを削除",
+    removeConfirmTitle: "{{name}} を削除しますか？",
+    removeConfirmMessage:
+      "このデバイスの保存コピーを削除します。ホスト上のファイルは変わりません。",
+    hostCopies: {
+      title: "{{host}} のコピー",
+      usage_one: "{{count}} ファイル、{{size}}",
+      usage_other: "{{count}} ファイル、{{size}}",
+      description:
+        "エージェントがリンクしたファイルを {{host}} にコピーし、元のホストがスリープ中でも開けるようにします。",
+      keepDays: "この日数リンクされなかったコピーは削除されます。",
+    },
   },
   menu: {
     backdrop: "メニューの背景",

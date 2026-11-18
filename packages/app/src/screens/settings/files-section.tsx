@@ -15,6 +15,7 @@ import {
   type FilePanel,
   type FilePanelSettingsRow,
 } from "@/file-panels";
+import { HostCopiesSection } from "@/offline-files/host-copies-section";
 import { OfflineFilesSection } from "@/offline-files/settings-section";
 import { PluginIconView } from "@/plugins/icons";
 import { settingsStyles } from "@/styles/settings";
@@ -31,6 +32,7 @@ export function FilesSection() {
     <View>
       <FilePanelsSection />
       <OfflineFilesSection />
+      <HostCopiesSection />
     </View>
   );
 }

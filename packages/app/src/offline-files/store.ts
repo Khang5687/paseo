@@ -126,7 +126,9 @@ export function getOfflineFile(serverId: string, path: string): Promise<OfflineF
 
 /**
  * Saved files of one host under `cwd` whose path ends with `query`, newest first, relative to
- * `cwd`. Answers the bare-name lookups chat links make while the host is offline.
+ * `cwd`. Answers the bare-name lookups chat links make while the host is offline. With no saved
+ * match it returns the name as written, since the offline host cannot search; the file pane then
+ * looks for another host's copy of it.
  */
 export function matchOfflineFiles(
   current: readonly OfflineFile[],
@@ -134,11 +136,12 @@ export function matchOfflineFiles(
 ): string[] {
   const prefix = `${input.cwd.replace(/[\\/]+$/, "")}/`;
   const query = input.query.replace(/^[\\/]+/, "");
-  return current
+  const matches = current
     .filter((entry) => entry.serverId === input.serverId && entry.path.startsWith(prefix))
     .sort((a, b) => b.savedAt - a.savedAt)
     .map((entry) => entry.path.slice(prefix.length))
     .filter((relative) => relative === query || relative.endsWith(`/${query}`));
+  return matches.length > 0 || !query ? matches : [query];
 }
 
 export async function findOfflineFiles(input: {
@@ -206,6 +209,14 @@ export function clearOfflineFiles(): Promise<void> {
   return mutate(async (current) => {
     await deleteAttachments(current.map((entry) => entry.attachment));
     return { next: [], result: undefined };
+  });
+}
+
+export function removeOfflineFile(serverId: string, path: string): Promise<void> {
+  return mutate(async (current) => {
+    const removed = current.filter((entry) => sameFile(entry, serverId, path));
+    if (removed.length > 0) await deleteAttachments(removed.map((entry) => entry.attachment));
+    return { next: current.filter((entry) => !sameFile(entry, serverId, path)), result: undefined };
   });
 }
 

@@ -13,6 +13,8 @@ import { FilePanelPicker, FilePanelView, useFilePanelChoice, type FilePanel } fr
 import { resolveFilePreviewReadTarget } from "@/file-explorer/preview-target";
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
+import { useAppSettings } from "@/hooks/use-settings";
+import { useHostCopy } from "@/offline-files/host-copy";
 import { readOfflineFileBytes, useOfflineFiles, type OfflineFile } from "@/offline-files/store";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { shareFileBytes } from "@/stores/download-store";
@@ -66,18 +68,13 @@ export function FilePane({
   // A hidden tab or a backgrounded app stops observing; observing again reports what changed.
   const isActive = useRetainedPanelActive();
   const isAppVisible = useAppActivelyVisible();
-  // With the host offline, a saved copy stands in for the file.
-  const hostConnected = useHostRuntimeIsConnected(serverId);
-  const offlineFiles = useOfflineFiles();
-  const offlineCopy = useMemo(
-    () =>
-      connected && hostConnected
-        ? null
-        : (offlineFiles?.find(
-            (entry) => entry.serverId === serverId && entry.path === absolutePath,
-          ) ?? null),
-    [absolutePath, connected, hostConnected, offlineFiles, serverId],
-  );
+  const { offlineCopy, hostCopy } = useOfflineStandIn({
+    serverId,
+    absolutePath,
+    connected,
+    hasTarget: target !== null,
+  });
+  const { settings } = useAppSettings();
   const handle = useFileHandle({
     serverId,
     target,
@@ -106,11 +103,17 @@ export function FilePane({
     [location.lineEnd, location.lineStart, path],
   );
 
-  const offlineBar = offlineCopy ? <OfflineCopyBar entry={offlineCopy} /> : null;
+  const offlineBar = <OfflineCopyBarFor entry={offlineCopy} />;
   let body;
-  if (!connected && !offlineCopy && target) {
+  if (hostCopy === "tooLarge") {
+    body = (
+      <Text style={styles.errorText}>
+        {t("offlineFiles.tooLarge", { size: settings.offlineFilesMaxFileMb })}
+      </Text>
+    );
+  } else if (!connected && !offlineCopy && target && hostCopy !== "loading") {
     body = <Text style={styles.errorText}>{t("workspace.terminal.hostDisconnected")}</Text>;
-  } else if (!handle || snapshot.status === "loading") {
+  } else if (!handle || snapshot.status === "loading" || hostCopy === "loading") {
     return (
       <View style={styles.container} testID="workspace-file-pane">
         <FilePanelLoading />
@@ -159,6 +162,41 @@ export function FilePane({
       <View style={styles.centerState}>{body}</View>
     </View>
   );
+}
+
+/**
+ * With the host offline, a saved copy stands in for the file: this device's own, else the one
+ * another host keeps.
+ */
+function useOfflineStandIn(input: {
+  serverId: string;
+  absolutePath: string;
+  connected: boolean;
+  hasTarget: boolean;
+}) {
+  const { serverId, absolutePath, hasTarget } = input;
+  const hostConnected = useHostRuntimeIsConnected(serverId);
+  const online = input.connected && hostConnected;
+  const offlineFiles = useOfflineFiles();
+  const offlineCopy = useMemo(
+    () =>
+      online
+        ? null
+        : (offlineFiles?.find(
+            (entry) => entry.serverId === serverId && entry.path === absolutePath,
+          ) ?? null),
+    [absolutePath, offlineFiles, online, serverId],
+  );
+  const hostCopy = useHostCopy({
+    serverId,
+    path: absolutePath,
+    enabled: !online && offlineFiles !== null && !offlineCopy && hasTarget,
+  });
+  return { offlineCopy, hostCopy };
+}
+
+function OfflineCopyBarFor({ entry }: { entry: OfflineFile | null }) {
+  return entry ? <OfflineCopyBar entry={entry} /> : null;
 }
 
 /** Says the file is a saved copy and how old it is, and hands it to other apps. */

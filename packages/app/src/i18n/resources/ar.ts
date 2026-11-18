@@ -2146,8 +2146,7 @@ export const ar: TranslationResources = {
     title: "الملفات دون اتصال",
     autoSave: {
       label: "حفظ ملفات المحادثة تلقائيًا",
-      description:
-        "احفظ الملفات المذكورة في المحادثات التي تفتحها، عبر Wi-Fi فقط، لتفتح والمضيف غير متصل.",
+      description: "احفظ الملفات المذكورة في المحادثات التي تفتحها، لتفتح والمضيف غير متصل.",
     },
     retentionDays: {
       label: "الاحتفاظ لمدة (أيام)",
@@ -2162,8 +2161,9 @@ export const ar: TranslationResources = {
       description: "لا تُحفظ الملفات الأكبر.",
     },
     saved: {
-      label: "المحفوظ: {{count}} ملفات، {{size}}",
-      description: "أحدث الملفات المحفوظة مدرجة أدناه.",
+      label_one: "المحفوظ: {{count}} ملف، {{size}}",
+      label_other: "المحفوظ: {{count}} ملفات، {{size}}",
+      description: "مجمّعة حسب المضيف. اضغط مطولًا على ملف لإزالته.",
     },
     clearAll: "مسح الكل",
     clearConfirmTitle: "مسح الملفات دون اتصال؟",
@@ -2174,6 +2174,23 @@ export const ar: TranslationResources = {
     readOnly: "هذه نسخة محفوظة. اتصل بالمضيف لتعديلها.",
     savedAgo: "نسخة دون اتصال، حُفظت {{time}}",
     share: "مشاركة",
+    wifiOnly: {
+      label: "الحفظ عبر Wi-Fi فقط",
+      description: "ينتظر الحفظ التلقائي شبكة Wi-Fi فلا يستهلك بيانات الجوال.",
+    },
+    search: "ابحث في الملفات المحفوظة",
+    noMatches: "لا توجد ملفات محفوظة مطابقة.",
+    remove: "إزالة",
+    removeHint: "اضغط مطولًا لإزالة النسخة المحفوظة",
+    removeConfirmTitle: "إزالة {{name}}؟",
+    removeConfirmMessage: "تُحذف النسخة المحفوظة من هذا الجهاز. لا يتغير الملف على المضيف.",
+    hostCopies: {
+      title: "النسخ على {{host}}",
+      usage_one: "{{count}} ملف، {{size}}",
+      usage_other: "{{count}} ملفات، {{size}}",
+      description: "تُنسخ الملفات التي يربطها وكلاؤك إلى {{host}}، لتفتح أثناء نوم مضيفها.",
+      keepDays: "تُحذف النسخ التي لم تُربط مجددًا طوال هذه الأيام.",
+    },
   },
   menu: {
     backdrop: "خلفية القائمة",

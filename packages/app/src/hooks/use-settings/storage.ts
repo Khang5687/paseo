@@ -125,6 +125,8 @@ export interface AppSettings {
   pullRequestOpenLocation: PullRequestOpenLocation;
   /** Save files mentioned in opened chats so they open while the host is offline. */
   offlineFilesAutoSave: boolean;
+  /** Automatic saves wait for Wi-Fi or ethernet. */
+  offlineFilesWifiOnly: boolean;
   offlineFilesRetentionDays: number;
   offlineFilesMaxTotalMb: number;
   offlineFilesMaxFileMb: number;
@@ -187,6 +189,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
   offlineFilesAutoSave: isNative,
+  offlineFilesWifiOnly: true,
   offlineFilesRetentionDays: OFFLINE_FILE_LIMITS.retentionDays.default,
   offlineFilesMaxTotalMb: OFFLINE_FILE_LIMITS.maxTotalMb.default,
   offlineFilesMaxFileMb: OFFLINE_FILE_LIMITS.maxFileMb.default,
@@ -325,6 +328,7 @@ const StoredAppSettingsSchema = z
       }),
     pullRequestOpenLocation: z.enum(["main", "side", "explorer"]).optional(),
     offlineFilesAutoSave: z.boolean().catch(isNative),
+    offlineFilesWifiOnly: z.boolean().catch(true),
     offlineFilesRetentionDays: offlineFileLimit("retentionDays"),
     offlineFilesMaxTotalMb: offlineFileLimit("maxTotalMb"),
     offlineFilesMaxFileMb: offlineFileLimit("maxFileMb"),

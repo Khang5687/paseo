@@ -2192,7 +2192,7 @@ export const es: TranslationResources = {
     autoSave: {
       label: "Guardar archivos del chat automáticamente",
       description:
-        "Guarda los archivos mencionados en los chats que abres, solo con Wi-Fi, para abrirlos cuando el host no está conectado.",
+        "Guarda los archivos mencionados en los chats que abres, para abrirlos cuando el host no está conectado.",
     },
     retentionDays: {
       label: "Conservar (días)",
@@ -2207,8 +2207,9 @@ export const es: TranslationResources = {
       description: "Los archivos más grandes no se guardan.",
     },
     saved: {
-      label: "Guardados: {{count}} archivos, {{size}}",
-      description: "Abajo aparecen los archivos guardados más recientes.",
+      label_one: "Guardado: {{count}} archivo, {{size}}",
+      label_other: "Guardados: {{count}} archivos, {{size}}",
+      description: "Agrupados por host. Mantén pulsado un archivo para quitarlo.",
     },
     clearAll: "Borrar todo",
     clearConfirmTitle: "¿Borrar los archivos sin conexión?",
@@ -2220,6 +2221,25 @@ export const es: TranslationResources = {
     readOnly: "Es una copia guardada. Conéctate al host para editarla.",
     savedAgo: "Copia sin conexión, guardada {{time}}",
     share: "Compartir",
+    wifiOnly: {
+      label: "Guardar solo con Wi-Fi",
+      description: "El guardado automático espera al Wi-Fi para no gastar datos móviles.",
+    },
+    search: "Buscar archivos guardados",
+    noMatches: "Ningún archivo guardado coincide.",
+    remove: "Quitar",
+    removeHint: "Mantén pulsado para quitar la copia guardada",
+    removeConfirmTitle: "¿Quitar {{name}}?",
+    removeConfirmMessage:
+      "La copia guardada se borra de este dispositivo. El archivo del host no cambia.",
+    hostCopies: {
+      title: "Copias en {{host}}",
+      usage_one: "{{count}} archivo, {{size}}",
+      usage_other: "{{count}} archivos, {{size}}",
+      description:
+        "Los archivos que enlazan tus agentes se copian a {{host}}, para abrirlos mientras su host duerme.",
+      keepDays: "Las copias que no se vuelven a enlazar en estos días se eliminan.",
+    },
   },
   menu: {
     backdrop: "Fondo del menú",
