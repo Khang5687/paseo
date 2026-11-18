@@ -3,11 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "../support/fixtures";
 import { openSettings } from "../support/helpers/app";
+import { clickSessionRow, openSessions } from "../support/helpers/archive-tab";
 import { connectDaemonClient } from "../support/helpers/daemon-client-loader";
 import { getE2EDaemonPort } from "../support/helpers/daemon-port";
 import { addConnectedHostAndReload, waitForConnectedHost } from "../support/helpers/hosts";
 import { startIsolatedHostDaemon } from "../support/helpers/isolated-host-daemon";
-import { buildAgentRoute } from "../support/helpers/mock-agent";
 import { seedWorkspace } from "../support/helpers/seed-client";
 import { getServerId } from "../support/helpers/server-id";
 import { openSettingsSection } from "../support/helpers/settings";
@@ -85,7 +85,10 @@ test.describe("Files from a sleeping host", () => {
         serverId: mac.serverId,
         endpoint: `localhost:${mac.port}`,
       });
-      await page.goto(buildAgentRoute(workspace.workspaceId, agent.id, mac.serverId));
+      // A cold deep link to the connected host's workspace redirected to /open-project here,
+      // so open the chat from History, as a user would.
+      await openSessions(page);
+      await clickSessionRow(page, "Copies while asleep");
       const link = page.getByTestId("assistant-message").getByText(PLAN, { exact: true });
       await expect(link).toBeVisible({ timeout: 60_000 });
       await page.setViewportSize({ width: 390, height: 844 });
