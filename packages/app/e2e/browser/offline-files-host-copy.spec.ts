@@ -60,7 +60,7 @@ test.describe("Files from a sleeping host", () => {
       const planPath = path.join(workspace.repoPath, PLAN);
       await mkdir(path.dirname(planPath), { recursive: true });
       await writeFile(planPath, `# Plan\n\n${PLAN_TEXT}\n`);
-      const agent = await workspace.client.createAgent({
+      await workspace.client.createAgent({
         provider: "mock",
         cwd: workspace.repoPath,
         workspaceId: workspace.workspaceId,
