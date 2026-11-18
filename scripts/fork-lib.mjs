@@ -135,16 +135,35 @@ export function playwrightFileResults(report, testDir, files) {
 }
 
 /** Feature verdicts from per-file results. A feature with no file in `results` was not run. */
-export function featureVerdicts(features, results) {
+export function featureVerdicts(features, results, { e2ePrs = null } = {}) {
   return activeFeatures(features).map((feature) => {
-    const guards = [...feature.tests, ...(feature.e2e ?? [])];
+    const e2eSkipped = e2ePrs !== null && !e2ePrs.has(feature.pr);
+    const guards = [...feature.tests, ...(e2eSkipped ? [] : (feature.e2e ?? []))];
     const ran = guards.filter((file) => results.has(file));
     const failed = ran.filter((file) => !results.get(file));
     let status = "pass";
-    if (ran.length === 0) status = feature.untested === undefined ? "not-run" : "untested";
-    else if (failed.length > 0) status = "fail";
+    if (ran.length === 0) {
+      if (feature.untested !== undefined) status = "untested";
+      // Only browser specs guard it and this run left them out: not a gap, not a failure.
+      else if (e2eSkipped && (feature.e2e ?? []).length > 0) status = "e2e-deferred";
+      else status = "not-run";
+    } else if (failed.length > 0) status = "fail";
     return { pr: feature.pr, title: feature.title, status, failed };
   });
+}
+
+/**
+ * Browser specs to run. `e2ePrs` (a Set of PR numbers) narrows them to those PRs' features;
+ * null runs every active feature's specs.
+ */
+export function selectE2eSpecs(features, e2ePrs) {
+  return [
+    ...new Set(
+      activeFeatures(features)
+        .filter((f) => e2ePrs === null || e2ePrs.has(f.pr))
+        .flatMap((f) => f.e2e ?? []),
+    ),
+  ];
 }
 
 /**
