@@ -2159,7 +2159,8 @@ export const ar: TranslationResources = {
       description: "لا تُحفظ الملفات الأكبر.",
     },
     saved: {
-      label: "المحفوظ: {{count}} ملفات، {{size}}",
+      label_one: "المحفوظ: {{count}} ملف، {{size}}",
+      label_other: "المحفوظ: {{count}} ملفات، {{size}}",
       description: "مجمّعة حسب المضيف. اضغط مطولًا على ملف لإزالته.",
     },
     clearAll: "مسح الكل",
@@ -2183,7 +2184,8 @@ export const ar: TranslationResources = {
     removeConfirmMessage: "تُحذف النسخة المحفوظة من هذا الجهاز. لا يتغير الملف على المضيف.",
     hostCopies: {
       title: "النسخ على {{host}}",
-      usage: "{{count}} ملفات، {{size}}",
+      usage_one: "{{count}} ملف، {{size}}",
+      usage_other: "{{count}} ملفات، {{size}}",
       description: "تُنسخ الملفات التي يربطها وكلاؤك إلى {{host}}، لتفتح أثناء نوم مضيفها.",
       keepDays: "تُحذف النسخ التي لم تُربط مجددًا طوال هذه الأيام.",
     },

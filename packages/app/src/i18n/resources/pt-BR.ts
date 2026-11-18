@@ -2190,7 +2190,8 @@ export const ptBR: TranslationResources = {
       description: "Arquivos maiores não são salvos.",
     },
     saved: {
-      label: "Salvos: {{count}} arquivos, {{size}}",
+      label_one: "Salvo: {{count}} arquivo, {{size}}",
+      label_other: "Salvos: {{count}} arquivos, {{size}}",
       description: "Agrupados por host. Toque e segure um arquivo para removê-lo.",
     },
     clearAll: "Limpar tudo",
@@ -2215,7 +2216,8 @@ export const ptBR: TranslationResources = {
     removeConfirmMessage: "A cópia salva é apagada deste dispositivo. O arquivo no host não muda.",
     hostCopies: {
       title: "Cópias em {{host}}",
-      usage: "{{count}} arquivos, {{size}}",
+      usage_one: "{{count}} arquivo, {{size}}",
+      usage_other: "{{count}} arquivos, {{size}}",
       description:
         "Os arquivos que seus agentes citam são copiados para {{host}}, para abrir enquanto o host deles dorme.",
       keepDays: "Cópias não citadas de novo por esse número de dias são removidas.",

@@ -2132,7 +2132,8 @@ export const zhCN: TranslationResources = {
       description: "更大的文件不会保存。",
     },
     saved: {
-      label: "已保存：{{count}} 个文件，{{size}}",
+      label_one: "已保存：{{count}} 个文件，{{size}}",
+      label_other: "已保存：{{count}} 个文件，{{size}}",
       description: "按主机分组。长按文件可移除。",
     },
     clearAll: "全部清除",
@@ -2156,7 +2157,8 @@ export const zhCN: TranslationResources = {
     removeConfirmMessage: "已保存的副本会从此设备删除，主机上的文件不受影响。",
     hostCopies: {
       title: "{{host}} 上的副本",
-      usage: "{{count}} 个文件，{{size}}",
+      usage_one: "{{count}} 个文件，{{size}}",
+      usage_other: "{{count}} 个文件，{{size}}",
       description: "智能体链接的文件会复制到 {{host}}，原主机休眠时也能打开。",
       keepDays: "超过此天数未再被链接的副本会被删除。",
     },

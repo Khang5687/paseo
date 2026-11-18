@@ -2182,7 +2182,8 @@ export const en = {
       description: "Larger files are not saved.",
     },
     saved: {
-      label: "Saved: {{count}} files, {{size}}",
+      label_one: "Saved: {{count}} file, {{size}}",
+      label_other: "Saved: {{count}} files, {{size}}",
       description: "Grouped by host. Long-press a file to remove it.",
     },
     clearAll: "Clear all",
@@ -2208,7 +2209,8 @@ export const en = {
       "The saved copy is deleted from this device. The file on the host is not touched.",
     hostCopies: {
       title: "Copies on {{host}}",
-      usage: "{{count}} files, {{size}}",
+      usage_one: "{{count}} file, {{size}}",
+      usage_other: "{{count}} files, {{size}}",
       description:
         "Files your agents link are copied to {{host}}, so they open while their own host sleeps.",
       keepDays: "Copies not linked again for this many days are removed.",

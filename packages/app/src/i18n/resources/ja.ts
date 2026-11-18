@@ -2177,7 +2177,8 @@ export const ja: TranslationResources = {
       description: "これより大きいファイルは保存しません。",
     },
     saved: {
-      label: "保存済み: {{count}} ファイル、{{size}}",
+      label_one: "保存済み: {{count}} ファイル、{{size}}",
+      label_other: "保存済み: {{count}} ファイル、{{size}}",
       description: "ホストごとに表示します。長押しでファイルを削除します。",
     },
     clearAll: "すべて削除",
@@ -2202,7 +2203,8 @@ export const ja: TranslationResources = {
       "このデバイスの保存コピーを削除します。ホスト上のファイルは変わりません。",
     hostCopies: {
       title: "{{host}} のコピー",
-      usage: "{{count}} ファイル、{{size}}",
+      usage_one: "{{count}} ファイル、{{size}}",
+      usage_other: "{{count}} ファイル、{{size}}",
       description:
         "エージェントがリンクしたファイルを {{host}} にコピーし、元のホストがスリープ中でも開けるようにします。",
       keepDays: "この日数リンクされなかったコピーは削除されます。",

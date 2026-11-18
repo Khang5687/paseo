@@ -2204,7 +2204,8 @@ export const fr: TranslationResources = {
       description: "Les fichiers plus gros ne sont pas enregistrés.",
     },
     saved: {
-      label: "Enregistrés : {{count}} fichiers, {{size}}",
+      label_one: "Enregistré : {{count}} fichier, {{size}}",
+      label_other: "Enregistrés : {{count}} fichiers, {{size}}",
       description: "Regroupés par hôte. Appui long sur un fichier pour le retirer.",
     },
     clearAll: "Tout effacer",
@@ -2231,7 +2232,8 @@ export const fr: TranslationResources = {
       "La copie enregistrée est supprimée de cet appareil. Le fichier sur l'hôte n'est pas modifié.",
     hostCopies: {
       title: "Copies sur {{host}}",
-      usage: "{{count}} fichiers, {{size}}",
+      usage_one: "{{count}} fichier, {{size}}",
+      usage_other: "{{count}} fichiers, {{size}}",
       description:
         "Les fichiers cités par vos agents sont copiés sur {{host}}, pour les ouvrir quand leur hôte est en veille.",
       keepDays: "Les copies non citées depuis ce nombre de jours sont supprimées.",

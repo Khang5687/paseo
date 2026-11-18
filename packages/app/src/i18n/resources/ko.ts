@@ -2166,7 +2166,8 @@ export const ko: TranslationResources = {
       description: "더 큰 파일은 저장하지 않습니다.",
     },
     saved: {
-      label: "저장됨: 파일 {{count}}개, {{size}}",
+      label_one: "저장됨: 파일 {{count}}개, {{size}}",
+      label_other: "저장됨: 파일 {{count}}개, {{size}}",
       description: "호스트별로 묶어 표시합니다. 파일을 길게 눌러 삭제합니다.",
     },
     clearAll: "모두 지우기",
@@ -2190,7 +2191,8 @@ export const ko: TranslationResources = {
     removeConfirmMessage: "이 기기에서 저장된 사본을 삭제합니다. 호스트의 파일은 그대로입니다.",
     hostCopies: {
       title: "{{host}}의 사본",
-      usage: "파일 {{count}}개, {{size}}",
+      usage_one: "파일 {{count}}개, {{size}}",
+      usage_other: "파일 {{count}}개, {{size}}",
       description:
         "에이전트가 링크한 파일을 {{host}}에 복사해 원래 호스트가 잠들어도 열 수 있게 합니다.",
       keepDays: "이 기간 동안 다시 링크되지 않은 사본은 삭제됩니다.",

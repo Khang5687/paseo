@@ -2192,7 +2192,8 @@ export const ru: TranslationResources = {
       description: "Файлы крупнее не сохраняются.",
     },
     saved: {
-      label: "Сохранено: файлов {{count}}, {{size}}",
+      label_one: "Сохранено: файлов {{count}}, {{size}}",
+      label_other: "Сохранено: файлов {{count}}, {{size}}",
       description: "По хостам. Долгое нажатие на файл удаляет его.",
     },
     clearAll: "Очистить всё",
@@ -2218,7 +2219,8 @@ export const ru: TranslationResources = {
       "Сохранённая копия удаляется с этого устройства. Файл на хосте не меняется.",
     hostCopies: {
       title: "Копии на {{host}}",
-      usage: "Файлов: {{count}}, {{size}}",
+      usage_one: "Файлов: {{count}}, {{size}}",
+      usage_other: "Файлов: {{count}}, {{size}}",
       description:
         "Файлы, на которые ссылаются ваши агенты, копируются на {{host}}, чтобы открываться, пока их хост спит.",
       keepDays: "Копии, на которые не ссылались столько дней, удаляются.",

@@ -107,7 +107,7 @@ test.describe("Files from a sleeping host", () => {
       await openSettingsSection(page, "files");
       const copies = page.getByTestId(`host-copies-${omenServerId}`);
       await expect(copies.getByText("Copies on Omen box")).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId(`host-copies-usage-${omenServerId}`)).toContainText("1 files");
+      await expect(page.getByTestId(`host-copies-usage-${omenServerId}`)).toContainText("1 file,");
       const keepDays = page.getByTestId(`host-copies-keep-days-${omenServerId}`);
       await keepDays.tap();
       await keepDays.fill("7");

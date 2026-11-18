@@ -2205,7 +2205,8 @@ export const es: TranslationResources = {
       description: "Los archivos más grandes no se guardan.",
     },
     saved: {
-      label: "Guardados: {{count}} archivos, {{size}}",
+      label_one: "Guardado: {{count}} archivo, {{size}}",
+      label_other: "Guardados: {{count}} archivos, {{size}}",
       description: "Agrupados por host. Mantén pulsado un archivo para quitarlo.",
     },
     clearAll: "Borrar todo",
@@ -2231,7 +2232,8 @@ export const es: TranslationResources = {
       "La copia guardada se borra de este dispositivo. El archivo del host no cambia.",
     hostCopies: {
       title: "Copias en {{host}}",
-      usage: "{{count}} archivos, {{size}}",
+      usage_one: "{{count}} archivo, {{size}}",
+      usage_other: "{{count}} archivos, {{size}}",
       description:
         "Los archivos que enlazan tus agentes se copian a {{host}}, para abrirlos mientras su host duerme.",
       keepDays: "Las copias que no se vuelven a enlazar en estos días se eliminan.",
