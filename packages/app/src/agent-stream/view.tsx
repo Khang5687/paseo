@@ -499,7 +499,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           openDirectory: openInlineDirectory,
           openOutsideDirectory: openInlineOutsideDirectory,
         }),
-      [workspaceRoot, lookupClient, openInlineFile, openInlineDirectory, openInlineOutsideDirectory],
+      [
+        workspaceRoot,
+        lookupClient,
+        openInlineFile,
+        openInlineDirectory,
+        openInlineOutsideDirectory,
+      ],
     );
     useEffect(() => {
       if (!isActive) inlinePathOpener.cancel();
