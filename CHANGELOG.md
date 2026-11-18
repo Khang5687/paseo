@@ -1,11 +1,26 @@
 # Changelog
 
-Not released yet. These changes are on `main` but not in 0.16.0; the next release entry includes them.
+Not released yet. These changes are on `main` but not in 0.16.1; the next release entry includes them.
 
 Added:
 
 - Agents can ask another agent questions with `ask_agent` without interrupting it: a hidden read-only copy of its conversation answers and stays open for follow-ups with the returned `threadId`, up to a round cap, then closes after the last round, on idle, on archive, or when the asker closes it. The copy cannot call mutating Paseo tools. Works on the same host or a connected one for Claude, Codex, OpenCode, and OMP agents; limits are set under `agents.askAgent` in `config.json`; `list_agents` now includes each agent's `workspaceId`
 - Agents can answer another agent's question boxes with `respond_to_permission` `answers` keyed by question header; `list_pending_permissions` filters by `agentId`, and both reach agents on connected hosts with `serverId`. The `paseo` skill now covers finding, asking, messaging, and unblocking other agents
+
+## 0.16.1 - 2026-11-17
+
+### Fixed
+
+- Fixed Claude Bypass approving actions without a permission card when a `permissions.ask` rule or a hook that returns `ask` required one ([#9927](https://github.com/getpaseo/paseo/pull/9927))
+- Fixed controls being touch-sized on a touch-screen laptop when a trackpad or mouse is its primary input ([#9909](https://github.com/getpaseo/paseo/pull/9909) by [@michaelhthomas](https://github.com/michaelhthomas))
+- Fixed Claude sessions failing until `/login` when Paseo refreshed the Claude model list while Claude Code was renewing an expired access token ([#9855](https://github.com/getpaseo/paseo/pull/9855) by [@daysun-k](https://github.com/daysun-k))
+- Fixed Add host text fields on web drawing without a box, which left the host password field invisible ([#9865](https://github.com/getpaseo/paseo/pull/9865) by [@angusb93](https://github.com/angusb93))
+- Fixed an OpenCode question that could not be answered or dismissed after a new message steered the turn ([#9891](https://github.com/getpaseo/paseo/pull/9891))
+- Fixed Pi and OMP model names that contain `/` being cut to the text after the last slash ([#9823](https://github.com/getpaseo/paseo/pull/9823), [#9836](https://github.com/getpaseo/paseo/pull/9836) by [@rms523](https://github.com/rms523))
+- Fixed Changes leaving out an edit when the file was saved with the same size in the same second it was staged ([#9854](https://github.com/getpaseo/paseo/pull/9854))
+- Fixed an error toast that never closed when marking a chat as read failed ([#9837](https://github.com/getpaseo/paseo/pull/9837))
+- Fixed wait results and finish notifications after a daemon restart joining an agent's self-started reply to the reply before it ([#9846](https://github.com/getpaseo/paseo/pull/9846))
+- Fixed Codex chats staying loaded in the daemon until restart when a client opened them only to read their history ([#9859](https://github.com/getpaseo/paseo/pull/9859) by [@Spshulem](https://github.com/Spshulem))
 
 ## 0.16.0 - 2026-11-16
 

@@ -1,11 +1,26 @@
 # Changelog
 
-尚未发布。以下变更已合入 `main`，但不包含在 0.16.0 中；下一个版本的条目会包含它们。
+尚未发布。以下变更已合入 `main`，但不包含在 0.16.1 中；下一个版本的条目会包含它们。
 
 新增：
 
 - Agent 可用 `ask_agent` 向另一个 Agent 提问而不打断它：由它对话的一个隐藏只读副本回答，并通过返回的 `threadId` 保持开启以便追问，直到轮数上限；最后一轮后、空闲超时、任一方被归档或提问方主动关闭时副本即被删除。副本不能调用会修改状态的 Paseo 工具。支持同一主机或已连接的主机上的 Claude、Codex、OpenCode 和 OMP Agent；限制项在 `config.json` 的 `agents.askAgent` 中设置；`list_agents` 现在会返回每个 Agent 的 `workspaceId`
 - Agent 可用 `respond_to_permission` 的 `answers`（按问题 header）回答另一个 Agent 的提问框；`list_pending_permissions` 可按 `agentId` 过滤，两者都可通过 `serverId` 用于已连接主机上的 Agent。`paseo` 技能新增查找、询问、发消息和解除其他 Agent 阻塞的说明
+
+## 0.16.1 - 2026-11-17
+
+### 修复
+
+- 修复 `permissions.ask` 规则或返回 `ask` 的钩子要求确认时，Claude Bypass 不显示权限卡片就批准操作的问题 ([#9927](https://github.com/getpaseo/paseo/pull/9927))
+- 修复触屏笔记本以触控板或鼠标为主要输入时，控件仍使用触控尺寸的问题 ([#9909](https://github.com/getpaseo/paseo/pull/9909)，贡献者：[@michaelhthomas](https://github.com/michaelhthomas))
+- 修复 Claude Code 正在续期已过期的访问令牌时，Paseo 刷新 Claude 模型列表导致 Claude 会话在执行 `/login` 前一直失败的问题 ([#9855](https://github.com/getpaseo/paseo/pull/9855)，贡献者：[@daysun-k](https://github.com/daysun-k))
+- 修复 Web 端“添加主机”的文本字段没有输入框，导致主机密码字段不可见的问题 ([#9865](https://github.com/getpaseo/paseo/pull/9865)，贡献者：[@angusb93](https://github.com/angusb93))
+- 修复新消息引导当前回合后，OpenCode 提问既无法回答也无法关闭的问题 ([#9891](https://github.com/getpaseo/paseo/pull/9891))
+- 修复名称包含 `/` 的 Pi 和 OMP 模型被截成最后一个斜杠之后文本的问题 ([#9823](https://github.com/getpaseo/paseo/pull/9823), [#9836](https://github.com/getpaseo/paseo/pull/9836)，贡献者：[@rms523](https://github.com/rms523))
+- 修复文件暂存后在同一秒内以相同大小保存时，“更改”遗漏该修改的问题 ([#9854](https://github.com/getpaseo/paseo/pull/9854))
+- 修复将对话标记为已读失败后，错误提示一直不关闭的问题 ([#9837](https://github.com/getpaseo/paseo/pull/9837))
+- 修复 daemon 重启后，等待结果和完成通知把 Agent 自行开始的回复与上一条回复拼接在一起的问题 ([#9846](https://github.com/getpaseo/paseo/pull/9846))
+- 修复客户端仅为读取历史而打开的 Codex 对话一直加载在 daemon 中直到重启的问题 ([#9859](https://github.com/getpaseo/paseo/pull/9859)，贡献者：[@Spshulem](https://github.com/Spshulem))
 
 ## 0.16.0 - 2026-11-16
 
