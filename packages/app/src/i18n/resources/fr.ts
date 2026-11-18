@@ -391,6 +391,8 @@ export const fr: TranslationResources = {
     copied: "Copié",
     noOutput: "Aucune sortie pour l’instant",
     noOutputFinished: "Aucune sortie",
+    fullScreen:
+      "Cette commande a dessiné un plein écran. Il s’affiche tel quel ; ouvrez-le dans l’onglet Terminal pour l’utiliser.",
     startFailed: "Impossible de lancer la commande",
     closeFailed: "Impossible de fermer le terminal",
     hostOffline: "Hôte hors ligne. Reconnectez-vous pour exécuter cette commande.",
@@ -568,8 +570,7 @@ export const fr: TranslationResources = {
         archivedTitle: "Espace de travail archivé",
         restoreDescription:
           "Restaurez {{workspaceName}} pour retrouver ses agents. Son worktree utilisera la branche {{branch}}.",
-        restoreWithoutBranchDescription:
-          "Restaurez {{workspaceName}} pour retrouver ses agents. Une nouvelle branche partira de la base enregistrée ou de la branche par défaut du dépôt.",
+        restoreWithoutBranchDescription: "Restaurez {{workspaceName}} pour retrouver ses agents.",
         unarchiveDescription: "{{workspaceName}} est archivé. Désarchivez-le pour le rouvrir.",
         restoreAction: "Restaurer",
         unarchiveAction: "Désarchiver",
@@ -2181,6 +2182,7 @@ export const fr: TranslationResources = {
     hostUnavailable: "L’hôte de téléchargement est indisponible.",
     cancelled: "Téléchargement annulé.",
     failed: "Impossible de télécharger le fichier.",
+    httpFailed: "Impossible de télécharger le fichier (HTTP {{status}}).",
     shareFile: "Partager le fichier",
     shareFileNamed: "Partager {{fileName}}",
   },

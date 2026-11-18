@@ -233,6 +233,7 @@ function RunSession({ runKey, scope, record, client, onClose }: RunSessionProps)
   // A successful run folds to its status line; anything else stays open to read.
   const [expanded, setExpanded] = useState(status.kind !== "exited" || status.exitCode !== 0);
   const lines = outputLines(live);
+  const screen = live?.kind === "output" && live.screen === true;
   useRunObservation({ runKey, serverId: scope.serverId, record, client, enabled: !terminalClosed });
 
   const { openTerminal: openWorkspaceTerminal } = scope;
@@ -309,12 +310,23 @@ function RunSession({ runKey, scope, record, client, onClose }: RunSessionProps)
           </ToolbarButton>
         </View>
       </View>
+      {running && screen ? (
+        <Text style={styles.hint} testID="code-run-full-screen">
+          {t("codeRun.fullScreen")}
+        </Text>
+      ) : null}
       {expanded ? <RunOutput lines={lines} running={running} /> : null}
       {closeState.kind === "failed" ? (
         <Text style={styles.error}>{t("codeRun.closeFailed")}</Text>
       ) : null}
       {running ? (
-        <RunControls runKey={runKey} record={record} client={client} lines={lines} />
+        <RunControls
+          runKey={runKey}
+          record={record}
+          client={client}
+          lines={lines}
+          screen={screen}
+        />
       ) : null}
       {!running && expanded ? (
         <View style={styles.finishRow}>
@@ -436,12 +448,14 @@ interface RunControlsProps {
   record: CodeRunRecord;
   client: CodeRunClient | null;
   lines: readonly string[];
+  /** `lines` is a full screen the command drew, not its printed output. */
+  screen: boolean;
 }
 
 /** Everything a running command can be asked for: an answer, a quick choice, or a key. */
-function RunControls({ runKey, record, client, lines }: RunControlsProps) {
+function RunControls({ runKey, record, client, lines, screen }: RunControlsProps) {
   const { t } = useTranslation();
-  const prompt = readRunPrompt(lines);
+  const prompt = readRunPrompt(lines, screen);
   const answer = useCallback(
     (text: string) => {
       if (client) answerCodeRun(client, record, text);
@@ -573,18 +587,18 @@ function useRunObservation(input: {
   const liveRestore = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.["terminal-restore-modes"] === true,
   );
-  const { terminalId, nonce } = record;
+  const { terminalId, nonce, startedAt } = record;
   const active = enabled && appVisible && panelActive && connected && client !== null;
   useEffect(() => {
     if (!active || !client) return;
     return observeCodeRun({
       client,
       key: runKey,
-      record: { terminalId, nonce },
+      record: { terminalId, nonce, startedAt },
       liveRestore,
       onFinish: signalFinish,
     });
-  }, [active, client, liveRestore, nonce, runKey, terminalId]);
+  }, [active, client, liveRestore, nonce, runKey, startedAt, terminalId]);
 }
 
 function signalFinish(exitCode: number) {

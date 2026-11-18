@@ -1,3 +1,5 @@
+import { pluginGallery } from "./plugin-gallery";
+
 export const en = {
   pluginCombobox: {
     searching: "Searching…",
@@ -383,6 +385,8 @@ export const en = {
     copied: "Copied",
     noOutput: "No output yet",
     noOutputFinished: "No output",
+    fullScreen:
+      "This command drew a full screen. Showing it as it is now; open it in the Terminal tab to work with it.",
     startFailed: "Unable to start the command",
     closeFailed: "Unable to close the terminal",
     hostOffline: "Host offline. Reconnect to run this command.",
@@ -560,8 +564,7 @@ export const en = {
         archivedTitle: "Workspace archived",
         restoreDescription:
           "Restore {{workspaceName}} to return to its agents. Its worktree will use branch {{branch}}.",
-        restoreWithoutBranchDescription:
-          "Restore {{workspaceName}} to return to its agents. A new branch will start from the saved base or the repository default.",
+        restoreWithoutBranchDescription: "Restore {{workspaceName}} to return to its agents.",
         unarchiveDescription: "{{workspaceName}} is archived. Unarchive it to open it again.",
         restoreAction: "Restore",
         unarchiveAction: "Unarchive",
@@ -2159,6 +2162,7 @@ export const en = {
     hostUnavailable: "Download host is unavailable.",
     cancelled: "Download was cancelled.",
     failed: "Failed to download file.",
+    httpFailed: "Failed to download file (HTTP {{status}}).",
     shareFile: "Share file",
     shareFileNamed: "Share {{fileName}}",
   },
@@ -2909,6 +2913,7 @@ export const en = {
       host: "Overview",
     },
     plugins: {
+      gallery: pluginGallery.en,
       title: "Plugins",
       screens: {
         open: "Open",
@@ -2946,21 +2951,22 @@ export const en = {
         enabling: "Enabling…",
         disable: "Disable",
         disabling: "Disabling…",
-        remove: "Remove",
-        removing: "Removing…",
+        remove: "Uninstall",
+        removing: "Uninstalling…",
       },
       feedback: {
         installed: "Installed {{name}}",
         reload: "Reloaded {{name}}",
         enable: "Enabled {{name}}",
         disable: "Disabled {{name}}",
-        remove: "Removed {{name}}",
+        remove: "Uninstalled {{name}}",
         kept: "Kept {{name}}",
         globalEnabled: "Plugins enabled",
         globalDisabled: "Plugins disabled",
       },
-      removeConfirmTitle: "Remove {{name}}?",
-      removeConfirmMessage: "This removes the configuration. The source directory is not deleted.",
+      removeConfirmTitle: "Uninstall {{name}}?",
+      removeConfirmMessage: "Its download and settings on this host are deleted.",
+      removeConfirmLocalMessage: "Its settings are deleted. Its folder stays on disk.",
       states: {
         offlineTitle: "Plugin host is offline",
         offlineDescription: "Reconnect to this host to manage its plugins.",

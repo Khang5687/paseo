@@ -390,6 +390,8 @@ export const ptBR: TranslationResources = {
     copied: "Copiado",
     noOutput: "Nenhuma saída ainda",
     noOutputFinished: "Nenhuma saída",
+    fullScreen:
+      "Este comando desenhou uma tela cheia. Ela aparece como está agora; abra-a na aba Terminal para usá-la.",
     startFailed: "Não foi possível iniciar o comando",
     closeFailed: "Não foi possível fechar o terminal",
     hostOffline: "Host offline. Reconecte para executar este comando.",
@@ -567,8 +569,7 @@ export const ptBR: TranslationResources = {
         archivedTitle: "Workspace arquivado",
         restoreDescription:
           "Restaure {{workspaceName}} para voltar aos seus agentes. A worktree usará a branch {{branch}}.",
-        restoreWithoutBranchDescription:
-          "Restaure {{workspaceName}} para voltar aos seus agentes. Uma nova branch partirá da base salva ou da branch padrão do repositório.",
+        restoreWithoutBranchDescription: "Restaure {{workspaceName}} para voltar aos seus agentes.",
         unarchiveDescription:
           "{{workspaceName}} está arquivado. Desarquive-o para abri-lo novamente.",
         restoreAction: "Restaurar",
@@ -2167,6 +2168,7 @@ export const ptBR: TranslationResources = {
     hostUnavailable: "Host de download indisponível.",
     cancelled: "Download cancelado.",
     failed: "Falha ao baixar arquivo.",
+    httpFailed: "Falha ao baixar arquivo (HTTP {{status}}).",
     shareFile: "Compartilhar arquivo",
     shareFileNamed: "Compartilhar {{fileName}}",
   },

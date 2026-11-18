@@ -82,6 +82,12 @@ export interface RunOutput {
   exitCode: number | null;
   /** Whole seconds on the host's clock; null until the run ends. */
   durationSeconds: number | null;
+  /**
+   * The run's wrapper lines are gone from a screen that still shows text: a full-screen
+   * program (tmux, vim, less) switched to the alternate screen, or the command cleared it.
+   * `lines` is then the screen as it is now.
+   */
+  screen: boolean;
 }
 
 /**
@@ -89,13 +95,17 @@ export interface RunOutput {
  *
  * `complete` says the capture starts at the top of the terminal. When it does not, and the
  * wrapper echo has scrolled out of the window, every captured line is output.
+ *
+ * `settled` says the shell has had time to echo the command. Before that, a screen without
+ * the wrapper is the shell's own prompt; after it, the command drew that screen.
  */
 export function readRunOutput(input: {
   lines: readonly string[];
   nonce: string;
   complete: boolean;
+  settled: boolean;
 }): RunOutput {
-  const { lines, nonce, complete } = input;
+  const { lines, nonce, complete, settled } = input;
   const startLine = new RegExp(`^\\[start (\\d+)\\] ${nonce}$`);
   const statusLine = new RegExp(`^\\[exit (\\d+) (\\d+)\\] ${nonce}$`);
   let echoEnd = -1;
@@ -116,10 +126,23 @@ export function readRunOutput(input: {
     if (start) startedAt = Number(start[1]);
     if (line.includes(nonce)) echoEnd = index;
   }
-  if (echoEnd === -1 && complete) return { lines: [], exitCode, durationSeconds };
+  if (echoEnd === -1 && complete) {
+    if (!settled) return { lines: [], exitCode, durationSeconds, screen: false };
+    // The command cleared the screen or switched to the alternate one. Show what it drew;
+    // once the status line is back, the text above it is ordinary output.
+    const end = statusIndex === -1 ? lines.length : statusIndex;
+    const drawn = trimBlankLines(lines.slice(0, end));
+    if (exitCode !== null) return { lines: drawn, exitCode, durationSeconds, screen: false };
+    // A full screen pads its rows with blanks (tmux keeps its status bar on the last row);
+    // the card follows the bottom, so long gaps would scroll the prompt out of view.
+    const screen = drawn.filter(
+      (line, index) => line.trim() !== "" || drawn[index - 1]?.trim() !== "",
+    );
+    return { lines: screen, exitCode, durationSeconds, screen: screen.length > 0 };
+  }
   const end = statusIndex === -1 ? lines.length : statusIndex;
   const output = trimBlankLines(lines.slice(echoEnd + 1, end));
-  return { lines: output, exitCode, durationSeconds };
+  return { lines: output, exitCode, durationSeconds, screen: false };
 }
 
 /** What the command is waiting for, read from the line it last printed. */
@@ -127,11 +150,17 @@ export type RunPrompt = { kind: "password"; sudo: boolean } | { kind: "confirm" 
 
 const CONFIRM_PROMPT = /\[y\/n\]|\(y\/n\)|\[yes\/no\]|\(yes\/no\)|continue\?/i;
 
-export function readRunPrompt(lines: readonly string[]): RunPrompt {
-  const last = lines.at(-1);
-  if (last === undefined) return null;
-  if (PASSWORD_PROMPT.test(last)) return { kind: "password", sudo: /\[sudo\]/i.test(last) };
-  if (CONFIRM_PROMPT.test(last)) return { kind: "confirm" };
+/**
+ * `screen` output is a whole screen whose bottom row is often the program's own status bar
+ * (tmux), so the prompt may sit on the last text line above it.
+ */
+export function readRunPrompt(lines: readonly string[], screen = false): RunPrompt {
+  const textLines = lines.filter((line) => line.trim() !== "");
+  const candidates = screen ? textLines.slice(-2).toReversed() : textLines.slice(-1);
+  for (const line of candidates) {
+    if (PASSWORD_PROMPT.test(line)) return { kind: "password", sudo: /\[sudo\]/i.test(line) };
+    if (CONFIRM_PROMPT.test(line)) return { kind: "confirm" };
+  }
   return null;
 }
 

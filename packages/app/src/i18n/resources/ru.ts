@@ -390,6 +390,8 @@ export const ru: TranslationResources = {
     copied: "Скопировано",
     noOutput: "Вывода пока нет",
     noOutputFinished: "Нет вывода",
+    fullScreen:
+      "Команда нарисовала полноэкранный интерфейс. Показан текущий экран; откройте его во вкладке «Терминал», чтобы работать с ним.",
     startFailed: "Не удалось запустить команду",
     closeFailed: "Не удалось закрыть терминал",
     hostOffline: "Хост не в сети. Подключитесь снова, чтобы запустить эту команду.",
@@ -568,7 +570,7 @@ export const ru: TranslationResources = {
         restoreDescription:
           "Восстановите «{{workspaceName}}», чтобы вернуться к его агентам. Worktree будет использовать ветку {{branch}}.",
         restoreWithoutBranchDescription:
-          "Восстановите «{{workspaceName}}», чтобы вернуться к его агентам. Новая ветка будет создана от сохранённой базовой или ветки репозитория по умолчанию.",
+          "Восстановите «{{workspaceName}}», чтобы вернуться к его агентам.",
         unarchiveDescription:
           "Рабочее пространство «{{workspaceName}}» находится в архиве. Разархивируйте его, чтобы снова открыть.",
         restoreAction: "Восстановить",
@@ -2169,6 +2171,7 @@ export const ru: TranslationResources = {
     hostUnavailable: "Хост загрузки недоступен.",
     cancelled: "Загрузка отменена.",
     failed: "Не удалось загрузить файл.",
+    httpFailed: "Не удалось загрузить файл (HTTP {{status}}).",
     shareFile: "Поделиться файлом",
     shareFileNamed: "Поделиться {{fileName}}",
   },

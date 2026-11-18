@@ -387,6 +387,8 @@ export const ko: TranslationResources = {
     copied: "복사됨",
     noOutput: "아직 출력이 없습니다",
     noOutputFinished: "출력 없음",
+    fullScreen:
+      "이 명령은 전체 화면을 그렸습니다. 현재 화면을 표시합니다. 조작하려면 터미널 탭에서 여세요.",
     startFailed: "명령을 시작하지 못했습니다",
     closeFailed: "터미널을 닫지 못했습니다",
     hostOffline: "호스트가 오프라인입니다. 다시 연결하면 이 명령을 실행할 수 있습니다.",
@@ -564,8 +566,7 @@ export const ko: TranslationResources = {
         archivedTitle: "워크스페이스가 보관되었습니다",
         restoreDescription:
           "{{workspaceName}}를 복원하여 에이전트로 돌아갑니다. 워크트리는 {{branch}} 브랜치를 사용합니다.",
-        restoreWithoutBranchDescription:
-          "{{workspaceName}}를 복원하여 에이전트로 돌아갑니다. 저장된 기반 브랜치 또는 저장소 기본 브랜치에서 새 브랜치를 만듭니다.",
+        restoreWithoutBranchDescription: "{{workspaceName}}를 복원하여 에이전트로 돌아갑니다.",
         unarchiveDescription: "{{workspaceName}}가 보관되었습니다. 다시 열려면 보관을 취소하세요.",
         restoreAction: "복원",
         unarchiveAction: "보관 취소",
@@ -2144,6 +2145,7 @@ export const ko: TranslationResources = {
     hostUnavailable: "다운로드 호스트를 사용할 수 없습니다.",
     cancelled: "다운로드가 취소되었습니다.",
     failed: "파일을 다운로드하지 못했습니다.",
+    httpFailed: "파일을 다운로드하지 못했습니다 (HTTP {{status}}).",
     shareFile: "파일 공유",
     shareFileNamed: "{{fileName}} 공유",
   },
