@@ -100,7 +100,8 @@ test.describe("Files from a sleeping host", () => {
       await page.screenshot({ path: test.info().outputPath("opened-from-omen-copy.png") });
 
       // Settings → Files: the Omen's copies and limits, and the phone's saved copy by host.
-      // At phone width the sidebar sits behind the menu button.
+      // At phone width the file opened as a sheet and the sidebar sits behind the menu button.
+      await page.getByRole("button", { name: "Close", exact: true }).last().tap();
       await page.getByRole("button", { name: "Open menu", exact: true }).first().tap();
       await page.locator('[data-testid="sidebar-settings"]:visible').first().tap();
       await openSettingsSection(page, "files");
