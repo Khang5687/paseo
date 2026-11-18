@@ -2268,6 +2268,7 @@ export const ru: TranslationResources = {
       documentUnsupported: "Файлы {{type}} нельзя показать на этом устройстве",
       failedToLoad: "Не удалось загрузить файл",
       notFound: "Файл не найден",
+      openFrom: "Открыть с",
       failedToLoadPreview: "Не удалось загрузить предварительный просмотр файла.",
       editor: {
         preview: "Предпросмотр",
