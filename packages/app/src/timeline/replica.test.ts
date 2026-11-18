@@ -1501,6 +1501,7 @@ describe("a chat that was empty when it went offline", () => {
     const owner = createViewedTimelineOwner({
       serverId: SERVER_ID,
       replica,
+      liveScope: "opened",
       replaceDemandedAgentIds: () => undefined,
       drainQueuedAgentMessage: () => undefined,
       applyTurnLiveness: () => undefined,
