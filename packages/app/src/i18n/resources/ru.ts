@@ -233,6 +233,7 @@ export const ru: TranslationResources = {
         "В текущем буфере обмена нет изображения. Попробуйте вставить его с клавиатуры.",
       pasteImageFailed: "Не удалось вставить изображение",
       fileTooLarge: "Файл {{fileName}} слишком большой (максимальный размер: {{size}})",
+      attachmentsTooLarge: "Вложения занимают {{size}} МБ, лимит {{limit}} МБ; удалите часть.",
     },
     clientCommands: {
       archiveAgent: "Архивировать текущего агента",

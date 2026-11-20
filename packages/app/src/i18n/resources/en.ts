@@ -229,6 +229,7 @@ export const en = {
       noClipboardImage: "No image in the current clipboard. Try pasting from your keyboard.",
       pasteImageFailed: "Failed to paste image",
       fileTooLarge: "{{fileName}} is too large (max {{size}})",
+      attachmentsTooLarge: "Attachments are {{size}} MB, limit is {{limit}} MB; remove some.",
     },
     clientCommands: {
       archiveAgent: "Archive the current agent",

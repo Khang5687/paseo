@@ -232,6 +232,7 @@ export const ptBR: TranslationResources = {
       noClipboardImage: "Não há imagem na área de transferência atual. Tente colar pelo teclado.",
       pasteImageFailed: "Falha ao colar a imagem",
       fileTooLarge: "{{fileName}} é grande demais (máximo {{size}})",
+      attachmentsTooLarge: "Os anexos têm {{size}} MB e o limite é {{limit}} MB; remova alguns.",
     },
     clientCommands: {
       archiveAgent: "Arquivar o agente atual",

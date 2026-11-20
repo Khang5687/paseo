@@ -233,6 +233,8 @@ export const es: TranslationResources = {
         "No hay ninguna imagen en el portapapeles actual. Prueba a pegar desde el teclado.",
       pasteImageFailed: "No se pudo pegar la imagen",
       fileTooLarge: "{{fileName}} is too large (max {{size}})",
+      attachmentsTooLarge:
+        "Los adjuntos ocupan {{size}} MB y el límite es {{limit}} MB; quita algunos.",
     },
     clientCommands: {
       archiveAgent: "Archivar el agente actual",

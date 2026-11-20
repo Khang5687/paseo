@@ -234,6 +234,8 @@ export const fr: TranslationResources = {
         "Aucune image dans le presse-papiers. Essayez de coller depuis votre clavier.",
       pasteImageFailed: "Impossible de coller l’image",
       fileTooLarge: "{{fileName}} est trop volumineux (maximum {{size}})",
+      attachmentsTooLarge:
+        "Les pièces jointes font {{size}} Mo, la limite est de {{limit}} Mo ; retirez-en.",
     },
     clientCommands: {
       archiveAgent: "Archiver l’agent actuel",
