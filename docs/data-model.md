@@ -688,6 +688,8 @@ can't read, and write them back on every save. A value that isn't a JSON array i
 
 Stores binary attachment blobs keyed by attachment ID.
 
+Every store keeps the picture as attached. Resizing happens only when a message is sent (`encodeAttachmentsForSend` in `packages/app/src/attachments/service.ts`): each picture goes to 2000 px on its long side as JPEG, so a message with many phone photos fits the 100 MiB WebSocket message limit, and previews and the original-size option still read the full picture. A send whose pictures still exceed the limit is refused in the composer before anything goes on the wire.
+
 ### AttachmentMetadata
 
 | Field         | Type      | Description                    |
