@@ -202,6 +202,7 @@ export const ar: TranslationResources = {
       noClipboardImage: "لا توجد صورة في الحافظة الحالية. جرّب اللصق من لوحة المفاتيح.",
       pasteImageFailed: "تعذر لصق الصورة",
       fileTooLarge: "{{fileName}} is too large (max {{size}})",
+      attachmentsTooLarge: "حجم المرفقات {{size}} ميغابايت، والحد {{limit}} ميغابايت؛ أزل بعضها.",
     },
     clientCommands: {
       archiveAgent: "أرشفة الوكيل الحالي",

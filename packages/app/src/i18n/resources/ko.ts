@@ -202,6 +202,8 @@ export const ko: TranslationResources = {
       noClipboardImage: "현재 클립보드에 이미지가 없습니다. 키보드에서 붙여넣기를 시도해 보세요.",
       pasteImageFailed: "이미지를 붙여넣지 못했습니다.",
       fileTooLarge: "{{fileName}}이(가) 너무 큽니다 (최대 {{size}})",
+      attachmentsTooLarge:
+        "첨부 파일이 {{size}}MB이고 한도는 {{limit}}MB입니다. 일부를 삭제하세요.",
     },
     clientCommands: {
       archiveAgent: "현재 에이전트 보관",

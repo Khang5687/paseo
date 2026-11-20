@@ -204,6 +204,8 @@ export const ja: TranslationResources = {
         "現在のクリップボードに画像がありません。キーボードから貼り付けてみてください。",
       pasteImageFailed: "画像を貼り付けられませんでした",
       fileTooLarge: "{{fileName}}が大きすぎます（最大{{size}}）",
+      attachmentsTooLarge:
+        "添付ファイルは{{size}} MBで、上限は{{limit}} MBです。いくつか削除してください。",
     },
     clientCommands: {
       archiveAgent: "現在のエージェントをアーカイブ",

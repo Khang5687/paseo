@@ -1,5 +1,8 @@
 import { collectRetainedAttachmentIds } from "@/attachments/gc-retention";
 import { getAttachmentStore } from "@/attachments/store";
+import { downscaleAttachmentForSend } from "@/attachments/image-codec";
+import type { EncodedImage } from "@/attachments/image-codec.types";
+import { assertAttachmentsFitMessage } from "@/attachments/message-size";
 import type { AttachmentMetadata, SaveAttachmentInput } from "@/attachments/types";
 
 const activePersistence = new Set<Promise<AttachmentMetadata>>();
@@ -92,35 +95,63 @@ export async function persistAttachmentFromFileUri(input: {
   });
 }
 
+// Decoding a 12 MP photo holds ~48 MB of pixels; a few at a time keeps a 100-picture send in memory.
+const RESIZE_CONCURRENCY = 3;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await run(items[index]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+export interface EncodeAttachmentsForSendOptions {
+  /** The "send original size" switch: skip resizing. */
+  sendOriginal?: boolean;
+}
+
+/**
+ * Reads the pictures for the wire, resized to the send size, and refuses the send
+ * with a size error when they cannot fit one message.
+ */
 export async function encodeAttachmentsForSend(
   attachments: readonly AttachmentMetadata[] | undefined,
-): Promise<Array<{ data: string; mimeType: string }> | undefined> {
+  options: EncodeAttachmentsForSendOptions = {},
+): Promise<EncodedImage[] | undefined> {
   if (!attachments || attachments.length === 0) {
     return undefined;
   }
 
   const store = await getAttachmentStore();
-  const encoded = await Promise.all(
-    attachments.map(async (attachment) => {
-      try {
-        const data = await store.encodeBase64({ attachment });
-        return {
-          data,
-          mimeType: attachment.mimeType,
-        };
-      } catch (error) {
-        console.error("[attachments] Failed to encode attachment for send", {
-          id: attachment.id,
-          error,
-        });
-        return null;
-      }
-    }),
-  );
+  const encoded = await mapWithConcurrency(attachments, RESIZE_CONCURRENCY, async (attachment) => {
+    try {
+      return await downscaleAttachmentForSend({
+        attachment,
+        readBase64: () => store.encodeBase64({ attachment }),
+        sendOriginal: options.sendOriginal === true,
+      });
+    } catch (error) {
+      console.error("[attachments] Failed to encode attachment for send", {
+        id: attachment.id,
+        error,
+      });
+      return null;
+    }
+  });
 
-  const valid = encoded.filter(
-    (entry): entry is { data: string; mimeType: string } => entry !== null,
-  );
+  const valid = encoded.filter((entry): entry is EncodedImage => entry !== null);
+  assertAttachmentsFitMessage(valid);
   return valid.length > 0 ? valid : undefined;
 }
 
