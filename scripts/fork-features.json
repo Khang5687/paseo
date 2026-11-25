@@ -1057,5 +1057,15 @@
       "packages/app/src/sidebar-nav/model.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/saved-library.spec.ts"]
+  },
+  {
+    "pr": 152,
+    "title": "feat(app): ask where to save a download, with a setting to turn it off",
+    "tests": [
+      "packages/app/src/stores/download-store.test.ts",
+      "packages/app/src/downloads/file-names.test.ts",
+      "packages/desktop/src/features/file-save.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/save-location.spec.ts"]
   }
 ]
