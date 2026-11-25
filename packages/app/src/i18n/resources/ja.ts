@@ -1257,6 +1257,7 @@ export const ja: TranslationResources = {
         created: "作成日時",
         manual: "手動",
         lastPrompt: "最後のプロンプト",
+        urgent: "緊急を先頭に",
         updateHost: "ワークスペースを並べ替えるにはホストを更新してください",
       },
       grouping: {

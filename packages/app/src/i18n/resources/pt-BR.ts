@@ -1270,6 +1270,7 @@ export const ptBR: TranslationResources = {
         created: "Criação",
         manual: "Manual",
         lastPrompt: "Último prompt",
+        urgent: "Urgentes primeiro",
         updateHost: "Atualize os hosts para ordenar os espaços de trabalho",
       },
       grouping: {
