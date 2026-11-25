@@ -924,7 +924,7 @@ describe("OMP history mapper", () => {
     for await (const event of streamOmpHistory({ sessionFile, provider: "omp" })) {
       events.push(event);
     }
-    expect(events.map((event) => event.item)).toEqual([
+    expect(events.filter((event) => event.type === "timeline").map((event) => event.item)).toEqual([
       { type: "user_message", text: "Summarise", messageId: "user-1" },
       { type: "assistant_message", text: "Before.", messageId: "resp-1" },
       { type: "compaction", status: "completed", preTokens: 77611 },
