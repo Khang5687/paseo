@@ -9,32 +9,27 @@ import Animated, {
 } from "react-native-reanimated";
 import { scheduleOnUI } from "react-native-worklets";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { createSteppedClock } from "@/components/stepped-clock";
+import { useAppVisible } from "@/hooks/use-app-visible";
 import {
   SYNCED_LOADER_DOT_COUNT,
+  SYNCED_LOADER_STEP_MS,
   getSyncedLoaderDotOpacity,
   getSyncedLoaderStep,
 } from "@/components/synced-loader-state";
 
 const GRID_COLUMNS = 2;
 const DOT_KEYS = Array.from({ length: SYNCED_LOADER_DOT_COUNT }, (_, i) => `dot-${i}`);
-const sharedStep = makeMutable(0);
-const activeLoaderCount = makeMutable(0);
-const clockRunning = makeMutable(false);
+const sharedStep = makeMutable(getSyncedLoaderStep(Date.now()));
+// The dots change about six times a second, so the clock wakes at each step boundary instead of
+// running a frame callback that would publish the same step on most frames.
+const syncedLoaderClock = createSteppedClock({
+  stepMs: SYNCED_LOADER_STEP_MS,
+  onStep: (nowMs) => {
+    sharedStep.value = getSyncedLoaderStep(nowMs);
+  },
+});
 let nextStepListenerId = 1;
-
-function advanceSharedStep(): void {
-  "worklet";
-  if (activeLoaderCount.value === 0) {
-    clockRunning.value = false;
-    return;
-  }
-
-  const nextStep = getSyncedLoaderStep(Date.now());
-  if (sharedStep.value !== nextStep) {
-    sharedStep.value = nextStep;
-  }
-  requestAnimationFrame(advanceSharedStep);
-}
 
 function registerStepListener(
   step: SharedValue<number>,
@@ -47,17 +42,10 @@ function registerStepListener(
   }
 
   registered.value = true;
-  step.value = getSyncedLoaderStep(Date.now());
+  step.value = sharedStep.value;
   sharedStep.addListener(listenerId, (nextStep) => {
     step.value = nextStep;
   });
-  activeLoaderCount.value += 1;
-
-  if (!clockRunning.value) {
-    clockRunning.value = true;
-    sharedStep.value = step.value;
-    requestAnimationFrame(advanceSharedStep);
-  }
 }
 
 function unregisterStepListener(registered: SharedValue<boolean>, listenerId: number): void {
@@ -68,7 +56,6 @@ function unregisterStepListener(registered: SharedValue<boolean>, listenerId: nu
 
   registered.value = false;
   sharedStep.removeListener(listenerId);
-  activeLoaderCount.value -= 1;
 }
 
 function useSyncedLoaderStep(active: boolean, reduceMotion: boolean): SharedValue<number> {
@@ -83,8 +70,10 @@ function useSyncedLoaderStep(active: boolean, reduceMotion: boolean): SharedValu
       return;
     }
 
+    const release = syncedLoaderClock.retain();
     scheduleOnUI(registerStepListener, step, registered, listenerId);
     return () => {
+      release();
       scheduleOnUI(unregisterStepListener, registered, listenerId);
     };
   }, [active, listenerId, reduceMotion, registered, step]);
@@ -93,7 +82,9 @@ function useSyncedLoaderStep(active: boolean, reduceMotion: boolean): SharedValu
 }
 
 export function SyncedLoader({ size = 10, color }: { size?: number; color: string }) {
-  const active = useRetainedPanelActive();
+  const panelActive = useRetainedPanelActive();
+  const appVisible = useAppVisible();
+  const active = panelActive && appVisible;
   const reduceMotion = useReducedMotion();
   const step = useSyncedLoaderStep(active, reduceMotion);
 

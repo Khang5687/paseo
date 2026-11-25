@@ -10,3 +10,7 @@ export function ChatFindExpansion({ children }: ChatFindExpansionProps) {
 export function useChatFindSelectedMessageId(): string | null {
   return null;
 }
+/** Native has no chat find to search with. */
+export function useChatFindSearch(): ((query: string) => void) | null {
+  return null;
+}

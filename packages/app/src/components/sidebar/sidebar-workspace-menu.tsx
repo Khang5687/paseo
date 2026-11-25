@@ -19,6 +19,10 @@ import { isWeb } from "@/constants/platform";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { useAppSettings } from "@/hooks/use-settings";
+import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
+import { useWorkspaceNoteBadge } from "@/notes/chat-badges-store";
+import { chatNoteBadgeLabels } from "@/components/sidebar/sidebar-note-badge";
+import { useCopyThreadAgentId } from "@/hooks/use-copy-agent-id";
 import { densityIconProps } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
@@ -86,7 +90,7 @@ export const ARCHIVE_BUTTON_FOOTPRINT = ARCHIVE_BUTTON_SIZE + ARCHIVE_BUTTON_KEB
 const triggerIconProps = densityIconProps("sm", foregroundMutedColorMapping);
 const triggerIconHoveredProps = densityIconProps("sm", foregroundColorMapping);
 
-function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
+export function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return <ThemedMoreVertical uniProps={hovered ? triggerIconHoveredProps : triggerIconProps} />;
 }
 
@@ -187,6 +191,7 @@ function SidebarWorkspaceMenuItems({
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
+  const copyAgentId = useCopyThreadAgentId(serverId, workspaceId);
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
@@ -216,6 +221,16 @@ function SidebarWorkspaceMenuItems({
           onSelect={onCopyBranchName}
         >
           {t("sidebar.workspace.actions.copyBranchName")}
+        </WorkspaceMenuItem>
+      ) : null}
+      {copyAgentId ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-copy-agent-id-${workspaceKey}`}
+          leading={copyLeadingIcon}
+          onSelect={copyAgentId}
+        >
+          {t("sidebar.workspace.actions.copyAgentId")}
         </WorkspaceMenuItem>
       ) : null}
       {onRename ? (
@@ -401,6 +416,7 @@ export function SidebarWorkspaceContextMenu({
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
+  draggable,
   ...triggerProps
 }: PropsWithChildren<
   SidebarWorkspaceMenuItemsProps &
@@ -412,12 +428,17 @@ export function SidebarWorkspaceContextMenu({
       hostBadgeLabel?: string | null;
       serviceSummary?: WorkspaceServiceSummary | null;
       highlightStyle: ComponentProps<typeof ContextMenuTrigger>["highlightStyle"];
+      // Long-press on native starts a drag on draggable rows, so only rows that can't be dragged
+      // open this menu on long-press. Draggable rows keep the kebab.
+      draggable: boolean;
     }
 >) {
   const {
     settings: { workspaceTitleSource },
   } = useAppSettings();
   const { t } = useTranslation();
+  const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
+  const noteBadge = useWorkspaceNoteBadge(workspace.serverId, workspace.workspaceId);
   const pullRequestLabel = workspace.prHint
     ? t("workspace.git.pr.accessibility.pullRequest", {
         number: workspace.prHint.number,
@@ -433,6 +454,8 @@ export function SidebarWorkspaceContextMenu({
     serviceLabel: serviceSummary
       ? t(workspaceServiceLabelKey(serviceSummary), { name: serviceSummary.name })
       : null,
+    hasUnsentDraft,
+    noteLabels: chatNoteBadgeLabels(noteBadge, t),
     t,
   });
   const workspaceTarget = useMemo<WorkspaceLabelTarget>(
@@ -475,7 +498,7 @@ export function SidebarWorkspaceContextMenu({
       <ContextMenuTrigger
         {...triggerProps}
         {...checkboxSpaceKeyProps}
-        enabledOnMobile={false}
+        enabledOnMobile={!draggable}
         accessibilityLabel={accessibilityLabel ?? rowAccessibilityLabel}
         highlightStyle={highlightStyle}
       >
@@ -513,7 +536,9 @@ export function SidebarWorkspaceContextMenu({
   );
 }
 
-function triggerStyle({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) {
+export function triggerStyle({
+  hovered = false,
+}: PressableStateCallbackType & { hovered?: boolean }) {
   return [styles.trigger, hovered && styles.triggerHovered];
 }
 

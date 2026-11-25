@@ -4,7 +4,8 @@ import { View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { SPACING, type Theme } from "@/styles/theme";
 import type { TurnTiming } from "@/timeline/turn-time";
-import { getAssistantReply, type StreamItem } from "@/types/stream";
+import { getAssistantReply, getStreamItemMessageId, type StreamItem } from "@/types/stream";
+import { ChatNoteRowProvider } from "@/chat-notes/context";
 import {
   collectAssistantResponseContentForStreamRenderStrategy,
   type StreamStrategy,
@@ -205,15 +206,29 @@ function CompletedTurnFooter({
     },
     [boundary, onForkAssistantTurn],
   );
+  const assistantItem = getAssistantReply(items[startIndex]);
+  const footer = (
+    <AssistantTurnFooter
+      getContent={assistantItem ? getContent : undefined}
+      completedAt={timing?.completedAt}
+      durationMs={timing?.durationMs}
+      onFork={boundary && onForkAssistantTurn ? handleFork : undefined}
+      metrics={turnMetrics}
+    />
+  );
   return (
     <View style={stylesheet.turnFooterSlot}>
-      <AssistantTurnFooter
-        getContent={getAssistantReply(items[startIndex]) ? getContent : undefined}
-        completedAt={timing?.completedAt}
-        durationMs={timing?.durationMs}
-        onFork={boundary && onForkAssistantTurn ? handleFork : undefined}
-        metrics={turnMetrics}
-      />
+      {assistantItem ? (
+        <ChatNoteRowProvider
+          rowId={assistantItem.id}
+          messageId={getStreamItemMessageId(assistantItem)}
+          role="assistant"
+        >
+          {footer}
+        </ChatNoteRowProvider>
+      ) : (
+        footer
+      )}
     </View>
   );
 }
