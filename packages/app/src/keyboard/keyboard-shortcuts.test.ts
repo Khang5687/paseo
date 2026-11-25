@@ -559,6 +559,11 @@ describe("keyboard-shortcuts", () => {
       context: { isMac: true, usesDesktopBindings: true, focusScope: "message-input" },
     },
     {
+      name: "leaves Windows AltGr+digit (reported as Ctrl+Alt) to text input",
+      event: { key: "{", code: "Digit7", ctrlKey: true, altKey: true },
+      context: { isMac: false, usesDesktopBindings: true, focusScope: "message-input" },
+    },
+    {
       name: "does not match Ctrl+K for command center on non-mac in terminal",
       event: { key: "k", code: "KeyK", ctrlKey: true },
       context: { isMac: false, focusScope: "terminal" },

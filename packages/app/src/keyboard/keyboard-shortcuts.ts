@@ -1488,6 +1488,9 @@ function matchesCombo(combo: KeyCombo, event: KeyboardShortcutInput, isMac: bool
   if (combo.repeat === false && event.repeat) return false;
 
   if (combo.code === "Digit") {
+    // Windows reports AltGr as Ctrl+Alt. When that chord typed a character ("{" from AltGr+7 on
+    // a German layout), the user is writing text, so the Ctrl+Alt row jump must not take it.
+    if (!isMac && event.ctrlKey && event.altKey && /^[^0-9]$/u.test(event.key)) return false;
     return parseDigit(event) !== null;
   }
   return matchesKeyOrCode(combo, event);

@@ -48,13 +48,6 @@ const PROJECT_JUMP_HELP_ID = "sidebar-project-jump-index";
 
 const ThemedLayoutGrid = withUnistyles(LayoutGrid);
 const allIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
-const SELECTED_STATE = { selected: true } as const;
-const UNSELECTED_STATE = { selected: false } as const;
-
-function tabState(selected: boolean) {
-  return selected ? SELECTED_STATE : UNSELECTED_STATE;
-}
-
 /** Hover state for the docs/hover.md pattern: the outer View listens, the inner press is separate. */
 function useHoverHandlers() {
   const [hovered, setHovered] = useState(false);
@@ -191,7 +184,7 @@ function RailAllButton({ selected, onPress }: { selected: boolean; onPress: () =
           <PressHighlight
             accessibilityRole="tab"
             accessibilityLabel={label}
-            accessibilityState={tabState(selected)}
+            aria-selected={selected}
             highlightStyle={styles.railButtonPressed}
             onPress={onPress}
             style={[
@@ -253,7 +246,7 @@ const RailProjectButton = memo(function RailProjectButton({
               accessibilityLabel={
                 needsInputLabel ? `${project.projectName}, ${needsInputLabel}` : project.projectName
               }
-              accessibilityState={tabState(selected)}
+              aria-selected={selected}
               highlightStyle={styles.railButtonPressed}
               onPress={handlePress}
               style={[
@@ -272,7 +265,11 @@ const RailProjectButton = memo(function RailProjectButton({
               />
               {needsInputCount > 0 ? <NeedsInputBadge count={needsInputCount} floating /> : null}
               {showNumber && shortcutNumber !== null ? (
-                <View style={styles.railNumber} pointerEvents="none">
+                <View
+                  style={styles.railNumber}
+                  pointerEvents="none"
+                  testID="sidebar-project-rail-number"
+                >
                   <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
                 </View>
               ) : null}
@@ -328,7 +325,7 @@ export function SidebarProjectChipRow({
     <>
       <PressHighlight
         accessibilityRole="tab"
-        accessibilityState={tabState(model.allSelected)}
+        aria-selected={model.allSelected}
         highlightStyle={styles.chipPressed}
         onPress={clearProjectFilters}
         style={[styles.chip, model.allSelected ? styles.chipSelected : null]}
@@ -421,11 +418,12 @@ const ProjectChip = memo(function ProjectChip({
         accessibilityLabel={
           needsInputLabel ? `${project.projectName}, ${needsInputLabel}` : project.projectName
         }
-        accessibilityState={tabState(selected)}
+        aria-selected={selected}
+        highlightStyle={styles.chipPressed}
         enabled={moves.length > 0}
         onPress={handlePress}
         style={[styles.chip, selected ? styles.chipSelected : null]}
-        testID={`sidebar-project-chip-${project.viewKey}`}
+        testID={`sidebar-project-chip-item-${project.viewKey}`}
       >
         {showNumber && shortcutNumber !== null ? (
           <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
