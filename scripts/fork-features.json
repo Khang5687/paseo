@@ -1047,5 +1047,15 @@
       "packages/app/src/components/markdown/renderer.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+  },
+  {
+    "pr": 150,
+    "title": "feat(app): Saved on this device library",
+    "tests": [
+      "packages/app/src/offline-files/store.test.ts",
+      "packages/app/src/offline-files/saved-list.test.ts",
+      "packages/app/src/sidebar-nav/model.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/saved-library.spec.ts"]
   }
 ]
