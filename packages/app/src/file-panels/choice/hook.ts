@@ -19,8 +19,8 @@ export function useFilePanelChoice(input: {
   path: string;
   /** The kind the file's stat reports, or null before the stat. */
   fileKind: FilePanelFileKind | null;
-  /** The size the file's stat reports, or null before the stat. */
-  fileSize: number | null;
+  /** The size the file's stat reports, or null before the stat. Omitted when the caller has no stat. */
+  fileSize?: number | null;
   /** The tab is on screen. */
   presentable: boolean;
   /** Identifies the tab's latest request to show a line, or null when it targets no line. */
