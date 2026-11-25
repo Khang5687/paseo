@@ -1399,6 +1399,7 @@ export const ko: TranslationResources = {
     },
     footer: {
       usage: "사용량",
+      saved: "이 기기에 저장됨",
     },
     help: {
       trigger: "도움말 및 지원",
@@ -2174,7 +2175,7 @@ export const ko: TranslationResources = {
     saved: {
       label_one: "저장됨: 파일 {{count}}개, {{size}}",
       label_other: "저장됨: 파일 {{count}}개, {{size}}",
-      description: "호스트별로 묶어 표시합니다. 파일을 길게 눌러 삭제합니다.",
+      description: "호스트별로 묶어 표시합니다. 탭하면 열리고, 길게 누르면 삭제합니다.",
     },
     clearAll: "모두 지우기",
     clearConfirmTitle: "오프라인 파일을 지울까요?",
@@ -2195,6 +2196,12 @@ export const ko: TranslationResources = {
     removeHint: "길게 눌러 저장된 사본 삭제",
     removeConfirmTitle: "{{name}}을(를) 삭제할까요?",
     removeConfirmMessage: "이 기기에서 저장된 사본을 삭제합니다. 호스트의 파일은 그대로입니다.",
+    library: {
+      empty: "아직 이 기기에 저장된 파일이 없습니다",
+      emptyHint:
+        "열거나 오프라인 저장하거나 다운로드한 파일이 여기에 표시되며 신호 없이도 열립니다.",
+      gone: "이 저장된 사본은 이 기기에서 삭제되었습니다.",
+    },
     hostCopies: {
       title: "{{host}}의 사본",
       usage_one: "파일 {{count}}개, {{size}}",

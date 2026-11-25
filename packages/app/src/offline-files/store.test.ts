@@ -60,6 +60,21 @@ describe("selectOfflineEvictions", () => {
     expect(paths(keep)).toEqual(["/new", "/mid"]);
     expect(paths(evict)).toEqual(["/old"]);
   });
+
+  it("never ages out a pinned file, and fills the total cap with pinned files first", () => {
+    const { keep, evict } = selectOfflineEvictions(
+      [
+        { ...file("/pinned-old", NOW - 90 * DAY, 4 * MB), pinned: true },
+        file("/opened-new", NOW - DAY, 4 * MB),
+        { ...file("/pinned-mid", NOW - 2 * DAY, 4 * MB), pinned: true },
+        file("/opened-stale", NOW - 31 * DAY, MB),
+      ],
+      { offlineFilesRetentionDays: 30, offlineFilesMaxTotalMb: 10 },
+      NOW,
+    );
+    expect(paths(keep)).toEqual(["/pinned-mid", "/pinned-old"]);
+    expect(paths(evict)).toEqual(["/opened-new", "/opened-stale"]);
+  });
 });
 
 describe("isSameOfflineVersion", () => {

@@ -4,6 +4,7 @@ import { resolveFilePreviewReadTarget } from "@/file-explorer/preview-target";
 import { getAppSettings } from "@/hooks/use-settings";
 import { i18n } from "@/i18n/i18next";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
+import { useSessionStore } from "@/stores/session-store";
 import { isOnUnmeteredNetwork } from "./network";
 import { getOfflineFile, isSameOfflineVersion, saveOfflineFile, touchOfflineFile } from "./store";
 
@@ -24,9 +25,11 @@ export interface OfflineSaveRequest {
   workspaceRoot: string;
   /** The path as the chat names it: absolute, or relative to the workspace. */
   path: string;
+  /** Saved on purpose: age never removes the copy. */
+  pinned: boolean;
 }
 
-export interface OfflineAutoSaveRequest extends Omit<OfflineSaveRequest, "path"> {
+export interface OfflineAutoSaveRequest extends Omit<OfflineSaveRequest, "path" | "pinned"> {
   /** The mention as the chat writes it; repeats within the recheck window are dropped. */
   mention: string;
   /** Finds the file, asking the host for bare names; null when it has none. */
@@ -60,15 +63,39 @@ export function autoSaveOfflineFile(request: OfflineAutoSaveRequest): Promise<vo
     }
     const path = await request.resolvePath().catch(() => null);
     if (!path) return;
-    const save = { ...request, path };
+    const save = { ...request, path, pinned: false };
     await run(fileKey(save), save);
   })();
   autoTail = next.catch(() => undefined);
   return next;
 }
 
-/** Saves a file the user asked for, on any network. */
-export function saveOfflineFileNow(request: OfflineSaveRequest): Promise<OfflineSaveResult> {
+/**
+ * Adds a file to this device's Saved library, on any network: what Save offline, Download and
+ * Send to call. The copy is pinned, so age never removes it. Without a connection to the host it
+ * fails with the host-disconnected message.
+ */
+export function addSavedFile(input: {
+  serverId: string;
+  /** Absolute, or relative to `workspaceRoot`. */
+  path: string;
+  workspaceRoot?: string;
+}): Promise<OfflineSaveResult> {
+  const session = useSessionStore.getState().sessions[input.serverId];
+  if (!session?.client) {
+    return Promise.resolve({
+      status: "failed",
+      error: i18n.t("workspace.terminal.hostDisconnected"),
+    });
+  }
+  const request: OfflineSaveRequest = {
+    serverId: input.serverId,
+    client: session.client,
+    canStat: session.serverInfo?.features?.workspaceFileEditing === true,
+    workspaceRoot: input.workspaceRoot ?? "",
+    path: input.path,
+    pinned: true,
+  };
   return run(fileKey(request), request);
 }
 
@@ -94,7 +121,7 @@ async function download(request: OfflineSaveRequest): Promise<OfflineSaveResult>
       if (remote.status !== "ready")
         return { status: "failed", error: i18n.t("panels.file.notFound") };
       if (isSameOfflineVersion(existing, remote)) {
-        await touchOfflineFile(serverId, absolutePath);
+        await touchOfflineFile(serverId, absolutePath, { pin: request.pinned });
         return { status: "fresh" };
       }
     }
@@ -109,6 +136,7 @@ async function download(request: OfflineSaveRequest): Promise<OfflineSaveResult>
       version: { ...file, mimeType: file.mime },
       bytes: file.bytes,
       limits: settings,
+      pinned: request.pinned,
     });
     return { status: "saved" };
   } catch (error) {
@@ -121,7 +149,7 @@ async function download(request: OfflineSaveRequest): Promise<OfflineSaveResult>
 }
 
 function fileKey(request: OfflineSaveRequest): string {
-  return `${request.serverId}\n${buildAbsoluteExplorerPath({
+  return `${request.serverId}\n${request.pinned}\n${buildAbsoluteExplorerPath({
     workspaceRoot: request.workspaceRoot,
     entryPath: request.path,
   })}`;

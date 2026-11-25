@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { createOfflineFileSession, withOfflineRefresh } from "@/offline-files/session";
+import { createOfflineFileSession, withSavedCopy } from "@/offline-files/session";
 import type { OfflineFile } from "@/offline-files/store";
 import { useSessionStore } from "@/stores/session-store";
 import { createDaemonFileSession } from "./daemon-session";
@@ -37,7 +37,7 @@ export function useFileHandle(input: {
     if (cwd && path && offlineCopy) {
       session = createOfflineFileSession(offlineCopy);
     } else if (cwd && path && client) {
-      session = withOfflineRefresh(
+      session = withSavedCopy(
         createDaemonFileSession(client, { workspaceFileEditing, fileByteWrites }),
         { serverId, path: absolutePath },
       );

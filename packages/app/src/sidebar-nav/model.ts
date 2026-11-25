@@ -9,7 +9,7 @@ export type SidebarSection = PluginSidebarSection;
  */
 export const BUILTIN_SIDEBAR_ITEM_IDS = {
   header: ["new-workspace", "history", "search", "schedules", "notes"],
-  footer: ["usage"],
+  footer: ["saved", "usage"],
 } as const satisfies Record<SidebarSection, readonly string[]>;
 
 export type BuiltinSidebarItemId<Section extends SidebarSection = SidebarSection> =
@@ -47,6 +47,7 @@ const BUILTIN_LABEL_KEYS: Record<BuiltinSidebarItemId, string> = {
   schedules: "sidebar.sections.schedules",
   notes: "sidebar.sections.notes",
   usage: "sidebar.footer.usage",
+  saved: "sidebar.footer.saved",
 };
 
 export function builtinSidebarNavLabelKey(id: BuiltinSidebarItemId): string {
@@ -65,6 +66,7 @@ const BUILTIN_SHORTCUT_ACTIONS: Record<BuiltinSidebarItemId, string | null> = {
   schedules: null,
   notes: null,
   usage: null,
+  saved: null,
 };
 
 export function builtinSidebarNavShortcutAction(id: BuiltinSidebarItemId): string | null {

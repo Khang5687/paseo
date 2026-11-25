@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { addSavedFile } from "@/offline-files/saver";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { useDownloadStore } from "@/stores/download-store";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
@@ -53,9 +54,12 @@ export function useFileDownload({
         requestFileDownloadToken: (targetPath) => requestFileDownloadToken(targetPath),
         readFile: requestFileBytes,
       });
+      // A download also lands in the Saved library, so it opens later with the host asleep.
+      void addSavedFile({ serverId, workspaceRoot: normalizedWorkspaceRoot, path });
     },
     [
       daemonProfile,
+      normalizedWorkspaceRoot,
       requestFileBytes,
       requestFileDownloadToken,
       serverId,

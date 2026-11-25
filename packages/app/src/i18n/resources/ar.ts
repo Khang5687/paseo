@@ -1392,6 +1392,7 @@ export const ar: TranslationResources = {
     },
     footer: {
       usage: "الاستخدام",
+      saved: "محفوظ على هذا الجهاز",
     },
     help: {
       trigger: "المساعدة والدعم",
@@ -2167,7 +2168,7 @@ export const ar: TranslationResources = {
     saved: {
       label_one: "المحفوظ: {{count}} ملف، {{size}}",
       label_other: "المحفوظ: {{count}} ملفات، {{size}}",
-      description: "مجمّعة حسب المضيف. اضغط مطولًا على ملف لإزالته.",
+      description: "مجمّعة حسب المضيف. اضغط على ملف لفتحه، واضغط مطولًا لإزالته.",
     },
     clearAll: "مسح الكل",
     clearConfirmTitle: "مسح الملفات دون اتصال؟",
@@ -2188,6 +2189,11 @@ export const ar: TranslationResources = {
     removeHint: "اضغط مطولًا لإزالة النسخة المحفوظة",
     removeConfirmTitle: "إزالة {{name}}؟",
     removeConfirmMessage: "تُحذف النسخة المحفوظة من هذا الجهاز. لا يتغير الملف على المضيف.",
+    library: {
+      empty: "لا شيء محفوظ على هذا الجهاز بعد",
+      emptyHint: "الملفات التي تفتحها أو تحفظها بلا اتصال أو تنزّلها تظهر هنا وتفتح دون إشارة.",
+      gone: "أُزيلت هذه النسخة المحفوظة من هذا الجهاز.",
+    },
     hostCopies: {
       title: "النسخ على {{host}}",
       usage_one: "{{count}} ملف، {{size}}",

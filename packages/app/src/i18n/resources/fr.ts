@@ -1422,6 +1422,7 @@ export const fr: TranslationResources = {
     },
     footer: {
       usage: "Utilisation",
+      saved: "Enregistré sur cet appareil",
     },
     help: {
       trigger: "Aide et assistance",
@@ -2212,7 +2213,8 @@ export const fr: TranslationResources = {
     saved: {
       label_one: "Enregistré : {{count}} fichier, {{size}}",
       label_other: "Enregistrés : {{count}} fichiers, {{size}}",
-      description: "Regroupés par hôte. Appui long sur un fichier pour le retirer.",
+      description:
+        "Regroupés par hôte. Touchez un fichier pour l'ouvrir, appui long pour le retirer.",
     },
     clearAll: "Tout effacer",
     clearConfirmTitle: "Effacer les fichiers hors ligne ?",
@@ -2236,6 +2238,12 @@ export const fr: TranslationResources = {
     removeConfirmTitle: "Retirer {{name}} ?",
     removeConfirmMessage:
       "La copie enregistrée est supprimée de cet appareil. Le fichier sur l'hôte n'est pas modifié.",
+    library: {
+      empty: "Rien n'est encore enregistré sur cet appareil",
+      emptyHint:
+        "Les fichiers que vous ouvrez, enregistrez hors ligne ou téléchargez apparaissent ici et s'ouvrent sans réseau.",
+      gone: "Cette copie enregistrée a été retirée de cet appareil.",
+    },
     hostCopies: {
       title: "Copies sur {{host}}",
       usage_one: "{{count}} fichier, {{size}}",

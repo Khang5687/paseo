@@ -1418,6 +1418,7 @@ export const ptBR: TranslationResources = {
     },
     footer: {
       usage: "Uso",
+      saved: "Salvo neste dispositivo",
     },
     help: {
       trigger: "Ajuda e suporte",
@@ -2198,7 +2199,8 @@ export const ptBR: TranslationResources = {
     saved: {
       label_one: "Salvo: {{count}} arquivo, {{size}}",
       label_other: "Salvos: {{count}} arquivos, {{size}}",
-      description: "Agrupados por host. Toque e segure um arquivo para removê-lo.",
+      description:
+        "Agrupados por host. Toque em um arquivo para abri-lo; toque e segure para removê-lo.",
     },
     clearAll: "Limpar tudo",
     clearConfirmTitle: "Limpar arquivos offline?",
@@ -2220,6 +2222,11 @@ export const ptBR: TranslationResources = {
     removeHint: "Toque e segure para remover a cópia salva",
     removeConfirmTitle: "Remover {{name}}?",
     removeConfirmMessage: "A cópia salva é apagada deste dispositivo. O arquivo no host não muda.",
+    library: {
+      empty: "Nada salvo neste dispositivo ainda",
+      emptyHint: "Arquivos que você abre, salva offline ou baixa aparecem aqui e abrem sem sinal.",
+      gone: "Esta cópia salva foi removida deste dispositivo.",
+    },
     hostCopies: {
       title: "Cópias em {{host}}",
       usage_one: "{{count}} arquivo, {{size}}",

@@ -1383,6 +1383,7 @@ export const zhCN: TranslationResources = {
     },
     footer: {
       usage: "使用情况",
+      saved: "已保存到此设备",
     },
     help: {
       trigger: "帮助与支持",
@@ -2139,7 +2140,7 @@ export const zhCN: TranslationResources = {
     saved: {
       label_one: "已保存：{{count}} 个文件，{{size}}",
       label_other: "已保存：{{count}} 个文件，{{size}}",
-      description: "按主机分组。长按文件可移除。",
+      description: "按主机分组。轻点文件可打开，长按可移除。",
     },
     clearAll: "全部清除",
     clearConfirmTitle: "清除离线文件？",
@@ -2160,6 +2161,11 @@ export const zhCN: TranslationResources = {
     removeHint: "长按移除已保存的副本",
     removeConfirmTitle: "移除 {{name}}？",
     removeConfirmMessage: "已保存的副本会从此设备删除，主机上的文件不受影响。",
+    library: {
+      empty: "此设备上还没有保存的文件",
+      emptyHint: "你打开、离线保存或下载的文件会显示在这里，没有网络也能打开。",
+      gone: "此保存的副本已从此设备移除。",
+    },
     hostCopies: {
       title: "{{host}} 上的副本",
       usage_one: "{{count}} 个文件，{{size}}",

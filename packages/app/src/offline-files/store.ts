@@ -25,6 +25,11 @@ const OfflineFileSchema = z.object({
   mimeType: z.string(),
   /** When the copy was last downloaded or confirmed to match the host. */
   savedAt: z.number(),
+  /**
+   * Saved on purpose (Save offline, Download, Send to), not only opened: age never removes it.
+   * Missing on copies saved before pinning existed.
+   */
+  pinned: z.boolean().optional(),
   attachment: z.looseObject({
     id: z.string(),
     mimeType: z.string(),
@@ -96,8 +101,9 @@ export function isSameOfflineVersion(a: OfflineFileVersion, b: OfflineFileVersio
 }
 
 /**
- * Splits saved files into the ones to keep and the ones to delete: anything older than the
- * retention window goes, then the oldest go until the rest fit the total cap.
+ * Splits saved files into the ones to keep and the ones to delete: unpinned files older than the
+ * retention window go, then the oldest go until the rest fit the total cap. Pinned files fill the
+ * cap first, so a file the user saved on purpose goes only after every file kept on open.
  */
 export function selectOfflineEvictions(
   current: readonly OfflineFile[],
@@ -105,12 +111,15 @@ export function selectOfflineEvictions(
   now: number,
 ): { keep: OfflineFile[]; evict: OfflineFile[] } {
   const cutoff = now - limits.offlineFilesRetentionDays * DAY_MS;
-  const newestFirst = [...current].sort((a, b) => b.savedAt - a.savedAt);
+  const byPriority = [...current].sort(
+    (a, b) => Number(b.pinned === true) - Number(a.pinned === true) || b.savedAt - a.savedAt,
+  );
   const keep: OfflineFile[] = [];
   const evict: OfflineFile[] = [];
   let total = 0;
-  for (const entry of newestFirst) {
-    if (entry.savedAt < cutoff || total + entry.size > limits.offlineFilesMaxTotalMb * MB) {
+  for (const entry of byPriority) {
+    const aged = !entry.pinned && entry.savedAt < cutoff;
+    if (aged || total + entry.size > limits.offlineFilesMaxTotalMb * MB) {
       evict.push(entry);
       continue;
     }
@@ -158,6 +167,8 @@ export function saveOfflineFile(input: {
   version: OfflineFileVersion & { kind: OfflineFile["kind"]; mimeType: string };
   bytes: Uint8Array;
   limits: OfflineFileLimits;
+  /** Saved on purpose. A copy pinned once stays pinned when it is refreshed. */
+  pinned?: boolean;
 }): Promise<OfflineFile> {
   // The collector keeps ids in the index; hold the new one until the index has it.
   let release = () => {};
@@ -168,6 +179,8 @@ export function saveOfflineFile(input: {
       fileName: getFileNameFromPath(input.path),
     });
     release = retainAttachmentForGarbageCollection(attachment.id);
+    const replaced = current.filter((entry) => sameFile(entry, input.serverId, input.path));
+    const others = current.filter((entry) => !sameFile(entry, input.serverId, input.path));
     const saved: OfflineFile = {
       serverId: input.serverId,
       path: input.path,
@@ -177,21 +190,26 @@ export function saveOfflineFile(input: {
       kind: input.version.kind,
       mimeType: input.version.mimeType,
       savedAt: Date.now(),
+      pinned: input.pinned === true || replaced.some((entry) => entry.pinned === true),
       attachment,
     };
-    const replaced = current.filter((entry) => sameFile(entry, input.serverId, input.path));
-    const others = current.filter((entry) => !sameFile(entry, input.serverId, input.path));
     const { keep, evict } = selectOfflineEvictions([saved, ...others], input.limits, Date.now());
     await deleteAttachments([...replaced, ...evict].map((entry) => entry.attachment));
     return { next: keep, result: saved };
   }).finally(() => release());
 }
 
-/** Records that the saved copy still matches the host. */
-export function touchOfflineFile(serverId: string, path: string): Promise<void> {
+/** Records that the saved copy still matches the host, and pins it when `pin` is set. */
+export function touchOfflineFile(
+  serverId: string,
+  path: string,
+  options: { pin?: boolean } = {},
+): Promise<void> {
   return mutate(async (current) => ({
     next: current.map((entry) =>
-      sameFile(entry, serverId, path) ? { ...entry, savedAt: Date.now() } : entry,
+      sameFile(entry, serverId, path)
+        ? { ...entry, savedAt: Date.now(), pinned: entry.pinned === true || options.pin === true }
+        : entry,
     ),
     result: undefined,
   }));
