@@ -2236,6 +2236,16 @@ export const ptBR: TranslationResources = {
       keepDays: "Cópias não citadas de novo por esse número de dias são removidas.",
     },
   },
+  sendTo: {
+    menuItem: "Enviar para…",
+    title: "Enviar para",
+    empty: "Nenhum outro dispositivo entrou neste host. Abra o Paseo nele primeiro.",
+    notConnected: "Desconectado. Abra o Paseo nele.",
+    sent: "Enviado para {{device}}",
+    failed: "Não foi possível enviar: {{error}}",
+    hostOffline: "{{host}} está offline. Tente de novo quando voltar.",
+    noticeTap: "{{title}}. Toque para abrir.",
+  },
   menu: {
     backdrop: "Fundo do menu",
   },

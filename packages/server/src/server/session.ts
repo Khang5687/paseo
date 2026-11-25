@@ -124,6 +124,7 @@ import {
 import type { NotesService } from "./notes/notes-service.js";
 import type { FileCopies } from "./file-copies/service.js";
 import { FileCopiesSession } from "./file-copies/session.js";
+import { FileSendSession, type FileSendBundle } from "./file-send/session.js";
 
 import { AgentManager, AgentRunCancellationError } from "./agent/agent-manager.js";
 import { buildTimelinePromptIndex } from "./agent/timeline-prompt-index.js";
@@ -534,6 +535,7 @@ export interface SessionOptions {
   agentDrafts?: AgentDraftService;
   notesService?: NotesService;
   fileCopies?: FileCopies;
+  fileSend?: FileSendBundle;
   accountRouting?: AccountRoutingAuthority;
   accountLogin?: OmpAccountLogin;
   /** The source is a direct loopback or local IPC socket: the host's own app. */
@@ -796,6 +798,18 @@ export class Session {
       this.sessionLogger,
     );
   }
+  private createFileSendSession(fileSend: FileSendBundle | undefined): FileSendSession | null {
+    if (!fileSend) return null;
+    return new FileSendSession(
+      {
+        emit: (msg, source) => this.emitForSource(msg, source),
+        clientId: () => this.clientId,
+      },
+      fileSend.service,
+      fileSend.registry,
+      this.sessionLogger,
+    );
+  }
   readonly delivery = new SessionDelivery(
     (source, message) => {
       if (!this.authorization.allowsOutbound(message)) return;
@@ -893,6 +907,8 @@ export class Session {
   private readonly agentDrafts: AgentDraftService | undefined;
   private readonly notesService: NotesService | undefined;
   private readonly fileCopiesSession: FileCopiesSession | null;
+  private readonly fileSend: FileSendBundle | undefined;
+  private readonly fileSendSession: FileSendSession | null;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -964,6 +980,7 @@ export class Session {
       agentDrafts,
       notesService,
       fileCopies,
+      fileSend,
       accountRouting,
       accountLogin,
       isHostLocalSource,
@@ -1049,6 +1066,8 @@ export class Session {
       logger: this.sessionLogger,
     });
     this.fileCopiesSession = this.createFileCopiesSession(fileCopies, paseoHome);
+    this.fileSend = fileSend;
+    this.fileSendSession = this.createFileSendSession(fileSend);
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
@@ -1786,6 +1805,11 @@ export class Session {
       this.clientSources.set(source, metadata);
     }
     return metadata;
+  }
+
+  /** The client id this session's app said hello with. For a file send it is the device id. */
+  public getDeviceId(): string {
+    return this.clientId;
   }
 
   public getClientActivity(source = this.delivery.currentSource): ClientActivity | null {
@@ -3572,7 +3596,10 @@ export class Session {
         this.workspaceFilesSession.handleFileUploadRequest(msg, this.delivery);
         return undefined;
       default:
-        return this.fileCopiesSession?.dispatch(msg, source);
+        return (
+          this.fileSendSession?.dispatch(msg, source) ??
+          this.fileCopiesSession?.dispatch(msg, source)
+        );
     }
   }
 
@@ -3790,6 +3817,7 @@ export class Session {
         return;
       case "push.unregister.request":
         this.pushNotifications.revoke(msg.token);
+        this.fileSend?.registry.removeByToken(msg.token);
         if (this.currentClientMetadata().pushToken?.trim() === msg.token.trim()) {
           this.currentClientMetadata().pushToken = null;
         }
@@ -10266,6 +10294,7 @@ function sessionEventCategory(message: SessionOutboundMessage): SessionEventSubs
     case "hub.execution.agent.update":
     case "hub.execution.agent.stream":
     case "notes.fired":
+    case "files.sent":
       return message.type;
     case "status":
       return statusEventCategory(message.payload.status);

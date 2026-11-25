@@ -1150,6 +1150,20 @@ export type UpdateFileCopySettingsOptions = Omit<
   FileCopiesUpdateSettingsRequest,
   "type" | "requestId"
 >;
+type FileDevicesRegisterRequest = Extract<
+  SessionInboundMessage,
+  { type: "files.devices.register.request" }
+>;
+export type FileDeviceRegistration = Omit<FileDevicesRegisterRequest, "type" | "requestId">;
+export type FileDevice = Extract<
+  SessionOutboundMessage,
+  { type: "files.devices.list.response" }
+>["payload"]["devices"][number];
+export interface FileSendReceipt {
+  deviceName: string;
+  /** `push` reached the push service; `live` reached the app over its connection. */
+  delivery: string;
+}
 type ProjectListRequest = Extract<SessionInboundMessage, { type: "project.list.request" }>;
 export type ProjectListOptions = Omit<ProjectListRequest, "type" | "requestId"> & {
   requestId?: string;
@@ -3962,6 +3976,56 @@ export class DaemonClient {
         }
         return payload;
       },
+    });
+  }
+
+  // ============================================================================
+  // Send to device (gate on server_info.features.sendToDevice)
+  // ============================================================================
+
+  /** Tells the host what this device is called and where its pushes go. Call on every connect. */
+  registerFileDevice(options: FileDeviceRegistration): Promise<void> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.devices.register.response", void>({
+      message: { type: "files.devices.register.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileSendError("files.devices.register.request", payload);
+      },
+    });
+  }
+
+  listFileDevices(): Promise<FileDevice[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.devices.list.response", FileDevice[]>(
+      {
+        message: { type: "files.devices.list.request" },
+        selectPayload: (payload) => {
+          if (payload.error) throw this.fileSendError("files.devices.list.request", payload);
+          return payload.devices;
+        },
+      },
+    );
+  }
+
+  sendFileToDevice(options: { deviceId: string; path: string }): Promise<FileSendReceipt> {
+    return this.sendNamespacedCorrelatedSessionRequest<
+      "files.send_to_device.response",
+      FileSendReceipt
+    >({
+      message: { type: "files.send_to_device.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileSendError("files.send_to_device.request", payload);
+        return { deviceName: payload.deviceName ?? "", delivery: payload.delivery ?? "" };
+      },
+    });
+  }
+
+  private fileSendError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "Send to device failed",
     });
   }
 

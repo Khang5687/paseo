@@ -10,6 +10,8 @@ import {
 } from "../host-operations/index.js";
 import { AgentDirectory } from "../directory.js";
 import { stat } from "node:fs/promises";
+import { isAbsolute, resolve as resolvePath } from "node:path";
+import { FileSendError, pickSendTarget, type FileSendService } from "../../file-send/service.js";
 import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
 import type { Logger } from "pino";
@@ -164,6 +166,7 @@ const COPY_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 export interface PaseoToolHostDependencies {
+  fileSend?: () => FileSendService | null;
   askThreads?: () => AskAgentThreads;
   agentMessages?: () => AgentMessageDelivery;
   finishSubscriptions?: () => FinishSubscriptions;
@@ -3782,6 +3785,53 @@ function createToolCatalog(
         content: [],
         structuredContent: ensureValidJson({ success: true, newMode: result.modeId }),
       };
+    },
+  );
+
+  registerTool(
+    "send_file_to_device",
+    {
+      title: "Send a file to a device",
+      description:
+        'Send a file on this host to one of the user\'s own devices (their phone, desktop app or browser). The device gets a note "<file> is ready"; tapping it opens the file and keeps a copy on the device. Use it when the user says "send that video to my phone". path is absolute or relative to your working directory. Leave device out to use the user\'s phone when only one is registered; otherwise pass the device name the user gave (a partial name works), or ask the user which one. Bytes are fetched when the device opens the note, so the file must stay on this host until then.',
+      inputSchema: {
+        path: z.string().min(1).describe("File to send: absolute, or relative to your cwd."),
+        device: z
+          .string()
+          .optional()
+          .describe('Device name, e.g. "Pixel" or "phone". Omit when one phone is registered.'),
+      },
+      outputSchema: {
+        success: z.boolean(),
+        path: z.string(),
+        deviceName: z.string(),
+        delivery: z.enum(["push", "live"]),
+      },
+    },
+    async ({ path: filePath, device }) => {
+      const fileSend = options.fileSend?.();
+      if (!fileSend) throw new Error("Sending files to devices is not available on this host");
+      const cwd = callerAgentId ? agentManager.getAgent(callerAgentId)?.cwd : undefined;
+      if (!isAbsolute(filePath) && !cwd) {
+        throw new PaseoToolInputError("path must be absolute outside an agent");
+      }
+      const absolute = cwd ? resolvePath(cwd, filePath) : filePath;
+      try {
+        const target = pickSendTarget(fileSend.listDevices(), device);
+        const result = await fileSend.send({ deviceId: target.deviceId, path: absolute });
+        return {
+          content: [],
+          structuredContent: ensureValidJson({
+            success: true,
+            path: absolute,
+            deviceName: result.deviceName,
+            delivery: result.delivery,
+          }),
+        };
+      } catch (error) {
+        if (error instanceof FileSendError) throw new PaseoToolInputError(error.message);
+        throw error;
+      }
     },
   );
 

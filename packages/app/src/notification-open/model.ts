@@ -12,7 +12,9 @@ export type NotificationPlaceTarget =
 
 export type NotificationOpenTarget =
   | NotificationPlaceTarget
-  | { kind: "note"; serverId: string; noteId: string; fallback: NotificationPlaceTarget };
+  | { kind: "note"; serverId: string; noteId: string; fallback: NotificationPlaceTarget }
+  /** A file another device sent to this one: opens from Saved once it is kept there. */
+  | { kind: "file"; serverId: string; path: string };
 
 function readId(data: object, key: string): string {
   const value: unknown = Reflect.get(data, key);
@@ -32,6 +34,8 @@ export function parseNotificationOpenTarget(data: unknown): NotificationOpenTarg
   if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
   const serverId = readId(data, "serverId");
   if (!serverId) return null;
+  const sentFilePath = readId(data, "sentFilePath");
+  if (sentFilePath) return { kind: "file", serverId, path: sentFilePath };
   const fallback = parsePlaceTarget(data, serverId);
   const noteId = readId(data, "noteId");
   if (noteId) return { kind: "note", serverId, noteId, fallback };
@@ -47,6 +51,8 @@ interface NotificationOpenRouterDeps {
   resolveNote: (target: { serverId: string; noteId: string }) => Promise<Note | null>;
   /** Open the note's highlighted spot; false when it cannot be opened. */
   openNote: (serverId: string, note: Note) => boolean;
+  /** Keep a sent file in Saved and open it; the caller reports any failure to the user. */
+  openSentFile: (target: { serverId: string; path: string }) => Promise<void>;
   whenReadyToNavigate: () => Promise<void>;
 }
 
@@ -76,6 +82,8 @@ export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
     const target = parseNotificationOpenTarget(tap.data);
     if (target?.kind === "note") {
       await openNoteTarget(target);
+    } else if (target?.kind === "file") {
+      await deps.openSentFile({ serverId: target.serverId, path: target.path }).catch(() => {});
     } else if (target) {
       openPlace(target);
     }

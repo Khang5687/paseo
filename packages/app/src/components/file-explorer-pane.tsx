@@ -64,6 +64,7 @@ import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-actions";
 import { usePanelStore, type ExpandedPathsUpdate, type SortOption } from "@/stores/panel-store";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
+import { useSendToAction } from "@/send-to/use-send-to";
 import {
   DIRECTORY_LISTING_INVALIDATED,
   type DirectoryListingResult,
@@ -125,6 +126,7 @@ interface TreeRowItemProps {
   onRevealEntry?: (entry: ExplorerEntry) => void;
   revealTargetName?: string;
   onDownloadEntry: (entry: ExplorerEntry) => void;
+  onSendToEntry?: (entry: ExplorerEntry) => void;
   onAddToChat?: (path: string) => void;
   onOpenFileToSide?: (path: string) => void;
   onNewEntry?: (parentPath: string, kind: "file" | "directory") => void;
@@ -251,6 +253,7 @@ function TreeRowItem({
   onRevealEntry,
   revealTargetName,
   onDownloadEntry,
+  onSendToEntry,
   onAddToChat,
   onOpenFileToSide,
   onNewEntry,
@@ -312,6 +315,10 @@ function TreeRowItem({
   const handleDownload = useCallback(() => {
     onDownloadEntry(entry);
   }, [onDownloadEntry, entry]);
+
+  const handleSendTo = useCallback(() => {
+    onSendToEntry?.(entry);
+  }, [onSendToEntry, entry]);
 
   const handleAddToChat = useCallback(() => {
     onAddToChat?.(entry.path);
@@ -388,6 +395,7 @@ function TreeRowItem({
         onReveal={onRevealEntry ? handleReveal : undefined}
         revealTargetName={revealTargetName}
         onDownload={handleDownload}
+        onSendTo={onSendToEntry ? handleSendTo : undefined}
         onAddToChat={onAddToChat ? handleAddToChat : undefined}
         onOpenToSide={!isDirectory && onOpenFileToSide ? handleOpenToSide : undefined}
         onNewFile={onNewEntry ? handleNewFile : undefined}
@@ -649,6 +657,20 @@ export function FileExplorerPane({
       downloadFile({ fileName: entry.name, path: entry.path });
     },
     [downloadFile],
+  );
+
+  const sendToAction = useSendToAction(serverId);
+  const handleSendToEntry = useCallback(
+    (entry: ExplorerEntry) => {
+      if (entry.kind !== "file") return;
+      sendToAction?.(
+        buildAbsoluteExplorerPath({
+          workspaceRoot: normalizedWorkspaceRoot,
+          entryPath: entry.path,
+        }),
+      );
+    },
+    [normalizedWorkspaceRoot, sendToAction],
   );
 
   const handleNewEntry = useCallback(
@@ -999,6 +1021,7 @@ export function FileExplorerPane({
           onRevealEntry={fileManagerTarget ? handleRevealEntry : undefined}
           revealTargetName={fileManagerTarget?.label}
           onDownloadEntry={handleDownloadEntry}
+          onSendToEntry={sendToAction ? handleSendToEntry : undefined}
           onAddToChat={onAddToChat}
           onOpenFileToSide={onOpenFileToSide}
           onNewEntry={fsEntryOpsEnabled ? handleNewEntry : undefined}
@@ -1019,6 +1042,8 @@ export function FileExplorerPane({
       handleOpenDirectoryInEditor,
       handleDeleteEntry,
       handleDownloadEntry,
+      handleSendToEntry,
+      sendToAction,
       handleDraftCommit,
       handleDuplicateEntry,
       handleEditCancel,
@@ -1471,6 +1496,7 @@ function TreeRowDispatcher({
   onRevealEntry,
   revealTargetName,
   onDownloadEntry,
+  onSendToEntry,
   onAddToChat,
   onOpenFileToSide,
   onNewEntry,
@@ -1495,6 +1521,7 @@ function TreeRowDispatcher({
   onRevealEntry?: (entry: ExplorerEntry) => void;
   revealTargetName?: string;
   onDownloadEntry: (entry: ExplorerEntry) => void;
+  onSendToEntry?: (entry: ExplorerEntry) => void;
   onAddToChat?: (path: string) => void;
   onOpenFileToSide?: (path: string) => void;
   onNewEntry?: (parentPath: string, kind: "file" | "directory") => void;
@@ -1528,6 +1555,7 @@ function TreeRowDispatcher({
       onRevealEntry={onRevealEntry}
       revealTargetName={revealTargetName}
       onDownloadEntry={onDownloadEntry}
+      onSendToEntry={onSendToEntry}
       onAddToChat={onAddToChat}
       onOpenFileToSide={onOpenFileToSide}
       onNewEntry={onNewEntry}

@@ -1057,5 +1057,17 @@
       "packages/app/src/sidebar-nav/model.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/saved-library.spec.ts"]
+  },
+  {
+    "pr": 154,
+    "title": "feat: send a file to one of your devices",
+    "tests": [
+      "packages/server/src/server/file-send/service.test.ts",
+      "packages/server/src/server/daemon-e2e/send-to-device.e2e.test.ts",
+      "packages/server/src/server/agent/mcp-server.test.ts",
+      "packages/app/src/send-to/model.test.ts",
+      "packages/app/src/send-to/open-sent-file.test.ts",
+      "packages/app/src/notification-open/model.test.ts"
+    ]
   }
 ]

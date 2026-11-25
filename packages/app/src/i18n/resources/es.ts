@@ -2253,6 +2253,16 @@ export const es: TranslationResources = {
       keepDays: "Las copias que no se vuelven a enlazar en estos días se eliminan.",
     },
   },
+  sendTo: {
+    menuItem: "Enviar a…",
+    title: "Enviar a",
+    empty: "Ningún otro dispositivo ha iniciado sesión en este host. Abre Paseo en él primero.",
+    notConnected: "Sin conexión. Abre Paseo en él.",
+    sent: "Enviado a {{device}}",
+    failed: "No se pudo enviar: {{error}}",
+    hostOffline: "{{host}} está sin conexión. Inténtalo de nuevo cuando vuelva.",
+    noticeTap: "{{title}}. Toca para abrir.",
+  },
   menu: {
     backdrop: "Fondo del menú",
   },

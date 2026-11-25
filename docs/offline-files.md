@@ -11,7 +11,7 @@ Code: `packages/app/src/offline-files/`.
 | Opening a file in the file pane    | `withSavedCopy` (`session.ts`) keeps the bytes the panel already read | no     |
 | Auto-save of files a chat mentions | `use-auto-save.ts`, off by default on web, Wi-Fi gate                 | no     |
 | Save offline, Download             | `addSavedFile` (`saver.ts`)                                           | yes    |
-| Send to another device (later)     | `addSavedFile`                                                        | yes    |
+| Tap on a file another device sent  | `addSavedFile`, from `send-to/open-sent-file.ts`                      | yes    |
 
 Anything the user saves on purpose goes through `addSavedFile({ serverId, path, workspaceRoot? })`. It reads the file from that host's live session and fails with the "host disconnected" message when the host is not connected. Do not write to the store directly from a new feature.
 

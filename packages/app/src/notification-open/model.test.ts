@@ -54,6 +54,10 @@ describe("notification open", () => {
       { kind: "terminal", serverId: "h", workspaceId: "w", terminalId: "t" },
     ],
     [
+      { serverId: "h", sentFilePath: " /out/clip.mp4 " },
+      { kind: "file", serverId: "h", path: "/out/clip.mp4" },
+    ],
+    [
       { serverId: "h", noteId: " n ", agentId: "a", workspaceId: "w" },
       {
         kind: "note",
@@ -93,6 +97,7 @@ describe("notification open", () => {
     const routes: string[] = [];
     const terminals: unknown[] = [];
     const openedNotes: { serverId: string; noteId: string }[] = [];
+    const sentFiles: { serverId: string; path: string }[] = [];
     const router = createNotificationOpenRouter({
       source,
       openAgent: (target) => {
@@ -115,9 +120,12 @@ describe("notification open", () => {
         if (canOpenNote) openedNotes.push({ serverId, noteId: note.id });
         return canOpenNote;
       },
+      openSentFile: async (target) => {
+        sentFiles.push(target);
+      },
       whenReadyToNavigate,
     });
-    return { source, agents, routes, terminals, openedNotes, router };
+    return { source, agents, routes, terminals, openedNotes, sentFiles, router };
   }
 
   it("takes the launch tap once across remounts", async () => {
@@ -214,6 +222,26 @@ describe("notification open", () => {
     expect(openedNotes).toEqual([{ serverId: "host", noteId: "note-1" }]);
     expect(agents).toEqual([{ serverId: "host", agentId: "agent" }]);
     expect(source.acknowledged).toEqual(["one", "note"]);
+    stop();
+  });
+
+  it("opens a file another device sent, once the app is ready to navigate", async () => {
+    let ready!: () => void;
+    const gate = new Promise<void>((resolve) => (ready = resolve));
+    const { source, sentFiles, routes, agents, router } = setup(() => gate);
+    const stop = router.start();
+    source.tap({
+      id: "file",
+      data: { serverId: "host", sentFilePath: "/home/k/out/clip.mp4", agentId: "ignored" },
+    });
+    await flush();
+    expect(sentFiles).toEqual([]);
+    ready();
+    await flush();
+    expect(sentFiles).toEqual([{ serverId: "host", path: "/home/k/out/clip.mp4" }]);
+    expect(routes).toEqual([]);
+    expect(agents).not.toContainEqual({ serverId: "host", agentId: "ignored" });
+    expect(source.acknowledged).toContain("file");
     stop();
   });
 

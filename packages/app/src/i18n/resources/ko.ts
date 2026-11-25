@@ -2211,6 +2211,16 @@ export const ko: TranslationResources = {
       keepDays: "이 기간 동안 다시 링크되지 않은 사본은 삭제됩니다.",
     },
   },
+  sendTo: {
+    menuItem: "보내기…",
+    title: "보낼 기기",
+    empty: "이 호스트에 로그인된 다른 기기가 아직 없습니다. 먼저 그 기기에서 Paseo를 여세요.",
+    notConnected: "연결되지 않음. 그 기기에서 Paseo를 여세요.",
+    sent: "{{device}}(으)로 보냈습니다",
+    failed: "보내지 못했습니다: {{error}}",
+    hostOffline: "{{host}}이(가) 오프라인입니다. 다시 연결되면 시도하세요.",
+    noticeTap: "{{title}}. 눌러서 열기.",
+  },
   menu: {
     backdrop: "메뉴 배경",
   },

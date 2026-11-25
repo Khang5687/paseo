@@ -121,6 +121,15 @@ import {
   FileCopiesUpdateSettingsResponseSchema,
 } from "./file-copies/schemas.js";
 import {
+  FileDevicesListRequestSchema,
+  FileDevicesListResponseSchema,
+  FileDevicesRegisterRequestSchema,
+  FileDevicesRegisterResponseSchema,
+  FileSendToDeviceRequestSchema,
+  FileSendToDeviceResponseSchema,
+  FilesSentMessageSchema,
+} from "./file-send/schemas.js";
+import {
   SpeechLocalModelsDeleteRequestSchema,
   SpeechLocalModelsDeleteResponseSchema,
   SpeechLocalModelsDownloadRequestSchema,
@@ -4183,6 +4192,8 @@ export const SessionEventSubscriptionSchema = z.enum([
   "hub.execution.agent.stream",
   // Send only to hosts with features.notes; older hosts reject unknown event names.
   "notes.fired",
+  // Send only to hosts with features.sendToDevice; older hosts reject unknown event names.
+  "files.sent",
 ]);
 export type SessionEventSubscription = z.infer<typeof SessionEventSubscriptionSchema>;
 export const SessionEventsSetSubscriptionRequestSchema = z.object({
@@ -4484,6 +4495,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   FileCopiesRemoveRequestSchema,
   FileCopiesGetSettingsRequestSchema,
   FileCopiesUpdateSettingsRequestSchema,
+  FileDevicesRegisterRequestSchema,
+  FileDevicesListRequestSchema,
+  FileSendToDeviceRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -4688,6 +4702,8 @@ export const ServerInfoStatusPayloadSchema = z
         notes: z.boolean().optional(),
         // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.
         fileCopies: z.boolean().optional(),
+        // COMPAT(sendToDevice): added in v0.16.2, remove gate after 2027-06-01.
+        sendToDevice: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
         workspaceBaseBranch: z.boolean().optional(),
@@ -8678,6 +8694,10 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   FileCopiesRemoveResponseSchema,
   FileCopiesGetSettingsResponseSchema,
   FileCopiesUpdateSettingsResponseSchema,
+  FileDevicesRegisterResponseSchema,
+  FileDevicesListResponseSchema,
+  FileSendToDeviceResponseSchema,
+  FilesSentMessageSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;

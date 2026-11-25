@@ -1,3 +1,4 @@
+import type { FileSendService } from "../file-send/service.js";
 import { AgentRunState, ForegroundPromptStart } from "./agent-run-state.js";
 import {
   createFinishSubscriptions,
@@ -7078,6 +7079,56 @@ describe("agent snapshot MCP serialization", () => {
         },
       },
     ]);
+  });
+
+  describe("send_file_to_device", () => {
+    const phone = {
+      deviceId: "p1",
+      name: "Pixel (Paseo Debug)",
+      kind: "phone",
+      reachable: true,
+      lastSeenAt: "2026-11-26T00:00:00.000Z",
+    };
+
+    async function setup(devices: (typeof phone)[]) {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue({ id: "agent-1", cwd: "/work/project" });
+      const sent: Array<{ deviceId: string; path: string }> = [];
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        logger: createTestLogger(),
+        providerSnapshotManager: createClaudeOnlyManager(),
+        callerAgentId: "agent-1",
+        fileSend: () =>
+          ({
+            listDevices: () => devices,
+            send: async (input: { deviceId: string; path: string }) => {
+              sent.push(input);
+              return { deviceName: devices[0]?.name ?? "", delivery: "push" };
+            },
+          }) as unknown as FileSendService,
+      });
+      return { tool: registeredTool(server, "send_file_to_device"), sent };
+    }
+
+    it("sends a path relative to the agent's folder to the only phone", async () => {
+      const { tool, sent } = await setup([phone]);
+      const response = await tool.handler({ path: "out/clip.mp4" });
+      expect(sent).toEqual([{ deviceId: "p1", path: "/work/project/out/clip.mp4" }]);
+      expect(response.structuredContent).toEqual({
+        success: true,
+        path: "/work/project/out/clip.mp4",
+        deviceName: "Pixel (Paseo Debug)",
+        delivery: "push",
+      });
+    });
+
+    it("tells the agent to ask the user when two phones could be meant", async () => {
+      const { tool, sent } = await setup([phone, { ...phone, deviceId: "p2", name: "iPad" }]);
+      await expect(tool.handler({ path: "/work/clip.mp4" })).rejects.toThrow(/Ask the user which/);
+      expect(sent).toEqual([]);
+    });
   });
 
   describe("respond_to_permission answers", () => {

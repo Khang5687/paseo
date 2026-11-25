@@ -2202,6 +2202,16 @@ export const ar: TranslationResources = {
       keepDays: "تُحذف النسخ التي لم تُربط مجددًا طوال هذه الأيام.",
     },
   },
+  sendTo: {
+    menuItem: "إرسال إلى…",
+    title: "إرسال إلى",
+    empty: "لم يسجّل أي جهاز آخر الدخول إلى هذا المضيف بعد. افتح Paseo عليه أولاً.",
+    notConnected: "غير متصل. افتح Paseo عليه.",
+    sent: "تم الإرسال إلى {{device}}",
+    failed: "تعذّر الإرسال: {{error}}",
+    hostOffline: "{{host}} غير متصل. حاول مجدداً عند عودته.",
+    noticeTap: "{{title}}. انقر للفتح.",
+  },
   menu: {
     backdrop: "خلفية القائمة",
   },

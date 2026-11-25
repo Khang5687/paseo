@@ -13,6 +13,7 @@ import {
   FolderPlus,
   MessageSquarePlus,
   Pencil,
+  Send,
   Trash2,
   Undo2,
   type LucideIcon,
@@ -60,6 +61,7 @@ interface FileActionsContextMenuContentProps {
   onReveal?: () => void;
   revealTargetName?: string;
   onDownload?: () => void;
+  onSendTo?: () => void;
   onAddToChat?: () => void;
   onNewFile?: () => void;
   onNewFolder?: () => void;
@@ -87,6 +89,7 @@ export function FileActionsContextMenuContent({
   onReveal,
   revealTargetName,
   onDownload,
+  onSendTo,
   onAddToChat,
   onNewFile,
   onNewFolder,
@@ -193,6 +196,12 @@ export function FileActionsContextMenuContent({
             onSelect: onDownload,
           }
         : null,
+      optionalFileAction(availableFile, onSendTo, {
+        key: "send-to",
+        group: "reference",
+        label: t("sendTo.menuItem"),
+        icon: Send,
+      }),
       availableFile && onAddToChat
         ? {
             key: "add-to-chat",
@@ -257,6 +266,7 @@ export function FileActionsContextMenuContent({
     onCopyRelativePath,
     onDelete,
     onDownload,
+    onSendTo,
     onDuplicate,
     onNewFile,
     onNewFolder,

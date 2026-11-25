@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import * as Clipboard from "expo-clipboard";
-import { Copy, Download, ExternalLink, FolderOpen } from "lucide-react-native";
+import { Copy, Download, ExternalLink, FolderOpen, Send } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { withUnistyles } from "react-native-unistyles";
 import {
@@ -13,6 +13,7 @@ import {
 import { UnresolvedFileLinkError } from "@/assistant-file-links/resolver";
 import { useToast } from "@/contexts/toast-context";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
+import { useSendToAction } from "@/send-to/use-send-to";
 import { useSessionStore } from "@/stores/session-store";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
@@ -120,6 +121,7 @@ const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolderOpen = withUnistyles(FolderOpen);
 const ThemedCopy = withUnistyles(Copy);
 const ThemedDownload = withUnistyles(Download);
+const ThemedSend = withUnistyles(Send);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const openInEditorIcon = (
   <ThemedExternalLink size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />
@@ -129,6 +131,7 @@ const copyIcon = <ThemedCopy size={ICON_SIZE.sm} uniProps={foregroundMutedColorM
 const saveOfflineIcon = (
   <ThemedDownload size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />
 );
+const sendToIcon = <ThemedSend size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />;
 
 interface ResolvedFilePath {
   target: FilePathMenuTarget;
@@ -245,6 +248,11 @@ function FilePathMenuContent({
     );
   }, [copy, t, withResolvedFile]);
 
+  const sendTo = useSendToAction(serverId);
+  const handleSendTo = useCallback(() => {
+    withResolvedFile(({ paths }) => sendTo?.(paths.absolutePath));
+  }, [sendTo, withResolvedFile]);
+
   const hasLaunchActions = editor !== null || fileManager !== null;
 
   return (
@@ -302,6 +310,15 @@ function FilePathMenuContent({
             {t("offlineFiles.saveOffline")}
           </ContextMenuItem>
         </>
+      ) : null}
+      {sendTo ? (
+        <ContextMenuItem
+          testID="file-path-menu-send-to"
+          leading={sendToIcon}
+          onSelect={handleSendTo}
+        >
+          {t("sendTo.menuItem")}
+        </ContextMenuItem>
       ) : null}
     </ContextMenuContent>
   );

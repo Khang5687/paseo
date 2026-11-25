@@ -178,6 +178,7 @@ import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
 import { NotesService } from "./notes/notes-service.js";
 import { FileCopies } from "./file-copies/service.js";
+import { FileDeviceRegistry } from "./file-send/device-registry.js";
 import {
   DaemonConfigStore,
   resolveFeatureDefaults,
@@ -1682,6 +1683,10 @@ export async function createPaseoDaemon(
   });
   await fileCopies.start();
 
+  const fileDevices = await FileDeviceRegistry.open(
+    logger.child({ module: "file-send" }),
+    path.join(config.paseoHome, "file-devices.json"),
+  );
   const askThreads = new AskAgentThreads(agentManager, logger, {
     paseoHome: config.paseoHome,
     settings: config.askAgent,
@@ -1854,6 +1859,7 @@ export async function createPaseoDaemon(
     voiceOnly: runtime.voiceOnly,
     resolveSpeakHandler: (agentId) => wsServer?.resolveVoiceSpeakHandler(agentId) ?? null,
     resolveCallerContext: (agentId) => wsServer?.resolveVoiceCallerContext(agentId) ?? null,
+    fileSend: () => wsServer?.fileSend ?? null,
     logger,
   });
   const createAgentToolCatalog = (runtime: PaseoToolRuntimeContext) =>
@@ -2093,6 +2099,7 @@ export async function createPaseoDaemon(
                 relayConfig: dependencies.serverFeatureOverrides?.relayConfig,
                 startPaused: true,
                 askThreads,
+                fileDevices,
               },
               workspaceAutoName,
               workspaceRuntimeStore,

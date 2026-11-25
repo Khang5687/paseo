@@ -194,6 +194,12 @@ Omit absent optional settings. If no profile fits, use provider discovery to cho
 | `list_pending_permissions` | List the question boxes and approval prompts agents wait on; `agentId` filters to one agent.         |
 | `respond_to_permission`    | Answer one as the user's tap would: `answers` keyed by question header, or an allow/deny `response`. |
 
+### Files
+
+| Tool                  | Function                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send_file_to_device` | Send a file on the host to the user's phone, desktop app or browser; they get a "ready" note and tapping it opens the file. `device` names it. |
+
 ### Browser
 
 Browser automation is opt-in and adds tools for opening tabs, reading pages, clicking, typing, and taking screenshots. See the [Browser tools reference](/docs/browser-tools).

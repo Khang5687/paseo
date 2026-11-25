@@ -2174,6 +2174,16 @@ export const zhCN: TranslationResources = {
       keepDays: "超过此天数未再被链接的副本会被删除。",
     },
   },
+  sendTo: {
+    menuItem: "发送到…",
+    title: "发送到",
+    empty: "还没有其他设备登录此主机。请先在该设备上打开 Paseo。",
+    notConnected: "未连接。请在该设备上打开 Paseo。",
+    sent: "已发送到 {{device}}",
+    failed: "无法发送：{{error}}",
+    hostOffline: "{{host}} 已离线。恢复后请重试。",
+    noticeTap: "{{title}}。点按打开。",
+  },
   menu: {
     backdrop: "菜单背景",
   },

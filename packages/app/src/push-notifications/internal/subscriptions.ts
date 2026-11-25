@@ -23,7 +23,18 @@ function getExpoProjectId(): string | null {
   return fromExtra.success ? fromExtra.data : null;
 }
 
-async function resolveToken(serverId: string): Promise<string | null> {
+const pendingTokens = new Map<string, Promise<string | null>>();
+
+/** One token lookup per host at a time: the push subscription and device registration share it. */
+export function resolveToken(serverId: string): Promise<string | null> {
+  const pending = pendingTokens.get(serverId);
+  if (pending) return pending;
+  const lookup = fetchToken(serverId).finally(() => pendingTokens.delete(serverId));
+  pendingTokens.set(serverId, lookup);
+  return lookup;
+}
+
+async function fetchToken(serverId: string): Promise<string | null> {
   const key = storageKey(serverId);
   const cached = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
   if (!(await ensureNotificationPermission())) {

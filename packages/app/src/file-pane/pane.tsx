@@ -12,6 +12,7 @@ import { FilePanelLoading } from "@/file-panels/loading";
 import { FilePanelPicker, FilePanelView, useFilePanelChoice, type FilePanel } from "@/file-panels";
 import { resolveFilePreviewReadTarget } from "@/file-explorer/preview-target";
 import { useFileDownload } from "@/hooks/use-file-download";
+import { SendToButton } from "@/send-to/send-to-button";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useHostCopy } from "@/offline-files/host-copy";
@@ -137,6 +138,7 @@ export function FilePane({
         <Button variant="outline" leftIcon={Download} onPress={handleDownload}>
           {t("workspace.fileActions.download")}
         </Button>
+        <SendToButton serverId={serverId} absolutePath={absolutePath} />
       </>
     );
   } else {
