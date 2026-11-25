@@ -7,6 +7,7 @@ import { DisabledModelError } from "./provider-disabled-models.js";
 
 export interface AgentConfigurationValidationInput {
   provider: string;
+  cwd?: string;
   model?: string;
   modeId?: string;
   thinkingOptionId?: string;

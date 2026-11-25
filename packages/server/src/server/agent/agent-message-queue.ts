@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { ActiveTurnBehavior, AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentManager } from "./agent-manager.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
+import type { AgentMessageDelivery } from "./agent-messages/index.js";
 import { sendPromptToAgent, waitForAgentRunStartWithTimeout } from "./agent-prompt.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { buildAgentPrompt } from "./prompt-attachments.js";
@@ -9,6 +10,7 @@ import { buildAgentPrompt } from "./prompt-attachments.js";
 export interface AgentMessageQueueDispatcherOptions {
   agentManager: AgentManager;
   agentStorage: AgentStorage;
+  agentMessages: Pick<AgentMessageDelivery, "sendDirect">;
   logger: Logger;
 }
 
@@ -27,6 +29,7 @@ export interface AgentMessageQueueDispatcherOptions {
 export class AgentMessageQueueDispatcher {
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
+  private readonly agentMessages: Pick<AgentMessageDelivery, "sendDirect">;
   private readonly logger: Logger;
   private readonly inFlight = new Map<string, Promise<void>>();
   private unsubscribe: (() => void) | null = null;
@@ -34,6 +37,7 @@ export class AgentMessageQueueDispatcher {
   constructor(options: AgentMessageQueueDispatcherOptions) {
     this.agentManager = options.agentManager;
     this.agentStorage = options.agentStorage;
+    this.agentMessages = options.agentMessages;
     this.logger = options.logger;
   }
 
@@ -167,6 +171,7 @@ export class AgentMessageQueueDispatcher {
       // not echo steered prompts), and a client that pre-renders the entry on
       // send-now has nothing to reconcile its row against.
       const result = await sendPromptToAgent({
+        agentMessages: this.agentMessages,
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         agentId,

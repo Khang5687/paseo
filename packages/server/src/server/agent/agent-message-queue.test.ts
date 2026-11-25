@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager, type ManagedAgent } from "./agent-manager.js";
 import { AgentMessageQueueDispatcher } from "./agent-message-queue.js";
+import { createTestAgentMessages } from "../test-utils/agent-messages.js";
 import { toAgentPayload } from "./agent-projections.js";
 import { AgentStorage } from "./agent-storage.js";
 import type {
@@ -208,6 +209,11 @@ beforeEach(async () => {
   dispatcher = new AgentMessageQueueDispatcher({
     agentManager: manager,
     agentStorage: storage,
+    agentMessages: createTestAgentMessages({
+      agentManager: manager,
+      agentStorage: storage,
+      logger,
+    }),
     logger,
   });
   dispatcher.attach();
@@ -484,6 +490,11 @@ test("the queue survives a daemon restart and drains once the agent is resumed",
   const restartedDispatcher = new AgentMessageQueueDispatcher({
     agentManager: restarted,
     agentStorage: storage,
+    agentMessages: createTestAgentMessages({
+      agentManager: restarted,
+      agentStorage: storage,
+      logger,
+    }),
     logger,
   });
   restartedDispatcher.attach();
@@ -527,6 +538,11 @@ test("a paused queue stays paused across a daemon restart", async () => {
   const restartedDispatcher = new AgentMessageQueueDispatcher({
     agentManager: restarted,
     agentStorage: storage,
+    agentMessages: createTestAgentMessages({
+      agentManager: restarted,
+      agentStorage: storage,
+      logger,
+    }),
     logger,
   });
   restartedDispatcher.attach();

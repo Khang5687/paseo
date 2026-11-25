@@ -12,7 +12,7 @@ interface RewindComposerRestoreProviderProps {
   setAttachments: (
     updater: (current: UserComposerAttachment[]) => UserComposerAttachment[],
   ) => void;
-  onRewindComplete: () => void;
+  onRewindComplete: (restoredComposerText: boolean) => void;
   children: ReactNode;
 }
 
@@ -61,13 +61,14 @@ export function RewindComposerRestoreProvider({
         currentText: currentText,
         rewoundText,
       });
-      if (nextText !== currentText) {
+      const restoredComposerText = nextText !== currentText;
+      if (restoredComposerText) {
         setText(nextText);
       }
       if (rewoundImages.length > 0) {
         setAttachments((current) => restoreComposerImages({ current, rewoundImages }));
       }
-      onRewindComplete();
+      onRewindComplete(restoredComposerText);
     },
     [onRewindComplete, setAttachments, setText, textSource],
   );
