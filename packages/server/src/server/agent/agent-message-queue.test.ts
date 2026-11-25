@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager, type ManagedAgent } from "./agent-manager.js";
@@ -633,7 +633,10 @@ test("an automatic drain that cannot send puts the same entry back at the head, 
   expect(toAgentPayload(manager.getAgent(agentId)!)).not.toHaveProperty("queuePauseReason");
   dispatcher.drainIfIdle(agentId);
   const started = await nextTurn;
-  expect(promptText(started.prompt)).toBe("refused at the door");
+  // The retry names the file the refused attempt wrote instead of saving the picture again.
+  const imagePath = join(workdir, "home", "uploads", localDay(), "image-1.png");
+  expect(promptText(started.prompt)).toBe(`refused at the door\n[Image #1]: ${imagePath}`);
+  expect(readdirSync(dirname(imagePath))).toEqual(["image-1.png"]);
   expect(started.prompt).toContainEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
   await waitForLifecycle(manager, agentId, "running");
   expect(manager.getAgent(agentId)?.queuedMessages).toEqual([second]);
