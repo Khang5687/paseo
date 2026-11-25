@@ -2,7 +2,7 @@ import { usePaneContext } from "@/panels/pane-context";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PluginFile, PluginTab } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
-import { Download, Share2 } from "lucide-react-native";
+import { Download } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -15,14 +15,13 @@ import { useFileDownload } from "@/hooks/use-file-download";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useHostCopy } from "@/offline-files/host-copy";
-import { readOfflineFileBytes, useOfflineFiles, type OfflineFile } from "@/offline-files/store";
+import { useOfflineFiles, type OfflineFile } from "@/offline-files/store";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
-import { shareFileBytes } from "@/stores/download-store";
 import { usePublishPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
 import { useSessionStore } from "@/stores/session-store";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { formatFileSize } from "@/utils/format-file-size";
-import { formatTimeAgo } from "@/utils/time";
+import { OfflineCopyBar } from "@/offline-files/copy-bar";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 
 /**
@@ -204,30 +203,71 @@ function OfflineCopyBarFor({ entry }: { entry: OfflineFile | null }) {
   return entry ? <OfflineCopyBar entry={entry} /> : null;
 }
 
-/** Says the file is a saved copy and how old it is, and hands it to other apps. */
-function OfflineCopyBar({ entry }: { entry: OfflineFile }) {
+const ignoreModified = () => {};
+
+/**
+ * A saved copy on its own, outside any workspace: the Saved screen's file view. It always reads
+ * this device's copy, so it opens with every host asleep. The caller provides the pane context.
+ */
+export function SavedFilePane({ entry }: { entry: OfflineFile }) {
   const { t } = useTranslation();
-  const share = useCallback(async () => {
-    await shareFileBytes({
-      bytes: await readOfflineFileBytes(entry),
-      fileName: entry.path.split(/[\\/]/).pop() ?? "file",
-      mimeType: entry.mimeType,
-    });
-  }, [entry]);
+  const target = useMemo(() => resolveFilePreviewReadTarget({ path: entry.path }), [entry.path]);
+  const handle = useFileHandle({
+    serverId: entry.serverId,
+    target,
+    absolutePath: entry.path,
+    observing: true,
+    offlineCopy: entry,
+  });
+  const snapshot = useFileHandleSnapshot(handle);
+  const targetKey = target ? `${target.cwd}:${target.path}` : null;
+  const { panel, choice } = useFilePanelChoice({
+    serverId: entry.serverId,
+    targetKey,
+    path: entry.path,
+    fileKind: snapshot.status === "ready" ? snapshot.kind : null,
+    presentable: true,
+    lineNavigation: null,
+  });
+  const params = useMemo(() => ({ path: entry.path }), [entry.path]);
+
+  let body;
+  if (!handle || snapshot.status === "loading") {
+    body = <FilePanelLoading />;
+  } else if (snapshot.status === "missing" || snapshot.status === "error") {
+    body = (
+      <View style={styles.centerState}>
+        <Text style={styles.errorText}>
+          {snapshot.status === "error" ? snapshot.error : t("panels.file.notFound")}
+        </Text>
+      </View>
+    );
+  } else if (!panel) {
+    body = (
+      <View style={styles.centerState}>
+        <Text style={styles.mutedText}>{t("panels.file.binaryPreviewUnavailable")}</Text>
+        <Text style={styles.mutedText}>{formatFileSize(snapshot.size)}</Text>
+      </View>
+    );
+  } else {
+    body = (
+      <>
+        <FilePanelPicker choice={choice} />
+        <MountedFilePanel
+          key={`${panel.id}:${targetKey}`}
+          panel={panel}
+          file={handle.file}
+          params={params}
+          revision={0}
+          onModifiedChange={ignoreModified}
+        />
+      </>
+    );
+  }
   return (
-    <View style={styles.offlineBar} testID="offline-file-bar">
-      <Text style={styles.offlineText} numberOfLines={1}>
-        {t("offlineFiles.savedAgo", { time: formatTimeAgo(new Date(entry.savedAt)) })}
-      </Text>
-      <Button
-        variant="ghost"
-        size="sm"
-        leftIcon={Share2}
-        onPress={share}
-        testID="offline-file-share"
-      >
-        {t("offlineFiles.share")}
-      </Button>
+    <View style={styles.container} testID="saved-file-pane">
+      <OfflineCopyBar entry={entry} />
+      {body}
     </View>
   );
 }
@@ -276,23 +316,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.destructive,
     fontSize: theme.fontSize.base,
     textAlign: "center",
-  },
-  offlineBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing[2],
-    paddingLeft: theme.spacing[3],
-    paddingRight: theme.spacing[1],
-    paddingVertical: theme.spacing[1],
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.surface1,
-  },
-  offlineText: {
-    flexShrink: 1,
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
   },
   mutedText: {
     color: theme.colors.foregroundMuted,

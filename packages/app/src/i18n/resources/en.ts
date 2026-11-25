@@ -1419,6 +1419,7 @@ export const en = {
     },
     footer: {
       usage: "Usage",
+      saved: "Saved on this device",
     },
     help: {
       trigger: "Help and support",
@@ -2249,7 +2250,7 @@ export const en = {
     saved: {
       label_one: "Saved: {{count}} file, {{size}}",
       label_other: "Saved: {{count}} files, {{size}}",
-      description: "Grouped by host. Long-press a file to remove it.",
+      description: "Grouped by host. Tap a file to open it, long-press to remove it.",
     },
     clearAll: "Clear all",
     clearConfirmTitle: "Clear offline files?",
@@ -2272,6 +2273,11 @@ export const en = {
     removeConfirmTitle: "Remove {{name}}?",
     removeConfirmMessage:
       "The saved copy is deleted from this device. The file on the host is not touched.",
+    library: {
+      empty: "Nothing saved on this device yet",
+      emptyHint: "Files you open, save offline or download show up here and open with no signal.",
+      gone: "This saved copy was removed from this device.",
+    },
     hostCopies: {
       title: "Copies on {{host}}",
       usage_one: "{{count}} file, {{size}}",

@@ -1445,6 +1445,7 @@ export const es: TranslationResources = {
     },
     footer: {
       usage: "Uso",
+      saved: "Guardado en este dispositivo",
     },
     help: {
       trigger: "Ayuda y soporte",
@@ -2270,7 +2271,8 @@ export const es: TranslationResources = {
     saved: {
       label_one: "Guardado: {{count}} archivo, {{size}}",
       label_other: "Guardados: {{count}} archivos, {{size}}",
-      description: "Agrupados por host. Mantén pulsado un archivo para quitarlo.",
+      description:
+        "Agrupados por host. Toca un archivo para abrirlo; mantén pulsado para quitarlo.",
     },
     clearAll: "Borrar todo",
     clearConfirmTitle: "¿Borrar los archivos sin conexión?",
@@ -2293,6 +2295,12 @@ export const es: TranslationResources = {
     removeConfirmTitle: "¿Quitar {{name}}?",
     removeConfirmMessage:
       "La copia guardada se borra de este dispositivo. El archivo del host no cambia.",
+    library: {
+      empty: "Aún no hay nada guardado en este dispositivo",
+      emptyHint:
+        "Los archivos que abres, guardas sin conexión o descargas aparecen aquí y se abren sin señal.",
+      gone: "Esta copia guardada se quitó de este dispositivo.",
+    },
     hostCopies: {
       title: "Copias en {{host}}",
       usage_one: "{{count}} archivo, {{size}}",

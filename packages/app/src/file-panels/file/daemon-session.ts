@@ -52,7 +52,8 @@ export function createDaemonFileSession(
       return {
         initial: classify(initial),
         unsubscribe() {
-          void subscription.unsubscribe();
+          // A host that went away mid-unsubscribe has nothing left to stop.
+          subscription.unsubscribe().catch(() => undefined);
         },
       };
     },

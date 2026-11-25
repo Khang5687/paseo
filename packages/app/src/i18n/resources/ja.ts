@@ -1423,6 +1423,7 @@ export const ja: TranslationResources = {
     },
     footer: {
       usage: "使用状況",
+      saved: "このデバイスに保存済み",
     },
     help: {
       trigger: "ヘルプとサポート",
@@ -2242,7 +2243,7 @@ export const ja: TranslationResources = {
     saved: {
       label_one: "保存済み: {{count}} ファイル、{{size}}",
       label_other: "保存済み: {{count}} ファイル、{{size}}",
-      description: "ホストごとに表示します。長押しでファイルを削除します。",
+      description: "ホストごとに表示します。タップで開き、長押しで削除します。",
     },
     clearAll: "すべて削除",
     clearConfirmTitle: "オフラインファイルを削除しますか？",
@@ -2264,6 +2265,12 @@ export const ja: TranslationResources = {
     removeConfirmTitle: "{{name}} を削除しますか？",
     removeConfirmMessage:
       "このデバイスの保存コピーを削除します。ホスト上のファイルは変わりません。",
+    library: {
+      empty: "このデバイスにはまだ何も保存されていません",
+      emptyHint:
+        "開いた、オフライン保存した、ダウンロードしたファイルがここに表示され、電波がなくても開けます。",
+      gone: "この保存コピーはこのデバイスから削除されました。",
+    },
     hostCopies: {
       title: "{{host}} のコピー",
       usage_one: "{{count}} ファイル、{{size}}",

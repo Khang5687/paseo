@@ -7,7 +7,7 @@ import { classifyForResolution } from "@/assistant-file-links/resolver";
 import { resolveFileLinkLookup } from "@/assistant-file-links/use-file-link";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useSessionStore } from "@/stores/session-store";
-import { saveOfflineFileNow } from "./saver";
+import { addSavedFile } from "./saver";
 
 /**
  * Saves a chat file link for offline use and reports the result in a toast. Links that are not
@@ -25,7 +25,6 @@ export function useSaveFileLinkOffline(): (source: AssistantFileLinkSource) => v
       toast?.error(t("workspace.terminal.hostDisconnected"));
       return;
     }
-    const client = session.client;
     const resolution = classifyForResolution(source, { workspaceRoot, relativePathBase });
     void (async () => {
       let path: string;
@@ -42,13 +41,7 @@ export function useSaveFileLinkOffline(): (source: AssistantFileLinkSource) => v
       } else {
         return;
       }
-      const result = await saveOfflineFileNow({
-        serverId,
-        client,
-        canStat: session.serverInfo?.features?.workspaceFileEditing === true,
-        workspaceRoot,
-        path,
-      });
+      const result = await addSavedFile({ serverId, workspaceRoot, path });
       if (result.status === "tooLarge") {
         toast?.error(t("offlineFiles.tooLarge", { size: result.maxFileMb }));
       } else if (result.status === "failed") {

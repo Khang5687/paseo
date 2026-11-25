@@ -1428,6 +1428,7 @@ export const ru: TranslationResources = {
     },
     footer: {
       usage: "Использование",
+      saved: "Сохранено на устройстве",
     },
     help: {
       trigger: "Помощь и поддержка",
@@ -2258,7 +2259,7 @@ export const ru: TranslationResources = {
     saved: {
       label_one: "Сохранено: файлов {{count}}, {{size}}",
       label_other: "Сохранено: файлов {{count}}, {{size}}",
-      description: "По хостам. Долгое нажатие на файл удаляет его.",
+      description: "По хостам. Нажмите на файл, чтобы открыть, долгое нажатие удаляет его.",
     },
     clearAll: "Очистить всё",
     clearConfirmTitle: "Очистить офлайн-файлы?",
@@ -2281,6 +2282,12 @@ export const ru: TranslationResources = {
     removeConfirmTitle: "Удалить {{name}}?",
     removeConfirmMessage:
       "Сохранённая копия удаляется с этого устройства. Файл на хосте не меняется.",
+    library: {
+      empty: "На этом устройстве пока ничего не сохранено",
+      emptyHint:
+        "Файлы, которые вы открываете, сохраняете офлайн или скачиваете, появляются здесь и открываются без сети.",
+      gone: "Эта сохранённая копия удалена с устройства.",
+    },
     hostCopies: {
       title: "Копии на {{host}}",
       usage_one: "Файлов: {{count}}, {{size}}",
