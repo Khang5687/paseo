@@ -2447,6 +2447,8 @@ export class VoiceAssistantWebSocketServer {
         fsEntryOps: true,
         // COMPAT(fsEntryDuplicate): added in v0.3.0, remove gate after 2027-02-09.
         fsEntryDuplicate: true,
+        // COMPAT(fsDirectorySubscriptions): added after v0.17.4, remove gate after 2027-05-25.
+        fsDirectorySubscriptions: true,
         // COMPAT(checkoutDiscardChanges): added in v0.3.0, remove gate after 2027-02-08.
         checkoutDiscardChanges: true,
         checkoutDiffAll: true,

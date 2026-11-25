@@ -6850,6 +6850,34 @@ export class DaemonClient {
     return { initial: snapshot.initial, subscription, unsubscribe: subscription.release };
   }
 
+  /**
+   * Watches the entry names of one directory. `onChange` runs when they change and again
+   * after a reconnect, since changes made while disconnected were missed.
+   * Requires `server_info.features.fsDirectorySubscriptions`.
+   */
+  async subscribeDirectory(
+    input: { cwd: string; path: string; signal?: AbortSignal },
+    onChange: () => void,
+  ): Promise<{ unsubscribe: () => Promise<void> }> {
+    const subscription = this.observe(
+      "fs.directory.subscribe.response",
+      { type: "fs.directory.subscribe.request", cwd: input.cwd, path: input.path },
+      { signal: input.signal },
+    );
+    let initial = true;
+    subscription.subscribe({
+      snapshot: () => {
+        if (!initial) onChange();
+        initial = false;
+      },
+      update: (message) => {
+        if (message.type === "fs.directory.update") onChange();
+      },
+    });
+    await subscription.ready;
+    return { unsubscribe: subscription.release };
+  }
+
   async writeFile(input: {
     cwd: string;
     path: string;

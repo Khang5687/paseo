@@ -3501,6 +3501,16 @@ export const FileUnsubscribeRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Watches one directory's entry names for the Files tree. Release goes through
+// `subscription.release.request`; there is no legacy unsubscribe RPC because only
+// owned-subscription daemons advertise `fsDirectorySubscriptions`.
+export const DirectorySubscribeRequestSchema = z.object({
+  type: z.literal("fs.directory.subscribe.request"),
+  cwd: z.string(),
+  path: z.string(),
+  requestId: z.string(),
+});
+
 export const FileWriteRequestSchema = z.object({
   type: z.literal("fs.file.write.request"),
   cwd: z.string(),
@@ -4483,6 +4493,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueSetPausedRequestSchema,
   FileExplorerRequestSchema,
   FileSubscribeRequestSchema,
+  DirectorySubscribeRequestSchema,
   FileUnsubscribeRequestSchema,
   FileWriteRequestSchema,
   FileEntryCreateRequestSchema,
@@ -4859,6 +4870,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceFileEditing: z.boolean().optional(),
         // COMPAT(fileByteWrites): added in v0.13.0, remove gate after 2027-04-20.
         fileByteWrites: z.boolean().optional(),
+        // COMPAT(fsDirectorySubscriptions): added after v0.17.4, remove gate after 2027-05-25.
+        fsDirectorySubscriptions: z.boolean().optional(),
         // COMPAT(providerUsageList): added in v0.1.98, drop the gate when daemon floor >= v0.1.98.
         providerUsageList: z.boolean().optional(),
         // COMPAT(agentDetach): added in v0.1.98, remove gate after 2026-12-19 once daemon floor >= v0.1.98.
@@ -7602,6 +7615,17 @@ export const FileUnsubscribeResponseSchema = z.object({
   }),
 });
 
+export const DirectorySubscribeResponseSchema = z.object({
+  type: z.literal("fs.directory.subscribe.response"),
+  payload: z.object({
+    subscriptionId: z.string(),
+    cwd: z.string(),
+    path: z.string(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const FileWriteResultSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("written"),
@@ -7673,6 +7697,16 @@ export const FileUpdateSchema = z.object({
   payload: z.object({
     subscriptionId: z.string(),
     version: FileVersionSchema,
+  }),
+});
+
+/** The entry names under `path` changed; the client re-lists it. */
+export const DirectoryUpdateSchema = z.object({
+  type: z.literal("fs.directory.update"),
+  payload: z.object({
+    subscriptionId: z.string(),
+    cwd: z.string(),
+    path: z.string(),
   }),
 });
 
@@ -8875,12 +8909,14 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   FileExplorerResponseSchema,
   FileSubscribeResponseSchema,
   FileUnsubscribeResponseSchema,
+  DirectorySubscribeResponseSchema,
   FileWriteResponseSchema,
   FileEntryCreateResponseSchema,
   FileEntryRenameResponseSchema,
   FileEntryDuplicateResponseSchema,
   FileEntryDeleteResponseSchema,
   FileUpdateSchema,
+  DirectoryUpdateSchema,
   ProjectIconResponseSchema,
   ProjectIconGetResponseSchema,
   FileDownloadTokenResponseSchema,
@@ -9407,6 +9443,9 @@ export type FileSubscribeRequest = z.infer<typeof FileSubscribeRequestSchema>;
 export type FileSubscribeResponse = z.infer<typeof FileSubscribeResponseSchema>;
 export type FileUnsubscribeRequest = z.infer<typeof FileUnsubscribeRequestSchema>;
 export type FileUnsubscribeResponse = z.infer<typeof FileUnsubscribeResponseSchema>;
+export type DirectorySubscribeRequest = z.infer<typeof DirectorySubscribeRequestSchema>;
+export type DirectorySubscribeResponse = z.infer<typeof DirectorySubscribeResponseSchema>;
+export type DirectoryUpdate = z.infer<typeof DirectoryUpdateSchema>;
 export type FileWriteRequest = z.infer<typeof FileWriteRequestSchema>;
 export type FileWriteResponse = z.infer<typeof FileWriteResponseSchema>;
 export type FileEntryCreateRequest = z.infer<typeof FileEntryCreateRequestSchema>;

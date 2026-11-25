@@ -3675,6 +3675,8 @@ export class Session {
         return this.workspaceFilesSession.handleFileSubscribeRequest(msg, this.delivery);
       case "fs.file.unsubscribe.request":
         return this.workspaceFilesSession.handleFileUnsubscribeRequest(msg, this.delivery);
+      case "fs.directory.subscribe.request":
+        return this.workspaceFilesSession.handleDirectorySubscribeRequest(msg, this.delivery);
       case "fs.file.write.request":
         return this.workspaceFilesSession.handleFileWriteRequest(msg);
       case "fs.entry.create.request":
