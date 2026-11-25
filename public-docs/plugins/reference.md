@@ -2073,19 +2073,22 @@ example implements these steps.
 
 A plugin panel is a candidate for every file its selector matches, text or binary. The built-in
 panels require the host's file kind: Markdown, HTML, and **Source** open text files; Image opens
-images. The Markdown and HTML panels each have a Preview and a Source view of the file, switched
-in their toolbar. **Source**, Paseo's editor, is the built-in panel for text files that no other
-built-in panel claims; it is never offered beside another built-in panel. Candidates are ordered:
-the built-in panel that claims the file, then plugin panels in host catalog order, then Source
-when no other built-in claims the file.
+images; Video (`mp4`, `mov`, `webm`, `m4v`), Audio (`mp3`, `m4a`, `wav`, `ogg`, `aac`, `flac`)
+and PDF open binary files with those extensions. Video, Audio and PDF load the whole file before
+they show it, so they skip files over 100 MB, and PDF is not offered on Android, whose WebView
+has no PDF viewer. The Markdown and HTML panels each have a Preview and a Source view of the file,
+switched in their toolbar. **Source**, Paseo's editor, is the built-in panel for text files that
+no other built-in panel claims; it is never offered beside another built-in panel. Candidates are
+ordered: the built-in panel that claims the file, then plugin panels in host catalog order, then
+Source when no other built-in claims the file.
 
 A remembered association selects its panel when that panel is available on the current host.
 Otherwise Paseo opens the first candidate. When a plugin panel is among several candidates and no
 association applies, Paseo asks once per tab open, over the panel it already opened. A file with
 one candidate never asks. With a Markdown plugin installed, the picker offers **Markdown — Paseo**
-and **Rich Markdown — markdown-panel**. A plugin that claims a text extension no built-in panel
-claims competes with Source, so its first open asks; a plugin that alone claims a binary file
-opens without asking.
+and **Rich Markdown — markdown-panel**; a PDF plugin likewise competes with the built-in PDF
+panel. A plugin that claims a text extension no built-in panel claims competes with Source, so its
+first open asks; a plugin that alone claims a binary file opens without asking.
 
 **Don't ask me again** remembers the choice on this device for the extension. When a candidate
 matches an exact filename, the choice applies to that basename instead. An unavailable association
@@ -2095,8 +2098,9 @@ Users choose a panel three ways: the picker on first open, **Open with…** in t
 **Settings > Files**. Open with switches the current tab and wins over the remembered association
 for this tab until it is retargeted; its **Always use** remembers the shown panel. Opening a file
 at a line, from a link or a search result, switches the tab to its built-in panel, which shows the
-line in its Source view. Files with no candidate show **Binary preview unavailable**; binary files
-have no Source panel.
+line in its Source view. Files with no candidate show **Binary preview unavailable** and
+**Download**; a file a built-in panel skips for its size shows **This file is too large to
+display** instead. Binary files have no Source panel.
 
 ### DocumentFrame
 
