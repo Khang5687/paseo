@@ -850,6 +850,7 @@ export class VoiceAssistantWebSocketServer {
     this.agentMessageQueue = new AgentMessageQueueDispatcher({
       agentManager,
       agentStorage,
+      agentMessages: this.agentMessages,
       logger: this.logger.child({ module: "agent-message-queue" }),
     });
     this.agentMessageQueue.attach();

@@ -19,7 +19,6 @@ import {
   type ProviderInstallationLaunch,
   type ProviderLaunch,
   requireProviderCapabilities,
-  type ProviderCommand,
   type ProviderCapability,
   type ProviderCommand,
   type ProviderConfigChanges,

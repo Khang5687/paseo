@@ -587,6 +587,7 @@ export async function fetchUsage(
   const rejected = await verifyLoginAccount(oauth.accessToken, input.accountKey, fetchApi, now);
   if (rejected !== undefined)
     return unavailable({ kind: "rejected", status: rejected, refreshedBy });
+  const profile = await profileCache.get(hashAccountKey(oauth.accessToken))?.result;
 
   const plan = buildClaudePlan(oauth.subscriptionType, oauth.rateLimitTier);
   const resp = await callClaudeApi(oauth.accessToken, now());

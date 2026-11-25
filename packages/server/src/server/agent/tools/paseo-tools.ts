@@ -2430,6 +2430,7 @@ function createToolCatalog(
       if (title) await agentManager.setTitle(forked.agent.id, title);
       if (prompt) {
         await sendPromptToAgent({
+          agentMessages: agentMessages(),
           agentManager,
           agentStorage,
           agentId: forked.agent.id,
