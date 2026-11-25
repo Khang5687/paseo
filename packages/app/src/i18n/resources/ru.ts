@@ -1238,6 +1238,7 @@ export const ru: TranslationResources = {
       lastOpen: "открыт последним",
       recentWorkspaces: "Недавние рабочие пространства",
       nextWaiting: "Следующее ожидающее · {{count}}",
+      quietMore: "Ещё · тихих: {{count}}",
     },
     view: {
       failed: "Не удалось загрузить вид боковой панели.",

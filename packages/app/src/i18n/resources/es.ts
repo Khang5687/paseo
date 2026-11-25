@@ -1256,6 +1256,7 @@ export const es: TranslationResources = {
       lastOpen: "último abierto",
       recentWorkspaces: "Espacios de trabajo recientes",
       nextWaiting: "Siguiente en espera · {{count}}",
+      quietMore: "Más · {{count}} en calma",
     },
     view: {
       failed: "No se pudo cargar la vista de la barra lateral.",

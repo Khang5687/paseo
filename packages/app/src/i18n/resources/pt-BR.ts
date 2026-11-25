@@ -1246,6 +1246,7 @@ export const ptBR: TranslationResources = {
       lastOpen: "último aberto",
       recentWorkspaces: "Workspaces recentes",
       nextWaiting: "Próximo aguardando · {{count}}",
+      quietMore: "Mais · {{count}} parados",
     },
     view: {
       failed: "Não foi possível carregar a visualização da barra lateral.",

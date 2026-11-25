@@ -1230,6 +1230,7 @@ export const en = {
       lastOpen: "last open",
       recentWorkspaces: "Recent workspaces",
       nextWaiting: "Next waiting · {{count}}",
+      quietMore: "More · {{count}} quiet",
     },
     view: {
       failed: "Sidebar view failed to load.",

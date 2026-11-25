@@ -1219,6 +1219,7 @@ export const ar: TranslationResources = {
       lastOpen: "آخر ما فُتح",
       recentWorkspaces: "مساحات العمل الأخيرة",
       nextWaiting: "التالي بانتظارك · {{count}}",
+      quietMore: "المزيد · هادئة: {{count}}",
     },
     view: {
       failed: "تعذر تحميل عرض الشريط الجانبي.",

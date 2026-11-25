@@ -36,6 +36,17 @@ Two keys move between workspaces across projects, whatever the strip shows. Thei
 - **Recent walk.** `useRecentWorkspacesStore` (per device) keeps the workspaces you opened, newest first; `WorkspaceShortcutTargetsSubscriber` records each one. The first Tab highlights the workspace you had open before this one, each further Tab goes one older, and Shift goes one newer. On web, `RecentWorkspacesOverlay` lists the walk while the modifier is held and releasing it opens the highlighted workspace. Native has no held walk: each press opens its step at once, so repeated presses flip between the last two workspaces, because hardware keyup there is not reliable enough to end a walk on. Blur ends a walk without opening anything. Entries the sidebar does not list sit out the walk and stay in the list, for the same reason as a stale last chat.
 - **Next waiting.** `resolveWaitingWorkspaces` lists every `needs_input` workspace from the unfiltered entries (`allWorkspaceEntriesByKey`), the longest wait first, so a filter never hides one. The key opens the one after the open workspace and wraps. The phone has no key, so the compact sidebar shows a Next waiting button with the count, only while some other workspace is waiting.
 
+## Quiet projects
+
+A project with no chat activity for 3 days folds into "More": on the rail, on the chip row, and at the end of the project list. Any new activity brings it back.
+
+- **Activity** is the newest of a workspace's creation, last prompt, status change, and its root agent's last status change, across the project (`deriveProjectActivity`). A project with nothing known stays out: unknown is not quiet.
+- **Never folds:** a project with a workspace waiting on you, the project of the open workspace, a project with a pinned workspace, and a project the filter picked. When every project would fold, none does.
+- **Time** is read hourly (`useQuietProjectKeys`), so a project folds within an hour of crossing 3 days.
+- **One toggle.** "More" opens on the rail, the chips and the list together (`useSidebarQuietFoldStore`, not persisted, so quiet projects start folded each launch). Opened projects list after the ones that show and don't drag on the rail.
+- **Digits** count the projects that show first, then the quiet ones, matching the rail.
+- The list folds only in project grouping with no project filter. Status grouping has no project rows to fold.
+
 ## Adding to the strip
 
 Later sidebar features plug in here rather than adding a second switcher:

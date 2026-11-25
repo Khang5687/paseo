@@ -12,6 +12,7 @@ import {
   createSidebarWorkspacePlacementSelector,
   createSidebarWorkspaceEntry,
   countProjectWorkspacesNeedingInput,
+  deriveProjectActivity,
   deriveProjectStatusBucket,
   deriveSidebarLoadingState,
   shouldShowSidebarHostLabels,
@@ -1001,6 +1002,41 @@ describe("countProjectWorkspacesNeedingInput", () => {
         sessions: { srv: sessionWith({ workspaces: [projectWorkspace("ws-1", "attention")] }) },
       }),
     ).toBe(0);
+  });
+});
+
+describe("deriveProjectActivity", () => {
+  it("takes the newest activity across the project's workspaces and hosts", () => {
+    const older = {
+      ...projectWorkspace("ws-1", "done"),
+      createdAt: new Date("2026-11-01T00:00:00.000Z"),
+      lastUserMessageAt: new Date("2026-11-10T00:00:00.000Z"),
+    };
+    const newer = {
+      ...projectWorkspace("ws-9", "running"),
+      statusEnteredAt: new Date("2026-11-20T00:00:00.000Z"),
+    };
+    expect(
+      deriveProjectActivity({
+        workspaces: [
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-1" }),
+          workspacePlacement({ serverId: "other", workspaceId: "ws-9" }),
+        ],
+        sessions: {
+          srv: sessionWith({ workspaces: [older] }),
+          other: sessionWith({ workspaces: [newer] }),
+        },
+      }),
+    ).toEqual({ lastActivityMs: Date.parse("2026-11-20T00:00:00.000Z"), needsInput: false });
+  });
+
+  it("reports a waiting workspace and no time when none is known", () => {
+    expect(
+      deriveProjectActivity({
+        workspaces: [workspacePlacement({ workspaceId: "ws-1" })],
+        sessions: { srv: sessionWith({ workspaces: [projectWorkspace("ws-1", "needs_input")] }) },
+      }),
+    ).toEqual({ lastActivityMs: null, needsInput: true });
   });
 });
 

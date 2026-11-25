@@ -1226,6 +1226,7 @@ export const ko: TranslationResources = {
       lastOpen: "마지막으로 열림",
       recentWorkspaces: "최근 워크스페이스",
       nextWaiting: "다음 대기 중 · {{count}}",
+      quietMore: "더 보기 · 조용한 {{count}}개",
     },
     view: {
       failed: "사이드바 보기를 불러오지 못했습니다.",
