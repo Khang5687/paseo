@@ -1,4 +1,5 @@
 import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Check, CircleAlert, Folder, FolderGit2, Monitor } from "lucide-react-native";
@@ -115,6 +116,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   shortcutNumber = null,
   showShortcutBadge = false,
   reserveIdleStatusIndicatorSpace = true,
+  lastOpen = false,
   titleEditor = null,
   children,
 }: {
@@ -135,6 +137,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   showShortcutBadge?: boolean;
   /** Keep the empty leading slot when the workspace has no active status. */
   reserveIdleStatusIndicatorSpace?: boolean;
+  /** Marks the chat you last had open in this project (phone, one project shown). */
+  lastOpen?: boolean;
   /** Takes the title's place, in a box exactly one title line tall, while renaming in place. */
   titleEditor?: ReactNode;
   children?: ReactNode;
@@ -200,6 +204,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
                 {workspaceLabel}
               </Text>
             )}
+            <LastOpenTag show={lastOpen} editing={titleEditor !== null} />
             <View style={sidebarWorkspaceRowStyles.rowRight}>{children}</View>
           </View>
           <WorkspaceMetaRow
@@ -222,6 +227,21 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     </View>
   );
 });
+
+function LastOpenTag({ show, editing }: { show: boolean; editing: boolean }) {
+  return show && !editing ? <LastOpenTagLabel /> : null;
+}
+
+function LastOpenTagLabel() {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.lastOpenTag} testID="sidebar-workspace-last-open">
+      <Text style={styles.lastOpenTagText} numberOfLines={1}>
+        {t("sidebar.projectStrip.lastOpen")}
+      </Text>
+    </View>
+  );
+}
 
 function WorkspaceSelectionCheckbox({
   checked,
@@ -563,6 +583,20 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: theme.spacing[2],
+  },
+  lastOpenTag: {
+    flexShrink: 0,
+    marginTop: 1,
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+  },
+  lastOpenTagText: {
+    color: theme.colors.accent,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    lineHeight: 16,
   },
   shortcutBadgeOverlay: {
     position: "absolute",

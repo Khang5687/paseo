@@ -1253,6 +1253,7 @@ export const es: TranslationResources = {
       moveFirst: "Mover al principio",
       moveEarlier: "Mover antes",
       moveLater: "Mover después",
+      lastOpen: "último abierto",
     },
     view: {
       failed: "No se pudo cargar la vista de la barra lateral.",

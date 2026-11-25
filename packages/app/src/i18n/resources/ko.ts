@@ -1223,6 +1223,7 @@ export const ko: TranslationResources = {
       moveFirst: "맨 앞으로 이동",
       moveEarlier: "앞으로 이동",
       moveLater: "뒤로 이동",
+      lastOpen: "마지막으로 열림",
     },
     view: {
       failed: "사이드바 보기를 불러오지 못했습니다.",

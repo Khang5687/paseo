@@ -7,6 +7,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { DraggableList, DraggableListHandle } from "@/components/draggable-list";
 import type { DraggableRenderItemInfo } from "@/components/draggable-list.types";
 import { ProjectIconView } from "@/components/project-icon-view";
+import { resolveProjectLastChat } from "@/components/sidebar/project-last-chat";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
 import { SidebarWorkspaceShortcutBadge } from "@/components/sidebar/sidebar-workspace-row-content";
 import {
@@ -26,6 +27,8 @@ import {
   useSidebarProjectNeedsInputCount,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useProjectIcons } from "@/projects/icons";
+import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
+import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import type { Theme } from "@/styles/theme";
@@ -226,10 +229,13 @@ const RailProjectButton = memo(function RailProjectButton({
   const needsInputCount = useSidebarProjectNeedsInputCount(project.workspaces);
   const chord = useProjectJumpChord(index);
   const shortcutNumber = projectStripShortcutNumber(index);
-  const handlePress = useCallback(
-    () => showOnlyProject(project.viewKey),
-    [project.viewKey, showOnlyProject],
-  );
+  const rememberedChat = useSidebarLastChatStore((state) => state.byProject[project.viewKey]);
+  // The rail sits beside the open chat, so a click goes back to where you were in that project.
+  const handlePress = useCallback(() => {
+    showOnlyProject(project.viewKey);
+    const lastChat = resolveProjectLastChat(project, rememberedChat);
+    if (lastChat) navigateToWorkspace(lastChat);
+  }, [project, rememberedChat, showOnlyProject]);
   const needsInputLabel =
     needsInputCount > 0 ? t("sidebar.projectStrip.needsInput", { count: needsInputCount }) : null;
 

@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import type { CommandCenterTab } from "@/command-center/tabs";
 import type { ShortcutBadgeTarget } from "@/keyboard/keyboard-shortcuts";
-import type { SidebarShortcutWorkspaceTarget } from "@/utils/sidebar-shortcuts";
+import type {
+  SidebarShortcutProjectTarget,
+  SidebarShortcutWorkspaceTarget,
+} from "@/utils/sidebar-shortcuts";
 
 const SHORTCUT_BADGE_DELAY_MS = 150;
 
@@ -18,7 +21,7 @@ interface KeyboardShortcutsState {
   /** Sidebar-visible workspace targets (up to 9), in top-to-bottom visual order. */
   sidebarShortcutWorkspaceTargets: SidebarShortcutWorkspaceTarget[];
   /** Project strip entries by strip position: index 0 answers the first digit. */
-  sidebarShortcutProjectKeys: string[];
+  sidebarShortcutProjects: SidebarShortcutProjectTarget[];
 
   setCommandCenterOpen: (open: boolean, tab?: CommandCenterTab) => void;
   setCommandCenterTab: (tab: CommandCenterTab) => void;
@@ -26,7 +29,7 @@ interface KeyboardShortcutsState {
   setCapturingShortcut: (capturing: boolean) => void;
   setHeldBadgeTarget: (target: ShortcutBadgeTarget | null) => void;
   setSidebarShortcutWorkspaceTargets: (targets: SidebarShortcutWorkspaceTarget[]) => void;
-  setSidebarShortcutProjectKeys: (keys: string[]) => void;
+  setSidebarShortcutProjects: (projects: SidebarShortcutProjectTarget[]) => void;
   resetModifiers: () => void;
 }
 
@@ -60,7 +63,7 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
   heldBadgeTarget: null,
   shortcutBadgeTarget: null,
   sidebarShortcutWorkspaceTargets: [],
-  sidebarShortcutProjectKeys: [],
+  sidebarShortcutProjects: [],
 
   setCommandCenterOpen: (open, tab = "all") =>
     set({ commandCenterOpen: open, commandCenterTab: open ? tab : "all" }),
@@ -74,7 +77,7 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
   },
   setSidebarShortcutWorkspaceTargets: (targets) =>
     set({ sidebarShortcutWorkspaceTargets: targets }),
-  setSidebarShortcutProjectKeys: (keys) => set({ sidebarShortcutProjectKeys: keys }),
+  setSidebarShortcutProjects: (projects) => set({ sidebarShortcutProjects: projects }),
   resetModifiers: () => {
     set({ heldBadgeTarget: null });
     updateBadgeTimer(set, get);

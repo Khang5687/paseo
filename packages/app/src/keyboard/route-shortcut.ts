@@ -3,6 +3,7 @@ import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispat
 import { buildSettingsRoute, parseHostWorkspaceRouteFromPathname } from "@/utils/host-routes";
 import {
   getRelativeSidebarShortcutTarget,
+  type SidebarShortcutProjectTarget,
   type SidebarShortcutWorkspaceTarget,
 } from "@/utils/sidebar-shortcuts";
 
@@ -11,7 +12,7 @@ export interface ShortcutRoutingContext {
   isMobile: boolean;
   sidebarShortcutTargets: ReadonlyArray<SidebarShortcutWorkspaceTarget>;
   /** Project strip entries in strip order; index 0 answers the first digit. */
-  sidebarShortcutProjectKeys: ReadonlyArray<string>;
+  sidebarShortcutProjects: ReadonlyArray<SidebarShortcutProjectTarget>;
   navigationActiveWorkspace: SidebarShortcutWorkspaceTarget | null;
   commandCenterOpen: boolean;
   shortcutsDialogOpen: boolean;
@@ -36,7 +37,12 @@ export type ShortcutAction =
   | { kind: "callback"; name: ShortcutCallbackName }
   | { kind: "command-center-toggle"; nextOpen: boolean; tab?: "files" }
   | { kind: "shortcuts-dialog-toggle"; nextOpen: boolean }
-  | { kind: "show-sidebar-project"; projectViewKey: string };
+  | {
+      kind: "show-sidebar-project";
+      projectViewKey: string;
+      /** The workspace to reopen with the list; null when the jump only changes the list. */
+      lastChat: SidebarShortcutWorkspaceTarget | null;
+    };
 
 const NONE: ShortcutAction = { kind: "none" };
 
@@ -141,9 +147,14 @@ function routeSidebarProjectNavigateIndex(
   ctx: ShortcutRoutingContext,
 ): ShortcutAction {
   if (!hasPayloadKey(payload, "index")) return NONE;
-  const projectViewKey = ctx.sidebarShortcutProjectKeys[payload.index - 1];
-  if (!projectViewKey) return NONE;
-  return { kind: "show-sidebar-project", projectViewKey };
+  const project = ctx.sidebarShortcutProjects[payload.index - 1];
+  if (!project) return NONE;
+  // On a phone the list is the destination: you look before you open (the chip marks the chat).
+  return {
+    kind: "show-sidebar-project",
+    projectViewKey: project.projectViewKey,
+    lastChat: ctx.isMobile ? null : project.lastChat,
+  };
 }
 
 function routeWorkspaceNavigateRelative(
