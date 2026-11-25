@@ -1047,5 +1047,14 @@
       "packages/app/src/components/markdown/renderer.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+  },
+  {
+    "pr": 143,
+    "title": "Preview video, audio and PDF files in the file tab",
+    "tests": [
+      "packages/app/src/file-panels/catalog.test.ts",
+      "packages/app/src/file-panels/resolve.test.ts",
+      "packages/server/src/server/file-explorer/service.test.ts"
+    ]
   }
 ]
