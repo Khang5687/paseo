@@ -1331,6 +1331,7 @@ export const ja: TranslationResources = {
       moveFirst: "先頭に移動",
       moveEarlier: "前に移動",
       moveLater: "後ろに移動",
+      lastOpen: "前回開いた",
     },
     view: {
       failed: "サイドバーのビューを読み込めませんでした。",

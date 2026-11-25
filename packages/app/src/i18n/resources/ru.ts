@@ -1336,6 +1336,7 @@ export const ru: TranslationResources = {
       moveFirst: "Переместить в начало",
       moveEarlier: "Переместить раньше",
       moveLater: "Переместить позже",
+      lastOpen: "открыт последним",
     },
     view: {
       failed: "Не удалось загрузить вид боковой панели.",

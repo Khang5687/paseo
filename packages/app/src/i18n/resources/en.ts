@@ -1328,6 +1328,7 @@ export const en = {
       moveFirst: "Move to first",
       moveEarlier: "Move earlier",
       moveLater: "Move later",
+      lastOpen: "last open",
     },
     view: {
       failed: "Sidebar view failed to load.",

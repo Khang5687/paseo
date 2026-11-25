@@ -22,11 +22,11 @@ settings the native composer does not implement.
 
 Three bindings share the digit keys, one per modifier set:
 
-| Jump                                                         | Mac desktop | Windows/Linux desktop | Web           |
-| ------------------------------------------------------------ | ----------- | --------------------- | ------------- |
-| Nth project in the [project strip](sidebar-project-strip.md) | Cmd+1-9     | Ctrl+1-9              | Alt+1-9       |
-| Nth sidebar row                                              | Cmd+Alt+1-9 | Ctrl+Alt+1-9          | Ctrl+Alt+1-9  |
-| Nth tab                                                      | Ctrl+1-9    | Alt+1-9               | Alt+Shift+1-9 |
+| Jump                                                                                             | Mac desktop | Windows/Linux desktop | Web           |
+| ------------------------------------------------------------------------------------------------ | ----------- | --------------------- | ------------- |
+| Nth project in the [project strip](sidebar-project-strip.md), reopening its last chat on desktop | Cmd+1-9     | Ctrl+1-9              | Alt+1-9       |
+| Nth sidebar row                                                                                  | Cmd+Alt+1-9 | Ctrl+Alt+1-9          | Ctrl+Alt+1-9  |
+| Nth tab                                                                                          | Ctrl+1-9    | Alt+1-9               | Alt+Shift+1-9 |
 
 Projects take the plainest chord because there are few of them and their order is stable; rows shift as agents start and finish. Web cannot use Cmd/Ctrl+digit, since the browser owns its tab keys.
 

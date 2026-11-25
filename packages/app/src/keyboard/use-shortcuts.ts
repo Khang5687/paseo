@@ -187,6 +187,9 @@ export function useKeyboardShortcuts({
       case "show-sidebar-project":
         useSidebarViewStore.getState().showOnlyProject(action.projectViewKey);
         usePanelStore.getState().openAgentListForLayout({ isCompact: isMobile });
+        if (action.lastChat) {
+          navigateToWorkspace(action.lastChat);
+        }
         return true;
     }
   };
@@ -203,7 +206,7 @@ export function useKeyboardShortcuts({
         pathname,
         isMobile,
         sidebarShortcutTargets: store.sidebarShortcutWorkspaceTargets,
-        sidebarShortcutProjectKeys: store.sidebarShortcutProjectKeys,
+        sidebarShortcutProjects: store.sidebarShortcutProjects,
         navigationActiveWorkspace:
           keyboardWorkspaceSelectionRef.current ?? activeWorkspaceSelection,
         commandCenterOpen: store.commandCenterOpen,

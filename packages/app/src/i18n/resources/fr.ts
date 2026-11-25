@@ -1346,6 +1346,7 @@ export const fr: TranslationResources = {
       moveFirst: "Placer en premier",
       moveEarlier: "Déplacer avant",
       moveLater: "Déplacer après",
+      lastOpen: "dernier ouvert",
     },
     view: {
       failed: "Impossible de charger la vue de la barre latérale.",

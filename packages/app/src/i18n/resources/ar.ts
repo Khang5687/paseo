@@ -1317,6 +1317,7 @@ export const ar: TranslationResources = {
       moveFirst: "نقل إلى الأول",
       moveEarlier: "نقل إلى موضع أسبق",
       moveLater: "نقل إلى موضع لاحق",
+      lastOpen: "آخر ما فُتح",
     },
     view: {
       failed: "تعذر تحميل عرض الشريط الجانبي.",

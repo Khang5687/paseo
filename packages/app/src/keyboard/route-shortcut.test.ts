@@ -18,7 +18,11 @@ function makeCtx(overrides: Partial<ShortcutRoutingContext> = {}): ShortcutRouti
     pathname: "/h/srv/workspace/ws-2",
     isMobile: false,
     sidebarShortcutTargets: SIDEBAR_TARGETS,
-    sidebarShortcutProjectKeys: ["proj-a", "proj-b", "proj-c"],
+    sidebarShortcutProjects: [
+      { projectViewKey: "proj-a", lastChat: null },
+      { projectViewKey: "proj-b", lastChat: { serverId: "srv", workspaceId: "ws-4" } },
+      { projectViewKey: "proj-c", lastChat: null },
+    ],
     navigationActiveWorkspace: null,
     commandCenterOpen: false,
     shortcutsDialogOpen: false,
@@ -164,13 +168,43 @@ describe("routeKeyboardShortcut — workspace.navigate.index", () => {
 });
 
 describe("routeKeyboardShortcut — sidebar.project.navigate.index", () => {
-  it("shows the project at that strip position", () => {
+  it("shows the project at that strip position and reopens its last chat", () => {
     expect(
       routeKeyboardShortcut(
         { action: "sidebar.project.navigate.index", payload: { index: 2 } },
         makeCtx(),
       ),
-    ).toEqual<ShortcutAction>({ kind: "show-sidebar-project", projectViewKey: "proj-b" });
+    ).toEqual<ShortcutAction>({
+      kind: "show-sidebar-project",
+      projectViewKey: "proj-b",
+      lastChat: { serverId: "srv", workspaceId: "ws-4" },
+    });
+  });
+
+  it("only changes the list on a phone", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 2 } },
+        makeCtx({ isMobile: true }),
+      ),
+    ).toEqual<ShortcutAction>({
+      kind: "show-sidebar-project",
+      projectViewKey: "proj-b",
+      lastChat: null,
+    });
+  });
+
+  it("only changes the list when the project has no remembered chat", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 1 } },
+        makeCtx(),
+      ),
+    ).toEqual<ShortcutAction>({
+      kind: "show-sidebar-project",
+      projectViewKey: "proj-a",
+      lastChat: null,
+    });
   });
 
   it("does nothing past the last project in the strip", () => {

@@ -10,7 +10,7 @@ beforeEach(() => {
     heldBadgeTarget: null,
     shortcutBadgeTarget: null,
     sidebarShortcutWorkspaceTargets: [],
-    sidebarShortcutProjectKeys: [],
+    sidebarShortcutProjects: [],
   });
 });
 

@@ -72,6 +72,7 @@ import {
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarViewStore, type SidebarGroupMode } from "@/stores/sidebar-view-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
+import { useIsProjectLastOpenRow } from "@/hooks/use-is-project-last-open-row";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -1135,6 +1136,7 @@ function WorkspaceRowInner({
   });
 
   const rowSelected = isSelectionMode ? isBulkSelected : selected;
+  const lastOpen = useIsProjectLastOpenRow(workspace, selected);
   const accessibilityState = useMemo(
     () => (isSelectionMode ? { checked: isBulkSelected } : { selected }),
     [isSelectionMode, isBulkSelected, selected],
@@ -1224,6 +1226,7 @@ function WorkspaceRowInner({
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
                 reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+                lastOpen={lastOpen && !isSelectionMode}
                 titleEditor={titleEditor}
               >
                 <WorkspaceRowRightGroup

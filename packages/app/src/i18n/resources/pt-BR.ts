@@ -1344,6 +1344,7 @@ export const ptBR: TranslationResources = {
       moveFirst: "Mover para o início",
       moveEarlier: "Mover para antes",
       moveLater: "Mover para depois",
+      lastOpen: "último aberto",
     },
     view: {
       failed: "Não foi possível carregar a visualização da barra lateral.",

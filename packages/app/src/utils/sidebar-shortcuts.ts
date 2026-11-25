@@ -9,6 +9,12 @@ export interface SidebarShortcutWorkspaceTarget {
   workspaceId: string;
 }
 
+/** A project strip entry: the project, and the workspace a jump reopens there, if any. */
+export interface SidebarShortcutProjectTarget {
+  projectViewKey: string;
+  lastChat: SidebarShortcutWorkspaceTarget | null;
+}
+
 export interface SidebarShortcutModel {
   shortcutTargets: SidebarShortcutWorkspaceTarget[];
   shortcutIndexByWorkspaceKey: Map<string, number>;

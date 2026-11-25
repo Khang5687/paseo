@@ -1308,6 +1308,7 @@ export const zhCN: TranslationResources = {
       moveFirst: "移到最前",
       moveEarlier: "前移",
       moveLater: "后移",
+      lastOpen: "上次打开",
     },
     view: {
       failed: "无法加载侧边栏视图。",
