@@ -1047,5 +1047,10 @@
       "packages/app/src/components/markdown/renderer.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+  },
+  {
+    "pr": 145,
+    "title": "Mount rarely used Paseo tools on demand in OMP chats",
+    "tests": ["packages/server/src/server/agent/providers/omp/host-tools.test.ts"]
   }
 ]
