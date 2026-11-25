@@ -7,6 +7,7 @@ import {
   Archive,
   Copy,
   Ellipsis,
+  ExternalLink,
   Globe,
   Import as ImportIcon,
   Settings,
@@ -41,10 +42,12 @@ import {
   type UseWorkspaceScriptsMenuPagesInput,
 } from "@/screens/workspace/scripts";
 import { usePluginWorkspaceMenu } from "@/plugins";
+import { openExternalUrl } from "@/utils/open-external-url";
 
 const ThemedEllipsis = withUnistyles(Ellipsis);
 const ThemedArchive = withUnistyles(Archive);
 const ThemedCopy = withUnistyles(Copy);
+const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedImport = withUnistyles(ImportIcon);
 const ThemedSettings = withUnistyles(Settings);
@@ -52,6 +55,7 @@ const ThemedSettings = withUnistyles(Settings);
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const MENU_NEW_BROWSER_ICON = <ThemedGlobe size={16} uniProps={mutedColorMapping} />;
+const MENU_OPEN_TASK_ICON = <ThemedExternalLink size={16} uniProps={mutedColorMapping} />;
 const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />;
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_ARCHIVE_ICON = <ThemedArchive size={16} uniProps={mutedColorMapping} />;
@@ -222,6 +226,8 @@ export interface WorkspaceHeaderMenuMobileProps extends WorkspaceHeaderWorkspace
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   scripts: UseWorkspaceScriptsMenuPagesInput;
+  /** Board task of the active agent tab, when it has one. */
+  taskUrl: string | null;
   showCreateBrowserTab: boolean;
   createTerminalDisabled: boolean;
   onCreateTerminalWithProfile: (profile: TerminalProfile, paneId?: string) => void;
@@ -240,6 +246,7 @@ export function WorkspaceHeaderMenuMobile({
   normalizedServerId,
   normalizedWorkspaceId,
   scripts,
+  taskUrl,
   showCreateBrowserTab,
   createTerminalDisabled,
   onCreateTerminalWithProfile,
@@ -269,6 +276,9 @@ export function WorkspaceHeaderMenuMobile({
   const handleEditProfiles = useCallback(() => {
     router.push(buildSettingsHostSectionRoute(normalizedServerId, "terminals") as Href);
   }, [normalizedServerId, router]);
+  const handleOpenTask = useCallback(() => {
+    if (taskUrl) void openExternalUrl(taskUrl).catch(console.error);
+  }, [taskUrl]);
   const { canArchive, archive } = useActiveWorkspaceArchive();
   const handleArchiveWorkspace = useCallback(() => {
     archive();
@@ -306,6 +316,15 @@ export function WorkspaceHeaderMenuMobile({
         pages={pages}
         sheetTitle={t("workspace.header.actions.workspaceActions")}
       >
+        {taskUrl ? (
+          <DropdownMenuItem
+            testID="workspace-header-open-task"
+            leading={MENU_OPEN_TASK_ICON}
+            onSelect={handleOpenTask}
+          >
+            {t("workspace.header.actions.openTask")}
+          </DropdownMenuItem>
+        ) : null}
         {onExitFocusMode ? (
           <DropdownMenuItem onSelect={onExitFocusMode}>
             {t("workspace.tabs.actions.exitFocusMode")}

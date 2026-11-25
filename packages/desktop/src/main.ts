@@ -61,6 +61,7 @@ import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { resolveAppIconPath } from "./features/stamped-icon.js";
 import { setupApplicationMenu } from "./features/menu.js";
+import { registerQuitConfirm } from "./features/quit-confirm/index.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
   decideBrowserWindowOpenRequest,
@@ -974,12 +975,14 @@ async function bootstrap(): Promise<void> {
   });
 
   await applyAppIcon();
+  const onQuitShortcut = registerQuitConfirm();
   setupApplicationMenu({
     onNewWindow: () => {
       void desktopWindowOwner.openAdditional().catch((error) => {
         log.error("[window] failed to create window from menu", error);
       });
     },
+    onQuitShortcut,
   });
   ensureNotificationCenterRegistration();
   registerDaemonManager();

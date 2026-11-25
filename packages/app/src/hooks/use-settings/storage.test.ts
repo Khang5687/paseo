@@ -85,6 +85,7 @@ describe("loadAppSettingsFromStorage", () => {
       theme: "dark",
       contentFontSize: 16,
       sendBehavior: "future-mode",
+      alternateSendBehavior: "future-mode",
       futureSetting: { enabled: true },
       sidebarRowItems: { host: false, futureRowItem: true },
     };
@@ -98,8 +99,56 @@ describe("loadAppSettingsFromStorage", () => {
 
     expect(result.theme).toBe("dark");
     expect(result.sendBehavior).toBe(DEFAULT_CLIENT_SETTINGS.sendBehavior);
+    expect(result.alternateSendBehavior).toBe("queue");
     expect(result.sidebarRowItems.host).toBe(false);
     expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) ?? "null")).toEqual(stored);
+  });
+
+  it.each([
+    { sendBehavior: "queue", alternateSendBehavior: "interrupt" },
+    { sendBehavior: "steer", alternateSendBehavior: "queue" },
+    { sendBehavior: "interrupt", alternateSendBehavior: "queue" },
+  ] as const)(
+    "keeps the alternate send of settings saved before it was configurable: $sendBehavior",
+    async ({ sendBehavior, alternateSendBehavior }) => {
+      const deps = makeDeps({
+        storage: createInMemoryKeyValueStorage({
+          [APP_SETTINGS_KEY]: JSON.stringify({ contentFontSize: 16, sendBehavior }),
+        }),
+      });
+
+      expect((await loadAppSettingsFromStorage(deps)).alternateSendBehavior).toBe(
+        alternateSendBehavior,
+      );
+      expect(
+        JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) ?? "{}").alternateSendBehavior,
+      ).toBe(alternateSendBehavior);
+    },
+  );
+
+  it("defaults a fresh install to steer on Send and queue on the alternate", async () => {
+    const result = await loadAppSettingsFromStorage(makeDeps());
+
+    expect(result.sendBehavior).toBe("steer");
+    expect(result.alternateSendBehavior).toBe("queue");
+  });
+
+  it("keeps the alternate send the user picked independently of the default send", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ contentFontSize: 16, sendBehavior: "queue" }),
+      }),
+    });
+    await loadAppSettingsFromStorage(deps);
+    await saveAppSettings({
+      queryClient: new QueryClient(),
+      updates: { alternateSendBehavior: "steer" },
+      deps,
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+    expect(result.sendBehavior).toBe("queue");
+    expect(result.alternateSendBehavior).toBe("steer");
   });
   it("migrates a stored interrupt to steer and persists it", async () => {
     const deps = makeDeps({

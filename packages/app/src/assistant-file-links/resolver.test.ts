@@ -120,6 +120,14 @@ it.each([
   });
 });
 
+it("opens a linkified schemeless web address on the web", () => {
+  const text = "github.com/Khang5687/throwback32";
+  expect(classifyForResolution({ href: text, text, markup: "linkify" }, CONTEXT)).toEqual({
+    kind: "resolved",
+    value: { kind: "external", url: `https://${text}` },
+  });
+});
+
 it("opens the existing non-ASCII file named by a rendered markdown link", async () => {
   const workspaceRoot = await mkdtemp(path.join(tmpdir(), "assistant-file-link-"));
   try {
@@ -386,6 +394,45 @@ describe("fetchDaemonResolution", () => {
       lineStart: 12,
       lineEnd: undefined,
     });
+  });
+
+  it("looks folders up only for extensionless names", async () => {
+    const lookups: Array<{ query: string; includeDirectories: boolean }> = [];
+    const getDirectorySuggestions: GetDirectorySuggestions = async (input) => {
+      lookups.push({ query: input.query, includeDirectories: input.includeDirectories });
+      return resolvedSuggestions(
+        input.includeDirectories
+          ? [{ path: "packages/app/src/components", kind: "directory" }]
+          : [],
+      );
+    };
+    const target = (relative: string) => ({
+      raw: relative,
+      path: `/Users/test/project/${relative}`,
+    });
+
+    await expect(
+      fetchDaemonResolution({
+        ambiguousQuery: "src/components/",
+        token: "src/components/",
+        target: target("src/components/"),
+        workspaceRoot: "/Users/test/project",
+        getDirectorySuggestions,
+      }),
+    ).resolves.toMatchObject({ path: "/Users/test/project/packages/app/src/components" });
+    await expect(
+      fetchDaemonResolution({
+        ambiguousQuery: "src/report.pdf",
+        token: "src/report.pdf",
+        target: target("src/report.pdf"),
+        workspaceRoot: "/Users/test/project",
+        getDirectorySuggestions,
+      }),
+    ).rejects.toEqual(new UnresolvedFileLinkError("src/report.pdf"));
+    expect(lookups).toEqual([
+      { query: "src/components", includeDirectories: true },
+      { query: "src/report.pdf", includeDirectories: false },
+    ]);
   });
 
   it("throws a typed unresolved error when the daemon finds no match", async () => {

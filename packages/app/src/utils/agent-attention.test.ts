@@ -21,6 +21,14 @@ describe("agent attention acknowledgement", () => {
     return { controller, state, calls, errors };
   }
 
+  it("clears a new main agent on opening even with no attention, but not before it is ready", () => {
+    const { controller, state, calls } = setup();
+    controller.update({ ...state, ready: false, isUnseen: true });
+    expect(calls).toEqual([]);
+    controller.update({ ...state, isUnseen: true });
+    expect(calls).toEqual(["clear"]);
+  });
+
   it("acknowledges entry, but keeps attention arriving while focused until another focus action", async () => {
     const { controller, state, calls } = setup();
     controller.update(state);

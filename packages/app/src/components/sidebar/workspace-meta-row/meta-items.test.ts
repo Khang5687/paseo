@@ -67,6 +67,19 @@ describe("selectMetaRowItems", () => {
     ).toEqual([]);
   });
 
+  it("leads with working subagents whatever the row toggles say", () => {
+    const visible = {
+      ...DEFAULT_SIDEBAR_ROW_ITEMS,
+      changeRequest: false,
+      services: false,
+      labels: false,
+    };
+    expect(select({ workingSubagentCount: 2, visible, checksDisplay: "none" })).toEqual([
+      { kind: "subagents", count: 2 },
+      { kind: "host" },
+    ]);
+  });
+
   it("only draws identity badges when enabled and available", () => {
     const visible = { ...DEFAULT_SIDEBAR_ROW_ITEMS, branch: true, project: true };
     expect(kinds(select({ currentBranch: null, projectName: null, visible }))).toEqual([
