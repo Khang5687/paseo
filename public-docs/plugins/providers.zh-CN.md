@@ -89,6 +89,25 @@ const { stdout } = await execCommand(launch.command, [...launch.args, "--version
 });
 ```
 
+### 在启动包装之后运行会话 {#run-sessions-behind-a-launch-wrap}
+
+来自 `agent.open.before` 的[启动包装](./hooks.zh-CN.md#launch-wraps)会作为 `session.open` 的 `config.wrap` 传给你的 Provider。要支持它：
+
+1. 在注册信息上设置 `launchWrap: true`。Paseo 会在 Provider 快照中发布 `launchWrap: true`，这样插件可以在你的 Provider 连接之前选择它。
+2. 把 `session.launch_wrap` 加入连接支持的能力。Paseo 只把 `config.wrap` 发给协商了该能力的连接，在其他连接上带包装的打开会失败。
+3. 用 `wrap` 选项启动会话的进程。`spawnProcess` 随后启动 `[...wrap, command, ...args]`，并为包装的可执行文件处理 Windows 启动器：
+
+```ts
+const child = spawnProcess(launch.command, [...launch.args, "serve"], {
+  wrap: input.config.wrap,
+  env: launch.env,
+  cwd: input.config.cwd,
+  stdio: "pipe",
+});
+```
+
+在包装之后启动所有为会话工作的进程。如果一个进程服务多个会话，就为带包装的会话单独启动一个。`runAcpProvider({ command })` 会为 ACP Agent 完成以上所有工作。
+
 ## 返回模型、模式和思考选项 {#return-models-modes-and-thinking-options}
 
 Paseo 在创建会话之前会请求目录。返回 Agent 表单需要的选项：
@@ -270,6 +289,8 @@ Paseo 刷新 Agent 的方式是关闭它当前的 Provider 会话，然后用当
 - `delivery: "auto"` 允许你开始一个轮次，或者在没有轮次的情况下完成一条命令。
 
 发布 `session.commands`，向 Composer 添加结构化命令。命令可以开始一个普通轮次，也可以作为副作用完成，并返回一个 `completed` 的提示词结果。
+
+用户输入 `/name ` 后，Composer 会显示该命令的 `argumentHint`。为命令提供 `subcommands`（`name`，以及可选的 `description` 和 `usage`），即可为第一个参数提供固定选项；选中后会自动填入。
 
 只声明你实现了的能力。如果不支持引导，请省略 `prompt.steer`；Paseo 可以改为替换当前轮次。
 

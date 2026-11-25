@@ -128,6 +128,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;
@@ -136,6 +138,8 @@ export interface ProviderSnapshotEntry {
   /** The page that helps users set up and troubleshoot this provider. */
   docsUrl?: string;
   defaultModeId?: string | null;
+  /** The provider can run a session behind an `agent.open.before` wrap. Absent means it cannot. */
+  launchWrap?: boolean;
 }
 
 export interface AgentFeatureToggle {

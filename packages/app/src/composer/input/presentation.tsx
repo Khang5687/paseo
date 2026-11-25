@@ -42,6 +42,7 @@ export function ComposerInputPresentation({
   showFullscreenButton,
   onEnter,
   overlay,
+  resizeGrip,
 }: {
   fullscreen: boolean;
   /** The sizing the toolbar's stylesheet resolves to; see `resolveControlSizing`. */
@@ -58,6 +59,7 @@ export function ComposerInputPresentation({
   showFullscreenButton: boolean;
   onEnter: () => void;
   overlay: ReactNode;
+  resizeGrip: ReactNode;
 }) {
   const { t } = useTranslation();
   // A retained tab keeps its fullscreen editor mounted while hidden; the global exit
@@ -108,6 +110,7 @@ export function ComposerInputPresentation({
           style={fullscreen ? styles.fullscreenInputWrapper : inputWrapperStyle}
           pointerEvents={inputPointerEvents}
         >
+          {fullscreen ? null : resizeGrip}
           {fullscreen ? null : attachmentSlot}
           <View style={fullscreen ? styles.fullscreenTextSurface : styles.inlineTextSurface}>
             {surface}

@@ -2,7 +2,7 @@ import { usePaneContext } from "@/panels/pane-context";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PluginFile, PluginTab } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
-import { Download } from "lucide-react-native";
+import { Download, Share2 } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,16 @@ import { FilePanelPicker, FilePanelView, useFilePanelChoice, type FilePanel } fr
 import { resolveFilePreviewReadTarget } from "@/file-explorer/preview-target";
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
+import { useAppSettings } from "@/hooks/use-settings";
+import { useHostCopy } from "@/offline-files/host-copy";
+import { readOfflineFileBytes, useOfflineFiles, type OfflineFile } from "@/offline-files/store";
+import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { shareFileBytes } from "@/stores/download-store";
 import { usePublishPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
 import { useSessionStore } from "@/stores/session-store";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { formatFileSize } from "@/utils/format-file-size";
+import { formatTimeAgo } from "@/utils/time";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 
 /**
@@ -62,11 +68,19 @@ export function FilePane({
   // A hidden tab or a backgrounded app stops observing; observing again reports what changed.
   const isActive = useRetainedPanelActive();
   const isAppVisible = useAppActivelyVisible();
+  const { offlineCopy, hostCopy } = useOfflineStandIn({
+    serverId,
+    absolutePath,
+    connected,
+    hasTarget: target !== null,
+  });
+  const { settings } = useAppSettings();
   const handle = useFileHandle({
     serverId,
     target,
     absolutePath,
     observing: isActive && isAppVisible,
+    offlineCopy,
   });
   const snapshot = useFileHandleSnapshot(handle);
   const targetKey = target ? `${target.cwd}:${target.path}` : null;
@@ -90,10 +104,17 @@ export function FilePane({
     [location.lineEnd, location.lineStart, path],
   );
 
+  const offlineBar = <OfflineCopyBarFor entry={offlineCopy} />;
   let body;
-  if (!connected && target) {
+  if (hostCopy === "tooLarge") {
+    body = (
+      <Text style={styles.errorText}>
+        {t("offlineFiles.tooLarge", { size: settings.offlineFilesMaxFileMb })}
+      </Text>
+    );
+  } else if (!connected && !offlineCopy && target && hostCopy !== "loading") {
     body = <Text style={styles.errorText}>{t("workspace.terminal.hostDisconnected")}</Text>;
-  } else if (!handle || snapshot.status === "loading") {
+  } else if (!handle || snapshot.status === "loading" || hostCopy === "loading") {
     return (
       <View style={styles.container} testID="workspace-file-pane">
         <FilePanelLoading />
@@ -127,6 +148,7 @@ export function FilePane({
   } else {
     return (
       <View style={styles.container} testID="workspace-file-pane">
+        {offlineBar}
         <FilePanelPicker choice={choice} />
         <MountedFilePanel
           key={`${panel.id}:${targetKey}`}
@@ -141,7 +163,71 @@ export function FilePane({
   }
   return (
     <View style={styles.container} testID="workspace-file-pane">
+      {offlineBar}
       <View style={styles.centerState}>{body}</View>
+    </View>
+  );
+}
+
+/**
+ * With the host offline, a saved copy stands in for the file: this device's own, else the one
+ * another host keeps.
+ */
+function useOfflineStandIn(input: {
+  serverId: string;
+  absolutePath: string;
+  connected: boolean;
+  hasTarget: boolean;
+}) {
+  const { serverId, absolutePath, hasTarget } = input;
+  const hostConnected = useHostRuntimeIsConnected(serverId);
+  const online = input.connected && hostConnected;
+  const offlineFiles = useOfflineFiles();
+  const offlineCopy = useMemo(
+    () =>
+      online
+        ? null
+        : (offlineFiles?.find(
+            (entry) => entry.serverId === serverId && entry.path === absolutePath,
+          ) ?? null),
+    [absolutePath, offlineFiles, online, serverId],
+  );
+  const hostCopy = useHostCopy({
+    serverId,
+    path: absolutePath,
+    enabled: !online && offlineFiles !== null && !offlineCopy && hasTarget,
+  });
+  return { offlineCopy, hostCopy };
+}
+
+function OfflineCopyBarFor({ entry }: { entry: OfflineFile | null }) {
+  return entry ? <OfflineCopyBar entry={entry} /> : null;
+}
+
+/** Says the file is a saved copy and how old it is, and hands it to other apps. */
+function OfflineCopyBar({ entry }: { entry: OfflineFile }) {
+  const { t } = useTranslation();
+  const share = useCallback(async () => {
+    await shareFileBytes({
+      bytes: await readOfflineFileBytes(entry),
+      fileName: entry.path.split(/[\\/]/).pop() ?? "file",
+      mimeType: entry.mimeType,
+    });
+  }, [entry]);
+  return (
+    <View style={styles.offlineBar} testID="offline-file-bar">
+      <Text style={styles.offlineText} numberOfLines={1}>
+        {t("offlineFiles.savedAgo", { time: formatTimeAgo(new Date(entry.savedAt)) })}
+      </Text>
+      <Button
+        variant="ghost"
+        size="sm"
+        leftIcon={Share2}
+        onPress={share}
+        testID="offline-file-share"
+      >
+        {t("offlineFiles.share")}
+      </Button>
     </View>
   );
 }
@@ -177,7 +263,7 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   centerState: {
     flex: 1,
@@ -190,6 +276,23 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.destructive,
     fontSize: theme.fontSize.base,
     textAlign: "center",
+  },
+  offlineBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[2],
+    paddingLeft: theme.spacing[3],
+    paddingRight: theme.spacing[1],
+    paddingVertical: theme.spacing[1],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+  },
+  offlineText: {
+    flexShrink: 1,
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
   },
   mutedText: {
     color: theme.colors.foregroundMuted,

@@ -24,6 +24,7 @@ import {
   ConnectionSubscriptions,
   type OwnedSubscription,
   DEFAULT_CLIENT_CAPABILITIES,
+  type SubscriptionObserver,
   type TimelineSubscription,
 } from "./connection/index.js";
 import { CreationClient } from "./creation/index.js";
@@ -46,8 +47,18 @@ import {
   RestartRequestedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
+  AGENT_ASK_DEFAULT_TIMEOUT_MS,
   SessionInboundMessageSchema,
+  type ActiveTurnBehavior,
   type AgentActiveTurnBehavior,
+  type AccountRoutingLoginSubmitCodeResponse,
+  type OmpAccountLoginPayload,
+  type OmpAccountRoutingMutation,
+  type OmpAccountRoutingMutationResult,
+  type OmpAccountRoutingState,
+  type OmpRoutingAccountRef,
+  type AgentAskReplyInfo,
+  type AgentAskThreadInfo,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
@@ -62,9 +73,11 @@ import type {
   FileUploadResponse,
   FileExplorerResponse,
   FileVersion,
+  AgentDraftSetRequest,
   FileWriteResult,
   FetchAgentTimelineResponseMessage,
   AgentForkContextResponseMessage,
+  AgentForkResponseMessage,
   GitSetupOptions,
   CheckoutStatusResponse,
   CheckoutCommit,
@@ -153,6 +166,9 @@ import type {
   AgentSkillSelection,
   AgentSkillsStatus,
   AgentSkillsSaveResult,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
+  AgentAttachment,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentOptionControl,
@@ -274,6 +290,198 @@ export class DaemonAuthenticationError extends Error {
     super(reason === "password_required" ? "Password required" : "Incorrect password");
     this.name = "DaemonAuthenticationError";
     this.reason = reason;
+  }
+}
+
+export class OmpAccountRoutingUnsupportedError extends Error {
+  readonly code = "unsupported" as const;
+
+  constructor(message = "The host does not support OMP account routing.") {
+    super(message);
+    this.name = "OmpAccountRoutingUnsupportedError";
+  }
+}
+
+export class OmpAccountLoginUnsupportedError extends Error {
+  constructor() {
+    super("This host cannot add an account from here");
+    this.name = "OmpAccountLoginUnsupportedError";
+  }
+}
+
+export interface OmpAccountRoutingRead {
+  state: OmpAccountRoutingState;
+  subscription?: OwnedSubscription<OmpAccountRoutingState>;
+}
+
+export interface OmpAccountRoutingSubscribedRead extends OmpAccountRoutingRead {
+  subscription: OwnedSubscription<OmpAccountRoutingState>;
+}
+
+type OmpAccountRoutingBootstrap = OmpAccountRoutingState & { subscriptionId: string };
+
+class OmpAccountRoutingSubscription implements OwnedSubscription<OmpAccountRoutingState> {
+  private readonly observers = new Set<SubscriptionObserver<OmpAccountRoutingBootstrap>>();
+  private readonly detachSource: () => void;
+  private readonly readyPromise: Promise<OmpAccountRoutingBootstrap>;
+  private readonly abortHandler: (() => void) | null;
+  private resolveReady!: (snapshot: OmpAccountRoutingBootstrap) => void;
+  private rejectReady!: (error: unknown) => void;
+  private currentBootstrap: OmpAccountRoutingBootstrap | null = null;
+  private readySettled = false;
+  private released = false;
+  private removed = false;
+
+  constructor(
+    private readonly source: OwnedSubscription<OmpAccountRoutingBootstrap>,
+    private readonly onRelease: () => void,
+    private readonly onFailure: (error: unknown) => void,
+    private readonly signal?: AbortSignal,
+  ) {
+    this.abortHandler = this.signal
+      ? () => {
+          const reason = this.signal?.reason;
+          this.cancel(reason instanceof Error ? reason : new Error("Request aborted"));
+        }
+      : null;
+    this.readyPromise = new Promise<OmpAccountRoutingBootstrap>((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
+    });
+    void this.readyPromise.catch(() => {});
+    this.detachSource = source.subscribe({
+      snapshot: (snapshot) => this.acceptSnapshot(snapshot),
+      update: (message) => {
+        if (this.released || message.type !== "account.routing.state.update") return;
+        const subscriptionId = this.source.subscriptionId;
+        if (!subscriptionId || message.payload.subscriptionId !== subscriptionId) return;
+        const nextState = message.payload.state;
+        const previousState = this.currentBootstrap;
+        if (
+          previousState &&
+          nextState.hostEpoch === previousState.hostEpoch &&
+          nextState.stateSequence <= previousState.stateSequence
+        ) {
+          return;
+        }
+        this.currentBootstrap = { ...nextState, subscriptionId };
+        for (const observer of this.observers) {
+          this.notify(() => observer.update(message));
+        }
+      },
+      error: (error) => {
+        this.rejectReadyIfPending(error);
+        for (const observer of this.observers) {
+          this.notify(() => observer.error?.(error));
+        }
+        this.finishReleased();
+      },
+    });
+    void source.ready.catch((error) => {
+      this.rejectReadyIfPending(error);
+      this.finishReleased();
+    });
+    if (this.signal && this.abortHandler) {
+      this.signal.addEventListener("abort", this.abortHandler, { once: true });
+      if (this.signal.aborted) this.abortHandler();
+    }
+  }
+
+  get subscriptionId(): string | null {
+    return this.source.subscriptionId;
+  }
+
+  get ready(): Promise<OmpAccountRoutingBootstrap> {
+    return this.readyPromise;
+  }
+
+  subscribe(observer: SubscriptionObserver<OmpAccountRoutingBootstrap>): () => void {
+    if (this.released) throw new Error("Subscription released");
+    this.observers.add(observer);
+    const snapshot = this.currentBootstrap;
+    if (snapshot) {
+      this.notify(() => observer.snapshot(snapshot));
+    }
+    return () => {
+      this.observers.delete(observer);
+    };
+  }
+
+  release(): Promise<void> {
+    this.released = true;
+    if (this.signal && this.abortHandler)
+      this.signal.removeEventListener("abort", this.abortHandler);
+    this.detachSource();
+    this.observers.clear();
+    // The owned source memoizes its teardown, so repeated calls share one release.
+    return this.source.release().finally(() => this.finishReleased());
+  }
+
+  cancel(reason: Error): void {
+    if (this.released) return;
+    this.rejectReadyIfPending(reason);
+    void this.release().catch((failure) => this.onFailure(failure));
+  }
+
+  unsupported(): void {
+    if (this.released) return;
+    const error = new OmpAccountRoutingUnsupportedError();
+    if (this.currentBootstrap) {
+      const diagnostic = {
+        ...this.currentBootstrap,
+        capability: { status: "unsupported" as const, reason: "host_unavailable" as const },
+      };
+      for (const observer of this.observers) {
+        this.notify(() => observer.snapshot(diagnostic));
+      }
+    } else {
+      this.rejectReadyIfPending(error);
+    }
+    void this.release().catch((failure) => this.onFailure(failure));
+  }
+
+  private acceptSnapshot(snapshot: OmpAccountRoutingBootstrap): void {
+    if (this.released) return;
+    this.currentBootstrap = snapshot;
+    this.resolveReadyIfPending(snapshot);
+    for (const observer of this.observers) {
+      this.notify(() => observer.snapshot(snapshot));
+    }
+  }
+
+  private notify(callback: () => void): void {
+    try {
+      callback();
+    } catch (error) {
+      this.onFailure(error);
+    }
+  }
+
+  private resolveReadyIfPending(snapshot: OmpAccountRoutingBootstrap): void {
+    if (this.readySettled) return;
+    this.readySettled = true;
+    this.resolveReady(snapshot);
+  }
+
+  private rejectReadyIfPending(error: unknown): void {
+    if (this.readySettled) return;
+    this.readySettled = true;
+    this.rejectReady(error);
+  }
+
+  private finishReleased(): void {
+    if (this.removed) return;
+    if (this.signal && this.abortHandler)
+      this.signal.removeEventListener("abort", this.abortHandler);
+    this.removed = true;
+    this.onRelease();
+  }
+
+  static withoutSubscriptionId({
+    subscriptionId: _subscriptionId,
+    ...state
+  }: OmpAccountRoutingBootstrap): OmpAccountRoutingState {
+    return state;
   }
 }
 
@@ -507,6 +715,7 @@ export interface SendMessageOptions {
   activeTurnBehavior?: AgentActiveTurnBehavior;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
+  attachmentRefs?: SendAgentMessageRequest["attachmentRefs"];
 }
 
 export interface AgentAttentionRequiredNotification {
@@ -534,6 +743,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
   outputSchema?: Record<string, unknown>;
   images?: CreateAgentRequestMessage["images"];
   attachments?: CreateAgentRequestMessage["attachments"];
+  attachmentRefs?: CreateAgentRequestMessage["attachmentRefs"];
   /** @deprecated Use createWorkspace({ source, agent, idempotencyKey }); rejected by createAgent. */
   git?: GitSetupOptions;
   worktree?: CreateAgentRequestMessage["worktree"];
@@ -744,6 +954,7 @@ type ScheduleUpdatePayload = Extract<
 >["payload"];
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
+export type AgentForkPayload = AgentForkResponseMessage["payload"];
 
 export type FetchAgentTimelineDirection = FetchAgentTimelinePayload["direction"];
 export type FetchAgentTimelineProjection = FetchAgentTimelinePayload["projection"];
@@ -830,6 +1041,8 @@ export interface AgentForkContextOptions {
   boundaryMessageId?: string;
   requestId?: string;
 }
+
+export type AgentForkOptions = AgentForkContextOptions;
 
 type AgentRefreshedStatusPayload = z.infer<typeof AgentRefreshedStatusPayloadSchema>;
 type RestartRequestedStatusPayload = z.infer<typeof RestartRequestedStatusPayloadSchema>;
@@ -933,6 +1146,38 @@ export type ProjectListPayload = Extract<
   SessionOutboundMessage,
   { type: "project.list.response" }
 >["payload"];
+export type NotesListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "notes.list.response" }
+>["payload"];
+type NotesCreateRequest = Extract<SessionInboundMessage, { type: "notes.create.request" }>;
+type NotesEditRequest = Extract<SessionInboundMessage, { type: "notes.edit.request" }>;
+export type CreateNoteOptions = Omit<NotesCreateRequest, "type" | "requestId">;
+export type EditNoteOptions = Omit<NotesEditRequest, "type" | "requestId">;
+export type NoteRecord = NotesListPayload["notes"][number];
+export type FileCopyEntry = NonNullable<
+  Extract<SessionOutboundMessage, { type: "files.copies.put.response" }>["payload"]["entry"]
+>;
+export type FileCopiesSettingsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "files.copies.get_settings.response" }
+>["payload"];
+export type FileCopiesListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "files.copies.list.response" }
+>["payload"];
+type FileCopiesPutRequest = Extract<SessionInboundMessage, { type: "files.copies.put.request" }>;
+type FileCopiesListRequest = Extract<SessionInboundMessage, { type: "files.copies.list.request" }>;
+type FileCopiesUpdateSettingsRequest = Extract<
+  SessionInboundMessage,
+  { type: "files.copies.update_settings.request" }
+>;
+export type PutFileCopyOptions = Omit<FileCopiesPutRequest, "type" | "requestId">;
+export type ListFileCopiesOptions = Omit<FileCopiesListRequest, "type" | "requestId">;
+export type UpdateFileCopySettingsOptions = Omit<
+  FileCopiesUpdateSettingsRequest,
+  "type" | "requestId"
+>;
 type ProjectListRequest = Extract<SessionInboundMessage, { type: "project.list.request" }>;
 export type ProjectListOptions = Omit<ProjectListRequest, "type" | "requestId"> & {
   requestId?: string;
@@ -1050,6 +1295,7 @@ interface WaitHandle<T> {
 interface WaitOptions {
   skipQueue?: boolean;
   requestId?: string;
+  signal?: AbortSignal;
   requestType?: SessionInboundMessage["type"];
 }
 
@@ -1062,6 +1308,9 @@ interface PendingBinaryFileRead {
   cwd: string;
   path: string;
   maxBytes?: number;
+  // A `files.copies.read` transfer completes through its own JSON response, not a synthesized
+  // `file_explorer_response`.
+  fileCopy?: true;
 }
 
 interface BinaryFileTransferState extends PendingBinaryFileRead {
@@ -1179,6 +1428,8 @@ function toTimeoutError(error: unknown, label: string, timeoutMs: number): Error
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30000;
 const DEFAULT_SESSION_RPC_TIMEOUT_MS = 60_000;
+// The daemon allows 90s per provider; retain its result through the delivery margin.
+const RECENT_PROVIDER_SESSIONS_TIMEOUT_MS = 100_000;
 const PUSH_TOKEN_REVOCATION_TIMEOUT_MS = 2_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_LIVENESS_TIMEOUT_MS = 5000;
@@ -1427,6 +1678,27 @@ function buildFetchAgentsRequest(
   });
 }
 
+/** Only the fields the caller set go on the wire, so old daemons see old-shaped requests. */
+function askRequestFields(
+  options: {
+    askedBy?: string;
+    askerAgentId?: string;
+    threadId?: string;
+    threadAction?: "ask" | "status" | "close" | "read";
+    readCursor?: string;
+  },
+  pagedReplies: boolean,
+) {
+  return {
+    ...(options.askedBy ? { askedBy: options.askedBy } : {}),
+    ...(options.askerAgentId ? { askerAgentId: options.askerAgentId } : {}),
+    ...(options.threadId ? { threadId: options.threadId } : {}),
+    ...(options.threadAction ? { threadAction: options.threadAction } : {}),
+    ...(options.readCursor !== undefined ? { readCursor: options.readCursor } : {}),
+    ...(pagedReplies ? { replyPaging: {} } : {}),
+  };
+}
+
 export class DaemonClient {
   private readonly providerSnapshotUpdates = new ProviderSnapshotUpdates({
     active: (message) => this.owned.owns(message),
@@ -1526,6 +1798,7 @@ export class DaemonClient {
   private readonly logGeneration: number | null;
   private lastServerInfoMessage: ServerInfoStatusPayload | null = null;
   private runtimeMetricsInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly ompAccountRoutingSubscriptions = new Set<OmpAccountRoutingSubscription>();
   private runtimeMetrics: DaemonClientRuntimeMetrics | null = null;
   private pingProbe: PingProbe | null = null;
   private readonly pongWaiters = new Set<PongWaiter>();
@@ -1849,6 +2122,7 @@ export class DaemonClient {
     this.disposeTransport(1000, "Client closed");
     this.providerSnapshotUpdates.clear();
     this.clearWaiters(new Error("Daemon client closed"));
+    this.releaseOmpAccountRoutingSubscriptions(new Error("Daemon client closed"));
     await this.diffStreams.close();
     await this.owned.close();
     this.creations.close();
@@ -1888,6 +2162,29 @@ export class DaemonClient {
     void this.connect().catch((error: unknown) =>
       this.logger.debug({ err: error }, "Connection attempt ended"),
     );
+  }
+
+  /**
+   * Closes the socket and stops reconnecting until the next `ensureConnected()`. Unlike `close()`,
+   * the client stays usable: owned subscriptions are restored when it connects again. Apps call
+   * this when they are backgrounded so an idle socket, its liveness pings and its reconnect
+   * backoff stop costing battery.
+   */
+  suspend(): void {
+    if (this.connectionState.status === "disposed" || !this.shouldReconnect) {
+      return;
+    }
+    this.shouldReconnect = false;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.disposeTransport(1000, "Client suspended");
+    this.scheduleReconnect({
+      reason: "Client suspended",
+      event: "SUSPEND",
+      reasonCode: "suspended",
+    });
   }
 
   private recordTransportActivity(): void {
@@ -2360,7 +2657,7 @@ export class DaemonClient {
     message: SessionInboundMessage;
     timeout?: number;
     select: (msg: SessionOutboundMessage) => T | null;
-    options?: { skipQueue?: boolean };
+    options?: { skipQueue?: boolean; signal?: AbortSignal };
     /** Sends the request in another form, such as a binary frame; defaults to `message`. */
     transmit?: () => Promise<void>;
   }): Promise<T> {
@@ -2387,12 +2684,21 @@ export class DaemonClient {
         return { kind: "ok", value };
       },
       timeout,
-      { ...params.options, requestId: params.requestId, requestType: params.message.type },
+      {
+        ...params.options,
+        requestId: params.requestId,
+        requestType: params.message.type,
+        signal: params.options?.signal,
+      },
     );
 
     // The response deadline still applies while the transport waits for drain.
     void promise.catch(() => undefined);
     try {
+      if (params.options?.signal?.aborted) {
+        const reason = params.options.signal.reason;
+        throw reason instanceof Error ? reason : new Error("Request aborted");
+      }
       const sent = params.transmit
         ? params.transmit()
         : this.sendSessionMessageOrThrow(wire.message);
@@ -2417,6 +2723,7 @@ export class DaemonClient {
     timeout?: number;
     responseType: TResponseType;
     options?: { skipQueue?: boolean };
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
     transmit?: () => Promise<void>;
   }): Promise<TResult> {
@@ -2424,7 +2731,7 @@ export class DaemonClient {
       requestId: params.requestId,
       message: params.message,
       timeout: params.timeout,
-      options: params.options,
+      options: { ...params.options, signal: params.signal },
       ...(params.transmit ? { transmit: params.transmit } : {}),
       select: (msg) => {
         const correlated = msg as CorrelatedResponseMessage;
@@ -2451,6 +2758,7 @@ export class DaemonClient {
     message: { type: SessionInboundMessage["type"] } & Record<string, unknown>;
     responseType: TResponseType;
     timeout?: number;
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const resolvedRequestId = this.createRequestId(params.requestId);
@@ -2463,7 +2771,7 @@ export class DaemonClient {
       message,
       responseType: params.responseType,
       timeout: params.timeout,
-      options: { skipQueue: true },
+      signal: params.signal,
       ...(params.selectPayload ? { selectPayload: params.selectPayload } : {}),
     });
   }
@@ -2478,6 +2786,7 @@ export class DaemonClient {
       unknown
     >;
     timeout?: number;
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const responseType = params.message.type.replace(/\.request$/, ".response") as TResponseType;
@@ -2567,6 +2876,149 @@ export class DaemonClient {
     if (!response.success) {
       throw new Error(response.error ?? "Failed to mark workspace unread");
     }
+  }
+
+  // Agent message queue (daemon-owned). Gate on `serverInfo.features.messageQueue`.
+
+  async addQueuedAgentMessage(
+    input: {
+      agentId: string;
+      text: string;
+      images?: AgentQueuedMessagePayload["images"];
+      attachments?: AgentAttachment[];
+      attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
+    },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.add.response">({
+      requestId,
+      message: {
+        type: "agent.queue.add.request",
+        agentId: input.agentId,
+        text: input.text,
+        images: input.images,
+        attachments: input.attachments,
+        attachmentRefs: input.attachmentRefs,
+      },
+    });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to queue agent message");
+    }
+    return response.message;
+  }
+
+  async removeQueuedAgentMessage(
+    input: { agentId: string; messageId: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.remove.response">({
+        requestId,
+        message: {
+          type: "agent.queue.remove.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to remove queued agent message");
+    }
+    return response.message;
+  }
+
+  async updateQueuedAgentMessage(
+    input: { agentId: string; messageId: string; text: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.update.response">({
+        requestId,
+        message: {
+          type: "agent.queue.update.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          text: input.text,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to update queued agent message");
+    }
+    return response.message;
+  }
+
+  async sendQueuedAgentMessageNow(
+    input: { agentId: string; messageId: string; activeTurnBehavior?: ActiveTurnBehavior },
+    requestId?: string,
+  ): Promise<void> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.send_now.response">({
+        requestId,
+        message: {
+          type: "agent.queue.send_now.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          activeTurnBehavior: input.activeTurnBehavior,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to send queued agent message");
+    }
+  }
+
+  // Queue controls. Gate on `serverInfo.features.messageQueueControls`.
+
+  async moveQueuedAgentMessage(
+    input: { agentId: string; messageId: string; toIndex: number },
+    requestId?: string,
+  ): Promise<void> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.move.response">(
+      {
+        requestId,
+        message: {
+          type: "agent.queue.move.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          toIndex: input.toIndex,
+        },
+      },
+    );
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to move queued agent message");
+    }
+  }
+
+  async clearQueuedAgentMessages(input: { agentId: string }, requestId?: string): Promise<number> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.clear.response">({
+        requestId,
+        message: {
+          type: "agent.queue.clear.request",
+          agentId: input.agentId,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to clear queued agent messages");
+    }
+    return response.removedCount;
+  }
+
+  async setAgentQueuePaused(
+    input: { agentId: string; paused: boolean },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.set_paused.response">({
+        requestId,
+        message: {
+          type: "agent.queue.set_paused.request",
+          agentId: input.agentId,
+          paused: input.paused,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to set agent queue paused state");
+    }
+    return response.paused;
   }
 
   sendHeartbeat(params: {
@@ -2760,6 +3212,214 @@ export class DaemonClient {
       this.livenessHeartbeatTimer = null;
       this.tickLivenessHeartbeat();
     }, LIVENESS_HEARTBEAT_INTERVAL_MS);
+  }
+
+  private getEffectiveClientCapabilities(): Partial<Record<ClientCapability, unknown>> {
+    return {
+      ...DEFAULT_CLIENT_CAPABILITIES,
+      ...this.config.capabilities,
+    };
+  }
+
+  private isOmpAccountRoutingSupported(): boolean {
+    const serverFeatures = this.lastServerInfoMessage?.features;
+    return (
+      serverFeatures?.ompAccountRouting === true &&
+      serverFeatures.ownedSubscriptions === true &&
+      this.getEffectiveClientCapabilities()[CLIENT_CAPS.ownedSubscriptions] === true
+    );
+  }
+
+  private requireOmpAccountRoutingSupport(): void {
+    const connected = this.connectionState.status === "connected" && this.transport !== null;
+    if (!connected || !this.isOmpAccountRoutingSupported())
+      throw new OmpAccountRoutingUnsupportedError();
+  }
+
+  private releaseUnsupportedOmpAccountRoutingSubscriptions(): void {
+    if (this.isOmpAccountRoutingSupported()) return;
+    for (const subscription of this.ompAccountRoutingSubscriptions) {
+      subscription.unsupported();
+    }
+  }
+  private releaseOmpAccountRoutingSubscriptions(error: Error): void {
+    for (const subscription of this.ompAccountRoutingSubscriptions) {
+      subscription.cancel(error);
+    }
+  }
+
+  private createOmpAccountRoutingSubscription(signal?: AbortSignal): OmpAccountRoutingSubscription {
+    // The adapter below is the only abort listener for the caller's signal. It cancels with the
+    // signal's reason, which the source's own release would replace with "Subscription released".
+    const source = this.owned.observe<OmpAccountRoutingBootstrap>(async (accept) => {
+      const requestId = this.createRequestId();
+      const response = await this.sendNamespacedCorrelatedSessionRequest<
+        "account.routing.get_state.response",
+        { state: OmpAccountRoutingState; subscriptionId: string }
+      >({
+        requestId,
+        message: { type: "account.routing.get_state.request", subscribe: {} },
+        signal,
+        selectPayload: (responsePayload) => {
+          if (typeof responsePayload.subscriptionId !== "string") {
+            throw new DaemonProtocolError({
+              requestId,
+              responseType: "account.routing.get_state.response",
+            });
+          }
+          return {
+            state: responsePayload.state,
+            subscriptionId: responsePayload.subscriptionId,
+          };
+        },
+      });
+      const bootstrap = {
+        ...response.state,
+        subscriptionId: response.subscriptionId,
+      };
+      accept(bootstrap);
+      return bootstrap;
+    });
+    let subscription: OmpAccountRoutingSubscription | null = null;
+    subscription = new OmpAccountRoutingSubscription(
+      source,
+      () => {
+        if (subscription) this.ompAccountRoutingSubscriptions.delete(subscription);
+      },
+      (error) => this.logger.error({ err: error }, "Subscription failed"),
+      signal,
+    );
+    this.ompAccountRoutingSubscriptions.add(subscription);
+    return subscription;
+  }
+
+  async getOmpAccountRoutingState(options?: {
+    subscribe?: object;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingRead> {
+    options?.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    if (options?.subscribe) {
+      const subscription = this.createOmpAccountRoutingSubscription(options.signal);
+      const snapshot = await subscription.ready;
+      return {
+        state: OmpAccountRoutingSubscription.withoutSubscriptionId(snapshot),
+        subscription,
+      };
+    }
+
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"account.routing.get_state.response">({
+        requestId: this.createRequestId(),
+        message: { type: "account.routing.get_state.request" },
+        signal: options?.signal,
+      });
+    return { state: response.state };
+  }
+
+  /** Lifecycle-only observation: the caller gets the owned handle and reads state through it. */
+  observeOmpAccountRoutingState(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<OmpAccountRoutingState> {
+    options?.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    return this.createOmpAccountRoutingSubscription(options?.signal);
+  }
+
+  /**
+   * Submits one revision-checked mutation. Host conflicts and other typed failures come back in
+   * `error`; only transport and correlation failures throw. The frame is never queued or resent:
+   * a disconnect rejects the call and the caller decides whether to retry against a fresh snapshot.
+   */
+  async mutateOmpAccountRouting(options: {
+    expectedPolicyRevision: number;
+    command: OmpAccountRoutingMutation;
+    signal?: AbortSignal;
+  }): Promise<OmpAccountRoutingMutationResult> {
+    options.signal?.throwIfAborted();
+    this.requireOmpAccountRoutingSupport();
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "account.routing.mutate.request",
+        requestId,
+        expectedPolicyRevision: options.expectedPolicyRevision,
+        command: options.command,
+      }),
+      responseType: "account.routing.mutate.response",
+      signal: options.signal,
+    });
+  }
+
+  private requireOmpAccountLogin(feature: "ompAccountLogin" | "ompAccountLoginLink"): void {
+    const connected = this.connectionState.status === "connected" && this.transport !== null;
+    if (!connected || this.lastServerInfoMessage?.features?.[feature] !== true) {
+      throw new OmpAccountLoginUnsupportedError();
+    }
+  }
+
+  private async sendOmpAccountLoginRequest(
+    type:
+      | "account.routing.login.start.request"
+      | "account.routing.login.get_status.request"
+      | "account.routing.login.cancel.request",
+    fields: { mode?: "add" | "replace"; replaceAccount?: OmpRoutingAccountRef } = {},
+  ): Promise<OmpAccountLoginPayload> {
+    this.requireOmpAccountLogin("ompAccountLogin");
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({ type, requestId, ...fields }),
+      responseType: type.replace(/\.request$/, ".response") as
+        | "account.routing.login.start.response"
+        | "account.routing.login.get_status.response"
+        | "account.routing.login.cancel.response",
+    });
+  }
+
+  /**
+   * Starts a host-side Claude sign-in. Without options it is add-only: OMP refuses to overwrite a
+   * stored account. `replace` overwrites only `account`. The host's own app gets the sign-in link
+   * in `status.authorizeUrl` and opens it itself; no other client sees it.
+   */
+  async startOmpAccountLogin(
+    options: { mode: "replace"; account: OmpRoutingAccountRef } | { mode?: "add" } = {},
+  ): Promise<OmpAccountLoginPayload> {
+    if (!options.mode)
+      return this.sendOmpAccountLoginRequest("account.routing.login.start.request");
+    this.requireOmpAccountLogin("ompAccountLoginLink");
+    return this.sendOmpAccountLoginRequest(
+      "account.routing.login.start.request",
+      options.mode === "replace"
+        ? { mode: "replace", replaceAccount: options.account }
+        : { mode: "add" },
+    );
+  }
+
+  /** Answers the host's open paste prompt; only the host's own app may. Needs the link feature. */
+  async submitOmpAccountLoginCode(
+    input: string,
+  ): Promise<AccountRoutingLoginSubmitCodeResponse["payload"]> {
+    this.requireOmpAccountLogin("ompAccountLoginLink");
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "account.routing.login.submit_code.request",
+        requestId,
+        input,
+      }),
+      responseType: "account.routing.login.submit_code.response",
+    });
+  }
+
+  getOmpAccountLoginStatus(): Promise<OmpAccountLoginPayload> {
+    return this.sendOmpAccountLoginRequest("account.routing.login.get_status.request");
+  }
+
+  cancelOmpAccountLogin(): Promise<OmpAccountLoginPayload> {
+    return this.sendOmpAccountLoginRequest("account.routing.login.cancel.request");
   }
 
   /**
@@ -3009,6 +3669,7 @@ export class DaemonClient {
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
+      timeout: RECENT_PROVIDER_SESSIONS_TIMEOUT_MS,
       options: { skipQueue: true },
       select: (msg) => {
         if (msg.type !== "fetch_recent_provider_sessions_response") {
@@ -3165,6 +3826,188 @@ export class DaemonClient {
         type: "workspace.label.delete.inspect.request",
         name: options.name,
       },
+    });
+  }
+
+  listNotes(): Promise<NoteRecord[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.list.response", NoteRecord[]>({
+      message: { type: "notes.list.request" },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.noteError("notes.list.request", payload);
+        return payload.notes;
+      },
+    });
+  }
+
+  /** Snapshot plus `notes.changed` updates while the caller holds the subscription. */
+  observeNotes(options?: { signal?: AbortSignal }): OwnedSubscription<NotesListPayload> {
+    return this.observe(
+      "notes.list.response",
+      { type: "notes.list.request", subscribe: {} },
+      options,
+    );
+  }
+
+  createNote(options: CreateNoteOptions): Promise<NoteRecord> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.create.response", NoteRecord>({
+      message: { type: "notes.create.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.note) throw this.noteError("notes.create.request", payload);
+        return payload.note;
+      },
+    });
+  }
+
+  editNote(options: EditNoteOptions): Promise<NoteRecord> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.edit.response", NoteRecord>({
+      message: { type: "notes.edit.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.note) throw this.noteError("notes.edit.request", payload);
+        return payload.note;
+      },
+    });
+  }
+
+  deleteNote(noteId: string): Promise<void> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.delete.response", void>({
+      message: { type: "notes.delete.request", noteId },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.noteError("notes.delete.request", payload);
+      },
+    });
+  }
+
+  private noteError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "Note request failed",
+    });
+  }
+
+  // ============================================================================
+  // File copies (gate on server_info.features.fileCopies)
+  // ============================================================================
+
+  /** Returns the mentioned paths the host has no copy of at the sent revision. */
+  recordFileCopyMentions(options: {
+    sourceHome: string;
+    files: { path: string; revision: string }[];
+  }): Promise<string[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<
+      "files.copies.record_mentions.response",
+      string[]
+    >({
+      message: { type: "files.copies.record_mentions.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error)
+          throw this.fileCopyError("files.copies.record_mentions.request", payload);
+        return payload.needed;
+      },
+    });
+  }
+
+  /** Stores a copy from bytes already sent with `uploadFile`. */
+  putFileCopy(options: PutFileCopyOptions): Promise<FileCopyEntry> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.put.response", FileCopyEntry>({
+      message: { type: "files.copies.put.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.entry) throw this.fileCopyError("files.copies.put.request", payload);
+        return payload.entry;
+      },
+    });
+  }
+
+  /** Reads the copy this host keeps of `path` on `sourceServerId` (absolute, or `~/…`). */
+  async readFileCopy(options: {
+    sourceServerId: string;
+    path: string;
+    timeout?: number;
+  }): Promise<FileReadResult & { entry: FileCopyEntry }> {
+    const requestId = this.createRequestId();
+    this.pendingBinaryFileReads.set(requestId, { cwd: "", path: options.path, fileCopy: true });
+    try {
+      const entry = await this.sendNamespacedCorrelatedSessionRequest<
+        "files.copies.read.response",
+        FileCopyEntry
+      >({
+        requestId,
+        message: {
+          type: "files.copies.read.request",
+          sourceServerId: options.sourceServerId,
+          path: options.path,
+        },
+        timeout: options.timeout,
+        selectPayload: (payload) => {
+          if (!payload.entry) throw this.fileCopyError("files.copies.read.request", payload);
+          return payload.entry;
+        },
+      });
+      const file = this.completedBinaryFileReads.get(requestId);
+      if (!file) throw new Error("File copy transfer did not arrive.");
+      return { ...file, path: entry.path, entry };
+    } finally {
+      this.pendingBinaryFileReads.delete(requestId);
+      this.activeBinaryFileTransfers.delete(requestId);
+      this.completedBinaryFileReads.delete(requestId);
+    }
+  }
+
+  listFileCopies(options: ListFileCopiesOptions = {}): Promise<FileCopiesListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.list.response">({
+      message: { type: "files.copies.list.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.list.request", payload);
+        return payload;
+      },
+    });
+  }
+
+  removeFileCopy(options: { sourceServerId: string; path: string }): Promise<boolean> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.remove.response", boolean>({
+      message: { type: "files.copies.remove.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.remove.request", payload);
+        return payload.removed;
+      },
+    });
+  }
+
+  getFileCopySettings(): Promise<FileCopiesSettingsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.get_settings.response">({
+      message: { type: "files.copies.get_settings.request" },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.get_settings.request", payload);
+        return payload;
+      },
+    });
+  }
+
+  updateFileCopySettings(
+    options: UpdateFileCopySettingsOptions,
+  ): Promise<FileCopiesSettingsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.update_settings.response">({
+      message: { type: "files.copies.update_settings.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) {
+          throw this.fileCopyError("files.copies.update_settings.request", payload);
+        }
+        return payload;
+      },
+    });
+  }
+
+  private fileCopyError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "File copy request failed",
     });
   }
 
@@ -3358,6 +4201,54 @@ export class DaemonClient {
       { type: "workspace.setup.subscribe.request", workspaceId },
       options,
     );
+  }
+
+  /** Requires `server_info.features.agentDraftSync`. Resubscribes with a fresh snapshot after reconnects. */
+  observeAgentDraft(
+    agentId: string,
+    options?: { signal?: AbortSignal },
+  ): OwnedSubscription<CorrelatedResponsePayload<"agent.draft.subscribe.response">> {
+    return this.observe(
+      "agent.draft.subscribe.response",
+      { type: "agent.draft.subscribe.request", agentId },
+      options,
+    );
+  }
+
+  async setAgentDraft(
+    input: Omit<AgentDraftSetRequest, "type" | "requestId">,
+  ): Promise<CorrelatedResponsePayload<"agent.draft.set.response">> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.set.response">({
+      message: { type: "agent.draft.set.request", ...input },
+    });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
+  }
+
+  async restoreAgentDraft(
+    agentId: string,
+    snapshotId: string,
+  ): Promise<CorrelatedResponsePayload<"agent.draft.restore.response">> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.restore.response">({
+        message: { type: "agent.draft.restore.request", agentId, snapshotId },
+      });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
+  }
+
+  /** Fetches a draft attachment's bytes (base64) by upload id. */
+  async getAgentDraftUpload(
+    agentId: string,
+    uploadId: string,
+  ): Promise<{ fileName: string | null; data: string }> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.upload.get.response">({
+        message: { type: "agent.draft.upload.get.request", agentId, uploadId },
+      });
+    if (payload.error || payload.data === null)
+      throw new Error(payload.error ?? "Upload not found.");
+    return { fileName: payload.fileName, data: payload.data };
   }
 
   private requireWorkspaceSetupObservation(): void {
@@ -3576,6 +4467,7 @@ export class DaemonClient {
       ...(options.attachments && options.attachments.length > 0
         ? { attachments: options.attachments }
         : {}),
+      attachmentRefs: options.attachmentRefs,
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktree ? { worktree: options.worktree } : {}),
       ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
@@ -3669,6 +4561,57 @@ export class DaemonClient {
     if (!payload.accepted) {
       throw new Error(payload.error ?? "detachAgent rejected");
     }
+  }
+
+  /** Ends the agent's session without archiving or deleting it. Requires `server_info.features.agentCloseSearch`. */
+  async closeAgent(agentId: string): Promise<void> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.close.response">({
+      message: { type: "agent.close.request", agentId },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "closeAgent rejected");
+    }
+  }
+
+  /** Requires `server_info.features.agentCloseSearch`. */
+  async searchAgents(
+    input: Omit<
+      Extract<SessionInboundMessage, { type: "agent.search.request" }>,
+      "type" | "requestId"
+    >,
+  ) {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.search.response">({
+      message: { type: "agent.search.request", ...input },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "searchAgents rejected");
+    }
+    return {
+      matches: payload.matches ?? [],
+      scanned: payload.scanned ?? 0,
+      truncated: payload.truncated ?? false,
+    };
+  }
+
+  /** Requires `server_info.features.agentUnarchive`. */
+  async unarchiveAgent(agentId: string): Promise<{
+    wasArchived: boolean;
+    workspaceId: string | null;
+    workspaceRestored: boolean;
+    warning: string | null;
+  }> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.unarchive.response">({
+      message: { type: "agent.unarchive.request", agentId },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "unarchiveAgent rejected");
+    }
+    return {
+      wasArchived: payload.wasArchived ?? false,
+      workspaceId: payload.workspaceId ?? null,
+      workspaceRestored: payload.workspaceRestored ?? false,
+      warning: payload.warning ?? null,
+    };
   }
 
   async updateAgent(
@@ -4275,6 +5218,115 @@ export class DaemonClient {
     return payload;
   }
 
+  /**
+   * Fork an agent into a new agent. Gate on `server_info.features.agentFork`. Resolves with the
+   * new agent's id and how it was seeded.
+   */
+  async forkAgent(
+    agentId: string,
+    options: AgentForkOptions = {},
+  ): Promise<AgentForkPayload & { forkedAgentId: string }> {
+    // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03.
+    if (this.lastServerInfoMessage?.features?.agentFork !== true) {
+      throw new Error("Update the host to fork agents.");
+    }
+    const resolvedRequestId = this.createRequestId(options.requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.fork.request",
+      agentId,
+      requestId: resolvedRequestId,
+      ...(options.boundaryCursor ? { boundaryCursor: options.boundaryCursor } : {}),
+      ...(options.boundaryMessageId ? { boundaryMessageId: options.boundaryMessageId } : {}),
+    });
+
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      timeout: 120000,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.fork.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== resolvedRequestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+
+    if (payload.error || !payload.forkedAgentId) {
+      throw new Error(payload.error ?? "Fork did not return an agent");
+    }
+    return { ...payload, forkedAgentId: payload.forkedAgentId };
+  }
+
+  /**
+   * Ask a forked copy of an agent's conversation; the agent itself is never interrupted.
+   * With the thread options, rounds continue with the same copy until it closes.
+   */
+  async askAgent(
+    agentId: string,
+    question: string,
+    options: {
+      askedBy?: string;
+      askerAgentId?: string;
+      threadId?: string;
+      threadAction?: "ask" | "status" | "close" | "read";
+      /** Cursor from an earlier reply's nextCursor; with threadAction "read". */
+      readCursor?: string;
+      timeoutMs?: number;
+      requestId?: string;
+    } = {},
+  ): Promise<{ answer: string | null; thread?: AgentAskThreadInfo; reply?: AgentAskReplyInfo }> {
+    // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
+    const features = this.getLastServerInfoMessage()?.features;
+    if (features?.agentAsk !== true) {
+      throw new Error("Update Paseo on that host to ask its agents.");
+    }
+    // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
+    if (
+      features.agentAskThreads !== true &&
+      (options.threadId !== undefined || (options.threadAction ?? "ask") !== "ask")
+    ) {
+      throw new Error("Update Paseo on that host to continue ask_agent threads.");
+    }
+    // COMPAT(agentAskReplyPaging): added in v0.16.0, remove gate after 2027-05-06.
+    const pagedReplies = features.agentAskReplyPaging === true;
+    if (!pagedReplies && options.readCursor !== undefined) {
+      throw new Error("Update Paseo on that host to read long replies.");
+    }
+    const resolvedRequestId = this.createRequestId(options.requestId);
+    const timeoutMs = options.timeoutMs ?? AGENT_ASK_DEFAULT_TIMEOUT_MS;
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.ask.request",
+      agentId,
+      question,
+      requestId: resolvedRequestId,
+      timeoutMs,
+      ...askRequestFields(options, pagedReplies),
+    });
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      // The daemon enforces timeoutMs; the margin covers forking and cleanup.
+      timeout: timeoutMs + 60_000,
+      options: { skipQueue: true },
+      select: (msg) =>
+        msg.type === "agent.ask.response" && msg.payload.requestId === resolvedRequestId
+          ? msg.payload
+          : null,
+    });
+    if (payload.error !== null) {
+      throw new Error(payload.error);
+    }
+    return {
+      answer: payload.answer,
+      ...(payload.thread ? { thread: payload.thread } : {}),
+      ...(payload.reply ? { reply: payload.reply } : {}),
+    };
+  }
+
   // ============================================================================
   // Agent Interaction
   // ============================================================================
@@ -4311,6 +5363,7 @@ export class DaemonClient {
       activeTurnBehavior,
       images: options.images,
       attachments: options.attachments,
+      attachmentRefs: options.attachmentRefs,
     });
     const payload = await this.sendRequest({
       requestId,
@@ -7502,10 +8555,7 @@ export class DaemonClient {
         clientType: this.config.clientType ?? "cli",
         protocolVersion: 1,
         ...(auth ? { auth } : {}),
-        capabilities: {
-          ...DEFAULT_CLIENT_CAPABILITIES,
-          ...this.config.capabilities,
-        },
+        capabilities: this.getEffectiveClientCapabilities(),
         ...(this.config.appVersion ? { appVersion: this.config.appVersion } : {}),
       });
     } catch (error) {
@@ -7840,6 +8890,7 @@ export class DaemonClient {
       modifiedAt: transfer.modifiedAt,
       revision: transfer.revision,
     });
+    if (transfer.fileCopy) return;
     this.handleSessionMessage({
       type: "file_explorer_response",
       payload: {
@@ -7899,6 +8950,9 @@ export class DaemonClient {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+    if (!enabled && this.connectionState.status !== "connected") {
+      this.releaseOmpAccountRoutingSubscriptions(new DaemonConnectionError("Reconnect disabled"));
+    }
   }
 
   private scheduleReconnect(input?: {
@@ -7945,11 +8999,13 @@ export class DaemonClient {
     if (this.authFailureReasonValue) this.setReconnectEnabled(false);
 
     if (wasDisposed) {
+      this.releaseOmpAccountRoutingSubscriptions(connectionError);
       this.rejectConnect(new Error(reason ?? "Daemon client is disposed"));
       return;
     }
     this.emitDisconnectedStateForReconnect(reason, input);
     if (!this.shouldReconnect || this.config.reconnect?.enabled === false) {
+      this.releaseOmpAccountRoutingSubscriptions(connectionError);
       this.rejectConnect(
         this.authFailureReasonValue
           ? new DaemonAuthenticationError(this.authFailureReasonValue)
@@ -8095,16 +9151,14 @@ export class DaemonClient {
         this.lastServerInfoMessage = serverInfo;
         this.destinationServerId = serverInfo.serverId;
         this.connectionFailure = undefined;
+        this.releaseUnsupportedOmpAccountRoutingSubscriptions();
         if (this.connectionState.status === "connecting") {
           this.resetConnectTimeout();
           this.reconnectAttempt = 0;
           this.updateConnectionState({ status: "connected" }, { event: "HELLO_SERVER_INFO" });
           this.startLivenessHeartbeat();
           this.diffStreams.connected(serverInfo.features?.diffSubscription === true);
-          this.owned.restore(serverInfo, {
-            ...DEFAULT_CLIENT_CAPABILITIES,
-            ...this.config.capabilities,
-          });
+          this.owned.restore(serverInfo, this.getEffectiveClientCapabilities());
           this.creations.reconnect();
           this.flushPendingSendQueue();
           this.resolveConnect();
@@ -8272,15 +9326,21 @@ export class DaemonClient {
     let settled = false;
     let rejectFn: ((error: Error) => void) | null = null;
 
+    let abortHandler: (() => void) | null = null;
     const promise = new Promise<T>((resolve, reject) => {
+      const cleanupAbort = () => {
+        if (abortHandler) options?.signal?.removeEventListener("abort", abortHandler);
+      };
       const wrappedResolve = (value: T) => {
         if (settled) return;
         settled = true;
+        cleanupAbort();
         resolve(value);
       };
       const wrappedReject = (error: Error) => {
         if (settled) return;
         settled = true;
+        cleanupAbort();
         reject(error);
       };
       rejectFn = wrappedReject;
@@ -8304,6 +9364,18 @@ export class DaemonClient {
         submitted: false,
       };
       this.waiters.add(waiter);
+      if (options?.signal) {
+        abortHandler = () => {
+          if (waiter) {
+            this.waiters.delete(waiter);
+            if (waiter.timeoutHandle) clearTimeout(waiter.timeoutHandle);
+          }
+          const reason = options.signal?.reason;
+          wrappedReject(reason instanceof Error ? reason : new Error("Request aborted"));
+        };
+        if (options.signal.aborted) abortHandler();
+        else options.signal.addEventListener("abort", abortHandler, { once: true });
+      }
     });
 
     const cancel = (error: Error) => {
@@ -8347,6 +9419,7 @@ function resolveAgentConfig(options: CreateAgentRequestOptions): AgentSessionCon
     callerAgentId: _callerAgentId,
     outputSchema: _outputSchema,
     attachments: _attachments,
+    attachmentRefs: _attachmentRefs,
     worktree: _worktree,
     autoArchive: _autoArchive,
     background: _background,

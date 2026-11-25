@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -21,6 +22,9 @@ import {
   realClaudeRewindSdk,
 } from "./rewind.js";
 import { FakeClaudeSdk } from "./test-rewind-claude-sdk.js";
+import { ClaudeAgentClient } from "./agent.js";
+import { ForkHandleRefusedError } from "../../fork-handle.js";
+import { createTestLogger } from "../../../../test-utils/test-logger.js";
 
 describe("Claude rewind", () => {
   test("forks the conversation up to the user message", async () => {
@@ -225,6 +229,96 @@ describe("Claude rewind against the Claude SDK", () => {
       "first",
       "first reply",
     ]);
+  });
+
+  test("forks a whole session for another session to continue, leaving the source alone", async () => {
+    tempRoot = mkdtempSync(path.join(tmpdir(), "claude-fork-config-dir-"));
+    delete process.env.CLAUDE_CONFIG_DIR;
+    const configDir = path.join(tempRoot, "custom-claude-dir");
+    const projectDir = path.join(configDir, "projects", "-repo");
+    mkdirSync(projectDir, { recursive: true });
+    const sessionId = randomUUID();
+    const firstUser = randomUUID();
+    const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);
+    writeTranscript(transcriptPath, sessionId, [
+      { type: "user", uuid: firstUser, parentUuid: null, text: "first" },
+      { type: "assistant", uuid: randomUUID(), parentUuid: firstUser, text: "first reply" },
+    ]);
+    const source = readFileSync(transcriptPath, "utf8");
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: configDir } },
+    });
+
+    const fork = await client.forkNativeSession({
+      provider: "claude",
+      sessionId,
+      nativeHandle: sessionId,
+      metadata: { cwd: "/repo", modeId: "bypassPermissions" },
+    });
+
+    expect(fork.handle.sessionId).not.toBe(sessionId);
+    expect(fork.handle).toMatchObject({
+      provider: "claude",
+      nativeHandle: fork.handle.sessionId,
+      metadata: { cwd: "/repo" },
+    });
+    expect(fork.readOnlyModeId).toBe("default");
+    const forkPath = path.join(projectDir, `${fork.handle.sessionId}.jsonl`);
+    expect(readMessageTexts(forkPath)).toEqual(["first", "first reply"]);
+    // Claude Code writes a session's tool results beside its transcript.
+    mkdirSync(path.join(projectDir, fork.handle.sessionId, "tool-results"), { recursive: true });
+
+    await fork.discard();
+    await fork.discard();
+
+    expect(existsSync(forkPath)).toBe(false);
+    expect(existsSync(path.join(projectDir, fork.handle.sessionId))).toBe(false);
+    expect(readFileSync(transcriptPath, "utf8")).toBe(source);
+  });
+
+  test("deletes a leftover fork from its handle alone, and refuses a handle that is not one", async () => {
+    tempRoot = mkdtempSync(path.join(tmpdir(), "claude-fork-leftover-"));
+    delete process.env.CLAUDE_CONFIG_DIR;
+    const configDir = path.join(tempRoot, "custom-claude-dir");
+    const projectDir = path.join(configDir, "projects", "-repo");
+    mkdirSync(projectDir, { recursive: true });
+    const sessionId = randomUUID();
+    const firstUser = randomUUID();
+    const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);
+    writeTranscript(transcriptPath, sessionId, [
+      { type: "user", uuid: firstUser, parentUuid: null, text: "first" },
+    ]);
+    const source = readFileSync(transcriptPath, "utf8");
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: configDir } },
+    });
+    const fork = await client.forkNativeSession({
+      provider: "claude",
+      sessionId,
+      nativeHandle: sessionId,
+      metadata: { cwd: "/repo" },
+    });
+    const forkPath = path.join(projectDir, `${fork.handle.sessionId}.jsonl`);
+    mkdirSync(path.join(projectDir, fork.handle.sessionId, "tool-results"), { recursive: true });
+
+    for (const bad of [
+      { ...fork.handle, nativeHandle: `../${fork.handle.sessionId}` },
+      { ...fork.handle, nativeHandle: "not-a-uuid" },
+      { ...fork.handle, nativeHandle: undefined, sessionId: "" },
+      { ...fork.handle, metadata: {} },
+    ]) {
+      await expect(client.discardNativeFork(bad)).rejects.toThrow(ForkHandleRefusedError);
+    }
+    expect(existsSync(forkPath)).toBe(true);
+
+    await client.discardNativeFork(fork.handle);
+    await client.discardNativeFork(fork.handle);
+
+    expect(existsSync(forkPath)).toBe(false);
+    expect(existsSync(path.join(projectDir, fork.handle.sessionId))).toBe(false);
+    expect(readFileSync(transcriptPath, "utf8")).toBe(source);
   });
 
   test("forks just before a message steered into a running turn", async () => {

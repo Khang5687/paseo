@@ -4,7 +4,7 @@ import { test, expect, type Page } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
 import {
   addProjectFlowInput,
-  chooseAddProjectMethod,
+  addProjectFlowSubmit,
   openAddProjectFlow,
 } from "../support/helpers/add-project-flow";
 import { expectOpenedProject } from "../support/helpers/project-picker-ui";
@@ -30,6 +30,7 @@ async function archiveWorkspaceFromSidebar(page: Page, workspaceId: string): Pro
 
   const archiveItem = page.getByTestId(`sidebar-workspace-menu-archive-${serverId}:${workspaceId}`);
   await expect(archiveItem).toBeVisible({ timeout: 10_000 });
+  page.once("dialog", (dialog) => void dialog.accept());
   await archiveItem.click();
 }
 
@@ -53,7 +54,6 @@ async function removeProjectFromSidebar(page: Page, projectViewKey: string): Pro
 
 async function addProjectFromPicker(page: Page, projectPath: string): Promise<string> {
   await openAddProjectFlow(page);
-  await chooseAddProjectMethod(page, "directory-search");
 
   const input = addProjectFlowInput(page);
   await input.fill(projectPath);
@@ -85,7 +85,6 @@ test.describe("Project picker search", () => {
     await gotoAppShell(page);
     await waitForSidebarProjectListReady(page);
     await openAddProjectFlow(page);
-    await chooseAddProjectMethod(page, "directory-search");
 
     const input = addProjectFlowInput(page);
     await input.fill(projectPickerFixture.fuzzyQuery);
@@ -93,6 +92,7 @@ test.describe("Project picker search", () => {
     const suggestion = page.getByText(projectPickerFixture.projectName, { exact: false }).first();
     await expect(suggestion).toBeVisible({ timeout: 30_000 });
     await suggestion.click();
+    await addProjectFlowSubmit(page).click();
 
     const projectId = await expectOpenedProject(page, projectPickerFixture.projectName);
     projectPickerFixture.rememberProjectId(projectId);
@@ -104,13 +104,11 @@ test.describe("Project picker search", () => {
     await gotoAppShell(page);
     await waitForSidebarProjectListReady(page);
     await openAddProjectFlow(page);
-    await chooseAddProjectMethod(page, "directory-search");
 
     const input = addProjectFlowInput(page);
     await input.fill("paseo-loading-state-no-match");
 
-    await expect(page.getByText("Start typing a path", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("Loading...", { exact: true })).toBeVisible();
+    await expect(page.getByText("Searching...", { exact: true })).toBeVisible();
   });
 });
 

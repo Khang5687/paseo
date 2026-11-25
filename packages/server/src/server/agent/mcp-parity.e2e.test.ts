@@ -626,6 +626,49 @@ describe("Suite A: Core Fixes", () => {
     }
   });
 
+  test("create_agent detached: true gets its own workspace in the caller directory and no parent label", async () => {
+    let agentId: string | null = null;
+    try {
+      const payload = await callToolStructured(agentScopedClient, "create_agent", {
+        detached: true,
+        title: "Detached discussion",
+        provider: "claude/claude-test-model",
+        initialPrompt: "say done and stop",
+      });
+      agentId = str(payload.agentId);
+      const parent = daemonHandle.daemon.agentManager.getAgent(parentAgentId);
+      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      expect(snapshot?.workspaceId).toBeTruthy();
+      expect(snapshot?.workspaceId).not.toBe(parent?.workspaceId);
+      expect(payload.workspaceId).toBe(snapshot?.workspaceId);
+      expect(snapshot?.cwd).toBe(parent?.cwd);
+      expect(snapshot?.labels?.[PARENT_AGENT_ID_LABEL]).toBeUndefined();
+      expect(snapshot?.labels?.["paseo.parent-server-id"]).toBeUndefined();
+    } finally {
+      await archiveAgentIfPresent(agentId);
+    }
+  });
+
+  test("create_agent detached: true with workspaceId uses that workspace", async () => {
+    let agentId: string | null = null;
+    try {
+      const parent = daemonHandle.daemon.agentManager.getAgent(parentAgentId);
+      const payload = await callToolStructured(agentScopedClient, "create_agent", {
+        detached: true,
+        workspaceId: parent?.workspaceId,
+        title: "Detached same workspace",
+        provider: "claude/claude-test-model",
+        initialPrompt: "say done and stop",
+      });
+      agentId = str(payload.agentId);
+      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      expect(snapshot?.workspaceId).toBe(parent?.workspaceId);
+      expect(snapshot?.labels?.[PARENT_AGENT_ID_LABEL]).toBeUndefined();
+    } finally {
+      await archiveAgentIfPresent(agentId);
+    }
+  });
+
   test("agentManager.createAgent injects paseo MCP using the daemon listen target", async () => {
     let agentId: string | null = null;
     try {
@@ -947,6 +990,45 @@ describe("Suite C: Schedule Tools", () => {
           model: "gpt-5.4",
         },
       });
+    } finally {
+      await deleteScheduleIfPresent(scheduleId);
+    }
+  });
+
+  test("create_schedule and update_schedule set archive on finish", async () => {
+    let scheduleId: string | null = null;
+    try {
+      const createArgs = {
+        prompt: "say hello",
+        cron: "*/5 * * * *",
+        name: "Parity archive on finish schedule",
+        provider: "claude",
+      };
+      const created = await callToolStructured(topLevelClient, "create_schedule", createArgs);
+      scheduleId = str(created.id);
+      expect(created.target).toMatchObject({ type: "new-agent", config: {} });
+      expect(created.target).not.toHaveProperty("config.archiveOnFinish");
+
+      const recreated = await callToolStructured(topLevelClient, "create_schedule", {
+        ...createArgs,
+        archiveOnFinish: false,
+      });
+      expect(recreated.id).toBe(scheduleId);
+      expect(recreated.target).toMatchObject({ config: { archiveOnFinish: false } });
+
+      for (const archiveOnFinish of [true, false]) {
+        const updated = await callToolStructured(topLevelClient, "update_schedule", {
+          id: scheduleId,
+          archiveOnFinish,
+        });
+        expect(updated.target).toMatchObject({ config: { archiveOnFinish } });
+      }
+
+      const listed = await callToolStructured(topLevelClient, "list_schedules", {});
+      const named = recordArr(listed.schedules).filter(
+        (schedule) => schedule.name === createArgs.name,
+      );
+      expect(named).toHaveLength(1);
     } finally {
       await deleteScheduleIfPresent(scheduleId);
     }

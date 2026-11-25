@@ -23,6 +23,8 @@ export interface JsonlRpcLaunch {
   args: string[];
   cwd: string;
   env?: Record<string, string>;
+  /** Start the process as `[...wrap, command, ...args]`. */
+  wrap?: readonly [string, ...string[]];
 }
 
 interface JsonlRpcResponse {
@@ -64,12 +66,24 @@ function assertChildWithPipes(
 
 function spawnJsonlRpcProcess(launch: JsonlRpcLaunch): ChildProcessWithoutNullStreams {
   const child = spawnProcess(launch.command, launch.args, {
+    wrap: launch.wrap,
     cwd: launch.cwd,
     envOverlay: launch.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
   assertChildWithPipes(child);
   return child;
+}
+
+/** A request the child answered with `success: false`; `data` carries any typed refusal details. */
+export class JsonlRpcResponseError extends Error {
+  constructor(
+    message: string,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = "JsonlRpcResponseError";
+  }
 }
 
 export class JsonlRpcProcess {
@@ -296,8 +310,9 @@ export class JsonlRpcProcess {
     this.pending.delete(response.id);
     if (!response.success) {
       pending.reject(
-        new Error(
+        new JsonlRpcResponseError(
           response.error ?? `${this.diagnosticName} ${response.command ?? "request"} failed`,
+          response.data,
         ),
       );
       return;
