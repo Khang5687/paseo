@@ -259,6 +259,12 @@ export const PASEO_TOOL_CATALOG = {
     context: targetAgent(),
     detail: { inputOrder: ["agentId", "requestId", "answers", "response"] },
   },
+  send_file_to_device: {
+    label: "Send file to device",
+    completedLabel: "Sent file to device",
+    context: (input) => baseName(input.path),
+    detail: { inputOrder: ["path", "device"], outputFields: ["deviceName", "delivery"] },
+  },
 
   // Workspaces and scripts
   create_workspace: {

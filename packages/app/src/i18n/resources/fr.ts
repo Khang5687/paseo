@@ -2316,6 +2316,16 @@ export const fr: TranslationResources = {
       keepDays: "Les copies non citées depuis ce nombre de jours sont supprimées.",
     },
   },
+  sendTo: {
+    menuItem: "Envoyer vers…",
+    title: "Envoyer vers",
+    empty: "Aucun autre appareil n'est connecté à cet hôte. Ouvrez d'abord Paseo dessus.",
+    notConnected: "Non connecté. Ouvrez Paseo dessus.",
+    sent: "Envoyé à {{device}}",
+    failed: "Envoi impossible : {{error}}",
+    hostOffline: "{{host}} est hors ligne. Réessayez à son retour.",
+    noticeTap: "{{title}}. Touchez pour ouvrir.",
+  },
   menu: {
     backdrop: "Arrière-plan du menu",
   },

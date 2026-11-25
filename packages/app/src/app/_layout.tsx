@@ -153,6 +153,7 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
+import { SendToHost } from "@/send-to/send-to-host";
 import { NoteRemindersHost } from "@/notes/reminders-host";
 import { ChatNoteBadgesHost } from "@/notes/chat-badges-store";
 import { ensureOsNotificationPermission } from "@/utils/os-notifications";
@@ -1000,6 +1001,7 @@ function RuntimeProviders({ children }: { children: ReactNode }) {
       <NotificationOpenBridge />
       <NoteRemindersHost />
       <ChatNoteBadgesHost />
+      <SendToHost />
       <SidebarCalloutProvider>
         <ProvidersWrapper>{children}</ProvidersWrapper>
       </SidebarCalloutProvider>

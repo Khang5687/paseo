@@ -7,6 +7,9 @@ import { useTranslation } from "react-i18next";
 import { useClientActivity } from "@/hooks/use-client-activity";
 import { useAppVisible } from "@/hooks/use-app-visible";
 import { startPushNotifications } from "@/push-notifications";
+import { startFileDeviceRegistration } from "@/send-to/register";
+import { useSendToStore } from "@/send-to/store";
+import { isNative } from "@/constants/platform";
 import {
   createSetAgentInitializing,
   refreshAgentInitializationTimeout,
@@ -490,6 +493,38 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         .catch((error) => console.warn("[Session] Failed to release notes feed", error));
     };
   }, [client, serverId, supportsNotes]);
+
+  // Send to: tell the host what this device is called, and take the files it sends here. Hosts
+  // that predate it reject the unknown event name, so this feed is separate too.
+  const supportsSendToDevice = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.sendToDevice === true,
+  );
+  useEffect(() => {
+    if (!supportsSendToDevice) return;
+    const stopRegistration = startFileDeviceRegistration({ client, serverId });
+    const feed = client.observeEvents(["files.sent"], { notifications: true });
+    const unsubscribe = feed.subscribe({
+      snapshot: () => {},
+      update: (message) => {
+        if (message.type !== "files.sent") return;
+        const { path, title, body } = message.payload;
+        // A phone's own push shows no banner while the app is open, so the app says it. Desktop
+        // and web have no push; the OS notification is the note.
+        if (isNative) {
+          useSendToStore.getState().announce({ serverId, path, title });
+          return;
+        }
+        void sendOsNotification({ title, body, data: { serverId, sentFilePath: path } });
+      },
+    });
+    return () => {
+      stopRegistration();
+      unsubscribe();
+      void feed
+        .release()
+        .catch((error) => console.warn("[Session] Failed to release send-to feed", error));
+    };
+  }, [client, serverId, supportsSendToDevice]);
 
   // Daemon message handlers - directly update Zustand store
   useEffect(() => {

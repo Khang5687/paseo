@@ -2287,6 +2287,17 @@ export const ja: TranslationResources = {
       keepDays: "この日数リンクされなかったコピーは削除されます。",
     },
   },
+  sendTo: {
+    menuItem: "送信先…",
+    title: "送信先",
+    empty:
+      "このホストにサインインしている他のデバイスはまだありません。先にそのデバイスで Paseo を開いてください。",
+    notConnected: "未接続です。そのデバイスで Paseo を開いてください。",
+    sent: "{{device}} に送信しました",
+    failed: "送信できませんでした: {{error}}",
+    hostOffline: "{{host}} はオフラインです。復帰したらもう一度お試しください。",
+    noticeTap: "{{title}}。タップして開く。",
+  },
   menu: {
     backdrop: "メニューの背景",
   },

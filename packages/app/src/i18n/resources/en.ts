@@ -2294,6 +2294,16 @@ export const en = {
       keepDays: "Copies not linked again for this many days are removed.",
     },
   },
+  sendTo: {
+    menuItem: "Send to…",
+    title: "Send to",
+    empty: "No other device is signed in to this host yet. Open Paseo on it first.",
+    notConnected: "Not connected. Open Paseo on it.",
+    sent: "Sent to {{device}}",
+    failed: "Could not send: {{error}}",
+    hostOffline: "{{host}} is offline. Try again when it is back.",
+    noticeTap: "{{title}}. Tap to open.",
+  },
   menu: {
     backdrop: "Menu backdrop",
   },

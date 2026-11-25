@@ -98,6 +98,7 @@ import {
   createPushNotifications,
   type PushNotifications,
   type PushNotificationSender,
+  type PushPayload,
 } from "./push/index.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
 import type { ServiceProxySubsystem } from "./service-proxy.js";
@@ -145,6 +146,8 @@ import type { WorkspaceLabelService } from "./workspace-labels/index.js";
 import type { AgentDraftService } from "./agent-draft/agent-draft-service.js";
 import type { NoteFiredEvent, NotesService } from "./notes/notes-service.js";
 import type { FileCopies } from "./file-copies/service.js";
+import { FileDeviceRegistry } from "./file-send/device-registry.js";
+import { FileSendService, type FileSendLiveTarget } from "./file-send/service.js";
 import { FileCopySender } from "./file-copies/sender.js";
 import type { Note } from "@getpaseo/protocol/notes/schemas";
 import type { AccountRoutingAuthority } from "./account-routing/authority.js";
@@ -212,6 +215,12 @@ interface WebSocketServerConfig {
   relayConfig?: boolean;
   startPaused?: boolean;
   askThreads?: AskAgentThreads;
+  /** Devices that can receive sent files, loaded from disk at startup. */
+  fileDevices?: FileDeviceRegistry;
+}
+
+function resolveFileDevices(injected: FileDeviceRegistry | undefined): FileDeviceRegistry {
+  return injected ?? FileDeviceRegistry.inMemory();
 }
 
 type WebSocketRuntimeMetrics = SessionRuntimeMetrics & CheckoutDiffMetrics;
@@ -628,6 +637,8 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentDrafts: AgentDraftService | undefined;
   private readonly notesService: NotesService | null;
   private readonly fileCopies: FileCopies | undefined;
+  private readonly fileDevices: FileDeviceRegistry;
+  readonly fileSend: FileSendService;
   private readonly detachFileCopySender: () => void;
   private readonly accountRouting: AccountRoutingAuthority | undefined;
   private readonly accountLogin: OmpAccountLogin | undefined;
@@ -930,11 +941,21 @@ export class VoiceAssistantWebSocketServer {
     };
 
     const pushLogger = this.logger.child({ module: "push" });
+    this.fileDevices = resolveFileDevices(wsConfig.fileDevices);
     this.pushNotifications = createPushNotifications({
       logger: pushLogger,
       filePath: join(paseoHome, "push-tokens.json"),
+      onTokenRevoked: (token) => this.fileDevices.removeByToken(token),
     });
     this.pushNotificationSender = pushNotificationSender ?? this.pushNotifications;
+    this.fileSend = new FileSendService({
+      registry: this.fileDevices,
+      serverId,
+      hostName: getHostName,
+      sendPush: (tokens, payload) => this.sendFilePush(tokens, payload),
+      liveTargets: (deviceId) => this.liveFileSendTargets(deviceId),
+      logger: this.logger.child({ module: "file-send" }),
+    });
 
     this.notesService = this.wireFiredNotes(notesService);
     this.agentManager.setAgentAttentionCallback((params) => {
@@ -1856,6 +1877,7 @@ export class VoiceAssistantWebSocketServer {
       agentDrafts: this.agentDrafts,
       notesService: this.notesService ?? undefined,
       fileCopies: this.fileCopies,
+      fileSend: { service: this.fileSend, registry: this.fileDevices },
       accountRouting: this.accountRouting,
       accountLogin: this.accountLogin,
       isHostLocalSource: (source) => {
@@ -2247,6 +2269,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.notesService ? { notes: true } : {}),
         // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.
         ...(this.fileCopies ? { fileCopies: true } : {}),
+        // COMPAT(sendToDevice): added in v0.16.2, remove gate after 2027-06-01.
+        sendToDevice: true,
         ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
         // The host can open a browser and sign a Claude account in; only advertised with routing.
         ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
@@ -3239,6 +3263,28 @@ export class VoiceAssistantWebSocketServer {
         this.sessions.get(ws)!.session.publishToSource(ws, message.message);
       else this.sendToClient(ws, message);
     }
+  }
+
+  private sendFilePush(tokens: string[], payload: PushPayload): Promise<void> {
+    const sender = this.pushNotificationSender;
+    return sender.sendToTokens
+      ? sender.sendToTokens(tokens, payload)
+      : this.pushNotifications.sendToTokens(tokens, payload);
+  }
+
+  private liveFileSendTargets(deviceId: string): FileSendLiveTarget[] {
+    const targets: FileSendLiveTarget[] = [];
+    for (const [ws, connection] of this.sessions) {
+      const { session } = connection;
+      if (session.getDeviceId() !== deviceId) continue;
+      // Older apps cannot parse files.sent; only sources that subscribed to it receive it.
+      if (!session.delivery.isModern(ws) || !session.wantsSourceEvent(ws, "files.sent")) continue;
+      targets.push({
+        appVisible: session.getClientActivity(ws)?.appVisible === true,
+        publish: (message) => session.publishToSource(ws, message),
+      });
+    }
+    return targets;
   }
 
   private async broadcastNoteFired(event: NoteFiredEvent): Promise<void> {
