@@ -18,6 +18,7 @@ function makeCtx(overrides: Partial<ShortcutRoutingContext> = {}): ShortcutRouti
     pathname: "/h/srv/workspace/ws-2",
     isMobile: false,
     sidebarShortcutTargets: SIDEBAR_TARGETS,
+    sidebarShortcutProjectKeys: ["proj-a", "proj-b", "proj-c"],
     navigationActiveWorkspace: null,
     commandCenterOpen: false,
     shortcutsDialogOpen: false,
@@ -157,6 +158,26 @@ describe("routeKeyboardShortcut — workspace.navigate.index", () => {
       routeKeyboardShortcut(
         { action: "workspace.navigate.index", payload: { index: 1 } },
         makeCtx({ sidebarShortcutTargets: [] }),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "none" });
+  });
+});
+
+describe("routeKeyboardShortcut — sidebar.project.navigate.index", () => {
+  it("shows the project at that strip position", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 2 } },
+        makeCtx(),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "show-sidebar-project", projectViewKey: "proj-b" });
+  });
+
+  it("does nothing past the last project in the strip", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 4 } },
+        makeCtx(),
       ),
     ).toEqual<ShortcutAction>({ kind: "none" });
   });

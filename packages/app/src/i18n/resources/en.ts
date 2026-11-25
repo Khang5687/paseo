@@ -1320,6 +1320,15 @@ export const en = {
     cancel: "Cancel",
   },
   sidebar: {
+    projectStrip: {
+      label: "Projects",
+      all: "All",
+      allProjects: "All projects",
+      needsInput: "Waiting on you: {{count}}",
+      moveFirst: "Move to first",
+      moveEarlier: "Move earlier",
+      moveLater: "Move later",
+    },
     view: {
       failed: "Sidebar view failed to load.",
       useDefault: "Use default view",
@@ -3481,6 +3490,7 @@ export const en = {
         archiveWorkspace: "Archive workspace",
         newTab: "New tab",
         closeCurrentTab: "Close current tab",
+        showProject: "Show project",
         jumpToWorkspace: "Jump to workspace",
         jumpToTab: "Jump to tab",
         previousWorkspace: "Previous workspace",

@@ -1323,6 +1323,15 @@ export const ja: TranslationResources = {
     cancel: "キャンセル",
   },
   sidebar: {
+    projectStrip: {
+      label: "プロジェクト",
+      all: "すべて",
+      allProjects: "すべてのプロジェクト",
+      needsInput: "あなたの対応待ち: {{count}}",
+      moveFirst: "先頭に移動",
+      moveEarlier: "前に移動",
+      moveLater: "後ろに移動",
+    },
     view: {
       failed: "サイドバーのビューを読み込めませんでした。",
       useDefault: "デフォルトのビューを使用",
@@ -3378,6 +3387,7 @@ export const ja: TranslationResources = {
         archiveWorkspace: "ワークスペースをアーカイブ",
         newTab: "新しいタブ",
         closeCurrentTab: "現在のタブを閉じる",
+        showProject: "プロジェクトを表示",
         jumpToWorkspace: "ワークスペースにジャンプ",
         jumpToTab: "タブにジャンプ",
         previousWorkspace: "前のワークスペース",

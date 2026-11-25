@@ -71,6 +71,8 @@ interface SidebarViewStoreState {
   clearHostFilters: () => void;
   focusHost: (serverId: string) => void;
   toggleProjectFilter: (viewKey: string) => void;
+  /** Narrow the sidebar to one project: the project strip's pick. */
+  showOnlyProject: (viewKey: string) => void;
   clearProjectFilters: () => void;
   toggleLabelFilter: (name: string) => void;
   clearLabelFilter: () => void;
@@ -211,6 +213,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
         set({ hostFilters: [serverId], projectFilters: [], labelFilter: emptyLabelFilter() }),
       toggleProjectFilter: (viewKey) =>
         set((state) => ({ projectFilters: toggleFilterEntry(state.projectFilters, viewKey) })),
+      showOnlyProject: (viewKey) => set({ projectFilters: [viewKey] }),
       clearProjectFilters: () => set({ projectFilters: [] }),
       toggleLabelFilter: (name) =>
         set((state) => {

@@ -106,7 +106,7 @@ describe("overlay and focus precedence in the source pipeline", () => {
   });
 
   it.each([true, false])(
-    "uses hardware conventions for workspace index jumps with mac=%s",
+    "uses hardware conventions for project index jumps with mac=%s",
     (isMac) => {
       const payloads: unknown[] = [];
       const pipeline = createKeyboardPipeline({
@@ -120,7 +120,7 @@ describe("overlay and focus precedence in the source pipeline", () => {
         overlays: createOverlayRegistry(),
       });
       pipeline.keyDown(nativeKeyboardInput(keyboardEvent("3", "Digit3", isMac), "message-input"));
-      expect(payloads).toEqual([["workspace.navigate.index", { index: 3 }]]);
+      expect(payloads).toEqual([["sidebar.project.navigate.index", { index: 3 }]]);
       pipeline.dispose();
     },
   );

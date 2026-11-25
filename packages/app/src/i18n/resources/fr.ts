@@ -1338,6 +1338,15 @@ export const fr: TranslationResources = {
     cancel: "Annuler",
   },
   sidebar: {
+    projectStrip: {
+      label: "Projets",
+      all: "Tous",
+      allProjects: "Tous les projets",
+      needsInput: "En attente de vous : {{count}}",
+      moveFirst: "Placer en premier",
+      moveEarlier: "Déplacer avant",
+      moveLater: "Déplacer après",
+    },
     view: {
       failed: "Impossible de charger la vue de la barre latérale.",
       useDefault: "Utiliser la vue par défaut",
@@ -3423,6 +3432,7 @@ export const fr: TranslationResources = {
         archiveWorkspace: "Archiver l’espace de travail",
         newTab: "Nouvel onglet",
         closeCurrentTab: "Fermer l’onglet actuel",
+        showProject: "Afficher le projet",
         jumpToWorkspace: "Aller à l’espace de travail",
         jumpToTab: "Aller à l’onglet",
         previousWorkspace: "Espace de travail précédent",

@@ -1316,6 +1316,15 @@ export const ko: TranslationResources = {
     cancel: "취소",
   },
   sidebar: {
+    projectStrip: {
+      label: "프로젝트",
+      all: "전체",
+      allProjects: "모든 프로젝트",
+      needsInput: "응답 대기: {{count}}",
+      moveFirst: "맨 앞으로 이동",
+      moveEarlier: "앞으로 이동",
+      moveLater: "뒤로 이동",
+    },
     view: {
       failed: "사이드바 보기를 불러오지 못했습니다.",
       useDefault: "기본 보기 사용",
@@ -3360,6 +3369,7 @@ export const ko: TranslationResources = {
         archiveWorkspace: "워크스페이스 보관",
         newTab: "새 탭",
         closeCurrentTab: "현재 탭 닫기",
+        showProject: "프로젝트 보기",
         jumpToWorkspace: "워크스페이스로 이동",
         jumpToTab: "탭으로 이동",
         previousWorkspace: "이전 워크스페이스",

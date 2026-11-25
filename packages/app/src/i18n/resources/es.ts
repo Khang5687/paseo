@@ -1346,6 +1346,15 @@ export const es: TranslationResources = {
     cancel: "Cancelar",
   },
   sidebar: {
+    projectStrip: {
+      label: "Proyectos",
+      all: "Todos",
+      allProjects: "Todos los proyectos",
+      needsInput: "Esperándote: {{count}}",
+      moveFirst: "Mover al principio",
+      moveEarlier: "Mover antes",
+      moveLater: "Mover después",
+    },
     view: {
       failed: "No se pudo cargar la vista de la barra lateral.",
       useDefault: "Usar vista predeterminada",
@@ -3419,6 +3428,7 @@ export const es: TranslationResources = {
         archiveWorkspace: "Archivar espacio de trabajo",
         newTab: "Nueva pestaña",
         closeCurrentTab: "Cerrar pestaña actual",
+        showProject: "Mostrar proyecto",
         jumpToWorkspace: "Saltar al espacio de trabajo",
         jumpToTab: "Saltar a la pestaña",
         previousWorkspace: "Espacio de trabajo anterior",

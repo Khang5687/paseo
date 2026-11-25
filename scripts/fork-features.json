@@ -1092,5 +1092,21 @@
     "pr": 145,
     "title": "Mount rarely used Paseo tools on demand in OMP chats",
     "tests": ["packages/server/src/server/agent/providers/omp/host-tools.test.ts"]
+  },
+  {
+    "pr": 146,
+    "title": "feat(app): project strip for the sidebar",
+    "tests": [
+      "packages/app/src/components/sidebar/project-strip-model.test.ts",
+      "packages/app/src/keyboard/keyboard-shortcuts.test.ts",
+      "packages/app/src/keyboard/route-shortcut.test.ts",
+      "packages/app/src/keyboard/native-shortcuts.test.ts",
+      "packages/app/src/stores/keyboard-shortcuts-store.test.ts",
+      "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts"
+    ],
+    "e2e": [
+      "packages/app/e2e/browser/sidebar-project-strip.spec.ts",
+      "packages/app/e2e/browser/workspace-relative-navigation.spec.ts"
+    ]
   }
 ]

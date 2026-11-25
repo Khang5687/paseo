@@ -197,20 +197,21 @@ export interface ProjectStatusSession {
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
 }
 
-/**
- * Most urgent status among a project's workspaces. Backs the status dot on a collapsed
- * project row, which otherwise hides every workspace-level signal it contains.
- *
- * Workspaces the session hasn't hydrated yet are skipped rather than counted as done —
- * an unknown workspace shouldn't drag the aggregate anywhere. Reuses the same
- * activity-index + effective-status pipeline as per-workspace rows (one pass over the
- * session's agents per server, not per workspace) rather than re-deriving it.
- */
-export function deriveProjectStatusBucket(input: {
+export interface ProjectStatusInput {
   workspaces: readonly SidebarWorkspacePlacement[];
   sessions: Record<string, ProjectStatusSession | undefined>;
   pendingCreateAttempts?: Record<string, PendingCreateAttempt>;
-}): SidebarStateBucket {
+}
+
+/**
+ * Effective status of each of a project's workspaces the session knows about.
+ *
+ * Workspaces the session hasn't hydrated yet are skipped rather than counted as done —
+ * an unknown workspace shouldn't drag an aggregate anywhere. Reuses the same
+ * activity-index + effective-status pipeline as per-workspace rows (one pass over the
+ * session's agents per server, not per workspace) rather than re-deriving it.
+ */
+function collectProjectWorkspaceStatuses(input: ProjectStatusInput): SidebarStateBucket[] {
   const workspaceIdsByServer = new Map<string, string[]>();
   for (const placement of input.workspaces) {
     const existing = workspaceIdsByServer.get(placement.serverId);
@@ -242,8 +243,20 @@ export function deriveProjectStatusBucket(input: {
       );
     }
   }
+  return buckets;
+}
 
-  return aggregateSidebarStateBuckets(buckets);
+/**
+ * Most urgent status among a project's workspaces. Backs the status dot on a collapsed
+ * project row, which otherwise hides every workspace-level signal it contains.
+ */
+export function deriveProjectStatusBucket(input: ProjectStatusInput): SidebarStateBucket {
+  return aggregateSidebarStateBuckets(collectProjectWorkspaceStatuses(input));
+}
+
+/** How many of a project's workspaces wait on the user. Backs the project strip's badge. */
+export function countProjectWorkspacesNeedingInput(input: ProjectStatusInput): number {
+  return collectProjectWorkspaceStatuses(input).filter((status) => status === "needs_input").length;
 }
 
 /** One bounded projection per sidebar; unchanged placements survive project reordering. */

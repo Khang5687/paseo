@@ -18,6 +18,22 @@ Composer send-key customization remains a separate capability. Native retains it
 existing Return submission path; advertising its web-only customization would expose
 settings the native composer does not implement.
 
+## Digit groups
+
+Three bindings share the digit keys, one per modifier set:
+
+| Jump                                                         | Mac desktop | Windows/Linux desktop | Web           |
+| ------------------------------------------------------------ | ----------- | --------------------- | ------------- |
+| Nth project in the [project strip](sidebar-project-strip.md) | Cmd+1-9     | Ctrl+1-9              | Alt+1-9       |
+| Nth sidebar row                                              | Cmd+Alt+1-9 | Ctrl+Alt+1-9          | Ctrl+Alt+1-9  |
+| Nth tab                                                      | Ctrl+1-9    | Alt+1-9               | Alt+Shift+1-9 |
+
+Projects take the plainest chord because there are few of them and their order is stable; rows shift as agents start and finish. Web cannot use Cmd/Ctrl+digit, since the browser owns its tab keys.
+
+Holding a group's modifiers shows that group's number badges, and only that group's. `resolveShortcutBadgeTarget` matches the held set exactly, so Cmd shows project numbers and Cmd+Alt shows row numbers. The badges read the effective bindings, so a rebind moves them too; a binding with a fixed digit, a second chord step, or no modifier shows none.
+
+Windows reports AltGr as Ctrl+Alt, so AltGr+7 on a German layout arrives as Ctrl+Alt+7 with `key` `{`. A digit binding on non-Mac does not match Ctrl+Alt when `key` is a character other than a digit, which leaves AltGr text to the input and keeps the row jump on layouts where Ctrl+Alt+7 still reports `7`.
+
 ## Native sources
 
 Use the iOS window press stream for hardware keys. The stream reaches JavaScript
