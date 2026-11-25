@@ -2,7 +2,8 @@ import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { CircleAlert, Folder, FolderGit2, Monitor, PencilLine } from "lucide-react-native";
+import { Check, CircleAlert, Folder, FolderGit2, Monitor, PencilLine } from "lucide-react-native";
+import { bySizing } from "@/components/ui/control-geometry";
 import { ProjectStatusIndicator } from "@/components/sidebar/project-leading-visual";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 import {
@@ -41,13 +42,16 @@ import {
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
-import { SidebarSelectionCheckbox } from "@/components/sidebar/selection/rows";
 
 const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
   fill: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
 });
+const checkedIconMapping = (theme: Theme) => ({
+  color: theme.colors.accentForeground,
+});
 
+const ThemedCheck = withUnistyles(Check);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedPencilLine = withUnistyles(PencilLine);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -61,12 +65,15 @@ export function SidebarWorkspaceRowFrame({
   workspace,
   isDragging = false,
   isEditingTitle = false,
+  isSelectionMode = false,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
   isDragging?: boolean;
   /** Hover would fade the kebab in over the title being edited and open the hover card. */
   isEditingTitle?: boolean;
+  /** Hover cards would cover neighbouring rows while the user clicks through a selection. */
+  isSelectionMode?: boolean;
   children: (input: {
     isHovered: boolean;
     contextMenuOpen: boolean;
@@ -94,7 +101,7 @@ export function SidebarWorkspaceRowFrame({
       workspace={workspace}
       prHint={workspace.prHint}
       isDragging={isDragging}
-      disabled={contextMenuOpen || isEditingTitle}
+      disabled={contextMenuOpen || isEditingTitle || isSelectionMode}
     >
       {children({
         isHovered: isHovered && !contextMenuOpen && !isDragging && !isEditingTitle,
@@ -116,10 +123,11 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   isHovered,
   isLoading,
   isCreating = false,
+  isSelectionMode = false,
+  isBulkSelected = false,
   shortcutNumber = null,
   showShortcutBadge = false,
   reserveIdleStatusIndicatorSpace = true,
-  selectionChecked = null,
   titleEditor = null,
   children,
 }: {
@@ -134,12 +142,12 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   isHovered: boolean;
   isLoading: boolean;
   isCreating?: boolean;
+  isSelectionMode?: boolean;
+  isBulkSelected?: boolean;
   shortcutNumber?: number | null;
   showShortcutBadge?: boolean;
   /** Keep the empty leading slot when the workspace has no active status. */
   reserveIdleStatusIndicatorSpace?: boolean;
-  /** Whether the row is ticked while sidebar selection is on; null while it is off. */
-  selectionChecked?: boolean | null;
   /** Takes the title's place, in a box exactly one title line tall, while renaming in place. */
   titleEditor?: ReactNode;
   children?: ReactNode;
@@ -157,20 +165,17 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   const workspaceBranchTextStyle = useMemo(
     () => [
       styles.workspaceBranchText,
-      isHovered && styles.workspaceBranchTextHovered,
+      (isHovered || isBulkSelected) && styles.workspaceBranchTextHovered,
       isCreating && styles.workspaceBranchTextCreating,
       isNew && styles.workspaceBranchTextNew,
     ],
-    [isHovered, isCreating, isNew],
+    [isHovered, isBulkSelected, isCreating, isNew],
   );
 
   let leadingVisual: ReactNode;
-  if (selectionChecked !== null) {
+  if (isSelectionMode) {
     leadingVisual = (
-      <SidebarSelectionCheckbox
-        checked={selectionChecked}
-        testID={`sidebar-workspace-select-${workspace.workspaceKey}`}
-      />
+      <WorkspaceSelectionCheckbox checked={isBulkSelected} workspaceKey={workspace.workspaceKey} />
     );
   } else if (leadingProjectName) {
     leadingVisual = (
@@ -238,7 +243,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
           />
         </View>
       </View>
-      {showShortcutBadge && shortcutNumber !== null ? (
+      {!isSelectionMode && showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.shortcutBadgeOverlay} pointerEvents="none">
           <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
         </View>
@@ -246,6 +251,22 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     </View>
   );
 });
+
+function WorkspaceSelectionCheckbox({
+  checked,
+  workspaceKey,
+}: {
+  checked: boolean;
+  workspaceKey: string;
+}) {
+  return (
+    <View style={styles.workspaceStatusDot} testID={`sidebar-workspace-checkbox-${workspaceKey}`}>
+      <View style={checked ? styles.selectionCheckboxChecked : styles.selectionCheckbox}>
+        {checked ? <ThemedCheck size={11} strokeWidth={2.5} uniProps={checkedIconMapping} /> : null}
+      </View>
+    </View>
+  );
+}
 
 function WorkspaceStatusIndicator({
   bucket,
@@ -475,6 +496,7 @@ export function resolveTrailingActionVisibility({
   isHovered,
   isTouchPlatform,
   showShortcut,
+  isSelectionMode = false,
 }: {
   workspace: SidebarWorkspaceEntry;
   trailing: SidebarWorkspaceTrailing;
@@ -482,6 +504,7 @@ export function resolveTrailingActionVisibility({
   isHovered: boolean;
   isTouchPlatform: boolean;
   showShortcut: boolean;
+  isSelectionMode?: boolean;
 }): {
   trailingPresentation: SidebarWorkspaceTrailingPresentation;
   showKebab: boolean;
@@ -491,10 +514,11 @@ export function resolveTrailingActionVisibility({
   reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation;
 } {
   const hasTrailing = hasSidebarWorkspaceTrailing({ workspace, trailing });
-  const showKebab = Boolean(hasArchiveAction && (isHovered || isTouchPlatform)) && !showShortcut;
+  const allowRowActions = hasArchiveAction && !isSelectionMode;
+  const showKebab = Boolean(allowRowActions && (isHovered || isTouchPlatform)) && !showShortcut;
   // Touch permanently replaces the stats with the menu. Only temporary shortcut hints
   // conceal content while retaining its width, so desktop rows do not shift.
-  const hasContent = hasTrailing && !(hasArchiveAction && isTouchPlatform);
+  const hasContent = hasTrailing && !(allowRowActions && isTouchPlatform);
   let trailingPresentation: SidebarWorkspaceTrailingPresentation = "absent";
   if (hasContent) trailingPresentation = showShortcut ? "hidden" : "visible";
   // The slot only holds width for something that permanently sits in it. Trailing content
@@ -503,7 +527,7 @@ export function resolveTrailingActionVisibility({
   // back to the title and the actions fade in over its tail.
   let reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation = "none";
   if (hasContent) reserveSlotWidth = "content";
-  if (hasArchiveAction && isTouchPlatform) reserveSlotWidth = "actions";
+  if (allowRowActions && isTouchPlatform) reserveSlotWidth = "actions";
   return {
     trailingPresentation,
     showKebab,
@@ -514,7 +538,7 @@ export function resolveTrailingActionVisibility({
     // row — over an unhovered one the gradient fades to the wrong color. That is also why
     // touch, which shows the kebab without ever hovering, never gets one.
     showScrim: showKebab && isHovered,
-    renderSlot: hasArchiveAction || hasTrailing,
+    renderSlot: allowRowActions || hasTrailing,
     reserveSlotWidth,
   };
 }
@@ -641,6 +665,25 @@ const styles = StyleSheet.create((theme) => ({
     height: TITLE_LINE_HEIGHT,
     borderRadius: theme.borderRadius.full,
     flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectionCheckbox: {
+    width: bySizing({ touch: 18, pointer: 15 }),
+    height: bySizing({ touch: 18, pointer: 15 }),
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1.5,
+    borderColor: theme.colors.borderAccent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectionCheckboxChecked: {
+    width: bySizing({ touch: 18, pointer: 15 }),
+    height: bySizing({ touch: 18, pointer: 15 }),
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.accent,
     alignItems: "center",
     justifyContent: "center",
   },

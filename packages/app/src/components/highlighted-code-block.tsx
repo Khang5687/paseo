@@ -1,17 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Pressable,
-  View,
-  Text,
-  type StyleProp,
-  type TextStyle,
-  type ViewStyle,
-} from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import React, { useCallback, useMemo, useState } from "react";
+import { View, Text, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Check, Copy, Play } from "lucide-react-native";
+import { Play } from "lucide-react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { HighlightToken } from "@getpaseo/highlight";
+import { BlockCopyButton, blockCopyGlyphInset } from "@/components/markdown/block-copy-button";
+import { mutedIconColorMapping } from "@/components/ui/icon-color";
+import { smallIconButtonChromeFrameSize } from "@/components/ui/icon-button-chrome";
+import { paneContentToolbarIconSize, ToolbarButton } from "@/components/ui/pane-content-toolbar";
 import { isNative, isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
@@ -22,6 +19,8 @@ import {
   markdownCopyDataSet,
   TRAILING_CODE_LINE_BREAKS,
 } from "@/assistant-selection-copy/markup";
+
+const ThemedPlay = withUnistyles(Play, mutedIconColorMapping);
 
 export interface CodeBlockRunControl {
   onPress: () => void;
@@ -94,6 +93,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
     [renderedCode, language],
   );
 
+  const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
@@ -102,11 +102,15 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   // Copy the code without its trailing blank lines. A fence body ends in a newline,
   // and ends in more than one when the author left a blank line before the closing
   // fence; pasting any of them into a terminal runs the last line.
-  const getCode = useCallback(() => code.replace(TRAILING_CODE_LINE_BREAKS, ""), [code]);
+  const copyCode = useCallback(async () => {
+    const content = code.replace(TRAILING_CODE_LINE_BREAKS, "");
+    if (!content) return false;
+    return Clipboard.setStringAsync(content);
+  }, [code]);
   // Two controls cover more of the first line than Copy alone; keep the code clear of them.
   const runnable = run !== undefined;
   const codeTextStyle = useMemo(
-    () => (runnable ? [innerTextStyle, copyButtonStyles.runReserve] : innerTextStyle),
+    () => (runnable ? [innerTextStyle, runButtonStyles.runReserve] : innerTextStyle),
     [innerTextStyle, runnable],
   );
 
@@ -126,17 +130,14 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
           {renderedCode}
         </Text>
       )}
-      <View
-        style={copyButtonStyles.actions}
-        pointerEvents={controlsVisible ? "box-none" : "none"}
-        dataSet={markdownCopyDataSet.ignore}
-      >
-        {run ? (
-          <RunButton onPress={run.onPress} visible={controlsVisible && run.available} />
-        ) : null}
-        <CopyButton getCode={getCode} visible={controlsVisible} />
-      </View>
-    </View>
+      {run ? (
+        <RunButton onPress={run.onPress} visible={controlsVisible && run.available} />
+      ) : null}
+      <BlockCopyButton
+        onCopy={copyCode}
+        visible={controlsVisible}
+        label={t("message.actions.copyCode")}
+      />    </View>
   );
 });
 
@@ -193,129 +194,52 @@ function splitFenceStyle(inheritedStyles: TextStyle, textStyle: TextStyle): Spli
   };
 }
 
-interface CopyButtonProps {
-  getCode: () => string;
-  visible: boolean;
-}
-
-const COPIED_RESET_MS = 1500;
-
-const CopyButton = React.memo(function CopyButton({ getCode, visible }: CopyButtonProps) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (resetRef.current) clearTimeout(resetRef.current);
-    },
-    [],
-  );
-
-  const handlePress = useCallback(async () => {
-    const content = getCode();
-    if (!content) return;
-    await Clipboard.setStringAsync(content);
-    setCopied(true);
-    if (resetRef.current) clearTimeout(resetRef.current);
-    resetRef.current = setTimeout(() => {
-      setCopied(false);
-      resetRef.current = null;
-    }, COPIED_RESET_MS);
-  }, [getCode]);
-
-  const visibilityStyle = visible
-    ? copyButtonStyles.containerVisible
-    : copyButtonStyles.containerHidden;
-  const wrapperStyle = useMemo(
-    () => [copyButtonStyles.container, visibilityStyle],
-    [visibilityStyle],
-  );
-
-  return (
-    <Pressable
-      onPress={handlePress}
-      style={wrapperStyle}
-      pointerEvents={visible ? "auto" : "none"}
-      accessibilityRole="button"
-      accessibilityLabel={copied ? t("message.actions.copied") : t("message.actions.copyCode")}
-      hitSlop={8}
-      dataSet={markdownCopyDataSet.ignore}
-    >
-      {({ hovered }) => {
-        const iconColor = hovered
-          ? copyButtonStyles.iconHoveredColor.color
-          : copyButtonStyles.iconColor.color;
-        return copied ? (
-          <Check size={14} color={iconColor} />
-        ) : (
-          <Copy size={14} color={iconColor} />
-        );
-      }}
-    </Pressable>
-  );
-});
-
 interface RunButtonProps {
   onPress: () => void;
   visible: boolean;
 }
 
+/** Sits beside the copy control, which owns the corner. */
 const RunButton = React.memo(function RunButton({ onPress, visible }: RunButtonProps) {
   const { t } = useTranslation();
-  const visibilityStyle = visible
-    ? copyButtonStyles.containerVisible
-    : copyButtonStyles.containerHidden;
-  const wrapperStyle = useMemo(
-    () => [copyButtonStyles.container, visibilityStyle],
-    [visibilityStyle],
-  );
+  const compact = useIsCompactFormFactor();
+  const [focused, setFocused] = useState(false);
+  const focus = useCallback(() => setFocused(true), []);
+  const blur = useCallback(() => setFocused(false), []);
+  const shown = visible || focused;
   return (
-    <Pressable
-      onPress={onPress}
-      style={wrapperStyle}
-      pointerEvents={visible ? "auto" : "none"}
-      accessibilityRole="button"
-      accessibilityLabel={t("codeRun.run")}
-      hitSlop={8}
-      testID="code-block-run"
-    >
-      {({ hovered }) => (
-        <Play
-          size={14}
-          color={
-            hovered ? copyButtonStyles.iconHoveredColor.color : copyButtonStyles.iconColor.color
-          }
-        />
-      )}
-    </Pressable>
+    <View style={runButtonStyles.corner(compact)} dataSet={markdownCopyDataSet.ignore}>
+      <ToolbarButton
+        compact={compact}
+        label={t("codeRun.run")}
+        onPress={onPress}
+        onFocus={focus}
+        onBlur={blur}
+        style={shown ? runButtonStyles.shown : runButtonStyles.hidden}
+        testID="code-block-run"
+      >
+        <ThemedPlay size={paneContentToolbarIconSize(compact)} />
+      </ToolbarButton>
+    </View>
   );
 });
 
-const copyButtonStyles = StyleSheet.create((theme) => ({
+const runButtonStyles = StyleSheet.create((theme) => ({
   runReserve: {
     paddingRight: theme.spacing[12],
   },
-  actions: {
-    position: "absolute",
-    top: theme.spacing[2],
-    right: theme.spacing[2],
-    flexDirection: "row",
-    gap: theme.spacing[2],
+  // One button frame in from the copy control's corner.
+  corner: (compact: boolean) => {
+    const frame = smallIconButtonChromeFrameSize(compact);
+    const frameOverhang = (frame - paneContentToolbarIconSize(compact)) / 2;
+    const inset = blockCopyGlyphInset(theme) - frameOverhang;
+    return {
+      position: "absolute" as const,
+      top: inset,
+      right: inset + frame,
+      pointerEvents: "box-none" as const,
+    };
   },
-  container: {
-    padding: theme.spacing[1],
-  },
-  containerVisible: {
-    opacity: 1,
-  },
-  containerHidden: {
-    opacity: 0,
-  },
-  iconColor: {
-    color: theme.colors.foregroundMuted,
-  },
-  iconHoveredColor: {
-    color: theme.colors.foreground,
-  },
+  shown: { opacity: 1, pointerEvents: "auto" },
+  hidden: { opacity: 0, pointerEvents: "none" },
 }));

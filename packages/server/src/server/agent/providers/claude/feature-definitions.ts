@@ -1,6 +1,9 @@
 import type { AgentOptionControl, AgentOptionToggleControl } from "../../agent-sdk-types.js";
 import { buildOutputStyleControl, type OutputStyle } from "../../output-styles.js";
-import { claudeManifestModelSupportsFastMode } from "./model-manifest.js";
+import {
+  claudeManifestModelSupportsFastMode,
+  claudeManifestModelSupportsUltracode,
+} from "./model-manifest.js";
 
 export const CLAUDE_FAST_MODE_CONTROL: AgentOptionToggleControl = {
   type: "toggle",
@@ -11,6 +14,14 @@ export const CLAUDE_FAST_MODE_CONTROL: AgentOptionToggleControl = {
   icon: "zap",
 };
 
+const CLAUDE_ULTRACODE_CONTROL: AgentOptionToggleControl = {
+  type: "toggle",
+  key: "ultracode",
+  label: "Ultracode",
+  description: "Let Claude plan workflows for substantive tasks",
+  icon: "Workflow",
+};
+
 export function claudeModelSupportsFastMode(modelId: string | null | undefined): boolean {
   return claudeManifestModelSupportsFastMode(modelId);
 }
@@ -18,11 +29,13 @@ export function claudeModelSupportsFastMode(modelId: string | null | undefined):
 export function buildClaudeControls(
   modelId: string | null | undefined,
   outputStyles: readonly OutputStyle[],
+  independentUltracode: boolean,
 ): AgentOptionControl[] {
-  const controls: AgentOptionControl[] = [];
-  if (claudeModelSupportsFastMode(modelId)) {
-    controls.push({ ...CLAUDE_FAST_MODE_CONTROL });
-  }
-  controls.push(buildOutputStyleControl({ styles: outputStyles }));
-  return controls;
+  return [
+    ...(claudeModelSupportsFastMode(modelId) ? [{ ...CLAUDE_FAST_MODE_CONTROL }] : []),
+    ...(independentUltracode && claudeManifestModelSupportsUltracode(modelId)
+      ? [{ ...CLAUDE_ULTRACODE_CONTROL }]
+      : []),
+    buildOutputStyleControl({ styles: outputStyles }),
+  ];
 }
