@@ -8,10 +8,15 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { BackHeader } from "@/components/headers/back-header";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { PressHighlight } from "@/components/ui/press-highlight";
+import { withContentDrag } from "@/components/ui/content-drag";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { ICON_SIZE, SPACING, type Theme } from "@/styles/theme";
 
-const PageScrollView = Platform.OS === "android" ? KeyboardAwareScrollView : ScrollView;
+// Rows on a page drag to reorder, so the page stops scrolling while a drag holds the touch.
+const PageScrollView =
+  Platform.OS === "android"
+    ? withContentDrag(KeyboardAwareScrollView)
+    : withContentDrag(ScrollView);
 
 interface PageLayoutProps {
   title?: string;
@@ -142,7 +147,7 @@ const separatorColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted 
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   scroll: {
     flex: 1,

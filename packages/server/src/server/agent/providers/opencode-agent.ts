@@ -61,7 +61,9 @@ import {
   type SteerResult,
   type ToolCallDetail,
   type ToolCallTimelineItem,
+  type ForkedNativeSession,
 } from "../agent-sdk-types.js";
+import { ForkHandleRefusedError, requireSafeNativeId } from "../fork-handle.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
   raceProviderRefreshAbort,
@@ -79,6 +81,7 @@ import {
 } from "../provider-launch-config.js";
 import { withTimeout } from "../../../utils/promise-timeout.js";
 import { execCommand } from "../../../utils/spawn.js";
+import type { LaunchWrap } from "../../../utils/launch-wrap.js";
 import { mapOpencodeToolCall } from "./opencode/tool-call-mapper.js";
 import {
   OPENCODE_EVENT_STREAM_READY_TIMEOUT_MS,
@@ -106,6 +109,7 @@ import { runProviderTurn } from "./provider-runner.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { normalizeProviderReplayTimestamp } from "../provider-history-timestamps.js";
+import { readQuestionAnswerList } from "../question-answers.js";
 import { revertOpenCodeConversationAndFiles } from "./opencode/rewind.js";
 import {
   claimOpenCodeSubagentFallbackTitle,
@@ -145,6 +149,7 @@ const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
 };
 
 const OPENCODE_BUILD_MODE_ID = "build";
+const OPENCODE_PLAN_MODE_ID = "plan";
 const OPENCODE_LEGACY_FULL_ACCESS_MODE_ID = "full-access";
 const OPENCODE_DEFAULT_VARIANT_ID = "default";
 const EMPTY_OPENCODE_EVENT_SOURCE: OpenCodeEventSource = {
@@ -544,6 +549,16 @@ function isOpenCodeNotFoundError(error: unknown): boolean {
     "name" in error &&
     (error as { name?: unknown }).name === "NotFoundError"
   );
+}
+
+function requireOpenCodeNativeSessionCwd(handle: AgentPersistenceHandle, action: string): string {
+  const { cwd } = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
+  if (!cwd) {
+    const message = `OpenCode native ${action} requires the original working directory`;
+    // A leftover record that lacks it can never be retried into working.
+    throw action === "discard" ? new ForkHandleRefusedError(message) : new Error(message);
+  }
+  return cwd;
 }
 
 async function abortOpenCodeSession(params: {
@@ -1537,7 +1552,10 @@ export class OpenCodeAgentClient implements AgentClient {
       cwd,
     };
     const openCodeConfig = this.assertConfig(config);
-    const registeredServerUrl = getOpenCodeChildSessionServerUrl(handle.sessionId);
+    // A registered parent server runs outside this launch's wrap, so a wrapped resume starts its own.
+    const registeredServerUrl = launchContext?.wrap
+      ? undefined
+      : getOpenCodeChildSessionServerUrl(handle.sessionId);
     const registeredAcquisition = registeredServerUrl
       ? this.serverManager.acquireExisting(registeredServerUrl)
       : null;
@@ -1617,12 +1635,23 @@ export class OpenCodeAgentClient implements AgentClient {
     config: OpenCodeAgentConfig,
     launchContext?: AgentLaunchContext,
   ): Promise<OpenCodeServerAcquisition> {
-    if (!this.bridge || requiresDedicatedOpenCodeServer(config, launchContext)) {
-      return launchContext?.env
-        ? this.serverManager.acquireDedicated(launchContext.env)
-        : this.serverManager.acquireCurrent();
+    if (launchContext?.wrap)
+      return this.acquireWrappedServer(launchContext.wrap, launchContext.env);
+    if (
+      launchContext?.env &&
+      (!this.bridge || requiresDedicatedOpenCodeServer(config, launchContext))
+    ) {
+      return this.serverManager.acquireDedicated({ env: launchContext.env });
     }
     return this.serverManager.acquireCurrent();
+  }
+
+  /** A wrapped session gets its own server, so it never shares one that runs outside its wrap. */
+  private acquireWrappedServer(
+    wrap: LaunchWrap,
+    env: Record<string, string> = {},
+  ): Promise<OpenCodeServerAcquisition> {
+    return this.serverManager.acquireDedicated({ env, wrap });
   }
 
   private bindBridgeSession(
@@ -1712,7 +1741,11 @@ export class OpenCodeAgentClient implements AgentClient {
   }
 
   async importSession(input: ImportProviderSessionInput, context: ImportProviderSessionContext) {
-    const acquisition = await this.serverManager.acquireCurrent();
+    const wrap = context.launchContext?.wrap;
+    // A wrapped import reads the session behind its wrap too, so it never starts a server outside it.
+    const acquisition = wrap
+      ? await this.acquireWrappedServer(wrap, context.launchContext?.env)
+      : await this.serverManager.acquireCurrent();
     const { url } = acquisition.server;
     const client = this.createOpenCodeClient({
       baseUrl: url,
@@ -1756,28 +1789,61 @@ export class OpenCodeAgentClient implements AgentClient {
     await this.setNativeSessionArchived(handle, 0);
   }
 
+  async forkNativeSession(handle: AgentPersistenceHandle): Promise<ForkedNativeSession> {
+    const cwd = requireOpenCodeNativeSessionCwd(handle, "fork");
+    // Without messageID OpenCode copies every message into a new top-level session.
+    const sessionId = await this.withNativeSessionClient(handle.sessionId, cwd, async (client) => {
+      const response = await client.session.fork({ sessionID: handle.sessionId, directory: cwd });
+      if (response.error || !response.data) {
+        throw new Error(
+          `Failed to fork OpenCode session: ${toDiagnosticErrorMessage(response.error)}`,
+        );
+      }
+      return response.data.id;
+    });
+    const discardFork = () =>
+      this.discardNativeFork({ ...handle, sessionId, nativeHandle: sessionId });
+    let discarded = false;
+    return {
+      handle: {
+        provider: handle.provider,
+        sessionId,
+        nativeHandle: sessionId,
+        metadata: handle.metadata,
+      },
+      // Plan denies edits; shell and other mutating tools ask, and the caller denies.
+      readOnlyModeId: OPENCODE_PLAN_MODE_ID,
+      discard: async () => {
+        if (discarded) return;
+        await discardFork();
+        discarded = true;
+      },
+    };
+  }
+
+  async discardNativeFork(handle: AgentPersistenceHandle): Promise<void> {
+    const sessionId = requireSafeNativeId(handle.sessionId, "OpenCode session id");
+    const cwd = requireOpenCodeNativeSessionCwd(handle, "discard");
+    await this.withNativeSessionClient(sessionId, cwd, async (client) => {
+      const response = await client.session.delete({ sessionID: sessionId, directory: cwd });
+      if (response.error && !isOpenCodeNotFoundError(response.error)) {
+        throw new Error(
+          `Failed to delete OpenCode fork: ${toDiagnosticErrorMessage(response.error)}`,
+        );
+      }
+    });
+  }
+
   private async setNativeSessionArchived(
     handle: AgentPersistenceHandle,
     archivedAt: number,
   ): Promise<void> {
-    const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
-    if (!metadata.cwd) {
-      throw new Error("OpenCode native archive update requires the original working directory");
-    }
-
-    const registeredServerUrl = getOpenCodeChildSessionServerUrl(handle.sessionId);
-    const acquisition =
-      (registeredServerUrl ? this.serverManager.acquireExisting(registeredServerUrl) : null) ??
-      (await this.serverManager.acquireCurrent());
-    const client = this.createOpenCodeClient({
-      baseUrl: acquisition.server.url,
-      directory: metadata.cwd,
-    });
-    try {
+    const cwd = requireOpenCodeNativeSessionCwd(handle, "archive update");
+    await this.withNativeSessionClient(handle.sessionId, cwd, async (client) => {
       const response = readOpenCodeRecord(
         await client.session.update({
           sessionID: handle.sessionId,
-          directory: metadata.cwd,
+          directory: cwd,
           time: { archived: archivedAt },
         }),
       );
@@ -1786,6 +1852,22 @@ export class OpenCodeAgentClient implements AgentClient {
           `Failed to ${archivedAt === 0 ? "unarchive" : "archive"} OpenCode session: ${toDiagnosticErrorMessage(response.error)}`,
         );
       }
+    });
+  }
+
+  private async withNativeSessionClient<T>(
+    sessionId: string,
+    directory: string,
+    operation: (client: OpencodeClient) => Promise<T>,
+  ): Promise<T> {
+    const registeredServerUrl = getOpenCodeChildSessionServerUrl(sessionId);
+    const acquisition =
+      (registeredServerUrl ? this.serverManager.acquireExisting(registeredServerUrl) : null) ??
+      (await this.serverManager.acquireCurrent());
+    try {
+      return await operation(
+        this.createOpenCodeClient({ baseUrl: acquisition.server.url, directory }),
+      );
     } finally {
       await acquisition.release();
     }
@@ -5032,10 +5114,24 @@ class OpenCodeAgentSession implements AgentSession {
         const answersRecord = readOpenCodeRecord(response.updatedInput?.answers);
         const questions = Array.isArray(pending.input?.questions) ? pending.input.questions : [];
         const answers = questions.map((item) => {
-          const header = readNonEmptyString(readOpenCodeRecord(item)?.header);
-          const rawAnswer = header ? readNonEmptyString(answersRecord?.[header]) : null;
+          const question = readOpenCodeRecord(item);
+          const header = readNonEmptyString(question?.header);
+          if (!header) {
+            return [];
+          }
+          const answerList = readQuestionAnswerList(response.updatedInput, header);
+          if (answerList) {
+            return answerList;
+          }
+          // COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps
+          // before v0.11.0 send only the comma-joined `answers` string. Only a multi-select
+          // answer can hold several values, so a single-select answer is never split.
+          const rawAnswer = readNonEmptyString(answersRecord?.[header]);
           if (!rawAnswer) {
             return [];
+          }
+          if (question?.multiSelect !== true) {
+            return [rawAnswer];
           }
           return rawAnswer
             .split(",")

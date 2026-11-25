@@ -228,7 +228,8 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
       ? `plugin_workspace_${identity}`
       : `plugin_agent_${identity}_${target.agentId.length}_${target.agentId}`;
   }
-  return `file_${target.path}`;
+  // A file on another host is a different tab from the same path on the workspace's host.
+  return target.serverId ? `file@${target.serverId}:${target.path}` : `file_${target.path}`;
 }
 
 function normalizePluginTabTarget(

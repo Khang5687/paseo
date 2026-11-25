@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { UsageSourceRegistry } from "../../../packages/server/src/server/plugins/usage-sources/index.js";
+import type { MspConnection } from "../server/connection.js";
+import { Questions } from "../server/questions.js";
 import { Usage as MuseUsage } from "../server/usage.js";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -161,6 +163,52 @@ test("registration exposes Muse with a daemon-resolved command", () => {
     command: ["muse"],
     icon: "icon.svg",
   });
+});
+test("a session's launch wrap starts Muse serve and the session runs through it", async () => {
+  const h = await harness();
+  const launcher = path.join(h.root, "launcher.mjs");
+  const marker = path.join(h.root, "wrapped.json");
+  await writeFile(
+    launcher,
+    [
+      'import { spawn } from "node:child_process";',
+      'import { writeFileSync } from "node:fs";',
+      "const [command, ...args] = process.argv.slice(2);",
+      "writeFileSync(process.env.MUSE_TEST_WRAP_MARKER, JSON.stringify([command, ...args]));",
+      'const child = spawn(command, args, { stdio: "inherit" });',
+      'child.on("exit", (code) => process.exit(code ?? 1));',
+      "",
+    ].join("\n"),
+  );
+  const from = await h.send({
+    type: "session.open",
+    requestId: "open",
+    sessionId: "paseo-session",
+    config: {
+      cwd: h.root,
+      env: { MUSE_TEST_WRAP_MARKER: marker },
+      settings: {},
+      mcpServers: {},
+      persist: true,
+      mode: "onRequest",
+      model: "meta/muse-spark-1.3",
+      systemPrompt: "Test instructions",
+      wrap: [process.execPath, launcher],
+    },
+    history: "replay",
+  });
+  expect(
+    await h.wait(
+      (event) => event.type === "session.ready" || event.type === "request.failed",
+      from,
+    ),
+  ).toMatchObject({ type: "session.ready" });
+  const wrapped = JSON.parse(await readFile(marker, "utf8")) as string[];
+  expect(wrapped.slice(0, h.launch.args.length + 2)).toEqual([
+    h.launch.command,
+    ...h.launch.args,
+    "serve",
+  ]);
 });
 test("installation links to the Muse guide and reports the installed version", async () => {
   const provider = registration();
@@ -1215,6 +1263,61 @@ for (const mode of ["answer", "cancel"] as const) {
     );
   });
 }
+test("question answer lists keep commas inside option labels and free text", async () => {
+  const sent: { method: string; params: { answers?: unknown } }[] = [];
+  const host = {
+    async command(method: string, params: { answers?: unknown }) {
+      sent.push({ method, params });
+      return {};
+    },
+  };
+  const questions = new Questions(
+    host as unknown as MspConnection,
+    "muse-session",
+    "paseo-session",
+    () => {},
+  );
+  const multiple = { mode: "multiple" as const };
+  const colors = [{ label: "Red, warm" }, { label: "Blue" }];
+  questions.requested({
+    userInputId: "colors-input",
+    toolName: "ask_user",
+    questions: [
+      { id: "picked", header: "Picked", question: "Colors?", options: colors, selection: multiple },
+      { id: "mixed", header: "Mixed", question: "More?", options: colors, selection: multiple },
+      {
+        id: "name",
+        header: "Name",
+        question: "Name?",
+        options: [{ label: "Atlas" }],
+        selection: { mode: "single" },
+      },
+    ],
+  });
+  await questions.answer("colors-input", {
+    behavior: "allow",
+    updatedInput: {
+      answers: { Picked: "Red, warm, Blue", Mixed: "Blue, teal, or cyan", Name: "Nebula, v2" },
+      answerLists: {
+        Picked: ["Red, warm", "Blue"],
+        Mixed: ["Blue", "teal, or cyan"],
+        Name: ["Nebula, v2"],
+      },
+    },
+  });
+  expect(sent).toEqual([
+    {
+      method: "userInput/answer",
+      params: expect.objectContaining({
+        answers: [
+          { questionId: "picked", selectedLabels: ["Red, warm", "Blue"] },
+          { questionId: "mixed", freeText: "Blue, teal, or cyan" },
+          { questionId: "name", freeText: "Nebula, v2" },
+        ],
+      }),
+    },
+  ]);
+});
 for (const variant of ["tool", "dedicated", "workflow"]) {
   test(`${variant} subagent opens only the supplied child and pages its real transcript`, async () => {
     const h = await harness("subagent", { MUSE_TEST_CHILD: variant });

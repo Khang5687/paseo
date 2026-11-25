@@ -575,8 +575,9 @@ where the overrides apply; workspace scripts still find the binary through the r
 
 ## Dependency signature audit
 
-The `quality` CI job runs `npm audit signatures`. It verifies every lockfile package's registry
-signature and, for packages published with provenance, fetches
+The [pre-release dependency checks](release.md#pre-release-dependency-checks) include
+`npm audit signatures`. The command verifies registry signatures and, for packages published
+with provenance, fetches
 `/-/npm/v1/attestations/<name>@<version>` from the registry. Cloudflare caches that document
 for a year. An edge that cached it in the seconds before the registry attached the publish
 attestation keeps serving a document with only the provenance bundle, and npm fails with:
@@ -587,11 +588,10 @@ npm error <name>@<version> has attestations but no corresponding public key(s) c
 ```
 
 The same package's registry signature verified a moment earlier with the same keys, so the
-key list is intact. The failure names one package, repeats only for that package, and depends
-on the Azure region the runner landed in, because each region maps to one Cloudflare colo. A
-rerun passes only by landing elsewhere.
+key list is intact. The failure names one package and depends on which Cloudflare edge serves
+the cached attestation.
 
-To confirm, fetch the URL from several runners and compare `content-length`, the `cf-ray` colo
+To confirm, fetch the URL from several regions and compare `content-length`, the `cf-ray` colo
 suffix, and the number of `attestations` entries (#7730 has the probe). To fix, remove or
 replace that version in the lockfile. If the dependent’s range cannot be changed, pin a clean
 version in root `overrides`. Report the URL to npm so they purge it.
@@ -633,10 +633,13 @@ npm run cli -- ls -a -g              # List all agents globally
 npm run cli -- ls -a -g --json       # Same, as JSON
 npm run cli -- inspect <id>          # Show detailed agent info
 npm run cli -- logs <id>             # View agent timeline
+npm run cli -- logs <id> --seq <n> --epoch <e> --context 2 # Rows a Paseo debug reference points at
 npm run cli -- agent open <id>       # Focus an existing agent in Paseo Desktop
 npm run cli -- daemon status         # Check daemon status
 npm run cli -- clone owner/repo --dir ~/workspace # Clone GitHub repo and register project
 ```
+
+`logs --seq` takes the agent id, epoch, and seq from a Paseo debug reference and prints the projected timeline row whose `sourceSeqRanges` contain that seq, one JSON object per line, with `"target": true` on that row. One projected row can merge many seqs (a streamed assistant reply, a tool call and its completion), so any seq inside the row finds it. `--context <k>` adds the `k` rows displayed before and after it (default 0). A seq is only meaningful within its epoch: when `--epoch` differs from the agent's current epoch, the command fails and names both rather than matching a different row. `--subagent <subagentId>` searches that provider subagent's timeline, with `<id>` as the parent agent. `--seq` cannot be combined with `--follow`, `--tail`, `--filter`, or `--since`. There is no canonical-row view: the daemon keeps only projected rows (see [timeline-sync.md](timeline-sync.md)).
 
 Use the global `--host` option to point the CLI at a different daemon:
 

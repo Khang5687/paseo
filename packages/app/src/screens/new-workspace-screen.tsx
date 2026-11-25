@@ -2,6 +2,7 @@ import { useAddHost } from "@/hosts/add-host";
 import type { CreateWorkspaceRequestOptions } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload, CreationSnapshot } from "@getpaseo/protocol/messages";
 import { encodeImages } from "@/utils/encode-images";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -531,6 +532,7 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
     clientMessageId: `${input.draftId}:initial-message`,
     images: images?.length ? images : undefined,
     attachments: wirePayload.attachments?.length ? wirePayload.attachments : undefined,
+    attachmentRefs: matchEncodedImageRefs(wirePayload.attachmentRefs, images, wirePayload.images),
   };
   const execute = async (): Promise<AgentSnapshotPayload> => {
     const { agent } = await ensureWorkspace({
@@ -1054,7 +1056,12 @@ export function NewWorkspaceScreen({
   const projectIconDataByProjectViewKey = useProjectIcons({
     projects: projectIconTargets,
   });
-  const draftKey = buildNewWorkspaceDraftKey(draftId);
+  const draftKey = buildNewWorkspaceDraftKey({
+    draftId,
+    serverId,
+    sourceDirectory: sourceDirectoryProp,
+    projectId,
+  });
   const forkDraftSetup = usePendingWorkspaceDraftSetup(draftId);
   const draftContextScopeKey = useDraftWorkspaceAttachmentScopeKey(draftId);
   const visibleDraftContextScopeKeys = useMemo(
@@ -1578,9 +1585,18 @@ export function NewWorkspaceScreen({
       ? t("newWorkspace.refPicker.searching")
       : t("newWorkspace.refPicker.noMatchingRefs");
 
+  // The prompt is where the user types; when a field's picker closes, focus returns there rather
+  // than to whatever had focus when the picker opened. A terminal profile that takes no prompt
+  // shows a read-only command preview, so its pickers keep returning focus to their field.
+  const composerFocusRef = useRef<{ focus: () => void } | null>(null);
+  const handleComposerFocusInput = useCallback((focus: () => void) => {
+    composerFocusRef.current = { focus };
+  }, []);
+
   const formStack = useNewWorkspaceForm({
     isCompact,
     isPending,
+    restoreFocusRef: terminalTakesPrompt ? composerFocusRef : undefined,
     pluginItems: (
       <PluginNewWorkspaceItems serverId={selectedServerId} screen={pluginScreen} setup={setup} />
     ),
@@ -1682,6 +1698,7 @@ export function NewWorkspaceScreen({
       clearDraft={noopClearDraft}
       autoFocus={terminalTakesPrompt}
       autoFocusKey={launchFocusKey}
+      onFocusInput={handleComposerFocusInput}
       error={errorMessage}
     />
   ) : (
@@ -1712,6 +1729,7 @@ export function NewWorkspaceScreen({
       clearDraft={handleClearDraft}
       autoFocus
       autoFocusKey={launchFocusKey}
+      onFocusInput={handleComposerFocusInput}
       commandDraft={composerState?.commandDraft}
       agentControls={agentControlsWithDisabled}
       error={errorMessage}
@@ -1868,7 +1886,7 @@ function NewWorkspaceLayout({
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     userSelect: "none",
   },
   content: {

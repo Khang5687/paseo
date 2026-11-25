@@ -39,6 +39,10 @@ import {
 } from "./local-transport.js";
 import { createNodeEntrypointInvocation, resolveDaemonRunnerEntrypoint } from "./runtime-paths.js";
 import {
+  resolveExternalDaemonLauncher,
+  runExternalDaemonLauncher,
+} from "./external-daemon-launcher.js";
+import {
   ExternalCliCommandError,
   runExternalCliJsonCommand,
   runExternalCliTextCommand,
@@ -306,6 +310,18 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
   }
 
   const home = getPaseoHome();
+  const externalLauncher = resolveExternalDaemonLauncher(home);
+  if (externalLauncher) {
+    logDesktopDaemonLifecycle("starting daemon through external launcher", {
+      launcher: externalLauncher,
+    });
+    await runExternalDaemonLauncher({
+      launcher: externalLauncher,
+      env: process.env,
+      timeoutMs: 90_000,
+    });
+    return resolveDesktopDaemonStatus();
+  }
   const invocation = createNodeEntrypointInvocation({
     entrypoint: resolveDaemonRunnerEntrypoint(),
     argvMode: "node-script",

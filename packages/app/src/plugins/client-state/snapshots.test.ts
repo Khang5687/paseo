@@ -95,7 +95,15 @@ describe("sidebar entity snapshots", () => {
     const idle: WorkspaceDescriptor = { ...workspace, status: "done" };
     const before = createPluginWorkspaceSnapshot(idle, "host-1");
     const activity = new Map([
-      [idle.id, { agentId: agent.id, status: "needs_input" as const, enteredAt: null }],
+      [
+        idle.id,
+        {
+          agentId: agent.id,
+          status: "needs_input" as const,
+          enteredAt: null,
+          hasUnseenAgent: false,
+        },
+      ],
     ]);
     const after = createPluginWorkspaceSnapshot(idle, "host-1", {
       workspaceAgentActivity: activity,
@@ -128,6 +136,16 @@ describe("sidebar entity snapshots", () => {
     expect(createPluginAgentSnapshot({ ...agent, background: true }, workspace.id).background).toBe(
       true,
     );
+  });
+
+  it("points a dispatched workspace at its parent's ref, and a root workspace at null", () => {
+    const parent = createPluginWorkspaceSnapshot(workspace, "host-1");
+    const child = createPluginWorkspaceSnapshot(
+      { ...workspace, id: "workspace-2", parentWorkspaceId: workspace.id },
+      "host-1",
+    );
+    expect(parent.parentWorkspace).toBeNull();
+    expect(child.parentWorkspace).toBe(parent.ref);
   });
 
   it("reads projects without requiring a workspace", () => {

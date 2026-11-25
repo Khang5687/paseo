@@ -18,6 +18,7 @@ import {
   Puzzle,
   RotateCw,
   Sparkles,
+  Split,
   SquarePen,
   SquareSlash,
 } from "lucide-react-native";
@@ -36,6 +37,7 @@ export type AutocompleteOptionIcon =
   | "plugin"
   | "archive"
   | "new-draft"
+  | "fork"
   | "file"
   | "directory";
 
@@ -49,6 +51,8 @@ export interface AutocompleteOption {
   description?: string;
   /** Where the option comes from, when that is not the provider itself: `Skill`, `Paseo`, a plugin. */
   tag?: string;
+  /** Muted second line under the row, e.g. the folder a skill loads from. */
+  sourcePath?: string;
 }
 
 /** What the list shows in place of options. */
@@ -71,6 +75,7 @@ const ROW_ICONS = {
   plugin: withUnistyles(Puzzle, mutedIconColorMapping),
   archive: withUnistyles(Archive, mutedIconColorMapping),
   "new-draft": withUnistyles(SquarePen, mutedIconColorMapping),
+  fork: withUnistyles(Split, mutedIconColorMapping),
   file: withUnistyles(File, mutedIconColorMapping),
   directory: withUnistyles(Folder, mutedIconColorMapping),
 } satisfies Record<AutocompleteOptionIcon, unknown>;
@@ -126,24 +131,31 @@ const AutocompleteRow = memo(function AutocompleteRow({
       // Name and description only; the hint and tag repeat what the name implies.
       accessibilityLabel={description ? `${label}, ${description}` : label}
     >
-      <View style={styles.itemIcon}>
-        <Icon size={ROW_ICON_SIZE} />
+      <View style={styles.itemMainRow}>
+        <View style={styles.itemIcon}>
+          <Icon size={ROW_ICON_SIZE} />
+        </View>
+        <HighlightedText
+          text={label}
+          ranges={labelMatches}
+          style={styles.itemLabel}
+          numberOfLines={1}
+        />
+        {argumentHint ? (
+          <Text style={styles.itemArgumentHint} numberOfLines={1}>
+            {argumentHint}
+          </Text>
+        ) : null}
+        <Text style={styles.itemDescription} numberOfLines={1}>
+          {description ?? ""}
+        </Text>
+        {option.tag ? <StatusBadge label={option.tag} size="xs" /> : null}
       </View>
-      <HighlightedText
-        text={label}
-        ranges={labelMatches}
-        style={styles.itemLabel}
-        numberOfLines={1}
-      />
-      {argumentHint ? (
-        <Text style={styles.itemArgumentHint} numberOfLines={1}>
-          {argumentHint}
+      {option.sourcePath ? (
+        <Text style={styles.itemSourcePath} numberOfLines={1} ellipsizeMode="head">
+          {option.sourcePath}
         </Text>
       ) : null}
-      <Text style={styles.itemDescription} numberOfLines={1}>
-        {description ?? ""}
-      </Text>
-      {option.tag ? <StatusBadge label={option.tag} size="xs" /> : null}
     </Pressable>
   );
 });
@@ -449,12 +461,23 @@ const styles = StyleSheet.create((theme: Theme) => ({
     height: theme.spacing[1],
   },
   item: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
+    justifyContent: "center",
     minHeight: ROW_MIN_HEIGHT,
     paddingHorizontal: theme.spacing[3],
     paddingVertical: theme.spacing[2],
+  },
+  itemMainRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  itemSourcePath: {
+    // Lines up under the label, past the row icon and its gap.
+    paddingLeft: 16 + theme.spacing[2],
+    marginTop: 2,
+    color: theme.colors.foregroundMuted,
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.sm,
   },
   itemActive: {
     backgroundColor: theme.colors.surface2,

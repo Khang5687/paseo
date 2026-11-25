@@ -55,6 +55,7 @@ import { HostPicker } from "@/components/hosts/host-picker";
 import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarToastRegion } from "@/components/sidebar/sidebar-toast-region";
+import { SidebarSelectionHost } from "@/sidebar-selection";
 import { SidebarNavRows, useVisibleSidebarNavItems } from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarFooterIconHighlight } from "@/components/sidebar/sidebar-footer-icon-highlight";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
@@ -130,6 +131,7 @@ interface SidebarSharedProps {
   groupMode: SidebarGroupMode;
   collapsedProjectKeys: ReadonlySet<string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   handleRefresh: () => void;
   handleOpenProject: () => void;
@@ -191,6 +193,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     toggleProjectCollapsed,
     groupMode,
     shortcutModel,
+    nestingDepthByWorkspaceKey,
   } = useSidebarModel();
   const { shortcutIndexByWorkspaceKey } = shortcutModel;
 
@@ -259,6 +262,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     groupMode,
     collapsedProjectKeys,
     shortcutIndexByWorkspaceKey,
+    nestingDepthByWorkspaceKey,
     toggleProjectCollapsed,
     handleRefresh,
     labels,
@@ -580,6 +584,7 @@ function MobileSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -649,6 +654,7 @@ function MobileSidebar({
                 collapsedProjectKeys={collapsedProjectKeys}
                 onToggleProjectCollapsed={toggleProjectCollapsed}
                 shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+                nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
                 groupMode={groupMode}
                 workspaceGroups={workspaceGroups}
                 projectIconTargets={projectIconTargets}
@@ -667,6 +673,7 @@ function MobileSidebar({
                 listHeaderComponent={workspacesSectionHeaderElement}
               />
             )}
+            <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
           </SidebarToastRegion>
         </SidebarViewSlot>
 
@@ -739,6 +746,7 @@ function DesktopSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -904,6 +912,7 @@ function DesktopSidebar({
                   collapsedProjectKeys={collapsedProjectKeys}
                   onToggleProjectCollapsed={toggleProjectCollapsed}
                   shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+                  nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
                   groupMode={groupMode}
                   workspaceGroups={workspaceGroups}
                   projectIconTargets={projectIconTargets}
@@ -922,6 +931,7 @@ function DesktopSidebar({
                   listHeaderComponent={workspacesSectionHeaderElement}
                 />
               )}
+              <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
             </SidebarToastRegion>
           </SidebarViewSlot>
 
@@ -1013,7 +1023,7 @@ const styles = StyleSheet.create((theme) => ({
   desktopSidebarBorder: (hasDivision: boolean) => ({
     borderRightWidth: hasDivision ? 0 : 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   }),
   sidebarDragArea: {
     position: "relative",

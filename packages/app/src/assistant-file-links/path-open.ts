@@ -6,6 +6,7 @@ import {
 } from "@/workspace/file-open";
 import { isAbsolutePath } from "@/utils/path";
 import { resolveMissingNestedRelativeFile, type GetDirectorySuggestions } from "./resolver";
+import type { FileHostPick } from "./host-pick";
 
 interface PathOpenInput {
   file?: string;
@@ -56,6 +57,8 @@ export function createInlinePathOpener(input: {
     getDirectorySuggestions: GetDirectorySuggestions;
   } | null;
   resolveRelativeFiles?: boolean;
+  /** Finds which host holds a file outside the workspace; without it, the chat's host opens it. */
+  pickHost?: (path: string) => Promise<FileHostPick>;
   openFile: (location: WorkspaceFileLocation, disposition: OpenFileDisposition) => void;
   openDirectory: (path: string) => void;
   openOutsideDirectory: (path: string) => void;
@@ -89,10 +92,16 @@ export function createInlinePathOpener(input: {
         if (ownGeneration !== generation) return;
         const resolved = normalizeInlinePathTarget(resolvedTarget.path, input.workspaceRoot);
         if (!resolved?.file) return;
+        const pick =
+          input.pickHost && isOutsideWorkspacePath(resolved.file)
+            ? await input.pickHost(resolved.file)
+            : ({ kind: "chatHost" } as const);
+        if (ownGeneration !== generation || pick.kind === "cancelled") return;
         const location = normalizeWorkspaceFileLocation({
           path: resolved.file,
           lineStart: resolvedTarget.lineStart,
           lineEnd: resolvedTarget.lineEnd,
+          ...(pick.kind === "otherHost" ? { serverId: pick.serverId } : {}),
         });
         if (location) input.openFile(location, disposition);
       }

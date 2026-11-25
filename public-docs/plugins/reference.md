@@ -15,15 +15,18 @@ Migrating an existing plugin? Follow the standalone [runtime-entry migration gui
 Local plugins are directory sources installed into one Paseo daemon. A plugin can contribute:
 
 - React Native screens and sidebar header and footer items to Paseo clients;
+- a [sidebar view](/docs/plugins/sidebar-views) that replaces the sidebar list, and [badges](#workspace-row-badge-items) on workspace rows;
 - workspace and agent panels opened as workspace tabs;
 - [file panels](#file-panels) for viewing or editing matching files;
 - global, workspace, and agent actions in the Command Center;
-- slash commands in the message composer;
+- slash commands, [controls](#composer-items), pills, and searchable external resources in the message composer;
+- [buttons](#header-buttons) in the workspace header and [fields](#new-workspace-items) on the New workspace screen;
+- [settings screens](#settings-screens) and light and dark themes in Settings → Appearance;
 - transformed and daemon-pushed agent timeline rows;
-- light and dark themes in Settings → Appearance;
-- schema-validated RPC handlers running beside the daemon;
-- normal Paseo operations through the TypeScript SDK;
-- searchable external resources in the message composer.
+- schema-validated RPC handlers and event streams running beside the daemon;
+- [hooks](/docs/plugins/hooks) that change or observe workspace, worktree, and agent operations;
+- [agent providers](/docs/plugins/providers), [usage sources](#usage-sources), and [worktree managers](#worktree-managers);
+- normal Paseo operations through the TypeScript SDK.
 
 Plugin code is trusted and unsandboxed. Client surfaces run in the Paseo app. Backend contributions run in a subprocess with access to the daemon machine, including its files, processes, credentials, and network.
 
@@ -401,7 +404,7 @@ Use `openSettings`, `openScreen`, and `openPanel` for your own registered contri
 ### Server runtime
 
 Paseo provides `@getpaseo/plugin`, `@getpaseo/plugin/server`,
-`@getpaseo/plugin/server/provider`, `@getpaseo/plugin/server/acp`, and `zod` to server code. Backend
+`@getpaseo/plugin/server/provider`, `@getpaseo/plugin/server/acp`, `@getpaseo/plugin/server/usage`, and `zod` to server code. Backend
 contributions run in a daemon subprocess with Node access to the host machine. Keep filesystem,
 process, credential, and other machine-local work under `server/`. A plugin without
 `index.server.ts` starts no subprocess.
@@ -1640,6 +1643,64 @@ unpainted.
 Themes need a host that supports them. A client released before `addTheme` cannot evaluate that client entry and reports
 `client.addTheme is not a function`. Update the client.
 
+## Contribute a skin
+
+`addSkin` adds a background image to Settings → Appearance → Background. Paseo draws it behind the
+whole app and caps how strongly it shows so text keeps its contrast. A skin is an image plus
+a little metadata:
+
+```ts
+import type { PluginClientContext } from "@getpaseo/plugin/client";
+
+export default function contribute(client: PluginClientContext) {
+  if (typeof client.addSkin !== "function") return () => {};
+  return client.addSkin({
+    id: "aurora",
+    name: "Aurora",
+    version: "1",
+    appearance: "dark",
+    focal: { x: 0.7, y: 0.3 },
+    loadThumbnail: () => client.rpc(thumbnailRpc, {}),
+    loadImage: () => client.rpc(imageRpc, {}),
+  });
+}
+```
+
+| Field           | Meaning                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `id`            | Lowercase letters, digits, and hyphens. Unique within the plugin. The app lists it as `<pluginId>/skin/<id>`.       |
+| `name`          | Display name, 1–60 characters.                                                                                      |
+| `version`       | Cache key, 1–64 characters. Change it whenever the image changes so devices fetch the new bytes.                    |
+| `appearance`    | `"light"` or `"dark"`: whether the art reads as light or dark. Used for filtering and the default per-theme choice. |
+| `focal`         | `{ x, y }`, each 0–1. The point kept in view when the image is cropped. Defaults to the center.                     |
+| `intensity`     | `{ home, workspace, utility }`, each 0–1. How strongly the art shows in each area. Paseo still enforces contrast.   |
+| `luminance`     | `{ low, high }`, each 0–1: WCAG relative luminance of the darkest and brightest 1% of pixels. Lets more art show.   |
+| `attribution`   | `{ author, license, sourceUrl }`, each at most 200 characters; `sourceUrl` must be `https`.                         |
+| `loadThumbnail` | Optional. Returns `{ base64, mimeType }` for the gallery, ideally about 512×288.                                    |
+| `loadImage`     | Returns `{ base64, mimeType }` for the full image.                                                                  |
+
+Images are PNG, JPEG, or WebP, at most 16 MiB, 16384 px per side, and 50 megapixels. Paseo
+downsizes them for the device (2560 px long side, plus a 640 px thumbnail) before caching, so
+supply the art at the quality you want and let the app shrink it.
+
+Paseo caches the image on the device the first time a user selects the skin. The cached copy keeps
+working offline and when the plugin is disabled; it is fetched again only when `version` changes.
+Contrast is enforced by Paseo: you cannot make text unreadable by choosing bright art, and
+omitting `luminance` simply makes Paseo assume the worst case.
+
+`client.applySkin(id)` makes one of this plugin's registered skins the active background on this
+device. It resolves once the image is cached and applied, and rejects with `Unknown skin: <id>`
+for an id the plugin did not register, or with the loader's error if the image fails to load.
+Call it from a user action, not from setup.
+
+A client released before skins reports `client.addSkin is not a function`. Feature-detect with
+`typeof client.addSkin === "function"` to ship one plugin that works on both. See
+`plugin-examples/skins`.
+
+A settings screen that browses and installs skins can pass `skinCatalog: true` to
+`addSettingsScreen`. Settings → Appearance → Background then links to it with a **Browse**
+button, so people find your catalog where they pick a background.
+
 ## Settings screens
 
 Register a component with `client.addSettingsScreen({ id, title, icon, Component })` in
@@ -1895,6 +1956,7 @@ Workspace snapshot fields:
 | `statusEnteredAt`    | ISO timestamp or `null`                                           |
 | `archivingAt`        | ISO timestamp or `null`                                           |
 | `diffStat`           | `{ additions: number; deletions: number } \| null`                |
+| `parentWorkspace`    | `WorkspaceRef \| null`                                            |
 
 Agent snapshot fields:
 

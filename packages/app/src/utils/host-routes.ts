@@ -428,6 +428,10 @@ export function buildSchedulesRoute() {
   return "/schedules" as const;
 }
 
+export function buildNotesRoute() {
+  return "/notes" as const;
+}
+
 export function buildOpenProjectRoute() {
   return "/open-project" as const;
 }
@@ -517,6 +521,7 @@ export const HOST_SECTION_SLUGS = [
   "connections",
   "pair-device",
   "agents",
+  "agent-profiles",
   "metadata",
   "voice",
   "workspaces",

@@ -20,6 +20,8 @@ export interface AttachmentMetadata {
   fileName?: string | null;
   byteSize?: number | null;
   createdAt: number;
+  /** Daemon upload holding a copy, set when the draft syncs across devices. */
+  uploadId?: string;
 }
 
 export interface BrowserElementAttachment {
