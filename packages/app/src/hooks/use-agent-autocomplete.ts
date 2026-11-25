@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AutocompleteOption, AutocompleteStatus } from "@/components/ui/autocomplete";
 import { findHighlightRanges } from "@/components/ui/highlighted-text-segments";
+import { shortenPath } from "@/utils/shorten-path";
 import {
   useAutocompleteCommands,
   type AgentSlashCommand,
@@ -17,14 +18,23 @@ import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { pluginDisplayName, usePluginList } from "@/plugins/plugin-list";
 import { resolveProviderLabel } from "@/utils/provider-definitions";
-import { CLIENT_SLASH_COMMANDS, type ClientSlashCommand } from "@/client-slash-commands";
+import {
+  CLIENT_SLASH_COMMANDS,
+  isClientSlashCommandAvailable,
+  type ClientSlashCommand,
+} from "@/client-slash-commands";
+import { useHostFeature } from "@/runtime/host-features";
 import type { PluginClientSlashCommand } from "@/plugins/client-slash-commands";
 import { mergeSlashCommandSources } from "@/plugins/client-slash-commands/model";
 import {
+  applySlashArgumentReplacement,
   applySlashCommandReplacement,
   filterAndRankCommandAutocompleteEntries,
   filterInlineSkillCommandEntries,
+  filterSlashArgumentChoices,
+  findActiveSlashArgument,
   findActiveSlashCommand,
+  type SlashArgumentRange,
   type SlashCommandRange,
 } from "@/utils/agent-command-autocomplete";
 import {
@@ -64,6 +74,7 @@ type AgentAutocompleteOption =
       command: PluginClientSlashCommand;
     })
   | (AutocompleteOption & { type: "provider_command" })
+  | (AutocompleteOption & { type: "argument_choice"; value: string })
   | (AutocompleteOption & {
       type: "workspace_entry";
       entryPath: string;
@@ -171,6 +182,7 @@ function mapDirectorySuggestionsToEntries(payload: {
 const CLIENT_COMMAND_ICONS = {
   "archive-agent": "archive",
   "replace-agent-with-draft": "new-draft",
+  "fork-agent": "fork",
 } as const satisfies Record<ClientSlashCommand["kind"], AutocompleteOption["icon"]>;
 
 interface CommandOptionContext {
@@ -221,17 +233,42 @@ function mapCommandToOption(
     icon: isSkill ? "skill" : "command",
     description: entry.command.description,
     tag: isSkill ? context.t("agentAutocomplete.skillTag") : undefined,
+    ...(entry.command.sourcePath ? { sourcePath: shortenPath(entry.command.sourcePath) } : {}),
   };
 }
 
-type AutocompleteMode = "command" | "file" | null;
+type AutocompleteMode = "command" | "argument" | "file" | null;
 
-interface BuildAutocompleteOptionsInput {
-  mode: AutocompleteMode;
+interface RootCommandsInput {
   commands: AgentSlashCommand[];
   pluginCommands: readonly PluginClientSlashCommand[];
-  pluginNames: ReadonlyMap<string, string>;
   isDraftContext: boolean;
+  supportsAgentFork: boolean;
+}
+
+function resolveRootCommands(input: RootCommandsInput): AvailableCommand[] {
+  return mergeSlashCommandSources({
+    builtIn: CLIENT_SLASH_COMMANDS.filter((command) =>
+      isClientSlashCommandAvailable(command, input),
+    ),
+    plugins: input.pluginCommands,
+    provider: input.commands,
+    onPluginCollision(command, winner) {
+      console.warn(
+        `[Plugins] Client slash command /${command.name} from ${command.pluginId} ignored; ${winner} command wins`,
+      );
+    },
+  })
+    .filter((entry) => !input.isDraftContext || entry.source !== "built-in")
+    .map((entry): AvailableCommand => {
+      if (entry.source === "built-in") return { source: "client", command: entry.command };
+      return entry;
+    });
+}
+
+interface BuildAutocompleteOptionsInput extends RootCommandsInput {
+  mode: AutocompleteMode;
+  pluginNames: ReadonlyMap<string, string>;
   commandFilterQuery: string;
   activeSlashCommand: SlashCommandRange | null;
   activeFileMention: FileMentionRange | null;
@@ -245,25 +282,10 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
       source: "provider" as const,
       command,
     }));
-    const rootCommands: AvailableCommand[] = mergeSlashCommandSources({
-      builtIn: CLIENT_SLASH_COMMANDS,
-      plugins: input.pluginCommands,
-      provider: input.commands,
-      onPluginCollision(command, winner) {
-        console.warn(
-          `[Plugins] Client slash command /${command.name} from ${command.pluginId} ignored; ${winner} command wins`,
-        );
-      },
-    })
-      .filter((entry) => !input.isDraftContext || entry.source !== "built-in")
-      .map((entry): AvailableCommand => {
-        if (entry.source === "built-in") return { source: "client", command: entry.command };
-        return entry;
-      });
     const availableCommands: AvailableCommand[] =
       input.activeSlashCommand?.position === "inline"
         ? filterInlineSkillCommandEntries(providerCommands)
-        : rootCommands;
+        : resolveRootCommands(input);
     const matches = filterAndRankCommandAutocompleteEntries(
       availableCommands,
       input.commandFilterQuery,
@@ -292,9 +314,71 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
   return [];
 }
 
+interface ArgumentAutocomplete {
+  /** Choices for the first argument, from the command's subcommands. */
+  options: AgentAutocompleteOption[];
+  /** Shown as a row nobody can select when the command has no choices. */
+  hint: string | null;
+  /**
+   * Enter picks a choice only when sending the text as typed would be wrong: a partial
+   * choice, or a bare command whose argument is required. Otherwise Enter sends and
+   * Tab or the arrow keys pick. Menus without choices keep Enter selecting.
+   */
+  enterSelects: boolean;
+}
+
+const NO_ARGUMENT_AUTOCOMPLETE: ArgumentAutocomplete = {
+  options: [],
+  hint: null,
+  enterSelects: true,
+};
+
+function buildArgumentAutocomplete(
+  input: RootCommandsInput & { argument: SlashArgumentRange | null },
+): ArgumentAutocomplete {
+  const argument = input.argument;
+  if (!argument) {
+    return NO_ARGUMENT_AUTOCOMPLETE;
+  }
+  const entry = resolveRootCommands(input).find(
+    (candidate) =>
+      candidate.command.name === argument.commandName ||
+      (candidate.source !== "plugin" &&
+        (candidate.command.aliases ?? []).includes(argument.commandName)),
+  );
+  if (!entry) {
+    return NO_ARGUMENT_AUTOCOMPLETE;
+  }
+  const subcommands = entry.source === "provider" ? (entry.command.subcommands ?? []) : [];
+  if (subcommands.length === 0) {
+    const hint = entry.command.argumentHint.trim();
+    return hint && argument.start === argument.end
+      ? { ...NO_ARGUMENT_AUTOCOMPLETE, hint: `/${entry.command.name} ${hint}` }
+      : NO_ARGUMENT_AUTOCOMPLETE;
+  }
+  const choices = filterSlashArgumentChoices(subcommands, argument.query);
+  const query = argument.query.toLowerCase();
+  const isExactChoice = choices.some((choice) => choice.name.toLowerCase() === query);
+  return {
+    options: orderAutocompleteOptions(choices).map((choice) => ({
+      type: "argument_choice" as const,
+      id: `argument:${choice.name}`,
+      label: choice.name,
+      labelMatches: findHighlightRanges(argument.query, choice.name),
+      icon: "command" as const,
+      argumentHint: choice.usage,
+      description: choice.description,
+      value: choice.name,
+    })),
+    hint: null,
+    enterSelects: query ? !isExactChoice : entry.command.argumentHint.trim().startsWith("<"),
+  };
+}
+
 function resolveAutocompleteMode(args: {
   showFileAutocomplete: boolean;
   showCommandAutocomplete: boolean;
+  showArgumentAutocomplete: boolean;
 }): AutocompleteMode {
   if (args.showFileAutocomplete) {
     return "file";
@@ -302,7 +386,25 @@ function resolveAutocompleteMode(args: {
   if (args.showCommandAutocomplete) {
     return "command";
   }
+  if (args.showArgumentAutocomplete) {
+    return "argument";
+  }
   return null;
+}
+
+function resolveAutocompleteQuery(args: {
+  mode: AutocompleteMode;
+  commandFilterQuery: string;
+  fileFilterQuery: string;
+  argument: SlashArgumentRange | null;
+}): string {
+  if (args.mode === "command") {
+    return args.commandFilterQuery;
+  }
+  if (args.mode === "argument") {
+    return args.argument?.query ?? "";
+  }
+  return args.fileFilterQuery;
 }
 
 function resolveAutocompleteIsVisible(args: {
@@ -311,7 +413,7 @@ function resolveAutocompleteIsVisible(args: {
   serverId: string;
   autocompleteCwd: string;
 }): boolean {
-  if (args.mode === "command") {
+  if (args.mode === "command" || args.mode === "argument") {
     return args.canLoadCommands;
   }
   if (args.mode === "file") {
@@ -355,6 +457,8 @@ interface AutocompleteMenu {
  */
 function resolveCommandMenu(input: {
   commandsState: CommandsState;
+  /** A refetch is running; with nothing to list it reads as loading, not as "no commands". */
+  isFetching: boolean;
   options: () => AgentAutocompleteOption[];
   providerLabel: string | null;
   error: Error | null;
@@ -363,11 +467,14 @@ function resolveCommandMenu(input: {
   t: TFunction;
 }): AutocompleteMenu {
   const { t } = input;
-  if (input.commandsState === "loading") {
-    const message = input.providerLabel
+  const loadingStatus: AutocompleteStatus = {
+    kind: "loading",
+    message: input.providerLabel
       ? t("agentAutocomplete.loadingProviderCommands", { provider: input.providerLabel })
-      : t("agentAutocomplete.loadingCommands");
-    return { options: [], status: { kind: "loading", message } };
+      : t("agentAutocomplete.loadingCommands"),
+  };
+  if (input.commandsState === "loading") {
+    return { options: [], status: loadingStatus };
   }
   if (input.commandsState === "error") {
     const title = input.providerLabel
@@ -378,7 +485,11 @@ function resolveCommandMenu(input: {
       status: { kind: "error", title, reason: input.error?.message, onRetry: input.onRetry },
     };
   }
-  return withEmptyStatus(input.options(), input.emptyText);
+  const options = input.options();
+  if (options.length === 0 && input.isFetching) {
+    return { options, status: loadingStatus };
+  }
+  return withEmptyStatus(options, input.emptyText);
 }
 
 function resolveFileMenu(input: {
@@ -467,6 +578,80 @@ function useCommandSourceNames(input: {
   };
 }
 
+function applyArgumentChoice(input: {
+  value: string;
+  snapshot: AgentAutocompleteInputSnapshot | undefined;
+  userInput: string;
+  activeSlashArgument: SlashArgumentRange | null;
+}): string | null {
+  const text = input.snapshot?.text ?? input.userInput;
+  const argument = input.snapshot
+    ? findActiveSlashArgument({ text, cursorIndex: input.snapshot.selection.start })
+    : input.activeSlashArgument;
+  return argument ? applySlashArgumentReplacement({ text, argument, value: input.value }) : null;
+}
+
+function useArgumentAutocomplete(
+  input: RootCommandsInput & {
+    mode: AutocompleteMode;
+    isVisible: boolean;
+    argument: SlashArgumentRange | null;
+  },
+): { argumentAutocomplete: ArgumentAutocomplete; isMenuVisible: boolean } {
+  const { mode, argument, commands, pluginCommands, isDraftContext, supportsAgentFork } = input;
+  const argumentAutocomplete = useMemo(
+    () =>
+      mode === "argument"
+        ? buildArgumentAutocomplete({
+            argument,
+            commands,
+            pluginCommands,
+            isDraftContext,
+            supportsAgentFork,
+          })
+        : NO_ARGUMENT_AUTOCOMPLETE,
+    [argument, commands, isDraftContext, mode, pluginCommands, supportsAgentFork],
+  );
+  // The argument menu shows only when it has choices or a hint for this command.
+  const hasArgumentContent =
+    argumentAutocomplete.options.length > 0 || argumentAutocomplete.hint !== null;
+  return {
+    argumentAutocomplete,
+    isMenuVisible: input.isVisible && (mode !== "argument" || hasArgumentContent),
+  };
+}
+
+// One refetch per menu session when the typed query matches nothing: the command the user is
+// looking for may have been installed after the cached list was fetched.
+function useRevalidateCommandsOnMiss(args: {
+  mode: AutocompleteMode;
+  isMenuVisible: boolean;
+  commandsState: CommandsState;
+  query: string;
+  optionCount: number;
+  revalidateForMiss: () => void;
+}) {
+  const { mode, revalidateForMiss } = args;
+  const hasMiss =
+    mode === "command" &&
+    args.isMenuVisible &&
+    args.commandsState === "ready" &&
+    args.query.length > 0 &&
+    args.optionCount === 0;
+  const revalidatedRef = useRef(false);
+  useEffect(() => {
+    if (mode !== "command") {
+      revalidatedRef.current = false;
+      return;
+    }
+    if (!hasMiss || revalidatedRef.current) {
+      return;
+    }
+    revalidatedRef.current = true;
+    revalidateForMiss();
+  }, [mode, hasMiss, revalidateForMiss]);
+}
+
 // A draft's agentId is a draft key the daemon does not know, so a draft lists
 // commands by its config only, and not at all until that config is complete.
 function resolveDraftCommandContext(draft: DraftCommandTarget | undefined) {
@@ -515,6 +700,10 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       }),
     [cursorIndex, userInput],
   );
+  const activeSlashArgument = useMemo(
+    () => findActiveSlashArgument({ text: userInput, cursorIndex }),
+    [cursorIndex, userInput],
+  );
   const showCommandAutocomplete = activeSlashCommand !== null;
   const commandFilterQuery = activeSlashCommand?.query ?? "";
 
@@ -553,8 +742,13 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
 
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const supportsAgentFork = useHostFeature(serverId, "agentFork");
 
-  const mode = resolveAutocompleteMode({ showFileAutocomplete, showCommandAutocomplete });
+  const mode = resolveAutocompleteMode({
+    showFileAutocomplete,
+    showCommandAutocomplete,
+    showArgumentAutocomplete: activeSlashArgument !== null,
+  });
   const canShowAutocomplete = resolveAutocompleteIsVisible({
     mode,
     canLoadCommands,
@@ -565,7 +759,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   const commandsQuery = useAutocompleteCommands({
     serverId,
     agentId,
-    enabled: mode === "command" && canLoadCommands && canListCommands,
+    enabled: (mode === "command" || mode === "argument") && canLoadCommands && canListCommands,
     draftConfig: queryDraftConfig,
   });
   const commandsState = resolveCommandsState({
@@ -586,6 +780,15 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     isCommandMenuOpen,
     commandsState,
     pluginCommandCount: pluginClientSlashCommands.length,
+  });
+  const { argumentAutocomplete, isMenuVisible } = useArgumentAutocomplete({
+    mode,
+    isVisible,
+    argument: activeSlashArgument,
+    commands: commandsQuery.commands,
+    pluginCommands: pluginClientSlashCommands,
+    isDraftContext,
+    supportsAgentFork,
   });
 
   const fileSuggestionsQuery = useQuery({
@@ -632,7 +835,10 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     onAutocompleteApplied?.();
   }, [onAutocompleteApplied, retryCommandsQuery]);
   const { options, status } = useMemo<AutocompleteMenu>(() => {
-    if (!isVisible) return { options: [], status: null };
+    if (!isMenuVisible) return { options: [], status: null };
+    if (mode === "argument") {
+      return withEmptyStatus(argumentAutocomplete.options, argumentAutocomplete.hint ?? "");
+    }
     const buildOptions = () =>
       buildAutocompleteOptions({
         activeFileMention,
@@ -643,6 +849,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
         activeSlashCommand,
         fileSuggestions: fileSuggestionsQuery.data ?? [],
         isDraftContext,
+        supportsAgentFork,
         mode,
         t,
       });
@@ -657,6 +864,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     }
     return resolveCommandMenu({
       commandsState,
+      isFetching: commandsQuery.isFetching,
       options: buildOptions,
       providerLabel,
       error: commandsQuery.error,
@@ -667,28 +875,53 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   }, [
     activeFileMention,
     activeSlashCommand,
+    argumentAutocomplete,
     commandFilterQuery,
     commandsEmptyText,
     commandsQuery.commands,
     commandsQuery.error,
+    commandsQuery.isFetching,
     commandsState,
     fileSuggestionsQuery.data,
     fileSuggestionsQuery.error,
     fileSuggestionsQuery.isLoading,
     fileSuggestionsQuery.isPending,
     isDraftContext,
-    isVisible,
+    isMenuVisible,
     mode,
     pluginClientSlashCommands,
     pluginNames,
     providerLabel,
     retryCommands,
+    supportsAgentFork,
     t,
   ]);
+
+  useRevalidateCommandsOnMiss({
+    mode,
+    isMenuVisible,
+    commandsState,
+    query: commandFilterQuery,
+    optionCount: options.length,
+    revalidateForMiss: commandsQuery.revalidateForMiss,
+  });
 
   const onSelectOption = useCallback(
     (option: AutocompleteOption, snapshot?: AgentAutocompleteInputSnapshot) => {
       const selected = option as AgentAutocompleteOption;
+      if (selected.type === "argument_choice") {
+        const nextInput = applyArgumentChoice({
+          value: selected.value,
+          snapshot,
+          userInput,
+          activeSlashArgument,
+        });
+        if (nextInput !== null) {
+          setUserInput(nextInput);
+          onAutocompleteApplied?.();
+        }
+        return;
+      }
       const current = resolveAgentAutocompleteSnapshot({
         input: snapshot,
         userInput,
@@ -745,6 +978,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       userInput,
       cursorIndex,
       activeFileMention,
+      activeSlashArgument,
       activeSlashCommand,
     ],
   );
@@ -772,18 +1006,24 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   );
 
   const { selectedIndex, onKeyPress } = useAutocomplete({
-    isVisible,
+    isVisible: isMenuVisible,
     options,
-    query: mode === "command" ? commandFilterQuery : fileFilterQuery,
+    query: resolveAutocompleteQuery({
+      mode,
+      commandFilterQuery,
+      fileFilterQuery,
+      argument: activeSlashArgument,
+    }),
     onSelectOption: selectOptionFromKeyPress,
     onEscape:
       mode === "command" && activeSlashCommand?.position === "start"
         ? () => setUserInput("")
         : undefined,
+    enterSelects: argumentAutocomplete.enterSelects,
   });
 
   return {
-    isVisible,
+    isVisible: isMenuVisible,
     options,
     selectedIndex,
     status,
