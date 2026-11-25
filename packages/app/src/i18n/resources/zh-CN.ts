@@ -2176,6 +2176,10 @@ export const zhCN: TranslationResources = {
     httpFailed: "下载文件失败 (HTTP {{status}}).",
     shareFile: "共享文件",
     shareFileNamed: "共享 {{fileName}}",
+    savedTo: "已保存到 {{where}}",
+    iosFolder: "文件 › Paseo › Downloads",
+    showInFolder: "在文件夹中显示",
+    showInFinder: "在 Finder 中显示",
   },
   offlineFiles: {
     title: "离线文件",
@@ -2874,6 +2878,20 @@ export const zhCN: TranslationResources = {
     },
     files: {
       title: "文件",
+      save: {
+        title: "保存文件",
+        askWhere: "询问保存位置",
+        askWhereHint: {
+          web: "下载位置由浏览器决定，所以这里的设置不起作用。",
+          desktop: "下载时打开“保存”对话框。关闭后直接保存到“下载 › Paseo”。",
+          ios: "下载时打开共享面板，其中有“存储到文件”。关闭后直接保存到“文件”App 里的 Paseo 文件夹。",
+          android: "下载时打开文件夹选择器。关闭后只需选择一次文件夹，之后直接保存到那里。",
+        },
+        folder: "保存文件夹",
+        folderNone: "尚未选择",
+        choose: "选择",
+        change: "更改",
+      },
       askEveryTime: "每次询问",
       askAgain: "重新询问",
       askAgainFor: "重新询问 {{label}}",

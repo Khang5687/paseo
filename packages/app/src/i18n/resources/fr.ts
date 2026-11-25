@@ -2248,6 +2248,10 @@ export const fr: TranslationResources = {
     httpFailed: "Impossible de télécharger le fichier (HTTP {{status}}).",
     shareFile: "Partager le fichier",
     shareFileNamed: "Partager {{fileName}}",
+    savedTo: "Enregistré dans {{where}}",
+    iosFolder: "Fichiers › Paseo › Downloads",
+    showInFolder: "Afficher dans le dossier",
+    showInFinder: "Afficher dans le Finder",
   },
   offlineFiles: {
     title: "Fichiers hors ligne",
@@ -2971,6 +2975,22 @@ export const fr: TranslationResources = {
     },
     files: {
       title: "Fichiers",
+      save: {
+        title: "Enregistrement des fichiers",
+        askWhere: "Demander où enregistrer",
+        askWhereHint: {
+          web: "Votre navigateur décide de l’emplacement des téléchargements, donc ce réglage n’a aucun effet ici.",
+          desktop:
+            "Télécharger ouvre la boîte Enregistrer. Désactivez pour enregistrer directement dans Téléchargements › Paseo.",
+          ios: "Télécharger ouvre la feuille de partage, qui propose Enregistrer dans Fichiers. Désactivez pour enregistrer directement dans le dossier Paseo de l’app Fichiers.",
+          android:
+            "Télécharger ouvre un sélecteur de dossier. Désactivez pour choisir un dossier une fois et enregistrer directement dedans.",
+        },
+        folder: "Dossier d’enregistrement",
+        folderNone: "Pas encore choisi",
+        choose: "Choisir",
+        change: "Changer",
+      },
       askEveryTime: "Toujours demander",
       askAgain: "Redemander",
       askAgainFor: "Redemander pour {{label}}",

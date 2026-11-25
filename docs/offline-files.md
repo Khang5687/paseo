@@ -15,7 +15,7 @@ Code: `packages/app/src/offline-files/`.
 
 Anything the user saves on purpose goes through `addSavedFile({ serverId, path, workspaceRoot? })`. It reads the file from that host's live session and fails with the "host disconnected" message when the host is not connected. Do not write to the store directly from a new feature.
 
-None of these ask. There is no Files app or Finder folder; Share on the offline copy bar hands a copy to other apps.
+None of these ask. Where a Download goes outside Paseo is a separate choice: [downloads.md](downloads.md). There is no Files app or Finder folder; Share on the offline copy bar hands a copy to other apps.
 
 ## Limits and pinning
 

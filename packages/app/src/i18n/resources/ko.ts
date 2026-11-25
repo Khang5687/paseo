@@ -2211,6 +2211,10 @@ export const ko: TranslationResources = {
     httpFailed: "파일을 다운로드하지 못했습니다 (HTTP {{status}}).",
     shareFile: "파일 공유",
     shareFileNamed: "{{fileName}} 공유",
+    savedTo: "{{where}}에 저장됨",
+    iosFolder: "파일 › Paseo › Downloads",
+    showInFolder: "폴더에서 보기",
+    showInFinder: "Finder에서 보기",
   },
   offlineFiles: {
     title: "오프라인 파일",
@@ -2919,6 +2923,22 @@ export const ko: TranslationResources = {
     },
     files: {
       title: "파일",
+      save: {
+        title: "파일 저장",
+        askWhere: "저장 위치 묻기",
+        askWhereHint: {
+          web: "다운로드 위치는 브라우저가 정하므로 여기서는 아무 효과가 없습니다.",
+          desktop:
+            "다운로드하면 저장 대화상자가 열립니다. 끄면 다운로드 › Paseo에 바로 저장합니다.",
+          ios: "다운로드하면 ‘파일에 저장’이 있는 공유 시트가 열립니다. 끄면 파일 앱의 Paseo 폴더에 바로 저장합니다.",
+          android:
+            "다운로드하면 폴더 선택기가 열립니다. 끄면 폴더를 한 번만 고르고 이후 그곳에 바로 저장합니다.",
+        },
+        folder: "저장 폴더",
+        folderNone: "아직 선택하지 않음",
+        choose: "선택",
+        change: "변경",
+      },
       askEveryTime: "매번 묻기",
       askAgain: "다시 묻기",
       askAgainFor: "{{label}} 다시 묻기",

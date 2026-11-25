@@ -1,7 +1,10 @@
 import { create } from "zustand";
-import { File as FSFile, Paths } from "expo-file-system";
 import * as LegacyFileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import { saveBrowserFile } from "@/downloads/browser-download";
+import { resolveDownloadTargetFile } from "@/downloads/cache-file";
+import { saveFile } from "@/downloads/save-file";
+import { shareSavedFile } from "@/downloads/share-file";
+import type { SaveOutcome, SavePreferences } from "@/downloads/types";
 import type { HostProfile } from "@/types/host-connection";
 import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
 import { isWeb } from "@/constants/platform";
@@ -32,6 +35,10 @@ export interface Download {
   fileName: string;
   status: "downloading" | "complete" | "error";
   message?: string;
+  /** Where a finished download went, when Paseo put it in a known folder. */
+  savedTo?: string;
+  /** Desktop: the saved file, so the toast can show it in the file manager. */
+  revealPath?: string;
   progress?: DownloadProgress;
   startedAt: number;
 }
@@ -57,12 +64,14 @@ interface DownloadState {
     }>;
     /** Reads the whole file over the session socket; used when no direct HTTP endpoint is active. */
     readFile: (path: string, maxBytes: number) => Promise<{ bytes: Uint8Array; size: number }>;
-    saveFile?: typeof saveDownloadedBytes;
+    /** Where the owner wants the file; read from settings when the download starts. */
+    destination: SavePreferences;
+    saveFile?: typeof saveFile;
     fetchFile?: typeof fetch;
   }) => Promise<void>;
 
   updateProgress: (id: string, progress: DownloadProgress) => void;
-  completeDownload: (id: string) => void;
+  completeDownload: (id: string, outcome?: SaveOutcome) => void;
   failDownload: (id: string, message: string) => void;
   dismissDownload: (id: string) => void;
   dismissAllCompleted: () => void;
@@ -85,7 +94,8 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
     activeConnectionId,
     requestFileDownloadToken,
     readFile,
-    saveFile = saveDownloadedBytes,
+    destination,
+    saveFile: save = saveFile,
     fetchFile = fetch,
   }) => {
     const id = generateDownloadId();
@@ -130,15 +140,15 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
             `File transfer incomplete: expected ${size} bytes, received ${bytes.byteLength}.`,
           );
         }
-        const savedUri = await saveFile({
-          bytes,
-          fileName: resolvedFileName,
-          mimeType: tokenResponse.mimeType,
-        });
-        get().completeDownload(id);
-        if (savedUri !== null) {
-          await shareSavedFile(savedUri, tokenResponse.mimeType, resolvedFileName);
-        }
+        get().completeDownload(
+          id,
+          await save({
+            content: bytes,
+            fileName: resolvedFileName,
+            mimeType: tokenResponse.mimeType,
+            preferences: destination,
+          }),
+        );
         return;
       }
       if (!downloadTarget.baseUrl) {
@@ -149,8 +159,15 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
 
       if (isWeb) {
         const file = await fetchDownload(fetchFile, downloadUrl);
-        saveBrowserFile(file, resolvedFileName);
-        get().completeDownload(id);
+        get().completeDownload(
+          id,
+          await save({
+            content: file,
+            fileName: resolvedFileName,
+            mimeType: tokenResponse.mimeType,
+            preferences: destination,
+          }),
+        );
         return;
       }
 
@@ -191,9 +208,15 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
         throw new Error(i18n.t("downloads.cancelled"));
       }
 
-      get().completeDownload(id);
-
-      await shareSavedFile(result.uri, tokenResponse.mimeType, resolvedFileName);
+      get().completeDownload(
+        id,
+        await save({
+          content: { uri: result.uri },
+          fileName: resolvedFileName,
+          mimeType: tokenResponse.mimeType,
+          preferences: destination,
+        }),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : i18n.t("downloads.failed");
       get().failDownload(id, message);
@@ -212,14 +235,28 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
     });
   },
 
-  completeDownload: (id) => {
+  completeDownload: (id, outcome) => {
+    // Backing out of the Save dialog or folder picker is not a download to report.
+    if (outcome?.kind === "cancelled") {
+      get().dismissDownload(id);
+      return;
+    }
     set((state) => {
       const download = state.downloads.get(id);
       if (!download) {
         return state;
       }
       const updated = new Map(state.downloads);
-      updated.set(id, { ...download, status: "complete" });
+      updated.set(id, {
+        ...download,
+        status: "complete",
+        ...(outcome?.kind === "saved"
+          ? {
+              savedTo: outcome.where,
+              ...(outcome.revealPath ? { revealPath: outcome.revealPath } : {}),
+            }
+          : {}),
+      });
       return { downloads: updated };
     });
   },
@@ -384,76 +421,6 @@ async function saveDownloadedBytes({
   const targetFile = resolveDownloadTargetFile(fileName);
   targetFile.write(bytes);
   return targetFile.uri;
-}
-
-async function shareSavedFile(
-  uri: string,
-  mimeType: string | null,
-  fileName: string,
-): Promise<void> {
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, {
-      mimeType: mimeType ?? undefined,
-      dialogTitle: fileName
-        ? i18n.t("downloads.shareFileNamed", { fileName })
-        : i18n.t("downloads.shareFile"),
-    });
-  }
-}
-
-function saveBrowserFile(file: Blob, fileName: string) {
-  if (typeof document === "undefined") {
-    return;
-  }
-
-  const url = URL.createObjectURL(file);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.rel = "noopener";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  // The browser may still be reading the blob while its save prompt is open.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
-function resolveDownloadTargetFile(fileName: string): FSFile {
-  const directory = Paths.cache ?? Paths.document;
-  if (!directory) {
-    throw new Error("No download directory available.");
-  }
-
-  const safeName = sanitizeDownloadFileName(fileName);
-  const split = splitFileName(safeName);
-  let targetFile = new FSFile(directory, safeName);
-  let suffix = 1;
-
-  while (targetFile.exists) {
-    targetFile = new FSFile(directory, `${split.base} (${suffix})${split.ext}`);
-    suffix += 1;
-  }
-
-  return targetFile;
-}
-
-function sanitizeDownloadFileName(fileName: string): string {
-  const trimmed = fileName.trim();
-  if (!trimmed) {
-    return "download";
-  }
-  return trimmed.replace(/[\\/:*?"<>|]+/g, "_");
-}
-
-function splitFileName(fileName: string): { base: string; ext: string } {
-  const lastDot = fileName.lastIndexOf(".");
-  if (lastDot <= 0) {
-    return { base: fileName, ext: "" };
-  }
-  return {
-    base: fileName.slice(0, lastDot),
-    ext: fileName.slice(lastDot),
-  };
 }
 
 export function formatSpeed(bytesPerSecond: number): string {

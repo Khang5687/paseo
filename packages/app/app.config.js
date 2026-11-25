@@ -127,6 +127,10 @@ export default {
       infoPlist: {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
+        // Documents shows in the Files app as "On My iPhone › Paseo": that is where Download
+        // saves when "Ask where to save" is off.
+        UIFileSharingEnabled: true,
+        LSSupportsOpeningDocumentsInPlace: true,
       },
       bundleIdentifier: variant.packageId,
       ...(variant.googleServiceInfoPlist
