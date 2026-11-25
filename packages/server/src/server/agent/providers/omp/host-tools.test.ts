@@ -135,33 +135,46 @@ class OmpHostToolHarness {
 }
 
 describe("OMP host tools", () => {
-  test("marks every caller-scoped Paseo tool essential for direct invocation", () => {
+  test("keeps talk tools and plugin tools loaded and mounts the rest on demand", () => {
+    const tool = (name: string, extra: Partial<PaseoToolDefinition> = {}): PaseoToolDefinition => ({
+      name,
+      description: `${name} tool.`,
+      handler: async () => ({ content: [] }),
+      ...extra,
+    });
     const catalog = createCatalog([
-      {
-        name: "create_agent",
+      tool("create_agent", {
         title: "Create agent",
-        description: "Create a Paseo agent.",
         inputSchema: { initialPrompt: z.string().describe("Prompt for the new agent.") },
-        handler: async () => ({ content: [] }),
-      },
-      {
-        name: "browser_list_tabs",
-        description: "List browser tabs.",
-        handler: async () => ({ content: [] }),
-      },
+      }),
+      tool("list_schedules"),
+      tool("browser_list_tabs"),
+      tool("acme_lookup", { alwaysLoaded: true }),
     ]);
 
     expect(serializeOmpHostTools(catalog)).toEqual([
       {
         name: "create_agent",
         label: "Create agent",
-        description: "Create a Paseo agent.",
+        description: "create_agent tool.",
         loadMode: "essential",
         parameters: expect.objectContaining({ type: "object", required: ["initialPrompt"] }),
       },
       {
+        name: "list_schedules",
+        description: "list_schedules tool.",
+        loadMode: "discoverable",
+        parameters: expect.objectContaining({ type: "object" }),
+      },
+      {
         name: "browser_list_tabs",
-        description: "List browser tabs.",
+        description: "browser_list_tabs tool.",
+        loadMode: "discoverable",
+        parameters: expect.objectContaining({ type: "object" }),
+      },
+      {
+        name: "acme_lookup",
+        description: "acme_lookup tool.",
         loadMode: "essential",
         parameters: expect.objectContaining({ type: "object" }),
       },
