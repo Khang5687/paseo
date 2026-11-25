@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
 import {
   normalizeProjectDescriptor,
@@ -128,6 +128,13 @@ function requireTimelineRow(storage: MemoryStorage): ReplicaRow {
   const row = [...storage.rows.values()].find((candidate) => candidate.kind === "timeline");
   if (!row) throw new Error("timeline row was not written");
   return row;
+}
+
+function storedBytes(storage: MemoryStorage): number {
+  return [...storage.rows.values()].reduce(
+    (total, row) => total + Buffer.byteLength(row.payload),
+    0,
+  );
 }
 
 function agent(id = "agent-1"): Agent {
@@ -1104,6 +1111,47 @@ describe("ReplicaCache", () => {
     expect((await cache.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([
       timelineItem("Persisted timeline"),
     ]);
+  });
+
+  describe("when the cache is full", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function chat(agentId: string) {
+      return { ...timeline("x".repeat(1_000)), agentId };
+    }
+
+    async function saveChat(cache: ReplicaCache, agentId: string, day: number): Promise<void> {
+      vi.setSystemTime(Date.UTC(2026, 10, day));
+      cache.commitTimeline(SERVER_ID, agentId, chat(agentId));
+      await cache.flush();
+    }
+
+    it("drops the least recently saved chat and keeps the host's other chats", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const storage = new MemoryStorage();
+      const previousSession = createCache(storage);
+      commitDirectory(previousSession, SERVER_ID, directory());
+      await previousSession.flush();
+      await saveChat(previousSession, "chat-a", 1);
+      await saveChat(previousSession, "chat-b", 2);
+      await saveChat(previousSession, "chat-c", 3);
+      // Opened again, so chat-b is now the least recently saved.
+      await saveChat(previousSession, "chat-a", 4);
+      const fullBytes = storedBytes(storage);
+
+      // Fits everything stored so far, but not one more chat.
+      const cache = createCache(storage, fullBytes + 100);
+      await saveChat(cache, "chat-d", 5);
+
+      const reopened = createCache(storage);
+      expect((await reopened.readDirectory(SERVER_ID)).agents.has("agent-1")).toBe(true);
+      expect(await reopened.readTimeline(SERVER_ID, "chat-b")).toBeUndefined();
+      for (const agentId of ["chat-a", "chat-c", "chat-d"]) {
+        expect((await reopened.readTimeline(SERVER_ID, agentId))?.agentId).toBe(agentId);
+      }
+    });
   });
 
   it("rebuilds every directory row before restoring its checkpoint after eviction", async () => {
