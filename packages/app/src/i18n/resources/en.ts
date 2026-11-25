@@ -2333,6 +2333,7 @@ export const en = {
       failedToLoad: "Failed to load file",
       notFound: "File not found",
       openFrom: "Open from",
+      chooseFile: "Which file do you mean?",
       failedToLoadPreview: "Failed to load file preview",
       editor: {
         preview: "Preview",

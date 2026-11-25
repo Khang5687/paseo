@@ -2338,6 +2338,7 @@ export const ptBR: TranslationResources = {
       failedToLoad: "Falha ao carregar arquivo",
       notFound: "Arquivo não encontrado",
       openFrom: "Abrir de",
+      chooseFile: "Qual arquivo você quer dizer?",
       failedToLoadPreview: "Falha ao carregar prévia do arquivo",
       editor: {
         preview: "Prévia",

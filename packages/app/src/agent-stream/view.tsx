@@ -106,6 +106,9 @@ import { ChatNoteRowProvider, ChatNotesProvider } from "@/chat-notes/context";
 import { ChatNotesSurface } from "@/chat-notes/surface";
 import { AssistantFileLinkResolverProvider, createInlinePathOpener } from "@/assistant-file-links";
 import { pickFileHostForChat } from "@/assistant-file-links/host-pick-runtime";
+import { resolveFileLinkSearchRoots } from "@/assistant-file-links/ladder";
+import { createToolCallPathIndex } from "@/assistant-file-links/tool-call-paths";
+import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import { useOfflineAutoSave } from "@/offline-files/use-auto-save";
 import { CodeRunScopeProvider } from "@/code-run/scope";
 import { useOpenOutsideWorkspaceFolder } from "@/workspace/open-in-file-manager/outside-folder";
@@ -429,6 +432,27 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const workspaceRoot = context.cwd?.trim() || "";
+    // Folders above the agent's cwd that a chat file name is searched in when the cwd misses it.
+    const workspaceFolder = useSessionStore((state) => {
+      const workspaces = state.sessions[resolvedServerId]?.workspaces;
+      const key = resolveWorkspaceMapKeyByIdentity({
+        workspaces,
+        workspaceId: context.workspaceId,
+      });
+      return key ? workspaces?.get(key)?.workspaceDirectory : undefined;
+    });
+    const projectFolder = useSessionStore((state) => {
+      const workspaces = state.sessions[resolvedServerId]?.workspaces;
+      const key = resolveWorkspaceMapKeyByIdentity({
+        workspaces,
+        workspaceId: context.workspaceId,
+      });
+      return key ? workspaces?.get(key)?.projectRootPath : undefined;
+    });
+    const searchRoots = useMemo(
+      () => resolveFileLinkSearchRoots({ workspaceRoot, workspaceFolder, projectFolder }),
+      [workspaceRoot, workspaceFolder, projectFolder],
+    );
     const codeRunWorkspaceId = resolveCodeRunWorkspaceId({
       readOnly,
       workspaceId: context.workspaceId,
@@ -564,6 +588,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // the component reads the current (fresh) streamItems/streamHead from props.
     const effectiveStreamItems = useRetainedValue(streamItems, isActive);
     const effectiveStreamHead = useRetainedValue(streamHead, isActive);
+    // The files this agent's tool calls named: the first place a bare chat file name is looked up.
+    const toolCallPathIndex = useMemo(() => createToolCallPathIndex(), []);
+    const getKnownFilePaths = useStableEvent(() =>
+      toolCallPathIndex(
+        effectiveStreamItems,
+        effectiveStreamHead ?? EMPTY_STREAM_HEAD,
+        workspaceRoot,
+      ),
+    );
     useOfflineAutoSave({
       serverId: resolvedServerId,
       workspaceRoot,
@@ -822,6 +855,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             client={client}
             serverId={resolvedServerId}
             workspaceRoot={workspaceRoot}
+            searchRoots={searchRoots}
+            getKnownFilePaths={getKnownFilePaths}
             onOpenWorkspaceFile={handleInlinePathPress}
             toast={toast}
           >
@@ -850,6 +885,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         openCodeRunTerminal,
         resolvedServerId,
         toast,
+        searchRoots,
+        getKnownFilePaths,
         workspaceRoot,
       ],
     );

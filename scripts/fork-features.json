@@ -1076,5 +1076,16 @@
       "packages/app/src/file-panels/resolve.test.ts",
       "packages/server/src/server/file-explorer/service.test.ts"
     ]
+  },
+  {
+    "pr": 144,
+    "title": "feat(app): find the file a chat link names, even when it is git-ignored or outside the cwd",
+    "tests": [
+      "packages/app/src/assistant-file-links/ladder.test.ts",
+      "packages/app/src/assistant-file-links/tool-call-paths.test.ts",
+      "packages/app/src/assistant-file-links/use-file-link.test.tsx",
+      "packages/server/src/utils/directory-suggestions.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/assistant-file-link-ladder.spec.ts"]
   }
 ]

@@ -6113,7 +6113,16 @@ export class Session {
   }
 
   private async handleDirectorySuggestionsRequest(msg: DirectorySuggestionsRequest): Promise<void> {
-    const { query, limit, requestId, cwd, includeFiles, includeDirectories, matchMode } = msg;
+    const {
+      query,
+      limit,
+      requestId,
+      cwd,
+      includeFiles,
+      includeDirectories,
+      matchMode,
+      includeIgnored,
+    } = msg;
 
     try {
       const workspaceCwd = cwd?.trim();
@@ -6134,7 +6143,8 @@ export class Session {
           ? WORKSPACE_SEARCH_HIDDEN_DIRECTORIES
           : [],
         confidentResultScanThreshold: searchesWorkspace ? undefined : 5_000,
-        respectGitIgnore: searchesWorkspace,
+        respectGitIgnore: searchesWorkspace && !includeIgnored,
+        walkBuildOutputDirectories: searchesWorkspace && includeIgnored === true,
         excludedDiscoveryPaths,
         includeFiles,
         includeDirectories,

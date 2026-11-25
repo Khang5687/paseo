@@ -57,6 +57,7 @@ async function searchRelativeDirectoryEntries(options: {
   maxDepth?: number;
   maxEntriesScanned?: number;
   respectGitIgnore?: boolean;
+  walkBuildOutputDirectories?: boolean;
 }) {
   return searchDirectoryEntries({
     root: options.cwd,
@@ -72,6 +73,7 @@ async function searchRelativeDirectoryEntries(options: {
     maxDepth: options.maxDepth,
     maxEntriesScanned: options.maxEntriesScanned,
     respectGitIgnore: options.respectGitIgnore,
+    walkBuildOutputDirectories: options.walkBuildOutputDirectories,
   });
 }
 
@@ -988,6 +990,40 @@ describe("relative typed-entry configuration", () => {
     expect({ exactResults, fuzzyResults }).toEqual({
       exactResults: [{ path: "generated/search-notes.md", kind: "file" }],
       fuzzyResults: [{ path: "docs/search-notes.md", kind: "file" }],
+    });
+  });
+
+  it("finds a bare name inside Git-ignored build output only when asked to walk it", async () => {
+    initGitRepo(workspaceDir, "out/\nrenders/\nnode_modules/\n");
+    mkdirSync(path.join(workspaceDir, "out", "video"), { recursive: true });
+    mkdirSync(path.join(workspaceDir, "renders"), { recursive: true });
+    mkdirSync(path.join(workspaceDir, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(path.join(workspaceDir, "out", "video", "clip.mp4"), "");
+    writeFileSync(path.join(workspaceDir, "renders", "poster.png"), "");
+    writeFileSync(path.join(workspaceDir, "node_modules", "pkg", "clip.mp4"), "");
+
+    const search = (query: string, ignored: boolean) =>
+      searchRelativeDirectoryEntries({
+        cwd: workspaceDir,
+        query,
+        limit: 10,
+        includeFiles: true,
+        includeDirectories: false,
+        matchMode: "suffix",
+        respectGitIgnore: !ignored,
+        walkBuildOutputDirectories: ignored,
+      });
+
+    expect({
+      defaultClip: await search("clip.mp4", false),
+      defaultPoster: await search("poster.png", false),
+      ignoredClip: await search("clip.mp4", true),
+      ignoredPoster: await search("poster.png", true),
+    }).toEqual({
+      defaultClip: [],
+      defaultPoster: [],
+      ignoredClip: [{ path: "out/video/clip.mp4", kind: "file" }],
+      ignoredPoster: [{ path: "renders/poster.png", kind: "file" }],
     });
   });
 

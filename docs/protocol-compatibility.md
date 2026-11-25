@@ -42,6 +42,8 @@ Existing functionality keeps working across versions. Never gate an established 
 
 OMP account routing is gated by `isOmpAccountRoutingSupported` in `packages/client/src/daemon-client.ts`; unsupported hosts get no request, subscription, or fallback. Adding an account is gated by `features.ompAccountLogin`, which the host advertises only with routing and only on macOS; the app shows the button only for the desktop app on that host's own computer.
 
+Chat file links search git-ignored files through `directory_suggestions_request.includeIgnored`, gated on `server_info.features.directorySuggestionsIncludeIgnored`. The app sends the field only to hosts that advertise it; on older hosts the link ladder skips the ignored pass and a git-ignored file still misses.
+
 ## Client capability ownership
 
 The client package advertises the protocol behavior it implements. Add each new capability to
