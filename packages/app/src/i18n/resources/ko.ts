@@ -2264,6 +2264,7 @@ export const ko: TranslationResources = {
       failedToLoad: "파일을 불러오지 못했습니다",
       notFound: "파일을 찾을 수 없습니다",
       openFrom: "열 위치",
+      chooseFile: "어떤 파일인가요?",
       failedToLoadPreview: "파일 미리보기를 불러오지 못했습니다",
       editor: {
         preview: "미리보기",

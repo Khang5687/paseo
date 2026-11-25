@@ -2293,6 +2293,7 @@ export const ru: TranslationResources = {
       failedToLoad: "Не удалось загрузить файл",
       notFound: "Файл не найден",
       openFrom: "Открыть с",
+      chooseFile: "Какой файл вы имеете в виду?",
       failedToLoadPreview: "Не удалось загрузить предварительный просмотр файла.",
       editor: {
         preview: "Предпросмотр",

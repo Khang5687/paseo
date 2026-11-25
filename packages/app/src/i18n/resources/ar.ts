@@ -2256,6 +2256,7 @@ export const ar: TranslationResources = {
       failedToLoad: "فشل تحميل الملف",
       notFound: "الملف غير موجود",
       openFrom: "فتح من",
+      chooseFile: "أي ملف تقصد؟",
       failedToLoadPreview: "فشل تحميل معاينة الملف",
       editor: {
         preview: "معاينة",

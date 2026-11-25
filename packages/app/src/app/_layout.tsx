@@ -64,6 +64,7 @@ import { WorkspaceSetupDialog } from "@/components/workspace-setup-dialog";
 import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-shortcut-targets-subscriber";
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
+import { FileLinkChooserSheet } from "@/assistant-file-links/file-link-chooser";
 import { HostConfirmationSheet } from "@/hosts/host-confirmation-sheet";
 import { NoteComposerHost } from "@/notes/composer/note-composer-host";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
@@ -579,6 +580,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <CommandCenter />
         <AddProjectFlowHost />
         <HostChooserModal />
+        <FileLinkChooserSheet />
         <HostConfirmationSheet />
         <NoteComposerHost />
         <ProviderSettingsHost />

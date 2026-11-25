@@ -6615,6 +6615,7 @@ export class DaemonClient {
       includeFiles?: boolean;
       includeDirectories?: boolean;
       matchMode?: "fuzzy" | "suffix";
+      includeIgnored?: boolean;
     },
     requestId?: string,
   ): Promise<DirectorySuggestionsPayload> {
@@ -6628,6 +6629,7 @@ export class DaemonClient {
         includeDirectories: options.includeDirectories,
         matchMode: options.matchMode,
         limit: options.limit,
+        ...(options.includeIgnored ? { includeIgnored: true } : {}),
       },
       responseType: "directory_suggestions_response",
       // Home-tree scans on large home dirs can take several seconds; don't cut

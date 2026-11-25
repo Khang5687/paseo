@@ -2276,6 +2276,7 @@ export const ja: TranslationResources = {
       failedToLoad: "ファイルの読み込みに失敗しました",
       notFound: "ファイルが見つかりません",
       openFrom: "開く場所",
+      chooseFile: "どのファイルですか？",
       failedToLoadPreview: "ファイルプレビューの読み込みに失敗しました",
       editor: {
         preview: "プレビュー",

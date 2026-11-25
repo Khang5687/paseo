@@ -2305,6 +2305,7 @@ export const fr: TranslationResources = {
       failedToLoad: "Impossible de charger le fichier",
       notFound: "Fichier introuvable",
       openFrom: "Ouvrir depuis",
+      chooseFile: "De quel fichier s’agit-il ?",
       failedToLoadPreview: "Impossible de charger l’aperçu du fichier",
       editor: {
         preview: "Aperçu",

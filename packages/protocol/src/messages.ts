@@ -2990,6 +2990,10 @@ export const DirectorySuggestionsRequestSchema = z.object({
   includeDirectories: z.boolean().optional(),
   matchMode: z.enum(["fuzzy", "suffix"]).optional(),
   limit: z.number().int().min(1).max(100).optional(),
+  // COMPAT(directorySuggestionsIncludeIgnored): added in v0.16.2, remove gate after 2027-05-25.
+  // Searches a workspace without honoring .gitignore and walks dist/build/out folders. Dependency
+  // trees (node_modules...) stay skipped. Older daemons ignore it.
+  includeIgnored: z.boolean().optional(),
   requestId: z.string(),
 });
 
@@ -4783,6 +4787,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceArchiveUndo: z.boolean().optional(),
         // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
         workspaceFileEditing: z.boolean().optional(),
+        // COMPAT(directorySuggestionsIncludeIgnored): added in v0.16.2, remove gate after 2027-05-25.
+        directorySuggestionsIncludeIgnored: z.boolean().optional(),
         // COMPAT(fileByteWrites): added in v0.13.0, remove gate after 2027-04-20.
         fileByteWrites: z.boolean().optional(),
         // COMPAT(providerUsageList): added in v0.1.98, drop the gate when daemon floor >= v0.1.98.

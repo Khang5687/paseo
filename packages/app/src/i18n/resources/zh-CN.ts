@@ -2228,6 +2228,7 @@ export const zhCN: TranslationResources = {
       failedToLoad: "加载文件失败",
       notFound: "找不到文件",
       openFrom: "打开位置",
+      chooseFile: "你指的是哪个文件？",
       failedToLoadPreview: "加载文件预览失败",
       editor: {
         preview: "预览",
