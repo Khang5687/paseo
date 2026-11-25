@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
+import { createTestAgentMessages } from "../test-utils/agent-messages.js";
 import { createTestAgentClient } from "../test-utils/fake-agent-client.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
@@ -231,6 +232,12 @@ describe("fork_agent tool", () => {
       agentStorage: harness.storage,
       // Only the fork path runs; the catalog never touches the provider snapshot manager here.
       providerSnapshotManager: {} as never,
+      agentMessages: () =>
+        createTestAgentMessages({
+          agentManager: harness.manager,
+          agentStorage: harness.storage,
+          logger,
+        }),
       logger,
       ...extra,
     });

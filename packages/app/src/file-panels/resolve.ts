@@ -1,9 +1,13 @@
 export type FilePanelFileKind = "text" | "image" | "binary";
 
-/** What resolution knows about a file: its path and the kind its stat reports, never contents. */
+/**
+ * What resolution knows about a file: its path, the kind its stat reports and, once stat'd, its
+ * size. Never its contents.
+ */
 export interface FilePanelFile {
   path: string;
   kind: FilePanelFileKind;
+  size?: number;
 }
 
 export interface FilePanelSelector {
@@ -21,6 +25,11 @@ export interface FilePanelCandidate {
   files: FilePanelFiles;
   /** The only kind of file a built-in panel reads. Plugin panels are offered for any kind. */
   fileKind?: FilePanelFileKind;
+  /**
+   * The largest file, in bytes, a built-in panel opens. It reads the whole file before showing
+   * it, so a bigger file gets no panel from it.
+   */
+  maxBytes?: number;
 }
 
 export interface FilePanelResolution<Candidate> {
@@ -29,6 +38,8 @@ export interface FilePanelResolution<Candidate> {
   selectorKey: string;
   /** The remembered candidate for `selectorKey`, when this host has it. */
   associatedPanelId: string | null;
+  /** A panel claims the file, but the file is over that panel's `maxBytes`. */
+  oversized: boolean;
 }
 
 export function filePanelExtension(path: string): string {
@@ -120,11 +131,12 @@ export function resolveFilePanel<Candidate extends FilePanelCandidate>(input: {
   choice?: string | null;
 }): FilePanelResolution<Candidate> {
   const { file, associations } = input;
-  const matching = input.candidates.filter(
+  const claiming = input.candidates.filter(
     (candidate) =>
       (candidate.fileKind === undefined || candidate.fileKind === file.kind) &&
       matchesFiles(file, candidate.files),
   );
+  const matching = claiming.filter((candidate) => fitsFile(candidate, file));
   const claimedByBuiltin = matching.some(
     (candidate) => candidate.builtin && candidate.files !== "all",
   );
@@ -139,5 +151,15 @@ export function resolveFilePanel<Candidate extends FilePanelCandidate>(input: {
   const associated = candidates.find((candidate) => candidate.id === associations[selectorKey]);
   const chosen = candidates.find((candidate) => candidate.id === input.choice);
   const panel = chosen ?? associated ?? candidates[0] ?? null;
-  return { panel, candidates, selectorKey, associatedPanelId: associated?.id ?? null };
+  return {
+    panel,
+    candidates,
+    selectorKey,
+    associatedPanelId: associated?.id ?? null,
+    oversized: matching.length < claiming.length,
+  };
+}
+
+function fitsFile(candidate: FilePanelCandidate, file: FilePanelFile): boolean {
+  return candidate.maxBytes === undefined || (file.size ?? 0) <= candidate.maxBytes;
 }

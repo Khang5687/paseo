@@ -1,6 +1,7 @@
 import { usesDesktopBindings } from "./internal/conventions";
 import { createKeyboardPipeline } from "./internal/pipeline";
 import { overlays } from "./internal/overlays";
+import { heldModifiers } from "./internal/press-modifiers";
 import { attachKeyboardSources, publishKeyboardPolicy } from "./internal/sources";
 import type { KeyboardSourceInput } from "./internal/sources/contract";
 import type { KeyboardInputEvent } from "./internal/overlays";
@@ -12,8 +13,10 @@ import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store"
 import { useKeyboardActionDispatcher } from "@/keyboard/keyboard-action-dispatcher-context";
 import {
   type ChordState,
+  type ShortcutBadgeModifiers,
   buildEffectiveBindings,
-  getWorkspaceIndexJumpModifierKey,
+  getIndexJumpBadgeModifiers,
+  resolveShortcutBadgeTarget,
 } from "@/keyboard/keyboard-shortcuts";
 import { shouldPublishBrowserShortcutPolicy } from "@/keyboard/internal/sources/electron-browser";
 import type { KeyboardShortcutPayload } from "@/keyboard/actions";
@@ -32,6 +35,37 @@ import {
   navigateToLastWorkspace,
   useActiveWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
+import { useSidebarViewStore } from "@/stores/sidebar-view-store";
+import { usePanelStore } from "@/stores/panel-store";
+import {
+  cancelRecentWorkspaceWalk,
+  releaseRecentWorkspaceWalk,
+  stepRecentWorkspaceWalk,
+} from "@/keyboard/recent-workspace-walk";
+
+const MODIFIER_FLAG_BY_KEY: Record<string, keyof ShortcutBadgeModifiers> = {
+  Meta: "meta",
+  Control: "ctrl",
+  Alt: "alt",
+  Shift: "shift",
+};
+
+/**
+ * The modifiers held after this key event. The event's own flags can lag for
+ * the modifier being pressed or released, so that key's flag is set from the
+ * event type instead.
+ */
+function heldModifiersAfter(event: KeyboardInputEvent, down: boolean): ShortcutBadgeModifiers {
+  const held = {
+    meta: Boolean(event.metaKey),
+    ctrl: Boolean(event.ctrlKey),
+    alt: Boolean(event.altKey),
+    shift: Boolean(event.shiftKey),
+  };
+  const flag = MODIFIER_FLAG_BY_KEY[event.key ?? ""];
+  if (flag) held[flag] = down;
+  return held;
+}
 
 export function useKeyboardShortcuts({
   enabled,
@@ -77,32 +111,29 @@ export function useKeyboardShortcuts({
     publishBrowserShortcutPolicy();
   }, [publishBrowserShortcutPolicy]);
 
-  // Only the modifier that actually performs the workspace-index jump on this
-  // runtime should reveal the sidebar number badges (Alt on web, Cmd on
-  // desktop Mac, Ctrl on desktop non-Mac). The store ORs altDown/cmdOrCtrlDown
-  // to drive badge visibility, so we set the flag matching this runtime.
-  // Derived from the effective bindings: `null` when the user unassigned or
-  // rebound the jump shortcut, and no `event.key` ever equals null, so the
-  // badges simply never appear.
-  const badgeModifierKey = getWorkspaceIndexJumpModifierKey(
-    { isMac, usesDesktopBindings: usesDesktopBindings },
-    bindings,
-  );
+  // Holding the modifiers of a digit jump reveals that group's number badges:
+  // the project strip for the plain group, the sidebar rows for the one with
+  // Alt added. Derived from the effective bindings, so a group the user
+  // unassigned or rebound to one concrete digit never shows badges.
+  const badgeGroups = useMemo(() => {
+    const platform = { isMac, usesDesktopBindings };
+    return {
+      project: getIndexJumpBadgeModifiers("project", platform, bindings),
+      workspace: getIndexJumpBadgeModifiers("workspace", platform, bindings),
+    };
+  }, [bindings, isMac]);
 
-  // The keyup listener matches the released key against the current modifier,
-  // so a modifier held while the jump binding changes could never be released
-  // and the badges would stay up until a blur. Clear them when it changes.
+  // A modifier held while the jump bindings change could leave its badges up
+  // until a blur. Clear them when the groups change.
   useEffect(() => {
     resetModifiers();
-  }, [badgeModifierKey, resetModifiers]);
+  }, [badgeGroups, resetModifiers]);
 
-  const setBadgeModifierDown = (down: boolean) => {
-    const state = useKeyboardShortcutsStore.getState();
-    if (usesDesktopBindings) {
-      state.setCmdOrCtrlDown(down);
-    } else {
-      state.setAltDown(down);
-    }
+  const updateHeldBadgeTarget = (event: KeyboardInputEvent, down: boolean) => {
+    if (!MODIFIER_FLAG_BY_KEY[event.key ?? ""]) return;
+    useKeyboardShortcutsStore
+      .getState()
+      .setHeldBadgeTarget(resolveShortcutBadgeTarget(heldModifiersAfter(event, down), badgeGroups));
   };
 
   const callbacksByName: Record<ShortcutCallbackName, (() => void) | undefined> = {
@@ -158,6 +189,18 @@ export function useKeyboardShortcuts({
       case "shortcuts-dialog-toggle":
         useKeyboardShortcutsStore.getState().setShortcutsDialogOpen(action.nextOpen);
         return true;
+      case "show-sidebar-project":
+        useSidebarViewStore.getState().showOnlyProject(action.projectViewKey);
+        usePanelStore.getState().openAgentListForLayout({ isCompact: isMobile });
+        if (action.lastChat) {
+          navigateToWorkspace(action.lastChat);
+        }
+        return true;
+      case "walk-recent-workspaces":
+        return stepRecentWorkspaceWalk(
+          action.delta,
+          keyboardWorkspaceSelectionRef.current ?? activeWorkspaceSelection,
+        );
     }
   };
 
@@ -173,8 +216,10 @@ export function useKeyboardShortcuts({
         pathname,
         isMobile,
         sidebarShortcutTargets: store.sidebarShortcutWorkspaceTargets,
+        sidebarShortcutProjects: store.sidebarShortcutProjects,
         navigationActiveWorkspace:
           keyboardWorkspaceSelectionRef.current ?? activeWorkspaceSelection,
+        waitingWorkspaces: store.waitingWorkspaces,
         commandCenterOpen: store.commandCenterOpen,
         shortcutsDialogOpen: store.shortcutsDialogOpen,
       },
@@ -222,15 +267,7 @@ export function useKeyboardShortcuts({
     if (key === "Escape" && pathname.startsWith("/settings") && !isMobile && hasActiveOverlay()) {
       return false;
     }
-    if (key === badgeModifierKey && !event.shiftKey) {
-      setBadgeModifierDown(true);
-    }
-    if (key === "Shift") {
-      const state = useKeyboardShortcutsStore.getState();
-      if (state.altDown || state.cmdOrCtrlDown) {
-        state.resetModifiers();
-      }
-    }
+    updateHeldBadgeTarget(event, true);
 
     return true;
   });
@@ -249,19 +286,31 @@ export function useKeyboardShortcuts({
     [getContext, getBindings, isCapturing, dispatchMatch, beforeResolve, chordChanged],
   );
 
+  const handleKeyDown = useStableEvent((input: KeyboardSourceInput) => {
+    heldModifiers.handleKeyDown(input.event);
+    return pipeline.keyDown(input);
+  });
+
   const handleKeyUp = useStableEvent((event: KeyboardInputEvent) => {
-    const key = event.key ?? "";
-    if (key === badgeModifierKey) {
-      setBadgeModifierDown(false);
+    heldModifiers.handleKeyUp(event);
+    updateHeldBadgeTarget(event, false);
+    if (MODIFIER_FLAG_BY_KEY[event.key ?? ""]) {
+      releaseRecentWorkspaceWalk(heldModifiersAfter(event, false));
     }
+  });
+
+  const handleBlur = useStableEvent(() => {
+    heldModifiers.reset();
+    resetModifiers();
+    cancelRecentWorkspaceWalk();
   });
 
   useEffect(() => {
     if (!enabled) return;
     const detach = attachKeyboardSources({
-      keyDown: pipeline.keyDown,
+      keyDown: handleKeyDown,
       keyUp: handleKeyUp,
-      blur: resetModifiers,
+      blur: handleBlur,
       commandCenterOpen: () => useKeyboardShortcutsStore.getState().commandCenterOpen,
       subscribeCommandCenter: (listener) =>
         useKeyboardShortcutsStore.subscribe((state, previous) => {
@@ -270,7 +319,8 @@ export function useKeyboardShortcuts({
     });
     return () => {
       detach();
+      heldModifiers.reset();
       pipeline.dispose();
     };
-  }, [enabled, pipeline, handleKeyUp, resetModifiers]);
+  }, [enabled, pipeline, handleKeyDown, handleKeyUp, handleBlur]);
 }

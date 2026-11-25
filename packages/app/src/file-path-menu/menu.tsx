@@ -11,6 +11,7 @@ import {
   useContextMenu,
 } from "@/components/ui/context-menu";
 import { UnresolvedFileLinkError } from "@/assistant-file-links/resolver";
+import { FileLinkPickCancelledError } from "@/assistant-file-links/ladder";
 import { useToast } from "@/contexts/toast-context";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useSendToAction } from "@/send-to/use-send-to";
@@ -171,6 +172,7 @@ function FilePathMenuContent({
         try {
           target = resolveTarget ? await resolveTarget() : { path: candidatePaths.absolutePath };
         } catch (error) {
+          if (error instanceof FileLinkPickCancelledError) return;
           if (error instanceof UnresolvedFileLinkError) {
             toast.error(t("common.errors.noFileFound", { token: error.token }));
             return;

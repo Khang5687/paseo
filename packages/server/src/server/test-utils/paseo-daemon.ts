@@ -73,6 +73,7 @@ interface TestPaseoDaemonOptions {
   pluginsEnabled?: PaseoDaemonConfig["pluginsEnabled"];
   pluginRegistryUrl?: PaseoDaemonConfig["pluginRegistryUrl"];
   builtinPlugins?: BuiltinPluginLoader;
+  lazyTerminalWorker?: boolean;
   plugins?: PaseoDaemonConfig["plugins"];
   /**
    * Replaces the OMP client with the real one over a scripted JSONL child, bound to the daemon's own
@@ -200,6 +201,7 @@ export async function createTestPaseoDaemon(
       ompCapabilityProbe:
         options.ompCapabilityProbe ??
         (async () => ({ complete: false, version: 0, unavailable: true })),
+      lazyTerminalWorker: options.lazyTerminalWorker ?? true,
       serverFeatureOverrides: {
         daemonStatusRpc: options.daemonStatusRpcCapability,
         relayConfig: options.relayConfigCapability,

@@ -1,6 +1,8 @@
 import { findMountedWindowStart } from "@/agent-stream/history-window";
 import { z } from "zod";
 import {
+  AgentBackgroundWorkSummarySchema,
+  AgentMetricSchema,
   AgentStatusSchema,
   AgentTimelineItemPayloadSchema,
   ForgeWebSchema,
@@ -75,7 +77,9 @@ export interface CachedTimeline {
 
 const PERSIST_DELAY_MS = 1_000;
 const MAX_TIMELINE_ITEMS = 50;
-const MAX_CACHE_BYTES = 32 * 1024 * 1024;
+// Room for about 270 chats of the 240 KB a real chat tail averages. The budget is shared by every
+// host, and only timelines are evicted to meet it, least recently saved first.
+const MAX_CACHE_BYTES = 64 * 1024 * 1024;
 const IsoDateSchema = z.iso.datetime();
 const TimelinePositionSchema = z.strictObject({
   epoch: z.string(),
@@ -128,6 +132,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     ...TimelineItemBaseShape,
     kind: z.literal("assistant_message"),
     messageId: z.string().optional(),
+    turnMetrics: z.array(AgentMetricSchema).optional(),
     text: z.string(),
     // Reject old caches containing display fragments; refetch the complete source text.
   }),
@@ -162,6 +167,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     ...TimelineItemBaseShape,
     kind: z.literal("tool_call"),
     provider: AgentProviderSchema,
+    turnMetrics: z.array(AgentMetricSchema).optional(),
     item: AgentTimelineItemPayloadSchema.refine((item) => item.type === "tool_call"),
   }),
   z.strictObject({
@@ -237,7 +243,7 @@ const StoredAgentSnapshotSchema = z.strictObject({
   updatedAt: IsoDateSchema,
   lastUserMessageAt: IsoDateSchema.nullable(),
   status: AgentStatusSchema,
-  backgroundWork: z.object({ count: z.number().int().nonnegative() }).optional(),
+  backgroundWork: AgentBackgroundWorkSummarySchema.optional(),
   activeTurn: z
     .strictObject({
       turnId: z.string(),
@@ -354,6 +360,8 @@ const StoredProjectSchema = z.strictObject({
 });
 
 const StoredTimelineSchema = z.strictObject({
+  // Optional: rows written before eviction kept recency have none and count as the oldest.
+  savedAt: IsoDateSchema.optional(),
   agentId: z.string(),
   items: z.array(StoredTimelineItemSchema),
   range: z
@@ -399,15 +407,19 @@ const DirectoryCheckpointSchema = z.strictObject({
   agents: DirectoryCursorSchema.optional(),
 });
 
-// Old checkpoints could describe a baseline that an overlapping refresh had discarded.
-// Revalidate directory contents once without evicting cached rows or timelines.
+// A checkpoint is trusted only when this version wrote it. Earlier writers could store one for a
+// directory the cache no longer held: unversioned ones after an overlapping refresh, version 1
+// after an eviction. Rejecting them revalidates directory contents once without evicting cached
+// rows or timelines.
+const DIRECTORY_CHECKPOINT_VERSION = 2;
+
 const StoredDirectoryCheckpointSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(DIRECTORY_CHECKPOINT_VERSION),
   cursors: DirectoryCheckpointSchema,
 });
 
 function serializeDirectoryCheckpoint(cursors: DirectoryCheckpoint) {
-  return { version: 1 as const, cursors };
+  return { version: DIRECTORY_CHECKPOINT_VERSION, cursors };
 }
 
 function deserializeDirectoryCheckpoint(payload: string): DirectoryCheckpoint {
@@ -499,6 +511,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...base,
         kind: item.kind,
         ...(item.messageId ? { messageId: item.messageId } : {}),
+        ...(item.turnMetrics ? { turnMetrics: item.turnMetrics } : {}),
         text: item.text,
       };
     case "thought":
@@ -533,6 +546,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...base,
         kind: item.kind,
         provider: item.payload.data.provider,
+        ...(item.turnMetrics ? { turnMetrics: item.turnMetrics } : {}),
         item: serializeAgentToolCall(item.payload.data),
       };
     case "plugin":
@@ -592,6 +606,7 @@ function deserializeBuiltinTimelineItem(
         ...base,
         kind: item.kind,
         ...(item.messageId ? { messageId: item.messageId } : {}),
+        ...(item.turnMetrics ? { turnMetrics: item.turnMetrics } : {}),
         text: item.text,
       };
     case "thought":
@@ -628,6 +643,7 @@ function deserializeBuiltinTimelineItem(
       return {
         ...base,
         kind: item.kind,
+        ...(item.turnMetrics ? { turnMetrics: item.turnMetrics } : {}),
         payload: {
           source: "agent",
           data: {
@@ -810,7 +826,7 @@ function isTimelineItemStoredLosslessly(item: StreamItem): boolean {
   }
 }
 
-function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
+function serializeTimeline(timeline: CachedTimeline, savedAt: Date): StoredTimeline | null {
   const canonicalItems = timeline.items.filter(
     (item) => item.kind !== "user_message" || !isUnreconciledLocalUserMessage(item),
   );
@@ -837,6 +853,8 @@ function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
     ) &&
     canonicalItems.some((item) => item.timelineCursor?.seq === range.endSeq);
   return {
+    // First key, so the index reads it from the payload's prefix without parsing the rest.
+    savedAt: savedAt.toISOString(),
     agentId: timeline.agentId,
     items,
     range: canPersistCoverage
@@ -862,9 +880,27 @@ function pendingRowKey(key: ReplicaRowKey): string {
   return `${key.serverId}\u0000${rowKey(key)}`;
 }
 
-// Budget accounting runs over every stored row of a touched host on each persist. Rows are
-// immutable once stored, so their size is computed once. The count itself avoids the JS Buffer
-// polyfill, which materialises the whole byte array just to measure it.
+const SAVED_AT_PREFIX = '{"savedAt":"';
+
+function readTimelineSavedAt(payload: string): number {
+  if (!payload.startsWith(SAVED_AT_PREFIX)) return 0;
+  const end = payload.indexOf('"', SAVED_AT_PREFIX.length);
+  const savedAt = Date.parse(payload.slice(SAVED_AT_PREFIX.length, end));
+  return Number.isFinite(savedAt) ? savedAt : 0;
+}
+
+/** What the budget needs to know about a stored row. The payload itself stays on disk. */
+interface StoredRowEntry extends ReplicaRowKey {
+  bytes: number;
+}
+
+function storedRowEntry(row: ReplicaRow): StoredRowEntry {
+  return { serverId: row.serverId, kind: row.kind, id: row.id, bytes: rowBytes(row) };
+}
+
+// A written row is measured by the budget check and again when the index takes it, so its size is
+// computed once. The count itself avoids the JS Buffer polyfill, which materialises the whole byte
+// array just to measure it.
 const rowBytesCache = new WeakMap<ReplicaRow, number>();
 
 function utf8ByteLength(text: string): number {
@@ -973,12 +1009,15 @@ function matchesReplicaRead(read: ReplicaRead, row: ReplicaRowKey): boolean {
 export class ReplicaCache {
   private readonly activeServerIds = new Set<string>();
   private readonly activeReads = new Set<ReplicaRead>();
-  private readonly storedRows = new Map<string, Map<string, ReplicaRow>>();
+  private readonly storedRows = new Map<string, Map<string, StoredRowEntry>>();
   private readonly hostBytes = new Map<string, number>();
   private readonly hostWriteOrder = new Map<string, true>();
+  // Stored timeline rows, least recently saved first. Eviction drops chats from the front.
+  private readonly timelineSaveOrder = new Map<string, StoredRowEntry>();
   private pendingUpserts = new Map<string, StructuredReplicaUpsert>();
   private pendingDeletes = new Map<string, ReplicaRowKey>();
   private pendingBaselines = new Set<string>();
+  // Hosts whose stored directory was evicted. Only a baseline stores their directory again.
   private readonly invalidatedHosts = new Set<string>();
   private readonly maxBytes: number;
   private totalBytes = 0;
@@ -1120,11 +1159,7 @@ export class ReplicaCache {
   private async deleteInvalidRow(row: ReplicaRow): Promise<void> {
     const invalidEntity = directoryEntityForRow(row);
     if (!invalidEntity) {
-      const changes = { upserts: [], deletes: [row] } satisfies ReplicaRowChanges;
-      await this.queueOperation(async () => {
-        await this.rowStore.apply(changes);
-        this.applyStoredChanges(changes);
-      });
+      await this.applyRepair(row.serverId, { upserts: [], deletes: [row] });
       return;
     }
 
@@ -1155,10 +1190,7 @@ export class ReplicaCache {
             ]
           : [],
     };
-    await this.queueOperation(async () => {
-      await this.rowStore.apply(changes);
-      this.applyStoredChanges(changes);
-    });
+    await this.applyRepair(row.serverId, changes);
   }
 
   private async repairInvalidDirectoryRows(
@@ -1181,9 +1213,16 @@ export class ReplicaCache {
             ]
           : [],
     };
-    await this.queueOperation(async () => {
-      await this.rowStore.apply(changes);
-      this.applyStoredChanges(changes);
+    await this.applyRepair(serverId, changes);
+  }
+
+  // A repair is queued behind writes that can evict its host. If one did, the host has no
+  // directory left for the repaired checkpoint to describe, so only the deletes still apply.
+  private applyRepair(serverId: string, changes: ReplicaRowChanges): Promise<void> {
+    return this.queueOperation(async () => {
+      const applied = this.invalidatedHosts.has(serverId) ? { ...changes, upserts: [] } : changes;
+      await this.rowStore.apply(applied);
+      this.applyStoredChanges(applied);
     });
   }
 
@@ -1193,7 +1232,6 @@ export class ReplicaCache {
     checkpoint?: DirectoryCheckpoint,
   ): void {
     if (!this.activeServerIds.has(serverId)) return;
-    if (this.invalidatedHosts.has(serverId)) return;
     for (const mutation of mutations) {
       if (mutation.type === "delete") {
         this.queueEntityDelete(serverId, mutation.kind, mutation.id);
@@ -1275,18 +1313,24 @@ export class ReplicaCache {
     this.invalidateHostReads(newServerId);
     const rows = this.storedRows.get(oldServerId);
     if (rows) {
-      const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaRow>();
+      const newRows = this.storedRows.get(newServerId) ?? new Map<string, StoredRowEntry>();
       this.totalBytes -=
         (this.hostBytes.get(oldServerId) ?? 0) + (this.hostBytes.get(newServerId) ?? 0);
       this.storedRows.delete(oldServerId);
       for (const [key, row] of rows) newRows.set(key, { ...row, serverId: newServerId });
       this.storedRows.set(newServerId, newRows);
-      const bytes = [...newRows.values()].reduce((sum, row) => sum + rowBytes(row), 0);
+      const bytes = [...newRows.values()].reduce((sum, row) => sum + row.bytes, 0);
       this.hostBytes.delete(oldServerId);
       this.hostBytes.set(newServerId, bytes);
       this.totalBytes += bytes;
       this.hostWriteOrder.delete(oldServerId);
       this.touchHost(newServerId);
+      const saveOrder = [...this.timelineSaveOrder.values()];
+      this.timelineSaveOrder.clear();
+      for (const entry of saveOrder) {
+        const renamed = entry.serverId === oldServerId ? newRows.get(rowKey(entry)) : entry;
+        if (renamed) this.timelineSaveOrder.set(pendingRowKey(renamed), renamed);
+      }
     }
     this.renamePendingHostChanges(oldServerId, newServerId);
     if (this.activeServerIds.delete(oldServerId)) this.activeServerIds.add(newServerId);
@@ -1423,9 +1467,17 @@ export class ReplicaCache {
   }
 
   private materializePendingChanges(pending: PendingReplicaChanges): ReplicaRowChanges {
-    const deletes = new Map(pending.deletes.map((row) => [pendingRowKey(row), row]));
+    // Decided here, inside the serialized write, because eviction happens there too. A mutation
+    // queued before its host was evicted would otherwise store a checkpoint without its directory.
+    const isStorable = (row: ReplicaRowKey): boolean =>
+      row.kind === "timeline" ||
+      !this.invalidatedHosts.has(row.serverId) ||
+      pending.baselines.has(row.serverId);
+    const deletes = new Map(
+      pending.deletes.filter(isStorable).map((row) => [pendingRowKey(row), row]),
+    );
     const upserts: ReplicaRow[] = [];
-    for (const upsert of pending.upserts) {
+    for (const upsert of pending.upserts.filter(isStorable)) {
       const row = this.materializeUpsert(upsert);
       if (row) upserts.push(row);
       else deletes.set(pendingRowKey(upsert), upsert);
@@ -1456,7 +1508,7 @@ export class ReplicaCache {
         value = serializeProject(upsert.value);
         break;
       case "timeline":
-        value = serializeTimeline(upsert.value);
+        value = serializeTimeline(upsert.value, new Date());
         if (!value) return null;
         break;
       case "checkpoint":
@@ -1504,17 +1556,22 @@ export class ReplicaCache {
       const previous = rows?.get(rowKey(key));
       if (previous) {
         rows?.delete(rowKey(key));
-        this.adjustHostBytes(key.serverId, -rowBytes(previous));
+        this.timelineSaveOrder.delete(pendingRowKey(key));
+        this.adjustHostBytes(key.serverId, -previous.bytes);
       }
       touchedServerIds.add(key.serverId);
     }
     for (const row of changes.upserts) {
-      const rows = this.storedRows.get(row.serverId) ?? new Map<string, ReplicaRow>();
+      const rows = this.storedRows.get(row.serverId) ?? new Map<string, StoredRowEntry>();
       const previous = rows.get(rowKey(row));
-      const previousBytes = previous ? rowBytes(previous) : 0;
-      rows.set(rowKey(row), row);
+      const entry = storedRowEntry(row);
+      rows.set(rowKey(row), entry);
       this.storedRows.set(row.serverId, rows);
-      this.adjustHostBytes(row.serverId, rowBytes(row) - previousBytes);
+      this.adjustHostBytes(row.serverId, entry.bytes - (previous?.bytes ?? 0));
+      if (row.kind === "timeline") {
+        this.timelineSaveOrder.delete(pendingRowKey(row));
+        this.timelineSaveOrder.set(pendingRowKey(row), entry);
+      }
       touchedServerIds.add(row.serverId);
     }
     for (const serverId of touchedServerIds) {
@@ -1543,7 +1600,7 @@ export class ReplicaCache {
     for (const key of changes.deletes) touchedServerIds.add(key.serverId);
     for (const row of changes.upserts) touchedServerIds.add(row.serverId);
 
-    const projectedRows = new Map<string, Map<string, ReplicaRow>>();
+    const projectedRows = new Map<string, Map<string, StoredRowEntry>>();
     const projectedBytes = new Map(this.hostBytes);
     for (const serverId of touchedServerIds) {
       projectedRows.set(serverId, new Map(this.storedRows.get(serverId)));
@@ -1552,20 +1609,37 @@ export class ReplicaCache {
       projectedRows.get(key.serverId)?.delete(rowKey(key));
     }
     for (const row of changes.upserts) {
-      projectedRows.get(row.serverId)?.set(rowKey(row), row);
+      projectedRows.get(row.serverId)?.set(rowKey(row), storedRowEntry(row));
     }
     for (const [serverId, rows] of projectedRows) {
       projectedBytes.set(
         serverId,
-        [...rows.values()].reduce((sum, row) => sum + rowBytes(row), 0),
+        [...rows.values()].reduce((sum, row) => sum + row.bytes, 0),
       );
     }
+    let projectedTotal = [...projectedBytes.values()].reduce((sum, bytes) => sum + bytes, 0);
 
+    // Drop the least recently saved chats first, across every host. The sidebar rows stay, so
+    // every other cached chat still opens offline. Timelines in this write are kept: one of them
+    // is usually the chat on screen.
+    const writtenKeys = new Set(changes.upserts.map(pendingRowKey));
+    const evictedTimelines: ReplicaRowKey[] = [];
+    for (const [key, entry] of this.timelineSaveOrder) {
+      if (projectedTotal <= this.maxBytes) break;
+      if (writtenKeys.has(key)) continue;
+      const rows = projectedRows.get(entry.serverId);
+      if (rows && !rows.delete(rowKey(entry))) continue;
+      projectedTotal -= entry.bytes;
+      projectedBytes.set(entry.serverId, (projectedBytes.get(entry.serverId) ?? 0) - entry.bytes);
+      evictedTimelines.push({ serverId: entry.serverId, kind: entry.kind, id: entry.id });
+    }
+
+    // Still over: the directories alone, or the chats just written, pass the budget. Evict whole
+    // hosts, oldest written first.
     const writeOrder = [...this.hostWriteOrder.keys()].filter(
       (serverId) => !touchedServerIds.has(serverId),
     );
     writeOrder.push(...touchedServerIds);
-    let projectedTotal = [...projectedBytes.values()].reduce((sum, bytes) => sum + bytes, 0);
     const evicted = new Set<string>();
     while (projectedTotal > this.maxBytes) {
       const serverId = writeOrder.shift();
@@ -1574,15 +1648,19 @@ export class ReplicaCache {
       projectedTotal -= bytes;
       projectedBytes.delete(serverId);
       evicted.add(serverId);
-      this.invalidatedHosts.add(serverId);
       if (this.storedRows.has(serverId)) await this.rowStore.deleteHost(serverId);
+      // Only after the delete commits: a failed eviction leaves the rows stored, and writers that
+      // check this set must keep their checkpoint in step with those rows.
+      this.invalidatedHosts.add(serverId);
       this.removeStoredHost(serverId);
     }
 
     return {
       changes: {
         upserts: changes.upserts.filter((row) => !evicted.has(row.serverId)),
-        deletes: changes.deletes.filter((key) => !evicted.has(key.serverId)),
+        deletes: [...changes.deletes, ...evictedTimelines].filter(
+          (key) => !evicted.has(key.serverId),
+        ),
       },
       evicted,
     };
@@ -1590,6 +1668,9 @@ export class ReplicaCache {
 
   private removeStoredHost(serverId: string): void {
     this.totalBytes -= this.hostBytes.get(serverId) ?? 0;
+    for (const row of this.storedRows.get(serverId)?.values() ?? []) {
+      if (row.kind === "timeline") this.timelineSaveOrder.delete(pendingRowKey(row));
+    }
     this.storedRows.delete(serverId);
     this.hostBytes.delete(serverId);
     this.hostWriteOrder.delete(serverId);
@@ -1633,19 +1714,31 @@ export class ReplicaCache {
       this.storedRows.clear();
       this.hostBytes.clear();
       this.hostWriteOrder.clear();
+      this.timelineSaveOrder.clear();
       this.totalBytes = 0;
+      const timelines: Array<{ entry: StoredRowEntry; savedAt: number }> = [];
       for (const host of hosts) {
         if (!this.activeServerIds.has(host.serverId)) {
           await this.rowStore.deleteHost(host.serverId);
           continue;
         }
-        const rows = new Map(host.rows.map((row) => [rowKey(row), row]));
-        const bytes = host.rows.reduce((sum, row) => sum + rowBytes(row), 0);
+        const rows = new Map<string, StoredRowEntry>();
+        let bytes = 0;
+        for (const row of host.rows) {
+          const entry = storedRowEntry(row);
+          rows.set(rowKey(row), entry);
+          bytes += entry.bytes;
+          if (row.kind === "timeline") {
+            timelines.push({ entry, savedAt: readTimelineSavedAt(row.payload) });
+          }
+        }
         this.storedRows.set(host.serverId, rows);
         this.hostBytes.set(host.serverId, bytes);
         this.totalBytes += bytes;
         this.touchHost(host.serverId);
       }
+      timelines.sort((left, right) => left.savedAt - right.savedAt);
+      for (const { entry } of timelines) this.timelineSaveOrder.set(pendingRowKey(entry), entry);
       return undefined;
     });
     return this.storedIndexPromise;

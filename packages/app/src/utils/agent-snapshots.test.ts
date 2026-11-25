@@ -39,6 +39,7 @@ function createSnapshot(
       queuePauseReason: input.queuePauseReason,
       controls: input.controls,
       options: input.options,
+      sessionMetrics: input.sessionMetrics,
     }),
   };
 }
@@ -130,6 +131,15 @@ describe("normalizeAgentSnapshot", () => {
     const userPaused = normalizeAgentSnapshot(createSnapshot({ queuePaused: true }), "server-1");
     expect(userPaused.queuePauseReason).toBeNull();
     expect(projectAgentSnapshot(userPaused)).not.toHaveProperty("queuePauseReason");
+  });
+
+  it("round-trips session metrics through the canonical snapshot boundary", () => {
+    const sessionMetrics = [{ label: "Cost", value: "$0.42", tone: "warning" as const }];
+
+    const agent = normalizeAgentSnapshot(createSnapshot({ sessionMetrics }), "server-1");
+
+    expect(agent.sessionMetrics).toEqual(sessionMetrics);
+    expect(projectAgentSnapshot(agent).sessionMetrics).toEqual(sessionMetrics);
   });
 
   it("normalizes identified and legacy active turns at the snapshot boundary", () => {

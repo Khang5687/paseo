@@ -58,7 +58,6 @@ import { SIDEBAR_ROW_ITEMS, type SidebarRowItem } from "./row-items";
 import { useWorkspaceLabelProjection } from "@/workspace-labels";
 import { WorkspaceLabelDot } from "@/workspace-labels/swatch";
 import { WorkspaceLabelManagerModal } from "@/workspace-labels/manager-modal";
-import { useSidebarSelectionStore } from "@/stores/sidebar-selection-store";
 import { PluginIconView } from "@/plugins/icons";
 import type { PluginWorkspaceRowBadgeItemGroup } from "@/plugins/workspace-row-badge-items";
 
@@ -176,7 +175,6 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
   const [managerOpen, setManagerOpen] = useState(false);
   const openManager = useCallback(() => setManagerOpen(true), []);
   const closeManager = useCallback(() => setManagerOpen(false), []);
-  const enterSelection = useSidebarSelectionStore((state) => state.enter);
 
   const triggerStyle = useCallback(
     ({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -395,12 +393,6 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
           >
             {t("sidebar.display.showBackground")}
           </MenuItem>
-          {/* An action among display settings: it is the one row that changes what a row press
-            does, and the Workspaces header has no other menu to hold it. */}
-          <MenuSeparator />
-          <MenuItem onSelect={enterSelection} testID="sidebar-display-select">
-            {t("sidebar.selection.select")}
-          </MenuItem>
         </MenuSurface>
       </MenuRoot>
       <WorkspaceLabelManagerModal visible={managerOpen} onClose={closeManager} />
@@ -420,6 +412,7 @@ function SortPage({
   const selectManual = useCallback(() => setWorkspaceSort("manual"), [setWorkspaceSort]);
   const selectCreated = useCallback(() => setWorkspaceSort("created"), [setWorkspaceSort]);
   const selectLastPrompt = useCallback(() => setWorkspaceSort("lastPrompt"), [setWorkspaceSort]);
+  const selectUrgent = useCallback(() => setWorkspaceSort("urgent"), [setWorkspaceSort]);
   return (
     <>
       <MenuItem selected={preferences.workspaceSort === "manual"} onSelect={selectManual}>
@@ -435,6 +428,9 @@ function SortPage({
             onSelect={selectLastPrompt}
           >
             {t("sidebar.display.sort.lastPrompt")}
+          </MenuItem>
+          <MenuItem selected={preferences.workspaceSort === "urgent"} onSelect={selectUrgent}>
+            {t("sidebar.display.sort.urgent")}
           </MenuItem>
         </>
       ) : (

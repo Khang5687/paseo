@@ -30,7 +30,8 @@ interface WorkspaceStructureSession {
   workspaces: Iterable<WorkspaceDescriptor>;
 }
 
-export type WorkspaceSort = "manual" | "created" | "lastPrompt";
+/** "urgent" orders by last prompt here; the sidebar then floats waiting workspaces up by status. */
+export type WorkspaceSort = "manual" | "created" | "lastPrompt" | "urgent";
 
 interface WorkspaceSortItem {
   workspaceName: string;
@@ -220,7 +221,7 @@ function workspaceSortTime(
 ): number {
   if (!sort) return 0;
   const time =
-    sort === "lastPrompt"
+    sort === "lastPrompt" || sort === "urgent"
       ? (workspace.lastUserMessageAt ?? workspace.createdAt)
       : workspace.createdAt;
   return time?.getTime() ?? 0;

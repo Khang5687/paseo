@@ -1,7 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { AssistantFileLinkSource } from "@/assistant-file-links";
+import { FileLinkPickCancelledError } from "@/assistant-file-links/ladder";
 import { useAssistantFileLinkResolverContext } from "@/assistant-file-links/provider";
-import { classifyForResolution, fetchDaemonResolution } from "@/assistant-file-links/resolver";
+import { classifyForResolution } from "@/assistant-file-links/resolver";
+import { resolveFileLinkLookup } from "@/assistant-file-links/use-file-link";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useSessionStore } from "@/stores/session-store";
 import { addSavedFile } from "./saver";
@@ -12,9 +15,11 @@ import { addSavedFile } from "./saver";
  */
 export function useSaveFileLinkOffline(): (source: AssistantFileLinkSource) => void {
   const { t } = useTranslation();
-  const { configRef, getDirectorySuggestions } = useAssistantFileLinkResolverContext();
+  const context = useAssistantFileLinkResolverContext();
+  const queryClient = useQueryClient();
   return useStableEvent((source: AssistantFileLinkSource) => {
-    const { serverId, workspaceRoot = "", relativePathBase, toast } = configRef.current;
+    const config = context.configRef.current;
+    const { serverId, workspaceRoot = "", relativePathBase, toast } = config;
     const session = serverId ? useSessionStore.getState().sessions[serverId] : undefined;
     if (!serverId || !session?.client) {
       toast?.error(t("workspace.terminal.hostDisconnected"));
@@ -25,10 +30,9 @@ export function useSaveFileLinkOffline(): (source: AssistantFileLinkSource) => v
       let path: string;
       if (resolution.kind === "needsLookup") {
         try {
-          path = (
-            await fetchDaemonResolution({ ...resolution, workspaceRoot, getDirectorySuggestions })
-          ).path;
-        } catch {
+          path = (await resolveFileLinkLookup({ resolution, config, context, queryClient })).path;
+        } catch (error) {
+          if (error instanceof FileLinkPickCancelledError) return;
           toast?.error(t("common.errors.noFileFound", { token: resolution.token }));
           return;
         }

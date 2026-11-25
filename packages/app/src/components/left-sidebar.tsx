@@ -55,6 +55,7 @@ import { HostPicker } from "@/components/hosts/host-picker";
 import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarToastRegion } from "@/components/sidebar/sidebar-toast-region";
+import { SidebarSelectionHost } from "@/sidebar-selection";
 import { SidebarNavRows, useVisibleSidebarNavItems } from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarFooterIconHighlight } from "@/components/sidebar/sidebar-footer-icon-highlight";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
@@ -109,6 +110,8 @@ import { useOfflineFiles } from "@/offline-files/store";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
+import { SidebarProjectChipRow, SidebarProjectRailLayout } from "./sidebar/project-strip";
+import { NextWaitingButton } from "./sidebar/next-waiting-button";
 
 type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
 
@@ -393,10 +396,10 @@ function SidebarHostPicker({
       includeAddHost
       onAddHost={onAddHost}
       showActiveConnection
-      onOpenHostSettings={onOpenHostSettings}
       searchable
+      title={label}
       desktopPlacement="top-start"
-      desktopMinWidth={240}
+      desktopMinWidth={328}
       addHostTestID="sidebar-host-add"
       hostOptionTestID={sidebarHostOptionTestID}
     >
@@ -655,6 +658,7 @@ function MobileSidebar({
       <View style={styles.sidebarContent} pointerEvents="auto">
         <WindowChromeSafeArea placement="below" />
         <SidebarNavScroll closeGestureRef={closeGestureRef}>{navRows}</SidebarNavScroll>
+        <SidebarProjectChipRow closeGestureRef={closeGestureRef} />
 
         <SidebarViewSlot dismiss={handleWorkspacePress}>
           <SidebarToastRegion active={active}>
@@ -684,8 +688,11 @@ function MobileSidebar({
                 listHeaderComponent={workspacesSectionHeaderElement}
               />
             )}
+            <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
           </SidebarToastRegion>
         </SidebarViewSlot>
+
+        <NextWaitingButton onNavigate={closeSidebar} />
 
         <SidebarFooter
           handleOpenProject={handleOpenProject}
@@ -907,53 +914,59 @@ function DesktopSidebar({
           {/* The drag overlay stays above this viewport: Electron does not clip
               app-region rects to scroll viewports, so a scrolled-out row would
               still claim its no-drag rect. */}
-          {hasNavRows ? (
-            <SidebarNavScroll closeGestureRef={closeGestureRef} windowContent>
-              <SidebarNavRows style={styles.sidebarHeaderGroup} onBeforeNavigate={closeSidebar} />
-            </SidebarNavScroll>
-          ) : null}
+          <SidebarProjectRailLayout>
+            {hasNavRows ? (
+              <SidebarNavScroll closeGestureRef={closeGestureRef} windowContent>
+                <SidebarNavRows style={styles.sidebarHeaderGroup} onBeforeNavigate={closeSidebar} />
+              </SidebarNavScroll>
+            ) : null}
 
-          <SidebarViewSlot dismiss={closeSidebar}>
-            <SidebarToastRegion active={active}>
-              {isInitialLoad && !hasActiveHostFilter ? (
-                <SidebarAgentListSkeleton />
-              ) : (
-                <SidebarWorkspaceList
-                  collapsedProjectKeys={collapsedProjectKeys}
-                  onToggleProjectCollapsed={toggleProjectCollapsed}
-                  shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
-                  nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
-                  groupMode={groupMode}
-                  workspaceGroups={workspaceGroups}
-                  projectIconTargets={projectIconTargets}
-                  pinnedGroups={pinnedGroups}
-                  projects={projects}
-                  hasProjectsBeforeFilter={hasProjectsBeforeFilter}
-                  hasActiveProjectFilter={hasActiveProjectFilter}
+            <SidebarViewSlot dismiss={closeSidebar}>
+              <SidebarToastRegion active={active}>
+                {isInitialLoad && !hasActiveHostFilter ? (
+                  <SidebarAgentListSkeleton />
+                ) : (
+                  <SidebarWorkspaceList
+                    collapsedProjectKeys={collapsedProjectKeys}
+                    onToggleProjectCollapsed={toggleProjectCollapsed}
+                    shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+                    nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
+                    groupMode={groupMode}
+                    workspaceGroups={workspaceGroups}
+                    projectIconTargets={projectIconTargets}
+                    pinnedGroups={pinnedGroups}
+                    projects={projects}
+                    hasProjectsBeforeFilter={hasProjectsBeforeFilter}
+                    hasActiveProjectFilter={hasActiveProjectFilter}
+                    workspaceEntriesByKey={workspaceEntriesByKey}
+                    isRefreshing={isManualRefresh && isRevalidating}
+                    onRefresh={handleRefresh}
+                    onAddProject={handleOpenProject}
+                    onImportSession={handleImportSession}
+                    onWorkspacePress={closeSidebar}
+                    parentGestureRef={closeGestureRef}
+                    dragGestureHostActive={active}
+                    listHeaderComponent={workspacesSectionHeaderElement}
+                  />
+                )}
+                <SidebarSelectionHost
+                  active={active}
                   workspaceEntriesByKey={workspaceEntriesByKey}
-                  isRefreshing={isManualRefresh && isRevalidating}
-                  onRefresh={handleRefresh}
-                  onAddProject={handleOpenProject}
-                  onImportSession={handleImportSession}
-                  onWorkspacePress={closeSidebar}
-                  parentGestureRef={closeGestureRef}
-                  dragGestureHostActive={active}
-                  listHeaderComponent={workspacesSectionHeaderElement}
                 />
-              )}
-            </SidebarToastRegion>
-          </SidebarViewSlot>
+              </SidebarToastRegion>
+            </SidebarViewSlot>
 
-          <SidebarCalloutSlot />
+            <SidebarCalloutSlot />
 
-          <SidebarFooter
-            handleOpenProject={handleOpenProject}
-            handleSettings={handleSettings}
-            labels={labels}
-            handleAddHost={handleAddHost}
-            handleOpenHostSettings={handleOpenHostSettings}
-            onBeforeNavigate={closeSidebar}
-          />
+            <SidebarFooter
+              handleOpenProject={handleOpenProject}
+              handleSettings={handleSettings}
+              labels={labels}
+              handleAddHost={handleAddHost}
+              handleOpenHostSettings={handleOpenHostSettings}
+              onBeforeNavigate={closeSidebar}
+            />
+          </SidebarProjectRailLayout>
 
           {!overlay && divisionLayout === null ? (
             <SidebarResizeHandle

@@ -9,11 +9,13 @@ import { StyleSheet } from "react-native-unistyles";
 import { useFileLink } from "@/assistant-file-links";
 import { CodeFence } from "@/code-run/fence";
 import { FileLinkContextMenu } from "@/assistant-file-links/context-menu";
+import { MARKDOWN_COPY_RECOGNIZED_LINK_ATTRIBUTE } from "@/assistant-selection-copy/markup";
 import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
 import { useForgeShorthand } from "@/git/forge-shorthand";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { MermaidFence } from "./fence/mermaid";
-import { markdownLinkSource } from "./source";
+import { isRecognizedLink, markdownLinkSource } from "./source";
+import { WebBlockquote } from "./quote-block.web";
 
 function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
   if (language?.toLowerCase() === "mermaid") return <MermaidFence code={code} />;
@@ -46,9 +48,18 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
     }),
     [anchorProps.style, hovered],
   );
+  // Selection copy pastes a link Paseo recognized as the text the reply showed.
+  const recognized = isRecognizedLink(link);
+  const copyAnchorProps = useMemo(
+    () =>
+      recognized
+        ? { ...anchorProps, [MARKDOWN_COPY_RECOGNIZED_LINK_ATTRIBUTE]: "true" }
+        : anchorProps,
+    [anchorProps, recognized],
+  );
   const anchor = (
     <a
-      {...anchorProps}
+      {...copyAnchorProps}
       href={forgeUrl ?? anchorProps.href}
       style={anchorStyle}
       onMouseEnter={handleMouseEnter}
@@ -109,4 +120,8 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-export const WEB_RENDERERS: MarkdownRenderers = { codeBlock: WebCodeBlock, link: WebLink };
+export const WEB_RENDERERS: MarkdownRenderers = {
+  codeBlock: WebCodeBlock,
+  link: WebLink,
+  blockquote: WebBlockquote,
+};

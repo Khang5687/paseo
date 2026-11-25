@@ -9,6 +9,8 @@ export function buildAgentPrompt(
   images?: Array<{ data: string; mimeType: string }>,
   attachments?: AgentAttachment[],
   attachmentRefs?: InlineAttachmentRef[],
+  // Where the daemon saved each image (see saveInlineImages), in image order.
+  imagePaths?: readonly string[],
 ): AgentPromptInput {
   const normalized = text.trim();
   const hasImages = (images?.length ?? 0) > 0;
@@ -56,8 +58,10 @@ export function buildAgentPrompt(
     );
   }
   (images ?? []).forEach((image, index) => {
-    const label = imageLabels.get(index);
-    if (label !== undefined) blocks.push(inlineRefNote(`[${label}]:`));
+    const path = imagePaths?.[index];
+    const label =
+      imageLabels.get(index) ?? (path === undefined ? undefined : `Image #${index + 1}`);
+    if (label !== undefined) blocks.push(inlineRefNote(`[${label}]:${path ? ` ${path}` : ""}`));
     blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
   });
   blocks.push(...otherAttachments);
@@ -70,8 +74,10 @@ function inlineRefNote(text: string): AgentAttachment {
   return { type: "text", mimeType: "text/plain", text };
 }
 
-// The notes buildAgentPrompt adds: `[Image #1]:` alone, `[File #2]: <absolute path>`.
-const INLINE_REF_NOTE_LINE = /^\[(?:Image #\d+\]:|File #\d+\]: (?:\/|[A-Za-z]:[\\/]).*)$/;
+// The notes buildAgentPrompt adds: `[Image #1]: <absolute path>` (older history: `[Image #1]:`
+// alone), `[File #2]: <absolute path>`.
+const INLINE_REF_NOTE_LINE =
+  /^\[(?:Image #\d+\]:(?: (?:\/|[A-Za-z]:[\\/]).*)?|File #\d+\]: (?:\/|[A-Za-z]:[\\/]).*)$/;
 
 /**
  * Provider history replays a user turn as all of its text, including the label notes the user

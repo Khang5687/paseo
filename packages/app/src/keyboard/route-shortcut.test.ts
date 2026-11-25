@@ -18,7 +18,13 @@ function makeCtx(overrides: Partial<ShortcutRoutingContext> = {}): ShortcutRouti
     pathname: "/h/srv/workspace/ws-2",
     isMobile: false,
     sidebarShortcutTargets: SIDEBAR_TARGETS,
+    sidebarShortcutProjects: [
+      { projectViewKey: "proj-a", lastChat: null },
+      { projectViewKey: "proj-b", lastChat: { serverId: "srv", workspaceId: "ws-4" } },
+      { projectViewKey: "proj-c", lastChat: null },
+    ],
     navigationActiveWorkspace: null,
+    waitingWorkspaces: [],
     commandCenterOpen: false,
     shortcutsDialogOpen: false,
     ...overrides,
@@ -157,6 +163,56 @@ describe("routeKeyboardShortcut — workspace.navigate.index", () => {
       routeKeyboardShortcut(
         { action: "workspace.navigate.index", payload: { index: 1 } },
         makeCtx({ sidebarShortcutTargets: [] }),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "none" });
+  });
+});
+
+describe("routeKeyboardShortcut — sidebar.project.navigate.index", () => {
+  it("shows the project at that strip position and reopens its last chat", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 2 } },
+        makeCtx(),
+      ),
+    ).toEqual<ShortcutAction>({
+      kind: "show-sidebar-project",
+      projectViewKey: "proj-b",
+      lastChat: { serverId: "srv", workspaceId: "ws-4" },
+    });
+  });
+
+  it("only changes the list on a phone", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 2 } },
+        makeCtx({ isMobile: true }),
+      ),
+    ).toEqual<ShortcutAction>({
+      kind: "show-sidebar-project",
+      projectViewKey: "proj-b",
+      lastChat: null,
+    });
+  });
+
+  it("only changes the list when the project has no remembered chat", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 1 } },
+        makeCtx(),
+      ),
+    ).toEqual<ShortcutAction>({
+      kind: "show-sidebar-project",
+      projectViewKey: "proj-a",
+      lastChat: null,
+    });
+  });
+
+  it("does nothing past the last project in the strip", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "sidebar.project.navigate.index", payload: { index: 4 } },
+        makeCtx(),
       ),
     ).toEqual<ShortcutAction>({ kind: "none" });
   });
@@ -304,6 +360,8 @@ describe("routeKeyboardShortcut — message-input.action", () => {
     ["dictation-confirm", "message-input.dictation-confirm"],
     ["voice-toggle", "message-input.voice-toggle"],
     ["voice-mute-toggle", "message-input.voice-mute-toggle"],
+    ["model-toggle", "message-input.model-toggle"],
+    ["effort-cycle", "message-input.effort-cycle"],
     ["mode-cycle", "message-input.mode-cycle"],
   ] as const)("kind=%s → dispatch %s", (kind, id) => {
     expect(
@@ -426,6 +484,50 @@ describe("routeKeyboardShortcut — toggle dialogs", () => {
         makeCtx({ shortcutsDialogOpen: true }),
       ),
     ).toEqual<ShortcutAction>({ kind: "shortcuts-dialog-toggle", nextOpen: false });
+  });
+});
+
+describe("routeKeyboardShortcut — jump keys", () => {
+  const waitingWorkspaces = [
+    { serverId: "srv", workspaceId: "ws-5" },
+    { serverId: "other", workspaceId: "ws-9" },
+  ];
+
+  it("opens the longest-waiting workspace when the open one is not waiting", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "workspace.waiting.next", payload: null },
+        makeCtx({ waitingWorkspaces }),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "navigate-workspace", serverId: "srv", workspaceId: "ws-5" });
+  });
+
+  it("moves past the open waiting workspace to the next one, in any project", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "workspace.waiting.next", payload: null },
+        makeCtx({ waitingWorkspaces, pathname: "/h/srv/workspace/ws-5" }),
+      ),
+    ).toEqual<ShortcutAction>({
+      kind: "navigate-workspace",
+      serverId: "other",
+      workspaceId: "ws-9",
+    });
+  });
+
+  it("does nothing when nothing else is waiting", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "workspace.waiting.next", payload: null },
+        makeCtx({ waitingWorkspaces: [{ serverId: "srv", workspaceId: "ws-2" }] }),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "none" });
+  });
+
+  it("routes the recent walk with its direction", () => {
+    expect(
+      routeKeyboardShortcut({ action: "workspace.recent.walk", payload: { delta: -1 } }, makeCtx()),
+    ).toEqual<ShortcutAction>({ kind: "walk-recent-workspaces", delta: -1 });
   });
 });
 

@@ -50,6 +50,7 @@ import {
   AGENT_ASK_DEFAULT_TIMEOUT_MS,
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
+  type AgentActiveTurnBehavior,
   type AccountRoutingLoginSubmitCodeResponse,
   type OmpAccountLoginPayload,
   type OmpAccountRoutingMutation,
@@ -80,6 +81,7 @@ import type {
   GitSetupOptions,
   CheckoutStatusResponse,
   CheckoutCommit,
+  CheckoutWorktree,
   ParsedDiffFile,
   CheckoutCommitResponse,
   CheckoutMergeResponse,
@@ -130,6 +132,8 @@ import type {
   RefreshProvidersSnapshotResponseMessage,
   ProviderDiagnosticResponseMessage,
   ProviderUsageListResponseMessage,
+  ProviderInstallationInspectResponseMessage,
+  ProviderInstallationCheckUpdatesResponseMessage,
   UsageReportEntry,
   DaemonGetStatusResponse,
   DaemonGetPairingOfferResponse,
@@ -677,6 +681,13 @@ export interface DaemonClientConfig {
   runtimeMetricsWindowMs?: number;
   trace?: DaemonClientTrace;
   capabilities?: Partial<Record<ClientCapability, unknown>>;
+  /**
+   * Ping the daemon every 10 s and reconnect after missed replies (default true). Turn it off
+   * only where the transport reports its own loss (a plugin's IPC channel, an in-process
+   * channel): there a ping cannot find a dead link the channel would not, and it costs both
+   * processes a wakeup per client every 10 s.
+   */
+  livenessHeartbeat?: boolean;
 }
 
 export interface DaemonClientTrace {
@@ -685,13 +696,23 @@ export interface DaemonClientTrace {
   endSection(): void;
 }
 
+/** A queued agent message carries the applied behavior and what happens next. */
+export interface AgentMessageReceipt {
+  deliveryStatus?: "queued";
+  activeTurnBehavior?: AgentActiveTurnBehavior;
+  guidance?: string;
+}
+
 export interface SendMessageOptions {
   sourceAgentId?: string;
   sourceAgentServerId?: string;
   sessionMode?: string;
   messageId?: string;
-  /** Agent sources wait for turn end unless interrupt is explicit. Human sources default to interrupt. */
-  activeTurnBehavior?: ActiveTurnBehavior;
+  /**
+   * Agent sources default to queue: wait for the running turn to end. Human sources default to
+   * interrupt and cannot queue.
+   */
+  activeTurnBehavior?: AgentActiveTurnBehavior;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
   attachmentRefs?: SendAgentMessageRequest["attachmentRefs"];
@@ -839,6 +860,13 @@ type GetProvidersSnapshotPayload = GetProvidersSnapshotResponseMessage["payload"
 type RefreshProvidersSnapshotPayload = RefreshProvidersSnapshotResponseMessage["payload"];
 type ProviderDiagnosticPayload = ProviderDiagnosticResponseMessage["payload"];
 type ProviderUsageListPayload = ProviderUsageListResponseMessage["payload"];
+type ProviderInstallationInspectPayload = ProviderInstallationInspectResponseMessage["payload"];
+type ProviderInstallationCheckUpdatesPayload =
+  ProviderInstallationCheckUpdatesResponseMessage["payload"];
+type ProviderInstallationUpdatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "provider.installation.update.response" }
+>["payload"];
 interface UsageListReportsPayload {
   requestId: string;
   reports: UsageReportEntry[];
@@ -1414,6 +1442,8 @@ function toTimeoutError(error: unknown, label: string, timeoutMs: number): Error
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30000;
 const DEFAULT_SESSION_RPC_TIMEOUT_MS = 60_000;
+// The daemon allows 90s per provider; retain its result through the delivery margin.
+const RECENT_PROVIDER_SESSIONS_TIMEOUT_MS = 100_000;
 const PUSH_TOKEN_REVOCATION_TIMEOUT_MS = 2_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_LIVENESS_TIMEOUT_MS = 5000;
@@ -3185,7 +3215,11 @@ export class DaemonClient {
   }
 
   private scheduleNextLivenessHeartbeat(): void {
-    if (this.connectionState.status !== "connected" || this.livenessHeartbeatTimer) {
+    if (
+      this.config.livenessHeartbeat === false ||
+      this.connectionState.status !== "connected" ||
+      this.livenessHeartbeatTimer
+    ) {
       return;
     }
     this.livenessHeartbeatTimer = setTimeout(() => {
@@ -3649,6 +3683,7 @@ export class DaemonClient {
     return this.sendRequest({
       requestId: resolvedRequestId,
       message,
+      timeout: RECENT_PROVIDER_SESSIONS_TIMEOUT_MS,
       options: { skipQueue: true },
       select: (msg) => {
         if (msg.type !== "fetch_recent_provider_sessions_response") {
@@ -4081,6 +4116,9 @@ export class DaemonClient {
         cwd,
       },
       responseType: "open_project_response",
+      // Opening a path whose checkout is currently archiving waits on the daemon checkout gate;
+      // wait for the terminal response or transport disconnect instead of timing out while queued.
+      timeout: 0,
     });
   }
 
@@ -4212,6 +4250,9 @@ export class DaemonClient {
         workspaceId,
       },
       responseType: "archive_workspace_response",
+      // Archive may wait for a queued checkout operation and then run teardown/manager removal,
+      // each bounded on the daemon; wait for the terminal response or transport disconnect.
+      timeout: 0,
     });
   }
 
@@ -4834,7 +4875,9 @@ export class DaemonClient {
           type: "workspace.recovery.restore.request",
           workspaceId,
         },
-        timeout: 150_000,
+        // Restore may wait behind an active archive/removal before running a bounded restore stage;
+        // wait for the terminal response or transport disconnect instead of timing out mid-workflow.
+        timeout: 0,
       });
     if (!payload.accepted) {
       throw new Error(payload.error ?? "Workspace recovery was rejected by the host");
@@ -4850,8 +4893,9 @@ export class DaemonClient {
           type: "workspace.archive.undo.request",
           workspaceId,
         },
-        // Undoing a finished worktree archive recreates the worktree, like recovery does.
-        timeout: 150_000,
+        // Undo may wait for an in-flight archive to settle and then recreate the worktree;
+        // wait for the terminal response or transport disconnect.
+        timeout: 0,
       });
     if (!payload.accepted) {
       throw new Error(payload.error ?? "The host could not undo the workspace archive");
@@ -5355,7 +5399,7 @@ export class DaemonClient {
     agentId: string,
     text: string,
     options: SendMessageOptions = {},
-  ): Promise<{ deliveryStatus?: "queued" }> {
+  ): Promise<AgentMessageReceipt> {
     if (
       options.sourceAgentId &&
       this.lastServerInfoMessage?.features?.agentMessageProvenance !== true
@@ -5368,6 +5412,7 @@ export class DaemonClient {
     ) {
       throw new Error("Update the Paseo host to send messages with a qualified agent address.");
     }
+    const activeTurnBehavior = this.activeTurnBehaviorForHost(options);
     const requestId = this.createRequestId();
     const messageId = options.messageId ?? crypto.randomUUID();
     const message = SessionInboundMessageSchema.parse({
@@ -5379,7 +5424,7 @@ export class DaemonClient {
       sourceAgentServerId: options.sourceAgentServerId,
       sessionMode: options.sessionMode,
       ...(messageId ? { messageId } : {}),
-      activeTurnBehavior: options.activeTurnBehavior,
+      activeTurnBehavior,
       images: options.images,
       attachments: options.attachments,
       attachmentRefs: options.attachmentRefs,
@@ -5401,14 +5446,39 @@ export class DaemonClient {
     if (!payload.accepted) {
       throw new Error(payload.error ?? "sendAgentMessage rejected");
     }
-    return payload.deliveryStatus ? { deliveryStatus: payload.deliveryStatus } : {};
+    return {
+      ...(payload.deliveryStatus ? { deliveryStatus: payload.deliveryStatus } : {}),
+      ...(payload.activeTurnBehavior ? { activeTurnBehavior: payload.activeTurnBehavior } : {}),
+      ...(payload.guidance ? { guidance: payload.guidance } : {}),
+    };
+  }
+
+  /** The behavior to put on the wire for this host. */
+  private activeTurnBehaviorForHost(
+    options: SendMessageOptions,
+  ): AgentActiveTurnBehavior | undefined {
+    const requested = options.activeTurnBehavior;
+    if (!options.sourceAgentId) {
+      if (requested === "queue")
+        throw new Error('activeTurnBehavior "queue" needs an agent sender (sourceAgentId).');
+      return requested;
+    }
+    if (this.lastServerInfoMessage?.features?.agentActiveTurnBehaviors === true) return requested;
+    // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove after 2027-05-22 once daemon
+    // floor >= v0.17.2. Older hosts reject queue and read an agent's steer as queue, so queue
+    // goes out as the host's own agent default and a real steer needs an update.
+    if (requested === "steer")
+      throw new Error(
+        "Update the Paseo host to steer a running turn from an agent. Leave the behavior out to queue the message, or use interrupt.",
+      );
+    return requested === "interrupt" ? "interrupt" : undefined;
   }
 
   async sendMessage(
     agentId: string,
     text: string,
     options?: SendMessageOptions,
-  ): Promise<{ deliveryStatus?: "queued" }> {
+  ): Promise<AgentMessageReceipt> {
     return this.sendAgentMessage(agentId, text, options);
   }
 
@@ -6246,6 +6316,23 @@ export class DaemonClient {
     return { baseRef: payload.baseRef, commits: payload.commits };
   }
 
+  /** Every git worktree of the repository `cwd` is in, whoever created it. */
+  async listCheckoutWorktrees(cwd: string, requestId?: string): Promise<CheckoutWorktree[]> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"checkout.worktrees.list.response">({
+        requestId,
+        message: {
+          type: "checkout.worktrees.list.request",
+          cwd,
+        },
+        timeout: 60000,
+      });
+    if (payload.error) {
+      throw new Error(payload.error.message);
+    }
+    return payload.worktrees;
+  }
+
   async getCommitFileDiff(
     cwd: string,
     sha: string,
@@ -6525,6 +6612,9 @@ export class DaemonClient {
         ...(input.scope !== undefined ? { scope: input.scope } : {}),
       },
       responseType: "paseo_worktree_archive_response",
+      // Archive may wait for a queued checkout operation and then run teardown/manager removal,
+      // each bounded on the daemon; wait for the terminal response or transport disconnect.
+      timeout: 0,
     });
   }
 
@@ -6548,6 +6638,10 @@ export class DaemonClient {
         ...(input.githubPrNumber !== undefined ? { githubPrNumber: input.githubPrNumber } : {}),
       },
       responseType: "create_paseo_worktree_response",
+      // Every daemon stage (before hooks, shared 120s manager budget, Git, after hooks) enforces
+      // its own deadline, and transport heartbeats/close reject if the host drops, so wait for the
+      // terminal worktree response instead of aborting prematurely mid-workflow.
+      timeout: 0,
     });
   }
 
@@ -6679,6 +6773,7 @@ export class DaemonClient {
       includeFiles?: boolean;
       includeDirectories?: boolean;
       matchMode?: "fuzzy" | "suffix";
+      includeIgnored?: boolean;
     },
     requestId?: string,
   ): Promise<DirectorySuggestionsPayload> {
@@ -6692,6 +6787,7 @@ export class DaemonClient {
         includeDirectories: options.includeDirectories,
         matchMode: options.matchMode,
         limit: options.limit,
+        ...(options.includeIgnored ? { includeIgnored: true } : {}),
       },
       responseType: "directory_suggestions_response",
       // Home-tree scans on large home dirs can take several seconds; don't cut
@@ -6818,6 +6914,34 @@ export class DaemonClient {
     });
     const snapshot = await subscription.ready;
     return { initial: snapshot.initial, subscription, unsubscribe: subscription.release };
+  }
+
+  /**
+   * Watches the entry names of one directory. `onChange` runs when they change and again
+   * after a reconnect, since changes made while disconnected were missed.
+   * Requires `server_info.features.fsDirectorySubscriptions`.
+   */
+  async subscribeDirectory(
+    input: { cwd: string; path: string; signal?: AbortSignal },
+    onChange: () => void,
+  ): Promise<{ unsubscribe: () => Promise<void> }> {
+    const subscription = this.observe(
+      "fs.directory.subscribe.response",
+      { type: "fs.directory.subscribe.request", cwd: input.cwd, path: input.path },
+      { signal: input.signal },
+    );
+    let initial = true;
+    subscription.subscribe({
+      snapshot: () => {
+        if (!initial) onChange();
+        initial = false;
+      },
+      update: (message) => {
+        if (message.type === "fs.directory.update") onChange();
+      },
+    });
+    await subscription.ready;
+    return { unsubscribe: subscription.release };
   }
 
   async writeFile(input: {
@@ -7337,6 +7461,70 @@ export class DaemonClient {
       responseType: "provider_diagnostic_response",
       timeout: 180000,
     });
+  }
+
+  /** Install and update links plus installed state. Requires `features.providerInstallation`. */
+  async inspectProviderInstallation(
+    provider: AgentProvider,
+    options?: { refresh?: boolean; requestId?: string },
+  ): Promise<ProviderInstallationInspectPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"provider.installation.inspect.response">({
+      requestId: options?.requestId,
+      message: {
+        type: "provider.installation.inspect.request",
+        provider,
+        ...(options?.refresh ? { refresh: true } : {}),
+      },
+      timeout: 60_000,
+    });
+  }
+
+  /** Whether the provider reports a newer version. Requires `features.providerInstallation`. */
+  async checkProviderUpdates(
+    provider: AgentProvider,
+    options?: { refresh?: boolean; requestId?: string },
+  ): Promise<ProviderInstallationCheckUpdatesPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"provider.installation.check_updates.response">(
+      {
+        requestId: options?.requestId,
+        message: {
+          type: "provider.installation.check_updates.request",
+          provider,
+          ...(options?.refresh ? { refresh: true } : {}),
+        },
+        timeout: 60_000,
+      },
+    );
+  }
+
+  /** Starts the provider's update, or joins the running one. Follow it with `observeProviderUpdates`. */
+  async updateProvider(
+    provider: AgentProvider,
+    options?: { requestId?: string },
+  ): Promise<ProviderInstallationUpdatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"provider.installation.update.response">({
+      requestId: options?.requestId,
+      message: { type: "provider.installation.update.request", provider },
+      timeout: 60_000,
+    });
+  }
+
+  /**
+   * The provider's latest update, then `provider.installation.update.progress` as updates start,
+   * report output and settle, and `provider.installation.update.cleared` when a refresh drops a
+   * failed update. Survives reconnects: each new snapshot replaces the previous one.
+   */
+  observeProviderUpdates(
+    provider: AgentProvider,
+    options?: { signal?: AbortSignal },
+  ): OwnedSubscription<
+    CorrelatedResponsePayload<"provider.installation.update.subscribe.response">
+  > {
+    return this.observe(
+      "provider.installation.update.subscribe.response",
+      { type: "provider.installation.update.subscribe.request", provider },
+      options,
+    );
   }
 
   async listProviderUsage(options?: { requestId?: string }): Promise<ProviderUsageListPayload> {

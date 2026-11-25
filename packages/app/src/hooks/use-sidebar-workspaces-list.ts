@@ -12,7 +12,7 @@ import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import {
   createSidebarWorkspacePlacementSelector,
   computeSidebarOrderUpdates,
-  createSidebarWorkspaceEntry,
+  countProjectWorkspacesNeedingInput,
   deriveProjectStatusBucket,
   deriveSidebarLoadingState,
   type ProjectStatusSession,
@@ -75,6 +75,33 @@ export function useSidebarProjectStatusBucket(input: {
       });
     },
     [enabled, pendingCreateAttempts, workspaces],
+  );
+
+  return useStoreWithEqualityFn(useSessionStore, selector, Object.is);
+}
+
+/**
+ * How many of a project's workspaces wait on the user, for the project strip's badge.
+ * Same subscription shape as `useSidebarProjectStatusBucket`: a primitive, so the strip
+ * entry re-renders only when the count moves.
+ */
+export function useSidebarProjectNeedsInputCount(
+  workspaces: readonly SidebarWorkspacePlacement[],
+): number {
+  const pendingCreateAttempts = useStoreWithEqualityFn(
+    useCreateFlowStore,
+    (state) => state.pendingByDraftId,
+    workspaceEqualityFns.deep,
+  );
+
+  const selector = useCallback(
+    (state: { sessions: Record<string, ProjectStatusSession | undefined> }) =>
+      countProjectWorkspacesNeedingInput({
+        workspaces,
+        sessions: state.sessions,
+        pendingCreateAttempts,
+      }),
+    [pendingCreateAttempts, workspaces],
   );
 
   return useStoreWithEqualityFn(useSessionStore, selector, Object.is);

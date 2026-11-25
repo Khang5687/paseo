@@ -19,6 +19,7 @@ import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
 import { startCreatedAgentInitialPrompt } from "../agent-prompt.js";
 import { resolveCreateAgentTitles } from "../create-agent-title.js";
 import { buildAgentPrompt } from "../prompt-attachments.js";
+import { saveInlineImages } from "../prompt-image-files.js";
 import { normalizeClientMessageId, resolveClientMessageId } from "../../client-message-id.js";
 import { resolveRequiredProviderModel, type ResolvedProviderModel } from "../mcp-shared.js";
 import {
@@ -231,6 +232,11 @@ export async function createAgentCommand(
   };
 }
 
+function requirePaseoHome(dependencies: CreateAgentCommandDependencies): string {
+  if (!dependencies.paseoHome) throw new Error("Saving pasted images needs the Paseo home.");
+  return dependencies.paseoHome;
+}
+
 async function resolveSessionCreateAgent(
   dependencies: CreateAgentCommandDependencies,
   input: CreateAgentFromSessionInput,
@@ -255,6 +261,9 @@ async function resolveSessionCreateAgent(
     input.images,
     input.attachments,
     input.attachmentRefs,
+    input.images?.length
+      ? await saveInlineImages(requirePaseoHome(dependencies), input.images, input.attachmentRefs)
+      : undefined,
   );
   const hasPromptContent = Array.isArray(prompt) ? prompt.length > 0 : prompt.length > 0;
   const clientMessageId = normalizeClientMessageId(input.clientMessageId);
