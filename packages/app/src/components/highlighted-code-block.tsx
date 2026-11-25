@@ -130,14 +130,13 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
           {renderedCode}
         </Text>
       )}
-      {run ? (
-        <RunButton onPress={run.onPress} visible={controlsVisible && run.available} />
-      ) : null}
+      {run ? <RunButton onPress={run.onPress} visible={controlsVisible && run.available} /> : null}
       <BlockCopyButton
         onCopy={copyCode}
         visible={controlsVisible}
         label={t("message.actions.copyCode")}
-      />    </View>
+      />{" "}
+    </View>
   );
 });
 

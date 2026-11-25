@@ -1087,6 +1087,7 @@ function useDraftHistoryControl({
   );
 }
 
+// oxlint-disable-next-line complexity
 const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   serverId,
   workspaceId,

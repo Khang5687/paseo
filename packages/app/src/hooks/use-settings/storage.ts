@@ -343,6 +343,7 @@ const StoredAppSettingsSchema = z
     manageBuiltInDaemon: z.boolean().optional().catch(undefined),
     releaseChannel: z.enum(["stable", "beta"]).optional().catch(undefined),
   })
+  // oxlint-disable-next-line complexity
   .transform(({ contentMaxWidth, ...stored }) => {
     const { legacyPullRequestsInSidePane, ...openInSidePane } = stored.openInSidePane;
     const needsWrite =

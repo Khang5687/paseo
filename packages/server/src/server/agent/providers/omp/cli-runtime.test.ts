@@ -5,7 +5,6 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
 import { PassThrough } from "node:stream";
 import pino from "pino";
 import { describe, expect, onTestFinished, test, vi } from "vitest";

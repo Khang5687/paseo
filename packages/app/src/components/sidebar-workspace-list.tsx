@@ -1248,7 +1248,7 @@ function WorkspaceRowInner({
                   onMarkAsUnread={onMarkAsUnread}
                   isPinned={isPinned}
                   onTogglePin={onTogglePin}
-                  />
+                />
               </SidebarWorkspaceRowContent>
               {feedback}
             </SidebarWorkspaceContextMenu>

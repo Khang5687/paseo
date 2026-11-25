@@ -209,7 +209,11 @@ beforeEach(async () => {
   dispatcher = new AgentMessageQueueDispatcher({
     agentManager: manager,
     agentStorage: storage,
-    agentMessages: createTestAgentMessages({ agentManager: manager, agentStorage: storage, logger }),
+    agentMessages: createTestAgentMessages({
+      agentManager: manager,
+      agentStorage: storage,
+      logger,
+    }),
     logger,
   });
   dispatcher.attach();

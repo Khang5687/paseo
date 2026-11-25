@@ -237,12 +237,7 @@ export function ProviderModels({
     discoveredBody = <MutedRow>{t("settings.providers.models.noSearchMatches")}</MutedRow>;
   } else {
     discoveredBody = filteredDiscovered.map((model, index) => (
-      <DiscoveredModelRow
-        key={model.id}
-        model={model}
-        first={index === 0}
-        toggles={modelToggles}
-      />
+      <DiscoveredModelRow key={model.id} model={model} first={index === 0} toggles={modelToggles} />
     ));
   }
 
@@ -373,10 +368,7 @@ function DiscoveredModelRow({
   return (
     <View style={[styles.modelRow, !first && settingsStyles.rowBorder]}>
       <View style={styles.modelText}>
-        <Text
-          style={[styles.modelTitle, isDimmed && styles.modelTitleDisabled]}
-          numberOfLines={1}
-        >
+        <Text style={[styles.modelTitle, isDimmed && styles.modelTitleDisabled]} numberOfLines={1}>
           {model.label}
         </Text>
         <Text style={styles.monoHint} numberOfLines={1} selectable dataSet={CODE_SURFACE_DATASET}>

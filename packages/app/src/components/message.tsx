@@ -671,6 +671,7 @@ const TIMESTAMP_REVEAL_MS = 3000;
  * Shows the turn duration and swaps to the end timestamp when both are known.
  * A turn without a visible start shows its end timestamp directly.
  */
+// oxlint-disable-next-line complexity
 export const AssistantTurnFooter = memo(function AssistantTurnFooter({
   getContent,
   completedAt,
