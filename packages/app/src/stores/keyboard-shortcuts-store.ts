@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { CommandCenterTab } from "@/command-center/tabs";
+import type { JumpTarget } from "@/components/sidebar/jump-targets";
 import type { ShortcutBadgeTarget } from "@/keyboard/keyboard-shortcuts";
 import type {
   SidebarShortcutProjectTarget,
@@ -22,6 +23,10 @@ interface KeyboardShortcutsState {
   sidebarShortcutWorkspaceTargets: SidebarShortcutWorkspaceTarget[];
   /** Project strip entries by strip position: index 0 answers the first digit. */
   sidebarShortcutProjects: SidebarShortcutProjectTarget[];
+  /** Workspaces waiting on you in every project, the one that waited longest first. */
+  waitingWorkspaces: JumpTarget[];
+  /** `serverId:workspaceId` of every workspace the sidebar lists, filters aside. */
+  listedWorkspaceKeys: ReadonlySet<string>;
 
   setCommandCenterOpen: (open: boolean, tab?: CommandCenterTab) => void;
   setCommandCenterTab: (tab: CommandCenterTab) => void;
@@ -30,6 +35,10 @@ interface KeyboardShortcutsState {
   setHeldBadgeTarget: (target: ShortcutBadgeTarget | null) => void;
   setSidebarShortcutWorkspaceTargets: (targets: SidebarShortcutWorkspaceTarget[]) => void;
   setSidebarShortcutProjects: (projects: SidebarShortcutProjectTarget[]) => void;
+  setJumpTargets: (input: {
+    waitingWorkspaces: JumpTarget[];
+    listedWorkspaceKeys: ReadonlySet<string>;
+  }) => void;
   resetModifiers: () => void;
 }
 
@@ -64,6 +73,8 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
   shortcutBadgeTarget: null,
   sidebarShortcutWorkspaceTargets: [],
   sidebarShortcutProjects: [],
+  waitingWorkspaces: [],
+  listedWorkspaceKeys: new Set(),
 
   setCommandCenterOpen: (open, tab = "all") =>
     set({ commandCenterOpen: open, commandCenterTab: open ? tab : "all" }),
@@ -78,6 +89,8 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
   setSidebarShortcutWorkspaceTargets: (targets) =>
     set({ sidebarShortcutWorkspaceTargets: targets }),
   setSidebarShortcutProjects: (projects) => set({ sidebarShortcutProjects: projects }),
+  setJumpTargets: ({ waitingWorkspaces, listedWorkspaceKeys }) =>
+    set({ waitingWorkspaces, listedWorkspaceKeys }),
   resetModifiers: () => {
     set({ heldBadgeTarget: null });
     updateBadgeTimer(set, get);

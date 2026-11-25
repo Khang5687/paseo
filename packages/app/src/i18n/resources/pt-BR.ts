@@ -1345,6 +1345,8 @@ export const ptBR: TranslationResources = {
       moveEarlier: "Mover para antes",
       moveLater: "Mover para depois",
       lastOpen: "último aberto",
+      recentWorkspaces: "Workspaces recentes",
+      nextWaiting: "Próximo aguardando · {{count}}",
     },
     view: {
       failed: "Não foi possível carregar a visualização da barra lateral.",
@@ -3420,6 +3422,9 @@ export const ptBR: TranslationResources = {
         jumpToTab: "Ir para aba",
         previousWorkspace: "Workspace anterior",
         nextWorkspace: "Próximo workspace",
+        recentWorkspaces: "Workspaces recentes",
+        recentWorkspacesBack: "Workspaces recentes, para trás",
+        nextWaitingWorkspace: "Próximo workspace esperando por você",
         previousTab: "Aba anterior",
         nextTab: "Próxima aba",
         splitPaneRight: "Dividir painel à direita",

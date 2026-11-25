@@ -37,6 +37,11 @@ import {
 } from "@/stores/navigation-active-workspace-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { usePanelStore } from "@/stores/panel-store";
+import {
+  cancelRecentWorkspaceWalk,
+  releaseRecentWorkspaceWalk,
+  stepRecentWorkspaceWalk,
+} from "@/keyboard/recent-workspace-walk";
 
 const MODIFIER_FLAG_BY_KEY: Record<string, keyof ShortcutBadgeModifiers> = {
   Meta: "meta",
@@ -191,6 +196,11 @@ export function useKeyboardShortcuts({
           navigateToWorkspace(action.lastChat);
         }
         return true;
+      case "walk-recent-workspaces":
+        return stepRecentWorkspaceWalk(
+          action.delta,
+          keyboardWorkspaceSelectionRef.current ?? activeWorkspaceSelection,
+        );
     }
   };
 
@@ -209,6 +219,7 @@ export function useKeyboardShortcuts({
         sidebarShortcutProjects: store.sidebarShortcutProjects,
         navigationActiveWorkspace:
           keyboardWorkspaceSelectionRef.current ?? activeWorkspaceSelection,
+        waitingWorkspaces: store.waitingWorkspaces,
         commandCenterOpen: store.commandCenterOpen,
         shortcutsDialogOpen: store.shortcutsDialogOpen,
       },
@@ -283,11 +294,15 @@ export function useKeyboardShortcuts({
   const handleKeyUp = useStableEvent((event: KeyboardInputEvent) => {
     heldModifiers.handleKeyUp(event);
     updateHeldBadgeTarget(event, false);
+    if (MODIFIER_FLAG_BY_KEY[event.key ?? ""]) {
+      releaseRecentWorkspaceWalk(heldModifiersAfter(event, false));
+    }
   });
 
   const handleBlur = useStableEvent(() => {
     heldModifiers.reset();
     resetModifiers();
+    cancelRecentWorkspaceWalk();
   });
 
   useEffect(() => {

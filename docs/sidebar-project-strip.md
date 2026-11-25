@@ -29,6 +29,13 @@ Each project remembers the workspace you last had open in it (`useSidebarLastCha
 
 Each project shows how many of its workspaces have the `needs_input` status, through `countProjectWorkspacesNeedingInput`. It counts every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
 
+## Jump keys
+
+Two keys move between workspaces across projects, whatever the strip shows. Their combos are in [the binding table](keyboard-shortcuts.md#jump-keys).
+
+- **Recent walk.** `useRecentWorkspacesStore` (per device) keeps the workspaces you opened, newest first; `WorkspaceShortcutTargetsSubscriber` records each one. The first Tab highlights the workspace you had open before this one, each further Tab goes one older, and Shift goes one newer. On web, `RecentWorkspacesOverlay` lists the walk while the modifier is held and releasing it opens the highlighted workspace. Native has no held walk: each press opens its step at once, so repeated presses flip between the last two workspaces, because hardware keyup there is not reliable enough to end a walk on. Blur ends a walk without opening anything. Entries the sidebar does not list sit out the walk and stay in the list, for the same reason as a stale last chat.
+- **Next waiting.** `resolveWaitingWorkspaces` lists every `needs_input` workspace from the unfiltered entries (`allWorkspaceEntriesByKey`), the longest wait first, so a filter never hides one. The key opens the one after the open workspace and wraps. The phone has no key, so the compact sidebar shows a Next waiting button with the count, only while some other workspace is waiting.
+
 ## Adding to the strip
 
 Later sidebar features plug in here rather than adding a second switcher:

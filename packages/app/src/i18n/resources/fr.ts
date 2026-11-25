@@ -1347,6 +1347,8 @@ export const fr: TranslationResources = {
       moveEarlier: "Déplacer avant",
       moveLater: "Déplacer après",
       lastOpen: "dernier ouvert",
+      recentWorkspaces: "Espaces de travail récents",
+      nextWaiting: "Suivant en attente · {{count}}",
     },
     view: {
       failed: "Impossible de charger la vue de la barre latérale.",
@@ -3447,6 +3449,9 @@ export const fr: TranslationResources = {
         jumpToTab: "Aller à l’onglet",
         previousWorkspace: "Espace de travail précédent",
         nextWorkspace: "Espace de travail suivant",
+        recentWorkspaces: "Espaces de travail récents",
+        recentWorkspacesBack: "Espaces de travail récents, en arrière",
+        nextWaitingWorkspace: "Espace de travail suivant qui vous attend",
         previousTab: "Onglet précédent",
         nextTab: "Onglet suivant",
         splitPaneRight: "Diviser le panneau vers la droite",

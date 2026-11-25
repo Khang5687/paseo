@@ -42,6 +42,8 @@ export type KeyboardActionId =
   | "workspace.pane.close"
   | "workspace.navigate.index"
   | "workspace.navigate.relative"
+  | "workspace.recent.walk"
+  | "workspace.waiting.next"
   | "sidebar.project.navigate.index"
   | "sidebar.toggle.left"
   | "sidebar.toggle.right"

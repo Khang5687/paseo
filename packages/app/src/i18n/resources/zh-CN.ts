@@ -1309,6 +1309,8 @@ export const zhCN: TranslationResources = {
       moveEarlier: "前移",
       moveLater: "后移",
       lastOpen: "上次打开",
+      recentWorkspaces: "最近的 workspace",
+      nextWaiting: "下一个等待中 · {{count}}",
     },
     view: {
       failed: "无法加载侧边栏视图。",
@@ -3328,6 +3330,9 @@ export const zhCN: TranslationResources = {
         jumpToTab: "跳转到标签",
         previousWorkspace: "上一个 workspace",
         nextWorkspace: "下一个 workspace",
+        recentWorkspaces: "最近的 workspace",
+        recentWorkspacesBack: "最近的 workspace（反向）",
+        nextWaitingWorkspace: "下一个等你处理的 workspace",
         previousTab: "上一个标签",
         nextTab: "下一个标签",
         splitPaneRight: "向右拆分窗格",

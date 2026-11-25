@@ -653,14 +653,14 @@ describe("keyboard-shortcuts", () => {
   // combo rather than the action, so it must not survive the rebind.
   describe("a rebound pane-focus shortcut", () => {
     const PANE_FOCUS_DOWN_BINDING = "workspace-pane-focus-down-cmd-shift-down";
-    // macOS emits U+2206 for Option+J; the stored combo comes from the code.
-    const altJ = { key: "\u2206", code: "KeyJ", altKey: true };
+    // macOS emits U+00A5 for Option+Y; the stored combo comes from the code.
+    const altY = { key: "\u00a5", code: "KeyY", altKey: true };
 
     it.each(["message-input", "editable"] as const)("fires with %s focused", (focusScope) => {
       const result = resolveShortcut({
-        event: altJ,
+        event: altY,
         context: { isMac: true, focusScope },
-        bindings: buildEffectiveBindings({ [PANE_FOCUS_DOWN_BINDING]: "Alt+J" }),
+        bindings: buildEffectiveBindings({ [PANE_FOCUS_DOWN_BINDING]: "Alt+Y" }),
       });
 
       expect(result.match?.action).toBe("workspace.pane.focus.down");
@@ -668,9 +668,9 @@ describe("keyboard-shortcuts", () => {
 
     it("still fires outside a text field", () => {
       const result = resolveShortcut({
-        event: altJ,
+        event: altY,
         context: { isMac: true, focusScope: "other" },
-        bindings: buildEffectiveBindings({ [PANE_FOCUS_DOWN_BINDING]: "Alt+J" }),
+        bindings: buildEffectiveBindings({ [PANE_FOCUS_DOWN_BINDING]: "Alt+Y" }),
       });
 
       expect(result.match?.action).toBe("workspace.pane.focus.down");
@@ -1548,5 +1548,37 @@ describe("shortcut capture completion", () => {
     expect(isShortcutCaptureComplete("show-shortcuts", [])).toBe(false);
     expect(isShortcutCaptureComplete("show-shortcuts", ["Ctrl+K"])).toBe(true);
     expect(isShortcutCaptureComplete("show-shortcuts", ["Ctrl+0"])).toBe(true);
+  });
+});
+
+describe("jump keys", () => {
+  it.each([
+    ["Mac desktop", { isMac: true, usesDesktopBindings: true }, { altKey: true }],
+    ["Windows/Linux desktop", { isMac: false, usesDesktopBindings: true }, { ctrlKey: true }],
+    ["web", { isMac: false, usesDesktopBindings: false }, { altKey: true }],
+  ] as const)("walks recent workspaces on %s, from the composer too", (_, context, modifier) => {
+    for (const focusScope of ["other", "message-input"] as const) {
+      expect(
+        resolveShortcut({
+          event: { key: "Tab", code: "Tab", ...modifier },
+          context: { ...context, focusScope },
+        }).match,
+      ).toMatchObject({ action: "workspace.recent.walk", payload: { delta: 1 } });
+      expect(
+        resolveShortcut({
+          event: { key: "Tab", code: "Tab", shiftKey: true, ...modifier },
+          context: { ...context, focusScope },
+        }).match,
+      ).toMatchObject({ action: "workspace.recent.walk", payload: { delta: -1 } });
+    }
+  });
+
+  it("leaves Ctrl+J to the terminal, where it types a newline", () => {
+    const context = { isMac: false, usesDesktopBindings: true };
+    const event = { key: "j", code: "KeyJ", ctrlKey: true };
+    expect(resolveShortcut({ event, context }).match?.action).toBe("workspace.waiting.next");
+    expect(
+      resolveShortcut({ event, context: { ...context, focusScope: "terminal" } }).match,
+    ).toBeNull();
   });
 });

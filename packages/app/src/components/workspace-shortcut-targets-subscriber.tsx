@@ -8,6 +8,8 @@ import { useSidebarModel } from "@/components/sidebar/sidebar-model";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
 import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
+import { useRecentWorkspacesStore } from "@/stores/recent-workspaces-store";
+import { useWaitingWorkspaces } from "@/hooks/use-waiting-workspaces";
 import type { SidebarShortcutProjectTarget } from "@/utils/sidebar-shortcuts";
 
 /**
@@ -26,6 +28,40 @@ function useRememberProjectLastChat(): void {
   }, [allProjects, openWorkspace, remember]);
 }
 
+/** Records every opened workspace as the newest visit, for the Opt+Tab walk. */
+function useRecordRecentWorkspace(): void {
+  const openWorkspace = useLastWorkspaceSelection();
+  const visit = useRecentWorkspacesStore((state) => state.visit);
+  useEffect(() => {
+    if (openWorkspace) visit(openWorkspace);
+  }, [openWorkspace, visit]);
+}
+
+const NO_LISTED_WORKSPACES: ReadonlySet<string> = new Set();
+
+/** Publishes what the waiting jump and the recent walk need to the keyboard routing. */
+function usePublishJumpTargets(enabled: boolean): void {
+  const { allProjects } = useSidebarModel();
+  const waitingWorkspaces = useWaitingWorkspaces();
+  const setJumpTargets = useKeyboardShortcutsStore((state) => state.setJumpTargets);
+  const listedWorkspaceKeys = useMemo(
+    () =>
+      new Set(
+        allProjects.flatMap((project) =>
+          project.workspaces.map((workspace) => workspace.workspaceKey),
+        ),
+      ),
+    [allProjects],
+  );
+  useEffect(() => {
+    setJumpTargets(
+      enabled
+        ? { waitingWorkspaces, listedWorkspaceKeys }
+        : { waitingWorkspaces: [], listedWorkspaceKeys: NO_LISTED_WORKSPACES },
+    );
+  }, [enabled, listedWorkspaceKeys, setJumpTargets, waitingWorkspaces]);
+}
+
 export function WorkspaceShortcutTargetsSubscriber({ enabled }: { enabled: boolean }) {
   const { shortcutModel, allProjects } = useSidebarModel();
   const lastChatByProject = useSidebarLastChatStore((state) => state.byProject);
@@ -36,6 +72,8 @@ export function WorkspaceShortcutTargetsSubscriber({ enabled }: { enabled: boole
     (state) => state.setSidebarShortcutProjects,
   );
   useRememberProjectLastChat();
+  useRecordRecentWorkspace();
+  usePublishJumpTargets(enabled);
   const projects = useMemo((): SidebarShortcutProjectTarget[] => {
     const keys = new Set(
       resolveProjectStripShortcutKeys(allProjects.map((project) => project.viewKey)),

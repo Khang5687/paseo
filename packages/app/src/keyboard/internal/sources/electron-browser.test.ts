@@ -347,7 +347,7 @@ describe("Electron guest source through shared resolution", () => {
     let receive: (payload: unknown) => void = () => {};
     const pipeline = createKeyboardPipeline({
       getContext: () => ({ isMac: true, usesDesktopBindings: true, commandCenterOpen: false }),
-      getBindings: () => buildEffectiveBindings({ "command-center-toggle-cmd-k-mac": "Cmd+J" }),
+      getBindings: () => buildEffectiveBindings({ "command-center-toggle-cmd-k-mac": "Cmd+Y" }),
       isCapturing: () => false,
       overlays: createOverlayRegistry(),
       dispatch: (match, input) => {
@@ -376,8 +376,8 @@ describe("Electron guest source through shared resolution", () => {
     );
     receive({
       browserId: "tab-1",
-      key: "j",
-      code: "KeyJ",
+      key: "y",
+      code: "KeyY",
       alt: false,
       control: false,
       meta: true,

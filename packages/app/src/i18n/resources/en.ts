@@ -1329,6 +1329,8 @@ export const en = {
       moveEarlier: "Move earlier",
       moveLater: "Move later",
       lastOpen: "last open",
+      recentWorkspaces: "Recent workspaces",
+      nextWaiting: "Next waiting · {{count}}",
     },
     view: {
       failed: "Sidebar view failed to load.",
@@ -3503,6 +3505,9 @@ export const en = {
         jumpToTab: "Jump to tab",
         previousWorkspace: "Previous workspace",
         nextWorkspace: "Next workspace",
+        recentWorkspaces: "Recent workspaces",
+        recentWorkspacesBack: "Recent workspaces, backwards",
+        nextWaitingWorkspace: "Next workspace waiting on you",
         previousTab: "Previous tab",
         nextTab: "Next tab",
         splitPaneRight: "Split pane right",

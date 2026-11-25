@@ -168,6 +168,9 @@ export const SHORTCUT_HELP_ROW_ORDER: Record<ShortcutSectionId, readonly string[
     "workspace-jump-index",
     "workspace-prev",
     "workspace-next",
+    "workspace-recent",
+    "workspace-recent-back",
+    "workspace-waiting-next",
     "pin-workspace",
     "archive-workspace",
     "undo-archive-workspace",
@@ -224,6 +227,9 @@ const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "workspace-tab-jump-index": "settings.shortcuts.help.jumpToTab",
   "workspace-prev": "settings.shortcuts.help.previousWorkspace",
   "workspace-next": "settings.shortcuts.help.nextWorkspace",
+  "workspace-recent": "settings.shortcuts.help.recentWorkspaces",
+  "workspace-recent-back": "settings.shortcuts.help.recentWorkspacesBack",
+  "workspace-waiting-next": "settings.shortcuts.help.nextWaitingWorkspace",
   "workspace-tab-prev": "settings.shortcuts.help.previousTab",
   "workspace-tab-next": "settings.shortcuts.help.nextTab",
   "workspace-pane-split-right": "settings.shortcuts.help.splitPaneRight",
@@ -764,6 +770,96 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       section: "workspaces",
       label: "Next workspace",
     },
+  },
+
+  // --- Recent workspaces walk ---
+  // Held like the app switcher: each press steps through workspaces, newest visit first, and
+  // letting go of the modifier opens the one highlighted. Windows and Linux reserve Alt+Tab for
+  // the window switcher, so their desktop app uses Ctrl+Tab.
+  {
+    id: "workspace-recent-walk-alt-tab-mac",
+    action: "workspace.recent.walk",
+    combo: "Alt+Tab",
+    when: { mac: true, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: 1 },
+    help: { id: "workspace-recent", section: "workspaces", label: "Recent workspaces" },
+  },
+  {
+    id: "workspace-recent-walk-alt-shift-tab-mac",
+    action: "workspace.recent.walk",
+    combo: "Alt+Shift+Tab",
+    when: { mac: true, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: -1 },
+    help: {
+      id: "workspace-recent-back",
+      section: "workspaces",
+      label: "Recent workspaces, backwards",
+    },
+  },
+  {
+    id: "workspace-recent-walk-ctrl-tab-non-mac",
+    action: "workspace.recent.walk",
+    combo: "Ctrl+Tab",
+    when: { mac: false, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: 1 },
+    help: { id: "workspace-recent", section: "workspaces", label: "Recent workspaces" },
+  },
+  {
+    id: "workspace-recent-walk-ctrl-shift-tab-non-mac",
+    action: "workspace.recent.walk",
+    combo: "Ctrl+Shift+Tab",
+    when: { mac: false, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: -1 },
+    help: {
+      id: "workspace-recent-back",
+      section: "workspaces",
+      label: "Recent workspaces, backwards",
+    },
+  },
+  {
+    id: "workspace-recent-walk-alt-tab-web",
+    action: "workspace.recent.walk",
+    combo: "Alt+Tab",
+    when: { desktopBindings: false, commandCenter: false },
+    payload: { type: "delta", delta: 1 },
+    help: { id: "workspace-recent", section: "workspaces", label: "Recent workspaces" },
+  },
+  {
+    id: "workspace-recent-walk-alt-shift-tab-web",
+    action: "workspace.recent.walk",
+    combo: "Alt+Shift+Tab",
+    when: { desktopBindings: false, commandCenter: false },
+    payload: { type: "delta", delta: -1 },
+    help: {
+      id: "workspace-recent-back",
+      section: "workspaces",
+      label: "Recent workspaces, backwards",
+    },
+  },
+
+  // --- Next workspace waiting on you ---
+  // The browser keeps Cmd/Ctrl+J for downloads, so web uses Alt+J. A terminal reads Ctrl+J as a
+  // newline, so the Windows and Linux binding leaves terminals alone.
+  {
+    id: "workspace-waiting-next-cmd-j-mac",
+    action: "workspace.waiting.next",
+    combo: "Cmd+J",
+    when: { mac: true, desktopBindings: true, commandCenter: false },
+    help: { id: "workspace-waiting-next", section: "workspaces", label: "Next waiting workspace" },
+  },
+  {
+    id: "workspace-waiting-next-ctrl-j-non-mac",
+    action: "workspace.waiting.next",
+    combo: "Ctrl+J",
+    when: { mac: false, desktopBindings: true, commandCenter: false, terminal: false },
+    help: { id: "workspace-waiting-next", section: "workspaces", label: "Next waiting workspace" },
+  },
+  {
+    id: "workspace-waiting-next-alt-j-web",
+    action: "workspace.waiting.next",
+    combo: "Alt+J",
+    when: { desktopBindings: false, commandCenter: false },
+    help: { id: "workspace-waiting-next", section: "workspaces", label: "Next waiting workspace" },
   },
 
   // --- Tab relative navigation ---

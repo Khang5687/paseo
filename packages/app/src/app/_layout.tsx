@@ -63,6 +63,7 @@ import { WorkspaceExplorerOpenGesture } from "@/mobile-panels/explorer-open-gest
 import { ProviderSettingsHost } from "@/components/provider-settings-host";
 import { WorkspaceSetupDialog } from "@/components/workspace-setup-dialog";
 import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-shortcut-targets-subscriber";
+import { RecentWorkspacesOverlay } from "@/components/sidebar/recent-workspaces-overlay";
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
 import { FileLinkChooserSheet } from "@/assistant-file-links/file-link-chooser";
@@ -680,6 +681,7 @@ function SidebarChrome({
         <LeftSidebar active={active} desktopOverlay={overlay && !isCompactLayout} />
       ) : null}
       <WorkspaceShortcutTargetsSubscriber enabled={keyboardShortcutsEnabled} />
+      {keyboardShortcutsEnabled ? <RecentWorkspacesOverlay /> : null}
     </SidebarModelProvider>
   );
 }

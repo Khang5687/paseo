@@ -1355,6 +1355,8 @@ export const es: TranslationResources = {
       moveEarlier: "Mover antes",
       moveLater: "Mover después",
       lastOpen: "último abierto",
+      recentWorkspaces: "Espacios de trabajo recientes",
+      nextWaiting: "Siguiente en espera · {{count}}",
     },
     view: {
       failed: "No se pudo cargar la vista de la barra lateral.",
@@ -3443,6 +3445,9 @@ export const es: TranslationResources = {
         jumpToTab: "Saltar a la pestaña",
         previousWorkspace: "Espacio de trabajo anterior",
         nextWorkspace: "Siguiente espacio de trabajo",
+        recentWorkspaces: "Espacios de trabajo recientes",
+        recentWorkspacesBack: "Espacios de trabajo recientes, hacia atrás",
+        nextWaitingWorkspace: "Siguiente espacio de trabajo que te espera",
         previousTab: "Pestaña anterior",
         nextTab: "Pestaña siguiente",
         splitPaneRight: "Panel dividido a la derecha",

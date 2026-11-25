@@ -34,6 +34,15 @@ Holding a group's modifiers shows that group's number badges, and only that grou
 
 Windows reports AltGr as Ctrl+Alt, so AltGr+7 on a German layout arrives as Ctrl+Alt+7 with `key` `{`. A digit binding on non-Mac does not match Ctrl+Alt when `key` is a character other than a digit, which leaves AltGr text to the input and keeps the row jump on layouts where Ctrl+Alt+7 still reports `7`.
 
+## Jump keys
+
+| Jump                                                                                     | Mac desktop            | Windows/Linux desktop    | Web                    |
+| ---------------------------------------------------------------------------------------- | ---------------------- | ------------------------ | ---------------------- |
+| Walk recent workspaces (Shift walks back), [details](sidebar-project-strip.md#jump-keys) | Opt+Tab, Opt+Shift+Tab | Ctrl+Tab, Ctrl+Shift+Tab | Alt+Tab, Alt+Shift+Tab |
+| Next workspace waiting on you, in any project                                            | Cmd+J                  | Ctrl+J                   | Alt+J                  |
+
+The walk only ends when its modifier is released, so its bindings must keep a modifier; `releaseRecentWorkspaceWalk` checks the held modifiers on every keyup. Windows and Linux keep Alt+Tab for the OS window switcher, so desktop uses Ctrl+Tab there; plain web cannot avoid it, so on those systems the web walk may never reach the page. Web uses Alt+J because the browser owns Cmd/Ctrl+J for downloads. Ctrl+J is off in the terminal, where it types a newline.
+
 ## Native sources
 
 Use the iOS window press stream for hardware keys. The stream reaches JavaScript

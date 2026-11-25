@@ -24,6 +24,7 @@ function makeCtx(overrides: Partial<ShortcutRoutingContext> = {}): ShortcutRouti
       { projectViewKey: "proj-c", lastChat: null },
     ],
     navigationActiveWorkspace: null,
+    waitingWorkspaces: [],
     commandCenterOpen: false,
     shortcutsDialogOpen: false,
     ...overrides,
@@ -483,6 +484,50 @@ describe("routeKeyboardShortcut — toggle dialogs", () => {
         makeCtx({ shortcutsDialogOpen: true }),
       ),
     ).toEqual<ShortcutAction>({ kind: "shortcuts-dialog-toggle", nextOpen: false });
+  });
+});
+
+describe("routeKeyboardShortcut — jump keys", () => {
+  const waitingWorkspaces = [
+    { serverId: "srv", workspaceId: "ws-5" },
+    { serverId: "other", workspaceId: "ws-9" },
+  ];
+
+  it("opens the longest-waiting workspace when the open one is not waiting", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "workspace.waiting.next", payload: null },
+        makeCtx({ waitingWorkspaces }),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "navigate-workspace", serverId: "srv", workspaceId: "ws-5" });
+  });
+
+  it("moves past the open waiting workspace to the next one, in any project", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "workspace.waiting.next", payload: null },
+        makeCtx({ waitingWorkspaces, pathname: "/h/srv/workspace/ws-5" }),
+      ),
+    ).toEqual<ShortcutAction>({
+      kind: "navigate-workspace",
+      serverId: "other",
+      workspaceId: "ws-9",
+    });
+  });
+
+  it("does nothing when nothing else is waiting", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "workspace.waiting.next", payload: null },
+        makeCtx({ waitingWorkspaces: [{ serverId: "srv", workspaceId: "ws-2" }] }),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "none" });
+  });
+
+  it("routes the recent walk with its direction", () => {
+    expect(
+      routeKeyboardShortcut({ action: "workspace.recent.walk", payload: { delta: -1 } }, makeCtx()),
+    ).toEqual<ShortcutAction>({ kind: "walk-recent-workspaces", delta: -1 });
   });
 });
 
