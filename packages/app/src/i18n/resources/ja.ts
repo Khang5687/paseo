@@ -1334,6 +1334,7 @@ export const ja: TranslationResources = {
       lastOpen: "前回開いた",
       recentWorkspaces: "最近のワークスペース",
       nextWaiting: "次の待機中 · {{count}}",
+      quietMore: "その他 · 静かな {{count}} 件",
     },
     view: {
       failed: "サイドバーのビューを読み込めませんでした。",

@@ -1349,6 +1349,7 @@ export const fr: TranslationResources = {
       lastOpen: "dernier ouvert",
       recentWorkspaces: "Espaces de travail récents",
       nextWaiting: "Suivant en attente · {{count}}",
+      quietMore: "Plus · {{count}} au calme",
     },
     view: {
       failed: "Impossible de charger la vue de la barre latérale.",

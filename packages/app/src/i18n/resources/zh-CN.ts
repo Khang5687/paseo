@@ -1311,6 +1311,7 @@ export const zhCN: TranslationResources = {
       lastOpen: "上次打开",
       recentWorkspaces: "最近的 workspace",
       nextWaiting: "下一个等待中 · {{count}}",
+      quietMore: "更多 · {{count}} 个安静项目",
     },
     view: {
       failed: "无法加载侧边栏视图。",

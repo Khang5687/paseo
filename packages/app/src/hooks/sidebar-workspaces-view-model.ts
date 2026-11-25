@@ -211,7 +211,10 @@ export interface ProjectStatusInput {
  * activity-index + effective-status pipeline as per-workspace rows (one pass over the
  * session's agents per server, not per workspace) rather than re-deriving it.
  */
-function collectProjectWorkspaceStatuses(input: ProjectStatusInput): SidebarStateBucket[] {
+function forEachKnownProjectWorkspace(
+  input: ProjectStatusInput,
+  visit: (serverId: string, session: ProjectStatusSession, workspace: WorkspaceDescriptor) => void,
+): void {
   const workspaceIdsByServer = new Map<string, string[]>();
   for (const placement of input.workspaces) {
     const existing = workspaceIdsByServer.get(placement.serverId);
@@ -222,7 +225,6 @@ function collectProjectWorkspaceStatuses(input: ProjectStatusInput): SidebarStat
     }
   }
 
-  const buckets: SidebarStateBucket[] = [];
   for (const [serverId, workspaceIds] of workspaceIdsByServer) {
     const session = input.sessions[serverId];
     if (!session) continue;
@@ -232,18 +234,65 @@ function collectProjectWorkspaceStatuses(input: ProjectStatusInput): SidebarStat
         workspaceId,
       });
       const workspace = workspaceKey ? session.workspaces.get(workspaceKey) : undefined;
-      if (!workspace) continue;
-      buckets.push(
-        deriveEffectiveWorkspaceStatus({
-          serverId,
-          workspace,
-          pendingCreateAttempts: input.pendingCreateAttempts,
-          workspaceAgentActivity: session.workspaceAgentActivity,
-        }).status,
-      );
+      if (workspace) visit(serverId, session, workspace);
     }
   }
+}
+
+function collectProjectWorkspaceStatuses(input: ProjectStatusInput): SidebarStateBucket[] {
+  const buckets: SidebarStateBucket[] = [];
+  forEachKnownProjectWorkspace(input, (serverId, session, workspace) => {
+    buckets.push(
+      deriveEffectiveWorkspaceStatus({
+        serverId,
+        workspace,
+        pendingCreateAttempts: input.pendingCreateAttempts,
+        workspaceAgentActivity: session.workspaceAgentActivity,
+      }).status,
+    );
+  });
   return buckets;
+}
+
+export interface ProjectActivity {
+  /** Newest chat activity across the project's workspaces; null when none is known. */
+  lastActivityMs: number | null;
+  needsInput: boolean;
+}
+
+/**
+ * When a project last saw chat activity, and whether a chat in it waits on you. Activity is the
+ * newest of a workspace's creation, last prompt, status change, and agent status change.
+ */
+export function deriveProjectActivity(input: ProjectStatusInput): ProjectActivity {
+  let lastActivityMs: number | null = null;
+  let needsInput = false;
+  forEachKnownProjectWorkspace(input, (serverId, session, workspace) => {
+    const times = [
+      workspace.createdAt,
+      workspace.lastUserMessageAt,
+      workspace.statusEnteredAt,
+      session.workspaceAgentActivity.get(workspace.id)?.enteredAt ?? null,
+    ];
+    for (const time of times) {
+      const ms = time?.getTime();
+      if (
+        ms !== undefined &&
+        !Number.isNaN(ms) &&
+        (lastActivityMs === null || ms > lastActivityMs)
+      ) {
+        lastActivityMs = ms;
+      }
+    }
+    const status = deriveEffectiveWorkspaceStatus({
+      serverId,
+      workspace,
+      pendingCreateAttempts: input.pendingCreateAttempts,
+      workspaceAgentActivity: session.workspaceAgentActivity,
+    }).status;
+    if (status === "needs_input") needsInput = true;
+  });
+  return { lastActivityMs, needsInput };
 }
 
 /**

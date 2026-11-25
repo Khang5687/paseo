@@ -1,4 +1,4 @@
-import { LayoutGrid } from "lucide-react-native";
+import { Ellipsis, LayoutGrid } from "lucide-react-native";
 import { memo, type ReactNode, type RefObject, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ScrollView, Text, View } from "react-native";
@@ -31,6 +31,7 @@ import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store"
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
+import { useSidebarQuietFoldStore } from "@/stores/sidebar-quiet-fold-store";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
@@ -50,7 +51,9 @@ const CHIP_ICON_SIZE = 18;
 const PROJECT_JUMP_HELP_ID = "sidebar-project-jump-index";
 
 const ThemedLayoutGrid = withUnistyles(LayoutGrid);
+const ThemedEllipsis = withUnistyles(Ellipsis);
 const allIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+
 /** Hover state for the docs/hover.md pattern: the outer View listens, the inner press is separate. */
 function useHoverHandlers() {
   const [hovered, setHovered] = useState(false);
@@ -72,7 +75,9 @@ function saveProjectStripOrder(reorderedKeys: string[]): void {
 }
 
 interface ProjectStripModel {
+  /** The projects that show; `quietProjects` sit behind "More". */
   projects: SidebarProjectEntry[];
+  quietProjects: SidebarProjectEntry[];
   projectKeys: string[];
   iconByViewKey: ReadonlyMap<string, string | null>;
   allSelected: boolean;
@@ -80,14 +85,15 @@ interface ProjectStripModel {
 }
 
 function useProjectStripModel(): ProjectStripModel | null {
-  const { allProjects, resolvedProjectFilters } = useSidebarModel();
+  const { allProjects, resolvedProjectFilters, stripProjects } = useSidebarModel();
   const iconTargets = useMemo(() => resolveSidebarProjectIconTargets(allProjects), [allProjects]);
   const iconByViewKey = useProjectIcons({ projects: iconTargets });
   const projectKeys = useMemo(() => allProjects.map((project) => project.viewKey), [allProjects]);
   const selectedKeys = useMemo(() => new Set(resolvedProjectFilters), [resolvedProjectFilters]);
   if (!shouldShowProjectStrip(allProjects.length)) return null;
   return {
-    projects: allProjects,
+    projects: stripProjects.active,
+    quietProjects: stripProjects.quiet,
     projectKeys,
     iconByViewKey,
     allSelected: resolvedProjectFilters.length === 0,
@@ -146,6 +152,20 @@ function SidebarProjectRail() {
     [model?.iconByViewKey, model?.selectedKeys, showNumbers],
   );
 
+  const quietFooter = useMemo(
+    () =>
+      model && model.quietProjects.length > 0 ? (
+        <RailQuietFold
+          projects={model.quietProjects}
+          startIndex={model.projects.length}
+          iconByViewKey={model.iconByViewKey}
+          selectedKeys={model.selectedKeys}
+          showNumber={showNumbers}
+        />
+      ) : null,
+    [model, showNumbers],
+  );
+
   if (!model) return null;
 
   return (
@@ -164,10 +184,77 @@ function SidebarProjectRail() {
         renderItem={renderItem}
         onDragEnd={handleDragEnd}
         extraData={model.selectedKeys}
+        ListFooterComponent={quietFooter}
         useDragHandle
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.railListContent}
       />
+    </View>
+  );
+}
+
+/**
+ * The rail's "More": projects with no chat activity for 3 days. Opening it lists them under
+ * it; they don't drag, since the drag order is the order of the projects that show.
+ */
+function RailQuietFold({
+  projects,
+  startIndex,
+  iconByViewKey,
+  selectedKeys,
+  showNumber,
+}: {
+  projects: SidebarProjectEntry[];
+  startIndex: number;
+  iconByViewKey: ReadonlyMap<string, string | null>;
+  selectedKeys: ReadonlySet<string>;
+  showNumber: boolean;
+}) {
+  const { t } = useTranslation();
+  const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
+  const open = useSidebarQuietFoldStore((state) => state.open);
+  const toggle = useSidebarQuietFoldStore((state) => state.toggle);
+  const label = t("sidebar.projectStrip.quietMore", { count: projects.length });
+  return (
+    <View testID="sidebar-project-rail-quiet">
+      <View style={styles.railDivider} />
+      <View style={styles.railItem} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <PressHighlight
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              aria-expanded={open}
+              highlightStyle={styles.railButtonPressed}
+              onPress={toggle}
+              style={[styles.railButton, hovered || open ? styles.railButtonHovered : null]}
+              testID="sidebar-project-rail-more"
+            >
+              <View style={styles.railAllIcon}>
+                <ThemedEllipsis size={16} uniProps={allIconMapping} />
+              </View>
+              <View style={styles.quietCountFloating} pointerEvents="none">
+                <Text style={styles.quietCountText}>{projects.length}</Text>
+              </View>
+            </PressHighlight>
+          </TooltipTrigger>
+          <TooltipContent side="right" align="center" offset={8}>
+            <Text style={styles.tooltipText}>{label}</Text>
+          </TooltipContent>
+        </Tooltip>
+      </View>
+      {open
+        ? projects.map((project, index) => (
+            <RailProjectButton
+              key={project.viewKey}
+              project={project}
+              index={startIndex + index}
+              iconDataUri={iconByViewKey.get(project.viewKey) ?? null}
+              selected={selectedKeys.has(project.viewKey)}
+              showNumber={showNumber}
+            />
+          ))
+        : null}
     </View>
   );
 }
@@ -350,6 +437,9 @@ export function SidebarProjectChipRow({
           showNumber={showNumbers}
         />
       ))}
+      {model.quietProjects.length > 0 ? (
+        <QuietChips model={model} showNumber={showNumbers} />
+      ) : null}
     </>
   );
 
@@ -381,6 +471,43 @@ export function SidebarProjectChipRow({
         </ScrollView>
       )}
     </View>
+  );
+}
+
+/** The chip row's "More": a chip that opens the quiet projects as chips after it. */
+function QuietChips({ model, showNumber }: { model: ProjectStripModel; showNumber: boolean }) {
+  const { t } = useTranslation();
+  const open = useSidebarQuietFoldStore((state) => state.open);
+  const toggle = useSidebarQuietFoldStore((state) => state.toggle);
+  return (
+    <>
+      <PressHighlight
+        accessibilityRole="button"
+        aria-expanded={open}
+        highlightStyle={styles.chipPressed}
+        onPress={toggle}
+        style={[styles.chip, open ? styles.chipOpen : null]}
+        testID="sidebar-project-chip-more"
+      >
+        <ThemedEllipsis size={14} uniProps={allIconMapping} />
+        <Text style={styles.chipMutedText} numberOfLines={1}>
+          {t("sidebar.projectStrip.quietMore", { count: model.quietProjects.length })}
+        </Text>
+      </PressHighlight>
+      {open
+        ? model.quietProjects.map((project, index) => (
+            <ProjectChip
+              key={project.viewKey}
+              project={project}
+              index={model.projects.length + index}
+              projectKeys={model.projectKeys}
+              iconDataUri={model.iconByViewKey.get(project.viewKey) ?? null}
+              selected={model.selectedKeys.has(project.viewKey)}
+              showNumber={showNumber}
+            />
+          ))
+        : null}
+    </>
   );
 }
 
@@ -579,6 +706,26 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: theme.fontWeight.semibold,
     lineHeight: 12,
   },
+  quietCountFloating: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 2,
+    borderColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.surface2,
+  },
+  quietCountText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: 10,
+    fontWeight: theme.fontWeight.semibold,
+    lineHeight: 12,
+  },
   tooltipRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -621,6 +768,9 @@ const styles = StyleSheet.create((theme) => ({
   chipPressed: {
     backgroundColor: theme.colors.surface2,
   },
+  chipOpen: {
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
   chipIconText: {
     fontSize: 10,
     fontWeight: theme.fontWeight.semibold,
@@ -630,5 +780,11 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.foreground,
+  },
+  chipMutedText: {
+    flexShrink: 1,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foregroundMuted,
   },
 }));

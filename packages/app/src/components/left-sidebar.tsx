@@ -112,6 +112,7 @@ import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
 import { SidebarProjectChipRow, SidebarProjectRailLayout } from "./sidebar/project-strip";
 import { NextWaitingButton } from "./sidebar/next-waiting-button";
+import { SidebarQuietFoldRow } from "./sidebar/quiet-fold-row";
 
 type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
 
@@ -686,6 +687,7 @@ function MobileSidebar({
                 parentGestureRef={closeGestureRef}
                 dragGestureHostActive={active}
                 listHeaderComponent={workspacesSectionHeaderElement}
+                listFooterComponent={quietFoldRowElement}
               />
             )}
             <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
@@ -947,6 +949,7 @@ function DesktopSidebar({
                     parentGestureRef={closeGestureRef}
                     dragGestureHostActive={active}
                     listHeaderComponent={workspacesSectionHeaderElement}
+                    listFooterComponent={quietFoldRowElement}
                   />
                 )}
                 <SidebarSelectionHost
@@ -1002,6 +1005,8 @@ function WorkspacesSectionHeader() {
 // Stable element so the sidebar list's listHeaderComponent prop keeps identity across
 // renders (WorkspacesSectionHeader takes no props).
 const workspacesSectionHeaderElement = <WorkspacesSectionHeader />;
+// Same for the footer: the "More" row reads what it needs from the sidebar model.
+const quietFoldRowElement = <SidebarQuietFoldRow />;
 
 // Static styles for Animated.Views — must NOT use Unistyles dynamic theme to
 // avoid the "Unable to find node on an unmounted component" crash when Unistyles

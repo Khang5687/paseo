@@ -63,7 +63,7 @@ function usePublishJumpTargets(enabled: boolean): void {
 }
 
 export function WorkspaceShortcutTargetsSubscriber({ enabled }: { enabled: boolean }) {
-  const { shortcutModel, allProjects } = useSidebarModel();
+  const { shortcutModel, stripProjects } = useSidebarModel();
   const lastChatByProject = useSidebarLastChatStore((state) => state.byProject);
   const setSidebarShortcutWorkspaceTargets = useKeyboardShortcutsStore(
     (state) => state.setSidebarShortcutWorkspaceTargets,
@@ -75,16 +75,18 @@ export function WorkspaceShortcutTargetsSubscriber({ enabled }: { enabled: boole
   useRecordRecentWorkspace();
   usePublishJumpTargets(enabled);
   const projects = useMemo((): SidebarShortcutProjectTarget[] => {
+    // The rail's order: projects folded into "More" come after the ones that show.
+    const stripOrder = [...stripProjects.active, ...stripProjects.quiet];
     const keys = new Set(
-      resolveProjectStripShortcutKeys(allProjects.map((project) => project.viewKey)),
+      resolveProjectStripShortcutKeys(stripOrder.map((project) => project.viewKey)),
     );
-    return allProjects
+    return stripOrder
       .filter((project) => keys.has(project.viewKey))
       .map((project) => ({
         projectViewKey: project.viewKey,
         lastChat: resolveProjectLastChat(project, lastChatByProject[project.viewKey]),
       }));
-  }, [allProjects, lastChatByProject]);
+  }, [stripProjects, lastChatByProject]);
 
   useEffect(() => {
     if (!enabled) {

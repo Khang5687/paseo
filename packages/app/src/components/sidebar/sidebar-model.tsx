@@ -8,6 +8,7 @@ import React, {
   type ReactNode,
 } from "react";
 import {
+  useQuietProjectKeys,
   useSidebarWorkspacesList,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
@@ -29,6 +30,9 @@ import type { SidebarProjectIconTarget } from "@/utils/sidebar-project-row-model
 import { filterWorkspacesByLabels, type SidebarWorkspaceGroup } from "./sidebar-labels";
 import { filterWorkspacesByProjects, resolveActiveProjectFilters } from "./sidebar-project-filter";
 import { sortProjectsByUrgency } from "./urgent-sort";
+import { resolveQuietKeep, splitQuietProjects } from "./quiet-projects";
+import { useSidebarQuietFoldStore } from "@/stores/sidebar-quiet-fold-store";
+import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import {
   hasAuthoritativeWorkspaceLabelCatalog,
   useWorkspaceLabelProjection,
@@ -55,6 +59,13 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   collapsedProjectKeys: ReadonlySet<string>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   shortcutModel: SidebarShortcutModel;
+  /**
+   * `allProjects` split for the rail and chip row: `quiet` holds projects folded into "More"
+   * (no chat activity for 3 days, nothing waiting on you). Digit jumps count `active` first.
+   */
+  stripProjects: { active: SidebarProjectEntry[]; quiet: SidebarProjectEntry[] };
+  /** How many projects the project list folded away. Zero while a project filter applies. */
+  listQuietCount: number;
   nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
@@ -174,6 +185,39 @@ export function SidebarModelProvider({
     [filteredProjects, filteredWorkspaceEntriesByKey, groupMode, workspaceSort],
   );
   const pinnedKeys = usePinnedSidebarKeys(orderedProjects);
+  const openWorkspace = useLastWorkspaceSelection();
+  const quietKeep = useMemo(
+    () =>
+      resolveQuietKeep({
+        projects: list.projects,
+        workspaceKeys: openWorkspace
+          ? [
+              ...pinnedKeys.pinnedWorkspaceKeys,
+              `${openWorkspace.serverId}:${openWorkspace.workspaceId}`,
+            ]
+          : pinnedKeys.pinnedWorkspaceKeys,
+        projectKeys: resolvedProjectFilters,
+      }),
+    [list.projects, openWorkspace, pinnedKeys.pinnedWorkspaceKeys, resolvedProjectFilters],
+  );
+  const quietProjectKeys = useQuietProjectKeys({ projects: list.projects, keep: quietKeep });
+  const stripProjects = useMemo(
+    () => splitQuietProjects(list.projects, quietProjectKeys),
+    [list.projects, quietProjectKeys],
+  );
+  const quietOpen = useSidebarQuietFoldStore((state) => state.open);
+  // The list folds only while it shows every project: a filter is an explicit pick.
+  const listFold = useMemo(() => {
+    if (groupMode !== "project" || hasActiveProjectFilter) {
+      return { projects: orderedProjects, quietCount: 0 };
+    }
+    const split = splitQuietProjects(orderedProjects, quietProjectKeys);
+    if (split.quiet.length === 0) return { projects: orderedProjects, quietCount: 0 };
+    return {
+      projects: quietOpen ? [...split.active, ...split.quiet] : split.active,
+      quietCount: split.quiet.length,
+    };
+  }, [groupMode, hasActiveProjectFilter, orderedProjects, quietOpen, quietProjectKeys]);
   const serverIds = useMemo(
     () => Array.from(new Set(list.workspacePlacements.map((workspace) => workspace.serverId))),
     [list.workspacePlacements],
@@ -181,7 +225,7 @@ export function SidebarModelProvider({
   const parentKeyByWorkspaceKey = useSidebarWorkspaceParents(serverIds);
   const projectionInput = useMemo(
     () => ({
-      projects: orderedProjects,
+      projects: listFold.projects,
       pinnedKeys,
       pinnedWorkspaceOrder,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
@@ -200,7 +244,7 @@ export function SidebarModelProvider({
       collapsedWorkspaceGroupKeys,
       groupMode,
       list.projectNamesByViewKey,
-      orderedProjects,
+      listFold.projects,
       pinnedCollapsed,
       pinnedKeys,
       pinnedWorkspaceOrder,
@@ -214,7 +258,7 @@ export function SidebarModelProvider({
   const value = useMemo(
     () => ({
       ...list,
-      projects: orderedProjects,
+      projects: listFold.projects,
       allProjects: list.projects,
       resolvedProjectFilters,
       hasProjectsBeforeFilter: list.projects.length > 0,
@@ -227,6 +271,8 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       toggleProjectCollapsed,
       shortcutModel: projection.shortcutModel,
+      listQuietCount: listFold.quietCount,
+      stripProjects,
       nestingDepthByWorkspaceKey: projection.nestingDepthByWorkspaceKey,
     }),
     [
@@ -234,8 +280,9 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       groupMode,
       list,
-      orderedProjects,
+      listFold,
       projection,
+      stripProjects,
       toggleProjectCollapsed,
       filteredWorkspaceEntriesByKey,
       workspaceEntriesByKey,

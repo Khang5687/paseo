@@ -1165,5 +1165,14 @@
       "packages/app/src/keyboard/native-shortcuts.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/sidebar-jump-keys.spec.ts"]
+  },
+  {
+    "pr": 153,
+    "title": "feat(app): fold quiet projects into More",
+    "tests": [
+      "packages/app/src/components/sidebar/quiet-projects.test.ts",
+      "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/sidebar-quiet-fold.spec.ts"]
   }
 ]
