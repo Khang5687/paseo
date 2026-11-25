@@ -1,4 +1,8 @@
-import type { AgentFileExplorerState, ExplorerDirectory } from "@/stores/session-store";
+import type {
+  AgentFileExplorerState,
+  ExplorerDirectory,
+  ExplorerEntry,
+} from "@/stores/session-store";
 
 export const DIRECTORY_LISTING_INVALIDATED = Symbol("directory-listing-invalidated");
 export type DirectoryListingResult =
@@ -72,6 +76,54 @@ export async function loadExplorerDirectory({
     });
     return invalidated ? DIRECTORY_LISTING_INVALIDATED : null;
   }
+}
+
+/**
+ * Background re-list for a folder the daemon reported as changed. Unlike
+ * `loadExplorerDirectory` it shows no spinner and no error: a folder that vanished drops
+ * out of its parent's listing, and a failed re-list keeps the old one. An unchanged
+ * listing keeps the same object, so rows do not re-render.
+ */
+export async function reloadExplorerDirectory({
+  readState,
+  updateState,
+  listDirectory,
+}: {
+  readState: () => AgentFileExplorerState | undefined;
+  updateState: UpdateExplorerState;
+  listDirectory: () => Promise<ExplorerDirectory>;
+}): Promise<void> {
+  const generation = readState()?.listingGeneration;
+  if (generation === undefined) return;
+  let directory: ExplorerDirectory;
+  try {
+    directory = await listDirectory();
+  } catch {
+    return;
+  }
+  updateState((state) => {
+    if (state.listingGeneration !== generation) return state;
+    const current = state.directories.get(directory.path);
+    if (current && sameEntries(current.entries, directory.entries)) return state;
+    const directories = new Map(state.directories);
+    directories.set(directory.path, directory);
+    return { ...state, directories };
+  });
+}
+
+function sameEntries(a: readonly ExplorerEntry[], b: readonly ExplorerEntry[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((entry, index) => {
+      const other = b[index];
+      return (
+        entry.path === other.path &&
+        entry.kind === other.kind &&
+        entry.size === other.size &&
+        entry.modifiedAt === other.modifiedAt
+      );
+    })
+  );
 }
 
 /** Refresh invalidates earlier replies as well as listings of collapsed folders. */

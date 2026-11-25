@@ -43,10 +43,11 @@ describe("resolveSidebarNavItems", () => {
       { key: "history", visible: true },
       { key: "search", visible: true },
       { key: "schedules", visible: true },
+      { key: "notes", visible: true },
       { key: kanbanKey, visible: true },
       { key: notesKey, visible: true },
     ]);
-    expect(items[4]).toEqual({ kind: "plugin", key: kanbanKey, group: kanban, visible: true });
+    expect(items[5]).toEqual({ kind: "plugin", key: kanbanKey, group: kanban, visible: true });
     expect(items[0]).toEqual({
       kind: "builtin",
       key: "new-workspace",
@@ -72,6 +73,7 @@ describe("resolveSidebarNavItems", () => {
       { key: "new-workspace", visible: false },
       { key: "history", visible: true },
       { key: "search", visible: true },
+      { key: "notes", visible: true },
       { key: notesKey, visible: true },
     ]);
   });
@@ -92,6 +94,7 @@ describe("resolveSidebarNavItems", () => {
       "new-workspace",
       "search",
       "schedules",
+      "notes",
     ]);
   });
 
@@ -110,6 +113,7 @@ describe("resolveSidebarNavItems", () => {
       { key: "new-workspace", visible: true },
       { key: "search", visible: true },
       { key: "schedules", visible: true },
+      { key: "notes", visible: true },
     ]);
   });
 });
@@ -119,8 +123,14 @@ describe("resolveSidebarNavItems for the Usage item", () => {
     const resolve = (preferences: SidebarNavPreference[]) =>
       summarize(resolveSidebarNavItems({ section: "footer", pluginGroups: [], preferences }));
 
-    expect(resolve([])).toEqual([{ key: "usage", visible: true }]);
-    expect(resolve([{ key: "usage", visible: false }])).toEqual([{ key: "usage", visible: false }]);
+    expect(resolve([])).toEqual([
+      { key: "saved", visible: true },
+      { key: "usage", visible: true },
+    ]);
+    expect(resolve([{ key: "usage", visible: false }])).toEqual([
+      { key: "usage", visible: false },
+      { key: "saved", visible: true },
+    ]);
   });
 });
 
@@ -139,6 +149,7 @@ describe("setSidebarNavItemVisible", () => {
       { key: "history", visible: true },
       { key: "search", visible: false },
       { key: "schedules", visible: true },
+      { key: "notes", visible: true },
       { key: kanbanKey, visible: true },
     ]);
   });
@@ -162,6 +173,7 @@ describe("setSidebarNavItemVisible", () => {
       { key: "new-workspace", visible: true },
       { key: "search", visible: true },
       { key: "schedules", visible: true },
+      { key: "notes", visible: true },
     ]);
   });
 
@@ -187,6 +199,7 @@ describe("setSidebarNavItemVisible", () => {
       { key: "history", visible: false },
       { key: "search", visible: true },
       { key: "schedules", visible: true },
+      { key: "notes", visible: true },
     ]);
     expect(
       summarize(
@@ -227,6 +240,7 @@ describe("moveSidebarNavItem", () => {
       "search",
       "history",
       "schedules",
+      "notes",
       kanbanKey,
     ]);
   });
@@ -238,8 +252,9 @@ describe("moveSidebarNavItem", () => {
       "new-workspace",
       "history",
       "search",
-      kanbanKey,
+      "notes",
       "schedules",
+      kanbanKey,
     ]);
   });
 
@@ -282,6 +297,7 @@ describe("builtinSidebarNavShortcutAction", () => {
     expect(builtinSidebarNavShortcutAction("search")).toBe("toggle-command-center");
     expect(builtinSidebarNavShortcutAction("history")).toBeNull();
     expect(builtinSidebarNavShortcutAction("schedules")).toBeNull();
+    expect(builtinSidebarNavShortcutAction("notes")).toBeNull();
   });
 });
 
@@ -289,7 +305,7 @@ describe("footer section", () => {
   const sync = group("sync", "status");
   const syncKey = pluginSidebarNavKey(sync);
 
-  it("resolves the Usage item first, then plugin rows", () => {
+  it("resolves Saved and Usage first, then plugin rows", () => {
     const items = resolveSidebarNavItems({
       section: "footer",
       pluginGroups: [sync],
@@ -297,6 +313,7 @@ describe("footer section", () => {
     });
 
     expect(summarize(items)).toEqual([
+      { key: "saved", visible: true },
       { key: "usage", visible: true },
       { key: syncKey, visible: true },
     ]);
@@ -309,7 +326,10 @@ describe("footer section", () => {
       preferences: [{ key: "history", visible: false }],
     });
 
-    expect(summarize(items)).toEqual([{ key: "usage", visible: true }]);
+    expect(summarize(items)).toEqual([
+      { key: "saved", visible: true },
+      { key: "usage", visible: true },
+    ]);
   });
 
   it("ignores the footer icon buttons, which are fixed and not items", () => {
@@ -329,6 +349,7 @@ describe("footer section", () => {
     expect(summarize(items)).toEqual([
       { key: syncKey, visible: true },
       { key: "usage", visible: false },
+      { key: "saved", visible: true },
     ]);
   });
 
@@ -355,6 +376,7 @@ describe("footer section", () => {
 
     expect(shown).toEqual([
       notesPreference,
+      { key: "saved", visible: true },
       { key: syncKey, visible: true },
       { key: "usage", visible: true },
     ]);

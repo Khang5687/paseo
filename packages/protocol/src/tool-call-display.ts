@@ -146,6 +146,10 @@ function buildUnknownDetailOverride(input: ToolCallDisplayInput): DetailDisplay 
       summary: input.detail.type === "plain_text" ? readString(input.detail.label) : undefined,
     };
   }
+  // Daemon status line for MCP servers connecting or disconnecting; the label names the servers.
+  if (lowerName === "mcp_servers" && input.detail.type === "plain_text") {
+    return { displayName: "MCP" };
+  }
   return {};
 }
 

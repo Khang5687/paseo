@@ -59,6 +59,7 @@ export interface OwnedSubscription {
 const BINARY_REPLY_REQUESTS: ReadonlySet<string> = new Set([
   "file_explorer_request",
   "plugin.rpc.invoke.request",
+  "files.copies.read.request",
 ]);
 
 // One registration per context kind; per-session registrations outlive closed sessions in Node.

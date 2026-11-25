@@ -47,6 +47,8 @@ export const ClaudeProviderOptionsSchema = z
   .object({
     /** Composer controls applied through Claude flag settings. */
     fast_mode: z.boolean().optional(),
+    /** Composer control: an output style name the provider passes as a flag setting. */
+    output_style: z.string().optional(),
     ultracode: z.boolean().optional(),
     allowedTools: z.array(z.string()).optional(),
     disallowedTools: z.array(z.string()).optional(),

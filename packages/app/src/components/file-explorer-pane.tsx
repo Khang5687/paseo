@@ -83,7 +83,8 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { useToast } from "@/contexts/toast-context";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
 import { useWorkspaceFields } from "@/stores/session-store-hooks";
-import { useOpenDirectoryInEditor } from "@/workspace/open-in-editor/directory";
+import { useLiveExplorerDirectories } from "@/hooks/use-live-explorer-directories";
+import { useOpenInPreferredEditor } from "@/workspace/open-in-editor/preferred";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
   { value: "name" },
@@ -441,6 +442,7 @@ export function FileExplorerPane({
   const {
     requestDirectoryListing,
     invalidateDirectoryListings,
+    reloadDirectoryListing,
     createEntry,
     renameEntry,
     duplicateEntry,
@@ -462,7 +464,7 @@ export function FileExplorerPane({
     workspaceId ?? null,
     (workspace) => workspace.projectId,
   );
-  const openDirectoryInEditor = useOpenDirectoryInEditor({
+  const preferredEditor = useOpenInPreferredEditor({
     serverId,
     workspaceDirectory: normalizedWorkspaceRoot,
     projectId,
@@ -637,8 +639,8 @@ export function FileExplorerPane({
   );
 
   const handleOpenDirectoryInEditor = useCallback(
-    (entry: ExplorerEntry) => openDirectoryInEditor?.open(entry.path),
-    [openDirectoryInEditor],
+    (entry: ExplorerEntry) => preferredEditor?.openDirectory(entry.path),
+    [preferredEditor],
   );
 
   const handleDownloadEntry = useCallback(
@@ -923,6 +925,22 @@ export function FileExplorerPane({
     [directories, expandedPaths, showHiddenFiles, sortOption],
   );
 
+  const openDirectoryPaths = useMemo(
+    () => [
+      ".",
+      ...treeRows
+        .filter((row) => row.entry.kind === "directory" && expandedPaths.has(row.entry.path))
+        .map((row) => row.entry.path),
+    ],
+    [expandedPaths, treeRows],
+  );
+  useLiveExplorerDirectories({
+    serverId,
+    workspaceRoot: hasWorkspaceScope ? normalizedWorkspaceRoot : "",
+    openPaths: openDirectoryPaths,
+    reload: reloadDirectoryListing,
+  });
+
   const listRows = useMemo<ExplorerListRow[]>(() => {
     const rows: ExplorerListRow[] = treeRows.map((row) =>
       pendingEdit?.type === "rename" && pendingEdit.entry.path === row.entry.path
@@ -994,8 +1012,8 @@ export function FileExplorerPane({
           onSelectEntry={handleSelectEntry}
           onCopyPath={handleCopyPath}
           onCopyRelativePath={handleCopyRelativePath}
-          onOpenInEditor={openDirectoryInEditor ? handleOpenDirectoryInEditor : undefined}
-          editorTargetName={openDirectoryInEditor?.targetName}
+          onOpenInEditor={preferredEditor ? handleOpenDirectoryInEditor : undefined}
+          editorTargetName={preferredEditor?.targetName}
           onRevealEntry={fileManagerTarget ? handleRevealEntry : undefined}
           revealTargetName={fileManagerTarget?.label}
           onDownloadEntry={handleDownloadEntry}
@@ -1030,7 +1048,7 @@ export function FileExplorerPane({
       handleSelectEntry,
       isDirectoryLoading,
       fileManagerTarget,
-      openDirectoryInEditor,
+      preferredEditor,
       selectedEntryPath,
       onAddToChat,
       onOpenFileToSide,
@@ -1669,7 +1687,7 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   },
   sortTrigger: {
     flexDirection: "row",

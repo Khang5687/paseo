@@ -32,6 +32,7 @@ describe("resolveFilePanel", () => {
       candidates: [markdown, alternative],
       selectorKey: "ext:md",
       associatedPanelId: alternative.id,
+      oversized: false,
     });
   });
   it("ignores an absent association without deleting it", () => {
@@ -58,6 +59,7 @@ describe("resolveFilePanel", () => {
       candidates: [],
       selectorKey: "ext:ts",
       associatedPanelId: null,
+      oversized: false,
     });
   });
   it("offers a panel claiming every file of its kind for files of that kind", () => {
@@ -67,6 +69,7 @@ describe("resolveFilePanel", () => {
       candidates: [every],
       selectorKey: "ext:ts",
       associatedPanelId: null,
+      oversized: false,
     });
     expect(resolve({ file: { ...file, kind: "binary" }, candidates: [every] }).panel).toBeNull();
   });
@@ -102,6 +105,7 @@ describe("resolveFilePanel", () => {
       candidates: [markdown, named],
       selectorKey: "name:README.MD",
       associatedPanelId: named.id,
+      oversized: false,
     });
     expect(resolve({ file: { ...file, path: "README.md" }, candidates: [named] }).panel).toBeNull();
   });
@@ -124,6 +128,7 @@ describe("resolveFilePanel", () => {
         candidates: [named],
         selectorKey: "name:Dockerfile",
         associatedPanelId: null,
+        oversized: false,
       });
     },
   );
@@ -131,6 +136,20 @@ describe("resolveFilePanel", () => {
     const upper = { ...alternative, files: { extensions: ["MD"] } };
     expect(resolve({ candidates: [upper] }).panel).toBe(upper);
     expect(resolve({ file: { ...file, path: "README" } }).selectorKey).toBe("ext:");
+  });
+  it("drops a built-in panel for a file over its size limit, leaving the floor", () => {
+    const capped: FilePanelCandidate = { ...markdown, maxBytes: 10 };
+    const every: FilePanelCandidate = { ...markdown, id: "builtin:source", files: "all" };
+    expect(resolve({ file: { ...file, size: 10 }, candidates: [capped, every] })).toMatchObject({
+      panel: capped,
+      candidates: [capped],
+      oversized: false,
+    });
+    expect(resolve({ file: { ...file, size: 11 }, candidates: [capped, every] })).toMatchObject({
+      panel: every,
+      candidates: [every],
+      oversized: true,
+    });
   });
 });
 

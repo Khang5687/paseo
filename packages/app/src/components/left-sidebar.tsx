@@ -105,6 +105,8 @@ import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { openSettingsFromSidebar } from "@/navigation/settings-navigation";
 import { UsageSidebarItem, UsageSidebarRoot, useUsageSummary, useOpenSidebarUsage } from "@/usage";
+import { SavedSidebarItem } from "@/offline-files/sidebar-item";
+import { useOfflineFiles } from "@/offline-files/store";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
@@ -134,6 +136,7 @@ interface SidebarSharedProps {
   groupMode: SidebarGroupMode;
   collapsedProjectKeys: ReadonlySet<string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   handleRefresh: () => void;
   handleOpenProject: () => void;
@@ -195,6 +198,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     toggleProjectCollapsed,
     groupMode,
     shortcutModel,
+    nestingDepthByWorkspaceKey,
   } = useSidebarModel();
   const { shortcutIndexByWorkspaceKey } = shortcutModel;
 
@@ -263,6 +267,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     groupMode,
     collapsedProjectKeys,
     shortcutIndexByWorkspaceKey,
+    nestingDepthByWorkspaceKey,
     toggleProjectCollapsed,
     handleRefresh,
     labels,
@@ -535,33 +540,43 @@ function SidebarUsageIcon({ label }: { label: string }) {
 }
 
 /**
- * The footer rows in the user's `sidebarFooterItems` order: the Usage item and plugin rows. The
- * Usage item is left out while it has no summary to show.
+ * The footer rows in the user's `sidebarFooterItems` order: Saved on this device, the Usage item
+ * and plugin rows. Saved is left out while nothing is saved, Usage while it has no summary.
  */
 function SidebarFooterRows({ onBeforeNavigate }: { onBeforeNavigate?: () => void }) {
   const { items } = useSidebarNavItems("footer");
   const usageSummary = useUsageSummary();
+  const savedCount = useOfflineFiles()?.length ?? 0;
   const rowsRef = useRef<View | null>(null);
-  const visibleItems = items.filter(
-    (item) => item.visible && (item.kind === "plugin" || usageSummary.length > 0),
-  );
+  const visibleItems = items.filter((item) => {
+    if (!item.visible) return false;
+    if (item.kind === "plugin") return true;
+    return item.id === "saved" ? savedCount > 0 : usageSummary.length > 0;
+  });
   if (visibleItems.length === 0) return null;
+  const renderItem = (item: (typeof visibleItems)[number]) => {
+    if (item.kind === "plugin") {
+      return (
+        <PluginSidebarItem
+          key={item.key}
+          group={item.group}
+          section="footer"
+          fallbackAnchorRef={rowsRef}
+          onBeforeNavigate={onBeforeNavigate}
+        />
+      );
+    }
+    if (item.id === "saved") {
+      return (
+        <SavedSidebarItem key={item.key} count={savedCount} onBeforeNavigate={onBeforeNavigate} />
+      );
+    }
+    return <UsageSidebarItem key={item.key} sources={usageSummary} />;
+  };
   return (
     <>
       <View ref={rowsRef} collapsable={false} style={styles.footerRows}>
-        {visibleItems.map((item) =>
-          item.kind === "plugin" ? (
-            <PluginSidebarItem
-              key={item.key}
-              group={item.group}
-              section="footer"
-              fallbackAnchorRef={rowsRef}
-              onBeforeNavigate={onBeforeNavigate}
-            />
-          ) : (
-            <UsageSidebarItem key={item.key} sources={usageSummary} />
-          ),
-        )}
+        {visibleItems.map(renderItem)}
       </View>
       <SidebarSeparator testID="sidebar-footer-separator" />
     </>
@@ -584,6 +599,7 @@ function MobileSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -654,6 +670,7 @@ function MobileSidebar({
                 collapsedProjectKeys={collapsedProjectKeys}
                 onToggleProjectCollapsed={toggleProjectCollapsed}
                 shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+                nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
                 groupMode={groupMode}
                 workspaceGroups={workspaceGroups}
                 projectIconTargets={projectIconTargets}
@@ -748,6 +765,7 @@ function DesktopSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -914,6 +932,7 @@ function DesktopSidebar({
                     collapsedProjectKeys={collapsedProjectKeys}
                     onToggleProjectCollapsed={toggleProjectCollapsed}
                     shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+                    nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
                     groupMode={groupMode}
                     workspaceGroups={workspaceGroups}
                     projectIconTargets={projectIconTargets}
@@ -1031,7 +1050,7 @@ const styles = StyleSheet.create((theme) => ({
   desktopSidebarBorder: (hasDivision: boolean) => ({
     borderRightWidth: hasDivision ? 0 : 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   }),
   sidebarDragArea: {
     position: "relative",

@@ -3,11 +3,13 @@ import { useTranslation } from "react-i18next";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useToast } from "@/contexts/toast-context";
 import {
+  buildWorktreeArchiveConfirmationMessage,
   confirmRiskyWorktreeArchive,
   DEFAULT_WORKTREE_ARCHIVE_WARNING_LABELS,
   readWorktreeArchiveRisk,
   type WorktreeArchiveWarningLabels,
 } from "@/git/worktree-archive-warning";
+import { confirmArchive } from "@/utils/archive-confirm";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
@@ -18,7 +20,10 @@ import {
   type WorkspaceArchiveTarget,
 } from "@/workspace/workspace-archive";
 
-function purgeArchivedWorkspaceState(input: { serverId: string; workspaceId: string }): void {
+export function purgeArchivedWorkspaceState(input: {
+  serverId: string;
+  workspaceId: string;
+}): void {
   const workspaceKey = buildWorkspaceTabPersistenceKey(input);
   if (workspaceKey) {
     useWorkspaceLayoutStore.getState().purgeWorkspace(workspaceKey);
@@ -112,19 +117,25 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
     if (!risk) {
       return false;
     }
-    return await confirmRiskyWorktreeArchive(
-      { workspaceName: name, diffStat, ...risk },
-      warningLabels,
-    );
+    const confirmation = { workspaceName: name, diffStat, ...risk };
+    // A risky worktree gets its own warning; a clean one gets the plain confirmation.
+    if (buildWorktreeArchiveConfirmationMessage(confirmation, warningLabels) === null) {
+      return await confirmArchive({ subject: "workspace", name });
+    }
+    return await confirmRiskyWorktreeArchive(confirmation, warningLabels);
   }, [diffStat, name, serverId, t, toast, warningLabels, workspaceDirectory]);
 
   const archive = useCallback(() => {
+    // Every archive asks first: a worktree after its host reports what removing it would lose.
     void runWorkspaceArchiveAttempt({
       workspace: { serverId, workspaceId },
-      confirm: workspaceKind === "worktree" ? confirmWorktreeArchive : undefined,
+      confirm:
+        workspaceKind === "worktree"
+          ? confirmWorktreeArchive
+          : () => confirmArchive({ subject: "workspace", name }),
       archive: archiveWorkspaceRecord,
     });
-  }, [archiveWorkspaceRecord, confirmWorktreeArchive, serverId, workspaceId, workspaceKind]);
+  }, [archiveWorkspaceRecord, confirmWorktreeArchive, name, serverId, workspaceId, workspaceKind]);
 
   return {
     archive,

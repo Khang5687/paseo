@@ -26,6 +26,7 @@ export function registerPluginTools(options: {
       name: tool.name,
       title: tool.title,
       description: tool.description,
+      alwaysLoaded: true,
       inputSchema: z.fromJSONSchema(tool.inputSchema),
       async handler(input, { signal }) {
         const result = await agentManager.executePluginTool({
