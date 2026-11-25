@@ -14,6 +14,7 @@ import {
   translateOpenCodeEvent,
 } from "./opencode-agent.js";
 import { streamSession } from "./test-utils/session-stream-adapter.js";
+import { ForkHandleRefusedError } from "../fork-handle.js";
 import {
   TestOpenCodeClient,
   TestOpenCodeHarness,
@@ -545,6 +546,113 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     ]);
     expect(runtime.acquisitions.every((acquisition) => acquisition.releaseCount === 1)).toBe(true);
     rmSync(cwd, { recursive: true, force: true });
+  });
+
+  test("forks the full native session and discards only the copy, once", async () => {
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const forkClient = new TestOpenCodeClient();
+    const discardClient = new TestOpenCodeClient();
+    const retryClient = new TestOpenCodeClient();
+    runtime.enqueueClient(forkClient);
+    runtime.enqueueClient(discardClient);
+    runtime.enqueueClient(retryClient);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const metadata = { cwd, modeId: "build", model: "opencode/big-pickle" };
+    const source = {
+      provider: "opencode" as const,
+      sessionId: "session-1",
+      nativeHandle: "session-1",
+      metadata,
+    };
+
+    try {
+      const fork = await client.forkNativeSession(source);
+
+      expect(forkClient.calls.sessionFork).toEqual([{ sessionID: "session-1", directory: cwd }]);
+      expect(fork.handle).toEqual({
+        provider: "opencode",
+        sessionId: "session-fork",
+        nativeHandle: "session-fork",
+        metadata,
+      });
+      expect(fork.readOnlyModeId).toBe("plan");
+      expect(source).toEqual({
+        provider: "opencode",
+        sessionId: "session-1",
+        nativeHandle: "session-1",
+        metadata: { cwd, modeId: "build", model: "opencode/big-pickle" },
+      });
+      expect(forkClient.calls.sessionUpdate).toEqual([]);
+      expect(forkClient.calls.sessionDelete).toEqual([]);
+
+      await fork.discard();
+      await fork.discard();
+
+      expect(discardClient.calls.sessionDelete).toEqual([
+        { sessionID: "session-fork", directory: cwd },
+      ]);
+      expect(retryClient.calls.sessionDelete).toEqual([]);
+      expect(runtime.acquisitions.map((acquisition) => acquisition.releaseCount)).toEqual([1, 1]);
+
+      retryClient.sessionForkResponse = { data: { id: "session-fork-2" } };
+      const missing = new TestOpenCodeClient();
+      missing.sessionDeleteResponse = {
+        error: { name: "NotFoundError", data: { message: "gone" } },
+      };
+      runtime.enqueueClient(missing);
+      const secondFork = await client.forkNativeSession(source);
+      await expect(secondFork.discard()).resolves.toBeUndefined();
+      expect(missing.calls.sessionDelete).toEqual([
+        { sessionID: "session-fork-2", directory: cwd },
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("deletes a leftover fork from its handle alone, and refuses a handle that is not one", async () => {
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const forkClient = new TestOpenCodeClient();
+    const discardClient = new TestOpenCodeClient();
+    runtime.enqueueClient(forkClient);
+    runtime.enqueueClient(discardClient);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const source = {
+      provider: "opencode" as const,
+      sessionId: "session-1",
+      nativeHandle: "session-1",
+      metadata: { cwd, modeId: "build" },
+    };
+
+    try {
+      const fork = await client.forkNativeSession(source);
+
+      for (const bad of [
+        { ...fork.handle, sessionId: "../session-1" },
+        { ...fork.handle, sessionId: "" },
+      ]) {
+        await expect(client.discardNativeFork(bad)).rejects.toThrow(ForkHandleRefusedError);
+      }
+      await expect(client.discardNativeFork({ ...fork.handle, metadata: {} })).rejects.toThrow();
+      expect(discardClient.calls.sessionDelete).toEqual([]);
+
+      await client.discardNativeFork(fork.handle);
+
+      expect(discardClient.calls.sessionDelete).toEqual([
+        { sessionID: "session-fork", directory: cwd },
+      ]);
+      expect(forkClient.calls.sessionDelete).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   test("single turn completes with streaming deltas", async () => {
@@ -4563,6 +4671,47 @@ describe("OpenCode persisted sessions", () => {
     ]);
   });
 
+  test("importSession reads a wrapped session on a server started behind the wrap", async () => {
+    const runtime = new TestOpenCodeHarness();
+    const metadataClient = new TestOpenCodeClient();
+    const resumedClient = new TestOpenCodeClient();
+    const cwd = "/workspace/repo";
+    const selectedSession = {
+      id: "ses_selected",
+      directory: cwd,
+      title: "Selected session",
+      time: { created: 2000, updated: 3000 },
+    };
+    metadataClient.sessionGetResponse = { data: selectedSession };
+    metadataClient.sessionMessagesResponse = { data: [] };
+    resumedClient.sessionGetResponse = { data: selectedSession };
+    resumedClient.sessionMessagesResponse = { data: [] };
+    runtime.enqueueClient(metadataClient);
+    runtime.enqueueClient(resumedClient);
+    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const wrap = ["/opt/sandbox/bin/run", "--profile", "import"] as const;
+
+    const imported = await client.importSession(
+      { providerHandleId: "ses_selected", cwd },
+      {
+        config: { provider: "opencode", cwd },
+        storedConfig: { provider: "opencode", cwd },
+        launchContext: { env: { PASEO_AGENT_ID: "imported" }, wrap },
+      },
+    );
+    await imported.session.close();
+
+    expect(runtime.acquisitions.map((acquisition) => [acquisition.kind, acquisition.wrap])).toEqual(
+      [
+        ["dedicated", wrap],
+        ["dedicated", wrap],
+      ],
+    );
+  });
+
   test("listImportableSessions matches Windows cwd paths with forward slashes", async () => {
     const runtime = new TestOpenCodeHarness();
     const openCodeClient = new TestOpenCodeClient();
@@ -4747,6 +4896,52 @@ describe("OpenCode provider subagent contract", () => {
       { baseUrl: runtime.server.url, directory: "/workspace/repo" },
       { baseUrl: runtime.server.url, directory: "/workspace/repo" },
     ]);
+  });
+
+  test("resumes a wrapped child on its own server behind the wrap, not the parent's server", async () => {
+    const runtime = new TestOpenCodeHarness();
+    const parentClient = new TestOpenCodeClient();
+    const childClient = new TestOpenCodeClient();
+    parentClient.sessionCreateResponse = { data: { id: "ses_parent_wrapped" } };
+    runtime.enqueueClient(parentClient);
+    runtime.enqueueClient(childClient);
+    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const parent = await client.createSession(
+      { provider: "opencode", cwd: "/workspace/repo" },
+      { env: { PASEO_AGENT_ID: "parent-agent" } },
+    );
+    parentClient.emitEvent({
+      type: "session.created",
+      properties: {
+        info: { id: "ses_child_wrapped", parentID: "ses_parent_wrapped", title: "Live child" },
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    const wrap = ["/opt/sandbox/bin/run", "--profile", "child"] as const;
+
+    const child = await client.resumeSession(
+      {
+        provider: "opencode",
+        sessionId: "ses_child_wrapped",
+        nativeHandle: "ses_child_wrapped",
+        metadata: { cwd: "/workspace/repo" },
+      },
+      undefined,
+      { env: { PASEO_AGENT_ID: "child-agent" }, wrap },
+    );
+    await child.close();
+    await parent.close();
+
+    expect(runtime.acquisitions.map((acquisition) => [acquisition.kind, acquisition.wrap])).toEqual(
+      [
+        ["dedicated", undefined],
+        ["dedicated", wrap],
+      ],
+    );
   });
 
   test("synthesizes an autonomous turn for adopted child timeline events", async () => {

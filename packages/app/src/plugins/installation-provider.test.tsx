@@ -59,6 +59,7 @@ function installation(invoked: string[]): InstalledPlugin {
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
   };

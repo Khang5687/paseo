@@ -30,6 +30,11 @@ export interface DraftRecord {
   lifecycle: DraftLifecycleState;
   updatedAt: number;
   version: number;
+  /**
+   * The version that matches the daemon's copy of this draft (agent chat draft sync).
+   * Any later edit bumps `version`, so a mismatch means local edits the daemon has not seen.
+   */
+  syncedVersion?: number;
 }
 
 export function editDraftRecordText(
@@ -60,6 +65,7 @@ export const AttachmentMetadataSchema = z.strictObject({
   fileName: z.string().nullable().optional(),
   byteSize: z.number().nullable().optional(),
   createdAt: z.number(),
+  uploadId: z.string().optional(),
 }) satisfies z.ZodType<AttachmentMetadata>;
 export const LegacyDraftImageSchema: z.ZodType<LegacyDraftImage> = z.strictObject({
   uri: z.string(),
@@ -130,6 +136,7 @@ const DraftRecordSchema: z.ZodType<DraftRecord> = z.strictObject({
   lifecycle: z.enum(["active", "abandoned", "sent"]),
   updatedAt: z.number(),
   version: z.number().int().positive(),
+  syncedVersion: z.number().int().positive().optional(),
 });
 export const DraftStoreStateSchema: z.ZodType<DraftStoreState> = z.strictObject({
   drafts: z.record(z.string(), DraftRecordSchema),
@@ -157,6 +164,7 @@ export function normalizeAttachmentMetadata(image: AttachmentMetadata): Attachme
     ...(typeof image.byteSize === "number" || image.byteSize === null
       ? { byteSize: image.byteSize }
       : {}),
+    ...(image.uploadId ? { uploadId: image.uploadId } : {}),
   };
 }
 

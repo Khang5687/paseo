@@ -13,6 +13,8 @@ export const PermissionStatus = {
 
 export const AndroidImportance = { DEFAULT: 3 } as const;
 
+export const SchedulableTriggerInputTypes = { DATE: "date" } as const;
+
 export async function getPermissionsAsync() {
   return DENIED_NOTIFICATION_PERMISSION;
 }
@@ -27,6 +29,16 @@ export async function getExpoPushTokenAsync() {
 
 export async function setNotificationChannelAsync() {
   return null;
+}
+
+export async function scheduleNotificationAsync(request: { identifier?: string }) {
+  return request.identifier ?? "";
+}
+
+export async function cancelScheduledNotificationAsync(): Promise<void> {}
+
+export async function getAllScheduledNotificationsAsync() {
+  return [];
 }
 
 export function setNotificationHandler(): void {}

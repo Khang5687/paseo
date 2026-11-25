@@ -1,13 +1,57 @@
 import { app, Menu, BrowserWindow, ipcMain } from "electron";
 import { getActivePaseoBrowserWebContentsForHostWindow } from "./browser-webviews/index.js";
 
-interface ShowContextMenuInput {
+export interface ShowContextMenuInput {
   kind?: "terminal";
   hasSelection?: boolean;
+  /** Localized "Add note" label; the item shows only when the renderer sends one. */
+  addNoteLabel?: string;
+  /** Echoed back with the chosen action so the renderer routes it to the right terminal. */
+  requestId?: string;
+}
+
+export type TerminalContextMenuAction = "add-note";
+
+/** Renderer event carrying the context-menu item the user picked that the renderer handles. */
+const TERMINAL_CONTEXT_MENU_ACTION_EVENT = "paseo:event:terminal-context-menu-action";
+
+export function buildTerminalContextMenuTemplate(
+  input: ShowContextMenuInput,
+  onAction: (action: TerminalContextMenuAction) => void,
+): Electron.MenuItemConstructorOptions[] {
+  const addNoteLabel = typeof input.addNoteLabel === "string" ? input.addNoteLabel.trim() : "";
+  return [
+    {
+      label: "Copy",
+      role: "copy",
+      enabled: input.hasSelection === true,
+    },
+    ...(addNoteLabel
+      ? [
+          {
+            label: addNoteLabel,
+            click: () => onAction("add-note"),
+          },
+        ]
+      : []),
+    {
+      label: "Paste",
+      role: "paste",
+    },
+    {
+      type: "separator",
+    },
+    {
+      label: "Select All",
+      role: "selectAll",
+    },
+  ];
 }
 
 interface ApplicationMenuOptions {
   onNewWindow: () => void;
+  /** Called when the Cmd+Q accelerator fires; null quits immediately. */
+  onQuitShortcut: (() => void) | null;
 }
 
 function withBrowserWindow(
@@ -85,7 +129,24 @@ function buildApplicationMenuTemplate(
               { role: "hideOthers" as const },
               { role: "unhide" as const },
               { type: "separator" as const },
-              { role: "quit" as const },
+              {
+                label: `Quit ${app.name}`,
+                accelerator: "Command+Q",
+                // Focused webContents intercept Cmd+Q before the menu does (see
+                // features/quit-confirm). This path covers the shortcut when no
+                // webContents has focus; a mouse click on the item quits directly.
+                click: (
+                  _item: Electron.MenuItem,
+                  _win: Electron.BaseWindow | undefined,
+                  event: Electron.KeyboardEvent,
+                ) => {
+                  if (event.triggeredByAccelerator && options.onQuitShortcut) {
+                    options.onQuitShortcut();
+                  } else {
+                    app.quit();
+                  }
+                },
+              },
             ],
           },
         ]
@@ -206,24 +267,13 @@ export function setupApplicationMenu(options: ApplicationMenuOptions): void {
       return;
     }
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: "Copy",
-        role: "copy",
-        enabled: input.hasSelection === true,
-      },
-      {
-        label: "Paste",
-        role: "paste",
-      },
-      {
-        type: "separator",
-      },
-      {
-        label: "Select All",
-        role: "selectAll",
-      },
-    ]);
+    const sender = event.sender;
+    const contextMenu = Menu.buildFromTemplate(
+      buildTerminalContextMenuTemplate(input, (action) => {
+        if (sender.isDestroyed()) return;
+        sender.send(TERMINAL_CONTEXT_MENU_ACTION_EVENT, { action, requestId: input.requestId });
+      }),
+    );
 
     contextMenu.popup({ window: win });
   });

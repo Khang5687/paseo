@@ -1,5 +1,10 @@
 import type {
   OmpAgentMessage,
+  OmpGoalAction,
+  OmpGoalModeState,
+  OmpLoginExisting,
+  OmpLoginResult,
+  OmpLogoutAccount,
   OmpModel,
   OmpPromptAck,
   OmpRpcHostToolDefinition,
@@ -13,16 +18,21 @@ import type {
   OmpThinkingLevel,
 } from "./rpc-types.js";
 import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
+import type { OmpHostRouting } from "./account-routing-bridge.js";
 
 export interface OmpRuntimeLaunch {
   cwd: string;
   argv: string[];
   env?: Record<string, string>;
+  /** Start OMP as `[...wrap, ...argv]`. */
+  wrap?: readonly [string, ...string[]];
   protocolMode?: "rpc" | "rpc-ui";
   model?: string;
   thinkingOptionId?: string;
   modeId?: string;
   session?: string;
+  // Start on a copy of this session file under a new session id.
+  fork?: string;
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
@@ -32,14 +42,23 @@ export interface OmpStartSessionInput {
   cwd: string;
   signal?: AbortSignal;
   env?: Record<string, string>;
+  /** The agent's launch wrap; every OMP process started for the agent runs behind it. */
+  wrap?: readonly [string, ...string[]];
   protocolMode?: "rpc" | "rpc-ui";
   model?: string;
   thinkingOptionId?: string;
   modeId?: string;
   session?: string;
+  // Start on a copy of this session file under a new session id.
+  fork?: string;
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
+  /**
+   * Present when the host owns Claude account routing for this launch. Absent means an independent
+   * OMP launch: no marker, no probe, no routing frames.
+   */
+  routing?: OmpHostRouting;
 }
 
 export interface OmpPromptInput {
@@ -56,7 +75,16 @@ export interface OmpRuntimeSession {
   prompt(input: OmpPromptInput): Promise<OmpPromptAck>;
   compact(customInstructions?: string): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
+  goal(action: OmpGoalAction): Promise<OmpGoalModeState | null>;
   abort(): Promise<void>;
+  /**
+   * Signs `providerId` into OMP's native store. OMP drives the browser step through
+   * `open_url` / `input` extension UI events; the call settles when the login ends. A guard
+   * refusal (`credential_exists`) resolves as such; any other failure throws.
+   */
+  login(providerId: string, options?: { existing?: OmpLoginExisting }): Promise<OmpLoginResult>;
+  /** Stored accounts for `providerId`, as OMP's `/logout` lists them. Never refreshes a token. */
+  getLogoutAccounts(providerId: string): Promise<OmpLogoutAccount[]>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;
   getMessages(): Promise<OmpAgentMessage[]>;
@@ -65,6 +93,8 @@ export interface OmpRuntimeSession {
   setThinkingLevel(level: OmpThinkingLevel): Promise<void>;
   getSessionStats(): Promise<OmpSessionStats>;
   getCommands(): Promise<OmpRpcSlashCommand[]>;
+  /** Rediscovers OMP skills and file slash commands for the session cwd, then lists commands. */
+  refreshCommands(): Promise<OmpRpcSlashCommand[]>;
   setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void>;
   setHostTools(tools: OmpRpcHostToolDefinition[]): Promise<string[]>;
   sendHostToolResult(result: OmpRpcHostToolResult): void;
@@ -114,11 +144,13 @@ export function buildOmpLaunch(input: {
             ...input.session.env,
           }
         : undefined,
+    wrap: input.session.wrap,
     model: input.session.model,
     thinkingOptionId: input.session.thinkingOptionId,
     protocolMode,
     modeId: input.session.modeId,
     session: input.session.session,
+    fork: input.session.fork,
     noSession: input.session.noSession,
     systemPrompt,
     extraArgs: input.session.extraArgs,
@@ -143,7 +175,9 @@ function appendOmpLaunchArgs(
   if (session.thinkingOptionId) {
     argv.push("--thinking", session.thinkingOptionId);
   }
-  if (session.noSession) {
+  if (session.fork) {
+    argv.push("--fork", session.fork);
+  } else if (session.noSession) {
     argv.push("--no-session");
   } else if (session.session) {
     argv.push("--session", session.session);

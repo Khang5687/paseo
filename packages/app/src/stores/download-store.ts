@@ -333,6 +333,12 @@ function buildDownloadUrl(baseUrl: string, token: string): string {
   return url.toString();
 }
 
+/** Hands bytes to other apps: the share sheet on native, a browser download on web. */
+export async function shareFileBytes(file: DownloadedBytes): Promise<void> {
+  const uri = await saveDownloadedBytes(file);
+  if (uri) await shareSavedFile(uri, file.mimeType, file.fileName);
+}
+
 /**
  * Fetches the file instead of navigating to it. The app runs on another origin than the host
  * (paseo://app on desktop), so a link to the download URL navigates the whole window, and any

@@ -100,6 +100,7 @@ import {
 } from "./codex/test-utils/fake-app-server.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { asInternals as castInternals, createStub } from "../../test-utils/class-mocks.js";
+import { ForkHandleRefusedError } from "../fork-handle.js";
 import { AgentManager } from "../agent-manager.js";
 import { AgentStorage } from "../agent-storage.js";
 import { buildProviderRegistry } from "../provider-registry.js";
@@ -2492,6 +2493,60 @@ describe("Codex app-server provider", () => {
     appServer.assertNoErrors();
   });
 
+  test.each(["interactive", "history"] as const)(
+    "spawns a wrapped %s resume through the launch wrap",
+    async (purpose) => {
+      const spawned: Array<{ command: string; args: string[]; wrap?: readonly string[] }> = [];
+      let resumes = 0;
+      // History reads the archived thread; an interactive resume unarchives it and resumes again.
+      const appServer = createFakeCodexAppServer({
+        "thread/loaded/list": () => ({ data: [] }),
+        "thread/resume": () =>
+          resumes++ === 0
+            ? Promise.reject(new Error(archivedThreadErrorMessage("archived-thread-id")))
+            : { thread: { id: "archived-thread-id" } },
+        "thread/unarchive": () => ({ thread: { id: "archived-thread-id" } }),
+        "thread/read": () => ({ thread: { turns: [] } }),
+      });
+      const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+        appServerProcess: {
+          resolvePrefix: async () => ({
+            command: "/opt/codex/bin/codex",
+            args: ["--profile", "x"],
+          }),
+          spawn: ({ command, args, options }) => {
+            spawned.push({ command, args, wrap: options.wrap });
+            return appServer.child;
+          },
+        },
+      });
+      const internals = castInternals<{
+        goalsEnabledPromise: Promise<boolean> | null;
+        autoReviewEnabledPromise: Promise<boolean> | null;
+      }>(provider);
+      internals.goalsEnabledPromise = Promise.resolve(false);
+      internals.autoReviewEnabledPromise = Promise.resolve(false);
+
+      const session = await provider.resumeSession(
+        archivedThreadHandle(),
+        undefined,
+        { wrap: ["/opt/sandbox/bin/run", "--profile", "a b"] },
+        { purpose },
+      );
+
+      expect(spawned.length).toBeGreaterThan(0);
+      for (const input of spawned) {
+        expect(input).toEqual({
+          command: "/opt/codex/bin/codex",
+          args: ["--profile", "x", "app-server"],
+          wrap: ["/opt/sandbox/bin/run", "--profile", "a b"],
+        });
+      }
+      await session.close();
+      appServer.assertNoErrors();
+    },
+  );
+
   test("unarchives Codex when an active Paseo agent resumes an archived thread", async () => {
     const threadRequests: string[] = [];
     let resumeAttempts = 0;
@@ -2800,6 +2855,180 @@ describe("Codex app-server provider", () => {
       { method: "thread/archive", params: { threadId: "native-thread-id" } },
     ]);
     appServer.assertNoErrors();
+  });
+
+  function createProviderWithFakeAppServers(
+    handlers: Record<string, (params: unknown) => unknown>,
+  ) {
+    const appServers: FakeCodexAppServer[] = [];
+    const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+      appServerProcess: createFakeCodexAppServerProcess(() => {
+        const appServer = createFakeCodexAppServer(handlers);
+        appServers.push(appServer);
+        return appServer.child;
+      }),
+    });
+    const threadRequests = () =>
+      appServers.flatMap((appServer) =>
+        appServer
+          .requests()
+          .filter((message) => String(message.method).startsWith("thread/"))
+          .map(({ method, params }) => ({ method, params })),
+      );
+    return { provider, appServers, threadRequests };
+  }
+
+  test("forks a persisted Codex thread into a read-only copy that discard deletes once", async () => {
+    const durableThreads = new Set(["source-thread"]);
+    const { provider, appServers, threadRequests } = createProviderWithFakeAppServers({
+      "thread/fork": () => {
+        durableThreads.add("forked-thread");
+        return {
+          thread: { id: "forked-thread" },
+          model: "gpt-5.4",
+          modelProvider: "openai",
+          serviceTier: null,
+          cwd: "/workspace/project",
+          approvalPolicy: "on-request",
+          approvalsReviewer: "user",
+          sandbox: { type: "readOnly" },
+        };
+      },
+      "thread/delete": (params) => {
+        const { threadId } = params as { threadId: string };
+        if (!durableThreads.delete(threadId)) {
+          return Promise.reject(new Error(`no rollout found for thread id ${threadId}`));
+        }
+        return {};
+      },
+    });
+    const source = {
+      provider: "codex",
+      sessionId: "source-thread",
+      nativeHandle: "source-thread",
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        threadId: "source-thread",
+        modeId: "full-access",
+        model: "gpt-5.4",
+        asyncQuestions: [{ id: "pending-question" }],
+      },
+    };
+
+    const fork = await provider.forkNativeSession(source);
+
+    expect(fork.readOnlyModeId).toBe("read-only");
+    expect(fork.handle).toEqual({
+      provider: "codex",
+      sessionId: "forked-thread",
+      nativeHandle: "forked-thread",
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        threadId: "forked-thread",
+        modeId: "full-access",
+        model: "gpt-5.4",
+      },
+    });
+    expect(source.metadata.threadId).toBe("source-thread");
+    expect(threadRequests()).toEqual([
+      {
+        method: "thread/fork",
+        params: {
+          threadId: "source-thread",
+          cwd: "/workspace/project",
+          model: "gpt-5.4",
+          approvalPolicy: "on-request",
+          sandbox: "read-only",
+          approvalsReviewer: "user",
+          excludeTurns: true,
+          persistExtendedHistory: true,
+        },
+      },
+    ]);
+
+    await Promise.all([fork.discard(), fork.discard()]);
+    await fork.discard();
+
+    expect(durableThreads).toEqual(new Set(["source-thread"]));
+    expect(threadRequests().slice(1)).toEqual([
+      { method: "thread/delete", params: { threadId: "forked-thread" } },
+    ]);
+    for (const appServer of appServers) appServer.assertNoErrors();
+  });
+
+  test("deletes a leftover forked thread from its handle alone, and refuses a handle that is not one", async () => {
+    const durableThreads = new Set(["source-thread"]);
+    const { provider, appServers, threadRequests } = createProviderWithFakeAppServers({
+      "thread/fork": () => {
+        durableThreads.add("forked-thread");
+        return {
+          thread: { id: "forked-thread" },
+          model: "gpt-5.4",
+          modelProvider: "openai",
+          serviceTier: null,
+          cwd: "/workspace/project",
+          approvalPolicy: "on-request",
+          approvalsReviewer: "user",
+          sandbox: { type: "readOnly" },
+        };
+      },
+      "thread/delete": (params) => {
+        const { threadId } = params as { threadId: string };
+        durableThreads.delete(threadId);
+        return {};
+      },
+    });
+    const fork = await provider.forkNativeSession({
+      provider: "codex",
+      sessionId: "source-thread",
+      nativeHandle: "source-thread",
+      metadata: { provider: "codex", cwd: "/workspace/project", threadId: "source-thread" },
+    });
+    const requestsBefore = threadRequests().length;
+
+    for (const bad of [
+      { ...fork.handle, nativeHandle: "../forked-thread" },
+      { ...fork.handle, nativeHandle: "a/b" },
+      { ...fork.handle, nativeHandle: undefined, sessionId: "" },
+    ]) {
+      await expect(provider.discardNativeFork(bad)).rejects.toThrow(ForkHandleRefusedError);
+    }
+    expect(threadRequests()).toHaveLength(requestsBefore);
+
+    await provider.discardNativeFork(fork.handle);
+
+    expect(durableThreads).toEqual(new Set(["source-thread"]));
+    expect(threadRequests().slice(requestsBefore)).toEqual([
+      { method: "thread/delete", params: { threadId: "forked-thread" } },
+    ]);
+    for (const appServer of appServers) appServer.assertNoErrors();
+  });
+
+  test("archives the forked copy on Codex without thread/delete", async () => {
+    const { provider, appServers, threadRequests } = createProviderWithFakeAppServers({
+      "thread/delete": () => ({
+        __jsonRpcError: {
+          code: -32600,
+          message: "Invalid request: unknown variant `thread/delete`",
+        },
+      }),
+      "thread/archive": () => ({}),
+    });
+
+    const fork = await provider.forkNativeSession({
+      provider: "codex",
+      sessionId: "source-thread",
+    });
+    await fork.discard();
+
+    expect(threadRequests().map(({ method, params }) => [method, params])).toEqual([
+      ["thread/fork", expect.objectContaining({ threadId: "source-thread" })],
+      ["thread/delete", { threadId: "forked-thread" }],
+      ["thread/archive", { threadId: "forked-thread" }],
+    ]);
+    for (const appServer of appServers) appServer.assertNoErrors();
   });
 
   test("unarchives a persisted Codex thread using sessionId when nativeHandle is absent", async () => {
@@ -3854,6 +4083,24 @@ describe("Codex app-server provider", () => {
       expect(existsSync(localImage.path)).toBe(true);
       rmSync(localImage.path, { force: true });
     }
+  });
+
+  test("marks inline attachment placeholders as Codex text elements", async () => {
+    const input = await codexAppServerTurnInputFromPrompt(
+      [{ type: "text", text: "é [Image #1] then [Image #1]", placeholders: ["[Image #1]"] }],
+      logger,
+    );
+
+    expect(input).toEqual([
+      {
+        type: "text",
+        text: "é [Image #1] then [Image #1]",
+        text_elements: [
+          { byteRange: { start: 3, end: 13 }, placeholder: "[Image #1]" },
+          { byteRange: { start: 19, end: 29 }, placeholder: "[Image #1]" },
+        ],
+      },
+    ]);
   });
 
   test("maps github_pr prompt attachments to Codex text input", async () => {
@@ -7074,6 +7321,63 @@ describe("Codex app-server provider", () => {
             favorite_drink: ["Tea"],
           },
         },
+      },
+    });
+  });
+
+  test("answers each question from its answer list, keeping commas inside answers", async () => {
+    const session = createSession();
+    const questions = [
+      {
+        id: "colors",
+        header: "Colors",
+        question: "Which colors?",
+        options: [{ label: "Red, warm" }, { label: "Blue" }],
+        multiSelect: true,
+        isOther: true,
+      },
+      {
+        id: "name",
+        header: "Name",
+        question: "Which name?",
+        options: [{ label: "Atlas" }],
+        isOther: true,
+      },
+    ];
+    const listed = asInternals(session).handleToolApprovalRequest({
+      itemId: "call-question-lists",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      questions,
+    });
+    await session.respondToPermission("permission-call-question-lists", {
+      behavior: "allow",
+      updatedInput: {
+        answers: { Colors: "Red, warm, Blue, teal, or cyan", Name: "Nebula, v2" },
+        answerLists: { Colors: ["Red, warm", "Blue", "teal, or cyan"], Name: ["Nebula, v2"] },
+      },
+    });
+    await expect(listed).resolves.toEqual({
+      answers: {
+        colors: { answers: ["Red, warm", "Blue", "teal, or cyan"] },
+        name: { answers: ["Nebula, v2"] },
+      },
+    });
+
+    const legacy = asInternals(session).handleToolApprovalRequest({
+      itemId: "call-question-legacy",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      questions,
+    });
+    await session.respondToPermission("permission-call-question-legacy", {
+      behavior: "allow",
+      updatedInput: { answers: { Colors: "Blue, teal", Name: "Nebula, v2" } },
+    });
+    await expect(legacy).resolves.toEqual({
+      answers: {
+        colors: { answers: ["Blue", "teal"] },
+        name: { answers: ["Nebula, v2"] },
       },
     });
   });

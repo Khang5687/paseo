@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
 import { FileTransferOpcode, type FileTransferFrame } from "@getpaseo/protocol/binary-frames/index";
 import { getErrorMessage } from "@getpaseo/protocol/error-utils";
-import type { FileUploadRequest, FileUploadResponse } from "../messages.js";
+import type { AgentAttachment, FileUploadRequest, FileUploadResponse } from "../messages.js";
 
 interface FileUploadStoreOptions {
   paseoHome: string;
@@ -198,6 +198,30 @@ export class FileUploadStore {
   private async removeUploadDirectory(upload: PendingUpload): Promise<void> {
     await rm(join(this.paseoHome, "uploads", upload.id), { recursive: true, force: true });
   }
+}
+
+/**
+ * Refuses a message whose uploaded files are gone from this host, so the sender sees the
+ * failure instead of the agent being handed a path with nothing behind it.
+ */
+export async function assertUploadedFilesExist(
+  attachments: readonly AgentAttachment[] | undefined,
+): Promise<void> {
+  const missing: string[] = [];
+  for (const attachment of attachments ?? []) {
+    if (attachment.type !== "uploaded_file") continue;
+    const present = await stat(attachment.path).then(
+      (stats) => stats.isFile(),
+      () => false,
+    );
+    if (!present) missing.push(`"${attachment.fileName}"`);
+  }
+  if (missing.length === 0) return;
+  const subject =
+    missing.length === 1
+      ? `Attached file ${missing[0]} is`
+      : `Attached files ${missing.join(", ")} are`;
+  throw new Error(`${subject} no longer on this host. Remove it and attach it again.`);
 }
 
 function buildUploadResponse(upload: PendingUpload, error: string | null): FileUploadResponse {

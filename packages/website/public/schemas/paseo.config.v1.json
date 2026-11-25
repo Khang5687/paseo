@@ -357,6 +357,40 @@
       },
       "additionalProperties": false
     },
+    "files": {
+      "type": "object",
+      "properties": {
+        "copies": {
+          "type": "object",
+          "properties": {
+            "targetServerId": {
+              "description": "Server id of the always-on host this daemon pushes copies of files its agents mention to. Unset: no copies are pushed.",
+              "type": "string"
+            },
+            "keepDays": {
+              "description": "Copies held for other hosts are removed this many days after their last mention. Defaults to 30.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxTotalBytes": {
+              "description": "Total size of copies held for other hosts. Defaults to 5 GiB.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxFileBytes": {
+              "description": "Largest single file copied. Defaults to 64 MiB.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "agents": {
       "type": "object",
       "properties": {
@@ -496,6 +530,13 @@
                   "required": ["id", "label"]
                 }
               },
+              "disabledModels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
               "disallowedTools": {
                 "type": "array",
                 "items": {
@@ -516,6 +557,113 @@
                   }
                 }
               },
+              "featureDefaults": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "mcpServers": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "stdio"
+                        },
+                        "command": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "env": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "alwaysLoad": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["type", "command"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "http"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "headers": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "alwaysLoad": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["type", "url"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "sse"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "headers": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "alwaysLoad": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["type", "url"]
+                    }
+                  ]
+                }
+              },
               "enabled": {
                 "type": "boolean"
               },
@@ -527,6 +675,11 @@
         },
         "idleRuntimeCleanup": {
           "type": "boolean"
+        },
+        "draftHistoryRetentionDays": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 3650
         },
         "resumeOnStartup": {
           "type": "boolean"
@@ -563,6 +716,54 @@
                 "required": ["provider"],
                 "additionalProperties": false
               }
+            }
+          },
+          "additionalProperties": false
+        },
+        "featureDefaults": {
+          "description": "Feature values every new agent starts with, e.g. { \"output_style\": \"Concise\" }. A provider's own featureDefaults win.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "askAgent": {
+          "type": "object",
+          "properties": {
+            "maxRounds": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxOpenThreads": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idleTimeoutMs": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 2147483647
+            },
+            "replyCharLimit": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "replyStoreChars": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           "additionalProperties": false

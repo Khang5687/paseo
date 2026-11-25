@@ -14,6 +14,7 @@ import { addReloadOptions, runReloadCommand } from "./reload.js";
 import { addImportOptions, runImportCommand } from "./import.js";
 import { runUpdateCommand } from "./update.js";
 import { runDetachCommand } from "./detach.js";
+import { runUnarchiveCommand } from "./unarchive.js";
 import { addOpenOptions, runOpenCommand } from "./open.js";
 import { withOutput } from "../../output/index.js";
 import {
@@ -82,6 +83,13 @@ export function createAgentCommand(): Command {
   addJsonAndDaemonHostOptions(addArchiveOptions(agent.command("archive"))).action(
     withOutput(runArchiveCommand),
   );
+
+  addJsonAndDaemonHostOptions(
+    agent
+      .command("unarchive")
+      .description("Restore an archived agent to the active list without starting a turn")
+      .argument("<id>", "Agent ID, prefix, or name"),
+  ).action(withOutput(runUnarchiveCommand));
 
   addJsonAndDaemonHostOptions(addReloadOptions(agent.command("reload"))).action(
     withOutput(runReloadCommand),
