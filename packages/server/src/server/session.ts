@@ -174,6 +174,7 @@ import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
 import type { AskAgentThreads } from "./agent/ask-agent.js";
 import { forkAgent } from "./agent/fork-agent.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
+import { saveInlineImages } from "./agent/prompt-image-files.js";
 import { assertUploadedFilesExist } from "./file-upload/index.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -4953,7 +4954,13 @@ export class Session {
     );
 
     const promptText = options?.spokenInput ? wrapSpokenInput(text) : text;
-    const prompt = buildAgentPrompt(promptText, images, attachments);
+    const prompt = buildAgentPrompt(
+      promptText,
+      images,
+      attachments,
+      undefined,
+      await saveInlineImages(this.paseoHome, images, undefined),
+    );
 
     try {
       await sendPromptToAgent({
@@ -9966,7 +9973,13 @@ export class Session {
       const agentId = resolved.agentId;
 
       await assertUploadedFilesExist(msg.attachments);
-      const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments, msg.attachmentRefs);
+      const prompt = buildAgentPrompt(
+        msg.text,
+        msg.images,
+        msg.attachments,
+        msg.attachmentRefs,
+        await saveInlineImages(this.paseoHome, msg.images, msg.attachmentRefs),
+      );
       this.sessionLogger.trace(
         {
           agentId,

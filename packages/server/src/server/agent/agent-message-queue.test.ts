@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager, type ManagedAgent } from "./agent-manager.js";
@@ -194,6 +194,12 @@ function promptText(prompt: AgentPromptInput): string {
     .join("\n");
 }
 
+function localDay(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 let workdir: string;
 let storage: AgentStorage;
 let client: HeldTurnClient;
@@ -215,6 +221,7 @@ beforeEach(async () => {
       logger,
     }),
     logger,
+    paseoHome: join(workdir, "home"),
   });
   dispatcher.attach();
 });
@@ -283,7 +290,9 @@ test("queued messages dispatch one at a time as each turn ends, and persist with
   const secondTurn = session.waitForNextTurn();
   session.completeTurn(session.turns[0].turnId);
   const started = await secondTurn;
-  expect(promptText(started.prompt)).toBe("second message");
+  const imagePath = join(workdir, "home", "uploads", localDay(), "image-1.png");
+  expect(promptText(started.prompt)).toBe(`second message\n[Image #1]: ${imagePath}`);
+  expect(readFileSync(imagePath, "utf8")).toBe("hello");
   expect(started.prompt).toContainEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
   await waitForLifecycle(manager, agentId, "running");
   expect(manager.getAgent(agentId)?.queuedMessages.map((item) => item.id)).toEqual([second.id]);
@@ -496,6 +505,7 @@ test("the queue survives a daemon restart and drains once the agent is resumed",
       logger,
     }),
     logger,
+    paseoHome: join(workdir, "home"),
   });
   restartedDispatcher.attach();
   try {
@@ -544,6 +554,7 @@ test("a paused queue stays paused across a daemon restart", async () => {
       logger,
     }),
     logger,
+    paseoHome: join(workdir, "home"),
   });
   restartedDispatcher.attach();
   try {
@@ -638,7 +649,10 @@ test("an automatic drain that cannot send puts the same entry back at the head, 
   expect(toAgentPayload(manager.getAgent(agentId)!)).not.toHaveProperty("queuePauseReason");
   dispatcher.drainIfIdle(agentId);
   const started = await nextTurn;
-  expect(promptText(started.prompt)).toBe("refused at the door");
+  // The retry names the file the refused attempt wrote instead of saving the picture again.
+  const imagePath = join(workdir, "home", "uploads", localDay(), "image-1.png");
+  expect(promptText(started.prompt)).toBe(`refused at the door\n[Image #1]: ${imagePath}`);
+  expect(readdirSync(dirname(imagePath))).toEqual(["image-1.png"]);
   expect(started.prompt).toContainEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
   await waitForLifecycle(manager, agentId, "running");
   expect(manager.getAgent(agentId)?.queuedMessages).toEqual([second]);

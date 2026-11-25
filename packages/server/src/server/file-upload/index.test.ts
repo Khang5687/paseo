@@ -56,6 +56,85 @@ describe("file uploads", () => {
     expect(readFileSync(path, "utf8")).toBe("hello world");
   });
 
+  it("puts every upload in today's folder under its real name", async () => {
+    const paseoHome = makePaseoHome();
+    const uploads = new FileUploadStore({ paseoHome });
+
+    const file = await uploadNamed(uploads, "clip.mp4");
+
+    const day = readdirSync(join(paseoHome, "uploads"));
+    expect(day).toHaveLength(1);
+    expect(day[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(file?.path).toBe(join(paseoHome, "uploads", day[0], "clip.mp4"));
+    expect(file?.id).toBe(`${day[0]}/clip.mp4`);
+  });
+
+  it("numbers a repeated name instead of overwriting the earlier file", async () => {
+    const uploads = new FileUploadStore({ paseoHome: makePaseoHome() });
+
+    const first = await uploadNamed(uploads, "shot.png");
+    const second = await uploadNamed(uploads, "shot.png");
+    const third = await uploadNamed(uploads, "shot.png");
+
+    expect([first, second, third].map((file) => basename(file!.path))).toEqual([
+      "shot.png",
+      "shot-2.png",
+      "shot-3.png",
+    ]);
+    expect(second?.fileName).toBe("shot-2.png");
+    expect(readFileSync(first!.path, "utf8")).toBe("hello world");
+  });
+
+  it("cancels an unfinished upload without touching other files in the folder", async () => {
+    const paseoHome = makePaseoHome();
+    const uploads = new FileUploadStore({ paseoHome });
+    const kept = await uploadNamed(uploads, "kept.txt");
+
+    const cancel = uploads.beginUpload({
+      type: "file.upload.request",
+      fileName: "half.txt",
+      mimeType: "text/plain",
+      size: 11,
+      modifiedAt: "2026-05-02T00:00:00.000Z",
+      requestId: "req-cancel",
+    });
+    await uploads.receiveFrame(uploadBegins("req-cancel"));
+    await uploads.receiveFrame(uploadChunk("req-cancel", "hello"));
+    const half = uploadedPath(paseoHome, "half.txt");
+    await cancel();
+
+    expect(existsSync(half)).toBe(false);
+    expect(readFileSync(kept!.path, "utf8")).toBe("hello world");
+  });
+
+  it("removes the day folder when the cancelled upload was its only file", async () => {
+    const paseoHome = makePaseoHome();
+    const uploads = new FileUploadStore({ paseoHome });
+
+    const cancel = uploads.beginUpload({
+      type: "file.upload.request",
+      fileName: "half.txt",
+      mimeType: "text/plain",
+      size: 11,
+      modifiedAt: "2026-05-02T00:00:00.000Z",
+      requestId: "req-cancel-only",
+    });
+    await uploads.receiveFrame(uploadBegins("req-cancel-only"));
+    await cancel();
+
+    expect(readdirSync(join(paseoHome, "uploads"))).toEqual([]);
+  });
+
+  it("keeps file-copy uploads in their own folder", async () => {
+    const paseoHome = makePaseoHome();
+    const uploads = new FileUploadStore({ paseoHome });
+
+    const file = await uploadNamed(uploads, ".paseo-file-copy");
+
+    expect(file?.id).toMatch(/^upload_[0-9a-f-]{36}$/);
+    expect(dirname(file!.path)).toBe(join(paseoHome, "uploads", file!.id));
+  });
+
   it("keeps the original file name for non-ASCII and punctuated names", async () => {
     const uploads = new FileUploadStore({ paseoHome: makePaseoHome() });
 

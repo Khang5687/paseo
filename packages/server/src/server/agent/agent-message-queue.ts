@@ -5,6 +5,7 @@ import { ensureAgentLoaded } from "./agent-loading.js";
 import type { AgentMessageDelivery } from "./agent-messages/index.js";
 import { sendPromptToAgent, waitForAgentRunStartWithTimeout } from "./agent-prompt.js";
 import type { AgentStorage } from "./agent-storage.js";
+import { saveInlineImages } from "./prompt-image-files.js";
 import { buildAgentPrompt } from "./prompt-attachments.js";
 
 export interface AgentMessageQueueDispatcherOptions {
@@ -12,6 +13,7 @@ export interface AgentMessageQueueDispatcherOptions {
   agentStorage: AgentStorage;
   agentMessages: Pick<AgentMessageDelivery, "sendDirect">;
   logger: Logger;
+  paseoHome: string;
 }
 
 /**
@@ -31,6 +33,9 @@ export class AgentMessageQueueDispatcher {
   private readonly agentStorage: AgentStorage;
   private readonly agentMessages: Pick<AgentMessageDelivery, "sendDirect">;
   private readonly logger: Logger;
+  private readonly paseoHome: string;
+  // A refused send puts the entry back; its retry names the files already written.
+  private readonly imagePathsByMessage = new Map<string, string[] | undefined>();
   private readonly inFlight = new Map<string, Promise<void>>();
   private unsubscribe: (() => void) | null = null;
 
@@ -39,6 +44,7 @@ export class AgentMessageQueueDispatcher {
     this.agentStorage = options.agentStorage;
     this.agentMessages = options.agentMessages;
     this.logger = options.logger;
+    this.paseoHome = options.paseoHome;
   }
 
   attach(): void {
@@ -138,6 +144,13 @@ export class AgentMessageQueueDispatcher {
     return run;
   }
 
+  private async savedImagePaths(message: AgentQueuedMessagePayload): Promise<string[] | undefined> {
+    if (this.imagePathsByMessage.has(message.id)) return this.imagePathsByMessage.get(message.id);
+    const paths = await saveInlineImages(this.paseoHome, message.images, message.attachmentRefs);
+    this.imagePathsByMessage.set(message.id, paths);
+    return paths;
+  }
+
   private async run(
     agentId: string,
     options: {
@@ -180,6 +193,7 @@ export class AgentMessageQueueDispatcher {
           message.images,
           message.attachments,
           message.attachmentRefs,
+          await this.savedImagePaths(message),
         ),
         messageId: message.id,
         activeTurnBehavior: options.activeTurnBehavior ?? "steer",
@@ -190,6 +204,7 @@ export class AgentMessageQueueDispatcher {
       // times out or fails does not un-send it (a rejected start is already in
       // the timeline as a rejected message), so requeueing would duplicate it.
       admitted = true;
+      this.imagePathsByMessage.delete(message.id);
       if (result.disposition === "turn_started") {
         await waitForAgentRunStartWithTimeout(this.agentManager, agentId, result.started);
       }
