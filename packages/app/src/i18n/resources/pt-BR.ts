@@ -1235,6 +1235,15 @@ export const ptBR: TranslationResources = {
     },
   },
   sidebar: {
+    projectStrip: {
+      label: "Projetos",
+      all: "Todos",
+      allProjects: "Todos os projetos",
+      needsInput: "Aguardando você: {{count}}",
+      moveFirst: "Mover para o início",
+      moveEarlier: "Mover para antes",
+      moveLater: "Mover para depois",
+    },
     view: {
       failed: "Não foi possível carregar a visualização da barra lateral.",
       useDefault: "Usar visualização padrão",
@@ -2786,6 +2795,7 @@ export const ptBR: TranslationResources = {
         archiveWorkspace: "Arquivar workspace",
         newTab: "Nova aba",
         closeCurrentTab: "Fechar aba atual",
+        showProject: "Mostrar projeto",
         jumpToWorkspace: "Ir para workspace",
         jumpToTab: "Ir para aba",
         previousWorkspace: "Workspace anterior",

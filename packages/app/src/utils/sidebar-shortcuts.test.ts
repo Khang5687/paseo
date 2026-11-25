@@ -94,6 +94,7 @@ describe("buildSidebarShortcutModel", () => {
             pathname: `/h/s/workspace/ws-${current}`,
             isMobile: false,
             sidebarShortcutTargets: model.shortcutTargets,
+            sidebarShortcutProjectKeys: [],
             navigationActiveWorkspace: null,
             commandCenterOpen: false,
             shortcutsDialogOpen: false,

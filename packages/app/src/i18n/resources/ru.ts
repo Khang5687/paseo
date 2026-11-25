@@ -1227,6 +1227,15 @@ export const ru: TranslationResources = {
     },
   },
   sidebar: {
+    projectStrip: {
+      label: "Проекты",
+      all: "Все",
+      allProjects: "Все проекты",
+      needsInput: "Ждут вас: {{count}}",
+      moveFirst: "Переместить в начало",
+      moveEarlier: "Переместить раньше",
+      moveLater: "Переместить позже",
+    },
     view: {
       failed: "Не удалось загрузить вид боковой панели.",
       useDefault: "Использовать стандартный вид",
@@ -2794,6 +2803,7 @@ export const ru: TranslationResources = {
         archiveWorkspace: "Архивировать рабочее пространство",
         newTab: "Новая вкладка",
         closeCurrentTab: "Закрыть текущую вкладку",
+        showProject: "Показать проект",
         jumpToWorkspace: "Перейти к рабочему пространству",
         jumpToTab: "Перейти на вкладку",
         previousWorkspace: "Предыдущее рабочее пространство",

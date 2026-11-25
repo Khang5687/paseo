@@ -1200,6 +1200,15 @@ export const zhCN: TranslationResources = {
     },
   },
   sidebar: {
+    projectStrip: {
+      label: "项目",
+      all: "全部",
+      allProjects: "全部项目",
+      needsInput: "等待你处理：{{count}}",
+      moveFirst: "移到最前",
+      moveEarlier: "前移",
+      moveLater: "后移",
+    },
     view: {
       failed: "无法加载侧边栏视图。",
       useDefault: "使用默认视图",
@@ -2716,6 +2725,7 @@ export const zhCN: TranslationResources = {
         archiveWorkspace: "归档工作区",
         newTab: "新建标签",
         closeCurrentTab: "关闭当前标签",
+        showProject: "显示项目",
         jumpToWorkspace: "跳转到 workspace",
         jumpToTab: "跳转到标签",
         previousWorkspace: "上一个 workspace",

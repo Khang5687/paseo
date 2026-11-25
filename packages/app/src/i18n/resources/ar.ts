@@ -1208,6 +1208,15 @@ export const ar: TranslationResources = {
     },
   },
   sidebar: {
+    projectStrip: {
+      label: "المشاريع",
+      all: "الكل",
+      allProjects: "كل المشاريع",
+      needsInput: "بانتظارك: {{count}}",
+      moveFirst: "نقل إلى الأول",
+      moveEarlier: "نقل إلى موضع أسبق",
+      moveLater: "نقل إلى موضع لاحق",
+    },
     view: {
       failed: "تعذر تحميل عرض الشريط الجانبي.",
       useDefault: "استخدام العرض الافتراضي",
@@ -2782,6 +2791,7 @@ export const ar: TranslationResources = {
         archiveWorkspace: "أرشفة مساحة العمل",
         newTab: "علامة تبويب جديدة",
         closeCurrentTab: "إغلاق علامة التبويب الحالية",
+        showProject: "عرض المشروع",
         jumpToWorkspace: "انتقل إلى مساحة العمل",
         jumpToTab: "انتقل إلى علامة التبويب",
         previousWorkspace: "مساحة العمل السابقة",

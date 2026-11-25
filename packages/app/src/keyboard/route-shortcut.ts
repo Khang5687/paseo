@@ -10,6 +10,8 @@ export interface ShortcutRoutingContext {
   pathname: string;
   isMobile: boolean;
   sidebarShortcutTargets: ReadonlyArray<SidebarShortcutWorkspaceTarget>;
+  /** Project strip entries in strip order; index 0 answers the first digit. */
+  sidebarShortcutProjectKeys: ReadonlyArray<string>;
   navigationActiveWorkspace: SidebarShortcutWorkspaceTarget | null;
   commandCenterOpen: boolean;
   shortcutsDialogOpen: boolean;
@@ -33,7 +35,8 @@ export type ShortcutAction =
   | { kind: "open-project-picker" }
   | { kind: "callback"; name: ShortcutCallbackName }
   | { kind: "command-center-toggle"; nextOpen: boolean; tab?: "files" }
-  | { kind: "shortcuts-dialog-toggle"; nextOpen: boolean };
+  | { kind: "shortcuts-dialog-toggle"; nextOpen: boolean }
+  | { kind: "show-sidebar-project"; projectViewKey: string };
 
 const NONE: ShortcutAction = { kind: "none" };
 
@@ -133,6 +136,16 @@ function routeWorkspaceNavigateIndex(
   };
 }
 
+function routeSidebarProjectNavigateIndex(
+  payload: KeyboardShortcutPayload,
+  ctx: ShortcutRoutingContext,
+): ShortcutAction {
+  if (!hasPayloadKey(payload, "index")) return NONE;
+  const projectViewKey = ctx.sidebarShortcutProjectKeys[payload.index - 1];
+  if (!projectViewKey) return NONE;
+  return { kind: "show-sidebar-project", projectViewKey };
+}
+
 function routeWorkspaceNavigateRelative(
   payload: KeyboardShortcutPayload,
   ctx: ShortcutRoutingContext,
@@ -202,6 +215,8 @@ export function routeKeyboardShortcut(
       return routeWorkspaceTabNavigateRelative(input.payload);
     case "workspace.navigate.index":
       return routeWorkspaceNavigateIndex(input.payload, ctx);
+    case "sidebar.project.navigate.index":
+      return routeSidebarProjectNavigateIndex(input.payload, ctx);
     case "workspace.navigate.relative":
       return routeWorkspaceNavigateRelative(input.payload, ctx);
     case "message-input.action":
