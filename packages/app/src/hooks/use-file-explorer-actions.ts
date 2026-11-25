@@ -5,6 +5,7 @@ import { usePanelStore } from "@/stores/panel-store";
 import { revealExplorerDirectory } from "@/file-explorer/tree";
 import {
   loadExplorerDirectory,
+  reloadExplorerDirectory,
   type DirectoryListingResult,
   invalidateExplorerDirectoryListings,
 } from "@/file-explorer/directory-listings";
@@ -110,6 +111,19 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
       });
     },
     [client, normalizedWorkspaceRoot, t, updateExplorerState, workspaceStateKey],
+  );
+
+  const reloadDirectoryListing = useCallback(
+    (path: string): Promise<void> => {
+      if (!workspaceStateKey || !normalizedWorkspaceRoot || !client) return Promise.resolve();
+      return reloadExplorerDirectory({
+        readState: () =>
+          useSessionStore.getState().sessions[serverId]?.fileExplorer.get(workspaceStateKey),
+        updateState: updateExplorerState,
+        listDirectory: () => client.listDirectory(normalizedWorkspaceRoot, path),
+      });
+    },
+    [client, normalizedWorkspaceRoot, serverId, updateExplorerState, workspaceStateKey],
   );
 
   const revealDirectory = useCallback(
@@ -260,6 +274,7 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
     revealDirectory,
     requestDirectoryListing,
     invalidateDirectoryListings,
+    reloadDirectoryListing,
     requestFileDownloadToken,
     requestFileBytes,
     createEntry,

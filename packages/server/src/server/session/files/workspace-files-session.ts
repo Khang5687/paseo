@@ -8,6 +8,7 @@ import {
   type FileTransferFrame,
 } from "@getpaseo/protocol/binary-frames/index";
 import type {
+  DirectorySubscribeRequest,
   FileDownloadTokenRequest,
   FileEntryCreateRequest,
   FileEntryDeleteRequest,
@@ -35,6 +36,11 @@ import {
   writeExplorerFile,
 } from "../../file-explorer/service.js";
 import { workspaceFileObserver, type FileObserver } from "../../file-explorer/observer.js";
+import {
+  workspaceDirectoryObserver,
+  type DirectoryObserver,
+  type DirectorySubscription,
+} from "../../file-explorer/directory-observer.js";
 import { getProjectIcon } from "../../../utils/project-icon.js";
 
 /**
@@ -55,6 +61,7 @@ export interface WorkspaceFilesSessionOptions {
   paseoHome: string;
   logger: pino.Logger;
   fileObserver?: FileObserver;
+  directoryObserver?: DirectoryObserver;
 }
 
 /**
@@ -70,6 +77,7 @@ export class WorkspaceFilesSession {
   private readonly logger: pino.Logger;
   private readonly fileUploads: FileUploadStore;
   private readonly fileObserver: FileObserver;
+  private readonly directoryObserver: DirectoryObserver;
 
   constructor(options: WorkspaceFilesSessionOptions) {
     this.host = options.host;
@@ -77,6 +85,7 @@ export class WorkspaceFilesSession {
     this.logger = options.logger;
     this.fileUploads = new FileUploadStore({ paseoHome: options.paseoHome });
     this.fileObserver = options.fileObserver ?? workspaceFileObserver;
+    this.directoryObserver = options.directoryObserver ?? workspaceDirectoryObserver;
   }
 
   async handleFileSubscribeRequest(
@@ -141,6 +150,60 @@ export class WorkspaceFilesSession {
           requestId: request.requestId,
         },
       });
+    }
+  }
+
+  async handleDirectorySubscribeRequest(
+    request: DirectorySubscribeRequest,
+    ownership: SessionDelivery,
+  ): Promise<void> {
+    let bootstrap: Promise<DirectorySubscription> | undefined;
+    const owner = ownership.begin(
+      "files",
+      undefined,
+      async () => {
+        await bootstrap?.then(
+          (subscription) => subscription.unsubscribe(),
+          () => undefined,
+        );
+      },
+      `directory:${request.requestId}`,
+    );
+    let ready = false;
+    let pending = false;
+    const emitUpdate = () =>
+      owner.emit({
+        type: "fs.directory.update",
+        payload: { subscriptionId: owner.responseId, cwd: request.cwd, path: request.path },
+      });
+    const respond = (error: string | null) =>
+      this.host.emit({
+        type: "fs.directory.subscribe.response",
+        payload: {
+          subscriptionId: owner.responseId,
+          cwd: request.cwd,
+          path: request.path,
+          error,
+          requestId: request.requestId,
+        },
+      });
+    try {
+      bootstrap = this.directoryObserver.subscribe({ cwd: request.cwd, path: request.path }, () => {
+        if (owner.signal.aborted) return;
+        if (ready) emitUpdate();
+        else pending = true;
+      });
+      const subscription = await bootstrap;
+      if (owner.signal.aborted) {
+        subscription.unsubscribe();
+        return;
+      }
+      respond(null);
+      ready = true;
+      if (pending) emitUpdate();
+    } catch (error) {
+      await owner.release();
+      respond(getErrorMessage(error));
     }
   }
 
