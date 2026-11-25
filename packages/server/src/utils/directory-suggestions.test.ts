@@ -478,6 +478,9 @@ describe("searchDirectoryEntries", () => {
       }),
     ).resolves.toEqual([]);
 
+    // The cache validates a listing by directory mtime/ctime, which advance in kernel-tick steps.
+    // A child created in the same tick as the first listing would leave both unchanged.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     mkdirSync(path.join(dynamicRoot, "fresh-project"));
 
     await expect(
