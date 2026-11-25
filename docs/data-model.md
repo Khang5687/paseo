@@ -637,12 +637,24 @@ then retry only when a requested row changes during the read. Unrelated agent st
 invalidate the read. Directory baseline replacements and host removal or renaming still invalidate
 the affected reads.
 
-The cache is capped at 32 MiB and evicts whole hosts in least-recently-written order. After an
-eviction, only a baseline replacement stores that host's directory again. Mutations queued around
-the eviction are dropped when they are written, so a checkpoint never outlives its rows. Budget
-bookkeeping may scan opaque row sizes during a deferred write, never during host registry startup or
-before a requested cache row can paint. The row store is not encrypted. A cached timeline can contain
-source code, prompts, and tool output; encrypted-at-rest storage is a separate security decision.
+The cache is capped at 64 MiB across every host. Over the cap it drops timeline rows, least recently
+saved first, and keeps every directory row, so the sidebar and every other cached chat still open
+offline. Chats stay in the cache until something newer pushes them out; there is no age limit. A
+real chat tail is 40 KB to 1 MB (about 240 KB on average), so the cap holds roughly 270 chats. Do not
+go back to evicting whole hosts for timeline growth: when one host holds most of the cache, a single
+new chat wipes that host's sidebar and every chat with it, and offline the app shows "Connecting"
+with an empty sidebar.
+
+Save order lives in the timeline payload as `savedAt`, the payload's first key, so startup reads it
+from the row's prefix instead of parsing every payload. Rows without it count as the oldest. Only
+when the directories alone, or the chats in the current write, pass the cap does the cache evict
+whole hosts, oldest written first. After a host eviction, only a baseline replacement stores that
+host's directory again. Mutations queued around the eviction are dropped when they are written, so
+a checkpoint never outlives its rows. The in-memory index keeps each row's key and size, not its
+payload. Budget bookkeeping may scan opaque row sizes during a deferred write, never during host
+registry startup or before a requested cache row can paint. The row store is not encrypted. A cached
+timeline can contain source code, prompts, and tool output; encrypted-at-rest storage is a separate
+security decision.
 
 ### Saved hosts
 

@@ -1108,5 +1108,10 @@
       "packages/app/e2e/browser/sidebar-project-strip.spec.ts",
       "packages/app/e2e/browser/workspace-relative-navigation.spec.ts"
     ]
+  },
+  {
+    "pr": 147,
+    "title": "fix(app): keep the sidebar and recent chats when the replica cache is full",
+    "tests": ["packages/app/src/runtime/replica-cache/index.test.ts"]
   }
 ]
