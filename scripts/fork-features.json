@@ -1056,6 +1056,7 @@
       "packages/app/src/assistant-file-links/tool-call-paths.test.ts",
       "packages/app/src/assistant-file-links/use-file-link.test.tsx",
       "packages/server/src/utils/directory-suggestions.test.ts"
-    ]
+    ],
+    "e2e": ["packages/app/e2e/browser/assistant-file-link-ladder.spec.ts"]
   }
 ]
