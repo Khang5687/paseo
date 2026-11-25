@@ -29,6 +29,7 @@ import type { WorkspaceFileLocation } from "@/workspace/file-open";
  * its own loading; the tab only knows the file exists, its kind, and whether the panel has
  * unsaved changes.
  */
+// oxlint-disable-next-line complexity
 export function FilePane({
   serverId,
   workspaceId,
