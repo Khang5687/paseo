@@ -2163,6 +2163,10 @@ export const ja: TranslationResources = {
     httpFailed: "ファイルのダウンロードに失敗しました (HTTP {{status}}).",
     shareFile: "ファイルを共有",
     shareFileNamed: "{{fileName}}を共有",
+    savedTo: "{{where}} に保存しました",
+    iosFolder: "ファイル › Paseo › Downloads",
+    showInFolder: "フォルダで表示",
+    showInFinder: "Finder で表示",
   },
   offlineFiles: {
     title: "オフラインファイル",
@@ -2870,6 +2874,22 @@ export const ja: TranslationResources = {
     },
     files: {
       title: "ファイル",
+      save: {
+        title: "ファイルの保存",
+        askWhere: "保存先を毎回確認する",
+        askWhereHint: {
+          web: "ダウンロード先はブラウザが決めるため、ここでは何も変わりません。",
+          desktop:
+            "ダウンロードすると保存ダイアログが開きます。オフにすると「ダウンロード › Paseo」に直接保存します。",
+          ios: "ダウンロードすると共有シートが開き、「“ファイル”に保存」を選べます。オフにすると「ファイル」アプリの Paseo フォルダに直接保存します。",
+          android:
+            "ダウンロードするとフォルダ選択が開きます。オフにすると、一度フォルダを選べば以降はそこに直接保存します。",
+        },
+        folder: "保存フォルダ",
+        folderNone: "未選択",
+        choose: "選択",
+        change: "変更",
+      },
       askEveryTime: "毎回確認する",
       askAgain: "もう一度確認する",
       askAgainFor: "{{label}} をもう一度確認する",

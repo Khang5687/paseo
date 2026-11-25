@@ -2179,6 +2179,10 @@ export const ru: TranslationResources = {
     httpFailed: "Не удалось загрузить файл (HTTP {{status}}).",
     shareFile: "Поделиться файлом",
     shareFileNamed: "Поделиться {{fileName}}",
+    savedTo: "Сохранено в {{where}}",
+    iosFolder: "Файлы › Paseo › Downloads",
+    showInFolder: "Показать в папке",
+    showInFinder: "Показать в Finder",
   },
   offlineFiles: {
     title: "Офлайн-файлы",
@@ -2894,6 +2898,22 @@ export const ru: TranslationResources = {
     },
     files: {
       title: "Файлы",
+      save: {
+        title: "Сохранение файлов",
+        askWhere: "Спрашивать, куда сохранять",
+        askWhereHint: {
+          web: "Браузер сам решает, куда сохранять загрузки, поэтому здесь это ничего не меняет.",
+          desktop:
+            "Загрузка открывает диалог «Сохранить». Выключите, чтобы сохранять сразу в «Загрузки › Paseo».",
+          ios: "Загрузка открывает меню «Поделиться» с пунктом «Сохранить в Файлы». Выключите, чтобы сохранять сразу в папку Paseo в приложении «Файлы».",
+          android:
+            "Загрузка открывает выбор папки. Выключите, чтобы выбрать папку один раз и сохранять сразу в неё.",
+        },
+        folder: "Папка для сохранения",
+        folderNone: "Ещё не выбрана",
+        choose: "Выбрать",
+        change: "Изменить",
+      },
       askEveryTime: "Спрашивать каждый раз",
       askAgain: "Спросить снова",
       askAgainFor: "Спросить снова для {{label}}",

@@ -2191,6 +2191,10 @@ export const es: TranslationResources = {
     httpFailed: "No se pudo descargar el archivo (HTTP {{status}}).",
     shareFile: "compartir archivo",
     shareFileNamed: "Compartir{{fileName}}",
+    savedTo: "Guardado en {{where}}",
+    iosFolder: "Archivos › Paseo › Downloads",
+    showInFolder: "Mostrar en la carpeta",
+    showInFinder: "Mostrar en Finder",
   },
   offlineFiles: {
     title: "Archivos sin conexión",
@@ -2902,6 +2906,22 @@ export const es: TranslationResources = {
     },
     files: {
       title: "Archivos",
+      save: {
+        title: "Guardar archivos",
+        askWhere: "Preguntar dónde guardar",
+        askWhereHint: {
+          web: "Tu navegador decide dónde van las descargas, así que esto no hace nada aquí.",
+          desktop:
+            "Descargar abre el cuadro Guardar. Desactívalo para guardar directamente en Descargas › Paseo.",
+          ios: "Descargar abre el menú Compartir, que incluye Guardar en Archivos. Desactívalo para guardar directamente en la carpeta Paseo de la app Archivos.",
+          android:
+            "Descargar abre un selector de carpeta. Desactívalo para elegir una carpeta una vez y guardar directamente allí.",
+        },
+        folder: "Carpeta de guardado",
+        folderNone: "Aún sin elegir",
+        choose: "Elegir",
+        change: "Cambiar",
+      },
       askEveryTime: "Preguntar siempre",
       askAgain: "Volver a preguntar",
       askAgainFor: "Volver a preguntar para {{label}}",

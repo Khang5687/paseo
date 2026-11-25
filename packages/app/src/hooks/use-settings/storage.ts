@@ -130,6 +130,14 @@ export interface AppSettings {
   offlineFilesRetentionDays: number;
   offlineFilesMaxTotalMb: number;
   offlineFilesMaxFileMb: number;
+  /**
+   * Download asks where to save each file (native Save dialog on desktop, share sheet on iOS,
+   * folder picker on Android). Off saves to Downloads › Paseo, the app's folder in Files, or the
+   * Android folder below. A browser decides for itself and ignores this.
+   */
+  downloadAskWhere: boolean;
+  /** Android: the folder picked the first time a download needs one while asking is off. */
+  downloadFolderUri: string | null;
 }
 
 export type AppSettingsUpdate =
@@ -193,6 +201,8 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   offlineFilesRetentionDays: OFFLINE_FILE_LIMITS.retentionDays.default,
   offlineFilesMaxTotalMb: OFFLINE_FILE_LIMITS.maxTotalMb.default,
   offlineFilesMaxFileMb: OFFLINE_FILE_LIMITS.maxFileMb.default,
+  downloadAskWhere: true,
+  downloadFolderUri: null,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -332,6 +342,8 @@ const StoredAppSettingsSchema = z
     offlineFilesRetentionDays: offlineFileLimit("retentionDays"),
     offlineFilesMaxTotalMb: offlineFileLimit("maxTotalMb"),
     offlineFilesMaxFileMb: offlineFileLimit("maxFileMb"),
+    downloadAskWhere: z.boolean().catch(true),
+    downloadFolderUri: z.string().nullable().catch(null),
     // COMPAT(explorerSidebarRouting): replaced by source-specific side-pane preferences in v0.6.
     openSupportingTabsInSidePanel: z.boolean().optional().catch(undefined),
     // COMPAT(rendererDesktopSettings): these fields used to share this renderer-owned key.

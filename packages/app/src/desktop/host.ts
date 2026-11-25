@@ -53,6 +53,23 @@ export interface DesktopDialogBridge {
   open?: (options?: DesktopDialogOpenOptions) => Promise<string | string[] | null>;
 }
 
+export interface DesktopSaveFileInput {
+  fileName: string;
+  bytes: Uint8Array;
+  /** Show the native Save dialog; off writes to Downloads › Paseo. */
+  ask: boolean;
+}
+
+export type DesktopSaveFileResult =
+  | { status: "saved"; path: string; folderLabel: string }
+  | { status: "cancelled" };
+
+export interface DesktopFilesBridge {
+  save?: (input: DesktopSaveFileInput) => Promise<DesktopSaveFileResult>;
+  /** Shows a file this app saved in the system file manager. */
+  reveal?: (path: string) => Promise<void>;
+}
+
 export interface DesktopNotificationBridge {
   isSupported?: () => Promise<boolean>;
   sendNotification?: (
@@ -196,6 +213,7 @@ export interface DesktopHostBridge {
   events?: DesktopEventsBridge;
   window?: DesktopWindowModuleBridge;
   dialog?: DesktopDialogBridge;
+  files?: DesktopFilesBridge;
   notification?: DesktopNotificationBridge;
   opener?: DesktopOpenerBridge;
   editor?: DesktopEditorBridge;

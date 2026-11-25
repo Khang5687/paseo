@@ -20,6 +20,7 @@ import { OfflineFilesSection } from "@/offline-files/settings-section";
 import { PluginIconView } from "@/plugins/icons";
 import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
+import { SaveLocationSection } from "./save-location-section";
 
 const MENU_ICON_SIZE = 16;
 
@@ -31,6 +32,7 @@ export function FilesSection() {
   return (
     <View>
       <FilePanelsSection />
+      <SaveLocationSection />
       <OfflineFilesSection />
       <HostCopiesSection />
     </View>

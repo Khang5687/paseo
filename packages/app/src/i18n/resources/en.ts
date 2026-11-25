@@ -2170,6 +2170,10 @@ export const en = {
     httpFailed: "Failed to download file (HTTP {{status}}).",
     shareFile: "Share file",
     shareFileNamed: "Share {{fileName}}",
+    savedTo: "Saved to {{where}}",
+    iosFolder: "Files › Paseo › Downloads",
+    showInFolder: "Show in folder",
+    showInFinder: "Show in Finder",
   },
   offlineFiles: {
     title: "Offline files",
@@ -2909,6 +2913,22 @@ export const en = {
     },
     files: {
       title: "Files",
+      save: {
+        title: "Saving files",
+        askWhere: "Ask where to save",
+        askWhereHint: {
+          web: "Your browser decides where downloads go, so this does nothing here.",
+          desktop:
+            "Download opens the Save dialog. Turn off to save straight to Downloads › Paseo.",
+          ios: "Download opens the share sheet, which has Save to Files. Turn off to save straight to the Paseo folder in the Files app.",
+          android:
+            "Download opens a folder picker. Turn off to pick a folder once and save straight there.",
+        },
+        folder: "Save folder",
+        folderNone: "Not chosen yet",
+        choose: "Choose",
+        change: "Change",
+      },
       askEveryTime: "Ask every time",
       askAgain: "Ask again",
       askAgainFor: "Ask again for {{label}}",

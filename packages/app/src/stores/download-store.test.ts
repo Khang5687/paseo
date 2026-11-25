@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { defaultHostAppearance } from "@/hosts/appearance";
 import { i18n } from "@/i18n/i18next";
+import type { SaveOutcome, SaveRequest } from "@/downloads/types";
 import {
   MAX_SESSION_DOWNLOAD_BYTES,
   useDownloadStore,
   type Download,
-  type DownloadedBytes,
 } from "@/stores/download-store";
 import type {
   DirectTcpHostConnection,
@@ -73,13 +73,15 @@ function createFileReader(read: () => Promise<{ bytes: Uint8Array; size: number 
   };
 }
 
-function createFileSaver() {
-  const savedFiles: DownloadedBytes[] = [];
+const ASK_EVERY_TIME = { askWhere: true, folderUri: null };
+
+function createFileSaver(outcome: SaveOutcome = { kind: "handedOff" }) {
+  const savedFiles: SaveRequest[] = [];
   return {
     savedFiles,
-    save: async (file: DownloadedBytes) => {
-      savedFiles.push(file);
-      return null;
+    save: async (request: SaveRequest) => {
+      savedFiles.push(request);
+      return outcome;
     },
   };
 }
@@ -108,6 +110,7 @@ async function startDownload(input: StartInput): Promise<Download | undefined> {
     activeConnectionId: input.activeConnectionId,
     requestFileDownloadToken: token.request,
     readFile: reader.read,
+    destination: ASK_EVERY_TIME,
     saveFile: saver.save,
     fetchFile: input.fetchFile ?? (async () => new Response(FILE_BYTES)),
   });
@@ -140,7 +143,12 @@ describe("download store transport selection", () => {
     expect(token.requested).toEqual([FILE_PATH]);
     expect(reader.requested).toEqual([FILE_PATH]);
     expect(saver.savedFiles).toEqual([
-      { bytes: FILE_BYTES, fileName: FILE_NAME, mimeType: MIME_TYPE },
+      {
+        content: FILE_BYTES,
+        fileName: FILE_NAME,
+        mimeType: MIME_TYPE,
+        preferences: ASK_EVERY_TIME,
+      },
     ]);
   });
 
@@ -159,11 +167,17 @@ describe("download store transport selection", () => {
         readRequests.push({ path, maxBytes });
         return { bytes: FILE_BYTES, size: FILE_BYTES.byteLength };
       },
+      destination: ASK_EVERY_TIME,
       saveFile: saver.save,
     });
     expect(readRequests).toEqual([{ path: FILE_PATH, maxBytes: MAX_SESSION_DOWNLOAD_BYTES }]);
     expect(saver.savedFiles).toEqual([
-      { bytes: FILE_BYTES, fileName: FILE_NAME, mimeType: MIME_TYPE },
+      {
+        content: FILE_BYTES,
+        fileName: FILE_NAME,
+        mimeType: MIME_TYPE,
+        preferences: ASK_EVERY_TIME,
+      },
     ]);
   });
 
@@ -202,7 +216,9 @@ describe("download store transport selection", () => {
 
     expect(download).toMatchObject({ status: "complete" });
     expect(reader.requested).toEqual([]);
-    expect(saver.savedFiles).toEqual([]);
+    // The HTTP route hands the fetched file to the same saver, as a Blob.
+    expect(saver.savedFiles).toHaveLength(1);
+    expect(saver.savedFiles[0]?.content).toBeInstanceOf(Blob);
   });
 
   it("fails with the HTTP status when a proxy in front of the host rejects the download", async () => {
@@ -314,5 +330,36 @@ describe("download store transport selection", () => {
       message: "File transfer incomplete: expected 6 bytes, received 0.",
     });
     expect(saver.savedFiles).toEqual([]);
+  });
+
+  it("reports where the file went and how to show it", async () => {
+    const saver = createFileSaver({
+      kind: "saved",
+      where: "Downloads \u203a Paseo",
+      revealPath: "/home/me/Downloads/Paseo/report.pdf",
+    });
+
+    const download = await startDownload({
+      profile: profileWith([relayConnection]),
+      activeConnectionId: relayConnection.id,
+      saver,
+    });
+
+    expect(download).toMatchObject({
+      status: "complete",
+      savedTo: "Downloads \u203a Paseo",
+      revealPath: "/home/me/Downloads/Paseo/report.pdf",
+    });
+  });
+
+  it("drops the download when the owner cancels the Save dialog", async () => {
+    const download = await startDownload({
+      profile: profileWith([relayConnection]),
+      activeConnectionId: relayConnection.id,
+      saver: createFileSaver({ kind: "cancelled" }),
+    });
+
+    expect(download).toBeUndefined();
+    expect(useDownloadStore.getState().downloads.size).toBe(0);
   });
 });

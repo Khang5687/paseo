@@ -2146,6 +2146,10 @@ export const ar: TranslationResources = {
     httpFailed: "فشل تنزيل الملف (HTTP {{status}}).",
     shareFile: "مشاركة الملف",
     shareFileNamed: "مشاركة{{fileName}}",
+    savedTo: "تم الحفظ في {{where}}",
+    iosFolder: "الملفات › Paseo › Downloads",
+    showInFolder: "إظهار في المجلد",
+    showInFinder: "إظهار في Finder",
   },
   offlineFiles: {
     title: "الملفات دون اتصال",
@@ -2876,6 +2880,21 @@ export const ar: TranslationResources = {
     },
     files: {
       title: "الملفات",
+      save: {
+        title: "حفظ الملفات",
+        askWhere: "اسأل عن مكان الحفظ",
+        askWhereHint: {
+          web: "يقرر المتصفح مكان التنزيلات، لذا لا يؤثر هذا الإعداد هنا.",
+          desktop: "يفتح التنزيل مربع الحفظ. أوقفه للحفظ مباشرة في التنزيلات › Paseo.",
+          ios: "يفتح التنزيل ورقة المشاركة التي تحتوي على «حفظ في الملفات». أوقفه للحفظ مباشرة في مجلد Paseo في تطبيق الملفات.",
+          android:
+            "يفتح التنزيل أداة اختيار المجلد. أوقفه لاختيار مجلد مرة واحدة والحفظ فيه مباشرة.",
+        },
+        folder: "مجلد الحفظ",
+        folderNone: "لم يُختر بعد",
+        choose: "اختيار",
+        change: "تغيير",
+      },
       askEveryTime: "اسأل في كل مرة",
       askAgain: "اسأل مجددًا",
       askAgainFor: "اسأل مجددًا عن {{label}}",

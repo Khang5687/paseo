@@ -2176,6 +2176,10 @@ export const ptBR: TranslationResources = {
     httpFailed: "Falha ao baixar arquivo (HTTP {{status}}).",
     shareFile: "Compartilhar arquivo",
     shareFileNamed: "Compartilhar {{fileName}}",
+    savedTo: "Salvo em {{where}}",
+    iosFolder: "Arquivos › Paseo › Downloads",
+    showInFolder: "Mostrar na pasta",
+    showInFinder: "Mostrar no Finder",
   },
   offlineFiles: {
     title: "Arquivos offline",
@@ -2883,6 +2887,21 @@ export const ptBR: TranslationResources = {
     },
     files: {
       title: "Arquivos",
+      save: {
+        title: "Salvar arquivos",
+        askWhere: "Perguntar onde salvar",
+        askWhereHint: {
+          web: "Seu navegador decide para onde vão os downloads, então isto não faz nada aqui.",
+          desktop: "Baixar abre a caixa Salvar. Desative para salvar direto em Downloads › Paseo.",
+          ios: "Baixar abre a folha de compartilhamento, que tem Salvar em Arquivos. Desative para salvar direto na pasta Paseo do app Arquivos.",
+          android:
+            "Baixar abre um seletor de pasta. Desative para escolher uma pasta uma vez e salvar direto nela.",
+        },
+        folder: "Pasta de destino",
+        folderNone: "Ainda não escolhida",
+        choose: "Escolher",
+        change: "Alterar",
+      },
       askEveryTime: "Perguntar sempre",
       askAgain: "Perguntar de novo",
       askAgainFor: "Perguntar de novo para {{label}}",

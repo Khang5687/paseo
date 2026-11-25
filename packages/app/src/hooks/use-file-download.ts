@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { useAppSettings } from "@/hooks/use-settings";
 import { addSavedFile } from "@/offline-files/saver";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { useDownloadStore } from "@/stores/download-store";
@@ -38,6 +39,8 @@ export function useFileDownload({
     workspaceRoot: normalizedWorkspaceRoot,
   });
   const startDownload = useDownloadStore((state) => state.startDownload);
+  const { settings, updateSettings } = useAppSettings();
+  const { downloadAskWhere, downloadFolderUri } = settings;
 
   return useCallback(
     ({ fileName, path }) => {
@@ -53,17 +56,25 @@ export function useFileDownload({
         activeConnectionId: getHostRuntimeStore().getSnapshot(serverId)?.activeConnectionId ?? null,
         requestFileDownloadToken: (targetPath) => requestFileDownloadToken(targetPath),
         readFile: requestFileBytes,
+        destination: {
+          askWhere: downloadAskWhere,
+          folderUri: downloadFolderUri,
+          onFolderPicked: (folderUri) => void updateSettings({ downloadFolderUri: folderUri }),
+        },
       });
       // A download also lands in the Saved library, so it opens later with the host asleep.
       void addSavedFile({ serverId, workspaceRoot: normalizedWorkspaceRoot, path });
     },
     [
       daemonProfile,
+      downloadAskWhere,
+      downloadFolderUri,
       normalizedWorkspaceRoot,
       requestFileBytes,
       requestFileDownloadToken,
       serverId,
       startDownload,
+      updateSettings,
       workspaceScopeId,
     ],
   );

@@ -50,6 +50,7 @@ import { reloadWhenRendererExits } from "./window/renderer-recovery.js";
 import { showWindowWhenReady } from "./window/show-when-ready.js";
 import { resolveDesktopWindowChromeMode, windowChromeModeArgument } from "./window/chrome.js";
 import { registerDialogHandlers } from "./features/dialogs.js";
+import { registerFileSaveHandlers } from "./features/file-save-handlers.js";
 import {
   registerNotificationHandlers,
   ensureNotificationCenterRegistration,
@@ -973,6 +974,7 @@ async function bootstrap(): Promise<void> {
   registerDaemonManager();
   registerWindowManager({ mode: DESKTOP_WINDOW_CHROME_MODE });
   registerDialogHandlers();
+  registerFileSaveHandlers();
   registerNotificationHandlers();
   const openExternalUrl = createExternalUrlOpener({ open: shell.openExternal });
   ipcMain.handle("paseo:opener:openUrl", (_event, value: unknown) => openExternalUrl(value));

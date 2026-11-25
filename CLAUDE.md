@@ -42,6 +42,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/notes.md](docs/notes.md)                                       | Notes on chat/terminal selections: host ownership, waiting-on events, shell integration coverage, the one-alert rule           |
 | [docs/file-icons.md](docs/file-icons.md)                             | Material icon theme integration for the file explorer                                                                          |
 | [docs/offline-files.md](docs/offline-files.md)                       | Saved on this device: where copies come from, pinning and limits, the workspace-less Saved file view                           |
+| [docs/downloads.md](docs/downloads.md)                               | Where Download saves: the ask-where setting per platform, iOS Documents exposure, Android folder picker limit                  |
 | [docs/providers.md](docs/providers.md)                               | Adding a new agent provider end-to-end                                                                                         |
 | [docs/forge-providers.md](docs/forge-providers.md)                   | Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers                                  |
 | [docs/custom-providers.md](docs/custom-providers.md)                 | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries                                              |

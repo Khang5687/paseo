@@ -6,9 +6,13 @@ import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { Check, X, XCircle } from "lucide-react-native";
+import { getIsElectronMac } from "@/constants/platform";
+import { canRevealSavedFile, revealSavedFile } from "@/downloads/reveal-file";
 import { useDownloadStore, formatSpeed, formatEta, type Download } from "@/stores/download-store";
 
 const AUTO_DISMISS_DELAY = 3000;
+// Long enough to click "Show in folder".
+const REVEAL_DISMISS_DELAY = 8000;
 
 function getDownloadStatusText(download: Download, t: TFunction): string {
   if (download.status === "downloading") {
@@ -17,7 +21,11 @@ function getDownloadStatusText(download: Download, t: TFunction): string {
     }
     return t("common.states.starting");
   }
-  if (download.status === "complete") return t("common.states.downloadComplete");
+  if (download.status === "complete") {
+    return download.savedTo
+      ? t("downloads.savedTo", { where: download.savedTo })
+      : t("common.states.downloadComplete");
+  }
   return download.message ?? t("common.states.downloadFailed");
 }
 
@@ -39,9 +47,12 @@ export function DownloadToast() {
     }
 
     if (activeDownload && activeDownload.status !== "downloading") {
-      dismissTimeoutRef.current = setTimeout(() => {
-        dismissDownload(activeDownload.id);
-      }, AUTO_DISMISS_DELAY);
+      dismissTimeoutRef.current = setTimeout(
+        () => {
+          dismissDownload(activeDownload.id);
+        },
+        activeDownload.revealPath ? REVEAL_DISMISS_DELAY : AUTO_DISMISS_DELAY,
+      );
     }
 
     return () => {
@@ -61,6 +72,13 @@ export function DownloadToast() {
       dismissDownload(activeDownload.id);
     }
   }, [activeDownload, dismissDownload]);
+
+  const revealPath = activeDownload?.revealPath;
+  const handleReveal = useCallback(() => {
+    if (revealPath) {
+      void revealSavedFile(revealPath);
+    }
+  }, [revealPath]);
 
   if (!activeDownload) {
     return null;
@@ -89,6 +107,18 @@ export function DownloadToast() {
             </View>
           )}
         </View>
+        {revealPath && canRevealSavedFile() ? (
+          <Pressable
+            onPress={handleReveal}
+            hitSlop={8}
+            accessibilityRole="button"
+            testID="download-toast-reveal"
+          >
+            <Text style={styles.action}>
+              {getIsElectronMac() ? t("downloads.showInFinder") : t("downloads.showInFolder")}
+            </Text>
+          </Pressable>
+        ) : null}
         {activeDownload.status !== "downloading" && (
           <Pressable onPress={handleDismiss} hitSlop={8} style={styles.dismiss}>
             <X size={16} color={theme.colors.foregroundMuted} />
@@ -148,6 +178,11 @@ const styles = StyleSheet.create((theme) => ({
     height: "100%",
     backgroundColor: theme.colors.primary,
     borderRadius: theme.borderRadius.full,
+  },
+  action: {
+    color: theme.colors.primary,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
   },
   dismiss: {
     padding: theme.spacing[1],
