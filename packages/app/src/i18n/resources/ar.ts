@@ -1217,6 +1217,8 @@ export const ar: TranslationResources = {
       moveEarlier: "نقل إلى موضع أسبق",
       moveLater: "نقل إلى موضع لاحق",
       lastOpen: "آخر ما فُتح",
+      recentWorkspaces: "مساحات العمل الأخيرة",
+      nextWaiting: "التالي بانتظارك · {{count}}",
     },
     view: {
       failed: "تعذر تحميل عرض الشريط الجانبي.",
@@ -2798,6 +2800,9 @@ export const ar: TranslationResources = {
         jumpToTab: "انتقل إلى علامة التبويب",
         previousWorkspace: "مساحة العمل السابقة",
         nextWorkspace: "مساحة العمل التالية",
+        recentWorkspaces: "مساحات العمل الأخيرة",
+        recentWorkspacesBack: "مساحات العمل الأخيرة، للخلف",
+        nextWaitingWorkspace: "مساحة العمل التالية التي تنتظرك",
         previousTab: "علامة التبويب السابقة",
         nextTab: "علامة التبويب التالية",
         splitPaneRight: "تقسيم الجزء الأيمن",

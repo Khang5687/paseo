@@ -1236,6 +1236,8 @@ export const ru: TranslationResources = {
       moveEarlier: "Переместить раньше",
       moveLater: "Переместить позже",
       lastOpen: "открыт последним",
+      recentWorkspaces: "Недавние рабочие пространства",
+      nextWaiting: "Следующее ожидающее · {{count}}",
     },
     view: {
       failed: "Не удалось загрузить вид боковой панели.",
@@ -2810,6 +2812,9 @@ export const ru: TranslationResources = {
         jumpToTab: "Перейти на вкладку",
         previousWorkspace: "Предыдущее рабочее пространство",
         nextWorkspace: "Следующее рабочее пространство",
+        recentWorkspaces: "Недавние рабочие пространства",
+        recentWorkspacesBack: "Недавние рабочие пространства, назад",
+        nextWaitingWorkspace: "Следующее пространство, ждущее вас",
         previousTab: "Предыдущая вкладка",
         nextTab: "Следующая вкладка",
         splitPaneRight: "Разделить панель справа",

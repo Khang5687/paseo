@@ -96,6 +96,7 @@ describe("buildSidebarShortcutModel", () => {
             sidebarShortcutTargets: model.shortcutTargets,
             sidebarShortcutProjects: [],
             navigationActiveWorkspace: null,
+            waitingWorkspaces: [],
             commandCenterOpen: false,
             shortcutsDialogOpen: false,
           },

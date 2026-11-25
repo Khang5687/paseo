@@ -109,6 +109,7 @@ import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
 import { SidebarProjectChipRow, SidebarProjectRailLayout } from "./sidebar/project-strip";
+import { NextWaitingButton } from "./sidebar/next-waiting-button";
 
 type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
 
@@ -673,6 +674,8 @@ function MobileSidebar({
             <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
           </SidebarToastRegion>
         </SidebarViewSlot>
+
+        <NextWaitingButton onNavigate={closeSidebar} />
 
         <SidebarFooter
           handleOpenProject={handleOpenProject}

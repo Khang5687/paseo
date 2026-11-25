@@ -6,6 +6,7 @@ import {
   type SidebarShortcutProjectTarget,
   type SidebarShortcutWorkspaceTarget,
 } from "@/utils/sidebar-shortcuts";
+import { type JumpTarget, nextWaitingWorkspace } from "@/components/sidebar/jump-targets";
 
 export interface ShortcutRoutingContext {
   pathname: string;
@@ -14,6 +15,8 @@ export interface ShortcutRoutingContext {
   /** Project strip entries in strip order; index 0 answers the first digit. */
   sidebarShortcutProjects: ReadonlyArray<SidebarShortcutProjectTarget>;
   navigationActiveWorkspace: SidebarShortcutWorkspaceTarget | null;
+  /** Workspaces waiting on you in every project, the one that waited longest first. */
+  waitingWorkspaces: ReadonlyArray<JumpTarget>;
   commandCenterOpen: boolean;
   shortcutsDialogOpen: boolean;
 }
@@ -37,6 +40,7 @@ export type ShortcutAction =
   | { kind: "callback"; name: ShortcutCallbackName }
   | { kind: "command-center-toggle"; nextOpen: boolean; tab?: "files" }
   | { kind: "shortcuts-dialog-toggle"; nextOpen: boolean }
+  | { kind: "walk-recent-workspaces"; delta: 1 | -1 }
   | {
       kind: "show-sidebar-project";
       projectViewKey: string;
@@ -181,6 +185,19 @@ function routeWorkspaceNavigateRelative(
   };
 }
 
+function routeWaitingNext(ctx: ShortcutRoutingContext): ShortcutAction {
+  const current =
+    ctx.navigationActiveWorkspace ?? parseHostWorkspaceRouteFromPathname(ctx.pathname);
+  const target = nextWaitingWorkspace(ctx.waitingWorkspaces, current);
+  if (!target) return NONE;
+  return { kind: "navigate-workspace", serverId: target.serverId, workspaceId: target.workspaceId };
+}
+
+function routeRecentWalk(payload: KeyboardShortcutPayload): ShortcutAction {
+  if (!hasPayloadKey(payload, "delta")) return NONE;
+  return { kind: "walk-recent-workspaces", delta: payload.delta };
+}
+
 function routeMessageInputAction(payload: KeyboardShortcutPayload): ShortcutAction {
   if (!hasPayloadKey(payload, "kind")) return NONE;
   const action = MESSAGE_INPUT_DISPATCH[payload.kind];
@@ -230,6 +247,10 @@ export function routeKeyboardShortcut(
       return routeSidebarProjectNavigateIndex(input.payload, ctx);
     case "workspace.navigate.relative":
       return routeWorkspaceNavigateRelative(input.payload, ctx);
+    case "workspace.recent.walk":
+      return routeRecentWalk(input.payload);
+    case "workspace.waiting.next":
+      return routeWaitingNext(ctx);
     case "message-input.action":
       return routeMessageInputAction(input.payload);
     case "agent.new":

@@ -1224,6 +1224,8 @@ export const ko: TranslationResources = {
       moveEarlier: "앞으로 이동",
       moveLater: "뒤로 이동",
       lastOpen: "마지막으로 열림",
+      recentWorkspaces: "최근 워크스페이스",
+      nextWaiting: "다음 대기 중 · {{count}}",
     },
     view: {
       failed: "사이드바 보기를 불러오지 못했습니다.",
@@ -2776,6 +2778,9 @@ export const ko: TranslationResources = {
         jumpToTab: "탭으로 이동",
         previousWorkspace: "이전 워크스페이스",
         nextWorkspace: "다음 워크스페이스",
+        recentWorkspaces: "최근 워크스페이스",
+        recentWorkspacesBack: "최근 워크스페이스, 역순",
+        nextWaitingWorkspace: "응답을 기다리는 다음 워크스페이스",
         previousTab: "이전 탭",
         nextTab: "다음 탭",
         splitPaneRight: "창을 오른쪽으로 분할",

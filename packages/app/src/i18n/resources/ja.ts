@@ -1231,6 +1231,8 @@ export const ja: TranslationResources = {
       moveEarlier: "前に移動",
       moveLater: "後ろに移動",
       lastOpen: "前回開いた",
+      recentWorkspaces: "最近のワークスペース",
+      nextWaiting: "次の待機中 · {{count}}",
     },
     view: {
       failed: "サイドバーのビューを読み込めませんでした。",
@@ -2788,6 +2790,9 @@ export const ja: TranslationResources = {
         jumpToTab: "タブにジャンプ",
         previousWorkspace: "前のワークスペース",
         nextWorkspace: "次のワークスペース",
+        recentWorkspaces: "最近のワークスペース",
+        recentWorkspacesBack: "最近のワークスペース (逆順)",
+        nextWaitingWorkspace: "あなたを待っている次のワークスペース",
         previousTab: "前のタブ",
         nextTab: "次のタブ",
         splitPaneRight: "右にペインを分割",
