@@ -828,6 +828,7 @@ export class VoiceAssistantWebSocketServer {
       agentManager,
       agentStorage,
       logger: this.logger.child({ module: "agent-message-queue" }),
+      paseoHome,
     });
     this.agentMessageQueue.attach();
     this.creationService = new CreationService(

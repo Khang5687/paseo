@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
 import type pino from "pino";
 import type {
   AgentDraft,
@@ -13,6 +12,7 @@ import type {
   StoredAgentDraftFields,
   StoredAgentDraftSnapshot,
 } from "../agent/agent-storage.js";
+import { isUploadId, removeUploadFile, resolveUploadFile } from "../file-upload/upload-location.js";
 
 export const DEFAULT_DRAFT_HISTORY_RETENTION_DAYS = 7;
 const MAX_DRAFT_SNAPSHOTS = 10;
@@ -22,7 +22,6 @@ const PREVIEW_CHARS = 80;
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Base64 grows bytes by a third; this keeps a response under the relay frame cap.
 const MAX_UPLOAD_READ_BYTES = 20 * 1024 * 1024;
-const UPLOAD_ID_PATTERN = /^upload_[0-9a-f-]{36}$/i;
 
 export interface DraftSetInput {
   text: string;
@@ -288,14 +287,17 @@ export class AgentDraftService {
   /** Reads an upload the agent's draft or history references, as base64. */
   async readUpload(agentId: string, uploadId: string): Promise<{ fileName: string; data: string }> {
     const record = await this.storage.get(agentId);
-    if (!record || !UPLOAD_ID_PATTERN.test(uploadId)) throw new Error("Upload not found.");
+    if (!record || !isUploadId(uploadId)) throw new Error("Upload not found.");
     if (!referencedUploadIds(record).has(uploadId)) throw new Error("Upload not found.");
-    const dir = join(this.paseoHome, "uploads", uploadId);
-    const [fileName] = await readdir(dir);
-    if (!fileName) throw new Error("Upload not found.");
-    const path = join(dir, fileName);
-    if ((await stat(path)).size > MAX_UPLOAD_READ_BYTES) throw new Error("Upload is too large.");
-    return { fileName, data: (await readFile(path)).toString("base64") };
+    const upload = await resolveUploadFile(this.paseoHome, uploadId);
+    if (!upload) throw new Error("Upload not found.");
+    if ((await stat(upload.path)).size > MAX_UPLOAD_READ_BYTES) {
+      throw new Error("Upload is too large.");
+    }
+    return {
+      fileName: upload.fileName,
+      data: (await readFile(upload.path)).toString("base64"),
+    };
   }
 
   private policy(): DraftPolicy {
@@ -333,9 +335,8 @@ export class AgentDraftService {
 
   private async deleteUploads(uploadIds: string[]): Promise<void> {
     for (const uploadId of uploadIds) {
-      if (!UPLOAD_ID_PATTERN.test(uploadId)) continue;
-      await rm(join(this.paseoHome, "uploads", uploadId), { recursive: true, force: true }).catch(
-        (error) => this.logger.warn({ err: error, uploadId }, "Failed to delete draft upload"),
+      await removeUploadFile(this.paseoHome, uploadId).catch((error) =>
+        this.logger.warn({ err: error, uploadId }, "Failed to delete draft upload"),
       );
     }
   }

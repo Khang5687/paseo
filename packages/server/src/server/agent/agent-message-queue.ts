@@ -4,12 +4,14 @@ import type { AgentManager } from "./agent-manager.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { sendPromptToAgent, waitForAgentRunStartWithTimeout } from "./agent-prompt.js";
 import type { AgentStorage } from "./agent-storage.js";
+import { saveInlineImages } from "./prompt-image-files.js";
 import { buildAgentPrompt } from "./prompt-attachments.js";
 
 export interface AgentMessageQueueDispatcherOptions {
   agentManager: AgentManager;
   agentStorage: AgentStorage;
   logger: Logger;
+  paseoHome: string;
 }
 
 /**
@@ -28,6 +30,7 @@ export class AgentMessageQueueDispatcher {
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
   private readonly logger: Logger;
+  private readonly paseoHome: string;
   private readonly inFlight = new Map<string, Promise<void>>();
   private unsubscribe: (() => void) | null = null;
 
@@ -35,6 +38,7 @@ export class AgentMessageQueueDispatcher {
     this.agentManager = options.agentManager;
     this.agentStorage = options.agentStorage;
     this.logger = options.logger;
+    this.paseoHome = options.paseoHome;
   }
 
   attach(): void {
@@ -175,6 +179,7 @@ export class AgentMessageQueueDispatcher {
           message.images,
           message.attachments,
           message.attachmentRefs,
+          await saveInlineImages(this.paseoHome, message.images, message.attachmentRefs),
         ),
         messageId: message.id,
         activeTurnBehavior: options.activeTurnBehavior ?? "steer",

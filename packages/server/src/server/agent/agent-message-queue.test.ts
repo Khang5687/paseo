@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -193,6 +193,12 @@ function promptText(prompt: AgentPromptInput): string {
     .join("\n");
 }
 
+function localDay(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 let workdir: string;
 let storage: AgentStorage;
 let client: HeldTurnClient;
@@ -209,6 +215,7 @@ beforeEach(async () => {
     agentManager: manager,
     agentStorage: storage,
     logger,
+    paseoHome: join(workdir, "home"),
   });
   dispatcher.attach();
 });
@@ -277,7 +284,9 @@ test("queued messages dispatch one at a time as each turn ends, and persist with
   const secondTurn = session.waitForNextTurn();
   session.completeTurn(session.turns[0].turnId);
   const started = await secondTurn;
-  expect(promptText(started.prompt)).toBe("second message");
+  const imagePath = join(workdir, "home", "uploads", localDay(), "image-1.png");
+  expect(promptText(started.prompt)).toBe(`second message\n[Image #1]: ${imagePath}`);
+  expect(readFileSync(imagePath, "utf8")).toBe("hello");
   expect(started.prompt).toContainEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
   await waitForLifecycle(manager, agentId, "running");
   expect(manager.getAgent(agentId)?.queuedMessages.map((item) => item.id)).toEqual([second.id]);
@@ -485,6 +494,7 @@ test("the queue survives a daemon restart and drains once the agent is resumed",
     agentManager: restarted,
     agentStorage: storage,
     logger,
+    paseoHome: join(workdir, "home"),
   });
   restartedDispatcher.attach();
   try {
@@ -528,6 +538,7 @@ test("a paused queue stays paused across a daemon restart", async () => {
     agentManager: restarted,
     agentStorage: storage,
     logger,
+    paseoHome: join(workdir, "home"),
   });
   restartedDispatcher.attach();
   try {
