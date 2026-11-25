@@ -37,6 +37,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/floating-panels.md](docs/floating-panels.md)                   | Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash      |
 | [docs/keyboard-shortcuts.md](docs/keyboard-shortcuts.md)             | The binding table, per-platform key sources, badges vs routing, iOS `UIKeyCommand` limits                                      |
 | [docs/menus.md](docs/menus.md)                                       | The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu                               |
+| [docs/drag-reorder.md](docs/drag-reorder.md)                         | Drag to reorder — `DraggableList` and its handle, the scroll view that must host the drag, grip placement, testing on a phone  |
 | [docs/expo-router.md](docs/expo-router.md)                           | Expo Router route ownership, startup restore, and native blank-screen gotchas                                                  |
 | [docs/notifications.md](docs/notifications.md)                       | Notification tap ownership, native replay and acknowledgement, startup handoff, and payload QA                                 |
 | [docs/notes.md](docs/notes.md)                                       | Notes on chat/terminal selections: host ownership, waiting-on events, shell integration coverage, the one-alert rule           |
@@ -60,7 +61,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/terminal-rendering.md](docs/terminal-rendering.md)             | Native terminal view: xterm owns the grid, cluster placement, emoji widths, mixed-direction limits, render regression          |
 | [docs/agent-stream-performance.md](docs/agent-stream-performance.md) | Assistant text pipeline — coalescing window, paced reveal, why arrival lumps are smoothed at render                            |
 | [docs/agent-stream-disclosure.md](docs/agent-stream-disclosure.md)   | Expand/collapse in the chat timeline — hold contract, native anchor sequence, frame spacing, render-window cost                |
-| [docs/markdown-renderer.md](docs/markdown-renderer.md)               | Shared Markdown engine, native selection, links, images and library constraints                                                |
+| [docs/markdown-renderer.md](docs/markdown-renderer.md)               | Shared Markdown engine, the vendored library fork, native selection, links, images and library constraints                     |
 | [docs/native-text-selection.md](docs/native-text-selection.md)       | Native diagram grouping, selection boundaries and leading inline image limitations                                             |
 | [docs/file-observation.md](docs/file-observation.md)                 | Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison                                     |
 | [docs/testing.md](docs/testing.md)                                   | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
@@ -68,6 +69,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/mobile-testing.md](docs/mobile-testing.md)                     | Maestro and mobile test workflows                                                                                              |
 | [docs/mobile-panels.md](docs/mobile-panels.md)                       | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
 | [docs/explorer-sidebar.md](docs/explorer-sidebar.md)                 | Explorer sidebar, side-pane, and compact workspace sheet host contracts, lifecycle, placement, routing preferences             |
+| [docs/sidebar-project-strip.md](docs/sidebar-project-strip.md)       | Project strip — desktop rail and compact chips, shared filter and order state, the waiting badge, where later features plug in |
 | [docs/ad-hoc-daemon-testing.md](docs/ad-hoc-daemon-testing.md)       | Isolated in-process daemon test harness                                                                                        |
 | [docs/browser-capture-harness.md](docs/browser-capture-harness.md)   | Real-Electron browser screenshot harness and compositor-surface gotcha                                                         |
 | [docs/android.md](docs/android.md)                                   | App variants, local/cloud builds, EAS workflows, version codes, F-Droid source builds and store metadata                       |

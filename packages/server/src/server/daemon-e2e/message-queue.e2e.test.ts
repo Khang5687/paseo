@@ -267,12 +267,19 @@ test("a queued message keeps its inline attachment labels on dispatch and on rem
     await vi.waitFor(() => expect(prompts).toHaveLength(3));
 
     const [, queuedPrompt, directPrompt] = prompts;
-    expect(queuedPrompt).toEqual([
+    // Each message saves its own copy of the picture, so the note's path differs (`-2` on a repeat).
+    const imageNote = {
+      type: "text",
+      mimeType: "text/plain",
+      text: expect.stringMatching(/^\[Image #1\]: \S+image-1(-2)?\.png$/),
+    };
+    const expectedBlocks = [
       { type: "text", text: "what is in [Image #1]?", placeholders: ["[Image #1]"] },
-      { type: "text", mimeType: "text/plain", text: "[Image #1]:" },
+      imageNote,
       { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
-    ]);
-    expect(queuedPrompt).toEqual(directPrompt);
+    ];
+    expect(queuedPrompt).toEqual(expectedBlocks);
+    expect(directPrompt).toEqual(expectedBlocks);
   } finally {
     await client?.close().catch(() => undefined);
     await daemon?.close().catch(() => undefined);

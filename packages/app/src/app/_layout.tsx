@@ -56,14 +56,17 @@ import { WindowSidebarMenuToggle } from "@/components/headers/sidebar-menu-toggl
 import { DesktopWindowControls } from "@/components/desktop/window-controls";
 import { SidebarModelProvider } from "@/components/sidebar/sidebar-model";
 import { WorkspacePinShortcutHandler } from "@/components/workspace-pin-shortcut-handler";
+import { WorkspaceArchiveShortcutHandler } from "@/components/workspace-archive-shortcut-handler";
 import { WorkspaceRenameHost } from "@/components/workspace-rename-host";
 import { WorkspaceArchiveUndoShortcutHost } from "@/workspace/archive-undo";
 import { WorkspaceExplorerOpenGesture } from "@/mobile-panels/explorer-open-gesture";
 import { ProviderSettingsHost } from "@/components/provider-settings-host";
 import { WorkspaceSetupDialog } from "@/components/workspace-setup-dialog";
 import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-shortcut-targets-subscriber";
+import { RecentWorkspacesOverlay } from "@/components/sidebar/recent-workspaces-overlay";
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
+import { FileLinkChooserSheet } from "@/assistant-file-links/file-link-chooser";
 import { HostConfirmationSheet } from "@/hosts/host-confirmation-sheet";
 import { NoteComposerHost } from "@/notes/composer/note-composer-host";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
@@ -543,6 +546,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
       <SkinBackdrop />
       {workspaceChrome}
       <AddHostFlowHost />
+      <WorkspaceArchiveShortcutHandler />
       <AppearanceStyleBoundary>
         {!isCompactLayout && appChromeLayout.sidebarToggleOwner === "window" ? (
           <WindowChromeRegion corners="top-left">
@@ -579,6 +583,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <CommandCenter />
         <AddProjectFlowHost />
         <HostChooserModal />
+        <FileLinkChooserSheet />
         <HostConfirmationSheet />
         <NoteComposerHost />
         <ProviderSettingsHost />
@@ -676,6 +681,7 @@ function SidebarChrome({
         <LeftSidebar active={active} desktopOverlay={overlay && !isCompactLayout} />
       ) : null}
       <WorkspaceShortcutTargetsSubscriber enabled={keyboardShortcutsEnabled} />
+      {keyboardShortcutsEnabled ? <RecentWorkspacesOverlay /> : null}
     </SidebarModelProvider>
   );
 }
@@ -950,6 +956,7 @@ function RootStack() {
       <Stack.Screen name="settings/hosts/[serverId]/plugin-directory/[owner]/[slug]" />
       <Stack.Screen name="settings/hosts/[serverId]/projects/index" />
       <Stack.Screen name="settings/hosts/[serverId]/projects/[projectId]" />
+      <Stack.Screen name="settings/hosts/[serverId]/providers/[providerId]" />
     </ThemedStack>
   );
 }

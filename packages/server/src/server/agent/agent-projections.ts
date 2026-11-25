@@ -11,6 +11,7 @@ import type {
   AgentCapabilityFlags,
   AgentOptionControl,
   AgentMetadata,
+  AgentMetric,
   AgentMode,
   AgentPermissionRequest,
   AgentPersistenceHandle,
@@ -104,6 +105,7 @@ export function toStoredAgentRecord(
     runtimeInfo,
     controls: normalizeControls(agent.controls),
     persistence,
+    ...projectSessionMetrics(agent.sessionMetrics),
     lastError: agent.lastError ?? undefined,
     ...projectAttention(agent.attention),
     internal: options?.internal,
@@ -170,6 +172,7 @@ export function toAgentPayload(
     archivedAt: options?.archivedAt ?? null,
     ...projectStoredQueue(agent),
     ...visibilityFlags(agent),
+    ...projectSessionMetrics(agent.sessionMetrics),
   };
 
   const usageScopeKey = projectUsageScopeKey(agent);
@@ -280,10 +283,18 @@ function buildStoredOptionControls(
   };
 }
 
+function visibleStoredBackgroundWork(
+  record: StoredAgentRecord,
+  summary: AgentSnapshotPayload["backgroundWork"],
+): AgentSnapshotPayload["backgroundWork"] {
+  return record.internal || record.archivedAt ? undefined : summary;
+}
+
 export function buildStoredAgentPayload(
   record: StoredAgentRecord,
   validProviders: Iterable<AgentProvider>,
   effectiveOptionsFor: EffectiveOptionsResolver,
+  backgroundWork?: AgentSnapshotPayload["backgroundWork"],
 ): AgentSnapshotPayload {
   const defaultCapabilities = {
     supportsStreaming: false,
@@ -324,6 +335,7 @@ export function buildStoredAgentPayload(
     updatedAt: updatedAt.toISOString(),
     lastUserMessageAt: lastUserMessageAt ? lastUserMessageAt.toISOString() : null,
     status: record.lastStatus,
+    backgroundWork: visibleStoredBackgroundWork(record, backgroundWork),
     capabilities: defaultCapabilities,
     currentModeId: record.lastModeId ?? null,
     availableModes: [],
@@ -341,6 +353,7 @@ export function buildStoredAgentPayload(
     ...projectStoredQueue(record),
     metadata: record.metadata,
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
+    ...projectSessionMetrics(record.sessionMetrics),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
   };
 }
@@ -633,6 +646,13 @@ function sanitizeMetadataArray(value: unknown): AgentMetadata[] | undefined {
     .map((entry) => sanitizeMetadata(entry))
     .filter((entry): entry is AgentMetadata => entry !== undefined);
   return sanitized.length > 0 ? sanitized : undefined;
+}
+
+/** A session with no metrics carries no field, on the wire and on disk. */
+function projectSessionMetrics(metrics: AgentMetric[] | undefined): {
+  sessionMetrics?: AgentMetric[];
+} {
+  return metrics?.length ? { sessionMetrics: metrics.map((metric) => ({ ...metric })) } : {};
 }
 
 type UsageNumericField = Exclude<keyof AgentUsage, never>;

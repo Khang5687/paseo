@@ -39,6 +39,8 @@ export type GetDirectorySuggestions = (input: {
   includeDirectories: boolean;
   matchMode: "suffix";
   limit: number;
+  /** Also search Git-ignored files and build output. Needs the host's `directorySuggestionsIncludeIgnored`. */
+  includeIgnored?: boolean;
 }) => Promise<DirectorySuggestionResult>;
 
 export type ResolvedAssistantFileLink =

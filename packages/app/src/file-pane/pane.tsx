@@ -29,6 +29,7 @@ import type { WorkspaceFileLocation } from "@/workspace/file-open";
  * its own loading; the tab only knows the file exists, its kind, and whether the panel has
  * unsaved changes.
  */
+// oxlint-disable-next-line complexity
 export function FilePane({
   serverId,
   workspaceId,
@@ -83,11 +84,12 @@ export function FilePane({
   });
   const snapshot = useFileHandleSnapshot(handle);
   const targetKey = target ? `${target.cwd}:${target.path}` : null;
-  const { panel, choice } = useFilePanelChoice({
+  const { panel, oversized, choice } = useFilePanelChoice({
     serverId,
     targetKey,
     path,
     fileKind: snapshot.status === "ready" ? snapshot.kind : null,
+    fileSize: snapshot.status === "ready" ? snapshot.size : null,
     presentable: isActive,
     lineNavigation: location.lineStart ? navigationRevision : null,
   });
@@ -132,7 +134,11 @@ export function FilePane({
   } else if (!panel) {
     body = (
       <>
-        <Text style={styles.mutedText}>{t("panels.file.binaryPreviewUnavailable")}</Text>
+        <Text style={styles.mutedText}>
+          {oversized
+            ? t("panels.file.tooLargeToDisplay")
+            : t("panels.file.binaryPreviewUnavailable")}
+        </Text>
         <Text style={styles.mutedText}>{formatFileSize(snapshot.size)}</Text>
         <Button variant="outline" leftIcon={Download} onPress={handleDownload}>
           {t("workspace.fileActions.download")}

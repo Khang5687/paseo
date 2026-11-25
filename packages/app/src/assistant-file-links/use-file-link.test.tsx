@@ -7,6 +7,7 @@ import React, { useCallback, useMemo, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToastApi } from "@/components/toast-host";
 import type { InlinePathTarget } from "./parse";
+import { useFileChoiceStore } from "./file-link-choice";
 import { AssistantFileLinkResolverProvider } from "./provider";
 import type { DirectorySuggestionResult } from "./resolver";
 import { useFileLink } from "./use-file-link";
@@ -59,6 +60,10 @@ interface OpenedFile {
   disposition: OpenFileDisposition;
 }
 
+function openedPaths(openedFiles: OpenedFile[]): string[] {
+  return openedFiles.map((opened) => opened.target.path);
+}
+
 interface TestClient {
   getDirectorySuggestions: (input: {
     query: string;
@@ -87,7 +92,12 @@ function createToast(): ToastApi {
   };
 }
 
-function createWrapper(input: { client: TestClient; openedFiles: OpenedFile[]; toast?: ToastApi }) {
+function createWrapper(input: {
+  client: TestClient;
+  openedFiles: OpenedFile[];
+  toast?: ToastApi;
+  knownPaths?: readonly string[];
+}) {
   const queryClient = createQueryClient();
   return function Wrapper({ children }: { children: ReactNode }) {
     const openWorkspaceFile = useCallback(
@@ -96,6 +106,7 @@ function createWrapper(input: { client: TestClient; openedFiles: OpenedFile[]; t
       },
       [],
     );
+    const getKnownFilePaths = useCallback(() => input.knownPaths ?? [], []);
 
     return (
       <QueryClientProvider client={queryClient}>
@@ -104,6 +115,7 @@ function createWrapper(input: { client: TestClient; openedFiles: OpenedFile[]; t
           serverId="server-1"
           workspaceRoot="/Users/test/project"
           onOpenWorkspaceFile={openWorkspaceFile}
+          getKnownFilePaths={getKnownFilePaths}
           toast={input.toast}
         >
           {children}
@@ -367,3 +379,93 @@ describe("useFileLink", () => {
 });
 
 const WorkspaceSwitchContext = React.createContext<(workspaceRoot: string) => void>(() => {});
+
+describe("useFileLink ladder", () => {
+  afterEach(() => {
+    cleanup();
+    useFileChoiceStore.getState().settle(null);
+  });
+
+  it("opens a file the agent's tool calls named without asking the daemon", async () => {
+    const getDirectorySuggestions = vi.fn(async () => resolvedSuggestions([]));
+    const openedFiles: OpenedFile[] = [];
+    const { result } = renderHook(() => useFileLink(SOURCE), {
+      wrapper: createWrapper({
+        client: { getDirectorySuggestions },
+        openedFiles,
+        knownPaths: ["/Users/test/project/out/dumm.md"],
+      }),
+    });
+
+    expect(result.current.target?.path).toBe("/Users/test/project/out/dumm.md");
+    act(() => {
+      result.current.onPress();
+    });
+    await waitFor(() => {
+      expect(openedPaths(openedFiles)).toEqual(["/Users/test/project/out/dumm.md"]);
+    });
+    expect(getDirectorySuggestions).not.toHaveBeenCalled();
+  });
+
+  it("asks which file when several match, then opens the pick", async () => {
+    const getDirectorySuggestions = vi.fn(async () =>
+      resolvedSuggestions([
+        { path: "docs/dumm.md", kind: "file" },
+        { path: "notes/dumm.md", kind: "file" },
+      ]),
+    );
+    const openedFiles: OpenedFile[] = [];
+    const toast = createToast();
+    const { result } = renderHook(() => useFileLink(SOURCE), {
+      wrapper: createWrapper({ client: { getDirectorySuggestions }, openedFiles, toast }),
+    });
+
+    expect(result.current.target).toBeNull();
+    act(() => {
+      result.current.onPress();
+    });
+    await waitFor(() => {
+      expect(useFileChoiceStore.getState().request?.paths).toEqual([
+        "/Users/test/project/docs/dumm.md",
+        "/Users/test/project/notes/dumm.md",
+      ]);
+    });
+    expect(openedFiles).toEqual([]);
+
+    act(() => {
+      useFileChoiceStore.getState().settle("/Users/test/project/notes/dumm.md");
+    });
+    await waitFor(() => {
+      expect(openedPaths(openedFiles)).toEqual(["/Users/test/project/notes/dumm.md"]);
+    });
+    expect(toast.show).not.toHaveBeenCalled();
+  });
+
+  it("opens nothing and stays quiet when the question is dismissed", async () => {
+    const getDirectorySuggestions = vi.fn(async () =>
+      resolvedSuggestions([
+        { path: "docs/dumm.md", kind: "file" },
+        { path: "notes/dumm.md", kind: "file" },
+      ]),
+    );
+    const openedFiles: OpenedFile[] = [];
+    const toast = createToast();
+    const { result } = renderHook(() => useFileLink(SOURCE), {
+      wrapper: createWrapper({ client: { getDirectorySuggestions }, openedFiles, toast }),
+    });
+
+    act(() => {
+      result.current.onPress();
+    });
+    await waitFor(() => {
+      expect(useFileChoiceStore.getState().request).not.toBeNull();
+    });
+    await act(async () => {
+      useFileChoiceStore.getState().settle(null);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(openedFiles).toEqual([]);
+    expect(toast.show).not.toHaveBeenCalled();
+  });
+});

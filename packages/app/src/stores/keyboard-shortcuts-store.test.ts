@@ -7,9 +7,10 @@ beforeEach(() => {
     commandCenterTab: "all",
     shortcutsDialogOpen: false,
     capturingShortcut: false,
-    altDown: false,
-    cmdOrCtrlDown: false,
+    heldBadgeTarget: null,
+    shortcutBadgeTarget: null,
     sidebarShortcutWorkspaceTargets: [],
+    sidebarShortcutProjects: [],
   });
 });
 

@@ -1,6 +1,7 @@
 import { createHook } from "node:async_hooks";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   realpathSync,
@@ -56,6 +57,7 @@ async function searchRelativeDirectoryEntries(options: {
   maxDepth?: number;
   maxEntriesScanned?: number;
   respectGitIgnore?: boolean;
+  walkBuildOutputDirectories?: boolean;
 }) {
   return searchDirectoryEntries({
     root: options.cwd,
@@ -71,6 +73,7 @@ async function searchRelativeDirectoryEntries(options: {
     maxDepth: options.maxDepth,
     maxEntriesScanned: options.maxEntriesScanned,
     respectGitIgnore: options.respectGitIgnore,
+    walkBuildOutputDirectories: options.walkBuildOutputDirectories,
   });
 }
 
@@ -475,6 +478,9 @@ describe("searchDirectoryEntries", () => {
       }),
     ).resolves.toEqual([]);
 
+    // The cache validates a listing by directory mtime/ctime, which advance in kernel-tick steps.
+    // A child created in the same tick as the first listing would leave both unchanged.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     mkdirSync(path.join(dynamicRoot, "fresh-project"));
 
     await expect(
@@ -780,6 +786,50 @@ describe("rooted queries with a typed parent", () => {
     ).resolves.toEqual([path.join(homeDir, "Developer", "pasta")]);
   });
 
+  it.for(["~/developer/pas", "~/developer/PASTA"])(
+    "returns the on-disk spelling exactly once for %s",
+    async (query, { skip }) => {
+      if (!existsSync(path.join(homeDir, "developer"))) {
+        skip("Requires a case-insensitive filesystem");
+      }
+      await expect(searchAbsoluteDirectoryPaths({ homeDir, query })).resolves.toEqual([
+        path.join(homeDir, "Developer", "pasta"),
+      ]);
+    },
+  );
+
+  it.for(["~/developer/pas", "~/developer/pasta", "~/developer/"])(
+    "keeps the visible spelling of a symlink for %s",
+    async (query, { skip }) => {
+      const link = path.join(homeDir, "developer");
+      if (existsSync(link)) skip("Requires a case-sensitive filesystem");
+      symlinkSync(path.join(homeDir, "Developer"), link, "junction");
+
+      const suggestions = await searchAbsoluteDirectoryPaths({ homeDir, query });
+      expect(suggestions).toContain(path.join(link, "pasta"));
+      expect(suggestions).not.toContain(path.join(homeDir, "Developer", "pasta"));
+    },
+  );
+
+  it("keeps a symlink under a parent whose spelling differs from the target's parent", async ({
+    skip,
+  }) => {
+    const parent = path.join(homeDir, "developer");
+    if (existsSync(parent)) skip("Requires a case-sensitive filesystem");
+    const target = path.join(homeDir, "Developer", "pasta");
+    const link = path.join(parent, "pasta");
+    mkdirSync(parent);
+    mkdirSync(path.join(target, "children"));
+    symlinkSync(target, link, "junction");
+
+    await expect(
+      searchAbsoluteDirectoryPaths({ homeDir, query: "~/developer/pasta", limit: 1 }),
+    ).resolves.toEqual([link]);
+    await expect(
+      searchAbsoluteDirectoryPaths({ homeDir, query: "~/developer/pasta/ch" }),
+    ).resolves.toEqual([path.join(link, "children")]);
+  });
+
   it("matches the whole tree when the typed parent does not exist", async () => {
     await expect(searchAbsoluteDirectoryPaths({ homeDir, query: "~/Devel/pas" })).resolves.toEqual([
       path.join(homeDir, "Developer", "pasta"),
@@ -943,6 +993,40 @@ describe("relative typed-entry configuration", () => {
     expect({ exactResults, fuzzyResults }).toEqual({
       exactResults: [{ path: "generated/search-notes.md", kind: "file" }],
       fuzzyResults: [{ path: "docs/search-notes.md", kind: "file" }],
+    });
+  });
+
+  it("finds a bare name inside Git-ignored build output only when asked to walk it", async () => {
+    initGitRepo(workspaceDir, "out/\nrenders/\nnode_modules/\n");
+    mkdirSync(path.join(workspaceDir, "out", "video"), { recursive: true });
+    mkdirSync(path.join(workspaceDir, "renders"), { recursive: true });
+    mkdirSync(path.join(workspaceDir, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(path.join(workspaceDir, "out", "video", "clip.mp4"), "");
+    writeFileSync(path.join(workspaceDir, "renders", "poster.png"), "");
+    writeFileSync(path.join(workspaceDir, "node_modules", "pkg", "clip.mp4"), "");
+
+    const search = (query: string, ignored: boolean) =>
+      searchRelativeDirectoryEntries({
+        cwd: workspaceDir,
+        query,
+        limit: 10,
+        includeFiles: true,
+        includeDirectories: false,
+        matchMode: "suffix",
+        respectGitIgnore: !ignored,
+        walkBuildOutputDirectories: ignored,
+      });
+
+    expect({
+      defaultClip: await search("clip.mp4", false),
+      defaultPoster: await search("poster.png", false),
+      ignoredClip: await search("clip.mp4", true),
+      ignoredPoster: await search("poster.png", true),
+    }).toEqual({
+      defaultClip: [],
+      defaultPoster: [],
+      ignoredClip: [{ path: "out/video/clip.mp4", kind: "file" }],
+      ignoredPoster: [{ path: "renders/poster.png", kind: "file" }],
     });
   });
 

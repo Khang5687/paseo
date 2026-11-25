@@ -83,6 +83,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { useToast } from "@/contexts/toast-context";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
 import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import { useLiveExplorerDirectories } from "@/hooks/use-live-explorer-directories";
 import { useOpenInPreferredEditor } from "@/workspace/open-in-editor/preferred";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
@@ -441,6 +442,7 @@ export function FileExplorerPane({
   const {
     requestDirectoryListing,
     invalidateDirectoryListings,
+    reloadDirectoryListing,
     createEntry,
     renameEntry,
     duplicateEntry,
@@ -922,6 +924,22 @@ export function FileExplorerPane({
     () => flattenExplorerTree({ directories, expandedPaths, sortOption, showHiddenFiles }),
     [directories, expandedPaths, showHiddenFiles, sortOption],
   );
+
+  const openDirectoryPaths = useMemo(
+    () => [
+      ".",
+      ...treeRows
+        .filter((row) => row.entry.kind === "directory" && expandedPaths.has(row.entry.path))
+        .map((row) => row.entry.path),
+    ],
+    [expandedPaths, treeRows],
+  );
+  useLiveExplorerDirectories({
+    serverId,
+    workspaceRoot: hasWorkspaceScope ? normalizedWorkspaceRoot : "",
+    openPaths: openDirectoryPaths,
+    reload: reloadDirectoryListing,
+  });
 
   const listRows = useMemo<ExplorerListRow[]>(() => {
     const rows: ExplorerListRow[] = treeRows.map((row) =>

@@ -12,6 +12,7 @@ import {
   computeSidebarOrderUpdates,
   createSidebarWorkspacePlacementSelector,
   createSidebarWorkspaceEntry,
+  countProjectWorkspacesNeedingInput,
   deriveProjectStatusBucket,
   deriveSidebarLoadingState,
   shouldShowSidebarHostLabels,
@@ -1030,6 +1031,40 @@ describe("deriveProjectStatusBucket", () => {
         },
       }),
     ).toBe("done");
+  });
+});
+
+describe("countProjectWorkspacesNeedingInput", () => {
+  it("counts each waiting workspace across the hosts a project spans", () => {
+    expect(
+      countProjectWorkspacesNeedingInput({
+        workspaces: [
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-1" }),
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-2" }),
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-3" }),
+          workspacePlacement({ serverId: "other", workspaceId: "ws-9" }),
+        ],
+        sessions: {
+          srv: sessionWith({
+            workspaces: [
+              projectWorkspace("ws-1", "needs_input"),
+              projectWorkspace("ws-2", "running"),
+              projectWorkspace("ws-3", "needs_input"),
+            ],
+          }),
+          other: sessionWith({ workspaces: [projectWorkspace("ws-9", "needs_input")] }),
+        },
+      }),
+    ).toBe(3);
+  });
+
+  it("does not count a finished workspace awaiting review as waiting", () => {
+    expect(
+      countProjectWorkspacesNeedingInput({
+        workspaces: [workspacePlacement({ workspaceId: "ws-1" })],
+        sessions: { srv: sessionWith({ workspaces: [projectWorkspace("ws-1", "attention")] }) },
+      }),
+    ).toBe(0);
   });
 });
 

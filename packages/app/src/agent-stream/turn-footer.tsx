@@ -1,9 +1,10 @@
+import type { AgentMetric } from "@getpaseo/protocol/agent-types";
 import React, { memo, useCallback, useMemo, type ReactNode } from "react";
 import { View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { SPACING, type Theme } from "@/styles/theme";
 import type { TurnTiming } from "@/timeline/turn-time";
-import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
+import { getAssistantReply, getStreamItemMessageId, type StreamItem } from "@/types/stream";
 import { ChatNoteRowProvider } from "@/chat-notes/context";
 import {
   collectAssistantResponseContentForStreamRenderStrategy,
@@ -82,6 +83,7 @@ export const TurnFooter = memo(function TurnFooter({
       items={host.items}
       timing={host.timing}
       startIndex={host.startIndex}
+      turnMetrics={host.turnMetrics}
       supportsTimelineCursor={supportsTimelineCursor}
       onForkAssistantTurn={onForkAssistantTurn}
     />
@@ -93,6 +95,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   items,
   timing,
   startIndex,
+  turnMetrics,
   supportsTimelineCursor,
   onForkAssistantTurn,
 }: {
@@ -100,6 +103,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   items: StreamItem[];
   timing?: TurnTiming;
   startIndex: number;
+  turnMetrics?: AgentMetric[];
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }) {
@@ -110,6 +114,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
         items={items}
         timing={timing}
         startIndex={startIndex}
+        turnMetrics={turnMetrics}
         supportsTimelineCursor={supportsTimelineCursor}
         onForkAssistantTurn={onForkAssistantTurn}
       />
@@ -166,6 +171,7 @@ function CompletedTurnFooter({
   items,
   timing,
   startIndex,
+  turnMetrics,
   supportsTimelineCursor,
   onForkAssistantTurn,
 }: {
@@ -173,6 +179,7 @@ function CompletedTurnFooter({
   items: StreamItem[];
   timing?: TurnTiming;
   startIndex: number;
+  turnMetrics?: AgentMetric[];
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }) {
@@ -199,13 +206,14 @@ function CompletedTurnFooter({
     },
     [boundary, onForkAssistantTurn],
   );
-  const assistantItem = items[startIndex]?.kind === "assistant_message" ? items[startIndex] : null;
+  const assistantItem = getAssistantReply(items[startIndex]);
   const footer = (
     <AssistantTurnFooter
       getContent={assistantItem ? getContent : undefined}
       completedAt={timing?.completedAt}
       durationMs={timing?.durationMs}
       onFork={boundary && onForkAssistantTurn ? handleFork : undefined}
+      metrics={turnMetrics}
     />
   );
   return (

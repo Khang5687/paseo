@@ -4,6 +4,7 @@ import { PluginSessionHistory } from "./plugin-session-history.js";
 import { resolve as resolvePath } from "node:path";
 import type { Logger } from "pino";
 import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
+import type { ProviderInstallationInspection } from "@getpaseo/protocol/messages";
 import { z } from "zod";
 import {
   PROVIDER_CAPABILITIES,
@@ -12,10 +13,14 @@ import {
   ProviderInputSchema,
   ProviderStatusSchema,
   type ProviderStatus,
+  type ProviderInspection,
+  type ProviderUpdateCheck,
+  type ProviderUpdateResult,
+  type ProviderInstallationLaunch,
   type ProviderLaunch,
   requireProviderCapabilities,
-  type ProviderCommand,
   type ProviderCapability,
+  type ProviderCommand,
   type ProviderConfigChanges,
   type ProviderConfigState,
   type ProviderConnection,
@@ -32,6 +37,9 @@ import {
 import type {
   AgentCapabilityFlags,
   AgentClient,
+  AgentClientInstallation,
+  AgentClientUpdateCheckContext,
+  AgentClientUpdateContext,
   AgentCreateSessionOptions,
   AgentLaunchContext,
   AgentMode,
@@ -58,6 +66,7 @@ import type {
   ProviderRefreshContext,
   SteerActiveTurnOptions,
   SteerResult,
+  AgentClientDiagnosticContext,
 } from "./agent-sdk-types.js";
 import {
   resolveProviderLaunch,
@@ -65,7 +74,14 @@ import {
   createProviderEnv,
   type ProviderRuntimeSettings,
 } from "./provider-launch-config.js";
+import { ImportedHistory } from "./provider-session-import.js";
 import { readPluginOptionState } from "./plugin-provider-options.js";
+import {
+  buildCommandResolutionDiagnosticRows,
+  formatProviderDiagnostic,
+  type DiagnosticEntry,
+} from "./providers/diagnostic-utils.js";
+import { LaunchWrapUnsupportedError } from "./provider-options.js";
 import type { RegisteredProviderDefinition } from "./provider-registry.js";
 import { runProviderTurn } from "./providers/provider-runner.js";
 import { StaleProviderSessionError } from "./stale-provider-session-error.js";
@@ -129,8 +145,19 @@ function isProviderRequestReply(
   );
 }
 
+function describeVersion(inspection: ProviderInstallationInspection): string {
+  if (inspection.status === "not_installed") return "not installed";
+  if (inspection.status === "error") return `error: ${inspection.message}`;
+  return inspection.version?.trim() || "unknown";
+}
+
+function toProviderLaunch(launch: ProviderInstallationLaunch): ProviderLaunch {
+  return { command: launch.command, args: launch.args, env: launch.env };
+}
+
 class ProviderRuntime {
   private connection: ProviderConnection | null = null;
+  connectedLaunch: ProviderLaunch | undefined;
   private connecting: Promise<ProviderConnection> | null = null;
   private closed = false;
   private generation = 0;
@@ -157,7 +184,8 @@ class ProviderRuntime {
     private readonly runtimeSettings?: ProviderRuntimeSettings,
   ) {}
 
-  private async resolveLaunch(): Promise<ProviderLaunch | undefined> {
+  /** The launch after overrides, and where its executable resolves. */
+  private async resolveConfiguredLaunch() {
     const command = this.registration.command;
     if (!command) return undefined;
     const launch = await resolveProviderLaunch({
@@ -167,9 +195,77 @@ class ProviderRuntime {
     if (launch.source !== "override") launch.args.unshift(...command.slice(1));
     const env = createProviderEnv({ runtimeSettings: this.runtimeSettings });
     launch.env = env;
-    const availability = await checkProviderLaunchAvailable(launch);
-    if (!availability.resolvedPath) throw new Error(`${launch.command} not found on PATH`);
-    return { command: resolvePath(availability.resolvedPath), args: launch.args, env };
+    return { launch, env, availability: await checkProviderLaunchAvailable(launch) };
+  }
+
+  /** The effective launch, including when its executable does not resolve. */
+  private async resolveEffectiveLaunch(): Promise<ProviderInstallationLaunch | undefined> {
+    const configured = await this.resolveConfiguredLaunch();
+    if (!configured) return undefined;
+    const { launch, env, availability } = configured;
+    if (!availability.resolvedPath)
+      return { command: launch.command, args: launch.args, env, resolved: false };
+    return {
+      command: resolvePath(availability.resolvedPath),
+      args: launch.args,
+      env,
+      resolved: true,
+    };
+  }
+
+  private async resolveLaunch(): Promise<ProviderLaunch | undefined> {
+    const launch = await this.resolveEffectiveLaunch();
+    if (!launch) return undefined;
+    if (!launch.resolved) throw new Error(`${launch.command} not found on PATH`);
+    return toProviderLaunch(launch);
+  }
+
+  async resolveUsageLaunch(): Promise<ProviderLaunch | undefined> {
+    const launch = await this.resolveEffectiveLaunch();
+    if (!launch?.resolved) return undefined;
+    return toProviderLaunch(launch);
+  }
+
+  async inspectInstallation(signal: AbortSignal): Promise<ProviderInspection> {
+    const inspect = this.registration.installation?.inspect;
+    if (!inspect) throw new Error("Provider does not report its installation");
+    const launch = await this.resolveEffectiveLaunch();
+    signal.throwIfAborted();
+    return await inspect.call(this.registration.installation, { launch, signal });
+  }
+
+  async checkForUpdates(context: AgentClientUpdateCheckContext): Promise<ProviderUpdateCheck> {
+    const checkForUpdates = this.registration.installation?.checkForUpdates;
+    if (!checkForUpdates) throw new Error("Provider does not check for updates");
+    const launch = await this.resolveEffectiveLaunch();
+    context.signal.throwIfAborted();
+    return await checkForUpdates.call(this.registration.installation, { ...context, launch });
+  }
+
+  async update(context: AgentClientUpdateContext): Promise<ProviderUpdateResult> {
+    const update = this.registration.installation?.update;
+    if (!update) throw new Error("Provider does not update itself");
+    const launch = await this.resolveEffectiveLaunch();
+    context.signal.throwIfAborted();
+    return await update.call(this.registration.installation, { ...context, launch });
+  }
+
+  /** What the daemon launches, where it found the executable and which version it runs. */
+  async launchDiagnosticRows(context: AgentClientDiagnosticContext): Promise<DiagnosticEntry[]> {
+    const configured = await this.resolveConfiguredLaunch();
+    if (!configured) return [];
+    const { launch, env, availability } = configured;
+    const rows = [
+      ...(await buildCommandResolutionDiagnosticRows(launch, {
+        knownBinaryNames: [launch.command],
+        pathValue: env.PATH,
+      })),
+      { label: "Resolved path", value: availability.resolvedPath ?? "not found" },
+    ];
+    if (!availability.resolvedPath) return rows;
+    const inspection = await context.inspectInstallation();
+    if (inspection) rows.push({ label: "Version", value: describeVersion(inspection) });
+    return rows;
   }
 
   async status(): Promise<ProviderStatus> {
@@ -190,11 +286,20 @@ class ProviderRuntime {
   async catalogCacheKey(options: FetchCatalogOptions): Promise<string | undefined> {
     const callback = this.registration.getCatalogCacheKey;
     if (!callback) return undefined;
-    return callback({ ...options, launch: await this.resolveLaunch() });
+    const launch = await this.resolveEffectiveLaunch();
+    // A missing executable gets its own catalogue, so refresh reports it unavailable instead of
+    // failing the key or reusing a catalogue cached while it was installed.
+    if (launch && !launch.resolved) return JSON.stringify(["unresolved", launch.command]);
+    return callback({ ...options, launch: launch && toProviderLaunch(launch) });
   }
 
   get negotiatedCapabilities(): readonly string[] {
     return this.connection?.capabilities ?? [];
+  }
+
+  /** The live connection's capabilities, connecting first when no connection exists yet. */
+  async connectedCapabilities(): Promise<readonly string[]> {
+    return (await this.getConnection()).capabilities;
   }
 
   get isClosed(): boolean {
@@ -381,8 +486,9 @@ class ProviderRuntime {
   }
 
   private async establishConnection(generation: number): Promise<ProviderConnection> {
+    const launch = await this.resolveLaunch();
     const rawConnection = await this.registration.connect({
-      launch: await this.resolveLaunch(),
+      launch,
       versions: [PROVIDER_PROTOCOL_VERSION],
       capabilities: PROVIDER_CAPABILITIES,
     });
@@ -396,6 +502,7 @@ class ProviderRuntime {
       await rawConnection.close().catch(() => undefined);
       throw error;
     }
+    this.connectedLaunch = launch;
     const connection = normalizeConnection(rawConnection);
     const unsubscribe = connection.onEvent((event) => this.accept(event));
     if (this.closed || generation !== this.generation) {
@@ -606,6 +713,8 @@ class ProviderRuntimeSession {
   >();
   private readonly activeTurnIds = new Set<string>();
   private terminal = false;
+  // The provider ended this session with session.closed, so it has nothing left to close.
+  private closedByProvider = false;
   private closePromise: Promise<void> | null = null;
   config: ProviderConfigState = { models: [], modes: [], thinkingOptions: [] };
   commands: ProviderCommand[] = [];
@@ -684,6 +793,7 @@ class ProviderRuntimeSession {
   }
 
   async configure(changes: ProviderConfigChanges): Promise<void> {
+    if (this.terminal) throw new StaleProviderSessionError(this.id);
     const input: Extract<ProviderInput, { type: "session.configure" }> = {
       type: "session.configure",
       requestId: randomUUID(),
@@ -724,7 +834,7 @@ class ProviderRuntimeSession {
 
   async close(): Promise<void> {
     this.history.length = 0;
-    if (this.restoration === "parent") {
+    if (this.restoration === "parent" || this.closedByProvider) {
       this.runtime.removeSession(this.id, this.providerSessionId);
       return;
     }
@@ -789,6 +899,7 @@ class ProviderRuntimeSession {
       return;
     }
     if (event.type === "session.runtime_failed" || event.type === "session.closed") {
+      if (event.type === "session.closed") this.closedByProvider = true;
       if (this.terminal) return;
       this.terminal = true;
       this.publish(event);
@@ -942,10 +1053,12 @@ function createPluginProviderDefinition(
     label: registration.label,
     description: registration.description ?? `Plugin provider ${registration.label}`,
     iconSvg: registration.icon,
+    docsUrl: registration.docsUrl,
     requiresConfiguration: registration.requiresConfiguration,
     defaultModeId: null,
     modes: [],
     supportsExactMcpPreapproval: true,
+    supportsLaunchWrap: registration.launchWrap === true,
     createClient,
   };
 }
@@ -957,22 +1070,53 @@ interface PendingChild {
 
 class PluginAgentClient implements AgentClient {
   readonly provider: string;
+  private readonly label: string;
   private readonly runtime: ProviderRuntime;
   private readonly rootsBySession = new Map<string, PluginAgentSession>();
   private readonly pendingChildren: PendingChild[] = [];
 
   readonly getCatalogCacheKey?: AgentClient["getCatalogCacheKey"];
+  readonly installation?: AgentClientInstallation;
+  readonly supportsLaunchWrap: boolean;
 
   constructor(registration: ProviderRegistration, runtimeSettings?: ProviderRuntimeSettings) {
     this.provider = registration.id;
+    this.label = registration.label;
+    this.supportsLaunchWrap = registration.launchWrap === true;
     this.runtime = new ProviderRuntime(registration, runtimeSettings);
     if (registration.getCatalogCacheKey)
       this.getCatalogCacheKey = (options) => this.runtime.catalogCacheKey(options);
+    const installation = registration.installation;
+    if (installation)
+      this.installation = {
+        installUrl: installation.installUrl,
+        updateUrl: installation.updateUrl,
+        inspect: installation.inspect
+          ? ({ signal }) => this.runtime.inspectInstallation(signal)
+          : undefined,
+        checkForUpdates: installation.checkForUpdates
+          ? (context) => this.runtime.checkForUpdates(context)
+          : undefined,
+        update: installation.update ? (context) => this.runtime.update(context) : undefined,
+      };
     this.runtime.onSessionOpened((session, opened) => this.acceptChild(session, opened));
+  }
+
+  resolveUsageLaunch() {
+    return this.runtime.resolveUsageLaunch();
   }
 
   get capabilities(): AgentCapabilityFlags {
     return agentCapabilities(this.runtime.negotiatedCapabilities);
+  }
+
+  async requireLaunchWrap(): Promise<void> {
+    if (!(await this.runtime.connectedCapabilities()).includes("session.launch_wrap")) {
+      throw new LaunchWrapUnsupportedError(
+        this.provider,
+        `Provider '${this.provider}' declares launch wrap support, but its connection does not offer session.launch_wrap`,
+      );
+    }
   }
 
   async createSession(
@@ -1033,9 +1177,20 @@ class PluginAgentClient implements AgentClient {
     return await this.runtime.isAvailable();
   }
 
-  async getDiagnostic(): Promise<{ diagnostic: string }> {
-    const status = await this.runtime.status();
-    return { diagnostic: status.diagnostic ?? "Provider is available" };
+  async getDiagnostic(context: AgentClientDiagnosticContext): Promise<{ diagnostic: string }> {
+    const [rows, status] = await Promise.all([
+      this.runtime.launchDiagnosticRows(context),
+      this.runtime.status(),
+    ]);
+    const report = [formatProviderDiagnostic(this.label, rows)];
+    if (!status.available) report.push(`  Error: ${status.diagnostic}`);
+    // An available provider adds its own rows, one per line.
+    else if (status.diagnostic) {
+      for (const line of status.diagnostic.split("\n")) {
+        if (line.trim()) report.push(`  ${line.trim()}`);
+      }
+    }
+    return { diagnostic: report.join("\n") };
   }
 
   async listImportableSessions(
@@ -1073,8 +1228,7 @@ class PluginAgentClient implements AgentClient {
       session,
       config: { ...context.storedConfig, provider: this.provider, cwd: input.cwd },
       persistence,
-      timeline: session.timelineHistory(),
-      providerSubagentEvents: session.subagentHistory(),
+      ...session.importedHistory(),
     };
   }
 
@@ -1136,6 +1290,12 @@ class PluginAgentClient implements AgentClient {
       },
       bind,
       config.settings,
+      this.runtime.connectedLaunch
+        ? {
+            ...this.runtime.connectedLaunch,
+            env: { ...this.runtime.connectedLaunch.env, ...config.env },
+          }
+        : undefined,
     );
     bind(bridge);
     return session;
@@ -1236,6 +1396,7 @@ class PluginAgentSession implements AgentSession {
     ) => Promise<ProviderRuntimeSession>,
     private readonly onBind: (bridge: ProviderRuntimeSession) => void,
     givenOptions: Readonly<Record<string, JsonValue>>,
+    private readonly usageLaunch: ProviderLaunch | undefined,
   ) {
     this.subagentIdsBySession.set(bridge.id, null);
     // Every setting the session opened with that was not given, including ones nobody set.
@@ -1249,6 +1410,17 @@ class PluginAgentSession implements AgentSession {
       (entry) => entry.item.type === "notification",
     );
     this.unsubscribe = bridge.onEvent((event) => this.accept(event, true));
+  }
+
+  usageSession() {
+    if (this.closed || !this.usageLaunch) return null;
+    return {
+      provider: this.provider,
+      model: this.bridge.config.model,
+      env: this.usageLaunch.env,
+      launch: this.usageLaunch,
+      sessionKey: this.bridge.id,
+    };
   }
 
   get id(): string {
@@ -1302,14 +1474,19 @@ class PluginAgentSession implements AgentSession {
     return { turnId };
   }
 
-  async steerActiveTurn(
+  /** Offered only when the provider negotiated prompt.steer, so callers can ask before steering. */
+  get steerActiveTurn():
+    | ((prompt: AgentPromptInput, options: SteerActiveTurnOptions) => Promise<SteerResult>)
+    | undefined {
+    if (!this.bridge.negotiatedCapabilities.includes("prompt.steer")) return undefined;
+    return (prompt, options) => this.steer(prompt, options);
+  }
+
+  private async steer(
     prompt: AgentPromptInput,
     options: SteerActiveTurnOptions,
   ): Promise<SteerResult> {
     this.assertReplayComplete();
-    if (!this.bridge.negotiatedCapabilities.includes("prompt.steer")) {
-      return { status: "unavailable" };
-    }
     const result = await this.bridge.prompt({
       clientMessageId: options.clientMessageId ?? randomUUID(),
       delivery: "steer",
@@ -1408,7 +1585,7 @@ class PluginAgentSession implements AgentSession {
     return this.bridge.commands.map((command) => ({
       ...command,
       argumentHint: command.argumentHint ?? "",
-      kind: "command",
+      kind: command.kind ?? "command",
     }));
   }
 
@@ -1478,13 +1655,10 @@ class PluginAgentSession implements AgentSession {
       );
   }
 
-  subagentHistory(): NonNullable<ImportedProviderSession["providerSubagentEvents"]> {
-    return this.history
-      .read(this.provider)
-      .filter(
-        (event): event is Extract<AgentStreamEvent, { type: "provider_subagent" }> =>
-          event.type === "provider_subagent",
-      );
+  importedHistory(): ReturnType<ImportedHistory["result"]> {
+    const history = new ImportedHistory();
+    for (const event of this.history.read(this.provider)) history.add(event);
+    return history.result();
   }
 
   attachChild(
@@ -1543,6 +1717,14 @@ class PluginAgentSession implements AgentSession {
             turnId: event.turnId,
           },
         ];
+      case "session.metrics":
+        return [
+          {
+            type: "session_metrics_updated",
+            provider: this.provider,
+            metrics: event.metrics.map((metric) => ({ ...metric })),
+          },
+        ];
       case "timeline.item":
         return this.translateTimeline(event);
       case "session.permission":
@@ -1569,7 +1751,12 @@ class PluginAgentSession implements AgentSession {
     }
     if (this.currentTurnId === event.turnId) this.currentTurnId = null;
     if (event.state === "completed") {
-      return { type: "turn_completed", provider: this.provider, turnId: event.turnId };
+      return {
+        type: "turn_completed",
+        provider: this.provider,
+        turnId: event.turnId,
+        ...(event.metrics ? { metrics: event.metrics.map((metric) => ({ ...metric })) } : {}),
+      };
     }
     if (event.state === "canceled") {
       return {
@@ -1931,14 +2118,21 @@ function mapModel(
   catalogThinkingOptions: Extract<ProviderEvent, { type: "catalog" }>["catalog"]["thinkingOptions"],
   catalogDefaultThinkingOption: string | undefined,
 ): AgentModelDefinition {
-  const thinkingOptions = model.thinkingOptions ?? catalogThinkingOptions;
+  // A default belongs to the options it was chosen from, so a model with its own options never
+  // takes the catalog's default.
+  const thinking = model.thinkingOptions
+    ? { options: model.thinkingOptions, defaultId: model.defaultThinkingOptionId }
+    : {
+        options: catalogThinkingOptions,
+        defaultId: model.defaultThinkingOptionId ?? catalogDefaultThinkingOption,
+      };
   return {
     ...model,
     provider,
     isDefault: model.isDefault ?? model.id === defaultModel,
     metadata: model.metadata ? { ...model.metadata } : undefined,
-    thinkingOptions: thinkingOptions?.map((option) => Object.assign({}, option)),
-    defaultThinkingOptionId: model.defaultThinkingOptionId ?? catalogDefaultThinkingOption,
+    thinkingOptions: thinking.options?.map((option) => Object.assign({}, option)),
+    defaultThinkingOptionId: thinking.defaultId,
   };
 }
 
@@ -1967,6 +2161,7 @@ function mapSessionConfig(
     providerOptions: config.providerOptions,
     title: config.title ?? undefined,
     persist,
+    ...(launchContext?.wrap ? { wrap: launchContext.wrap } : {}),
   };
 }
 
@@ -2077,10 +2272,21 @@ function encodePersistence(persistence: ProviderPersistence): string {
   return `plugin:${JSON.stringify(persistence)}`;
 }
 
+// Providers whose agents were saved by the generic ACP provider before they became plugins.
+const FORMER_ACP_PROVIDERS = new Set<string>([
+  // COMPAT(gooseProvider): added in v0.17.0, remove after 2027-05-20 once legacy handles have migrated.
+  "goose",
+  // COMPAT(hermesProvider): added in v0.17.4, remove after 2027-05-23 once legacy handles have migrated.
+  "hermes",
+]);
+
 function decodePersistence(handle: AgentPersistenceHandle): ProviderPersistence {
   const fromMetadata = handle.metadata?.pluginProviderPersistence;
   if (fromMetadata !== undefined) {
     return ProviderPersistenceSchema.parse(fromMetadata);
+  }
+  if (FORMER_ACP_PROVIDERS.has(handle.provider) && !handle.sessionId.startsWith("plugin:")) {
+    return { version: 1, data: { sessionId: handle.sessionId } };
   }
   return decodePersistenceId(handle.sessionId);
 }

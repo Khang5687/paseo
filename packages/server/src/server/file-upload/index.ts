@@ -1,10 +1,17 @@
-import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { appendFile, stat } from "node:fs/promises";
+import { basename } from "node:path";
 
 import { FileTransferOpcode, type FileTransferFrame } from "@getpaseo/protocol/binary-frames/index";
 import { getErrorMessage } from "@getpaseo/protocol/error-utils";
+import { FILE_COPY_UPLOAD_NAME } from "../file-copies/uploads.js";
 import type { AgentAttachment, FileUploadRequest, FileUploadResponse } from "../messages.js";
+import {
+  createLegacyUploadFile,
+  createUploadFile,
+  removeUploadFile,
+  sanitizeUploadFileName,
+  type UploadFile,
+} from "./upload-location.js";
 
 interface FileUploadStoreOptions {
   paseoHome: string;
@@ -13,16 +20,15 @@ interface FileUploadStoreOptions {
 
 interface PendingUpload {
   requestId: string;
-  id: string;
+  // Set when the file is created, on the file-begin frame.
+  location: UploadFile | null;
   source: object;
   completed: boolean;
   finished(response: FileUploadResponse | null): void;
   fileName: string;
   mimeType: string;
   size: number;
-  path: string;
   receivedBytes: number;
-  started: boolean;
   staleTimeout: ReturnType<typeof setTimeout>;
   queue: Promise<void>;
   cleanup?: Promise<void>;
@@ -49,21 +55,17 @@ export class FileUploadStore {
   ): () => Promise<void> {
     const existingUpload = this.pending.get(source)?.get(request.requestId);
     if (existingUpload) void this.cancel(existingUpload).catch(() => {});
-    const fileName = sanitizeFileName(request.fileName);
-    const id = `upload_${randomUUID()}`;
-    const uploadDir = join(this.paseoHome, "uploads", id);
+    const fileName = sanitizeUploadFileName(request.fileName);
     const upload: PendingUpload = {
       requestId: request.requestId,
-      id,
+      location: null,
       source,
       completed: false,
       finished,
       fileName,
       mimeType: request.mimeType,
       size: request.size,
-      path: join(uploadDir, fileName),
       receivedBytes: 0,
-      started: false,
       staleTimeout: this.createStaleUploadTimeout(source, request.requestId),
       queue: Promise.resolve(),
     };
@@ -123,13 +125,16 @@ export class FileUploadStore {
   }
 
   private async startWriting(upload: PendingUpload): Promise<void> {
-    await mkdir(join(this.paseoHome, "uploads", upload.id), { recursive: true });
-    await writeFile(upload.path, new Uint8Array());
-    upload.started = true;
+    // Copy uploads are internal and deleted as a whole folder; chat uploads get a dated path.
+    upload.location =
+      upload.fileName === FILE_COPY_UPLOAD_NAME
+        ? await createLegacyUploadFile(this.paseoHome, upload.fileName)
+        : await createUploadFile(this.paseoHome, upload.fileName);
+    upload.fileName = basename(upload.location.path);
   }
 
   private async writeChunk(upload: PendingUpload, bytes: Uint8Array): Promise<void> {
-    if (!upload.started) {
+    if (!upload.location) {
       throw new Error("Upload chunks arrived before file begin.");
     }
     const nextReceivedBytes = upload.receivedBytes + bytes.byteLength;
@@ -138,14 +143,14 @@ export class FileUploadStore {
         `Upload exceeded declared size: expected ${upload.size}, received ${nextReceivedBytes}.`,
       );
     }
-    await appendFile(upload.path, bytes);
+    await appendFile(upload.location.path, bytes);
     upload.receivedBytes += bytes.byteLength;
   }
 
   private async completeUpload(upload: PendingUpload): Promise<FileUploadResponse> {
     this.clearPendingUpload(upload);
     if (upload.receivedBytes !== upload.size) {
-      await this.removeUploadDirectory(upload);
+      await this.removeUploadedFile(upload);
       return buildUploadResponse(
         upload,
         `Upload size mismatch: expected ${upload.size}, received ${upload.receivedBytes}.`,
@@ -176,7 +181,7 @@ export class FileUploadStore {
     if (upload.cleanup) return upload.cleanup;
     this.clearPendingUpload(upload);
     upload.cleanup = upload.queue.then(async () => {
-      if (!upload.completed) await this.removeUploadDirectory(upload);
+      if (!upload.completed) await this.removeUploadedFile(upload);
       return undefined;
     });
     upload.finished(null);
@@ -192,11 +197,11 @@ export class FileUploadStore {
 
   private async removeFailedUpload(upload: PendingUpload): Promise<void> {
     this.clearPendingUpload(upload);
-    await this.removeUploadDirectory(upload);
+    await this.removeUploadedFile(upload);
   }
 
-  private async removeUploadDirectory(upload: PendingUpload): Promise<void> {
-    await rm(join(this.paseoHome, "uploads", upload.id), { recursive: true, force: true });
+  private async removeUploadedFile(upload: PendingUpload): Promise<void> {
+    if (upload.location) await removeUploadFile(this.paseoHome, upload.location.id);
   }
 }
 
@@ -229,41 +234,18 @@ function buildUploadResponse(upload: PendingUpload, error: string | null): FileU
     type: "file.upload.response",
     payload: {
       requestId: upload.requestId,
-      file: error
-        ? null
-        : {
-            type: "uploaded_file",
-            id: upload.id,
-            fileName: upload.fileName,
-            mimeType: upload.mimeType,
-            size: upload.size,
-            path: upload.path,
-          },
+      file:
+        error || !upload.location
+          ? null
+          : {
+              type: "uploaded_file",
+              id: upload.location.id,
+              fileName: upload.fileName,
+              mimeType: upload.mimeType,
+              size: upload.size,
+              path: upload.location.path,
+            },
       error,
     },
   };
-}
-
-// Most file systems cap a single file name at 255 bytes.
-const MAX_FILE_NAME_BYTES = 255;
-
-// Keeps the client's file name, replacing only what cannot appear in a single
-// file name on Linux, macOS, or Windows.
-function sanitizeFileName(value: string): string {
-  const name = basename(value)
-    .replace(/[\p{Cc}\\/:*?"<>|]/gu, "_")
-    .trim();
-  return fitFileNameLength(name.length > 0 && name !== "." && name !== ".." ? name : "upload");
-}
-
-function fitFileNameLength(name: string): string {
-  if (Buffer.byteLength(name) <= MAX_FILE_NAME_BYTES) return name;
-  const extension = extname(name);
-  const keptExtension = Buffer.byteLength(extension) < MAX_FILE_NAME_BYTES ? extension : "";
-  let stem = "";
-  for (const char of name.slice(0, name.length - keptExtension.length)) {
-    if (Buffer.byteLength(stem + char + keptExtension) > MAX_FILE_NAME_BYTES) break;
-    stem += char;
-  }
-  return stem + keptExtension;
 }

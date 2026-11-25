@@ -118,7 +118,7 @@ appear in the plugin catalog. Editing one in development requires a daemon resta
 Directory, Git, and npm installs cannot use a built-in ID.
 
 A provider registration with `requiresConfiguration: true` participates only while its ID exists
-under `agents.providers`. Hoplite and fx use this for catalog opt-in. Add writes `{ "enabled": true }`
+under `agents.providers`. Hoplite, fx, goose, and Hermes use this for catalog opt-in. Add writes `{ "enabled": true }`
 without `extends`, so it selects the bundled adapter. Remove deletes the config entry; setting
 `enabled: false` keeps the entry. The bundled JavaScript still loads at startup, but an absent
 provider does not enter executable resolution or catalog discovery.
@@ -129,7 +129,7 @@ availability and a diagnostic after the daemon resolves the executable. Configur
 environment, or enablement overrides under `agents.providers.muse`. Omit `extends` to keep
 the bundled integration; an entry with `extends` shadows it with a custom provider. See
 [provider contributions](#contribute-a-provider) for the contract and
-[Muse Code](../public-docs/muse-code.md) for setup, per-agent options, and version limitations.
+[Muse Code](../public-docs/supported-providers/muse-code.md) for setup, per-agent options, and version limitations.
 
 ## Install from a registry
 
@@ -462,14 +462,84 @@ Server entries register async handlers with `server.addHook(name, handler)`, ret
 function. Names follow `subject.operation.position`, ending in `before` or `after`. Waiting is a per-hook
 registry property, independent of position. The [hooks reference](../public-docs/plugins/hooks.md)
 owns payloads, ordering, failure behavior, and examples. `agent.create.before` edits saved
-configuration; `agent.open.before` contributes launch-only `env`, `tools`, and `mcpServers` on
-every open. Executable tool definitions stay in the plugin process; only metadata crosses the boundary.
+configuration; `agent.open.before` contributes launch-only `env`, `tools`, `mcpServers`, and a
+[launch wrap](#launch-wrap) on every open. Executable tool definitions stay in the plugin process; only metadata crosses the boundary.
+`packages/server/src/server/plugins/session-attachments.ts` records what each plugin contributed to
+each live session. A plugin start, stop, or reload reruns only that plugin's callback per session,
+swaps its tools in place, and reopens a session only when its launch would differ. A reopen closes
+the provider process, so a reload must not reopen agents the plugin does not change.
+
+### Launch wrap
+
+An `agent.open.before` result can carry `wrap: [executable, ...args]`. The provider then starts that
+session's harness as `[...wrap, command, ...args]` with the final hook env. It starts with no shell,
+except Windows script launchers, which go through cmd.exe like any provider launcher
+(`spawnProcess` quotes each argument). An argument with spaces stays one element. `executable` must
+be an absolute path.
+The wrap is never saved on the agent; every open asks the hooks again, and a plugin session reopen
+reuses the wrap it opened with.
+
+- **Support is a provider property.** The provider snapshot entry carries `launchWrap: true` when the
+  provider can apply a wrap. Read it in `agent.create.before` with `paseo.providers.snapshot()`; an
+  absent field means unsupported, which is also what a host without this feature reports. Core
+  providers declare it in the provider contract table in `provider-registry.ts`; every core provider
+  that starts a local harness declares it, and custom ACP providers and providers that extend a core
+  one inherit it. A plugin provider declares `ProviderRegistration.launchWrap`;
+  `runAcpProvider({ command })` sets it, a connector declares it itself (Muse Code does). The declaration travels with the
+  registration metadata, so it is in the snapshot before the provider first connects.
+- **One wrap per open.** A later hook, in the same plugin or a later one, may omit the wrap or return
+  the same value. A different value fails the open.
+- **Fail closed.** `buildLaunchContext` admits a wrapped open before any session harness starts. It
+  throws `LaunchWrapUnsupportedError` (`code: "launch_wrap_unsupported"`) when the provider does not
+  declare support, or when a plugin provider's live connection lacks `session.launch_wrap`. A host
+  that predates `wrap` rejects the key: the hook result schema is strict. A missing launcher fails the
+  spawn; nothing retries the bare command.
+
+Once an open selects a wrap, a supported provider runs that session's harness through it or fails
+before starting the harness. Every provider starts through `spawnProcess({ wrap })`, which owns the
+argv and Windows launcher handling; `applyLaunchWrap` covers the launches that do not go through it
+(pty terminals, MCP stdio transports, worktree commands). The wrap also covers what Paseo starts for
+the session: stdio MCP servers Paseo hosts for the agent (OMP, OpenCode v2), Pi's MCP probe, and ACP
+client terminals. OpenCode shares one server between sessions, so a wrapped session gets a dedicated
+server instead; an explicitly configured external OpenCode server cannot be wrapped and the open
+fails. The guarantee does not cover:
+
+1. Paseo's host terminal tools (`create_terminal`, `send_terminal_keys`) run outside the wrap.
+2. Work before the open hook runs unwrapped: draft command and control discovery, and the catalog
+   lookup during create when no model is set.
+3. Host-side operations run unwrapped: availability and capability probes (the ACP connection's
+   initialize probe included), catalog and session listing, version and update commands, usage
+   queries, and Codex native archive and unarchive.
+4. Losing the plugin that chose the wrap is not covered: a later open without it runs unwrapped.
 
 Worktree placement is resolved before Git source planning, so a hook can change the branch and base
 without undoing fetched refs. Restores use the recorded destination and bypass creation hooks.
 Workspace records decide ownership, including explicit non-ownership after recovery. Without a record,
 ownership checks prefer the marker-verified worktree root over the legacy
 path shape: a plugin can place a worktree several directories below the default worktrees root.
+
+A plugin can also take over worktree creation, removal, and restoration with
+`server.registerWorktreeManager({ create, remove?, restore? })`. It runs after
+`worktree.create.before` and before `worktree.create.after`, with a 120-second timeout matching Git
+worktree commands. Paseo snapshots existing worktree paths before calling `create` so a manager
+cannot adopt a pre-existing directory as Paseo-owned, verifies Git worktree postconditions, records
+`worktreeManagerPluginId` in `paseo/worktree.json` and on the workspace record,
+and skips first-agent branch auto-rename. Removal saves `refs/paseo/kept-commits/<sha>` before
+calling the owning plugin's `remove`, and `create`, `remove`, and `restore` carry `untrusted` for fork
+change requests; `remove` and `restore` fall back to built-in Git when the plugin declines or is disabled. See the
+[worktree managers reference](../public-docs/plugins/reference.md#worktree-managers) and
+`plugin-examples/worktrunk`.
+
+`terminal.create.before` runs in `withTerminalCreateHook`, which wraps the daemon's one terminal manager, so every creation path is covered and adopted terminals are not; callers pass an `origin` to name the source. `command.run.before` runs inside the setup and teardown runners through `commandRunHook`. Setup and archive dependencies take `lifecycle` as a required field so a new caller cannot skip the hook by omission; pass `null` only where no plugins run.
+
+Both hooks change only `env` and a [launch wrap](#launch-wrap); `keepSelectedWrap` in the lifecycle
+module applies the one-wrap rule to all three wrap hooks. The terminal wrap becomes the terminal's
+`command` and `args` in `withTerminalCreateHook`, so the terminal worker protocol does not change and
+no previous-version adapter is needed. A default-shell terminal resolves the shell there through
+`default-terminal-shell.ts`, which stays apart from `terminal.ts` so the daemon does not load node-pty.
+The wrapped shell starts without Paseo's shell integration, which is why a wrapped script does not
+report command completion. A setup or teardown wrap goes in front of the
+`buildStringCommandShellInvocation` argv.
 
 Emit from the operation owner, not a client subscription. Provider history replay must not trigger
 live hooks. Notifications must not be awaited inside agent mutations: a handler can send a prompt
@@ -509,6 +579,18 @@ that effective launch. Return `{ available: true }` or
 before calling status; it exposes your diagnostic through the normal provider diagnostic command.
 A command-backed provider without status is available when its executable resolves. Providers with
 neither command nor status retain connection-based availability.
+
+Implement optional `installation` to fill the **Installation** section of provider settings. The
+bridge sends each callback as a `provider.installation.*` request carrying the launch `status`
+receives plus `resolved`. `resolved: false` means the executable was not found and `command` is
+the configured name, so answer `not_installed` instead of spawning it. Inspect and update-check
+requests use the 30 s plugin request timeout; the daemon's 25 s update-check deadline sits below
+it, so a slow check reports that deadline. `update` has no request timeout and streams output
+through `provider.installation.report`. When the daemon stops waiting on any of the three, it
+sends `provider.installation.cancel`, which aborts the callback's `signal`.
+The rules shared with built-ins are in [providers.md](providers.md#installation-and-updates); the
+author contract is in the
+[public provider guide](../public-docs/plugins/providers.md#report-installation-and-updates).
 
 A same-ID config entry without `extends` overrides the plugin's `enabled`, `command`, `env`, label,
 description, and model configuration through the normal provider registry. `enabled: false` disables
@@ -558,9 +640,17 @@ persistence. Re-read credentials and provider-owned configuration on `session.op
 daemon launch from `connect` and the per-session env and MCP servers from `session.open`. There is
 no provider reload input.
 
+Declare `ProviderRegistration.launchWrap: true` when every session spawns its own harness and can
+run it as `[...config.wrap, command, ...args]`; offer `session.launch_wrap` on the connection. See
+[Launch wrap](#launch-wrap). `runAcpProvider({ command })` does both.
+
 For an ACP command, register `runAcpProvider({ id, label, command })` from
-`@getpaseo/plugin/server/acp`. Its transformer hooks cover narrow vendor differences; do not translate the
-whole provider event stream. The shim uses the resolved launch for every probe and session, overlaying
+`@getpaseo/plugin/server/acp`. The shim builds the standard row for each ACP tool `kind`
+(`acp-internal/tool-call-detail.ts`). Its transformer hooks cover narrow vendor differences; do not translate the
+whole provider event stream. A `toolCall` transformer sees the raw `input`, `output` and `content`, and a
+`detail` it sets replaces the standard row. Parse vendor display text defensively and return the call
+unchanged when the shape does not match, so an upstream format change falls back to the standard row
+(`plugins/hermes-provider/server/terminal-command.ts`). The shim uses the resolved launch for every probe and session, overlaying
 only the supplied per-session env for sessions. The direct and ACP examples live in
 `plugin-examples/provider-direct`
 and `plugin-examples/provider-acp-transformer`.
@@ -646,11 +736,20 @@ panel, and mounts it with a `PluginFile` handle; the panel reads, shows its own 
 and resolves conflicts. The host has no bar and no notion of a panel's views: the Markdown and HTML
 panels own their Preview and Source views, toolbar and editor buffer, and the tab only shows the
 dot a panel sets through `tab.setModified`. Source is the floor for text files no other built-in
-claims, never a candidate beside one. Built-in panels (Markdown, HTML, Image, and Source, Paseo's
-editor) take exactly `PluginFilePanelProps`, including params and persisted tab state, so a fix to reading, watching, or writing lands in one place:
+claims, never a candidate beside one. Built-in panels (Markdown, HTML, Image, Video, Audio, PDF,
+and Source, Paseo's editor) take exactly `PluginFilePanelProps`, including params and persisted tab state, so a fix to reading, watching, or writing lands in one place:
 `packages/app/src/file-panels/file/`. Do not add a host-side read or loading gate for one panel;
 make that panel faster instead. Source highlights a large file on native in idle-time slices,
 the lines around the opening line first.
+
+Video, Audio and PDF read the whole file through `file.url()` (the WebSocket binary channel, so it
+works over the relay) before they show it. There is no HTTP range route to stream from: the
+download route takes single-use tokens and only works on a direct connection. So a candidate can
+set `maxBytes` (100 MB for these panels, `MEDIA_PREVIEW_MAX_BYTES` in
+`packages/app/src/file-panels/catalog.ts`); a bigger file gets no panel from it and the tab shows
+Download with "too large". Web and desktop play with `<video>`/`<audio>`, native with `expo-video`
+for both. Android has no PDF panel because its WebView cannot show PDFs, so a PDF opens with
+Download there.
 
 The handle checks every write against the version it last read or wrote, so two panels or a panel
 and an agent cannot silently overwrite each other. The daemon reports the file's kind (text,
@@ -788,14 +887,15 @@ is the [New workspace items reference](../public-docs/plugins/reference.md#new-w
 
 The screen's choices that a plugin may change live in one plain store,
 `createNewWorkspaceSetup` (`packages/app/src/screens/new-workspace/setup-model.ts`): the base
-picker selection, the manual isolation, the branch name and the workspace metadata. The pickers and
+picker selection, the manual isolation, the chosen existing worktree, the Branch off or Check out
+action per ref list, the branch name and the workspace metadata. The pickers and
 the plugin commands write to it, so a command sees what an earlier command left. Project and host
 stay in the screen's hooks (`useNewWorkspaceHostSelector` reconciles them against each other), and
 they are read-only to plugins; a command that switched them would unmount the item that called it.
 
 The store is built in the render that creates the screen, with what the screen derives from its
 hooks (the lock, the project, whether the project can make worktrees, whether the host supports
-metadata), so a command is valid from a child's first effect, which runs before the screen's own
+metadata and ref actions, the project's git worktrees), so a command is valid from a child's first effect, which runs before the screen's own
 effects. `syncInputs` refreshes those inputs in a layout effect on every commit, and commands read
 them when they run, never from the render that built them. The pickers and the commands pick
 through the same `chooseBase` and `chooseIsolation`, so a plugin command has the effects of a
@@ -853,6 +953,13 @@ runtime plugin ID, preserves the source timeline cursor and identity, validates 
 its Zod schema, and mounts the component inside the normal plugin runtime and error boundary. An
 optional output `id` distinguishes several stable replacements from the same source item; its output
 index is the default.
+
+Each replacement keeps a reference to the source row (`source` on the projected stream item), and
+turn logic reads a replaced reply through it. A reply split into several cards stays one reply: turn
+folding keeps every card visible, and the turn footer hangs under the last card, copies the original
+reply text once, forks at its message, and shows its duration and stats. Read the reply with
+`getAssistantReply` (`packages/app/src/types/stream.ts`) instead of checking `kind ===
+"assistant_message"`.
 
 Transformers run synchronously and must be deterministic. When several transformers match, the
 first one that returns a result owns that source item. Plugin and registration ordering is stable.
