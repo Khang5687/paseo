@@ -5,29 +5,21 @@ import type {
   LinkRendererProps,
   MarkdownRenderers,
 } from "react-native-enriched-markdown";
-import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { StyleSheet } from "react-native-unistyles";
 import { useFileLink } from "@/assistant-file-links";
+import { CodeFence } from "@/code-run/fence";
+import { FileLinkContextMenu } from "@/assistant-file-links/context-menu";
 import { MARKDOWN_COPY_RECOGNIZED_LINK_ATTRIBUTE } from "@/assistant-selection-copy/markup";
+import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
 import { useForgeShorthand } from "@/git/forge-shorthand";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
-import type { Theme } from "@/styles/theme";
 import { MermaidFence } from "./fence/mermaid";
 import { isRecognizedLink, markdownLinkSource } from "./source";
 import { WebBlockquote } from "./quote-block.web";
 
-const ThemedCodeBlock = withUnistyles(HighlightedCodeBlock);
-const codeStyle = (theme: Theme) => ({
-  inheritedStyles: {
-    color: theme.colors.foreground,
-    fontFamily: theme.fontFamily.mono,
-    fontSize: theme.fontSize.code,
-  },
-  textStyle: { backgroundColor: theme.colors.surface2, padding: 12, borderRadius: 8 },
-});
 function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
   if (language?.toLowerCase() === "mermaid") return <MermaidFence code={code} />;
-  return <ThemedCodeBlock code={code} language={language} uniProps={codeStyle} />;
+  return <CodeFence code={code} language={language} />;
 }
 
 // The library styles links inline, so a stylesheet :hover rule cannot underline them.
@@ -37,10 +29,14 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
   const forgeShorthand = useForgeShorthand();
   // A forge reference like `#12` carries its web URL so hover, copy and new-tab opens work.
   const forgeUrl = link.sourceType === "text" ? forgeShorthand?.resolve(link.url) : null;
-  const { tooltipPath, onHoverIn } = useFileLink(
-    forgeUrl ? markdownLinkSource(forgeUrl) : markdownLinkSource(link.url, link.sourceType),
+  const source = useMemo(
+    () => (forgeUrl ? markdownLinkSource(forgeUrl) : markdownLinkSource(link.url, link.sourceType)),
+    [forgeUrl, link.url, link.sourceType],
   );
+  const { tooltipPath, fileCandidate, onHoverIn, resolveFile } = useFileLink(source);
   const tooltip = forgeUrl ?? tooltipPath;
+  const saveFileLinkOffline = useSaveFileLinkOffline();
+  const saveOffline = useCallback(() => saveFileLinkOffline(source), [saveFileLinkOffline, source]);
   const [hovered, setHovered] = useState(false);
   const handleMouseEnter = useCallback(() => setHovered(true), []);
   const handleMouseLeave = useCallback(() => setHovered(false), []);
@@ -75,7 +71,19 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
   return (
     <Tooltip delayDuration={400}>
       <TooltipTrigger asChild onHoverIn={onHoverIn}>
-        <InlineLinkTrigger>{anchor}</InlineLinkTrigger>
+        <InlineLinkTrigger>
+          {fileCandidate ? (
+            <FileLinkContextMenu
+              fileCandidate={fileCandidate}
+              resolveFile={resolveFile}
+              onSaveOffline={saveOffline}
+            >
+              {anchor}
+            </FileLinkContextMenu>
+          ) : (
+            anchor
+          )}
+        </InlineLinkTrigger>
       </TooltipTrigger>
       {tooltip ? (
         <TooltipContent side="top" align="start" maxWidth={520}>

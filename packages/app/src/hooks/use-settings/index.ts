@@ -29,6 +29,7 @@ import {
   MIN_CONTENT_FONT_SIZE,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_BASE_FONT_SIZE,
+  OFFLINE_FILE_LIMITS,
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   normalizeAppSettings,
@@ -73,6 +74,7 @@ export {
   MIN_CONTENT_FONT_SIZE,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_BASE_FONT_SIZE,
+  OFFLINE_FILE_LIMITS,
   parseClampedFontSize,
   parseTerminalScrollbackLines,
   resolveContentMaxWidth,
@@ -270,4 +272,16 @@ export async function loadAppSettingsFromStorage(deps?: SettingsDeps): Promise<A
 
 export async function loadSettingsFromStorage(deps?: SettingsDeps): Promise<Settings> {
   return loadSettingsFromStoragePure(deps ?? productionDeps);
+}
+
+/** The current app settings outside React, from the shared query cache. */
+export async function getAppSettings(): Promise<AppSettings> {
+  return normalizeAppSettings(
+    await appQueryClient.ensureQueryData({
+      queryKey: APP_SETTINGS_QUERY_KEY,
+      queryFn: () => loadAppSettingsFromStorage(),
+      staleTime: Infinity,
+      gcTime: Infinity,
+    }),
+  );
 }
