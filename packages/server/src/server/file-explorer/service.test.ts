@@ -165,6 +165,33 @@ describe("file explorer service", () => {
     }
   });
 
+  it.each([
+    ["clip.mp4", "video/mp4"],
+    ["clip.MOV", "video/quicktime"],
+    ["clip.webm", "video/webm"],
+    ["clip.m4v", "video/x-m4v"],
+    ["song.mp3", "audio/mpeg"],
+    ["song.m4a", "audio/mp4"],
+    ["song.wav", "audio/wav"],
+    ["song.ogg", "audio/ogg"],
+    ["song.aac", "audio/aac"],
+    ["song.flac", "audio/flac"],
+  ])("reports %s as binary %s, whatever its first bytes", async (name, mimeType) => {
+    const root = await createTempDir("paseo-file-media-");
+    try {
+      // Text-looking bytes: the extension alone decides, so a panel can play the file.
+      await writeFile(path.join(root, name), "ftypisom", "utf8");
+      const target = { root, relativePath: name };
+      expect(await getExplorerFileVersion(target)).toMatchObject({ kind: "binary", mimeType });
+      expect(await readExplorerFileBytes(target)).toMatchObject({ kind: "binary", mimeType });
+      await streamExplorerFile(target, async (file) => {
+        expect(file).toMatchObject({ kind: "binary", mimeType });
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("writes base64 content as bytes, including over a binary file", async () => {
     const root = await createTempDir("paseo-file-write-bytes-");
     try {

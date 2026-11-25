@@ -1067,5 +1067,14 @@
       "packages/app/src/file-explorer/live-directories.test.ts",
       "packages/app/src/file-explorer/directory-listings.test.ts"
     ]
+  },
+  {
+    "pr": 143,
+    "title": "Preview video, audio and PDF files in the file tab",
+    "tests": [
+      "packages/app/src/file-panels/catalog.test.ts",
+      "packages/app/src/file-panels/resolve.test.ts",
+      "packages/server/src/server/file-explorer/service.test.ts"
+    ]
   }
 ]

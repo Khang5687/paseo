@@ -97,8 +97,12 @@ describe("buildFilePanelSettingsRows", () => {
   });
 
   it("keeps a remembered key whose panel is on no connected host", () => {
-    expect(rows(catalog(), { "ext:pdf": "plugin:pdf-panel/pdf" })).toEqual([
-      { selectorKey: "ext:pdf", candidates: [source], associatedPanelId: "plugin:pdf-panel/pdf" },
+    expect(rows(catalog(), { "ext:epub": "plugin:epub-panel/epub" })).toEqual([
+      {
+        selectorKey: "ext:epub",
+        candidates: [source],
+        associatedPanelId: "plugin:epub-panel/epub",
+      },
     ]);
   });
 

@@ -736,11 +736,20 @@ panel, and mounts it with a `PluginFile` handle; the panel reads, shows its own 
 and resolves conflicts. The host has no bar and no notion of a panel's views: the Markdown and HTML
 panels own their Preview and Source views, toolbar and editor buffer, and the tab only shows the
 dot a panel sets through `tab.setModified`. Source is the floor for text files no other built-in
-claims, never a candidate beside one. Built-in panels (Markdown, HTML, Image, and Source, Paseo's
-editor) take exactly `PluginFilePanelProps`, including params and persisted tab state, so a fix to reading, watching, or writing lands in one place:
+claims, never a candidate beside one. Built-in panels (Markdown, HTML, Image, Video, Audio, PDF,
+and Source, Paseo's editor) take exactly `PluginFilePanelProps`, including params and persisted tab state, so a fix to reading, watching, or writing lands in one place:
 `packages/app/src/file-panels/file/`. Do not add a host-side read or loading gate for one panel;
 make that panel faster instead. Source highlights a large file on native in idle-time slices,
 the lines around the opening line first.
+
+Video, Audio and PDF read the whole file through `file.url()` (the WebSocket binary channel, so it
+works over the relay) before they show it. There is no HTTP range route to stream from: the
+download route takes single-use tokens and only works on a direct connection. So a candidate can
+set `maxBytes` (100 MB for these panels, `MEDIA_PREVIEW_MAX_BYTES` in
+`packages/app/src/file-panels/catalog.ts`); a bigger file gets no panel from it and the tab shows
+Download with "too large". Web and desktop play with `<video>`/`<audio>`, native with `expo-video`
+for both. Android has no PDF panel because its WebView cannot show PDFs, so a PDF opens with
+Download there.
 
 The handle checks every write against the version it last read or wrote, so two panels or a panel
 and an agent cannot silently overwrite each other. The daemon reports the file's kind (text,
