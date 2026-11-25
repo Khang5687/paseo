@@ -1124,5 +1124,15 @@
       "packages/app/src/utils/sidebar-shortcuts.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/sidebar-project-last-chat.spec.ts"]
+  },
+  {
+    "pr": 149,
+    "title": "feat(app): Urgent first workspace sort",
+    "tests": [
+      "packages/app/src/components/sidebar/urgent-sort.test.ts",
+      "packages/app/src/projects/workspace-structure.test.ts",
+      "packages/app/src/stores/sidebar-view-store.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/sidebar-urgent-sort.spec.ts"]
   }
 ]

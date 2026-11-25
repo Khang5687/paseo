@@ -28,6 +28,7 @@ import { buildSidebarProjection } from "./sidebar-projection";
 import type { SidebarProjectIconTarget } from "@/utils/sidebar-project-row-model";
 import { filterWorkspacesByLabels, type SidebarWorkspaceGroup } from "./sidebar-labels";
 import { filterWorkspacesByProjects, resolveActiveProjectFilters } from "./sidebar-project-filter";
+import { sortProjectsByUrgency } from "./urgent-sort";
 import {
   hasAuthoritativeWorkspaceLabelCatalog,
   useWorkspaceLabelProjection,
@@ -161,7 +162,16 @@ export function SidebarModelProvider({
     list.projects,
     visibleWorkspaceKeys,
   ]);
-  const pinnedKeys = usePinnedSidebarKeys(filteredProjects);
+  const workspaceSort = useSidebarViewStore((state) => state.workspaceSort);
+  // Urgent first reorders by live status, which only the hydrated entries carry.
+  const orderedProjects = useMemo(
+    () =>
+      workspaceSort === "urgent" && groupMode === "project"
+        ? sortProjectsByUrgency(filteredProjects, filteredWorkspaceEntriesByKey)
+        : filteredProjects,
+    [filteredProjects, filteredWorkspaceEntriesByKey, groupMode, workspaceSort],
+  );
+  const pinnedKeys = usePinnedSidebarKeys(orderedProjects);
   const serverIds = useMemo(
     () => Array.from(new Set(list.workspacePlacements.map((workspace) => workspace.serverId))),
     [list.workspacePlacements],
@@ -169,7 +179,7 @@ export function SidebarModelProvider({
   const parentKeyByWorkspaceKey = useSidebarWorkspaceParents(serverIds);
   const projectionInput = useMemo(
     () => ({
-      projects: filteredProjects,
+      projects: orderedProjects,
       pinnedKeys,
       pinnedWorkspaceOrder,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
@@ -188,7 +198,7 @@ export function SidebarModelProvider({
       collapsedWorkspaceGroupKeys,
       groupMode,
       list.projectNamesByViewKey,
-      filteredProjects,
+      orderedProjects,
       pinnedCollapsed,
       pinnedKeys,
       pinnedWorkspaceOrder,
@@ -202,7 +212,7 @@ export function SidebarModelProvider({
   const value = useMemo(
     () => ({
       ...list,
-      projects: filteredProjects,
+      projects: orderedProjects,
       allProjects: list.projects,
       resolvedProjectFilters,
       hasProjectsBeforeFilter: list.projects.length > 0,
@@ -221,7 +231,7 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       groupMode,
       list,
-      filteredProjects,
+      orderedProjects,
       projection,
       toggleProjectCollapsed,
       filteredWorkspaceEntriesByKey,

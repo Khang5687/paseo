@@ -1345,6 +1345,7 @@ export const ar: TranslationResources = {
         created: "تاريخ الإنشاء",
         manual: "يدوي",
         lastPrompt: "آخر طلب",
+        urgent: "العاجل أولًا",
         updateHost: "حدّث المضيفين لترتيب مساحات العمل",
       },
       grouping: {

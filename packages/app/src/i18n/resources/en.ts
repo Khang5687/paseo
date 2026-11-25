@@ -1356,6 +1356,7 @@ export const en = {
         created: "Created",
         manual: "Manual",
         lastPrompt: "Last prompt",
+        urgent: "Urgent first",
         updateHost: "Update hosts to sort workspaces",
       },
       grouping: {
