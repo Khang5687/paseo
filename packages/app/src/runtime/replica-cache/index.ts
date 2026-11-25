@@ -192,6 +192,7 @@ const AgentCapabilitiesSchema = z.strictObject({
   supportsRewindConversation: z.boolean().optional(),
   supportsRewindFiles: z.boolean().optional(),
   supportsRewindBoth: z.boolean().optional(),
+  supportsNativeFork: z.boolean().optional(),
 });
 
 const StoredProjectCheckoutSchema = z.union([
@@ -335,6 +336,8 @@ const StoredWorkspaceSchema = z.strictObject({
   labels: z.array(z.string()).optional(),
   status: z.enum(["needs_input", "failed", "running", "attention", "done"]),
   statusEnteredAt: IsoDateSchema.nullable(),
+  // Optional because entries written before the count existed have none.
+  runningSubagentCount: z.number().optional(),
   activityAt: z.null(),
   archivingAt: z.string().nullable(),
   diffStat: z.strictObject({ additions: z.number(), deletions: z.number() }).nullable(),
@@ -452,6 +455,25 @@ function timelineBase(item: StreamItem) {
     ...(item.turnId ? { turnId: item.turnId } : {}),
     timestamp: item.timestamp.toISOString(),
   };
+}
+
+const OPTIONAL_CAPABILITY_KEYS = [
+  "supportsSessionListing",
+  "supportsRewindConversation",
+  "supportsRewindFiles",
+  "supportsRewindBoth",
+  "supportsNativeFork",
+] as const;
+
+function pickDefinedCapabilities(
+  capabilities: Agent["capabilities"],
+): Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> {
+  const picked: Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> = {};
+  for (const key of OPTIONAL_CAPABILITY_KEYS) {
+    const value = capabilities[key];
+    if (value !== undefined) picked[key] = value;
+  }
+  return picked;
 }
 
 function serializeAgentToolCall(data: AgentToolCallData): StoredToolCall {
@@ -659,22 +681,11 @@ function serializeAgentCapabilities(
   return {
     supportsStreaming: capabilities.supportsStreaming,
     supportsSessionPersistence: capabilities.supportsSessionPersistence,
-    ...(capabilities.supportsSessionListing !== undefined
-      ? { supportsSessionListing: capabilities.supportsSessionListing }
-      : {}),
     supportsDynamicModes: capabilities.supportsDynamicModes,
     supportsMcpServers: capabilities.supportsMcpServers,
     supportsReasoningStream: capabilities.supportsReasoningStream,
     supportsToolInvocations: capabilities.supportsToolInvocations,
-    ...(capabilities.supportsRewindConversation !== undefined
-      ? { supportsRewindConversation: capabilities.supportsRewindConversation }
-      : {}),
-    ...(capabilities.supportsRewindFiles !== undefined
-      ? { supportsRewindFiles: capabilities.supportsRewindFiles }
-      : {}),
-    ...(capabilities.supportsRewindBoth !== undefined
-      ? { supportsRewindBoth: capabilities.supportsRewindBoth }
-      : {}),
+    ...pickDefinedCapabilities(capabilities),
   };
 }
 
@@ -767,6 +778,7 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     labels: workspace.labels,
     status: workspace.status,
     statusEnteredAt: workspace.statusEnteredAt?.toISOString() ?? null,
+    runningSubagentCount: workspace.runningSubagentCount,
     activityAt: null,
     archivingAt: workspace.archivingAt,
     diffStat: workspace.diffStat,

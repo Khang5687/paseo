@@ -2,7 +2,7 @@ import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { ToolCallDetail, ToolCallIconName } from "@getpaseo/protocol/agent-types";
 import { isPaseoToolName } from "@getpaseo/protocol/tool-name-normalization";
 
-export type ToolCallIcon = ToolCallIconName | "paseo";
+export type ToolCallIcon = ToolCallIconName | "paseo" | "plug";
 
 const TOOL_DETAIL_ICON_NAMES: Record<ToolCallDetail["type"], ToolCallIcon> = {
   shell: "square_terminal",
@@ -28,6 +28,10 @@ export function resolveToolCallIconName(
     return "paseo";
   }
   const lowerName = toolName.trim().toLowerCase();
+  // Daemon status line for MCP servers connecting or disconnecting; the wire icon is for old clients.
+  if (lowerName === "mcp_servers" && detail?.type === "plain_text") {
+    return "plug";
+  }
 
   if (detail?.type === "plain_text" && detail.icon) {
     return detail.icon;

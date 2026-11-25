@@ -35,6 +35,7 @@ function makeEntry(
     hasRunningScripts: false,
     archiveHasUncommittedChanges: null,
     archiveUnpushedCommitCount: null,
+    workingSubagentCount: 0,
     ...overrides,
   };
 }

@@ -15,9 +15,11 @@ import { SettingsSection } from "@/components/settings";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton, paneContentToolbarIconSize } from "@/components/ui/pane-content-toolbar";
 import { SearchField } from "@/components/ui/search-field";
+import { Switch } from "@/components/ui/switch";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useHostFeature } from "@/runtime/host-features";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
@@ -45,6 +47,38 @@ function rankModels<T>(items: T[], query: string, fields: (item: T) => string[])
   return scored.map((entry) => entry.item);
 }
 
+interface ModelToggleState {
+  /** Requested enabled state per model ID while its config patch is in flight. */
+  pending: Readonly<Record<string, boolean>>;
+  error: string | null;
+}
+
+interface ModelToggles {
+  disabledModelIds: readonly string[];
+  state: ModelToggleState;
+  onToggle: (model: AgentModelDefinition, isEnabled: boolean) => Promise<void>;
+}
+
+function applyPendingToggles(
+  disabledModelIds: readonly string[],
+  pending: ModelToggleState["pending"],
+): string[] {
+  const disabled = new Set(disabledModelIds);
+  for (const [modelId, isEnabled] of Object.entries(pending)) {
+    if (isEnabled) {
+      disabled.delete(modelId);
+    } else {
+      disabled.add(modelId);
+    }
+  }
+  return [...disabled];
+}
+
+function withoutPending(state: ModelToggleState, modelId: string): ModelToggleState["pending"] {
+  const { [modelId]: _settled, ...pending } = state.pending;
+  return pending;
+}
+
 /**
  * A provider's models: search, the ones it reports, and the ones added by hand. The caller decides
  * whether it appears and whether the provider's own models are listed.
@@ -69,9 +103,18 @@ export function ProviderModels({
   const [query, setQuery] = useState("");
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
+  const supportsDisabledModels = useHostFeature(serverId, "providerDisabledModels");
+  const [modelToggleState, setModelToggleState] = useState<ModelToggleState>({
+    pending: {},
+    error: null,
+  });
 
   const additionalModels = useMemo(
     () => config?.providers?.[provider]?.additionalModels ?? [],
+    [config?.providers, provider],
+  );
+  const disabledModelIds = useMemo(
+    () => config?.providers?.[provider]?.disabledModels ?? [],
     [config?.providers, provider],
   );
   const loading = entry.status === "loading";
@@ -81,6 +124,7 @@ export function ProviderModels({
     serverId,
     provider,
     currentModels: entry.models,
+    currentDisabledModels: entry.disabledModels,
     providerSnapshotRefreshing: loading,
     previousCache: discoveredCacheRef.current,
   });
@@ -115,6 +159,41 @@ export function ProviderModels({
     [additionalModels, patchConfig, provider],
   );
 
+  const handleToggleModel = useCallback(
+    async (model: AgentModelDefinition, isEnabled: boolean) => {
+      const pending = { ...modelToggleState.pending, [model.id]: isEnabled };
+      const failure = t("settings.providers.models.failedToToggle", { model: model.label });
+      setModelToggleState({ pending, error: null });
+      let error: string | null = null;
+      try {
+        const saved = await patchConfig({
+          providers: {
+            [provider]: { disabledModels: applyPendingToggles(disabledModelIds, pending) },
+          },
+        });
+        if (!saved) error = failure;
+      } catch (cause) {
+        error = cause instanceof Error ? `${failure}: ${cause.message}` : failure;
+      }
+      setModelToggleState((current) => ({
+        pending: withoutPending(current, model.id),
+        error: error ?? current.error,
+      }));
+    },
+    [disabledModelIds, modelToggleState.pending, patchConfig, provider, t],
+  );
+
+  const modelToggles = useMemo<ModelToggles | null>(
+    () =>
+      supportsDisabledModels
+        ? { disabledModelIds, state: modelToggleState, onToggle: handleToggleModel }
+        : null,
+    [disabledModelIds, handleToggleModel, modelToggleState, supportsDisabledModels],
+  );
+  const disabledCount = modelToggles
+    ? discoveredModels.filter((model) => disabledModelIds.includes(model.id)).length
+    : 0;
+
   const customTrailing = useMemo(
     () => (
       <View style={styles.headerTrailing}>
@@ -135,8 +214,14 @@ export function ProviderModels({
 
   const discoveredTrailing = useMemo(
     () =>
-      refresh ? <DiscoveredTrailing count={discoveredModels.length} refresh={refresh} /> : null,
-    [discoveredModels.length, refresh],
+      refresh ? (
+        <DiscoveredTrailing
+          count={discoveredModels.length}
+          disabledCount={disabledCount}
+          refresh={refresh}
+        />
+      ) : null,
+    [disabledCount, discoveredModels.length, refresh],
   );
 
   let discoveredBody: React.ReactNode;
@@ -152,7 +237,7 @@ export function ProviderModels({
     discoveredBody = <MutedRow>{t("settings.providers.models.noSearchMatches")}</MutedRow>;
   } else {
     discoveredBody = filteredDiscovered.map((model, index) => (
-      <DiscoveredModelRow key={model.id} model={model} first={index === 0} />
+      <DiscoveredModelRow key={model.id} model={model} first={index === 0} toggles={modelToggles} />
     ));
   }
 
@@ -187,6 +272,9 @@ export function ProviderModels({
               testID="provider-settings-search"
             />
           </View>
+          {modelToggles?.state.error ? (
+            <Text style={[styles.errorText, styles.sectionError]}>{modelToggles.state.error}</Text>
+          ) : null}
           <View style={settingsStyles.card}>
             {/* A provider can report hundreds of models; the rest of the page stays in reach. */}
             <ScrollView
@@ -215,9 +303,26 @@ export function ProviderModels({
 }
 
 /** How many models the provider reports, when it last reported them, and the way to ask again. */
-function DiscoveredTrailing({ count, refresh }: { count: number; refresh: ProviderRefresh }) {
+function DiscoveredTrailing({
+  count,
+  disabledCount,
+  refresh,
+}: {
+  count: number;
+  disabledCount: number;
+  refresh: ProviderRefresh;
+}) {
+  const { t } = useTranslation();
   const checked = useCheckedLabel(refresh);
-  const facts = [count > 0 ? String(count) : null, checked].filter(Boolean).join(" · ");
+  const facts = [
+    count > 0 ? String(count) : null,
+    disabledCount > 0
+      ? t("settings.providers.models.disabledCount", { count: disabledCount })
+      : null,
+    checked,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <View style={styles.headerTrailing}>
       {facts ? (
@@ -238,19 +343,51 @@ function MutedRow({ children }: { children: string }) {
   );
 }
 
-function DiscoveredModelRow({ model, first }: { model: AgentModelDefinition; first: boolean }) {
+function DiscoveredModelRow({
+  model,
+  first,
+  toggles,
+}: {
+  model: AgentModelDefinition;
+  first: boolean;
+  toggles: ModelToggles | null;
+}) {
+  const { t } = useTranslation();
+  const pendingValue = toggles?.state.pending[model.id];
+  const isSaving = pendingValue !== undefined;
+  const isEnabled = pendingValue ?? !toggles?.disabledModelIds.includes(model.id);
+  const isDimmed = toggles !== null && !isEnabled;
+  // Some providers (OMP) echo the id as the description; skip lines that add nothing.
+  const showDescription =
+    !!model.description && model.description !== model.id && model.description !== model.label;
+  const handleValueChange = useCallback(
+    (next: boolean) => void toggles?.onToggle(model, next),
+    [model, toggles],
+  );
+
   return (
     <View style={[styles.modelRow, !first && settingsStyles.rowBorder]}>
-      <Text style={styles.modelTitle} numberOfLines={1}>
-        {model.label}
-      </Text>
-      <Text style={styles.monoHint} numberOfLines={1} selectable dataSet={CODE_SURFACE_DATASET}>
-        {model.id}
-      </Text>
-      {model.description ? (
-        <Text style={styles.descriptionInline} numberOfLines={1}>
-          {model.description}
+      <View style={styles.modelText}>
+        <Text style={[styles.modelTitle, isDimmed && styles.modelTitleDisabled]} numberOfLines={1}>
+          {model.label}
         </Text>
+        <Text style={styles.monoHint} numberOfLines={1} selectable dataSet={CODE_SURFACE_DATASET}>
+          {model.id}
+        </Text>
+        {showDescription ? (
+          <Text style={styles.descriptionInline} numberOfLines={1}>
+            {model.description}
+          </Text>
+        ) : null}
+      </View>
+      {toggles ? (
+        <Switch
+          value={isEnabled}
+          onValueChange={handleValueChange}
+          disabled={isSaving}
+          accessibilityLabel={t("settings.providers.models.toggleModel", { model: model.label })}
+          testID={`provider-model-toggle-${model.id}`}
+        />
       ) : null}
     </View>
   );
@@ -273,18 +410,14 @@ function CustomModelRow({
 
   return (
     <View style={[styles.modelRow, !first && settingsStyles.rowBorder]}>
-      <Text style={[styles.modelTitle, styles.customModelText]} numberOfLines={1}>
-        {model.label}
-      </Text>
-      <Text
-        style={[styles.monoHint, styles.customModelText]}
-        numberOfLines={1}
-        selectable
-        dataSet={CODE_SURFACE_DATASET}
-      >
-        {model.id}
-      </Text>
-      <View style={styles.modelRowFiller} />
+      <View style={styles.modelText}>
+        <Text style={styles.modelTitle} numberOfLines={1}>
+          {model.label}
+        </Text>
+        <Text style={styles.monoHint} numberOfLines={1} selectable dataSet={CODE_SURFACE_DATASET}>
+          {model.id}
+        </Text>
+      </View>
       <ToolbarButton
         label={t("settings.providers.models.removeModel", { id: model.id })}
         onPress={handleDelete}
@@ -412,32 +545,36 @@ const styles = StyleSheet.create((theme) => ({
   modelRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: theme.spacing[2],
+    paddingVertical: theme.spacing[3],
     paddingHorizontal: theme.spacing[4],
     gap: theme.spacing[3],
+  },
+  // Label, id and description stack in a shrinking column so long ids truncate instead of
+  // pushing the trailing switch out of the row.
+  modelText: {
+    flex: 1,
+    minWidth: 0,
+    gap: theme.spacing[1],
   },
   modelTitle: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
-    flexShrink: 0,
+  },
+  modelTitleDisabled: {
+    color: theme.colors.foregroundMuted,
   },
   monoHint: {
     fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.code,
     color: theme.colors.foregroundMuted,
-    flexShrink: 0,
   },
   descriptionInline: {
-    flex: 1,
     fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,
   },
-  customModelText: {
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  modelRowFiller: {
-    flex: 1,
+  sectionError: {
+    marginBottom: theme.spacing[2],
+    marginLeft: theme.spacing[1],
   },
   formGroup: {
     gap: theme.spacing[3],
