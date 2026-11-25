@@ -1087,5 +1087,10 @@
       "packages/server/src/utils/directory-suggestions.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/assistant-file-link-ladder.spec.ts"]
+  },
+  {
+    "pr": 145,
+    "title": "Mount rarely used Paseo tools on demand in OMP chats",
+    "tests": ["packages/server/src/server/agent/providers/omp/host-tools.test.ts"]
   }
 ]
