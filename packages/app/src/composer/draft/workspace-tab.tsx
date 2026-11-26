@@ -30,7 +30,8 @@ import {
   validateDraftSubmission,
 } from "@/composer/draft/workspace-tab-core";
 import { DRAFT_CAPABILITIES } from "@/composer/draft/timeline";
-import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import type { AgentSnapshotPayload, InlineAttachmentRef } from "@getpaseo/protocol/messages";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import {
@@ -106,7 +107,7 @@ function resolveDraftModeId(input: {
 
 async function submitDraftCreateRequest(input: {
   draftId: string;
-  attempt: { clientMessageId: string };
+  attempt: { clientMessageId: string; attachmentRefs?: InlineAttachmentRef[] };
   text: string;
   images?: UserMessageImageAttachment[];
   attachments?: unknown;
@@ -173,6 +174,7 @@ async function submitDraftCreateRequest(input: {
     ...(Object.keys(composerState.metadata).length > 0 ? { metadata: composerState.metadata } : {}),
     ...(imagesData && imagesData.length > 0 ? { images: imagesData } : {}),
     ...(attachmentsArray && attachmentsArray.length > 0 ? { attachments: attachmentsArray } : {}),
+    attachmentRefs: matchEncodedImageRefs(attempt.attachmentRefs, imagesData, images),
   };
   const result = await client.createAgent({
     ...request,

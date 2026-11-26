@@ -1,0 +1,9 @@
+{
+  "pr": 111,
+  "title": "feat(server): ask_agent long replies come back in pages read by cursor",
+  "tests": [
+    "packages/server/src/server/agent/ask-agent.test.ts",
+    "packages/server/src/server/agent/host-operations/index.test.ts",
+    "packages/protocol/src/messages.agent-ask-threads.test.ts"
+  ]
+}

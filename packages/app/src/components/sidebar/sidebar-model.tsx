@@ -1,6 +1,14 @@
 import { useTranslation } from "react-i18next";
-import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import {
+  useQuietProjectKeys,
   useSidebarWorkspacesList,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
@@ -8,6 +16,7 @@ import {
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import { usePinnedSidebarKeys, type PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
+import { useSidebarWorkspaceParents } from "@/hooks/use-sidebar-workspace-parents";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import {
   hasActiveSidebarLabelFilter,
@@ -20,6 +29,10 @@ import { buildSidebarProjection } from "./sidebar-projection";
 import type { SidebarProjectIconTarget } from "@/utils/sidebar-project-row-model";
 import { filterWorkspacesByLabels, type SidebarWorkspaceGroup } from "./sidebar-labels";
 import { filterWorkspacesByProjects, resolveActiveProjectFilters } from "./sidebar-project-filter";
+import { sortProjectsByUrgency } from "./urgent-sort";
+import { resolveQuietKeep, splitQuietProjects } from "./quiet-projects";
+import { useSidebarQuietFoldStore } from "@/stores/sidebar-quiet-fold-store";
+import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import {
   hasAuthoritativeWorkspaceLabelCatalog,
   useWorkspaceLabelProjection,
@@ -27,6 +40,8 @@ import {
 
 interface SidebarModel extends SidebarWorkspacesListResult {
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
+  /** Every hydrated row, before any filter: what "waiting on you in any project" reads. */
+  allWorkspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   /**
    * Every project the sidebar could show, before any filter narrows it.
    *
@@ -44,6 +59,14 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   collapsedProjectKeys: ReadonlySet<string>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   shortcutModel: SidebarShortcutModel;
+  /**
+   * `allProjects` split for the rail and chip row: `quiet` holds projects folded into "More"
+   * (no chat activity for 3 days, nothing waiting on you). Digit jumps count `active` first.
+   */
+  stripProjects: { active: SidebarProjectEntry[]; quiet: SidebarProjectEntry[] };
+  /** How many projects the project list folded away. Zero while a project filter applies. */
+  listQuietCount: number;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
 }
 
 const SidebarModelContext = createContext<SidebarModel | null>(null);
@@ -73,6 +96,7 @@ export function SidebarModelProvider({
     (state) => state.collapsedWorkspaceGroupKeys,
   );
   const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
+  const expandedThreadKeys = useSidebarCollapsedSectionsStore((state) => state.expandedThreadKeys);
   const pinnedWorkspaceOrder = useSidebarOrderStore((state) => state.pinnedWorkspaceOrder);
   const toggleProjectCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleProjectCollapsed,
@@ -151,10 +175,57 @@ export function SidebarModelProvider({
     list.projects,
     visibleWorkspaceKeys,
   ]);
-  const pinnedKeys = usePinnedSidebarKeys(filteredProjects);
+  const workspaceSort = useSidebarViewStore((state) => state.workspaceSort);
+  // Urgent first reorders by live status, which only the hydrated entries carry.
+  const orderedProjects = useMemo(
+    () =>
+      workspaceSort === "urgent" && groupMode === "project"
+        ? sortProjectsByUrgency(filteredProjects, filteredWorkspaceEntriesByKey)
+        : filteredProjects,
+    [filteredProjects, filteredWorkspaceEntriesByKey, groupMode, workspaceSort],
+  );
+  const pinnedKeys = usePinnedSidebarKeys(orderedProjects);
+  const openWorkspace = useLastWorkspaceSelection();
+  const quietKeep = useMemo(
+    () =>
+      resolveQuietKeep({
+        projects: list.projects,
+        workspaceKeys: openWorkspace
+          ? [
+              ...pinnedKeys.pinnedWorkspaceKeys,
+              `${openWorkspace.serverId}:${openWorkspace.workspaceId}`,
+            ]
+          : pinnedKeys.pinnedWorkspaceKeys,
+        projectKeys: resolvedProjectFilters,
+      }),
+    [list.projects, openWorkspace, pinnedKeys.pinnedWorkspaceKeys, resolvedProjectFilters],
+  );
+  const quietProjectKeys = useQuietProjectKeys({ projects: list.projects, keep: quietKeep });
+  const stripProjects = useMemo(
+    () => splitQuietProjects(list.projects, quietProjectKeys),
+    [list.projects, quietProjectKeys],
+  );
+  const quietOpen = useSidebarQuietFoldStore((state) => state.open);
+  // The list folds only while it shows every project: a filter is an explicit pick.
+  const listFold = useMemo(() => {
+    if (groupMode !== "project" || hasActiveProjectFilter) {
+      return { projects: orderedProjects, quietCount: 0 };
+    }
+    const split = splitQuietProjects(orderedProjects, quietProjectKeys);
+    if (split.quiet.length === 0) return { projects: orderedProjects, quietCount: 0 };
+    return {
+      projects: quietOpen ? [...split.active, ...split.quiet] : split.active,
+      quietCount: split.quiet.length,
+    };
+  }, [groupMode, hasActiveProjectFilter, orderedProjects, quietOpen, quietProjectKeys]);
+  const serverIds = useMemo(
+    () => Array.from(new Set(list.workspacePlacements.map((workspace) => workspace.serverId))),
+    [list.workspacePlacements],
+  );
+  const parentKeyByWorkspaceKey = useSidebarWorkspaceParents(serverIds);
   const projectionInput = useMemo(
     () => ({
-      projects: filteredProjects,
+      projects: listFold.projects,
       pinnedKeys,
       pinnedWorkspaceOrder,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
@@ -163,30 +234,36 @@ export function SidebarModelProvider({
       pinnedCollapsed,
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,
+      parentKeyByWorkspaceKey,
+      expandedThreadKeys,
       t,
     }),
     [
+      expandedThreadKeys,
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,
       groupMode,
       list.projectNamesByViewKey,
-      filteredProjects,
+      listFold.projects,
       pinnedCollapsed,
       pinnedKeys,
       pinnedWorkspaceOrder,
       filteredWorkspaceEntriesByKey,
+      parentKeyByWorkspaceKey,
       t,
     ],
   );
   const projection = useMemo(() => buildSidebarProjection(projectionInput), [projectionInput]);
+  const childWorkspaceCounts = useStableCountMap(projection.childWorkspaceCountByWorkspaceKey);
   const value = useMemo(
     () => ({
       ...list,
-      projects: filteredProjects,
+      projects: listFold.projects,
       allProjects: list.projects,
       resolvedProjectFilters,
       hasProjectsBeforeFilter: list.projects.length > 0,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
+      allWorkspaceEntriesByKey: workspaceEntriesByKey,
       groupMode,
       workspaceGroups: projection.workspaceGroups,
       projectIconTargets: projection.projectIconTargets,
@@ -194,20 +271,52 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       toggleProjectCollapsed,
       shortcutModel: projection.shortcutModel,
+      listQuietCount: listFold.quietCount,
+      stripProjects,
+      nestingDepthByWorkspaceKey: projection.nestingDepthByWorkspaceKey,
     }),
     [
       resolvedProjectFilters,
       collapsedProjectKeys,
       groupMode,
       list,
-      filteredProjects,
+      listFold,
       projection,
+      stripProjects,
       toggleProjectCollapsed,
       filteredWorkspaceEntriesByKey,
+      workspaceEntriesByKey,
     ],
   );
 
-  return <SidebarModelContext.Provider value={value}>{children}</SidebarModelContext.Provider>;
+  return (
+    <SidebarModelContext.Provider value={value}>
+      <SidebarChildWorkspaceCountsContext.Provider value={childWorkspaceCounts}>
+        {children}
+      </SidebarChildWorkspaceCountsContext.Provider>
+    </SidebarModelContext.Provider>
+  );
+}
+
+const EMPTY_COUNTS: ReadonlyMap<string, number> = new Map();
+
+/**
+ * Subagent workspace rows under each thread row. Its own context, kept identical across
+ * projections that did not change it, so a thread's fold row re-renders only when its count moves.
+ */
+const SidebarChildWorkspaceCountsContext = createContext<ReadonlyMap<string, number>>(EMPTY_COUNTS);
+
+export function useSidebarChildWorkspaceCount(workspaceKey: string): number {
+  return useContext(SidebarChildWorkspaceCountsContext).get(workspaceKey) ?? 0;
+}
+
+function useStableCountMap(next: ReadonlyMap<string, number>): ReadonlyMap<string, number> {
+  const previous = useRef(EMPTY_COUNTS);
+  const current = previous.current;
+  const same =
+    current.size === next.size && [...next].every(([key, count]) => current.get(key) === count);
+  if (!same) previous.current = next;
+  return previous.current;
 }
 
 export function useSidebarModel(): SidebarModel {

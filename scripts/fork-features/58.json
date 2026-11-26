@@ -1,0 +1,6 @@
+{
+  "pr": 58,
+  "title": "fix(queue): keep images on queued messages",
+  "tests": ["packages/app/src/composer/daemon-queue.test.ts"],
+  "e2e": ["packages/app/e2e/browser/queue-controls.spec.ts"]
+}

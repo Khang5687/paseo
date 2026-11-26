@@ -1,0 +1,5 @@
+{
+  "pr": 86,
+  "title": "feat(server): agents can answer other agents' question boxes, across hosts",
+  "tests": ["packages/server/src/server/agent/mcp-server.test.ts"]
+}

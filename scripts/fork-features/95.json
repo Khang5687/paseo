@@ -1,0 +1,9 @@
+{
+  "pr": 95,
+  "title": "feat(server): search and unarchive agents from agent tools",
+  "tests": [
+    "packages/server/src/server/agent/agent-search.test.ts",
+    "packages/server/src/server/agent/mcp-server.test.ts",
+    "packages/server/src/server/authorization/index.test.ts"
+  ]
+}

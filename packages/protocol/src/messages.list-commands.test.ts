@@ -82,6 +82,31 @@ describe("list_commands_request schema", () => {
     ]);
   });
 
+  test("carries the skill source folder through responses", () => {
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "list_commands_response",
+      payload: {
+        agentId: "agent-123",
+        requestId: "req-123",
+        error: null,
+        commands: [
+          {
+            name: "skill:taste",
+            description: "Apply code taste",
+            argumentHint: "",
+            kind: "skill",
+            sourcePath: "/home/k/.agents/skills/taste",
+          },
+        ],
+      },
+    });
+
+    if (parsed.type !== "list_commands_response") {
+      throw new Error("Expected list_commands_response message");
+    }
+    expect(parsed.payload.commands[0]?.sourcePath).toBe("/home/k/.agents/skills/taste");
+  });
+
   test("falls back to command for unknown future command kinds", () => {
     const parsed = SessionOutboundMessageSchema.parse({
       type: "list_commands_response",
@@ -105,5 +130,28 @@ describe("list_commands_request schema", () => {
       throw new Error("Expected list_commands_response message");
     }
     expect(parsed.payload.commands[0]?.kind).toBe("command");
+  });
+
+  test("preserves subcommand choices and aliases in responses", () => {
+    const compact = {
+      name: "compact",
+      description: "Compact the conversation",
+      argumentHint: "[soft|remote|snapcompact] [focus]",
+      kind: "command",
+      aliases: ["c"],
+      subcommands: [
+        { name: "soft", description: "Summarize locally", usage: "[focus]" },
+        { name: "snapcompact", description: "Archive history onto images" },
+      ],
+    };
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "list_commands_response",
+      payload: { agentId: "agent-123", requestId: "req-123", error: null, commands: [compact] },
+    });
+
+    if (parsed.type !== "list_commands_response") {
+      throw new Error("Expected list_commands_response message");
+    }
+    expect(parsed.payload.commands).toEqual([compact]);
   });
 });

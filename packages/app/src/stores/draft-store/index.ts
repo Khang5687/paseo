@@ -1,3 +1,7 @@
+import {
+  collectSentMessageImageIds,
+  waitForSentMessageImagesHydration,
+} from "@/stores/sent-message-images-store";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -36,6 +40,7 @@ import {
 } from "./migration";
 import { createDraftPersistStorage } from "./persistence";
 import { createValidatedPersistStorage } from "@/storage/validated-persist-storage";
+import { listOfflineFileAttachmentIds } from "@/offline-files/store";
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import { applyMetadataPatch } from "@/composer/draft/metadata";
 import { hasDraftContent } from "@/composer/draft/input-draft-core";
@@ -46,6 +51,14 @@ interface DraftStoreActions {
   getDraftInput: (draftKey: string) => DraftInput | undefined;
   hydrateDraftInput: (input: { draftKey: string }) => Promise<DraftInput | undefined>;
   saveDraftInput: (input: { draftKey: string; draft: DraftInput }) => void;
+  /** Writes the daemon's copy of a synced draft; the result counts as already synced. */
+  applySyncedDraftInput: (input: {
+    draftKey: string;
+    draft: DraftInput;
+    updatedAt: number;
+  }) => void;
+  /** Records that `version` matches the daemon's copy, unless the draft moved on since. */
+  markDraftSynced: (input: { draftKey: string; version: number }) => void;
   /** Saves what `update` makes of the current input; an emptied input abandons the draft. */
   updateDraftInput: (input: {
     draftKey: string;
@@ -100,6 +113,7 @@ function createDraftRecord(input: {
   draft: DraftInput;
   lifecycle: DraftLifecycleState;
   previousVersion?: number;
+  updatedAt?: number;
 }): DraftRecord {
   return {
     input: {
@@ -107,7 +121,7 @@ function createDraftRecord(input: {
       attachments: input.draft.attachments.map(normalizeComposerAttachment),
     },
     lifecycle: input.lifecycle,
-    updatedAt: Date.now(),
+    updatedAt: input.updatedAt ?? Date.now(),
     version: (input.previousVersion ?? 0) + 1,
   };
 }
@@ -166,7 +180,9 @@ async function runAttachmentGc(): Promise<void> {
     };
   });
 
-  const referencedIds = new Set<string>();
+  await waitForSentMessageImagesHydration();
+
+  const referencedIds = new Set<string>(collectSentMessageImageIds());
   for (const id of useDraftStore.getState().collectActiveAttachmentIds()) {
     referencedIds.add(id);
   }
@@ -203,6 +219,11 @@ async function runAttachmentGc(): Promise<void> {
     }
   }
 
+  // Saved offline files live in the attachment store too.
+  for (const id of await listOfflineFileAttachmentIds()) {
+    referencedIds.add(id);
+  }
+
   try {
     await garbageCollectAttachments({ referencedIds });
   } catch (error) {
@@ -219,6 +240,8 @@ function collectQueuedMessageAttachmentIds(
       for (const attachment of queuedMessage.attachments) {
         if (attachment.kind === "image") {
           referencedIds.add(attachment.metadata.id);
+        } else if (attachment.kind === "browser_element" && attachment.attachment.screenshot) {
+          referencedIds.add(attachment.attachment.screenshot.id);
         }
       }
     }
@@ -341,6 +364,37 @@ export const useDraftStore = create<DraftStore>()(
           };
         });
         scheduleAttachmentGc();
+      },
+
+      applySyncedDraftInput: ({ draftKey, draft, updatedAt }) => {
+        set((state) => {
+          const existing = state.drafts[draftKey];
+          const isEmpty = draft.text.length === 0 && draft.attachments.length === 0;
+          if (isEmpty && !existing) return state;
+          const record = createDraftRecord({
+            draft,
+            lifecycle: isEmpty ? "abandoned" : "active",
+            previousVersion: existing?.version,
+            // A cleared record is pruned by age, so it keeps the local clock.
+            updatedAt: isEmpty ? Date.now() : updatedAt,
+          });
+          return {
+            drafts: { ...state.drafts, [draftKey]: { ...record, syncedVersion: record.version } },
+          };
+        });
+        scheduleAttachmentGc();
+      },
+
+      markDraftSynced: ({ draftKey, version }) => {
+        set((state) => {
+          const existing = state.drafts[draftKey];
+          if (!existing || existing.version !== version || existing.syncedVersion === version) {
+            return state;
+          }
+          return {
+            drafts: { ...state.drafts, [draftKey]: { ...existing, syncedVersion: version } },
+          };
+        });
       },
 
       updateDraftInput: ({ draftKey, update }) => {

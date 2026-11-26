@@ -143,6 +143,25 @@ describe("MockLoadTestAgentClient", () => {
     expect(events.map((event) => event.type)).toEqual(["turn_canceled"]);
   });
 
+  test("can fail the turn without ever echoing the user message", async () => {
+    vi.useFakeTimers();
+    const client = new MockLoadTestAgentClient();
+    const session = await client.createSession({
+      provider: "mock",
+      cwd: process.cwd(),
+      model: "ten-second-stream",
+    });
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await session.startTurn("Fail synthetic turn before user message.", {
+      clientMessageId: "client-message-1",
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(events.map((event) => event.type)).toEqual(["turn_started", "turn_failed"]);
+  });
+
   test("can emit the provider user-message echo before accepting the turn", async () => {
     const client = new MockLoadTestAgentClient();
     const session = await client.createSession({

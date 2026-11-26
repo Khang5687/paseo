@@ -91,4 +91,38 @@ describe("local file attachment store", () => {
     );
     expect(fileSystem.directories.has("file:///cache/preview-assets")).toBe(true);
   });
+
+  it("appends a big file chunk by chunk to the managed path", async () => {
+    const { fileSystem, store } = createStore();
+
+    const writer = await store.openWriter({
+      id: "movie",
+      mimeType: "video/mp4",
+      fileName: "movie.mp4",
+    });
+    await writer.write(new Uint8Array([1, 2]));
+    await writer.write(new Uint8Array([3]));
+    const attachment = await writer.finish();
+
+    expect(fileSystem.files.get("file:///cache/preview-assets/movie.mp4")).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+    expect(attachment).toMatchObject({
+      id: "movie",
+      mimeType: "video/mp4",
+      storageType: "native-file",
+      storageKey: "/cache/preview-assets/movie.mp4",
+      byteSize: 3,
+    });
+  });
+
+  it("removes the half-written file when a transfer is abandoned", async () => {
+    const { fileSystem, store } = createStore();
+
+    const writer = await store.openWriter({ id: "movie", mimeType: "video/mp4" });
+    await writer.write(new Uint8Array([1, 2]));
+    await writer.abort();
+
+    expect(fileSystem.files.size).toBe(0);
+  });
 });

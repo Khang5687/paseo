@@ -86,6 +86,7 @@ function createOwner(
     replica,
     replaceDemandedAgentIds: () => undefined,
     drainQueuedAgentMessage: () => undefined,
+    liveScope: "opened",
     applyTurnLiveness,
     ports: {
       canCheckFreshness: () => checksFreshness,
@@ -1339,6 +1340,7 @@ describe("create handoff lifetime", () => {
       replica,
       replaceDemandedAgentIds: () => undefined,
       drainQueuedAgentMessage: () => undefined,
+      liveScope: "opened",
       applyTurnLiveness: () => undefined,
       ports: {
         canCheckFreshness: () => false,
@@ -1507,6 +1509,7 @@ describe("a chat that was empty when it went offline", () => {
     const owner = createViewedTimelineOwner({
       serverId: SERVER_ID,
       replica,
+      liveScope: "opened",
       replaceDemandedAgentIds: () => undefined,
       drainQueuedAgentMessage: () => undefined,
       applyTurnLiveness: () => undefined,
@@ -1947,6 +1950,7 @@ describe("archived timeline lifetime", () => {
       replica,
       replaceDemandedAgentIds: () => undefined,
       drainQueuedAgentMessage: () => undefined,
+      liveScope: "opened",
       applyTurnLiveness: () => undefined,
       ports: {
         canCheckFreshness: () => false,

@@ -15,6 +15,7 @@ interface UseAgentAttentionClearParams {
   isAgentDataReady: boolean;
   requiresAttention: boolean;
   attentionReason: AttentionReason;
+  isUnseen: boolean;
   isScreenFocused: boolean;
   focusRequest: object | null;
   onError: (error: unknown) => void;
@@ -32,6 +33,7 @@ export function useAgentAttentionClear({
   isAgentDataReady,
   requiresAttention,
   attentionReason,
+  isUnseen,
   isScreenFocused,
   focusRequest,
   onError,
@@ -87,6 +89,7 @@ export function useAgentAttentionClear({
       ready: Boolean(client && agentId && isConnected && isAgentDataReady),
       requiresAttention,
       attentionReason,
+      isUnseen,
       focusRequest,
     });
   }, [
@@ -99,6 +102,7 @@ export function useAgentAttentionClear({
     isAppVisible,
     requiresAttention,
     attentionReason,
+    isUnseen,
     focusRequest,
   ]);
 

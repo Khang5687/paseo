@@ -1,0 +1,6 @@
+{
+  "pr": 15,
+  "title": "feat(app): right-click menu for file paths in agent replies",
+  "tests": ["packages/app/src/assistant-file-links/use-file-link.test.tsx"],
+  "e2e": ["packages/app/e2e/browser/assistant-file-link-menu.spec.ts"]
+}

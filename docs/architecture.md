@@ -482,6 +482,7 @@ $PASEO_HOME/
 ├── projects/workspaces.json                    # Workspace registry
 ├── projects/icons/                             # Custom project icon images
 ├── schedules/                                  # Scheduled-agent definitions and runs
+├── uploads/{YYYY-MM-DD}/{file name}            # Chat uploads and pasted pictures (see below)
 ├── config.json                                 # Daemon config (mutable)
 ├── daemon-keypair.json                         # Daemon identity for relay/E2EE
 ├── push-tokens.json                            # Mobile push tokens
@@ -492,6 +493,12 @@ $PASEO_HOME/
 The supervisor alone publishes its ready worker's endpoint in `paseo.pid`, clears it before respawn, and fails if any worker exits before first readiness. CLI home selection trusts only that live record; config expresses desired state, never an endpoint fallback. POSIX home stop signals the captured supervisor without TCP. Windows graceful stop and ordinary RPCs trust the published endpoint. This metadata is not cryptographic listener ownership: edited endpoints, copied identities, PID reuse, and address takeover races remain outside that guarantee. A stale heartbeat never permits reclaiming a live lock.
 
 Worker restart retains supervisor arguments/environment and rereads the configuration file. Updating a package and observing its new worker version do not refresh the running supervisor code; the launcher owns full-process replacement. See [CLI lifecycle contracts](../public-docs/cli.md#daemon-management).
+
+### Uploads
+
+Every file a user attaches lands at `uploads/<YYYY-MM-DD>/<name>` (host local date, original name sanitized). A name taken that day becomes `name-2.ext`, `name-3.ext`; a file is never overwritten. The upload id is that path relative to `uploads/`; draft sync and `files.copies` address uploads by id, so go through `file-upload/upload-location.ts` rather than joining paths. Pasted pictures arrive as base64, which providers take as is, so the daemon also writes each to `image-<N>.<ext>` (N is its `[Image #N]` label) before the prompt reaches any provider, and the prompt note reads `[Image #N]: <absolute path>`.
+
+Why short, readable paths: users ask agents to save an upload into a project weeks later, and a random folder name in the path pollutes the agent's context. Uploads are never pruned. Older `upload_<uuid>/<name>` folders keep working. File-copy uploads (`.paseo-file-copy`) stay in that older layout because the copy flow deletes the whole folder.
 
 ## Outbound networking
 
