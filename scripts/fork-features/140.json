@@ -6,6 +6,7 @@
     "packages/app/src/attachments/image-codec.native.test.ts",
     "packages/app/src/attachments/image-codec.browser.test.ts",
     "packages/app/src/attachments/service.test.ts",
-    "packages/app/src/composer/attachments/submit.test.ts"
+    "packages/app/src/composer/attachments/submit.test.ts",
+    "packages/app/src/attachments/workspace-file.test.ts"
   ]
 }
