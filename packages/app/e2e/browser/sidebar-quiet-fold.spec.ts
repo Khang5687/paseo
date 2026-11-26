@@ -124,8 +124,9 @@ test.describe("Quiet projects fold into More", () => {
 
         await more.tap();
         await expect(more).toHaveAttribute("aria-expanded", "true");
-        await expect(stripItem(page, "chip", quiet)).toBeInViewport();
-        await expect(more).toBeInViewport();
+        // Whole chips, not a sliver at the edge: the row has finished scrolling to them.
+        await expect(stripItem(page, "chip", quiet)).toBeInViewport({ ratio: 1 });
+        await expect(more).toBeInViewport({ ratio: 1 });
         await expect(stripItem(page, "chip", background)).toHaveCount(0);
         await page.screenshot({ path: test.info().outputPath("compact-quiet-open.png") });
       } finally {
