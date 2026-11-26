@@ -35,7 +35,6 @@ import { useSidebarQuietFoldStore } from "@/stores/sidebar-quiet-fold-store";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
-import { getStatusDotColor } from "@/utils/status-dot-color";
 import { resolveSidebarProjectIconTargets } from "@/utils/sidebar-project-row-model";
 import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
 import {
@@ -689,7 +688,8 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.full,
-    backgroundColor: getStatusDotColor({ theme, bucket: "needs_input" }) ?? theme.colors.accent,
+    // The palette purple, as on the New main agent dot: the strip badge is not the orange status dot.
+    backgroundColor: theme.colors.palette.purple[500],
   },
   needsInputBadgeFloating: {
     position: "absolute",
