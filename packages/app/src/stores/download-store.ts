@@ -2,9 +2,11 @@ import { create } from "zustand";
 import * as LegacyFileSystem from "expo-file-system/legacy";
 import { saveBrowserFile } from "@/downloads/browser-download";
 import { resolveDownloadTargetFile } from "@/downloads/cache-file";
+import { readSavedContent } from "@/downloads/saved-content";
 import { saveFile } from "@/downloads/save-file";
 import { shareSavedFile } from "@/downloads/share-file";
 import type { SaveOutcome, SavePreferences } from "@/downloads/types";
+import type { OfflineSaveProgress, OfflineSaveResult } from "@/offline-files/saver";
 import type { HostProfile } from "@/types/host-connection";
 import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
 import { isWeb } from "@/constants/platform";
@@ -18,14 +20,60 @@ interface DownloadProgress {
   eta: number;
 }
 
-// The session path holds the file in memory two to three times over (client chunks, the
-// concatenated result, then the Blob or native write). Lift once the client streams chunks to disk.
-export const MAX_SESSION_DOWNLOAD_BYTES = 64 * 1024 * 1024;
+/** A transfer under this size finishes before a progress bar would help, so it gets none. */
+const TRANSFER_PROGRESS_MIN_BYTES = 5 * 1024 * 1024;
 
 export interface DownloadedBytes {
   bytes: Uint8Array;
   fileName: string;
   mimeType: string | null;
+}
+
+function addDownloadEntry(input: { serverId: string; scopeId: string; fileName: string }): string {
+  const id = generateDownloadId();
+  const download: Download = { id, ...input, status: "downloading", startedAt: Date.now() };
+  useDownloadStore.setState((state) => ({
+    downloads: new Map(state.downloads).set(id, download),
+    activeDownloadId: id,
+  }));
+  return id;
+}
+
+function toProgress(startedAt: number, received: number, total: number): DownloadProgress {
+  const elapsed = (Date.now() - startedAt) / 1000;
+  const speed = elapsed > 0 ? received / elapsed : 0;
+  return {
+    percent: total > 0 ? received / total : 0,
+    bytesWritten: received,
+    totalBytes: total,
+    speed,
+    eta: speed > 0 ? (total - received) / speed : 0,
+  };
+}
+
+/**
+ * Shows the download toast, with percent, speed and time left, while `run` copies a big file.
+ * A file under a few MB never gets one. The toast goes when `run` ends; the caller reports the
+ * result its own way.
+ */
+export async function withTransferProgress<T>(
+  input: { serverId: string; scopeId: string; fileName: string },
+  run: (onProgress: OfflineSaveProgress) => Promise<T>,
+): Promise<T> {
+  let id: string | null = null;
+  const startedAt = Date.now();
+  try {
+    return await run((received, total) => {
+      if (id === null && total >= TRANSFER_PROGRESS_MIN_BYTES) {
+        id = addDownloadEntry(input);
+      }
+      if (id !== null) {
+        useDownloadStore.getState().updateProgress(id, toProgress(startedAt, received, total));
+      }
+    });
+  } finally {
+    if (id !== null) useDownloadStore.getState().dismissDownload(id);
+  }
 }
 
 export interface Download {
@@ -62,11 +110,15 @@ interface DownloadState {
       size: number | null;
       error: string | null;
     }>;
-    /** Reads the whole file over the session socket; used when no direct HTTP endpoint is active. */
-    readFile: (path: string, maxBytes: number) => Promise<{ bytes: Uint8Array; size: number }>;
+    /**
+     * Copies the file to this device's Saved library, over the session socket, in chunks. The
+     * download is delivered from that copy, so a file of any allowed size never sits whole in memory.
+     */
+    saveCopy: (onProgress?: OfflineSaveProgress) => Promise<OfflineSaveResult>;
     /** Where the owner wants the file; read from settings when the download starts. */
     destination: SavePreferences;
     saveFile?: typeof saveFile;
+    readSaved?: typeof readSavedContent;
     fetchFile?: typeof fetch;
   }) => Promise<void>;
 
@@ -93,25 +145,13 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
     daemonProfile,
     activeConnectionId,
     requestFileDownloadToken,
-    readFile,
+    saveCopy,
     destination,
     saveFile: save = saveFile,
+    readSaved = readSavedContent,
     fetchFile = fetch,
   }) => {
-    const id = generateDownloadId();
-    const download: Download = {
-      id,
-      serverId,
-      scopeId,
-      fileName,
-      status: "downloading",
-      startedAt: Date.now(),
-    };
-
-    set((state) => ({
-      downloads: new Map(state.downloads).set(id, download),
-      activeDownloadId: id,
-    }));
+    const id = addDownloadEntry({ serverId, scopeId, fileName });
 
     try {
       const tokenResponse = await requestFileDownloadToken(path);
@@ -122,28 +162,27 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       const resolvedFileName = tokenResponse.fileName ?? fileName;
       const downloadTarget = resolveDaemonDownloadTarget(daemonProfile, activeConnectionId);
       if (!downloadTarget) {
-        // Relay, SSH, socket and pipe hosts have no HTTP endpoint: read the file over the
-        // session socket that is already connected (#543).
-        if (
-          typeof tokenResponse.size === "number" &&
-          tokenResponse.size > MAX_SESSION_DOWNLOAD_BYTES
-        ) {
+        // Relay, SSH, socket and pipe hosts have no HTTP endpoint: copy the file over the
+        // session socket that is already connected (#543), then deliver the saved copy.
+        const startedAt = Date.now();
+        const result = await saveCopy((received, total) =>
+          get().updateProgress(id, toProgress(startedAt, received, total)),
+        );
+        if (result.status === "tooLarge") {
           throw new Error(
-            i18n.t("composer.errors.fileTooLarge", { fileName: resolvedFileName, size: "64 MB" }),
+            i18n.t("composer.errors.fileTooLarge", {
+              fileName: resolvedFileName,
+              size: `${result.maxFileMb} MB`,
+            }),
           );
         }
-        const { bytes, size } = await readFile(path, MAX_SESSION_DOWNLOAD_BYTES);
-        // A daemon without a binary channel answers `encoding: "none"` for a binary file: no
-        // content, real size. Never save that as a complete download.
-        if (bytes.byteLength !== size) {
-          throw new Error(
-            `File transfer incomplete: expected ${size} bytes, received ${bytes.byteLength}.`,
-          );
+        if (result.status === "failed") {
+          throw new Error(result.error);
         }
         get().completeDownload(
           id,
           await save({
-            content: bytes,
+            content: await readSaved(result.file, resolvedFileName),
             fileName: resolvedFileName,
             mimeType: tokenResponse.mimeType,
             preferences: destination,
@@ -154,6 +193,8 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       if (!downloadTarget.baseUrl) {
         throw new Error(i18n.t("downloads.hostUnavailable"));
       }
+      // The file also goes to the Saved library, so it opens later with the host asleep.
+      void saveCopy();
 
       const downloadUrl = buildDownloadUrl(downloadTarget.baseUrl, tokenResponse.token);
 

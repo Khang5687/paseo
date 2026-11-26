@@ -25,6 +25,11 @@ function storedContentFontSize(storage: Storage): number | undefined {
   return raw === undefined ? undefined : JSON.parse(raw).contentFontSize;
 }
 
+function storedOfflineTotal(storage: Storage): number | undefined {
+  const raw = storage.entries.get(APP_SETTINGS_KEY);
+  return raw === undefined ? undefined : JSON.parse(raw).offlineFilesMaxTotalMb;
+}
+
 /** An in-memory storage whose write to `failingKey` always throws, as a full disk would. */
 function createFailingWriteStorage(failingKey: string): Storage {
   const storage = createInMemoryKeyValueStorage();
@@ -45,7 +50,7 @@ describe("migrateAppSettings", () => {
 
     expect(result.sendBehavior).toBe("steer");
     expect(storedSendBehavior(storage)).toBe("steer");
-    expect(appliedIds(storage)).toEqual(["steer-default"]);
+    expect(appliedIds(storage)).toEqual(["steer-default", "offline-total-2gb"]);
   });
 
   it("leaves interrupt alone once the migration has run", async () => {
@@ -64,7 +69,7 @@ describe("migrateAppSettings", () => {
 
     expect(result.sendBehavior).toBe("queue");
     expect(storage.entries.has(APP_SETTINGS_KEY)).toBe(false);
-    expect(appliedIds(storage)).toEqual(["steer-default"]);
+    expect(appliedIds(storage)).toEqual(["steer-default", "offline-total-2gb"]);
   });
 
   it("marks itself applied on a fresh install without rewriting settings", async () => {
@@ -73,7 +78,7 @@ describe("migrateAppSettings", () => {
     await migrateAppSettings(settingsWith("steer"), storage);
 
     expect(storage.entries.has(APP_SETTINGS_KEY)).toBe(false);
-    expect(appliedIds(storage)).toEqual(["steer-default"]);
+    expect(appliedIds(storage)).toEqual(["steer-default", "offline-total-2gb"]);
   });
 
   it("keeps unknown migration ids written by a newer client", async () => {
@@ -83,7 +88,11 @@ describe("migrateAppSettings", () => {
 
     await migrateAppSettings(settingsWith("interrupt"), storage);
 
-    expect(appliedIds(storage)).toEqual(["some-later-migration", "steer-default"]);
+    expect(appliedIds(storage)).toEqual([
+      "some-later-migration",
+      "steer-default",
+      "offline-total-2gb",
+    ]);
   });
 
   it("migrates every mobile 15px content preference to 16px", async () => {
@@ -94,7 +103,11 @@ describe("migrateAppSettings", () => {
 
     expect(result.contentFontSize).toBe(16);
     expect(storedContentFontSize(storage)).toBe(16);
-    expect(appliedIds(storage)).toEqual(["steer-default", "mobile-content-16"]);
+    expect(appliedIds(storage)).toEqual([
+      "steer-default",
+      "mobile-content-16",
+      "offline-total-2gb",
+    ]);
   });
 
   it("leaves a 15px web content preference unchanged", async () => {
@@ -105,7 +118,7 @@ describe("migrateAppSettings", () => {
 
     expect(result.contentFontSize).toBe(15);
     expect(storedContentFontSize(storage)).toBeUndefined();
-    expect(appliedIds(storage)).toEqual(["steer-default"]);
+    expect(appliedIds(storage)).toEqual(["steer-default", "offline-total-2gb"]);
   });
 
   it("lets a mobile user choose 15px after the default migration ran", async () => {
@@ -127,6 +140,42 @@ describe("migrateAppSettings", () => {
     expect(result.contentFontSize).toBe(15);
   });
 
+  it("moves a stored 500 MB Saved total to the 2 GB default", async () => {
+    const storage = createInMemoryKeyValueStorage();
+
+    const result = await migrateAppSettings(
+      { ...settingsWith("steer"), offlineFilesMaxTotalMb: 500 },
+      storage,
+    );
+
+    expect(result.offlineFilesMaxTotalMb).toBe(2048);
+    expect(storedOfflineTotal(storage)).toBe(2048);
+  });
+
+  it("keeps any other stored Saved total", async () => {
+    const storage = createInMemoryKeyValueStorage();
+
+    const result = await migrateAppSettings(
+      { ...settingsWith("steer"), offlineFilesMaxTotalMb: 300 },
+      storage,
+    );
+
+    expect(result.offlineFilesMaxTotalMb).toBe(300);
+    expect(storage.entries.has(APP_SETTINGS_KEY)).toBe(false);
+  });
+
+  it("lets a user choose 500 MB after the Saved total migration ran", async () => {
+    const storage = createInMemoryKeyValueStorage();
+    await migrateAppSettings({ ...settingsWith("steer"), offlineFilesMaxTotalMb: 500 }, storage);
+
+    const result = await migrateAppSettings(
+      { ...settingsWith("steer"), offlineFilesMaxTotalMb: 500 },
+      storage,
+    );
+
+    expect(result.offlineFilesMaxTotalMb).toBe(500);
+  });
+
   it("stays unmarked when the settings write fails, so a later launch retries", async () => {
     const storage = createFailingWriteStorage(APP_SETTINGS_KEY);
 
@@ -144,6 +193,6 @@ describe("migrateAppSettings", () => {
     const result = await migrateAppSettings(settingsWith("steer"), recovered);
 
     expect(result.sendBehavior).toBe("steer");
-    expect(appliedIds(recovered)).toEqual(["steer-default"]);
+    expect(appliedIds(recovered)).toEqual(["steer-default", "offline-total-2gb"]);
   });
 });

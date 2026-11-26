@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { readValidatedJson } from "@/storage/validated-storage";
 import { APP_SETTINGS_KEY, SETTINGS_MIGRATIONS_KEY } from "./keys";
-import type { AppSettings, KeyValueStorage, PersistedAppSettings } from "./storage";
+import {
+  OFFLINE_FILE_LIMITS,
+  type AppSettings,
+  type KeyValueStorage,
+  type PersistedAppSettings,
+} from "./storage";
 
 const AppliedMigrationsSchema = z.strictObject({ applied: z.array(z.string()) });
 
@@ -15,6 +20,14 @@ const STEER_DEFAULT_MIGRATION = "steer-default";
 
 /** Existing mobile installs materialized the old 15px content default in storage. */
 const MOBILE_CONTENT_16_MIGRATION = "mobile-content-16";
+
+/**
+ * The Saved library total defaulted to 500 MB and, like every default, was materialized into
+ * storage on first load, so a stored 500 cannot be told apart from a deliberate one. This moves
+ * every stored 500 to the new 2 GB default exactly once; picking 500 afterwards sticks.
+ */
+const OFFLINE_TOTAL_2GB_MIGRATION = "offline-total-2gb";
+const OLD_OFFLINE_TOTAL_MB = 500;
 
 /**
  * Brings stored settings up to date, returning what the caller should use. Owns both writes so
@@ -47,6 +60,15 @@ export async function migrateAppSettings(
   if (options.native && !applied.has(MOBILE_CONTENT_16_MIGRATION)) {
     migrated = migrated.contentFontSize === 15 ? { ...migrated, contentFontSize: 16 } : migrated;
     applied.add(MOBILE_CONTENT_16_MIGRATION);
+    addedMigration = true;
+  }
+
+  if (!applied.has(OFFLINE_TOTAL_2GB_MIGRATION)) {
+    migrated =
+      migrated.offlineFilesMaxTotalMb === OLD_OFFLINE_TOTAL_MB
+        ? { ...migrated, offlineFilesMaxTotalMb: OFFLINE_FILE_LIMITS.maxTotalMb.default }
+        : migrated;
+    applied.add(OFFLINE_TOTAL_2GB_MIGRATION);
     addedMigration = true;
   }
 

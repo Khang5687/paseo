@@ -1203,5 +1203,22 @@
     "title": "fix(app): purple waiting badge on the project strip",
     "tests": ["packages/app/src/components/sidebar/project-strip-model.test.ts"],
     "e2e": ["packages/app/e2e/browser/sidebar-project-strip.spec.ts"]
+  },
+  {
+    "pr": 156,
+    "title": "feat(app): save big files up to 500 MB without holding them in memory",
+    "tests": [
+      "packages/client/src/daemon-client.test.ts",
+      "packages/app/src/offline-files/saver.test.ts",
+      "packages/app/src/hooks/use-settings/migrations.test.ts",
+      "packages/app/src/stores/download-store.test.ts",
+      "packages/app/src/send-to/open-sent-file.test.ts",
+      "packages/app/src/attachments/web/indexeddb-attachment-store.test.ts",
+      "packages/app/src/attachments/local-file-attachment-store.test.ts",
+      "packages/app/src/desktop/attachments/desktop-attachment-store.test.ts",
+      "packages/desktop/src/features/attachments.test.ts",
+      "packages/desktop/src/features/file-save.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/big-file-save.spec.ts"]
   }
 ]

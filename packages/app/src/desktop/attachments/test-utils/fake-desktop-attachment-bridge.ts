@@ -70,6 +70,25 @@ export function createFakeDesktopAttachmentBridge(): FakeDesktopAttachmentBridge
         source: { kind: "bytes", bytes },
       });
     },
+    async appendBytes({ attachmentId, bytes, extension, reset }) {
+      const path = buildPath(attachmentId, extension);
+      const existing = reset ? undefined : savedEntries.find((entry) => entry.path === path);
+      if (existing && existing.source.kind === "bytes") {
+        const joined = new Uint8Array(existing.source.bytes.byteLength + bytes.byteLength);
+        joined.set(existing.source.bytes);
+        joined.set(bytes, existing.source.bytes.byteLength);
+        existing.source = { kind: "bytes", bytes: joined };
+        existing.byteSize = joined.byteLength;
+        return { path, byteSize: joined.byteLength };
+      }
+      return record({
+        attachmentId,
+        path,
+        byteSize: bytes.byteLength,
+        extension: extension ?? null,
+        source: { kind: "bytes", bytes },
+      });
+    },
     async deleteFile({ path }) {
       deletedPaths.push(path);
       return true;

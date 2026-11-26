@@ -4075,6 +4075,185 @@ test("readFile resolves from binary file frames when the daemon supports them", 
   expect(new TextDecoder().decode(result.bytes)).toBe("hello");
 });
 
+async function connectedFileClient(clientId: string) {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId,
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+  return { client, mock };
+}
+
+/** The request id the client generated for its first sent file read. */
+function sentRequestId(frame: unknown): string {
+  const parsed: unknown = JSON.parse(assertStr(frame));
+  if (typeof parsed === "object" && parsed !== null && "message" in parsed) {
+    const { message } = parsed;
+    if (typeof message === "object" && message !== null && "requestId" in message) {
+      if (typeof message.requestId === "string") return message.requestId;
+    }
+  }
+  throw new Error("The sent frame has no request id.");
+}
+
+test("readFileToSink streams a file past the old 64 MB cap without collecting it", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_big");
+  const total = 100 * 1024 * 1024;
+  const chunk = new Uint8Array(256 * 1024).fill(7);
+  const events: string[] = [];
+  let received = 0;
+  let progress = 0;
+
+  const responsePromise = client.readFileToSink(
+    "/tmp/project",
+    "big.bin",
+    {
+      begin: (meta) => {
+        events.push(`begin:${meta.size}`);
+      },
+      write: (bytes) => {
+        received += bytes.byteLength;
+      },
+    },
+    { timeout: 0, onProgress: (bytes) => (progress = bytes) },
+  );
+  const requestId = sentRequestId(mock.sent[0]);
+
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId,
+      metadata: { mime: "video/mp4", size: total, encoding: "binary", modifiedAt: "2026-05-02" },
+    }),
+  );
+  for (let sent = 0; sent < total; sent += chunk.byteLength) {
+    mock.triggerMessage(
+      encodeFileTransferFrame({ opcode: FileTransferOpcode.FileChunk, requestId, payload: chunk }),
+    );
+  }
+  mock.triggerMessage(encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }));
+
+  const meta = await responsePromise;
+  expect(events).toEqual([`begin:${total}`]);
+  expect(received).toBe(total);
+  expect(progress).toBe(total);
+  expect(meta).toMatchObject({ mime: "video/mp4", size: total, path: "big.bin" });
+  expect(meta).not.toHaveProperty("bytes");
+});
+
+test("readFileToSink rejects when the sink fails and ignores the frames after it", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_fail");
+  let writes = 0;
+
+  const responsePromise = client.readFileToSink("/tmp/project", "full.bin", {
+    write: () => {
+      writes += 1;
+      throw new Error("Disk full");
+    },
+  });
+  const rejection = expect(responsePromise).rejects.toThrow("Disk full");
+  const requestId = sentRequestId(mock.sent[0]);
+
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId,
+      metadata: {
+        mime: "application/octet-stream",
+        size: 6,
+        encoding: "binary",
+        modifiedAt: "2026-05-02",
+      },
+    }),
+  );
+  const payload = new Uint8Array(3);
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileChunk, requestId, payload }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileChunk, requestId, payload }),
+  );
+  mock.triggerMessage(encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }));
+
+  await rejection;
+  expect(writes).toBe(1);
+});
+
+test("readFileToSink gives a daemon without the binary channel the file in one write", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_legacy");
+  const written: string[] = [];
+
+  const responsePromise = client.readFileToSink("/tmp/project", "logo.png", {
+    write: (bytes) => {
+      written.push(new TextDecoder().decode(bytes));
+    },
+  });
+  const requestId = sentRequestId(mock.sent[0]);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "file_explorer_response",
+      payload: {
+        cwd: "/tmp/project",
+        path: "logo.png",
+        mode: "file",
+        directory: null,
+        file: {
+          path: "logo.png",
+          kind: "image",
+          encoding: "base64",
+          content: "aGVsbG8=",
+          mimeType: "image/png",
+          size: 5,
+          modifiedAt: "2026-05-02T00:00:00.000Z",
+        },
+        error: null,
+        requestId,
+      },
+    }),
+  );
+
+  await expect(responsePromise).resolves.toMatchObject({ size: 5, kind: "image" });
+  expect(written).toEqual(["hello"]);
+});
+
+test("readFileToSink refuses a binary file a legacy daemon answered with no content", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_none");
+  const responsePromise = client.readFileToSink("/tmp/project", "clip.bin", { write: () => {} });
+  const requestId = sentRequestId(mock.sent[0]);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "file_explorer_response",
+      payload: {
+        cwd: "/tmp/project",
+        path: "clip.bin",
+        mode: "file",
+        directory: null,
+        file: {
+          path: "clip.bin",
+          kind: "binary",
+          encoding: "none",
+          mimeType: "application/octet-stream",
+          size: 6,
+          modifiedAt: "2026-05-02T00:00:00.000Z",
+        },
+        error: null,
+        requestId,
+      },
+    }),
+  );
+
+  await expect(responsePromise).rejects.toThrow(
+    "File transfer incomplete: expected 6 bytes, received 0.",
+  );
+});
+
 test("readFile drops an old daemon's over-budget binary chunks and reports the refusal", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({

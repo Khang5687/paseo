@@ -2,11 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { defaultHostAppearance } from "@/hosts/appearance";
 import { i18n } from "@/i18n/i18next";
 import type { SaveOutcome, SaveRequest } from "@/downloads/types";
-import {
-  MAX_SESSION_DOWNLOAD_BYTES,
-  useDownloadStore,
-  type Download,
-} from "@/stores/download-store";
+import type { OfflineSaveProgress, OfflineSaveResult } from "@/offline-files/saver";
+import type { OfflineFile } from "@/offline-files/store";
+import { useDownloadStore, type Download } from "@/stores/download-store";
 import type {
   DirectTcpHostConnection,
   HostProfile,
@@ -62,14 +60,40 @@ function createTokenRequest(size: number | null = FILE_BYTES.byteLength) {
   };
 }
 
-function createFileReader(read: () => Promise<{ bytes: Uint8Array; size: number }>) {
-  const requested: string[] = [];
+const SAVED_FILE: OfflineFile = {
+  serverId: "srv_remote",
+  path: FILE_PATH,
+  size: FILE_BYTES.byteLength,
+  modifiedAt: "2026-01-01T00:00:00Z",
+  revision: "r1",
+  kind: "binary",
+  mimeType: MIME_TYPE,
+  savedAt: 1,
+  pinned: true,
+  attachment: {
+    id: "att-1",
+    mimeType: MIME_TYPE,
+    storageType: "web-indexeddb",
+    storageKey: "att-1",
+    createdAt: 1,
+  },
+};
+const SAVED_CONTENT = { managedPath: "/managed/attachments/att-1.bin" };
+
+function createSavedCopy(
+  run: (onProgress?: OfflineSaveProgress) => Promise<OfflineSaveResult> = async () => ({
+    status: "saved",
+    file: SAVED_FILE,
+  }),
+) {
+  const requests: number[] = [];
   return {
-    requested,
-    read: async (path: string) => {
-      requested.push(path);
-      return read();
+    requests,
+    saveCopy: async (onProgress?: OfflineSaveProgress) => {
+      requests.push(requests.length);
+      return run(onProgress);
     },
+    readSaved: async () => SAVED_CONTENT,
   };
 }
 
@@ -90,16 +114,14 @@ interface StartInput {
   profile: HostProfile;
   activeConnectionId: string | null;
   token?: ReturnType<typeof createTokenRequest>;
-  reader?: ReturnType<typeof createFileReader>;
+  copy?: ReturnType<typeof createSavedCopy>;
   saver?: ReturnType<typeof createFileSaver>;
   fetchFile?: typeof fetch;
 }
 
 async function startDownload(input: StartInput): Promise<Download | undefined> {
   const token = input.token ?? createTokenRequest();
-  const reader =
-    input.reader ??
-    createFileReader(async () => ({ bytes: FILE_BYTES, size: FILE_BYTES.byteLength }));
+  const copy = input.copy ?? createSavedCopy();
   const saver = input.saver ?? createFileSaver();
   await useDownloadStore.getState().startDownload({
     serverId: "srv_remote",
@@ -109,7 +131,8 @@ async function startDownload(input: StartInput): Promise<Download | undefined> {
     daemonProfile: input.profile,
     activeConnectionId: input.activeConnectionId,
     requestFileDownloadToken: token.request,
-    readFile: reader.read,
+    saveCopy: copy.saveCopy,
+    readSaved: copy.readSaved,
     destination: ASK_EVERY_TIME,
     saveFile: saver.save,
     fetchFile: input.fetchFile ?? (async () => new Response(FILE_BYTES)),
@@ -125,55 +148,24 @@ describe("download store transport selection", () => {
 
   it("downloads over the session when the active connection is the relay", async () => {
     const token = createTokenRequest();
-    const reader = createFileReader(async () => ({
-      bytes: FILE_BYTES,
-      size: FILE_BYTES.byteLength,
-    }));
+    const copy = createSavedCopy();
     const saver = createFileSaver();
 
     const download = await startDownload({
       profile: profileWith([relayConnection]),
       activeConnectionId: relayConnection.id,
       token,
-      reader,
+      copy,
       saver,
     });
 
     expect(download).toMatchObject({ fileName: FILE_NAME, status: "complete" });
     expect(token.requested).toEqual([FILE_PATH]);
-    expect(reader.requested).toEqual([FILE_PATH]);
+    // One transfer into Saved; the download is delivered from that copy, not read twice.
+    expect(copy.requests).toHaveLength(1);
     expect(saver.savedFiles).toEqual([
       {
-        content: FILE_BYTES,
-        fileName: FILE_NAME,
-        mimeType: MIME_TYPE,
-        preferences: ASK_EVERY_TIME,
-      },
-    ]);
-  });
-
-  it("bounds the session read even when the token reports a smaller file", async () => {
-    const readRequests: Array<{ path: string; maxBytes: number }> = [];
-    const saver = createFileSaver();
-    await useDownloadStore.getState().startDownload({
-      serverId: "srv_remote",
-      scopeId: "workspace-1",
-      fileName: FILE_NAME,
-      path: FILE_PATH,
-      daemonProfile: profileWith([relayConnection]),
-      activeConnectionId: relayConnection.id,
-      requestFileDownloadToken: createTokenRequest(1).request,
-      readFile: async (path: string, maxBytes: number) => {
-        readRequests.push({ path, maxBytes });
-        return { bytes: FILE_BYTES, size: FILE_BYTES.byteLength };
-      },
-      destination: ASK_EVERY_TIME,
-      saveFile: saver.save,
-    });
-    expect(readRequests).toEqual([{ path: FILE_PATH, maxBytes: MAX_SESSION_DOWNLOAD_BYTES }]);
-    expect(saver.savedFiles).toEqual([
-      {
-        content: FILE_BYTES,
+        content: SAVED_CONTENT,
         fileName: FILE_NAME,
         mimeType: MIME_TYPE,
         preferences: ASK_EVERY_TIME,
@@ -182,43 +174,38 @@ describe("download store transport selection", () => {
   });
 
   it("ignores a directTcp entry that is not the active connection", async () => {
-    const reader = createFileReader(async () => ({
-      bytes: FILE_BYTES,
-      size: FILE_BYTES.byteLength,
-    }));
+    const copy = createSavedCopy();
     const saver = createFileSaver();
 
     const download = await startDownload({
       profile: profileWith([staleTcpConnection, relayConnection]),
       activeConnectionId: relayConnection.id,
-      reader,
+      copy,
       saver,
     });
 
     expect(download).toMatchObject({ status: "complete" });
-    expect(reader.requested).toEqual([FILE_PATH]);
+    expect(copy.requests).toHaveLength(1);
     expect(saver.savedFiles).toHaveLength(1);
   });
 
   it("keeps the HTTP token download when the active connection is directTcp", async () => {
-    const reader = createFileReader(async () => ({
-      bytes: FILE_BYTES,
-      size: FILE_BYTES.byteLength,
-    }));
+    const copy = createSavedCopy();
     const saver = createFileSaver();
 
     const download = await startDownload({
       profile: profileWith([localTcpConnection, relayConnection]),
       activeConnectionId: localTcpConnection.id,
-      reader,
+      copy,
       saver,
     });
 
     expect(download).toMatchObject({ status: "complete" });
-    expect(reader.requested).toEqual([]);
     // The HTTP route hands the fetched file to the same saver, as a Blob.
     expect(saver.savedFiles).toHaveLength(1);
     expect(saver.savedFiles[0]?.content).toBeInstanceOf(Blob);
+    // The file also goes to Saved, in the background.
+    expect(copy.requests).toHaveLength(1);
   });
 
   it("fails with the HTTP status when a proxy in front of the host rejects the download", async () => {
@@ -272,16 +259,13 @@ describe("download store transport selection", () => {
     expect(saver.savedFiles).toEqual([]);
   });
 
-  it("fails the download and saves nothing when the session read fails", async () => {
-    const reader = createFileReader(async () => {
-      throw new Error("Connection lost");
-    });
+  it("fails the download and saves nothing when the session copy fails", async () => {
     const saver = createFileSaver();
 
     const download = await startDownload({
       profile: profileWith([relayConnection]),
       activeConnectionId: relayConnection.id,
-      reader,
+      copy: createSavedCopy(async () => ({ status: "failed", error: "Connection lost" })),
       saver,
     });
 
@@ -289,47 +273,39 @@ describe("download store transport selection", () => {
     expect(saver.savedFiles).toEqual([]);
   });
 
-  it("refuses a file over the session size limit before reading it", async () => {
-    const token = createTokenRequest(MAX_SESSION_DOWNLOAD_BYTES + 1);
-    const reader = createFileReader(async () => ({
-      bytes: FILE_BYTES,
-      size: FILE_BYTES.byteLength,
-    }));
+  it("names the limit when the file is too big to keep", async () => {
     const saver = createFileSaver();
-
     const download = await startDownload({
       profile: profileWith([relayConnection]),
       activeConnectionId: relayConnection.id,
-      token,
-      reader,
+      copy: createSavedCopy(async () => ({ status: "tooLarge", maxFileMb: 500 })),
       saver,
     });
 
     expect(download).toMatchObject({
       status: "error",
-      message: i18n.t("composer.errors.fileTooLarge", { fileName: FILE_NAME, size: "64 MB" }),
+      message: i18n.t("composer.errors.fileTooLarge", { fileName: FILE_NAME, size: "500 MB" }),
     });
-    expect(download?.message).toContain("64 MB");
-    expect(reader.requested).toEqual([]);
     expect(saver.savedFiles).toEqual([]);
   });
 
-  it("fails instead of saving an empty file when the daemon returns no content", async () => {
-    const reader = createFileReader(async () => ({ bytes: new Uint8Array(), size: 6 }));
-    const saver = createFileSaver();
+  it("shows progress while a session copy arrives", async () => {
+    const seen: Array<Download["progress"]> = [];
+    const copy = createSavedCopy(async (onProgress) => {
+      onProgress?.(250, 1000);
+      const { activeDownloadId, downloads } = useDownloadStore.getState();
+      seen.push(activeDownloadId ? downloads.get(activeDownloadId)?.progress : undefined);
+      return { status: "saved", file: SAVED_FILE };
+    });
 
     const download = await startDownload({
       profile: profileWith([relayConnection]),
       activeConnectionId: relayConnection.id,
-      reader,
-      saver,
+      copy,
     });
 
-    expect(download).toMatchObject({
-      status: "error",
-      message: "File transfer incomplete: expected 6 bytes, received 0.",
-    });
-    expect(saver.savedFiles).toEqual([]);
+    expect(seen[0]).toMatchObject({ percent: 0.25, bytesWritten: 250, totalBytes: 1000 });
+    expect(download).toMatchObject({ status: "complete" });
   });
 
   it("reports where the file went and how to show it", async () => {

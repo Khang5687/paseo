@@ -7,6 +7,7 @@ import { useToast } from "@/contexts/toast-context";
 import { addSavedFile } from "@/offline-files/saver";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
+import { withTransferProgress } from "@/stores/download-store";
 import { buildSavedFileRoute } from "@/utils/host-routes";
 import { fileNameOf } from "./model";
 import { openSentFile, type OpenSentFileDeps } from "./open-sent-file";
@@ -29,7 +30,11 @@ async function waitForHost(serverId: string): Promise<boolean> {
 
 const deps: OpenSentFileDeps = {
   waitForHost,
-  save: ({ serverId, path }) => addSavedFile({ serverId, path }),
+  save: ({ serverId, path }) =>
+    withTransferProgress(
+      { serverId, scopeId: serverId, fileName: fileNameOf(path) },
+      (onProgress) => addSavedFile({ serverId, path, onProgress }),
+    ),
   openSaved: (target) => router.navigate(buildSavedFileRoute(target)),
 };
 

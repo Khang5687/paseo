@@ -179,12 +179,31 @@ export interface GarbageCollectInput {
 }
 
 /**
+ * Writes one attachment from chunks as they arrive, so a big file never sits in memory whole.
+ * The attachment can be read only after `finish`.
+ */
+export interface AttachmentWriter {
+  readonly id: string;
+  write(chunk: Uint8Array): Promise<void>;
+  finish(): Promise<AttachmentMetadata>;
+  /** Drops what was written so far. */
+  abort(): Promise<void>;
+}
+
+export interface OpenAttachmentWriterInput {
+  id?: string;
+  mimeType?: string;
+  fileName?: string | null;
+}
+
+/**
  * Async storage contract for attachment bytes.
  * Metadata is persisted in drafts/messages; bytes live in platform stores.
  */
 export interface AttachmentStore {
   readonly storageType: AttachmentStorageType;
   save(input: SaveAttachmentInput): Promise<AttachmentMetadata>;
+  openWriter(input: OpenAttachmentWriterInput): Promise<AttachmentWriter>;
   encodeBase64(input: EncodeAttachmentInput): Promise<string>;
   resolvePreviewUrl(input: ResolvePreviewUrlInput): Promise<string>;
   releasePreviewUrl?(input: ReleasePreviewUrlInput): Promise<void>;

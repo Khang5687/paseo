@@ -161,30 +161,57 @@ export async function findOfflineFiles(input: {
   return matchOfflineFiles(await load(), input);
 }
 
-export function saveOfflineFile(input: {
+interface SaveOfflineFileInput {
   serverId: string;
   path: string;
   version: OfflineFileVersion & { kind: OfflineFile["kind"]; mimeType: string };
-  bytes: Uint8Array;
   limits: OfflineFileLimits;
   /** Saved on purpose. A copy pinned once stays pinned when it is refreshed. */
   pinned?: boolean;
-}): Promise<OfflineFile> {
-  // The collector keeps ids in the index; hold the new one until the index has it.
-  let release = () => {};
-  return mutate(async (current) => {
-    const attachment = await persistAttachmentFromBytes({
+}
+
+export function saveOfflineFile(
+  input: SaveOfflineFileInput & { bytes: Uint8Array },
+): Promise<OfflineFile> {
+  return commitOfflineFile(input, input.bytes.byteLength, () =>
+    persistAttachmentFromBytes({
       bytes: input.bytes,
       mimeType: input.version.mimeType,
       fileName: getFileNameFromPath(input.path),
-    });
+    }),
+  );
+}
+
+/**
+ * Saves a copy whose bytes are already in the attachment store, written there in chunks. The
+ * caller holds the attachment against garbage collection until this settles.
+ */
+export function saveOfflineAttachment(
+  input: SaveOfflineFileInput & { attachment: AttachmentMetadata },
+): Promise<OfflineFile> {
+  return commitOfflineFile(
+    input,
+    input.attachment.byteSize ?? input.version.size,
+    async () => input.attachment,
+  );
+}
+
+function commitOfflineFile(
+  input: SaveOfflineFileInput,
+  size: number,
+  getAttachment: () => Promise<AttachmentMetadata>,
+): Promise<OfflineFile> {
+  // The collector keeps ids in the index; hold the new one until the index has it.
+  let release = () => {};
+  return mutate(async (current) => {
+    const attachment = await getAttachment();
     release = retainAttachmentForGarbageCollection(attachment.id);
     const replaced = current.filter((entry) => sameFile(entry, input.serverId, input.path));
     const others = current.filter((entry) => !sameFile(entry, input.serverId, input.path));
     const saved: OfflineFile = {
       serverId: input.serverId,
       path: input.path,
-      size: input.bytes.byteLength,
+      size,
       modifiedAt: input.version.modifiedAt,
       revision: input.version.revision,
       kind: input.version.kind,

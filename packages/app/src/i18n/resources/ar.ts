@@ -2266,7 +2266,8 @@ export const ar: TranslationResources = {
     },
     maxFileMb: {
       label: "أكبر ملف (ميغابايت)",
-      description: "لا تُحفظ الملفات الأكبر.",
+      description:
+        "لا تُحفظ الملفات الأكبر تلقائيًا. الملف الذي تحفظه بنفسك يمكن أن يصل إلى 500 ميغابايت.",
     },
     saved: {
       label_one: "المحفوظ: {{count}} ملف، {{size}}",

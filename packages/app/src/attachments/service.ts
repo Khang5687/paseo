@@ -3,7 +3,12 @@ import { getAttachmentStore } from "@/attachments/store";
 import { downscaleAttachmentForSend } from "@/attachments/image-codec";
 import type { EncodedImage } from "@/attachments/image-codec.types";
 import { assertAttachmentsFitMessage } from "@/attachments/message-size";
-import type { AttachmentMetadata, SaveAttachmentInput } from "@/attachments/types";
+import type {
+  AttachmentMetadata,
+  AttachmentWriter,
+  OpenAttachmentWriterInput,
+  SaveAttachmentInput,
+} from "@/attachments/types";
 
 const activePersistence = new Set<Promise<AttachmentMetadata>>();
 const persistedDuringGarbageCollection = new Set<string>();
@@ -146,6 +151,17 @@ export async function encodeAttachmentsForSend(
   const valid = encoded.filter((entry): entry is EncodedImage => entry !== null);
   assertAttachmentsFitMessage(valid);
   return valid.length > 0 ? valid : undefined;
+}
+
+/**
+ * Opens a writer for a file that arrives in chunks. Hold `retainAttachmentForGarbageCollection`
+ * on `writer.id` until the attachment is referenced, or a collection can drop the partial file.
+ */
+export async function openAttachmentWriter(
+  input: OpenAttachmentWriterInput,
+): Promise<AttachmentWriter> {
+  const store = await getAttachmentStore();
+  return await store.openWriter(input);
 }
 
 export async function readAttachmentBytes(attachment: AttachmentMetadata): Promise<Uint8Array> {

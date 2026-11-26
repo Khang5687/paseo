@@ -2287,7 +2287,8 @@ export const ja: TranslationResources = {
     },
     maxFileMb: {
       label: "最大ファイルサイズ（MB）",
-      description: "これより大きいファイルは保存しません。",
+      description:
+        "これより大きいファイルは自動では保存しません。自分で保存するファイルは最大500 MBまでです。",
     },
     saved: {
       label_one: "保存済み: {{count}} ファイル、{{size}}",
