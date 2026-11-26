@@ -172,6 +172,32 @@ PASEO_PROFILE_BUILD=1 npm run android:production
 Those markers emit only while a system trace records `sh.paseo` (`perfetto -a sh.paseo ...`);
 they do not produce Downloads files.
 
+### Finding a launch freeze
+
+A JS thread that hangs at launch looks like a network fault: the app shows "Connecting", ignores
+taps, and the daemon logs `relay_data_connected` followed 15 s later by
+`relay_e2ee_handshake_timeout_terminating`, because the app never sends its hello. Check the app
+before the relay.
+
+1. Reproduce on an x86_64 emulator with an x86_64 build. An arm64 APK does not start there
+   (`couldn't find DSO to load: libreactnative.so`). From `packages/app/android`:
+   `APP_VARIANT=development ./gradlew assembleRelease -PreactNativeArchitectures=x86_64`.
+2. Freezes often need the phone's saved state: several hosts, two or more projects (the sidebar
+   chip row shows), one host offline. Set that up through the app, then snapshot the data on a
+   `google_apis` image: `adb root`, then
+   `adb shell "cd /data/data && tar czf /data/local/tmp/app.tgz sh.paseo.debug"`. Restoring that
+   file (`chown` to the app user, `restorecon -R`) replays the launch in seconds, and deleting rows
+   from `databases/RKStorage` or `files/SQLite/paseo-replica-row-store.db` bisects the trigger.
+3. `adb logcat -d | grep -E "lowmemorykiller|Abort message"` tells a memory runaway from a plain
+   hang. A tombstone stack in `mqt_v_js` names the native call but not the JS caller.
+4. For the JS caller, start Hermes' sampling profiler from `MainApplication.onCreate` in a
+   throwaway build: on a background thread, call
+   `HermesSamplingProfiler.enable()` and then `dumpSampledTraceToFile("$filesDir/trace-N.cpuprofile")`
+   every few seconds. The newest file's samples hold function names. Do not commit it.
+
+The chip row freeze found this way is under Integration rules in
+[mobile-panels.md](mobile-panels.md#integration-rules).
+
 ## Running on an emulator against a worktree daemon
 
 `npm run android` builds and installs the dev client, but two connections have to reach your Mac from inside the emulator — Metro (the JS bundle) and the Paseo daemon — and **the emulator does not share the host's loopback**: `localhost` inside the emulator is the emulator itself. Reach the host at `10.0.2.2` (the standard AVD's host alias) for both:

@@ -1,0 +1,6 @@
+{
+  "pr": 165,
+  "title": "fix(app): stop the Android launch freeze from the sidebar chip row",
+  "untested": "native-only: the gesture-handler config reaches Android's createGestureHandler, which no vitest or web e2e runs; checked by launching an x86_64 release build on an emulator with two projects (PR body, docs/android.md Finding a launch freeze)",
+  "tests": []
+}
