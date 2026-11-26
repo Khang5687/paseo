@@ -11,6 +11,7 @@ import { DensityIcon } from "@/components/ui/density-icon";
 import { useIconButtonChromeStyle } from "@/components/ui/icon-button-chrome";
 import { MenuCheckboxItem, MenuSubTrigger, type MenuPageDefinition } from "@/components/ui/menu";
 import { isWeb } from "@/constants/platform";
+import { swallowTouchRelease } from "@/components/sidebar/swallow-touch-release";
 import {
   PLUGIN_SIDEBAR_NAV_ICON,
   sidebarNavItemIcon,
@@ -70,12 +71,14 @@ function SidebarNavIconTrigger({
   nativeID,
   accessibilityLabel,
 }: Omit<SidebarNavIconButtonProps, "row">): ReactElement {
-  const menu = useContextMenu();
+  const { setOpen } = useContextMenu();
   const chromeStyle = useIconButtonChromeStyle({ size: "large", round: true, active: isActive });
   // ContextMenuTrigger opens on right click on web and on long press natively. A phone browser
   // gets no right click, so the web trigger opens on long press as well.
-  const { setOpen } = menu;
-  const handleWebLongPress = useCallback(() => setOpen(true), [setOpen]);
+  const handleWebLongPress = useCallback(() => {
+    swallowTouchRelease();
+    setOpen(true);
+  }, [setOpen]);
   const accessibilityState = useMemo(() => ({ selected: isActive }), [isActive]);
   return (
     <ContextMenuTrigger

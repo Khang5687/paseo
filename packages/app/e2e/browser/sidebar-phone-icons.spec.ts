@@ -39,12 +39,13 @@ async function longPress(page: Page, target: Locator): Promise<void> {
 interface Seeded {
   full: SeededWorkspace;
   empty: SeededWorkspace;
+  agentId: string;
 }
 
 // One project with a chat, one whose only workspace is archived so it is empty.
 async function seedProjects(): Promise<Seeded> {
   const full = await seedWorkspace({ repoPrefix: "phone-icons-full-", title: "Full work" });
-  await createMockIdleAgent(full.client, {
+  const agent = await createMockIdleAgent(full.client, {
     cwd: full.workspaceDirectory,
     workspaceId: full.workspaceId,
     title: "Phone icons chat",
@@ -52,7 +53,11 @@ async function seedProjects(): Promise<Seeded> {
   const empty = await seedWorkspace({ repoPrefix: "phone-icons-empty-", title: "Empty work" });
   const archived = await empty.client.archiveWorkspace(empty.workspaceId);
   if (archived.error) throw new Error(archived.error);
-  return { full, empty };
+  return { full, empty, agentId: agent.id };
+}
+
+function clipboardReader(page: Page): () => Promise<string> {
+  return () => page.evaluate(() => navigator.clipboard.readText());
 }
 
 function ghostRow(page: Page, project: SeededWorkspace): Locator {
@@ -80,8 +85,10 @@ test.describe("Phone sidebar icon row at phone width", () => {
   test.use({ viewport: PHONE, isMobile: true, hasTouch: true });
 
   test("shows icon buttons, names one on long press, and lets the user show Notes again", async ({
+    context,
     page,
   }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await gotoAppShell(page);
     await page.getByRole("button", { name: "Open menu", exact: true }).tap();
     await waitForSidebarHydration(page);
@@ -106,21 +113,24 @@ test.describe("Phone sidebar icon row at phone width", () => {
       await expect(page.getByTestId(`sidebar-workspace-row-${key}`)).toBeVisible();
       await expect(page.getByTestId(`sidebar-workspace-copy-agent-id-${key}`)).toHaveCount(0);
       await page.getByTestId(`sidebar-workspace-kebab-${key}`).tap();
-      await expect(page.getByTestId(`sidebar-workspace-menu-copy-agent-id-${key}`)).toBeVisible();
+      const copyItem = page.getByTestId(`sidebar-workspace-menu-copy-agent-id-${key}`);
+      await expect(copyItem).toBeVisible();
       await page.waitForTimeout(600);
       await saveScreenshot(page, "phone-icons-chat-menu");
-      await page.keyboard.press("Escape");
-      await expect(page.getByTestId(`sidebar-workspace-menu-copy-agent-id-${key}`)).toHaveCount(0);
+      await copyItem.tap();
+      await expect.poll(clipboardReader(page)).toBe(seeded.agentId);
+      await expect(copyItem).toHaveCount(0);
     });
 
     await test.step("a long press names the button and opens Buttons to show", async () => {
       await longPress(page, iconRow.getByTestId("sidebar-sessions"));
-      const menu = page.getByTestId("sidebar-sessions-menu");
-      await expect(menu).toBeVisible();
-      await expect(menu.getByText("History", { exact: true })).toBeVisible();
-      await page.waitForTimeout(600);
+      // The sheet is titled with the button's name and stays open once the finger lifts.
+      const openButtons = page.getByTestId("sidebar-nav-buttons-open");
+      await expect(openButtons).toBeInViewport({ ratio: 1 });
+      await expect(page.getByText("History", { exact: true })).toBeVisible();
       await saveScreenshot(page, "phone-icons-long-press");
-      await page.getByTestId("sidebar-nav-buttons-open").tap();
+      await openButtons.tap();
+      const done = page.getByTestId("sidebar-nav-buttons-done");
       const notesItem = page.getByTestId("sidebar-nav-buttons-item-notes");
       await expect(notesItem).toBeVisible();
       await expect(notesItem).toHaveAttribute("aria-checked", "false");
@@ -129,9 +139,11 @@ test.describe("Phone sidebar icon row at phone width", () => {
       await notesItem.tap();
       await expect(notesItem).toHaveAttribute("aria-checked", "true");
       await saveScreenshot(page, "phone-icons-buttons-notes-on");
-      await page.getByTestId("sidebar-nav-buttons-done").tap();
-      await expect(menu).toHaveCount(0);
+      await done.tap();
+      await expect(done).toHaveCount(0);
+      await expect(openButtons).not.toBeInViewport();
       await expect(iconRow.getByTestId("sidebar-notes")).toBeVisible();
+      await page.waitForTimeout(400);
       await saveScreenshot(page, "phone-icons-row-with-notes");
     });
 
