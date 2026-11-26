@@ -73,8 +73,14 @@ export function builtinSidebarNavShortcutAction(id: BuiltinSidebarItemId): strin
   return BUILTIN_SHORTCUT_ACTIONS[id];
 }
 
-function builtinVisibleByDefault(_id: BuiltinSidebarItemId): boolean {
-  return true;
+/**
+ * Keys the compact layout hides until the user ticks them, so the phone's icon row starts with
+ * the buttons people use. Only the default changes: a stored preference always wins.
+ */
+const COMPACT_HIDDEN_BY_DEFAULT: ReadonlySet<string> = new Set(["notes"]);
+
+function visibleByDefault(key: string, compact: boolean): boolean {
+  return !(compact && COMPACT_HIDDEN_BY_DEFAULT.has(key));
 }
 
 export function pluginSidebarNavKey(
@@ -95,7 +101,10 @@ export function resolveSidebarNavItems<Section extends SidebarSection>(input: {
   section: Section;
   pluginGroups: readonly PluginSidebarGroup[];
   preferences: readonly SidebarNavPreference[];
+  /** The compact (phone) layout, whose defaults hide `COMPACT_HIDDEN_BY_DEFAULT`. */
+  compact?: boolean;
 }): SidebarNavItem<Section>[] {
+  const compact = input.compact ?? false;
   const builtinIds: readonly BuiltinSidebarItemId<Section>[] =
     BUILTIN_SIDEBAR_ITEM_IDS[input.section];
   const groupsByKey = new Map(
@@ -127,12 +136,12 @@ export function resolveSidebarNavItems<Section extends SidebarSection>(input: {
       kind: "builtin",
       key: id,
       id,
-      visible: builtinVisibleByDefault(id),
+      visible: visibleByDefault(id, compact),
     });
   }
   for (const [key, group] of groupsByKey) {
     if (placed.has(key)) continue;
-    items.push({ kind: "plugin", key, group, visible: true });
+    items.push({ kind: "plugin", key, group, visible: visibleByDefault(key, compact) });
   }
   return items;
 }

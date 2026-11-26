@@ -42,6 +42,7 @@ import {
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
+import { useIsCompactFormFactor } from "@/constants/layout";
 
 const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
@@ -605,7 +606,10 @@ export function SidebarWorkspaceTrailingActionOverlay({
   /** Fade the row into the actions when something (the diff stat) is still rendered behind it. */
   scrimBackdrop?: SidebarSurfaceBackdrop;
   workspaceKey: string;
-  /** With both set, shows the copy-agent-id button first, ahead of the archive button. */
+  /**
+   * With both set, shows the copy-agent-id button first, ahead of the archive button. Not on the
+   * compact layout: there the row's ⋮ menu carries Copy agent ID, which keeps phone rows light.
+   */
   serverId?: string;
   workspaceId?: string;
   /**
@@ -615,8 +619,9 @@ export function SidebarWorkspaceTrailingActionOverlay({
   onArchiveButtonPress?: () => void;
   children: ReactNode;
 }) {
+  const isCompact = useIsCompactFormFactor();
   if (!visible || !children) return null;
-  const showCopyAgentId = serverId !== undefined && workspaceId !== undefined;
+  const showCopyAgentId = serverId !== undefined && workspaceId !== undefined && !isCompact;
   return (
     <>
       {scrimBackdrop ? (

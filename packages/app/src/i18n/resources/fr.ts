@@ -1355,6 +1355,10 @@ export const fr: TranslationResources = {
       nextWaiting: "Suivant en attente · {{count}}",
       quietMore: "Plus · {{count}} au calme",
     },
+    navButtons: {
+      title: "Boutons affichés",
+      done: "Terminé",
+    },
     view: {
       failed: "Impossible de charger la vue de la barre latérale.",
       useDefault: "Utiliser la vue par défaut",

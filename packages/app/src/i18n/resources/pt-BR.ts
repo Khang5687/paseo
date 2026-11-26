@@ -1352,6 +1352,10 @@ export const ptBR: TranslationResources = {
       nextWaiting: "Próximo aguardando · {{count}}",
       quietMore: "Mais · {{count}} parados",
     },
+    navButtons: {
+      title: "Botões visíveis",
+      done: "Concluído",
+    },
     view: {
       failed: "Não foi possível carregar a visualização da barra lateral.",
       useDefault: "Usar visualização padrão",

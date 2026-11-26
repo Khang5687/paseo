@@ -7,6 +7,10 @@ import { DensityIcon } from "@/components/ui/density-icon";
 import { Shortcut } from "@/components/ui/shortcut";
 import { density, densityIconBox } from "@/styles/density";
 import type { ShortcutKey } from "@/utils/format-shortcut";
+import {
+  SidebarNavIconButton,
+  useSidebarNavIconRow,
+} from "@/components/sidebar/sidebar-nav-icon-button";
 
 type SidebarHeaderRowVariant = "header" | "compact" | "inline";
 
@@ -39,7 +43,28 @@ interface SidebarHeaderRowProps {
   rowRef?: Ref<View>;
 }
 
-export function SidebarHeaderRow({
+export function SidebarHeaderRow(props: SidebarHeaderRowProps) {
+  const iconRow = useSidebarNavIconRow();
+  // Inside the phone's icon row a header-group row is one round button; its trailing content
+  // (shortcut hints, plugin trailing slots) has no room there.
+  if (iconRow && props.variant === "compact") {
+    return (
+      <SidebarNavIconButton
+        row={iconRow}
+        icon={props.icon}
+        label={props.label}
+        onPress={props.onPress}
+        isActive={props.isActive ?? false}
+        testID={props.testID}
+        nativeID={props.nativeID}
+        accessibilityLabel={props.accessibilityLabel}
+      />
+    );
+  }
+  return <SidebarHeaderFullRow {...props} />;
+}
+
+function SidebarHeaderFullRow({
   icon,
   label,
   onPress,

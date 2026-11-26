@@ -73,7 +73,7 @@ test.describe("Sidebar workspace copy agent ID", () => {
   test.describe("compact layout", () => {
     test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-    test("copies the agent id by tap, from the visible button and from the menu", async ({
+    test("copies the agent id by tap from the menu; the row has no copy button", async ({
       context,
       page,
     }) => {
@@ -90,15 +90,12 @@ test.describe("Sidebar workspace copy agent ID", () => {
         await waitForSidebarHydration(page);
 
         const key = workspaceKey(workspace);
-        const copyButton = page.getByTestId(`sidebar-workspace-copy-agent-id-${key}`);
-        await expect(copyButton).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByTestId(`sidebar-workspace-row-${key}`)).toBeVisible({
+          timeout: 30_000,
+        });
+        await expect(page.getByTestId(`sidebar-workspace-copy-agent-id-${key}`)).toHaveCount(0);
         await saveScreenshot(page, "copy-agent-id-compact-sidebar");
 
-        await copyButton.tap();
-        await expectClipboard(page, agent.id);
-        await expect(page.getByText(`Copied Agent ID ${agent.id.slice(0, 7)}`)).toBeVisible();
-
-        await clearClipboard(page);
         await page.getByTestId(`sidebar-workspace-kebab-${key}`).tap();
         const item = page.getByTestId(`sidebar-workspace-menu-copy-agent-id-${key}`);
         await expect(item).toBeVisible();

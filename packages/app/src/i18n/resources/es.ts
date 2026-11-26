@@ -1363,6 +1363,10 @@ export const es: TranslationResources = {
       nextWaiting: "Siguiente en espera · {{count}}",
       quietMore: "Más · {{count}} en calma",
     },
+    navButtons: {
+      title: "Botones visibles",
+      done: "Listo",
+    },
     view: {
       failed: "No se pudo cargar la vista de la barra lateral.",
       useDefault: "Usar vista predeterminada",

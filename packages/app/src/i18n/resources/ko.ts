@@ -1333,6 +1333,10 @@ export const ko: TranslationResources = {
       nextWaiting: "다음 대기 중 · {{count}}",
       quietMore: "더 보기 · 조용한 {{count}}개",
     },
+    navButtons: {
+      title: "표시할 버튼",
+      done: "완료",
+    },
     view: {
       failed: "사이드바 보기를 불러오지 못했습니다.",
       useDefault: "기본 보기 사용",

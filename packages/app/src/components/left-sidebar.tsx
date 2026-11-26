@@ -56,7 +56,11 @@ import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-pref
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarToastRegion } from "@/components/sidebar/sidebar-toast-region";
 import { SidebarSelectionHost } from "@/sidebar-selection";
-import { SidebarNavRows, useVisibleSidebarNavItems } from "@/components/sidebar/sidebar-nav-rows";
+import {
+  SidebarNavIconRow,
+  SidebarNavRows,
+  useVisibleSidebarNavItems,
+} from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarFooterIconHighlight } from "@/components/sidebar/sidebar-footer-icon-highlight";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
 import { SidebarFooterOverflowMenu } from "@/components/sidebar/sidebar-footer-overflow-menu";
@@ -643,11 +647,9 @@ function MobileSidebar({
   );
 
   const navRows = (
-    <SidebarNavRows
-      style={styles.mobileNavRowsGroup}
-      onBeforeNavigate={closeSidebar}
-      firstRowTrailing={closeButton}
-    />
+    <View style={styles.mobileNavRowsGroup}>
+      <SidebarNavIconRow onBeforeNavigate={closeSidebar} trailing={closeButton} />
+    </View>
   );
 
   return (

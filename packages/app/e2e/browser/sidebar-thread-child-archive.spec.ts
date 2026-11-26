@@ -35,9 +35,10 @@ test("a subagent row archives from its kebab menu after confirming", async ({ pa
     await page.getByTestId(`sidebar-thread-children-toggle-${parentKey}`).tap({ timeout: 30_000 });
     const childRow = page.getByTestId(`sidebar-thread-child-paseo-${pair.child.id}`);
     await expect(childRow).toBeVisible();
+    // Phone rows carry no copy-agent-ID icon; Copy agent ID lives in the kebab menu.
     await expect(
       page.getByTestId(`sidebar-thread-child-copy-agent-id-${pair.child.id}`),
-    ).toBeVisible();
+    ).toHaveCount(0);
 
     await page.getByTestId(`sidebar-thread-child-kebab-${pair.child.id}`).tap();
     const item = page.getByTestId(`sidebar-thread-child-menu-archive-${pair.child.id}`);

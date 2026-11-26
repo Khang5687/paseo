@@ -1325,6 +1325,10 @@ export const ar: TranslationResources = {
       nextWaiting: "التالي بانتظارك · {{count}}",
       quietMore: "المزيد · هادئة: {{count}}",
     },
+    navButtons: {
+      title: "الأزرار المعروضة",
+      done: "تم",
+    },
     view: {
       failed: "تعذر تحميل عرض الشريط الجانبي.",
       useDefault: "استخدام العرض الافتراضي",

@@ -1,10 +1,20 @@
 import { router, usePathname } from "expo-router";
 import { CalendarClock, History, NotebookPen, Plus, Search } from "lucide-react-native";
-import { memo, useCallback, useMemo, useRef, type ComponentType, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  type ComponentType,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { View, type StyleProp, type ViewStyle } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
+import { SidebarNavIconRowContext } from "@/components/sidebar/sidebar-nav-icon-button";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { PluginSidebarItem } from "@/plugins/sidebar-items";
 import { canCreateWorktreeForProjectKind } from "@/projects/host-projects";
@@ -13,6 +23,7 @@ import {
   builtinSidebarNavLabelKey,
   builtinSidebarNavShortcutAction,
   type BuiltinSidebarNavId,
+  type SidebarNavItem,
 } from "@/sidebar-nav/model";
 import { useSidebarNavItems } from "@/sidebar-nav/use-sidebar-nav-items";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
@@ -32,8 +43,6 @@ interface SidebarNavRowProps {
 interface SidebarNavRowsProps extends SidebarNavRowProps {
   /** Style for the group wrapper, which the sidebar owns. */
   style?: StyleProp<ViewStyle>;
-  /** Sits to the right of the first row, which shrinks to make room. */
-  firstRowTrailing?: ReactNode;
 }
 
 /** The top-level items the user keeps visible, in display order. */
@@ -42,45 +51,67 @@ export function useVisibleSidebarNavItems() {
   return useMemo(() => items.filter((item) => item.visible), [items]);
 }
 
+function renderNavItem(
+  item: SidebarNavItem<"header">,
+  groupRef: RefObject<View | null>,
+  onBeforeNavigate: (() => void) | undefined,
+): ReactElement {
+  if (item.kind === "plugin") {
+    return (
+      <PluginSidebarItem
+        key={item.key}
+        group={item.group}
+        section="header"
+        fallbackAnchorRef={groupRef}
+        onBeforeNavigate={onBeforeNavigate}
+      />
+    );
+  }
+  const Row = BUILTIN_ROWS[item.id];
+  return <Row key={item.key} onBeforeNavigate={onBeforeNavigate} />;
+}
+
 /**
  * Top-level sidebar navigation, ordered and filtered by the user's
  * `sidebarNavItems` preference. Renders nothing — not even the bordered group
- * wrapper — when every item is hidden and there is no `firstRowTrailing`.
+ * wrapper — when every item is hidden.
  */
-export function SidebarNavRows({ style, onBeforeNavigate, firstRowTrailing }: SidebarNavRowsProps) {
+export function SidebarNavRows({ style, onBeforeNavigate }: SidebarNavRowsProps) {
   const visibleItems = useVisibleSidebarNavItems();
   const groupRef = useRef<View | null>(null);
 
-  if (visibleItems.length === 0 && !firstRowTrailing) return null;
-
-  const [firstRow, ...restRows] = visibleItems.map((item) => {
-    if (item.kind === "plugin") {
-      return (
-        <PluginSidebarItem
-          key={item.key}
-          group={item.group}
-          section="header"
-          fallbackAnchorRef={groupRef}
-          onBeforeNavigate={onBeforeNavigate}
-        />
-      );
-    }
-    const Row = BUILTIN_ROWS[item.id];
-    return <Row key={item.key} onBeforeNavigate={onBeforeNavigate} />;
-  });
+  if (visibleItems.length === 0) return null;
 
   return (
     <View ref={groupRef} collapsable={false} style={style}>
-      {firstRowTrailing ? (
-        <View style={styles.firstRow}>
-          <View style={styles.firstRowItem}>{firstRow}</View>
-          {firstRowTrailing}
-        </View>
-      ) : (
-        firstRow
-      )}
-      {restRows}
+      {visibleItems.map((item) => renderNavItem(item, groupRef, onBeforeNavigate))}
     </View>
+  );
+}
+
+/**
+ * The compact layout's top navigation: the same items as `SidebarNavRows`, drawn as one row of
+ * round icon buttons with `trailing` (the close button) at the right. Long-pressing a button
+ * names it and leads to the list where the user picks which buttons show.
+ */
+export function SidebarNavIconRow({
+  onBeforeNavigate,
+  trailing,
+}: SidebarNavRowProps & { trailing: ReactNode }) {
+  const { items, setVisible } = useSidebarNavItems("header");
+  const visibleItems = useMemo(() => items.filter((item) => item.visible), [items]);
+  const groupRef = useRef<View | null>(null);
+  const iconRow = useMemo(() => ({ items, setVisible }), [items, setVisible]);
+
+  return (
+    <SidebarNavIconRowContext.Provider value={iconRow}>
+      <View style={styles.iconRow} testID="sidebar-nav-icon-row">
+        <View ref={groupRef} collapsable={false} style={styles.iconRowButtons}>
+          {visibleItems.map((item) => renderNavItem(item, groupRef, onBeforeNavigate))}
+        </View>
+        {trailing}
+      </View>
+    </SidebarNavIconRowContext.Provider>
   );
 }
 
@@ -219,13 +250,18 @@ const BUILTIN_ROWS: Record<BuiltinSidebarNavId, ComponentType<SidebarNavRowProps
   notes: SidebarNotesRow,
 };
 
-const styles = StyleSheet.create({
-  firstRow: {
+const styles = StyleSheet.create((theme) => ({
+  iconRow: {
     flexDirection: "row",
-    alignItems: "center",
+    // With more buttons than fit, they wrap; the close button stays on the first line.
+    alignItems: "flex-start",
+    paddingLeft: theme.spacing[2],
   },
-  firstRowItem: {
+  iconRowButtons: {
     flex: 1,
     minWidth: 0,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
   },
-});
+}));
