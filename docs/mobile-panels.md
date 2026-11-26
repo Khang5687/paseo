@@ -118,6 +118,13 @@ definition, no longer eligible to begin.
 - Keep `SidebarModelProvider` outside `MobileGestureWrapper`. The provider shares sidebar derivation
   across consumers, while Gesture Handler requires the wrapper's direct child to be a native `View`
   so its injected `collapsable={false}` reaches Android/Fabric.
+- Relate a scroller to a panel gesture through a gesture object: wrap it in a `GestureDetector`
+  with `Gesture.Native()` and `blocksExternalGesture`, `requireExternalGestureToFail`, or
+  `simultaneousWithExternalGesture`. Gesture Handler's component props convert only
+  `simultaneousHandlers` and `waitFor` to handler tags. `blocksHandlers` reaches native as is: the
+  sidebar chip row passed the close pan's ref through it, Android copied the whole gesture into the
+  handler config, and the app ran out of memory at launch with its JS thread stuck in
+  `createGestureHandler`.
 - Sidebars render through `MobilePanelOverlay`; do not duplicate overlay lifecycle or motion styles
   in sidebar components. The wide left sidebar keeps the same content and gesture hosts when switching
   between dock and overlay. App chrome owns mounting and presentation; settled panel activity owns

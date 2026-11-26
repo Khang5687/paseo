@@ -2,7 +2,7 @@ import { Ellipsis, LayoutGrid } from "lucide-react-native";
 import { memo, type ReactNode, type RefObject, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ScrollView, Text, View } from "react-native";
-import { type GestureType, ScrollView as GHScrollView } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { DraggableList, DraggableListHandle } from "@/components/draggable-list";
 import type { DraggableRenderItemInfo } from "@/components/draggable-list.types";
@@ -410,6 +410,14 @@ export function SidebarProjectChipRow({
   const model = useProjectStripModel();
   const showNumbers = useShowProjectShortcutBadges();
   const clearProjectFilters = useSidebarViewStore((state) => state.clearProjectFilters);
+  // The close pan waits for this scroll to fail, so a sideways drag on the chips scrolls them
+  // instead of closing the sidebar. The relation lives on a Native gesture: the gesture-handler
+  // ScrollView's blocksHandlers prop reaches native unconverted, and copying the close pan's ref
+  // through it ran Android out of memory at launch.
+  const chipScrollGesture = useMemo(
+    () => Gesture.Native().blocksExternalGesture(closeGestureRef),
+    [closeGestureRef],
+  );
 
   if (!model) return null;
 
@@ -442,6 +450,16 @@ export function SidebarProjectChipRow({
     </>
   );
 
+  const chipScroll = (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.chipRowContent}
+    >
+      {chips}
+    </ScrollView>
+  );
+
   return (
     <View
       style={styles.chipRowContainer}
@@ -450,24 +468,9 @@ export function SidebarProjectChipRow({
       testID="sidebar-project-chip-row"
     >
       {platformIsNative ? (
-        <GHScrollView
-          horizontal
-          // The close pan waits for this scroll to fail, so a sideways drag on the
-          // chips scrolls them instead of closing the sidebar.
-          blocksHandlers={closeGestureRef}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRowContent}
-        >
-          {chips}
-        </GHScrollView>
+        <GestureDetector gesture={chipScrollGesture}>{chipScroll}</GestureDetector>
       ) : (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRowContent}
-        >
-          {chips}
-        </ScrollView>
+        chipScroll
       )}
     </View>
   );
