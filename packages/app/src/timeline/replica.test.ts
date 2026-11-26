@@ -237,6 +237,7 @@ describe("viewed timeline persistence", () => {
       replica,
       replaceDemandedAgentIds: () => undefined,
       drainQueuedAgentMessage: () => undefined,
+      liveScope: "opened",
       applyTurnLiveness: () => undefined,
       ports: {
         canCheckFreshness: () => false,
