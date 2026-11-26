@@ -1186,5 +1186,11 @@
       "packages/app/src/send-to/open-sent-file.test.ts",
       "packages/app/src/notification-open/model.test.ts"
     ]
+  },
+  {
+    "pr": 155,
+    "title": "fix(app): purple waiting badge on the project strip",
+    "tests": ["packages/app/src/components/sidebar/project-strip-model.test.ts"],
+    "e2e": ["packages/app/e2e/browser/sidebar-project-strip.spec.ts"]
   }
 ]
