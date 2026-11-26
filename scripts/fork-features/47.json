@@ -1,0 +1,12 @@
+{
+  "pr": 47,
+  "title": "fix: show OMP account routing section before any OMP agent runs",
+  "tests": [
+    "packages/app/src/omp-account-routing/presentation.test.ts",
+    "packages/server/src/server/account-routing/authority.test.ts",
+    "packages/server/src/server/account-routing/probe.test.ts",
+    "packages/server/src/server/account-routing/routing.integration.test.ts",
+    "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
+}

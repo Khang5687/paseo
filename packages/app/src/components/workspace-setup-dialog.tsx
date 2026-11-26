@@ -30,6 +30,7 @@ import {
   resolveComposerAttachmentSubmitFormat,
   splitComposerAttachmentsForSubmit,
 } from "@/composer/attachments/submit";
+import { matchEncodedImageRefs } from "@/composer/attachments/inline-refs";
 import type {
   CreateAgentRequestOptions,
   DaemonClient,
@@ -344,6 +345,11 @@ export function WorkspaceSetupDialog() {
           agent: {
             ...agentInput,
             clientMessageId: `${pendingWorkspaceSetup.creationId}:initial-message`,
+            attachmentRefs: matchEncodedImageRefs(
+              wirePayload.attachmentRefs,
+              encodedImages,
+              wirePayload.images,
+            ),
           },
           onAgentCreated: (value) => {
             createdAgent = value;

@@ -6,8 +6,11 @@ import {
   consumeForcedTimelineTailReplacement,
   createViewedTimelineSync,
   FRESHNESS_CHECK_QUIET_MS,
+  resolveLiveTimelineAgentIds,
+  type TimelineLiveScope,
   type TimelineResponsePayload,
   type ViewedTimelineStatus,
+  type ViewedTimelineSync,
   type ViewedTimelineSyncPorts,
 } from "./viewed-timeline-sync";
 
@@ -128,6 +131,59 @@ test("switching chats promotes the newly visible catch-up while another visible 
   world.sync.dispose();
 });
 
+test("live subscriptions follow the platform scope", () => {
+  const chats = { openedAgentIds: ["a-earlier", "b-tab"], visibleAgentIds: ["c-shown"] };
+
+  expect({
+    desktop: resolveLiveTimelineAgentIds({ scope: "opened", active: true, ...chats }),
+    desktopHidden: resolveLiveTimelineAgentIds({ scope: "opened", active: false, ...chats }),
+    phone: resolveLiveTimelineAgentIds({ scope: "visible", active: true, ...chats }),
+    phoneBackgrounded: resolveLiveTimelineAgentIds({ scope: "visible", active: false, ...chats }),
+  }).toEqual({
+    desktop: ["a-earlier", "b-tab", "c-shown"],
+    desktopHidden: ["a-earlier", "b-tab", "c-shown"],
+    phone: ["c-shown"],
+    phoneBackgrounded: [],
+  });
+});
+
+test("on phones, leaving a chat unsubscribes it and returning resumes after its cursor", async () => {
+  const world = new TimelineWorld(undefined, false, "visible");
+  world.sync.setConnected(true);
+  world.show("pane", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({ hasNewer: false, seq: 7 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.cursors.set("agent-a", { epoch: "epoch-agent-a", endSeq: 7 });
+
+  world.show("pane", ["agent-b"]);
+  const switched = await world.nextMembership();
+  switched.succeed();
+  (await world.nextFetch("agent-b")).respond({ hasNewer: false });
+
+  world.show("pane", ["agent-a"]);
+  const returned = await world.nextMembership();
+  returned.succeed();
+  const resume = await world.nextFetch("agent-a");
+  resume.respond({ hasNewer: false, seq: 9 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+
+  expect({
+    switched: switched.agentIds,
+    returned: returned.agentIds,
+    resume: resume.request,
+  }).toEqual({
+    switched: ["agent-b"],
+    returned: ["agent-a"],
+    resume: expect.objectContaining({
+      direction: "after",
+      cursor: { epoch: "epoch-agent-a", seq: 7 },
+    }),
+  });
+  world.expectNoPendingFetch();
+  world.sync.dispose();
+});
+
 test("reconnect drains hidden chats two at a time after the visible chat settles", async () => {
   const world = new TimelineWorld();
   const hidden = Array.from({ length: 15 }, (_, index) => `hidden-${10 + index}`);
@@ -165,6 +221,46 @@ test("reconnect drains hidden chats two at a time after the visible chat settles
   world.sync.dispose();
 });
 
+test("on phones, backgrounding drops every subscription and foregrounding catches the shown chat up", async () => {
+  const world = new TimelineWorld(undefined, false, "visible");
+  world.sync.setConnected(true);
+  world.show("pane", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({ hasNewer: false, seq: 3 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.cursors.set("agent-a", { epoch: "epoch-agent-a", endSeq: 3 });
+  const reportedBeforeBackground = world.reportedCurrent.length;
+
+  world.sync.setActive(false);
+  const background = await world.nextMembership();
+  background.succeed();
+  world.expectNoPendingFetch();
+  // Backgrounding keeps the catch-up obligation, unlike navigating away.
+  expect(world.reportedCurrent.slice(reportedBeforeBackground)).toEqual([]);
+
+  world.sync.setActive(true);
+  const foreground = await world.nextMembership();
+  foreground.succeed();
+  const resume = await world.nextFetch("agent-a");
+  resume.respond({ hasNewer: false, seq: 5 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+
+  expect({
+    background: background.agentIds,
+    foreground: foreground.agentIds,
+    resume: resume.request,
+  }).toEqual({
+    background: [],
+    foreground: ["agent-a"],
+    resume: expect.objectContaining({
+      direction: "after",
+      cursor: { epoch: "epoch-agent-a", seq: 3 },
+    }),
+  });
+  world.expectNoPendingFetch();
+  world.sync.dispose();
+});
+
 test("focusing a queued chat starts it while both hidden catch-ups are running", async () => {
   const world = new TimelineWorld();
   world.openedEarlier(["hidden-a", "hidden-b", "next-visible"]);
@@ -186,10 +282,17 @@ test("focusing a queued chat starts it while both hidden catch-ups are running",
 });
 
 class TimelineWorld {
+  readonly sync: ViewedTimelineSync;
+
   constructor(
     private readonly observeMembership?: ViewedTimelineSyncPorts["observe"],
     private readonly checksFreshness = false,
-  ) {}
+    // Field initializers run before parameter properties are assigned, so the sync is built here.
+    liveScope: TimelineLiveScope = "opened",
+  ) {
+    this.sync = this.createSync(liveScope);
+  }
+
   readonly errors: string[] = [];
   readonly appliedCurrent: string[] = [];
   readonly releasedMemberships: string[][] = [];
@@ -198,82 +301,87 @@ class TimelineWorld {
   readonly forcedTimelineTailReplacements = new Set<string>();
   readonly reportedCurrent: TimelineCurrentReport[] = [];
   cacheGate: Deferred<void> | null = null;
-  readonly sync = createViewedTimelineSync({
-    replaceDemandedAgentIds: () => undefined,
-    onCatchUpEnded: (agentId) => {
-      this.reportedCurrent.push({
-        agentId,
-        status: this.sync.getAgentTimelineStatus(agentId),
-      });
-    },
-    onCatchUpOwed: () => undefined,
-    onCatchUpSettled: () => undefined,
-    isArchived: () => false,
-    prepare: async (agentId) => {
-      this.cacheRequests.push(agentId);
-      this.cacheRequestWaiters.shift()?.(agentId);
-      await this.cacheGate?.promise;
-    },
-    canCheckFreshness: () => this.checksFreshness,
-    applyCurrentTimeline: (agentId) => {
-      this.appliedCurrent.push(agentId);
-    },
-    observe: (agentIds, cursors) => {
-      if (this.observeMembership) return this.observeMembership(agentIds, cursors);
-      const result = deferred<{ timelines?: Record<string, "current" | "behind"> }>();
-      this.memberships.push({
-        agentIds,
-        cursors,
-        succeed: (timelines) => result.resolve({ timelines }),
-        fail: (message) => result.reject(new Error(message)),
-      });
-      this.releaseMembershipWaiter();
-      return {
-        ready: result.promise,
-        release: async () => {
-          this.releasedMemberships.push(agentIds);
-          result.reject(new Error("Subscription released"));
+  private createSync(liveScope: TimelineLiveScope): ViewedTimelineSync {
+    return createViewedTimelineSync(
+      {
+        replaceDemandedAgentIds: () => undefined,
+        onCatchUpEnded: (agentId) => {
+          this.reportedCurrent.push({
+            agentId,
+            status: this.sync.getAgentTimelineStatus(agentId),
+          });
         },
-      };
-    },
-    readCursor: (agentId) => this.cursors.get(agentId),
-    fetchPage: async (agentId, request) => {
-      const result = deferred<{
-        hasNewer: boolean;
-        endCursor: { epoch: string; seq: number } | null;
-      }>();
-      this.fetches.push({
-        agentId,
-        request,
-        respond: ({ hasNewer, seq = 1 }) =>
-          result.resolve({
-            hasNewer,
-            endCursor: { epoch: `epoch-${agentId}`, seq },
-          }),
-        fail: (message) => result.reject(new Error(message)),
-      });
-      this.releaseFetchWaiters();
-      return result.promise;
-    },
-    fetchLatestTail: async (agentId) => {
-      this.forcedTimelineTailReplacements.add(agentId);
-      try {
-        return await this.fetchTimeline(agentId, {
-          direction: "tail",
-          limit: 40,
-          projection: "projected",
-          wholeTurns: true,
-        });
-      } finally {
-        this.forcedTimelineTailReplacements.delete(agentId);
-      }
-    },
-    reportError: (error) => {
-      this.errors.push(error instanceof Error ? error.message : String(error));
-      const waiter = this.errorWaiters.shift();
-      if (waiter) waiter(this.errors.at(-1) ?? "");
-    },
-  });
+        onCatchUpOwed: () => undefined,
+        onCatchUpSettled: () => undefined,
+        isArchived: () => false,
+        prepare: async (agentId) => {
+          this.cacheRequests.push(agentId);
+          this.cacheRequestWaiters.shift()?.(agentId);
+          await this.cacheGate?.promise;
+        },
+        canCheckFreshness: () => this.checksFreshness,
+        applyCurrentTimeline: (agentId) => {
+          this.appliedCurrent.push(agentId);
+        },
+        observe: (agentIds, cursors) => {
+          if (this.observeMembership) return this.observeMembership(agentIds, cursors);
+          const result = deferred<{ timelines?: Record<string, "current" | "behind"> }>();
+          this.memberships.push({
+            agentIds,
+            cursors,
+            succeed: (timelines) => result.resolve({ timelines }),
+            fail: (message) => result.reject(new Error(message)),
+          });
+          this.releaseMembershipWaiter();
+          return {
+            ready: result.promise,
+            release: async () => {
+              this.releasedMemberships.push(agentIds);
+              result.reject(new Error("Subscription released"));
+            },
+          };
+        },
+        readCursor: (agentId) => this.cursors.get(agentId),
+        fetchPage: async (agentId, request) => {
+          const result = deferred<{
+            hasNewer: boolean;
+            endCursor: { epoch: string; seq: number } | null;
+          }>();
+          this.fetches.push({
+            agentId,
+            request,
+            respond: ({ hasNewer, seq = 1 }) =>
+              result.resolve({
+                hasNewer,
+                endCursor: { epoch: `epoch-${agentId}`, seq },
+              }),
+            fail: (message) => result.reject(new Error(message)),
+          });
+          this.releaseFetchWaiters();
+          return result.promise;
+        },
+        fetchLatestTail: async (agentId) => {
+          this.forcedTimelineTailReplacements.add(agentId);
+          try {
+            return await this.fetchTimeline(agentId, {
+              direction: "tail",
+              limit: 40,
+              projection: "projected",
+              wholeTurns: true,
+            });
+          } finally {
+            this.forcedTimelineTailReplacements.delete(agentId);
+          }
+        },
+        reportError: (error) => {
+          this.errors.push(error instanceof Error ? error.message : String(error));
+          const waiter = this.errorWaiters.shift();
+          if (waiter) waiter(this.errors.at(-1) ?? "");
+        },
+      },
+      { liveScope },
+    );
+  }
 
   show(sourceId: string, agentIds: string[]): void {
     this.sync.replaceVisibleAgentIds(sourceId, agentIds);

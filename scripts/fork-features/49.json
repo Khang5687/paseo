@@ -1,0 +1,12 @@
+{
+  "pr": 49,
+  "title": "feat(server): list OMP accounts without a running agent",
+  "tests": [
+    "packages/app/src/omp-account-routing/presentation.test.ts",
+    "packages/server/src/server/account-routing/authority.test.ts",
+    "packages/server/src/server/account-routing/listing.test.ts",
+    "packages/server/src/server/account-routing/login.test.ts",
+    "packages/server/src/server/account-routing/probe.test.ts",
+    "packages/server/src/server/account-routing/routing.integration.test.ts"
+  ]
+}

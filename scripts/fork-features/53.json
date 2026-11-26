@@ -1,0 +1,5 @@
+{
+  "pr": 53,
+  "title": "fix(omp): show newly installed skills in a running session on released OMP",
+  "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
+}

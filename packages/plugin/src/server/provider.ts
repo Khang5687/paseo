@@ -508,6 +508,15 @@ export interface ProviderCommand {
   description: string;
   argumentHint?: string;
   kind?: "command" | "skill";
+  /** Fixed choices for the first argument, offered after `/name `. */
+  subcommands?: ProviderCommandSubcommand[];
+}
+
+export interface ProviderCommandSubcommand {
+  name: string;
+  description?: string;
+  /** Arguments the choice takes after its name, e.g. `[focus]`. */
+  usage?: string;
 }
 
 export interface ProviderError {
@@ -1266,6 +1275,17 @@ const commandSchema = z
     description: z.string(),
     argumentHint: z.string().optional(),
     kind: z.enum(["command", "skill"]).optional(),
+    subcommands: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            description: z.string().optional(),
+            usage: z.string().optional(),
+          })
+          .strip(),
+      )
+      .optional(),
   })
   .strip();
 const usageSchema = z

@@ -1,9 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
+import {
+  ensureDefaultNotificationChannel,
+  ensureNotificationPermission,
+} from "../native-notifications";
 import type { RevokePushNotificationsInput, StartPushNotificationsInput } from "./types";
 
 const STORAGE_PREFIX = "@paseo:expo-push-token:";
@@ -20,28 +23,26 @@ function getExpoProjectId(): string | null {
   return fromExtra.success ? fromExtra.data : null;
 }
 
-async function ensurePushPermission(): Promise<boolean> {
-  const existing = await Notifications.getPermissionsAsync();
-  if (existing.status === Notifications.PermissionStatus.GRANTED) return true;
-  if (!existing.canAskAgain) return false;
-  const requested = await Notifications.requestPermissionsAsync();
-  return requested.status === Notifications.PermissionStatus.GRANTED;
+const pendingTokens = new Map<string, Promise<string | null>>();
+
+/** One token lookup per host at a time: the push subscription and device registration share it. */
+export function resolveToken(serverId: string): Promise<string | null> {
+  const pending = pendingTokens.get(serverId);
+  if (pending) return pending;
+  const lookup = fetchToken(serverId).finally(() => pendingTokens.delete(serverId));
+  pendingTokens.set(serverId, lookup);
+  return lookup;
 }
 
-async function resolveToken(serverId: string): Promise<string | null> {
+async function fetchToken(serverId: string): Promise<string | null> {
   const key = storageKey(serverId);
   const cached = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
-  if (!(await ensurePushPermission())) {
+  if (!(await ensureNotificationPermission())) {
     await AsyncStorage.removeItem(key);
     return null;
   }
 
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-  }
+  await ensureDefaultNotificationChannel();
 
   const projectId = getExpoProjectId();
   if (!projectId) {

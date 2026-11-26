@@ -1,17 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyDictationTranscript,
+  clampComposerInputHeight,
   computeCanStartDictation,
   type MessageInputEnterContext,
   resolveActiveSendBehavior,
+  resolveComposerMaxInputHeight,
   resolveComposerSurfacePresentation,
   resolveComposerSurfaceText,
   resolveGlyphRailOffset,
   resolveMessageInputEnterAction,
   resolveRetainedSelection,
   resolveAlternateSendAction,
+  resolveSendNowBehavior,
   runAlternateSendAction,
   runDefaultSendAction,
+  type MessageInputEnterAction,
+  type SendBehavior,
   runMessageInputKeyboardAction,
   stopRealtimeVoice,
 } from "./state";
@@ -172,24 +177,47 @@ describe("dictation keyboard behavior", () => {
 });
 
 describe("dictation transcript behavior", () => {
-  it("publishes an auto-sent transcript to the composer before submitting it", () => {
-    const actions: string[] = [];
-
-    applyDictationTranscript("spoken prompt", {
+  function transcriptContext(
+    actions: string[],
+    overrides: Partial<Parameters<typeof applyDictationTranscript>[1]> = {},
+  ): Parameters<typeof applyDictationTranscript>[1] {
+    return {
       value: "typed context",
       defaultSendBehavior: "interrupt",
+      sendNowBehavior: "steer",
       isAgentRunning: false,
       onQueue: undefined,
       replaceText: (text) => actions.push(`replace:${text}`),
-      onSubmit: (payload) => actions.push(`submit:${payload.text}`),
+      onSubmit: (payload) => actions.push(`submit:${payload.text}:${payload.activeTurnBehavior}`),
       attachments: [],
       cwd: "/repo",
       autoSend: true,
-    });
+      ...overrides,
+    };
+  }
+
+  it("publishes an auto-sent transcript to the composer before submitting it", () => {
+    const actions: string[] = [];
+
+    applyDictationTranscript("spoken prompt", transcriptContext(actions));
 
     expect(actions).toEqual([
       "replace:typed context spoken prompt",
-      "submit:typed context spoken prompt",
+      "submit:typed context spoken prompt:interrupt",
+    ]);
+  });
+
+  it("sends a transcript now when the default queues but this composer cannot", () => {
+    const actions: string[] = [];
+
+    applyDictationTranscript(
+      "spoken prompt",
+      transcriptContext(actions, { defaultSendBehavior: "queue", isAgentRunning: true }),
+    );
+
+    expect(actions).toEqual([
+      "replace:typed context spoken prompt",
+      "submit:typed context spoken prompt:steer",
     ]);
   });
 });
@@ -201,120 +229,127 @@ describe("composer send behavior", () => {
     expect(resolveActiveSendBehavior("steer", true)).toBe("steer");
   });
 
-  function actions() {
+  function press(
+    action: "default" | "alternate",
+    behaviors: { defaultSendBehavior: SendBehavior; alternateSendBehavior: SendBehavior },
+    options: { isAgentRunning?: boolean; canQueue?: boolean } = {},
+  ): string[] {
     const calls: string[] = [];
-    return {
-      calls,
-      handleSendMessage: () => calls.push("send"),
+    const ctx = {
+      ...behaviors,
+      isAgentRunning: options.isAgentRunning ?? true,
+      onQueue: options.canQueue === false ? undefined : () => undefined,
+      handleSendMessage: (activeTurnBehavior: string) => calls.push(`send:${activeTurnBehavior}`),
       handleQueueMessage: () => calls.push("queue"),
-      onQueue: () => undefined,
     };
+    if (action === "default") runDefaultSendAction(ctx);
+    else runAlternateSendAction(ctx);
+    return calls;
   }
 
-  it("uses Enter to interrupt and Mod+Enter to queue when interrupt is selected", () => {
-    const defaultAction = actions();
-    runDefaultSendAction({
-      defaultSendBehavior: "interrupt",
-      isAgentRunning: true,
-      onQueue: defaultAction.onQueue,
-      handleSendMessage: defaultAction.handleSendMessage,
-      handleQueueMessage: defaultAction.handleQueueMessage,
-    });
-
-    const alternateAction = actions();
-    runAlternateSendAction({
-      defaultSendBehavior: "interrupt",
-      isAgentRunning: true,
-      onQueue: alternateAction.onQueue,
-      handleSendMessage: alternateAction.handleSendMessage,
-      handleQueueMessage: alternateAction.handleQueueMessage,
-    });
-
-    expect(defaultAction.calls).toEqual(["send"]);
-    expect(alternateAction.calls).toEqual(["queue"]);
-  });
-
-  it("uses Enter to steer and Mod+Enter to queue when steer is selected", () => {
-    const defaultAction = actions();
-    runDefaultSendAction({
+  it.each([
+    {
       defaultSendBehavior: "steer",
-      isAgentRunning: true,
-      onQueue: defaultAction.onQueue,
-      handleSendMessage: defaultAction.handleSendMessage,
-      handleQueueMessage: defaultAction.handleQueueMessage,
-    });
-
-    const alternateAction = actions();
-    runAlternateSendAction({
+      alternateSendBehavior: "queue",
+      send: "send:steer",
+      alt: "queue",
+    },
+    {
+      defaultSendBehavior: "interrupt",
+      alternateSendBehavior: "queue",
+      send: "send:interrupt",
+      alt: "queue",
+    },
+    {
+      defaultSendBehavior: "queue",
+      alternateSendBehavior: "steer",
+      send: "queue",
+      alt: "send:steer",
+    },
+    {
+      defaultSendBehavior: "queue",
+      alternateSendBehavior: "interrupt",
+      send: "queue",
+      alt: "send:interrupt",
+    },
+    {
       defaultSendBehavior: "steer",
-      isAgentRunning: true,
-      onQueue: alternateAction.onQueue,
-      handleSendMessage: alternateAction.handleSendMessage,
-      handleQueueMessage: alternateAction.handleQueueMessage,
-    });
+      alternateSendBehavior: "interrupt",
+      send: "send:steer",
+      alt: "send:interrupt",
+    },
+    { defaultSendBehavior: "queue", alternateSendBehavior: "queue", send: "queue", alt: "queue" },
+  ] as const)(
+    "while running, default $defaultSendBehavior does $send and alternate $alternateSendBehavior does $alt",
+    ({ defaultSendBehavior, alternateSendBehavior, send, alt }) => {
+      const behaviors = { defaultSendBehavior, alternateSendBehavior };
+      expect(press("default", behaviors)).toEqual([send]);
+      expect(press("alternate", behaviors)).toEqual([alt]);
+    },
+  );
 
-    expect(defaultAction.calls).toEqual(["send"]);
-    expect(alternateAction.calls).toEqual(["queue"]);
+  it("runs the default send for the alternate while no turn is running", () => {
+    const behaviors = {
+      defaultSendBehavior: "interrupt",
+      alternateSendBehavior: "queue",
+    } as const;
+    expect(press("alternate", behaviors, { isAgentRunning: false })).toEqual(["send:interrupt"]);
+    expect(
+      press(
+        "alternate",
+        { defaultSendBehavior: "queue", alternateSendBehavior: "interrupt" },
+        { isAgentRunning: false },
+      ),
+    ).toEqual(["send:interrupt"]);
   });
 
-  it("uses Enter to queue and Mod+Enter to submit when queue is selected", () => {
-    const defaultAction = actions();
-    runDefaultSendAction({
-      defaultSendBehavior: "queue",
-      isAgentRunning: true,
-      onQueue: defaultAction.onQueue,
-      handleSendMessage: defaultAction.handleSendMessage,
-      handleQueueMessage: defaultAction.handleQueueMessage,
-    });
-
-    const alternateAction = actions();
-    runAlternateSendAction({
-      defaultSendBehavior: "queue",
-      isAgentRunning: true,
-      onQueue: alternateAction.onQueue,
-      handleSendMessage: alternateAction.handleSendMessage,
-      handleQueueMessage: alternateAction.handleQueueMessage,
-    });
-
-    expect(defaultAction.calls).toEqual(["queue"]);
-    expect(alternateAction.calls).toEqual(["send"]);
+  it("sends now instead of queueing when the composer cannot queue, never interrupting by default", () => {
+    expect(
+      press(
+        "default",
+        { defaultSendBehavior: "queue", alternateSendBehavior: "steer" },
+        { canQueue: false },
+      ),
+    ).toEqual(["send:steer"]);
+    expect(
+      press(
+        "default",
+        { defaultSendBehavior: "queue", alternateSendBehavior: "queue" },
+        { canQueue: false },
+      ),
+    ).toEqual(["send:steer"]);
   });
 
-  it("sends with the alternate action while no turn is running", () => {
-    for (const defaultSendBehavior of ["steer", "interrupt", "queue"] as const) {
-      const alternateAction = actions();
-      runAlternateSendAction({
-        defaultSendBehavior,
-        isAgentRunning: false,
-        onQueue: alternateAction.onQueue,
-        handleSendMessage: alternateAction.handleSendMessage,
-        handleQueueMessage: alternateAction.handleQueueMessage,
-      });
-      expect(alternateAction.calls).toEqual(["send"]);
-    }
+  it("sends now with the alternate first, then the default, then steer", () => {
+    expect(resolveSendNowBehavior({ sendBehavior: "queue", alternateSendBehavior: "steer" })).toBe(
+      "steer",
+    );
+    expect(
+      resolveSendNowBehavior({ sendBehavior: "steer", alternateSendBehavior: "interrupt" }),
+    ).toBe("interrupt");
+    expect(
+      resolveSendNowBehavior({ sendBehavior: "interrupt", alternateSendBehavior: "queue" }),
+    ).toBe("interrupt");
+    expect(resolveSendNowBehavior({ sendBehavior: "queue", alternateSendBehavior: "queue" })).toBe(
+      "steer",
+    );
   });
 
   it("offers an alternate action only while a turn runs and the composer can queue", () => {
     const onQueue = () => undefined;
     expect(
-      resolveAlternateSendAction({ defaultSendBehavior: "steer", isAgentRunning: true, onQueue }),
-    ).toBe("queue");
+      resolveAlternateSendAction({ alternateSendBehavior: "steer", isAgentRunning: true, onQueue }),
+    ).toBe("steer");
     expect(
       resolveAlternateSendAction({
-        defaultSendBehavior: "interrupt",
-        isAgentRunning: true,
+        alternateSendBehavior: "queue",
+        isAgentRunning: false,
         onQueue,
       }),
-    ).toBe("queue");
-    expect(
-      resolveAlternateSendAction({ defaultSendBehavior: "queue", isAgentRunning: true, onQueue }),
-    ).toBe("send");
-    expect(
-      resolveAlternateSendAction({ defaultSendBehavior: "steer", isAgentRunning: false, onQueue }),
     ).toBeNull();
     expect(
       resolveAlternateSendAction({
-        defaultSendBehavior: "queue",
+        alternateSendBehavior: "interrupt",
         isAgentRunning: true,
         onQueue: undefined,
       }),
@@ -455,76 +490,78 @@ describe("resolveMessageInputEnterAction", () => {
   });
 
   describe("composed with the send actions", () => {
-    function actions() {
+    function runEnter(
+      enterAction: MessageInputEnterAction | null,
+      behaviors: { defaultSendBehavior: SendBehavior; alternateSendBehavior: SendBehavior },
+      isAgentRunning: boolean,
+    ): string[] {
       const calls: string[] = [];
-      return {
-        calls,
-        handleSendMessage: () => calls.push("send"),
-        handleQueueMessage: () => calls.push("queue"),
+      const ctx = {
+        ...behaviors,
+        isAgentRunning,
         onQueue: () => undefined,
+        handleSendMessage: (activeTurnBehavior: string) => calls.push(`send:${activeTurnBehavior}`),
+        handleQueueMessage: () => calls.push("queue"),
       };
+      if (enterAction === "alternate-send") runAlternateSendAction(ctx);
+      if (enterAction === "default-send") runDefaultSendAction(ctx);
+      return calls;
     }
 
-    function resolveCommandEnterToSendModifierEnter() {
-      return resolveMessageInputEnterAction(
-        enterContext({ sendShortcut: "mod-enter", metaKey: true, isAgentRunning: true }),
-      );
-    }
+    const queueThenSteer = {
+      defaultSendBehavior: "queue",
+      alternateSendBehavior: "steer",
+    } as const;
 
-    it("queues through the default send action when queue behavior is selected and the agent is running", () => {
-      const sendAction = actions();
-
-      expect(resolveCommandEnterToSendModifierEnter()).toBe("default-send");
-
-      runDefaultSendAction({
-        defaultSendBehavior: "queue",
-        isAgentRunning: true,
-        onQueue: sendAction.onQueue,
-        handleSendMessage: sendAction.handleSendMessage,
-        handleQueueMessage: sendAction.handleQueueMessage,
-      });
-
-      expect(sendAction.calls).toEqual(["queue"]);
-    });
-
-    it("sends through the default send action when queue behavior is selected and the agent is idle", () => {
-      const sendAction = actions();
-
+    it("queues on Enter and steers on Cmd+Enter when Enter sends", () => {
       expect(
-        resolveMessageInputEnterAction(
-          enterContext({ sendShortcut: "mod-enter", metaKey: true, isAgentRunning: false }),
+        runEnter(
+          resolveMessageInputEnterAction(enterContext({ isAgentRunning: true })),
+          queueThenSteer,
+          true,
         ),
-      ).toBe("default-send");
-
-      runDefaultSendAction({
-        defaultSendBehavior: "queue",
-        isAgentRunning: false,
-        onQueue: sendAction.onQueue,
-        handleSendMessage: sendAction.handleSendMessage,
-        handleQueueMessage: sendAction.handleQueueMessage,
-      });
-
-      expect(sendAction.calls).toEqual(["send"]);
+      ).toEqual(["queue"]);
+      expect(
+        runEnter(
+          resolveMessageInputEnterAction(enterContext({ metaKey: true, isAgentRunning: true })),
+          queueThenSteer,
+          true,
+        ),
+      ).toEqual(["send:steer"]);
     });
 
-    it.each([{ defaultSendBehavior: "steer" }, { defaultSendBehavior: "interrupt" }] as const)(
-      "sends through the default send action when $defaultSendBehavior behavior is selected and the agent is running",
-      ({ defaultSendBehavior }) => {
-        const sendAction = actions();
+    it("runs the default send on Cmd+Enter and inserts a new line on Enter when modifier Enter sends", () => {
+      expect(
+        runEnter(
+          resolveMessageInputEnterAction(
+            enterContext({ sendShortcut: "mod-enter", isAgentRunning: true }),
+          ),
+          queueThenSteer,
+          true,
+        ),
+      ).toEqual([]);
+      expect(
+        runEnter(
+          resolveMessageInputEnterAction(
+            enterContext({ sendShortcut: "mod-enter", metaKey: true, isAgentRunning: true }),
+          ),
+          queueThenSteer,
+          true,
+        ),
+      ).toEqual(["queue"]);
+    });
 
-        expect(resolveCommandEnterToSendModifierEnter()).toBe("default-send");
-
-        runDefaultSendAction({
-          defaultSendBehavior,
-          isAgentRunning: true,
-          onQueue: sendAction.onQueue,
-          handleSendMessage: sendAction.handleSendMessage,
-          handleQueueMessage: sendAction.handleQueueMessage,
-        });
-
-        expect(sendAction.calls).toEqual(["send"]);
-      },
-    );
+    it("sends on Cmd+Enter while idle when modifier Enter sends and the default queues", () => {
+      expect(
+        runEnter(
+          resolveMessageInputEnterAction(
+            enterContext({ sendShortcut: "mod-enter", metaKey: true, isAgentRunning: false }),
+          ),
+          queueThenSteer,
+          false,
+        ),
+      ).toEqual(["send:steer"]);
+    });
   });
 });
 
@@ -612,5 +649,48 @@ describe("fullscreen glyph rail", () => {
     const inkInset =
       (geometry.controlSize - geometry.glyphIconSize) / 2 + (geometry.glyphIconSize * 2) / 24;
     expect(offset + inkInset).toBeCloseTo(0);
+  });
+});
+
+describe("composer max input height", () => {
+  const wide = { windowHeight: 900, compact: false, minHeight: 46 };
+  const phone = { windowHeight: 844, compact: true, minHeight: 30 };
+
+  it("defaults to a third of a desktop window and 160px on a phone", () => {
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: null })).toBe(300);
+    expect(resolveComposerMaxInputHeight({ ...phone, preferredHeight: null })).toBe(160);
+  });
+
+  it("never defaults a short desktop window below the phone cap", () => {
+    expect(
+      resolveComposerMaxInputHeight({ ...wide, windowHeight: 360, preferredHeight: null }),
+    ).toBe(160);
+  });
+
+  it("uses a dragged size, held between one line and 80% of the window", () => {
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: 500 })).toBe(500);
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: 10 })).toBe(46);
+    expect(resolveComposerMaxInputHeight({ ...wide, preferredHeight: 2000 })).toBe(720);
+    expect(resolveComposerMaxInputHeight({ ...phone, preferredHeight: 900 })).toBe(675);
+  });
+
+  it("refits a size saved in a taller window", () => {
+    expect(
+      resolveComposerMaxInputHeight({ ...wide, windowHeight: 500, preferredHeight: 700 }),
+    ).toBe(400);
+  });
+
+  it("clamps a drag to the same bounds", () => {
+    const bounds = { windowHeight: 900, minHeight: 46 };
+    expect(clampComposerInputHeight(250.4, bounds)).toBe(250);
+    expect(clampComposerInputHeight(-80, bounds)).toBe(46);
+    expect(clampComposerInputHeight(5000, bounds)).toBe(720);
+  });
+
+  it("only applies the floor before the window has a height", () => {
+    expect(clampComposerInputHeight(5000, { windowHeight: 0, minHeight: 46 })).toBe(5000);
+    expect(resolveComposerMaxInputHeight({ ...wide, windowHeight: 0, preferredHeight: null })).toBe(
+      160,
+    );
   });
 });

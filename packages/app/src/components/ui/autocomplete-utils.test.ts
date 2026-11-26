@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getAutocompleteFallbackIndex, orderAutocompleteOptions } from "./autocomplete-utils";
+import {
+  getAutocompleteFallbackIndex,
+  orderAutocompleteOptions,
+  resolveAutocompleteSelectedIndex,
+} from "./autocomplete-utils";
 
 const OPTIONS = ["alpha", "beta", "gamma"];
 
@@ -22,5 +26,62 @@ describe("getAutocompleteFallbackIndex", () => {
 
   it("picks top item when below-input ordering is used", () => {
     expect(getAutocompleteFallbackIndex(3, "below-input")).toBe(0);
+  });
+});
+
+describe("resolveAutocompleteSelectedIndex", () => {
+  const fewer = [{ id: "clear" }, { id: "exit" }];
+  // A refetch adds commands above the chosen one (above-input order).
+  const more = [{ id: "tdd" }, { id: "help" }, { id: "clear" }, { id: "exit" }];
+
+  it("keeps the chosen option when more options arrive for the same query", () => {
+    expect(
+      resolveAutocompleteSelectedIndex({
+        choice: { id: "clear", query: "" },
+        query: "",
+        options: more,
+      }),
+    ).toBe(2);
+    expect(
+      resolveAutocompleteSelectedIndex({
+        choice: { id: "exit", query: "" },
+        query: "",
+        options: more,
+      }),
+    ).toBe(3);
+  });
+
+  it("moves to the option nearest the input when the query changes", () => {
+    expect(
+      resolveAutocompleteSelectedIndex({
+        choice: { id: "tdd", query: "" },
+        query: "t",
+        options: more,
+      }),
+    ).toBe(3);
+  });
+
+  it("falls back when the chosen option is gone or nothing was chosen", () => {
+    expect(
+      resolveAutocompleteSelectedIndex({
+        choice: { id: "tdd", query: "" },
+        query: "",
+        options: fewer,
+      }),
+    ).toBe(1);
+    expect(
+      resolveAutocompleteSelectedIndex({
+        choice: null,
+        query: "",
+        options: fewer,
+      }),
+    ).toBe(1);
+    expect(
+      resolveAutocompleteSelectedIndex({
+        choice: { id: "exit", query: "" },
+        query: "",
+        options: [],
+      }),
+    ).toBe(-1);
   });
 });

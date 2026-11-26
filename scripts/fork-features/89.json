@@ -1,0 +1,6 @@
+{
+  "pr": 89,
+  "title": "fix(app): show the slash command menu while provider commands load",
+  "tests": ["packages/app/src/components/ui/autocomplete-utils.test.ts"],
+  "e2e": ["packages/app/e2e/browser/composer-autocomplete.spec.ts"]
+}

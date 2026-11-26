@@ -1,0 +1,6 @@
+{
+  "pr": 45,
+  "title": "feat(app): make the OMP Claude account routing section readable",
+  "tests": ["packages/app/src/omp-account-routing/presentation.test.ts"],
+  "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
+}

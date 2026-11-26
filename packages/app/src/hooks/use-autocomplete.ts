@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  getAutocompleteFallbackIndex,
   getAutocompleteNextIndex,
+  resolveAutocompleteSelectedIndex,
+  type AutocompleteChoice,
   type AutocompleteOptionsPosition,
 } from "@/components/ui/autocomplete-utils";
 
@@ -11,7 +12,7 @@ interface AutocompleteKeyPressEvent {
 }
 
 interface UseAutocompleteInput<
-  TOption,
+  TOption extends { id: string },
   TKeyPressEvent extends AutocompleteKeyPressEvent = AutocompleteKeyPressEvent,
 > {
   isVisible: boolean;
@@ -20,6 +21,11 @@ interface UseAutocompleteInput<
   onSelectOption: (option: TOption, event?: TKeyPressEvent) => void;
   onEscape?: () => void;
   optionsPosition?: AutocompleteOptionsPosition;
+  /**
+   * When false, Enter is left to the input (it sends) until the user moves the
+   * selection with the arrow keys; Tab still picks. Defaults to true.
+   */
+  enterSelects?: boolean;
 }
 
 interface UseAutocompleteResult<TKeyPressEvent extends AutocompleteKeyPressEvent> {
@@ -27,21 +33,27 @@ interface UseAutocompleteResult<TKeyPressEvent extends AutocompleteKeyPressEvent
   onKeyPress: (event: TKeyPressEvent) => boolean;
 }
 
+const NO_OPTIONS: readonly never[] = [];
+
 export function useAutocomplete<
-  TOption,
+  TOption extends { id: string },
   TKeyPressEvent extends AutocompleteKeyPressEvent = AutocompleteKeyPressEvent,
 >(input: UseAutocompleteInput<TOption, TKeyPressEvent>): UseAutocompleteResult<TKeyPressEvent> {
   // The user's choice, tied to the query it was made for. The shown index is resolved from it
   // during render, so a list never paints its first frame without a selection: the popover only
   // measures once a non-empty list has one.
-  const [choice, setChoice] = useState<{ index: number; query: string } | null>(null);
-  const itemCount = input.isVisible ? input.options.length : 0;
-  const selectedIndex = resolveSelectedIndex({
+  const [choice, setChoice] = useState<AutocompleteChoice | null>(null);
+  const shownOptions = input.isVisible ? input.options : NO_OPTIONS;
+  const selectedIndex = resolveAutocompleteSelectedIndex({
     choice,
     query: input.query,
-    itemCount,
-    optionsPosition: input.optionsPosition,
+    options: shownOptions,
+    position: input.optionsPosition,
   });
+  const isChosen =
+    choice !== null &&
+    choice.query === input.query &&
+    shownOptions[selectedIndex]?.id === choice.id;
 
   // A choice belongs to one search. Until this clears it, the query check above ignores it.
   useEffect(() => {
@@ -56,15 +68,18 @@ export function useAutocomplete<
 
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
         event.preventDefault();
-        setChoice({
-          index: getAutocompleteNextIndex({
-            currentIndex: selectedIndex,
-            itemCount: input.options.length,
-            key: event.key,
-          }),
-          query: input.query,
+        const nextIndex = getAutocompleteNextIndex({
+          currentIndex: selectedIndex,
+          itemCount: input.options.length,
+          key: event.key,
         });
+        const nextOption = input.options[nextIndex];
+        setChoice(nextOption ? { id: nextOption.id, query: input.query } : null);
         return true;
+      }
+
+      if (event.key === "Enter" && input.enterSelects === false && !isChosen) {
+        return false;
       }
 
       if (event.key === "Tab" || event.key === "Enter") {
@@ -84,29 +99,11 @@ export function useAutocomplete<
 
       return false;
     },
-    [input, selectedIndex],
+    [input, isChosen, selectedIndex],
   );
 
   return {
     selectedIndex,
     onKeyPress,
   };
-}
-
-function resolveSelectedIndex(input: {
-  choice: { index: number; query: string } | null;
-  query: string;
-  itemCount: number;
-  optionsPosition?: AutocompleteOptionsPosition;
-}): number {
-  const { choice } = input;
-  if (
-    choice &&
-    choice.query === input.query &&
-    choice.index >= 0 &&
-    choice.index < input.itemCount
-  ) {
-    return choice.index;
-  }
-  return getAutocompleteFallbackIndex(input.itemCount, input.optionsPosition);
 }

@@ -30,6 +30,7 @@ async function archiveWorkspaceFromSidebar(page: Page, workspaceId: string): Pro
 
   const archiveItem = page.getByTestId(`sidebar-workspace-menu-archive-${serverId}:${workspaceId}`);
   await expect(archiveItem).toBeVisible({ timeout: 10_000 });
+  page.once("dialog", (dialog) => void dialog.accept());
   await archiveItem.click();
 }
 

@@ -44,6 +44,13 @@ export interface TerminalActivityTransitionEvent {
 
 export type TerminalActivityListener = (event: TerminalActivityTransitionEvent) => void;
 
+export interface TerminalCommandFinishedEvent {
+  terminalId: string;
+  exitCode: number | null;
+}
+
+export type TerminalCommandFinishedListener = (event: TerminalCommandFinishedEvent) => void;
+
 export interface TerminalWorkspaceContributionChangedEvent {
   terminalId: string;
   cwd: string;
@@ -113,6 +120,8 @@ export interface TerminalManager {
   killAll(): void;
   subscribeTerminalsChanged(listener: TerminalsChangedListener): () => void;
   subscribeTerminalActivity(listener: TerminalActivityListener): () => void;
+  /** Shell-integration command completions (OSC 633 D) across every terminal. */
+  subscribeTerminalCommandFinished(listener: TerminalCommandFinishedListener): () => void;
   subscribeTerminalWorkspaceContributionChanged(
     listener: TerminalWorkspaceContributionChangedListener,
   ): () => void;
@@ -147,6 +156,7 @@ export function createTerminalManager(
   const terminalActivityTokenById = new Map<string, string>();
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
   const terminalActivityListeners = new Set<TerminalActivityListener>();
+  const commandFinishedListeners = new Set<TerminalCommandFinishedListener>();
   const terminalWorkspaceContributionChangedListeners =
     new Set<TerminalWorkspaceContributionChangedListener>();
   const defaultEnvByRootCwd = new Map<string, Record<string, string>>();
@@ -229,6 +239,15 @@ export function createTerminalManager(
     const unsubscribeTitle = session.onTitleChange(() => {
       emitTerminalsChanged({ cwd: session.cwd });
     });
+    const unsubscribeCommandFinished = session.onCommandFinished((info) => {
+      for (const listener of Array.from(commandFinishedListeners)) {
+        try {
+          listener({ terminalId: session.id, exitCode: info.exitCode });
+        } catch {
+          // no-op
+        }
+      }
+    });
     const unsubscribeActivity = session.onActivityChange((transition) => {
       emitTerminalActivityTransition({ session, transition });
       emitTerminalsChanged({ cwd: session.cwd });
@@ -243,7 +262,10 @@ export function createTerminalManager(
       }
     });
     terminalExitUnsubscribeById.set(session.id, unsubscribeExit);
-    terminalTitleUnsubscribeById.set(session.id, unsubscribeTitle);
+    terminalTitleUnsubscribeById.set(session.id, () => {
+      unsubscribeTitle();
+      unsubscribeCommandFinished();
+    });
     terminalActivityUnsubscribeById.set(session.id, unsubscribeActivity);
     return session;
   }
@@ -525,6 +547,13 @@ export function createTerminalManager(
       terminalActivityListeners.add(listener);
       return () => {
         terminalActivityListeners.delete(listener);
+      };
+    },
+
+    subscribeTerminalCommandFinished(listener: TerminalCommandFinishedListener): () => void {
+      commandFinishedListeners.add(listener);
+      return () => {
+        commandFinishedListeners.delete(listener);
       };
     },
 

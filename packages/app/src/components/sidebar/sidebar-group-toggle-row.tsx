@@ -1,5 +1,5 @@
 import { PressHighlight as Pressable } from "@/components/ui/press-highlight";
-import { useCallback } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View, type PressableStateCallbackType } from "react-native";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
@@ -8,6 +8,9 @@ import { isWeb } from "@/constants/platform";
 import { sidebarWorkspaceRowStyles } from "@/components/sidebar/sidebar-workspace-row-content";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { density, densityIconBox } from "@/styles/density";
+
+const EXPANDED_STATE = { expanded: true } as const;
+const COLLAPSED_STATE = { expanded: false } as const;
 
 /**
  * The row that ends a truncated group. It is a workspace row that happens to say "Show more", so
@@ -23,29 +26,40 @@ export function SidebarGroupToggleRow({
   expanded,
   onPress,
   indented = false,
+  indentLevel,
+  label: labelOverride,
   testID,
+  trailing,
 }: {
   expanded: boolean;
   onPress: () => void;
   indented?: boolean;
+  /** Nesting steps, for a fold row under a thread row; overrides `indented`. */
+  indentLevel?: number;
+  /** What the row folds, instead of "Show more" / "Show less". */
+  label?: string;
   testID: string;
+  /** A control at the row's end, such as a kebab. */
+  trailing?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const label = t(
-    expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore",
-  );
+  const label =
+    labelOverride ??
+    t(expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore");
   const rowStyle = useCallback(
     ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.row,
       indented && sidebarWorkspaceRowStyles.rowIndented,
+      indentLevel !== undefined && sidebarWorkspaceRowStyles.rowNested(indentLevel),
       hovered && !pressed && styles.rowHovered,
     ],
-    [indented],
+    [indented, indentLevel],
   );
 
   return (
     <Pressable
       accessibilityRole={isWeb ? undefined : "button"}
+      accessibilityState={expanded ? EXPANDED_STATE : COLLAPSED_STATE}
       accessibilityLabel={label}
       onPress={onPress}
       style={rowStyle}
@@ -64,6 +78,7 @@ export function SidebarGroupToggleRow({
           <Text style={hovered || pressed ? styles.textHovered : styles.text} numberOfLines={1}>
             {label}
           </Text>
+          {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
         </>
       )}
     </Pressable>
@@ -89,6 +104,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   rowPressed: {
     backgroundColor: theme.colors.surface2,
+  },
+  trailing: {
+    marginLeft: "auto",
+    flexShrink: 0,
   },
   // The width of a workspace row's status slot, so the label lands on the same rail as the
   // titles above it rather than two points to their left.

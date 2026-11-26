@@ -266,6 +266,10 @@ function shouldEmitTurnFailure(prompt: AgentPromptInput): boolean {
   return /emit\s+(?:a\s+)?synthetic\s+turn\s+failure/i.test(promptToText(prompt));
 }
 
+function shouldFailBeforeUserMessage(prompt: AgentPromptInput): boolean {
+  return /fail synthetic turn before user message/i.test(promptToText(prompt));
+}
+
 function parseSteeringReplayShape(prompt: AgentPromptInput): SteeringReplayShape | null {
   const match = /replay a (claude|codex)-shaped foreground shell tool call/i.exec(
     promptToText(prompt),
@@ -955,6 +959,11 @@ export class MockLoadTestAgentSession implements AgentSession {
     if (shouldEmitUserMessageBeforeTurnAcceptance(prompt)) {
       emitUserMessage();
       scheduleTurn();
+      return { turnId };
+    }
+    if (shouldFailBeforeUserMessage(prompt)) {
+      // The provider never took the prompt: no user-message echo, only the failure.
+      this.scheduleFailedTurn(turn);
       return { turnId };
     }
     if (shouldWithholdUserMessageUntilInterrupt(prompt)) {
