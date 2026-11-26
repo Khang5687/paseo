@@ -1,0 +1,5 @@
+{
+  "pr": 160,
+  "title": "Resume an OMP agent whose recorded model is gone",
+  "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
+}
