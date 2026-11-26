@@ -1,0 +1,5 @@
+{
+  "pr": 44,
+  "title": "fix(omp): accept OMP's native billing shape in routing catalogs",
+  "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
+}

@@ -1,0 +1,10 @@
+{
+  "pr": 77,
+  "title": "fix(app): cut battery drain on phones",
+  "tests": [
+    "packages/app/src/timeline/viewed-timeline-sync.test.ts",
+    "packages/app/src/utils/terminal-renderer-readiness.test.ts",
+    "packages/app/src/runtime/host-runtime.test.ts",
+    "packages/client/src/daemon-client.test.ts"
+  ]
+}

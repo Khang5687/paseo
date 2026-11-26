@@ -1,0 +1,9 @@
+{
+  "pr": 73,
+  "title": "feat: sync agent chat drafts across devices",
+  "tests": [
+    "packages/server/src/server/daemon-e2e/agent-draft-sync.e2e.test.ts",
+    "packages/server/src/server/agent-draft/agent-draft-service.test.ts",
+    "packages/app/src/composer/draft/agent-draft-sync.test.ts"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "pr": 37,
+  "title": "fix(app): keep model toggles aligned in the provider sheet",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/provider-model-toggles.spec.ts"]
+}

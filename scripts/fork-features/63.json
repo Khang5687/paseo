@@ -1,0 +1,6 @@
+{
+  "pr": 63,
+  "title": "chore(fork): send Android pushes through the owner's Expo project",
+  "untested": "app.config.js reads gitignored .secrets/eas.json; checked with @expo/config getConfig and by a push to the phone",
+  "tests": []
+}

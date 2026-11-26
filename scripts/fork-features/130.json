@@ -1,0 +1,6 @@
+{
+  "pr": 130,
+  "title": "fix(app): show a full-screen program's screen in the Run card",
+  "tests": ["packages/app/src/code-run/command.test.ts"],
+  "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+}

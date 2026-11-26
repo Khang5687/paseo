@@ -1,0 +1,8 @@
+{
+  "pr": 87,
+  "title": "feat(fork): apply fork builds without interrupting running agents",
+  "tests": [
+    "scripts/fork-daemon-idle.test.mjs",
+    "packages/desktop/src/daemon/external-daemon-launcher.test.ts"
+  ]
+}

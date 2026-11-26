@@ -1,0 +1,11 @@
+{
+  "pr": 50,
+  "title": "feat(app): Add Claude account sheet with sign-in link and paste fallback",
+  "tests": [
+    "packages/app/src/i18n/resources.test.ts",
+    "packages/app/src/omp-account-routing/add-account-flow.test.ts",
+    "packages/app/src/omp-account-routing/presentation.test.ts",
+    "packages/app/src/omp-account-routing/queries.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
+}

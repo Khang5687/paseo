@@ -1,0 +1,8 @@
+{
+  "pr": 9,
+  "title": "fix(omp): show newly installed skills in a running OMP session's / menu",
+  "tests": [
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"
+  ]
+}

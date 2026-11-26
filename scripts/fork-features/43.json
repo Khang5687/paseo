@@ -1,0 +1,9 @@
+{
+  "pr": 43,
+  "title": "feat(app): host-global OMP Claude account controls in Settings > Providers",
+  "tests": [
+    "packages/app/src/omp-account-routing/presentation.test.ts",
+    "packages/app/src/omp-account-routing/queries.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
+}

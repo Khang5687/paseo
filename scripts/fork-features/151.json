@@ -1,0 +1,11 @@
+{
+  "pr": 151,
+  "title": "feat(app): jump keys for recent and waiting workspaces",
+  "tests": [
+    "packages/app/src/components/sidebar/jump-targets.test.ts",
+    "packages/app/src/keyboard/route-shortcut.test.ts",
+    "packages/app/src/keyboard/keyboard-shortcuts.test.ts",
+    "packages/app/src/keyboard/native-shortcuts.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/sidebar-jump-keys.spec.ts"]
+}
