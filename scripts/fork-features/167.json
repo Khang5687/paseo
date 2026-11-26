@@ -1,0 +1,10 @@
+{
+  "pr": 167,
+  "title": "feat: show when a heartbeat next runs instead of a spinner",
+  "tests": [
+    "packages/server/src/server/schedule/service.test.ts",
+    "packages/app/src/background-work/presentation.test.ts",
+    "packages/app/src/utils/workspace-agent-activity.test.ts",
+    "packages/app/src/components/sidebar/workspace-meta-row/meta-items.test.ts"
+  ]
+}
