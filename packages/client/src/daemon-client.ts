@@ -1181,6 +1181,16 @@ function toTimeoutError(error: unknown, label: string, timeoutMs: number): Error
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30000;
 const DEFAULT_SESSION_RPC_TIMEOUT_MS = 60_000;
+// The answer to a message with pictures cannot arrive before its last byte does, which takes
+// minutes on a slow link. Such sends get the default deadline plus the time their bytes need at
+// 1 Mbit/s (125 bytes per ms); a dead link is still caught by the liveness check.
+const SLOW_LINK_BYTES_PER_MS = 125;
+
+function sendDeadlineMs(images: ReadonlyArray<{ data: string }> | undefined): number {
+  const bytes = images?.reduce((sum, image) => sum + image.data.length, 0) ?? 0;
+  return DEFAULT_SESSION_RPC_TIMEOUT_MS + Math.ceil(bytes / SLOW_LINK_BYTES_PER_MS);
+}
+
 // The daemon allows 90s per provider; retain its result through the delivery margin.
 const RECENT_PROVIDER_SESSIONS_TIMEOUT_MS = 100_000;
 const PUSH_TOKEN_REVOCATION_TIMEOUT_MS = 2_000;
@@ -3605,6 +3615,7 @@ export class DaemonClient {
       requestId,
       message,
       options: { skipQueue: true },
+      timeout: sendDeadlineMs(options.images),
       select: (msg) => {
         if (msg.type !== "status") {
           return null;
@@ -4331,6 +4342,7 @@ export class DaemonClient {
       requestId,
       message,
       options: { skipQueue: true },
+      timeout: sendDeadlineMs(options.images),
       select: (msg) => {
         if (msg.type !== "send_agent_message_response") {
           return null;

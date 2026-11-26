@@ -1629,6 +1629,50 @@ test("defaults session RPC waiters to sixty seconds", async () => {
 });
 
 test.each([
+  ["without pictures", [], 60_000],
+  // 1.25 MB of picture data takes 10 s at 1 Mbit/s.
+  [
+    "with pictures",
+    [
+      { data: "a".repeat(500_000), mimeType: "image/jpeg" },
+      { data: "b".repeat(750_000), mimeType: "image/jpeg" },
+    ],
+    70_000,
+  ],
+] as const)(
+  "gives a message %s the default deadline plus its bytes at 1 Mbit/s",
+  async (_label, images, deadlineMs) => {
+    useHeartbeatClock();
+    const mock = createMockTransport();
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: "clsk_unit_test",
+      logger: createMockLogger(),
+      reconnect: { enabled: false },
+      transportFactory: () => mock.transport,
+    });
+    clients.push(client);
+    const connectPromise = client.connect();
+    mock.triggerOpen();
+    await connectPromise;
+
+    const sent = client.sendAgentMessage("agent-1", "look", { images: [...images] });
+    let settled = false;
+    void sent.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+
+    await vi.advanceTimersByTimeAsync(deadlineMs - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(sent).rejects.toThrow(
+      `No response to send_agent_message_request after ${deadlineMs}ms`,
+    );
+  },
+);
+
+test.each([
   [
     "archive_workspace_request",
     (client: DaemonClient) => client.archiveWorkspace("workspace-1"),
