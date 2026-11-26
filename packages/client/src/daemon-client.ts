@@ -136,6 +136,7 @@ import type {
   ProviderInstallationCheckUpdatesResponseMessage,
   UsageReportEntry,
   DaemonGetStatusResponse,
+  DaemonTailscaleSetResponse,
   DaemonGetPairingOfferResponse,
   DaemonConfigReloadResponse,
   DiagnosticsResponse,
@@ -1055,6 +1056,7 @@ export interface ShutdownServerOptions {
   keepTerminals?: boolean;
 }
 export interface DaemonStatusOptions {
+  includeProviders?: boolean;
   requestId?: string;
   timeout?: number;
 }
@@ -7268,6 +7270,17 @@ export class DaemonClient {
     });
   }
 
+  async setTailscaleEnabled(
+    enabled: boolean,
+    confirmed = false,
+  ): Promise<DaemonTailscaleSetResponse["payload"]> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "daemon.tailscale.set.request", enabled, confirmed },
+      responseType: "daemon.tailscale.set.response",
+    });
+  }
+
+  /** The Tailscale disconnect flag describes the connection used for this request. */
   async getDaemonStatus(options?: DaemonStatusOptions): Promise<DaemonStatusPayload> {
     if (!this.lastServerInfoMessage) throw new DaemonConnectionError("Transport not connected");
     if (this.lastServerInfoMessage?.features?.daemonStatusRpc !== true) {
@@ -7277,6 +7290,7 @@ export class DaemonClient {
       requestId: options?.requestId,
       message: {
         type: "daemon.get_status.request",
+        includeProviders: options?.includeProviders,
       },
       responseType: "daemon.get_status.response",
       timeout: options?.timeout,
