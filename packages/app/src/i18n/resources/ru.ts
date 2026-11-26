@@ -2261,7 +2261,8 @@ export const ru: TranslationResources = {
     },
     maxFileMb: {
       label: "Максимальный файл (МБ)",
-      description: "Файлы крупнее не сохраняются.",
+      description:
+        "Файлы крупнее не сохраняются автоматически. Файл, который вы сохраняете сами, может быть до 500 МБ.",
     },
     saved: {
       label_one: "Сохранено: файлов {{count}}, {{size}}",

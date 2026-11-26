@@ -1,6 +1,11 @@
 import { collectRetainedAttachmentIds } from "@/attachments/gc-retention";
 import { getAttachmentStore } from "@/attachments/store";
-import type { AttachmentMetadata, SaveAttachmentInput } from "@/attachments/types";
+import type {
+  AttachmentMetadata,
+  AttachmentWriter,
+  OpenAttachmentWriterInput,
+  SaveAttachmentInput,
+} from "@/attachments/types";
 
 const activePersistence = new Set<Promise<AttachmentMetadata>>();
 const persistedDuringGarbageCollection = new Set<string>();
@@ -122,6 +127,17 @@ export async function encodeAttachmentsForSend(
     (entry): entry is { data: string; mimeType: string } => entry !== null,
   );
   return valid.length > 0 ? valid : undefined;
+}
+
+/**
+ * Opens a writer for a file that arrives in chunks. Hold `retainAttachmentForGarbageCollection`
+ * on `writer.id` until the attachment is referenced, or a collection can drop the partial file.
+ */
+export async function openAttachmentWriter(
+  input: OpenAttachmentWriterInput,
+): Promise<AttachmentWriter> {
+  const store = await getAttachmentStore();
+  return await store.openWriter(input);
 }
 
 export async function readAttachmentBytes(attachment: AttachmentMetadata): Promise<Uint8Array> {

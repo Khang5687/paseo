@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { saveFile, sanitizeFileName } from "./file-save";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
+const noManagedStorage = (): string => {
+  throw new Error("Not in managed storage.");
+};
 
 describe("desktop file save", () => {
   let downloadsDir: string;
@@ -18,7 +21,11 @@ describe("desktop file save", () => {
   });
 
   it("with the question off, writes to Downloads/Paseo and never overwrites", async () => {
-    const deps = { downloadsDir, chooseSavePath: async () => null };
+    const deps = {
+      downloadsDir,
+      chooseSavePath: async () => null,
+      resolveSourcePath: noManagedStorage,
+    };
 
     const first = await saveFile({ fileName: "report.pdf", bytes: bytes("one"), ask: false }, deps);
     const second = await saveFile(
@@ -47,6 +54,7 @@ describe("desktop file save", () => {
       { fileName: "note.txt", bytes: bytes("hello"), ask: true },
       {
         downloadsDir,
+        resolveSourcePath: noManagedStorage,
         chooseSavePath: async (defaultPath) => {
           asked.push(defaultPath);
           return target;
@@ -66,7 +74,7 @@ describe("desktop file save", () => {
   it("writes nothing when the dialog is cancelled", async () => {
     const result = await saveFile(
       { fileName: "note.txt", bytes: bytes("hello"), ask: true },
-      { downloadsDir, chooseSavePath: async () => null },
+      { downloadsDir, chooseSavePath: async () => null, resolveSourcePath: noManagedStorage },
     );
 
     expect(result).toEqual({ status: "cancelled" });
@@ -77,10 +85,39 @@ describe("desktop file save", () => {
     await writeFile(path.join(downloadsDir, "keep.txt"), "x");
     const result = await saveFile(
       { fileName: "../../keep.txt", bytes: bytes("y"), ask: false },
-      { downloadsDir, chooseSavePath: async () => null },
+      { downloadsDir, chooseSavePath: async () => null, resolveSourcePath: noManagedStorage },
     );
 
     expect(result).toMatchObject({ path: path.join(downloadsDir, "Paseo", "keep.txt") });
     expect(sanitizeFileName("..")).toBe("download");
+  });
+
+  it("copies a managed file instead of taking its bytes, and never overwrites", async () => {
+    const source = path.join(downloadsDir, "managed.bin");
+    await writeFile(source, "big file");
+    const deps = {
+      downloadsDir,
+      chooseSavePath: async () => null,
+      resolveSourcePath: (value: string) => value,
+    };
+
+    const first = await saveFile({ fileName: "video.mp4", sourcePath: source, ask: false }, deps);
+    const second = await saveFile({ fileName: "video.mp4", sourcePath: source, ask: false }, deps);
+
+    expect(first).toMatchObject({ path: path.join(downloadsDir, "Paseo", "video.mp4") });
+    expect(second).toMatchObject({ path: path.join(downloadsDir, "Paseo", "video (1).mp4") });
+    expect(await readFile(path.join(downloadsDir, "Paseo", "video (1).mp4"), "utf8")).toBe(
+      "big file",
+    );
+  });
+
+  it("refuses a source path outside managed storage", async () => {
+    await expect(
+      saveFile(
+        { fileName: "passwd", sourcePath: "/etc/passwd", ask: false },
+        { downloadsDir, chooseSavePath: async () => null, resolveSourcePath: noManagedStorage },
+      ),
+    ).rejects.toThrow("Not in managed storage.");
+    expect(await readdir(downloadsDir)).toEqual([]);
   });
 });

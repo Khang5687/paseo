@@ -2258,7 +2258,8 @@ export const ptBR: TranslationResources = {
     },
     maxFileMb: {
       label: "Maior arquivo (MB)",
-      description: "Arquivos maiores não são salvos.",
+      description:
+        "Arquivos maiores não são salvos automaticamente. Um arquivo que você salva pode ter até 500 MB.",
     },
     saved: {
       label_one: "Salvo: {{count}} arquivo, {{size}}",

@@ -2233,7 +2233,8 @@ export const ko: TranslationResources = {
     },
     maxFileMb: {
       label: "최대 파일 크기(MB)",
-      description: "더 큰 파일은 저장하지 않습니다.",
+      description:
+        "더 큰 파일은 자동으로 저장하지 않습니다. 직접 저장하는 파일은 최대 500MB까지 가능합니다.",
     },
     saved: {
       label_one: "저장됨: 파일 {{count}}개, {{size}}",

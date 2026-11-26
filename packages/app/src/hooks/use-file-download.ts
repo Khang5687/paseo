@@ -33,7 +33,7 @@ export function useFileDownload({
     () => workspaceId?.trim() || normalizedWorkspaceRoot,
     [normalizedWorkspaceRoot, workspaceId],
   );
-  const { requestFileDownloadToken, requestFileBytes } = useFileExplorerActions({
+  const { requestFileDownloadToken } = useFileExplorerActions({
     serverId,
     workspaceId,
     workspaceRoot: normalizedWorkspaceRoot,
@@ -55,22 +55,20 @@ export function useFileDownload({
         daemonProfile,
         activeConnectionId: getHostRuntimeStore().getSnapshot(serverId)?.activeConnectionId ?? null,
         requestFileDownloadToken: (targetPath) => requestFileDownloadToken(targetPath),
-        readFile: requestFileBytes,
+        saveCopy: (onProgress) =>
+          addSavedFile({ serverId, workspaceRoot: normalizedWorkspaceRoot, path, onProgress }),
         destination: {
           askWhere: downloadAskWhere,
           folderUri: downloadFolderUri,
           onFolderPicked: (folderUri) => void updateSettings({ downloadFolderUri: folderUri }),
         },
       });
-      // A download also lands in the Saved library, so it opens later with the host asleep.
-      void addSavedFile({ serverId, workspaceRoot: normalizedWorkspaceRoot, path });
     },
     [
       daemonProfile,
       downloadAskWhere,
       downloadFolderUri,
       normalizedWorkspaceRoot,
-      requestFileBytes,
       requestFileDownloadToken,
       serverId,
       startDownload,

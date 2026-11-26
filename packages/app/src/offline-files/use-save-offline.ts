@@ -1,12 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { AssistantFileLinkSource } from "@/assistant-file-links";
+import { getFileNameFromPath } from "@/attachments/utils";
 import { FileLinkPickCancelledError } from "@/assistant-file-links/ladder";
 import { useAssistantFileLinkResolverContext } from "@/assistant-file-links/provider";
 import { classifyForResolution } from "@/assistant-file-links/resolver";
 import { resolveFileLinkLookup } from "@/assistant-file-links/use-file-link";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useSessionStore } from "@/stores/session-store";
+import { withTransferProgress } from "@/stores/download-store";
 import { addSavedFile } from "./saver";
 
 /**
@@ -41,7 +43,10 @@ export function useSaveFileLinkOffline(): (source: AssistantFileLinkSource) => v
       } else {
         return;
       }
-      const result = await addSavedFile({ serverId, workspaceRoot, path });
+      const result = await withTransferProgress(
+        { serverId, scopeId: serverId, fileName: getFileNameFromPath(path) ?? path },
+        (onProgress) => addSavedFile({ serverId, workspaceRoot, path, onProgress }),
+      );
       if (result.status === "tooLarge") {
         toast?.error(t("offlineFiles.tooLarge", { size: result.maxFileMb }));
       } else if (result.status === "failed") {

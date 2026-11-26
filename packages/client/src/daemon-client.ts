@@ -841,6 +841,17 @@ export interface FileReadResult {
   modifiedAt: string;
   revision?: string;
 }
+
+/** A file's metadata without its bytes: what a streamed read returns. */
+export type FileReadMeta = Omit<FileReadResult, "bytes">;
+
+/** Where a streamed read puts the bytes, so a big file never sits in memory whole. */
+export interface FileReadSink {
+  /** Runs once, before the first chunk of a binary transfer. */
+  begin?(meta: FileReadMeta): void | Promise<void>;
+  /** Chunks arrive in order; the next one waits for this to settle. */
+  write(chunk: Uint8Array): void | Promise<void>;
+}
 export interface FileUploadInput {
   fileName: string;
   mimeType: string;
@@ -1325,6 +1336,9 @@ interface PendingBinaryFileRead {
   // A `files.copies.read` transfer completes through its own JSON response, not a synthesized
   // `file_explorer_response`.
   fileCopy?: true;
+  // Chunks go here as they arrive instead of piling up in memory.
+  sink?: FileReadSink;
+  onProgress?: (received: number, total: number) => void;
 }
 
 interface BinaryFileTransferState extends PendingBinaryFileRead {
@@ -1337,6 +1351,10 @@ interface BinaryFileTransferState extends PendingBinaryFileRead {
   modifiedAt: string;
   revision?: string;
   chunks: Uint8Array[];
+  received: number;
+  /** Sink writes run one at a time, in arrival order. */
+  sinkWrites: Promise<void>;
+  sinkError?: unknown;
 }
 
 type RpcWaitResult<T> = { kind: "ok"; value: T } | { kind: "error"; error: DaemonRpcError };
@@ -6850,8 +6868,47 @@ export class DaemonClient {
     maxBytes?: number,
     timeout?: number,
   ): Promise<FileReadResult> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    this.pendingBinaryFileReads.set(resolvedRequestId, { cwd, path, maxBytes });
+    return this.readFileInternal({ cwd, path, requestId, maxBytes, timeout });
+  }
+
+  /**
+   * Like `readFile`, but each chunk goes to `sink` as it arrives and the result carries no bytes,
+   * so a file of any size reads in constant memory. `onProgress` reports bytes received so far.
+   * A daemon without the binary channel sends the file whole; it reaches the sink in one write.
+   */
+  async readFileToSink(
+    cwd: string,
+    path: string,
+    sink: FileReadSink,
+    options: {
+      maxBytes?: number;
+      timeout?: number;
+      onProgress?: (received: number, total: number) => void;
+    } = {},
+  ): Promise<FileReadMeta> {
+    const { bytes: _bytes, ...meta } = await this.readFileInternal({
+      cwd,
+      path,
+      sink,
+      maxBytes: options.maxBytes,
+      timeout: options.timeout,
+      onProgress: options.onProgress,
+    });
+    return meta;
+  }
+
+  private async readFileInternal(input: {
+    cwd: string;
+    path: string;
+    requestId?: string;
+    maxBytes?: number;
+    timeout?: number;
+    sink?: FileReadSink;
+    onProgress?: (received: number, total: number) => void;
+  }): Promise<FileReadResult> {
+    const { cwd, path, maxBytes, sink, onProgress } = input;
+    const resolvedRequestId = this.createRequestId(input.requestId);
+    this.pendingBinaryFileReads.set(resolvedRequestId, { cwd, path, maxBytes, sink, onProgress });
     try {
       const payload = await this.requestFileExplorer(
         cwd,
@@ -6860,7 +6917,7 @@ export class DaemonClient {
         resolvedRequestId,
         true,
         maxBytes,
-        timeout,
+        input.timeout,
       );
       if (payload.error) {
         throw new Error(payload.error);
@@ -6873,7 +6930,22 @@ export class DaemonClient {
       if (!payload.file) {
         throw new Error("File unavailable.");
       }
-      return legacyExplorerFileToBytes(payload.file);
+      const legacy = legacyExplorerFileToBytes(payload.file);
+      if (sink) {
+        // A daemon without a binary channel answers a binary file with its size and no content.
+        // Never hand that on as a complete file.
+        if (legacy.bytes.byteLength !== legacy.size) {
+          throw new Error(
+            `File transfer incomplete: expected ${legacy.size} bytes, received ${legacy.bytes.byteLength}.`,
+          );
+        }
+        const { bytes: _unused, ...meta } = legacy;
+        await sink.begin?.(meta);
+        await sink.write(legacy.bytes);
+        onProgress?.(legacy.bytes.byteLength, legacy.size);
+        return { ...legacy, bytes: new Uint8Array() };
+      }
+      return legacy;
     } finally {
       this.pendingBinaryFileReads.delete(resolvedRequestId);
       this.activeBinaryFileTransfers.delete(resolvedRequestId);
@@ -8916,7 +8988,7 @@ export class DaemonClient {
       if (!pending) {
         return;
       }
-      this.activeBinaryFileTransfers.set(frame.requestId, {
+      const transfer: BinaryFileTransferState = {
         ...pending,
         mime: frame.metadata.mime,
         size: frame.metadata.size,
@@ -8924,7 +8996,24 @@ export class DaemonClient {
         modifiedAt: frame.metadata.modifiedAt,
         revision: frame.metadata.revision,
         chunks: [],
-      });
+        received: 0,
+        sinkWrites: Promise.resolve(),
+      };
+      this.activeBinaryFileTransfers.set(frame.requestId, transfer);
+      const { sink } = transfer;
+      // COMPAT(fileReadByteBudget): added in v0.5.0, remove after 2027-02-21 once daemon floor >= v0.5.0.
+      // An old daemon streams despite maxBytes; the sink never sees a file over the budget.
+      if (sink?.begin && !(transfer.maxBytes && transfer.size > transfer.maxBytes)) {
+        const meta: FileReadMeta = {
+          mime: transfer.mime,
+          size: transfer.size,
+          path: transfer.path,
+          kind: binaryFileKind(transfer.mime, transfer.encoding),
+          modifiedAt: transfer.modifiedAt,
+          revision: transfer.revision,
+        };
+        this.queueSinkWrite(frame.requestId, transfer, () => sink.begin?.(meta));
+      }
       return;
     }
 
@@ -8939,7 +9028,14 @@ export class DaemonClient {
       if (transfer.maxBytes && transfer.size > transfer.maxBytes) {
         return;
       }
-      transfer.chunks.push(frame.payload);
+      transfer.received += frame.payload.byteLength;
+      const { sink } = transfer;
+      if (sink) {
+        this.queueSinkWrite(frame.requestId, transfer, () => sink.write(frame.payload));
+      } else {
+        transfer.chunks.push(frame.payload);
+      }
+      transfer.onProgress?.(transfer.received, transfer.size);
       return;
     }
 
@@ -8961,21 +9057,69 @@ export class DaemonClient {
       return;
     }
 
-    const received = transfer.chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-    if (received !== transfer.size) {
+    if (transfer.received !== transfer.size) {
       this.activeBinaryFileTransfers.delete(frame.requestId);
       this.rejectWaitersForRequestId(
         frame.requestId,
         new Error(
-          `File transfer incomplete: expected ${transfer.size} bytes, received ${received}.`,
+          `File transfer incomplete: expected ${transfer.size} bytes, received ${transfer.received}.`,
         ),
       );
       return;
     }
 
-    const bytes = concatByteChunks(transfer.chunks, transfer.size);
-    this.activeBinaryFileTransfers.delete(frame.requestId);
-    this.completedBinaryFileReads.set(frame.requestId, {
+    if (!transfer.sink) {
+      this.finishBinaryFileTransfer(frame.requestId, transfer);
+      return;
+    }
+    // Every queued sink write has to land before the read counts as done.
+    void transfer.sinkWrites.then(() => this.finishAfterSinkWrites(frame.requestId, transfer));
+  }
+
+  private finishAfterSinkWrites(requestId: string, transfer: BinaryFileTransferState): void {
+    if (this.activeBinaryFileTransfers.get(requestId) !== transfer) {
+      return;
+    }
+    this.finishBinaryFileTransfer(requestId, transfer);
+  }
+
+  private queueSinkWrite(
+    requestId: string,
+    transfer: BinaryFileTransferState,
+    write: () => void | Promise<void>,
+  ): void {
+    transfer.sinkWrites = transfer.sinkWrites.then(() =>
+      this.runSinkWrite(requestId, transfer, write),
+    );
+  }
+
+  private async runSinkWrite(
+    requestId: string,
+    transfer: BinaryFileTransferState,
+    write: () => void | Promise<void>,
+  ): Promise<void> {
+    if (transfer.sinkError !== undefined) {
+      return;
+    }
+    try {
+      await write();
+    } catch (error) {
+      transfer.sinkError = error ?? new Error("File sink failed.");
+      // Later frames find no transfer and are dropped.
+      this.activeBinaryFileTransfers.delete(requestId);
+      this.rejectWaitersForRequestId(
+        requestId,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+  }
+
+  private finishBinaryFileTransfer(requestId: string, transfer: BinaryFileTransferState): void {
+    const bytes = transfer.sink
+      ? new Uint8Array()
+      : concatByteChunks(transfer.chunks, transfer.size);
+    this.activeBinaryFileTransfers.delete(requestId);
+    this.completedBinaryFileReads.set(requestId, {
       bytes,
       mime: transfer.mime,
       size: transfer.size,
@@ -8994,7 +9138,7 @@ export class DaemonClient {
         directory: null,
         file: null,
         error: null,
-        requestId: frame.requestId,
+        requestId,
       },
     });
   }

@@ -2252,7 +2252,8 @@ export const en = {
     },
     maxFileMb: {
       label: "Largest file (MB)",
-      description: "Larger files are not saved.",
+      description:
+        "Larger files are not saved automatically. A file you save yourself can be up to 500 MB.",
     },
     saved: {
       label_one: "Saved: {{count}} file, {{size}}",

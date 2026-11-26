@@ -2271,7 +2271,8 @@ export const fr: TranslationResources = {
     },
     maxFileMb: {
       label: "Fichier le plus gros (Mo)",
-      description: "Les fichiers plus gros ne sont pas enregistrés.",
+      description:
+        "Les fichiers plus gros ne sont pas enregistrés automatiquement. Un fichier que vous enregistrez vous-même peut atteindre 500 Mo.",
     },
     saved: {
       label_one: "Enregistré : {{count}} fichier, {{size}}",

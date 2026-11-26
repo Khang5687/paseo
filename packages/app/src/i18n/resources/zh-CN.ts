@@ -2198,7 +2198,7 @@ export const zhCN: TranslationResources = {
     },
     maxFileMb: {
       label: "单个文件上限 (MB)",
-      description: "更大的文件不会保存。",
+      description: "更大的文件不会自动保存。你主动保存的文件最大可达 500 MB。",
     },
     saved: {
       label_one: "已保存：{{count}} 个文件，{{size}}",
