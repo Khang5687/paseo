@@ -396,6 +396,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const transformTimelineItem = useInstalledTimelineTransform(resolvedServerId);
 
     const client = useSessionStore((state) => state.sessions[resolvedServerId]?.client ?? null);
+    // The job the open turn is blocked on, so the footer shows an hourglass, not the loader.
+    const waitingOn = useSessionStore(
+      (state) =>
+        state.sessions[resolvedServerId]?.agents.get(agentId)?.backgroundWork?.waitingOn?.title ??
+        null,
+    );
     const sessionStreamHead = useSessionStore((state) =>
       state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
     );
@@ -1003,6 +1009,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           <TurnFooter
             isRunning={isTurnActive}
             inFlightTurnStartedAt={baseRenderModel.turnTiming.runningStartedAt}
+            waitingOn={waitingOn}
             host={bottomTurnFooterHost}
             strategy={streamRenderStrategy}
             supportsTimelineCursor={supportsAgentForkContextCursor}
@@ -1016,6 +1023,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         readOnly,
         isTurnActive,
         baseRenderModel.turnTiming.runningStartedAt,
+        waitingOn,
         bottomTurnFooterHost,
         streamRenderStrategy,
         supportsAgentForkContextCursor,

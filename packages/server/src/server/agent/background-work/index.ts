@@ -8,6 +8,10 @@ export interface AgentBackgroundWorkInput {
   description: string | null;
   command?: string;
   canStop?: boolean;
+  /** The last lines the work printed, oldest first, at most 20. */
+  outputTail?: string[];
+  /** The agent's turn is blocked until this work ends. */
+  waitedOn?: boolean;
 }
 
 export interface AgentBackgroundWorkItem extends AgentBackgroundWorkInput {
@@ -85,6 +89,8 @@ export class AgentBackgroundWorkStore {
         kind: input.kind,
         description: input.description,
         ...(input.command ? { command: input.command } : {}),
+        ...(input.outputTail?.length ? { outputTail: input.outputTail } : {}),
+        ...(input.waitedOn ? { waitedOn: true } : {}),
         ...(input.canStop
           ? { canStop: true, stopToken: previousById.get(id)?.stopToken ?? randomUUID() }
           : {}),
@@ -170,17 +176,27 @@ export class AgentBackgroundWorkStore {
       const at = work.item.nextRunAt;
       if (at && (!nextRunAt || Date.parse(at) < Date.parse(nextRunAt))) nextRunAt = at;
     }
-    return {
-      count,
-      ...(runningCount === count ? {} : { runningCount }),
-      ...(nextRunAt ? { nextRunAt } : {}),
-    };
+    const summary: AgentBackgroundWorkSummary = { count };
+    if (runningCount !== count) summary.runningCount = runningCount;
+    if (nextRunAt) summary.nextRunAt = nextRunAt;
+    const waitingOn = waitingOnSummary(items);
+    if (waitingOn) summary.waitingOn = waitingOn;
+    return summary;
   }
 
   clear(agentId: string): AgentBackgroundWorkItem[] | null {
     if (!this.providerItems.delete(agentId)) return null;
     return this.list(agentId);
   }
+}
+
+/** The first job the provider says the agent's turn is blocked on. */
+function waitingOnSummary(
+  items: readonly AgentBackgroundWorkItem[] | undefined,
+): AgentBackgroundWorkSummary["waitingOn"] {
+  const waited = items?.find((item) => item.waitedOn);
+  if (!waited) return undefined;
+  return { itemId: waited.id, title: waited.description ?? waited.command ?? "" };
 }
 
 function sameItems(
@@ -199,8 +215,16 @@ function sameItems(
         item.canStop === other.canStop &&
         item.stopToken === other.stopToken &&
         item.startedAt === other.startedAt &&
-        item.nextRunAt === other.nextRunAt
+        item.nextRunAt === other.nextRunAt &&
+        item.waitedOn === other.waitedOn &&
+        sameLines(item.outputTail, other.outputTail)
       );
     })
   );
+}
+
+function sameLines(left: readonly string[] | undefined, right: readonly string[] | undefined) {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((line, index) => line === right[index]);
 }

@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Clock } from "lucide-react-native";
+import { Clock, Hourglass } from "lucide-react-native";
 import {
   MENU_ITEM_HEIGHT,
   MenuRoot,
@@ -35,7 +35,11 @@ import type { Theme } from "@/styles/theme";
 import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
 
 const ThemedClock = withUnistyles(Clock);
+const ThemedHourglass = withUnistyles(Hourglass);
 const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const waitingIconMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? undefined,
+});
 
 /**
  * The strip of pills where a pane's ambient trackers and plugin actions live.
@@ -96,6 +100,11 @@ export interface ComposerTrackPillSegment {
    * running. The bucket still says what state the work is in.
    */
   scheduled?: boolean;
+  /**
+   * Draws an hourglass in place of the running ring, for a turn that is blocked on a job rather
+   * than working.
+   */
+  waiting?: boolean;
 }
 
 export interface ComposerTrackPillProps {
@@ -207,7 +216,11 @@ function ComposerTrackPillTrigger({
             style={styles.segment}
             testID={`${testID}-segment-${index}`}
           >
-            <ComposerTrackMark bucket={segment.bucket} scheduled={segment.scheduled} />
+            <ComposerTrackMark
+              bucket={segment.bucket}
+              scheduled={segment.scheduled}
+              waiting={segment.waiting}
+            />
             <Text style={labelStyle} numberOfLines={1}>
               {segment.text}
             </Text>
@@ -350,12 +363,17 @@ export function ComposerTrackRow({
 export function ComposerTrackMark({
   bucket,
   scheduled = false,
+  waiting = false,
 }: {
   bucket: SidebarStateBucket | null;
   scheduled?: boolean;
+  waiting?: boolean;
 }): ReactElement | null {
   if (scheduled) {
     return <ThemedClock size={STATUS_INDICATOR_ALERT_SIZE} uniProps={mutedIconMapping} />;
+  }
+  if (waiting) {
+    return <ThemedHourglass size={STATUS_INDICATOR_ALERT_SIZE} uniProps={waitingIconMapping} />;
   }
   if (!bucket) {
     return null;

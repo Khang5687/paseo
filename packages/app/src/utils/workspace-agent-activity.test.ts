@@ -16,6 +16,7 @@ function agent(input: {
   parentAgentId?: string | null;
   background?: boolean;
   nextRunAt?: string;
+  waitingOn?: string;
 }): Agent {
   return {
     serverId: "host-a",
@@ -67,6 +68,9 @@ function agent(input: {
     labels: {},
     ...(input.nextRunAt
       ? { backgroundWork: { count: 1, runningCount: 0, nextRunAt: input.nextRunAt } }
+      : {}),
+    ...(input.waitingOn !== undefined
+      ? { backgroundWork: { count: 1, waitingOn: { itemId: "bg_1", title: input.waitingOn } } }
       : {}),
   };
 }
@@ -153,6 +157,7 @@ describe("workspace agent activity index", () => {
             status: "needs_input",
             enteredAt: new Date("2026-06-01T10:01:00.000Z"),
             nextRunAt: null,
+            waitingOn: null,
           },
         ],
         [
@@ -162,6 +167,7 @@ describe("workspace agent activity index", () => {
             status: "attention",
             enteredAt: new Date("2026-06-01T10:02:00.000Z"),
             nextRunAt: null,
+            waitingOn: null,
           },
         ],
       ]),
@@ -193,6 +199,7 @@ describe("workspace agent activity index", () => {
       status: "done",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
       nextRunAt: null,
+      waitingOn: null,
     });
   });
 
@@ -237,6 +244,7 @@ describe("workspace agent activity index", () => {
       status: "running",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
       nextRunAt: null,
+      waitingOn: null,
     });
   });
 
@@ -273,6 +281,7 @@ describe("workspace agent activity index", () => {
             status: "done",
             enteredAt: new Date("2026-06-01T10:00:00.000Z"),
             nextRunAt: null,
+            waitingOn: null,
           },
         ],
         [
@@ -282,6 +291,7 @@ describe("workspace agent activity index", () => {
             status: "running",
             enteredAt: new Date("2026-06-01T10:03:00.000Z"),
             nextRunAt: null,
+            waitingOn: null,
           },
         ],
       ]),
@@ -359,6 +369,7 @@ describe("workspace agent activity index", () => {
       status: "needs_input",
       enteredAt: new Date("2026-06-01T10:05:00.000Z"),
       nextRunAt: null,
+      waitingOn: null,
     });
   });
 
@@ -398,5 +409,26 @@ describe("workspace agent activity index", () => {
       agentId: "latest",
       nextRunAt: "2026-06-01T11:00:00.000Z",
     });
+  });
+
+  it("names the job a working chat waits on, and drops it once the chat stops working", () => {
+    const waiting = (status: Agent["status"]) =>
+      buildWorkspaceAgentActivityIndex(
+        new Map([
+          [
+            "root",
+            agent({
+              id: "root",
+              workspaceId: "workspace-a",
+              status,
+              updatedAt: "2026-06-01T10:00:00.000Z",
+              waitingOn: "fork build",
+            }),
+          ],
+        ]),
+      ).get("workspace-a")?.waitingOn;
+
+    expect(waiting("running")).toBe("fork build");
+    expect(waiting("idle")).toBeNull();
   });
 });

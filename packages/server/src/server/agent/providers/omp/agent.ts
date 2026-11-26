@@ -110,6 +110,7 @@ import { mapOmpAdvisorMessageToToolCall } from "./advisor-message.js";
 import { handleOmpHostToolRuntimeEvent, OmpHostToolRouter } from "./host-tools.js";
 import { OmpSubagentIndex } from "./subagent-index.js";
 import { OmpQuestionUi } from "./question-ui.js";
+import { OmpBackgroundJobs } from "./background-jobs.js";
 import { mapOmpToolDetail } from "./tool-call-mapper.js";
 import { OmpUsagePoller, type OmpUsagePollScheduler } from "./usage-poller.js";
 import { ompReplyStep, ompSessionMetrics } from "./metrics.js";
@@ -678,6 +679,12 @@ export class OmpAgentSession implements AgentSession {
   private readonly activeToolCalls = new Map<string, OmpTrackedToolCall>();
   private readonly pendingExtensionUiRequests = new Map<string, AgentPermissionRequest>();
   private readonly questionUi = new OmpQuestionUi();
+  private readonly backgroundJobs = new OmpBackgroundJobs({
+    publish: (items) => this.emit({ type: "background_work", provider: this.provider, items }),
+    sendCommand: async (message) => {
+      await this.runtimeSession.prompt({ message });
+    },
+  });
   private activeTurnId: string | null = null;
   private readonly pendingClientMessages: Array<{ clientMessageId: string | null; text: string }> =
     [];
@@ -1239,8 +1246,13 @@ export class OmpAgentSession implements AgentSession {
       await this.runtimeSession.close();
     } finally {
       await this.hostTools?.close();
+      this.backgroundJobs.clear();
       this.clearOmpSessionState();
     }
+  }
+
+  async stopBackgroundWork(id: string): Promise<void> {
+    await this.backgroundJobs.stop(id);
   }
 
   private clearOmpSessionState(): void {
@@ -1684,11 +1696,8 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private handleCommandOutput(textValue: unknown): void {
-    if (!this.activeTurnId) {
-      return;
-    }
     const text = stripAnsi(optionalString(textValue) ?? "").trim();
-    if (!text) {
+    if (!text || this.backgroundJobs.consumeCommandOutput(text) || !this.activeTurnId) {
       return;
     }
     if (!this.activeTurnStarted) {
@@ -1893,6 +1902,7 @@ export class OmpAgentSession implements AgentSession {
     this.runtimeDead = true;
     void this.hostTools?.close();
     this.usagePoller.stopTurn();
+    this.backgroundJobs.clear();
     if (!this.activeTurnId) {
       this.terminalizeActiveWork();
       this.subagentIndex.clear(this.runtimeSession);
@@ -1949,10 +1959,18 @@ export class OmpAgentSession implements AgentSession {
         const toolCall = parseToolArgs(event.toolName, event.args);
         this.activeToolCalls.set(event.toolCallId, toolCall);
         this.questionUi.start(event.toolName, event.args);
+        this.backgroundJobs.toolStarted(
+          event.toolCallId,
+          event.toolName,
+          event.args,
+          "intent" in event ? event.intent : undefined,
+        );
         this.emitToolCallEvent(event.toolCallId, toolCall, "running", null, null);
         return;
       }
       case "tool_execution_update": {
+        // A job keeps reporting under its tool call id after the call returned.
+        this.backgroundJobs.toolUpdated(event.toolCallId, event.toolName, event.partialResult);
         const toolCall = this.activeToolCalls.get(event.toolCallId);
         if (!toolCall) {
           return;
@@ -2002,6 +2020,7 @@ export class OmpAgentSession implements AgentSession {
     const toolCall =
       this.activeToolCalls.get(event.toolCallId) ?? parseToolArgs(event.toolName, null);
     this.activeToolCalls.delete(event.toolCallId);
+    this.backgroundJobs.toolEnded(event.toolCallId, event.toolName, event.result);
 
     this.questionUi.finish(event.toolName);
 

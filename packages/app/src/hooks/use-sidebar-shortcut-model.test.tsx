@@ -37,6 +37,7 @@ function workspace(projectKey: string, workspaceId: string): SidebarWorkspaceEnt
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    waitingOn: null,
   };
 }
 

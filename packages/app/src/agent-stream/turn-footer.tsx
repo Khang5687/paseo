@@ -1,7 +1,8 @@
 import type { AgentMetric } from "@getpaseo/protocol/agent-types";
 import React, { memo, useCallback, useMemo, type ReactNode } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { Hourglass } from "lucide-react-native";
 import { SPACING, type Theme } from "@/styles/theme";
 import type { TurnTiming } from "@/timeline/turn-time";
 import { getAssistantReply, type StreamItem } from "@/types/stream";
@@ -20,9 +21,15 @@ import type { TurnFooterHost } from "./layout";
 import { AssistantForkMenu } from "@/components/assistant-fork-menu";
 import { SyncedLoader } from "@/components/synced-loader";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { formatWaitingLabel, WAITING_SHORT_TITLE_CHARS } from "@/background-work/presentation";
+import { getStatusDotColor } from "@/utils/status-dot-color";
 
 const ThemedSyncedLoader = withUnistyles(SyncedLoader);
 const workingIndicatorColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
+const ThemedHourglass = withUnistyles(Hourglass);
+const waitingIndicatorColorMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? undefined,
+});
 export const TURN_FOOTER_BOTTOM_SPACING = SPACING[8];
 // Every footer variant (running, completed with Copy, completed with only its duration) gets
 // this content height, so a turn ending swaps the footer's controls without moving the rows
@@ -49,6 +56,7 @@ export type InFlightTurnForkHandler = (target: AssistantForkTarget) => Promise<v
 export const TurnFooter = memo(function TurnFooter({
   isRunning,
   inFlightTurnStartedAt,
+  waitingOn = null,
   host,
   strategy,
   supportsTimelineCursor,
@@ -57,6 +65,8 @@ export const TurnFooter = memo(function TurnFooter({
 }: {
   isRunning: boolean;
   inFlightTurnStartedAt: Date | null;
+  /** The background job the open turn is blocked on ("" when unnamed). */
+  waitingOn?: string | null;
   host: TurnFooterHost | null;
   strategy: TurnContentStrategy;
   supportsTimelineCursor: boolean;
@@ -68,6 +78,7 @@ export const TurnFooter = memo(function TurnFooter({
       <TurnFooterRow>
         <RunningTurnFooter
           inFlightTurnStartedAt={inFlightTurnStartedAt}
+          waitingOn={waitingOn}
           onForkInFlightTurn={onForkInFlightTurn}
         />
       </TurnFooterRow>
@@ -123,17 +134,29 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
 
 const WorkingIndicator = memo(function WorkingIndicator({
   inFlightTurnStartedAt = null,
+  waitingOn = null,
   onForkInFlightTurn,
 }: {
   inFlightTurnStartedAt?: Date | null;
+  waitingOn?: string | null;
   onForkInFlightTurn?: InFlightTurnForkHandler;
 }) {
   const active = useRetainedPanelActive();
   return (
     <View style={stylesheet.turnFooterContent}>
-      <View style={stylesheet.workingLoader}>
-        <ThemedSyncedLoader size={14} uniProps={workingIndicatorColorMapping} />
-      </View>
+      {/* A turn blocked on a job is waiting, not working: an hourglass and the job's name. */}
+      {waitingOn === null ? (
+        <View style={stylesheet.workingLoader}>
+          <ThemedSyncedLoader size={14} uniProps={workingIndicatorColorMapping} />
+        </View>
+      ) : (
+        <View style={stylesheet.waiting} testID="turn-waiting-indicator">
+          <ThemedHourglass size={14} uniProps={waitingIndicatorColorMapping} />
+          <Text style={stylesheet.waitingLabel} numberOfLines={1}>
+            {formatWaitingLabel(waitingOn, WAITING_SHORT_TITLE_CHARS)}
+          </Text>
+        </View>
+      )}
       {/* Match the completed-turn footer: actions precede timing metadata. */}
       {onForkInFlightTurn ? <AssistantForkMenu onFork={onForkInFlightTurn} /> : null}
       {inFlightTurnStartedAt ? (
@@ -150,15 +173,18 @@ const WorkingIndicator = memo(function WorkingIndicator({
 
 function RunningTurnFooter({
   inFlightTurnStartedAt,
+  waitingOn,
   onForkInFlightTurn,
 }: {
   inFlightTurnStartedAt: Date | null;
+  waitingOn: string | null;
   onForkInFlightTurn?: InFlightTurnForkHandler;
 }) {
   return (
     <View style={stylesheet.turnFooterSlot} testID="turn-working-indicator">
       <WorkingIndicator
         inFlightTurnStartedAt={inFlightTurnStartedAt}
+        waitingOn={waitingOn}
         onForkInFlightTurn={onForkInFlightTurn}
       />
     </View>
@@ -262,5 +288,17 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   workingLoader: {
     marginLeft: -2,
+  },
+  waiting: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1.5],
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  waitingLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: STREAM_METADATA_FONT_SIZE,
+    flexShrink: 1,
   },
 }));

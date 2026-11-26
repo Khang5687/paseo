@@ -26,6 +26,7 @@ function select(overrides: Partial<Parameters<typeof selectMetaRowItems>[0]> = {
     prHint: PR_HINT,
     serviceSummary: SERVICE,
     nextRunAt: null,
+    waitingOn: null,
     labels: LABELS,
     visible: DEFAULT_SIDEBAR_ROW_ITEMS,
     checksDisplay: DEFAULT_SIDEBAR_CHECKS_DISPLAY,
@@ -64,6 +65,14 @@ describe("selectMetaRowItems", () => {
       "labels",
     ]);
     expect(items).toContainEqual({ kind: "nextRun", at: "2026-06-06T09:00:00.000Z" });
+  });
+
+  it("leads with the job a working chat waits on, even one without a name", () => {
+    expect(select({ waitingOn: "fork build" })[0]).toEqual({
+      kind: "waiting",
+      title: "fork build",
+    });
+    expect(select({ waitingOn: "" })[0]).toEqual({ kind: "waiting", title: "" });
   });
 
   it("omits what the workspace does not have", () => {

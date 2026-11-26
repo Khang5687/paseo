@@ -57,6 +57,8 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   hasRunningScripts: boolean;
   /** When a heartbeat on one of its chats next fires. */
   nextRunAt: string | null;
+  /** The job its working chat waits on ("" when unnamed); null when it is not waiting. */
+  waitingOn: string | null;
 }
 
 export interface SidebarProjectEntry {
@@ -183,6 +185,7 @@ export function createSidebarWorkspaceEntry(input: {
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
     nextRunAt: input.workspaceAgentActivity?.get(input.workspace.id)?.nextRunAt ?? null,
+    waitingOn: input.workspaceAgentActivity?.get(input.workspace.id)?.waitingOn ?? null,
   };
 }
 

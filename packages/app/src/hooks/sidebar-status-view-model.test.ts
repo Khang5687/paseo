@@ -35,6 +35,7 @@ function ws(
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    waitingOn: null,
     workspaceKey: input.workspaceKey,
   };
 }

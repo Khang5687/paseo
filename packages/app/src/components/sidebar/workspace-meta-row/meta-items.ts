@@ -6,10 +6,11 @@ import { selectCheckSummary, type CheckSummary } from "./check-summary";
 import type { WorkspaceServiceSummary } from "./service-summary";
 
 /**
- * What ends up on the line under a workspace title, in the order it is read: where the
- * workspace lives, what change it belongs to, whether that change is passing, what it is
- * running, when a heartbeat next wakes it, and what someone filed it under. Identity first, then
- * the work, then the work's state, then the labels a person put on it.
+ * What ends up on the line under a workspace title, in the order it is read: what the working
+ * chat waits on, where the workspace lives, what change it belongs to, whether that change is
+ * passing, what it is running, when a heartbeat next wakes it, and what someone filed it under.
+ * A wait leads because it explains the hourglass in the status slot beside it; then identity,
+ * then the work, then the work's state, then the labels a person put on it.
  *
  * Labels are one item rather than one per label: they are drawn as a run of chips with a single
  * separator in front of them, so the line reads as four peers however many labels a workspace
@@ -23,6 +24,7 @@ export type MetaRowItem =
   | { kind: "checks"; summary: CheckSummary; label: boolean }
   | { kind: "services"; summary: WorkspaceServiceSummary }
   | { kind: "nextRun"; at: string }
+  | { kind: "waiting"; title: string }
   | { kind: "labels"; labels: readonly WorkspaceLabelDefinition[] };
 
 /**
@@ -43,6 +45,8 @@ export function selectMetaRowItems(input: {
   serviceSummary: WorkspaceServiceSummary | null;
   /** A scheduled heartbeat. Not a preference: it is why an idle row will start working again. */
   nextRunAt: string | null;
+  /** The job the working chat waits on; "" when unnamed. Not a preference either. */
+  waitingOn: string | null;
   labels: readonly WorkspaceLabelDefinition[];
   visible: SidebarRowItems;
   checksDisplay: SidebarChecksDisplay;
@@ -54,12 +58,16 @@ export function selectMetaRowItems(input: {
     prHint,
     serviceSummary,
     nextRunAt,
+    waitingOn,
     labels,
     visible,
     checksDisplay,
   } = input;
   const items: MetaRowItem[] = [];
 
+  if (waitingOn !== null) {
+    items.push({ kind: "waiting", title: waitingOn });
+  }
   if (currentBranch && visible.branch) {
     items.push({ kind: "branch", name: currentBranch });
   }

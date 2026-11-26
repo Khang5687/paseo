@@ -29,6 +29,7 @@ function workspace(workspaceId: string, projectViewKey: string): SidebarWorkspac
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    waitingOn: null,
   };
 }
 

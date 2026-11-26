@@ -39,6 +39,7 @@ function makeWorkspace(
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    waitingOn: null,
     labels,
   };
   return { placement, entry };
