@@ -11,6 +11,7 @@ import { AgentTurnChangedError } from "./agent-prompt.js";
 import {
   continuesAssistantMessage,
   projectTimelineRows,
+  type ProjectedTimelineRow,
   TimelineProjection,
 } from "./timeline-projection.js";
 import type { PluginLifecycle } from "../plugins/lifecycle/index.js";
@@ -4830,16 +4831,26 @@ export class AgentManager {
     }
     // An interactive session must acquire its rewind lock without yielding.
 
-    const submittedRow = this.timelineStore
-      .getRows(agentId)
-      .find(
-        (row) =>
-          row.item.type === "user_message" &&
-          row.item.messageId === messageId &&
-          row.item.clientMessageId === messageId,
-      );
+    const timelineRows = this.timelineStore.getRows(agentId);
+    const submittedRow = timelineRows.find(
+      (row) =>
+        row.item.type === "user_message" &&
+        row.item.messageId === messageId &&
+        row.item.clientMessageId === messageId,
+    );
     if (submittedRow && !submittedRow.providerMessageId) {
-      throw new Error("Cannot rewind before the provider acknowledges the submitted prompt");
+      // A running turn may still be acknowledged, so it is never dropped. A turn that ended
+      // without an acknowledgement (it failed before the provider took the prompt) never will
+      // be: the provider has nothing to rewind, so only Paseo's copy goes. Later rows the
+      // provider did acknowledge would be left behind in its history, so those still refuse.
+      const providerKnowsLaterPrompt = timelineRows.some(
+        (row) => row.seqStart > submittedRow.seqStart && row.providerMessageId,
+      );
+      if (this.hasInFlightRun(agentId) || providerKnowsLaterPrompt) {
+        throw new Error("Cannot rewind before the provider acknowledges the submitted prompt");
+      }
+      await this.discardUnacknowledgedPrompt(agent, submittedRow, mode);
+      return;
     }
     const providerMessageId = submittedRow?.providerMessageId ?? messageId;
 
@@ -4919,6 +4930,47 @@ export class AgentManager {
       throw new Error(`Provider '${handle.provider}' cannot discard a forked session`);
     }
     await client.discardNativeFork(handle);
+  }
+
+  /**
+   * Removes a prompt the provider never acknowledged, and everything after it, from Paseo's
+   * timeline. The provider has no record of it, so its rewind is not called. Files are
+   * untouched by a prompt the provider never ran, so the files mode has nothing to do.
+   */
+  private async discardUnacknowledgedPrompt(
+    agent: ActiveManagedAgent,
+    submittedRow: ProjectedTimelineRow,
+    mode: RewindMode,
+  ): Promise<void> {
+    if (mode === "files") {
+      return;
+    }
+    const agentId = agent.id;
+    const lock = this.runs.createPendingRun(agentId);
+    try {
+      this.logger.info(
+        { agentId, provider: agent.provider, seq: submittedRow.seq, mode },
+        "agent.rewind.discard_unacknowledged",
+      );
+      await this.flush();
+      this.agentStreamCoalescer.flushAndDiscard(agentId);
+      const kept = this.timelineStore
+        .getRows(agentId)
+        .filter((row) => row.seqStart < submittedRow.seqStart);
+      await this.deleteCommittedTimeline(agentId);
+      this.timelineStore.delete(agentId);
+      this.timelineStore.initialize(agentId, { rows: kept, timestamp: new Date().toISOString() });
+      this.enqueueDurableTimelineBulkInsert(agentId, kept);
+      this.dispatch({
+        type: "timeline_replacement",
+        agentId,
+        epoch: this.timelineStore.getEpoch(agentId),
+      });
+      this.touchUpdatedAt(agent);
+      this.emitState(agent);
+    } finally {
+      this.runs.settleForegroundRun(agentId, lock.token);
+    }
   }
 
   async deleteAgentState(agentId: string): Promise<void> {
