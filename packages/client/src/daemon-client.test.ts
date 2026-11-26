@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
@@ -13,6 +14,8 @@ import {
   type PluginClientBundle,
   type PluginClientBundleStore,
 } from "./daemon-client";
+import type { WebSocketLike } from "./daemon-client-transport-types";
+import { createWebSocketTransportFactory } from "./daemon-client-websocket-transport";
 import type { OmpAccountRoutingState } from "@getpaseo/protocol/messages";
 import { createHostChannelTransport } from "./hosts/index.js";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
@@ -1713,6 +1716,50 @@ test("defaults session RPC waiters to sixty seconds", async () => {
   await vi.advanceTimersByTimeAsync(1);
   await expect(responsePromise).rejects.toThrow("No response to fetch_agent_request after 60000ms");
 });
+
+test.each([
+  ["without pictures", [], 60_000],
+  // 1.25 MB of picture data takes 10 s at 1 Mbit/s.
+  [
+    "with pictures",
+    [
+      { data: "a".repeat(500_000), mimeType: "image/jpeg" },
+      { data: "b".repeat(750_000), mimeType: "image/jpeg" },
+    ],
+    70_000,
+  ],
+] as const)(
+  "gives a message %s the default deadline plus its bytes at 1 Mbit/s",
+  async (_label, images, deadlineMs) => {
+    useHeartbeatClock();
+    const mock = createMockTransport();
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: "clsk_unit_test",
+      logger: createMockLogger(),
+      reconnect: { enabled: false },
+      transportFactory: () => mock.transport,
+    });
+    clients.push(client);
+    const connectPromise = client.connect();
+    mock.triggerOpen();
+    await connectPromise;
+
+    const sent = client.sendAgentMessage("agent-1", "look", { images: [...images] });
+    let settled = false;
+    void sent.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+
+    await vi.advanceTimersByTimeAsync(deadlineMs - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(sent).rejects.toThrow(
+      `No response to send_agent_message_request after ${deadlineMs}ms`,
+    );
+  },
+);
 
 test.each([
   [
@@ -3446,6 +3493,106 @@ test("tears down and reports a liveness timeout after the daemon goes silent for
     reason: "Liveness check timed out (15000ms)",
   });
   expect(session.teardownCount()).toBe(1);
+});
+
+// A socket behind a slow uplink: sent bytes queue in bufferedAmount and leave at the link's
+// rate. The daemon answers a ping only once the bytes queued ahead of it have left.
+class SlowLinkSocket extends EventEmitter {
+  readyState = 0;
+  bufferedAmount = 0;
+  bytesPerSecond = 100 * 1024;
+  readonly closes: string[] = [];
+  private sentBytes = 0;
+  private drainedBytes = 0;
+  private pingsEndAt: number[] = [];
+  private readonly network = setInterval(() => this.tick(), 100);
+
+  open(): void {
+    this.readyState = 1;
+    this.emit("open");
+    this.emit(
+      "message",
+      wrapSessionMessage({
+        type: "status",
+        payload: {
+          status: "server_info",
+          serverId: "srv_slow_link_test",
+          features: { binaryChunkingV1: true },
+          hostname: null,
+          version: null,
+        },
+      }),
+      false,
+    );
+  }
+
+  send(data: string | Uint8Array | ArrayBuffer): void {
+    const bytes = typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
+    this.sentBytes += bytes;
+    this.bufferedAmount += bytes;
+    if (typeof data === "string" && JSON.parse(data).type === "ping") {
+      this.pingsEndAt.push(this.sentBytes);
+    }
+  }
+
+  close(_code?: number, reason?: string): void {
+    this.closes.push(reason ?? "");
+    this.readyState = 3;
+    clearInterval(this.network);
+  }
+
+  private tick(): void {
+    const drained = Math.min(this.bufferedAmount, this.bytesPerSecond / 10);
+    this.bufferedAmount -= drained;
+    this.drainedBytes += drained;
+    while (this.pingsEndAt.length > 0 && this.pingsEndAt[0]! <= this.drainedBytes) {
+      this.pingsEndAt.shift();
+      this.emit("message", JSON.stringify({ type: "pong" }), false);
+    }
+  }
+}
+
+async function startUploadOverSlowLink(): Promise<{
+  client: DaemonClient;
+  socket: SlowLinkSocket;
+}> {
+  const socket = new SlowLinkSocket();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_slow_link_test",
+    logger: noopLogger,
+    reconnect: { enabled: false },
+    transportFactory: createWebSocketTransportFactory(() => socket as unknown as WebSocketLike),
+  });
+  clients.push(client);
+  const connection = client.connect();
+  socket.open();
+  await connection;
+  // Six MiB at 100 KiB/s: about a minute on the wire, past two missed 15 s ping windows.
+  void client.sendAgentMessage("agent_slow_link", "x".repeat(6 * 1024 * 1024)).catch(() => {});
+  return { client, socket };
+}
+
+test("stays online while an upload drains for longer than two ping windows", async () => {
+  useHeartbeatClock();
+  const { client, socket } = await startUploadOverSlowLink();
+
+  await vi.advanceTimersByTimeAsync(75_000);
+
+  expect(socket.closes).toEqual([]);
+  expect(client.getConnectionState()).toEqual({ status: "connected" });
+});
+
+test("tears down when an upload stops draining", async () => {
+  useHeartbeatClock();
+  const { client, socket } = await startUploadOverSlowLink();
+  await vi.advanceTimersByTimeAsync(5_000);
+  socket.bytesPerSecond = 0;
+
+  await vi.advanceTimersByTimeAsync(60_000);
+
+  expect(socket.closes).toEqual(["Liveness check timed out"]);
+  expect(client.getConnectionState()).toMatchObject({ status: "disconnected" });
 });
 
 test("survives a single missed pong when answers resume", async () => {
