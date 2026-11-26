@@ -185,6 +185,8 @@ export const ja: TranslationResources = {
     attachments: {
       addImage: "画像を追加",
       pasteImage: "画像を貼り付け",
+      sendOriginalSize: "元のサイズで送信",
+      sendOriginalSizeDescription: "次のメッセージの画像を縮小しない",
       addFile: "ファイルをアップロード",
       addIssueOrPr: "イシューまたはPRを追加",
       addIssueOrPr_mr: "イシューまたはMRを追加",
@@ -233,6 +235,8 @@ export const ja: TranslationResources = {
         "現在のクリップボードに画像がありません。キーボードから貼り付けてみてください。",
       pasteImageFailed: "画像を貼り付けられませんでした",
       fileTooLarge: "{{fileName}}が大きすぎます（最大{{size}}）",
+      attachmentsTooLarge:
+        "添付ファイルは{{size}} MBで、上限は{{limit}} MBです。いくつか削除してください。",
     },
     clientCommands: {
       archiveAgent: "現在のエージェントをアーカイブ",

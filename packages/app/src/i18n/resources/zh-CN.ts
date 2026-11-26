@@ -184,6 +184,8 @@ export const zhCN: TranslationResources = {
     attachments: {
       addImage: "添加图片",
       pasteImage: "粘贴图片",
+      sendOriginalSize: "发送原图",
+      sendOriginalSizeDescription: "下一条消息的图片不压缩",
       addFile: "Upload file",
       addIssueOrPr: "添加 issue 或 PR",
       addIssueOrPr_mr: "添加 issue 或 MR",
@@ -231,6 +233,7 @@ export const zhCN: TranslationResources = {
       noClipboardImage: "当前剪贴板中没有图片。请尝试通过键盘粘贴。",
       pasteImageFailed: "无法粘贴图片",
       fileTooLarge: "{{fileName}} is too large (max {{size}})",
+      attachmentsTooLarge: "附件共 {{size}} MB，上限为 {{limit}} MB；请移除一些。",
     },
     clientCommands: {
       archiveAgent: "归档当前 Agent",

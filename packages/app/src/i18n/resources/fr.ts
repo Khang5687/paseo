@@ -186,6 +186,8 @@ export const fr: TranslationResources = {
     attachments: {
       addImage: "Ajouter une image",
       pasteImage: "Coller une image",
+      sendOriginalSize: "Envoyer en taille originale",
+      sendOriginalSizeDescription: "Images du prochain message, non réduites",
       addFile: "Importer un fichier",
       addIssueOrPr: "Ajouter un ticket ou une PR",
       addIssueOrPr_mr: "Ajouter un ticket ou une MR",
@@ -234,6 +236,8 @@ export const fr: TranslationResources = {
         "Aucune image dans le presse-papiers. Essayez de coller depuis votre clavier.",
       pasteImageFailed: "Impossible de coller l’image",
       fileTooLarge: "{{fileName}} est trop volumineux (maximum {{size}})",
+      attachmentsTooLarge:
+        "Les pièces jointes font {{size}} Mo, la limite est de {{limit}} Mo ; retirez-en.",
     },
     clientCommands: {
       archiveAgent: "Archiver l’agent actuel",

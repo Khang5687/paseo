@@ -76,6 +76,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Shortcut } from "@/components/ui/shortcut";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -146,6 +147,9 @@ export interface AttachmentMenuItem {
   onSelect: () => void;
   disabled?: boolean;
   icon?: React.ReactElement | null;
+  description?: string;
+  /** Makes the row an on/off toggle that keeps the menu open; `onSelect` flips it. */
+  checked?: boolean;
 }
 
 export interface ComposerInputSnapshot {
@@ -320,17 +324,32 @@ function AttachButtonIcon({
 function AttachmentMenuList({ items }: { items: AttachmentMenuItem[] }) {
   return (
     <>
-      {items.map((item) => (
-        <DropdownMenuItem
-          key={item.id}
-          testID={`message-input-attachment-menu-item-${item.id}`}
-          disabled={item.disabled}
-          onSelect={item.onSelect}
-          leading={item.icon ?? null}
-        >
-          {item.label}
-        </DropdownMenuItem>
-      ))}
+      {items.map((item) =>
+        item.checked === undefined ? (
+          <DropdownMenuItem
+            key={item.id}
+            testID={`message-input-attachment-menu-item-${item.id}`}
+            disabled={item.disabled}
+            onSelect={item.onSelect}
+            leading={item.icon ?? null}
+            description={item.description}
+          >
+            {item.label}
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuCheckboxItem
+            key={item.id}
+            testID={`message-input-attachment-menu-item-${item.id}`}
+            disabled={item.disabled}
+            checked={item.checked}
+            onToggle={item.onSelect}
+            leading={item.icon ?? null}
+            description={item.description}
+          >
+            {item.label}
+          </DropdownMenuCheckboxItem>
+        ),
+      )}
     </>
   );
 }

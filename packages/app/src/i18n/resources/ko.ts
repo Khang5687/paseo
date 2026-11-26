@@ -184,6 +184,8 @@ export const ko: TranslationResources = {
     attachments: {
       addImage: "이미지 추가",
       pasteImage: "이미지 붙여넣기",
+      sendOriginalSize: "원본 크기로 보내기",
+      sendOriginalSizeDescription: "다음 메시지의 이미지를 줄이지 않음",
       addFile: "파일 업로드",
       addIssueOrPr: "이슈 또는 PR 추가",
       addIssueOrPr_mr: "이슈 또는 MR 추가",
@@ -231,6 +233,8 @@ export const ko: TranslationResources = {
       noClipboardImage: "현재 클립보드에 이미지가 없습니다. 키보드에서 붙여넣기를 시도해 보세요.",
       pasteImageFailed: "이미지를 붙여넣지 못했습니다.",
       fileTooLarge: "{{fileName}}이(가) 너무 큽니다 (최대 {{size}})",
+      attachmentsTooLarge:
+        "첨부 파일이 {{size}}MB이고 한도는 {{limit}}MB입니다. 일부를 삭제하세요.",
     },
     clientCommands: {
       archiveAgent: "현재 에이전트 보관",

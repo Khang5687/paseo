@@ -94,3 +94,22 @@ export function splitComposerAttachmentsForSubmit(
     attachmentRefs,
   };
 }
+
+/**
+ * Marks the pictures of an outgoing message with the "Send original size" switch. Clears the mark
+ * when the switch is off, since a failed send puts the marked pictures back in the composer.
+ */
+export function applySendOriginalToImages(
+  attachments: ComposerAttachment[],
+  sendOriginal: boolean,
+): ComposerAttachment[] {
+  return attachments.map((attachment) => {
+    if (attachment.kind !== "image") return attachment;
+    if (sendOriginal) {
+      return { kind: "image", metadata: { ...attachment.metadata, sendOriginal: true } };
+    }
+    if (attachment.metadata.sendOriginal === undefined) return attachment;
+    const { sendOriginal: _cleared, ...metadata } = attachment.metadata;
+    return { kind: "image", metadata };
+  });
+}
