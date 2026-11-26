@@ -203,6 +203,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         backdrop={backdrop}
         hasUnsentDraft={hasUnsentDraft}
         loading={isLoading}
+        waiting={workspace.waitingOn !== null}
         testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
       />
     );
