@@ -253,7 +253,8 @@ const BUILTIN_ROWS: Record<BuiltinSidebarNavId, ComponentType<SidebarNavRowProps
 const styles = StyleSheet.create((theme) => ({
   iconRow: {
     flexDirection: "row",
-    alignItems: "center",
+    // With more buttons than fit, they wrap; the close button stays on the first line.
+    alignItems: "flex-start",
     paddingLeft: theme.spacing[2],
   },
   iconRowButtons: {
