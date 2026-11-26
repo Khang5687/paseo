@@ -1220,5 +1220,14 @@
       "packages/desktop/src/features/file-save.test.ts"
     ],
     "e2e": ["packages/app/e2e/browser/big-file-save.spec.ts"]
+  },
+  {
+    "pr": 158,
+    "title": "fix(server): rewind a prompt whose turn ended before the provider acknowledged it",
+    "tests": [
+      "packages/server/src/server/agent/agent-manager.test.ts",
+      "packages/server/src/server/agent/providers/mock-load-test-agent.test.ts"
+    ],
+    "e2e": ["packages/app/e2e/browser/agent-message-rewind.spec.ts"]
   }
 ]

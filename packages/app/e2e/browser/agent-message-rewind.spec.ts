@@ -145,8 +145,11 @@ test.describe("Agent message rewind", () => {
       const userMessage = page.getByTestId("user-message").filter({ hasText: prompt });
       await expect(userMessage).toBeVisible();
       await expect(page.getByTestId("composer-image-attachment-pill")).toHaveCount(0);
-      const finish = await agent.client.waitForFinish(agent.agentId, 30_000);
-      expect(finish.status).toBe("error");
+      await agent.client.waitForAgentUpsert(
+        agent.agentId,
+        (snapshot) => snapshot.status === "error",
+        30_000,
+      );
 
       await rewindConversation(page, userMessage, prompt);
 
