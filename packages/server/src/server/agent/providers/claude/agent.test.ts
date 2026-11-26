@@ -1583,10 +1583,14 @@ describe("ClaudeAgentSession features", () => {
 
   test("keeps turn identities distinct across resumed session objects", async () => {
     const { queryFactory } = createQueryMock();
+    // Resume looks for the transcript in every folder under the config dir's `projects`;
+    // against a real ~/.claude with many projects that scan outlasts the test timeout.
+    const emptyConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-claude-resume-empty-"));
     const client = new ClaudeAgentClient({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: emptyConfigDir } },
     });
     const handle = {
       provider: "claude" as const,
@@ -1602,6 +1606,7 @@ describe("ClaudeAgentSession features", () => {
       expect(nextTurn.turnId).not.toBe(firstTurn.turnId);
     } finally {
       await resumed.close();
+      await fs.rm(emptyConfigDir, { recursive: true, force: true });
     }
   });
 
