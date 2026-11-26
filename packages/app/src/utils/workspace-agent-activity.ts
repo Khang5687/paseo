@@ -7,6 +7,8 @@ export interface WorkspaceAgentActivity {
   agentId: string;
   status: WorkspaceDescriptor["status"];
   enteredAt: Date | null;
+  /** Earliest scheduled run among the workspace's root agents, whichever agent is latest. */
+  nextRunAt: string | null;
   // Whether any root agent here is a new main agent the user has not opened yet. Any root agent,
   // not only the latest, so a second agent starting does not hide the first one's highlight.
   hasUnseenAgent: boolean;
@@ -17,24 +19,43 @@ function workspaceAgentStatus(agent: Agent): Agent["status"] {
   return agent.status === "running" ? "idle" : agent.status;
 }
 
+/** A visible root agent of its workspace: the agents whose state the workspace row shows. */
+function isWorkspaceActivityRoot(
+  agent: Agent,
+  agents: ReadonlyMap<string, Agent>,
+): agent is Agent & { workspaceId: string } {
+  const parentAgent = agent.parentAgentId ? agents.get(agent.parentAgentId) : undefined;
+  return Boolean(
+    !agent.archivedAt &&
+    !agent.background &&
+    agent.workspaceId &&
+    isWorkspaceRootAgent(agent, parentAgent),
+  );
+}
+
+function keepEarliest(
+  byWorkspaceId: Map<string, string>,
+  workspaceId: string,
+  at: string | undefined,
+) {
+  const earliest = byWorkspaceId.get(workspaceId);
+  if (at && (!earliest || Date.parse(at) < Date.parse(earliest))) {
+    byWorkspaceId.set(workspaceId, at);
+  }
+}
+
 export function buildWorkspaceAgentActivityIndex(
   agents: ReadonlyMap<string, Agent>,
   previous?: ReadonlyMap<string, WorkspaceAgentActivity>,
 ): Map<string, WorkspaceAgentActivity> {
   const activityByWorkspaceId = new Map<string, WorkspaceAgentActivity>();
   const latestActivityAtByWorkspaceId = new Map<string, Date>();
+  const nextRunAtByWorkspaceId = new Map<string, string>();
   const unseenWorkspaceIds = new Set<string>();
 
   for (const agent of agents.values()) {
-    const parentAgent = agent.parentAgentId ? agents.get(agent.parentAgentId) : undefined;
-    if (
-      agent.archivedAt ||
-      agent.background ||
-      !agent.workspaceId ||
-      !isWorkspaceRootAgent(agent, parentAgent)
-    ) {
-      continue;
-    }
+    if (!isWorkspaceActivityRoot(agent, agents)) continue;
+    keepEarliest(nextRunAtByWorkspaceId, agent.workspaceId, agent.backgroundWork?.nextRunAt);
     if (isUnseenAgentLabels(agent.labels)) {
       unseenWorkspaceIds.add(agent.workspaceId);
     }
@@ -56,16 +77,19 @@ export function buildWorkspaceAgentActivityIndex(
       agentId: agent.id,
       status,
       enteredAt,
+      nextRunAt: null,
       hasUnseenAgent: false,
     });
   }
 
   for (const [workspaceId, activity] of activityByWorkspaceId) {
+    activity.nextRunAt = nextRunAtByWorkspaceId.get(workspaceId) ?? null;
     activity.hasUnseenAgent = unseenWorkspaceIds.has(workspaceId);
     const previousActivity = previous?.get(workspaceId);
     if (
       previousActivity?.agentId === activity.agentId &&
       previousActivity.status === activity.status &&
+      previousActivity.nextRunAt === activity.nextRunAt &&
       previousActivity.hasUnseenAgent === activity.hasUnseenAgent
     ) {
       activityByWorkspaceId.set(workspaceId, previousActivity);

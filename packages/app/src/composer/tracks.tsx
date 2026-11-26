@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState, type ReactElement, type ReactNode } fro
 import { Pressable, Text, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { Clock } from "lucide-react-native";
 import {
   MENU_ITEM_HEIGHT,
   MenuRoot,
@@ -25,9 +26,16 @@ import { CHAT_COLUMN_RAIL_DATASET } from "@/chat-rail";
 import { isWeb } from "@/constants/platform";
 import { usePanelAwareHorizontalScrollGesture } from "@/mobile-panels/gestures";
 import { getStatusDotColor } from "@/utils/status-dot-color";
-import { STATUS_INDICATOR_FILLED_DOT_SIZE } from "@/utils/status-indicator-geometry";
+import {
+  STATUS_INDICATOR_ALERT_SIZE,
+  STATUS_INDICATOR_FILLED_DOT_SIZE,
+} from "@/utils/status-indicator-geometry";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
+import type { Theme } from "@/styles/theme";
 import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
+
+const ThemedClock = withUnistyles(Clock);
+const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 /**
  * The strip of pills where a pane's ambient trackers and plugin actions live.
@@ -83,6 +91,11 @@ export interface ComposerTrackPillSegment {
   bucket: SidebarStateBucket | null;
   /** Short enough to stay on one line alongside its siblings: "1 failed", "2/7 tasks", "3". */
   text: string;
+  /**
+   * Draws a clock in place of the bucket's mark, for work that waits for a time rather than
+   * running. The bucket still says what state the work is in.
+   */
+  scheduled?: boolean;
 }
 
 export interface ComposerTrackPillProps {
@@ -194,7 +207,7 @@ function ComposerTrackPillTrigger({
             style={styles.segment}
             testID={`${testID}-segment-${index}`}
           >
-            <ComposerTrackMark bucket={segment.bucket} />
+            <ComposerTrackMark bucket={segment.bucket} scheduled={segment.scheduled} />
             <Text style={labelStyle} numberOfLines={1}>
               {segment.text}
             </Text>
@@ -336,9 +349,14 @@ export function ComposerTrackRow({
  */
 export function ComposerTrackMark({
   bucket,
+  scheduled = false,
 }: {
   bucket: SidebarStateBucket | null;
+  scheduled?: boolean;
 }): ReactElement | null {
+  if (scheduled) {
+    return <ThemedClock size={STATUS_INDICATOR_ALERT_SIZE} uniProps={mutedIconMapping} />;
+  }
   if (!bucket) {
     return null;
   }

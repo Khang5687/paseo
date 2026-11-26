@@ -55,6 +55,8 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   archiveUnpushedCommitCount: number | null;
   scripts: WorkspaceDescriptor["scripts"];
   hasRunningScripts: boolean;
+  /** When a heartbeat on one of its chats next fires. */
+  nextRunAt: string | null;
   // Subagents still working under a root agent that waits on the user. Zero while
   // the row already shows running, since the spinner says the same thing.
   workingSubagentCount: number;
@@ -185,6 +187,7 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
+    nextRunAt: input.workspaceAgentActivity?.get(input.workspace.id)?.nextRunAt ?? null,
     workingSubagentCount: input.workspace.runningSubagentCount ?? 0,
     isNew: input.workspaceAgentActivity?.get(input.workspace.id)?.hasUnseenAgent ?? false,
   };

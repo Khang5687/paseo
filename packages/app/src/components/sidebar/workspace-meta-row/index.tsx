@@ -3,11 +3,12 @@ import { Fragment, useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
+import { Clock, ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
 import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
 } from "@getpaseo/protocol/workspace-labels";
+import { formatNextRunLabel } from "@/background-work";
 import type { HostBadgeModel } from "@/hosts/appearance";
 import { HostBadge, HOST_BADGE_ICON_SIZE } from "@/hosts/host-badge";
 import { WorkspaceLabelChip, WORKSPACE_LABEL_CHIP_INSET } from "@/workspace-labels/chip";
@@ -40,6 +41,7 @@ export {
  */
 const META_ICON_SIZE = HOST_BADGE_ICON_SIZE;
 
+const ThemedClock = withUnistyles(Clock);
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolder = withUnistyles(Folder);
 const ThemedGitBranch = withUnistyles(GitBranch);
@@ -75,6 +77,7 @@ export function WorkspaceMetaRow({
   hostBadge,
   prHint,
   serviceSummary,
+  nextRunAt = null,
   labels = EMPTY_LABELS,
   workingSubagentCount = 0,
   workspace = null,
@@ -85,6 +88,8 @@ export function WorkspaceMetaRow({
   hostBadge: HostBadgeModel | null;
   prHint: PrHint | null;
   serviceSummary: WorkspaceServiceSummary | null;
+  /** When a heartbeat next wakes the workspace. Previews have none. */
+  nextRunAt?: string | null;
   labels?: readonly WorkspaceLabelDefinition[];
   workingSubagentCount?: number;
   /** The real workspace behind the row; previews leave it out and get no plugin items. */
@@ -99,6 +104,7 @@ export function WorkspaceMetaRow({
     hasHostBadge: hostBadge !== null,
     prHint,
     serviceSummary,
+    nextRunAt,
     labels,
     visible: rowItems,
     checksDisplay,
@@ -162,6 +168,9 @@ function MetaItemNode({
   }
   if (item.kind === "labels") {
     return <LabelsItem labels={item.labels} leading={leading} />;
+  }
+  if (item.kind === "nextRun") {
+    return <NextRunItem at={item.at} />;
   }
   return <ServiceItem summary={item.summary} />;
 }
@@ -343,6 +352,22 @@ function ServiceItem({ summary }: { summary: WorkspaceServiceSummary }) {
       <ThemedGlobe size={META_ICON_SIZE} uniProps={unhealthy ? dangerMapping : successMapping} />
       <Text style={unhealthy ? styles.serviceNameUnhealthy : styles.serviceName} numberOfLines={1}>
         {summary.name}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * When a heartbeat next wakes one of the workspace's chats. A clock, not the running ring: the
+ * row is idle until then, and a ring would say it is working.
+ */
+function NextRunItem({ at }: { at: string }) {
+  const label = formatNextRunLabel(at);
+  return (
+    <View style={styles.item} testID="sidebar-workspace-next-run">
+      <ThemedClock size={META_ICON_SIZE} uniProps={mutedMapping} />
+      <Text style={styles.prText} numberOfLines={1}>
+        {label}
       </Text>
     </View>
   );

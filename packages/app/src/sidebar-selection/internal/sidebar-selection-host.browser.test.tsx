@@ -60,6 +60,7 @@ function makeEntry(id: string): SidebarWorkspaceEntry {
     labels: [],
     scripts: [],
     hasRunningScripts: false,
+    nextRunAt: null,
     archiveHasUncommittedChanges: null,
     archiveUnpushedCommitCount: null,
     workingSubagentCount: 0,

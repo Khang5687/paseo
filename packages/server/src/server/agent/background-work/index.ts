@@ -12,6 +12,7 @@ export interface AgentBackgroundWorkInput {
 
 export interface AgentBackgroundWorkItem extends AgentBackgroundWorkInput {
   startedAt: string;
+  nextRunAt?: string;
   stopToken?: string;
 }
 
@@ -25,6 +26,8 @@ export interface DaemonBackgroundWorkInput extends DaemonBackgroundWorkKey {
   kind: string;
   description: string | null;
   startedAt: string;
+  /** Scheduled work: when it next fires. */
+  nextRunAt?: string;
   countsAsRunning?: boolean;
   stop: () => Promise<void>;
 }
@@ -94,7 +97,15 @@ export class AgentBackgroundWorkStore {
   }
 
   setDaemonBackgroundWork(input: DaemonBackgroundWorkInput): AgentBackgroundWorkItem[] | null {
-    const { agentId, kind, description, startedAt, countsAsRunning = true, stop } = input;
+    const {
+      agentId,
+      kind,
+      description,
+      startedAt,
+      nextRunAt,
+      countsAsRunning = true,
+      stop,
+    } = input;
     const id = daemonItemId(input);
     const items = this.daemonItems.get(agentId) ?? new Map<string, DaemonBackgroundWork>();
     const previous = items.get(id);
@@ -103,6 +114,7 @@ export class AgentBackgroundWorkStore {
       kind,
       description,
       startedAt,
+      ...(nextRunAt ? { nextRunAt } : {}),
       canStop: true,
       stopToken: previous?.item.stopToken ?? randomUUID(),
     };
@@ -152,10 +164,17 @@ export class AgentBackgroundWorkStore {
 
     const count = (items?.length ?? 0) + (daemonItems?.size ?? 0);
     let runningCount = items?.length ?? 0;
+    let nextRunAt: string | undefined;
     for (const work of daemonItems?.values() ?? []) {
       if (work.countsAsRunning) runningCount++;
+      const at = work.item.nextRunAt;
+      if (at && (!nextRunAt || Date.parse(at) < Date.parse(nextRunAt))) nextRunAt = at;
     }
-    return runningCount === count ? { count } : { count, runningCount };
+    return {
+      count,
+      ...(runningCount === count ? {} : { runningCount }),
+      ...(nextRunAt ? { nextRunAt } : {}),
+    };
   }
 
   clear(agentId: string): AgentBackgroundWorkItem[] | null {
@@ -179,7 +198,8 @@ function sameItems(
         item.command === other.command &&
         item.canStop === other.canStop &&
         item.stopToken === other.stopToken &&
-        item.startedAt === other.startedAt
+        item.startedAt === other.startedAt &&
+        item.nextRunAt === other.nextRunAt
       );
     })
   );

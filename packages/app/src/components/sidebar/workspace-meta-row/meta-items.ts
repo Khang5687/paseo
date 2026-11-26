@@ -8,8 +8,8 @@ import type { WorkspaceServiceSummary } from "./service-summary";
 /**
  * What ends up on the line under a workspace title, in the order it is read: where the
  * workspace lives, what change it belongs to, whether that change is passing, what it is
- * running, and what someone filed it under. Identity first, then the work, then the work's
- * state, then the labels a person put on it.
+ * running, when a heartbeat next wakes it, and what someone filed it under. Identity first, then
+ * the work, then the work's state, then the labels a person put on it.
  *
  * Working subagents lead the line whenever any are working. The row's status icon follows the
  * root agent alone, so it stops spinning when the root's turn ends; this says work is still going
@@ -27,6 +27,7 @@ export type MetaRowItem =
   | { kind: "changeRequest"; hint: PrHint }
   | { kind: "checks"; summary: CheckSummary; label: boolean }
   | { kind: "services"; summary: WorkspaceServiceSummary }
+  | { kind: "nextRun"; at: string }
   | { kind: "labels"; labels: readonly WorkspaceLabelDefinition[] };
 
 /**
@@ -45,6 +46,8 @@ export function selectMetaRowItems(input: {
   hasHostBadge: boolean;
   prHint: PrHint | null;
   serviceSummary: WorkspaceServiceSummary | null;
+  /** A scheduled heartbeat. Not a preference: it is why an idle row will start working again. */
+  nextRunAt: string | null;
   labels: readonly WorkspaceLabelDefinition[];
   visible: SidebarRowItems;
   checksDisplay: SidebarChecksDisplay;
@@ -57,6 +60,7 @@ export function selectMetaRowItems(input: {
     hasHostBadge,
     prHint,
     serviceSummary,
+    nextRunAt,
     labels,
     visible,
     checksDisplay,
@@ -92,6 +96,10 @@ export function selectMetaRowItems(input: {
 
   if (serviceSummary && visible.services) {
     items.push({ kind: "services", summary: serviceSummary });
+  }
+
+  if (nextRunAt) {
+    items.push({ kind: "nextRun", at: nextRunAt });
   }
 
   if (labels.length > 0 && visible.labels) {

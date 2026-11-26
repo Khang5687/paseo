@@ -971,6 +971,8 @@ export const AgentBackgroundWorkSummarySchema = z.object({
   count: z.number().int().nonnegative(),
   /** Defaults to the total count when omitted. */
   runningCount: z.number().int().nonnegative().optional(),
+  /** Earliest `nextRunAt` among the agent's scheduled items. */
+  nextRunAt: z.string().optional(),
 });
 
 export type AgentBackgroundWorkSummary = z.infer<typeof AgentBackgroundWorkSummarySchema>;
@@ -6171,6 +6173,8 @@ export const AgentBackgroundWorkItemSchema = z.object({
   description: z.string().nullable(),
   command: z.string().optional(),
   startedAt: z.string(),
+  /** When scheduled work (a heartbeat) next fires. Scheduled work waits; it is not running. */
+  nextRunAt: z.string().optional(),
   canStop: z.boolean().optional(),
   stopToken: z.string().optional(),
 });

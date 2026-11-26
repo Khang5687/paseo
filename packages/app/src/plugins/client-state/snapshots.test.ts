@@ -101,6 +101,7 @@ describe("sidebar entity snapshots", () => {
           agentId: agent.id,
           status: "needs_input" as const,
           enteredAt: null,
+          nextRunAt: null,
           hasUnseenAgent: false,
         },
       ],

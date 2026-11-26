@@ -242,6 +242,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             hostBadge={hostBadge ?? null}
             prHint={workspace.prHint}
             serviceSummary={serviceSummary}
+            nextRunAt={workspace.nextRunAt}
             labels={labels}
             workingSubagentCount={workspace.workingSubagentCount}
             workspace={workspace}
