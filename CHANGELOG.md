@@ -1,5 +1,12 @@
 # Changelog
 
+Not released yet. These changes are on `main` but not in 0.17.4; the next release entry includes them.
+
+Added:
+
+- Agents can ask another agent questions with `ask_agent` without interrupting it: a hidden read-only copy of its conversation answers and stays open for follow-ups with the returned `threadId`, up to a round cap, then closes after the last round, on idle, on archive, or when the asker closes it. The copy cannot call mutating Paseo tools. Works on the same host or a connected one for Claude, Codex, OpenCode, and OMP agents; limits are set under `agents.askAgent` in `config.json`; `list_agents` now includes each agent's `workspaceId`
+- Agents can answer another agent's question boxes with `respond_to_permission` `answers` keyed by question header; `list_pending_permissions` filters by `agentId`, and both reach agents on connected hosts with `serverId`. The `paseo` skill now covers finding, asking, messaging, and unblocking other agents
+
 ## 0.17.5 - 2026-11-26
 
 - **Archive workspaces together:** Cmd/Ctrl+click a workspace in the sidebar to select multiple workspaces and archive them in one step. ([#10798](https://github.com/getpaseo/paseo/pull/10798), [#10821](https://github.com/getpaseo/paseo/pull/10821))
@@ -65,13 +72,6 @@
 - Added launch wraps so plugins can run agents, terminals, and worktree commands inside a sandbox ([#10786](https://github.com/getpaseo/paseo/pull/10786) by [@clkao](https://github.com/clkao), [@bendavid](https://github.com/bendavid))
 - Added the parent workspace to plugin workspace snapshots ([#10781](https://github.com/getpaseo/paseo/pull/10781) by [@spatenotte](https://github.com/spatenotte))
 - Updated the bundled `paseo-plugin` skill to the current plugin API ([#10793](https://github.com/getpaseo/paseo/pull/10793))
-
-Not released yet. These changes are on `main` but not in 0.17.4; the next release entry includes them.
-
-Added:
-
-- Agents can ask another agent questions with `ask_agent` without interrupting it: a hidden read-only copy of its conversation answers and stays open for follow-ups with the returned `threadId`, up to a round cap, then closes after the last round, on idle, on archive, or when the asker closes it. The copy cannot call mutating Paseo tools. Works on the same host or a connected one for Claude, Codex, OpenCode, and OMP agents; limits are set under `agents.askAgent` in `config.json`; `list_agents` now includes each agent's `workspaceId`
-- Agents can answer another agent's question boxes with `respond_to_permission` `answers` keyed by question header; `list_pending_permissions` filters by `agentId`, and both reach agents on connected hosts with `serverId`. The `paseo` skill now covers finding, asking, messaging, and unblocking other agents
 
 ## 0.17.4 - 2026-11-23
 

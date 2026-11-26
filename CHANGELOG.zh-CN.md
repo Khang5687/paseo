@@ -1,5 +1,12 @@
 # Changelog
 
+尚未发布。以下变更已合入 `main`，但不包含在 0.17.4 中；下一个版本的条目会包含它们。
+
+新增：
+
+- Agent 可用 `ask_agent` 向另一个 Agent 提问而不打断它：由它对话的一个隐藏只读副本回答，并通过返回的 `threadId` 保持开启以便追问，直到轮数上限；最后一轮后、空闲超时、任一方被归档或提问方主动关闭时副本即被删除。副本不能调用会修改状态的 Paseo 工具。支持同一主机或已连接的主机上的 Claude、Codex、OpenCode 和 OMP Agent；限制项在 `config.json` 的 `agents.askAgent` 中设置；`list_agents` 现在会返回每个 Agent 的 `workspaceId`
+- Agent 可用 `respond_to_permission` 的 `answers`（按问题 header）回答另一个 Agent 的提问框；`list_pending_permissions` 可按 `agentId` 过滤，两者都可通过 `serverId` 用于已连接主机上的 Agent。`paseo` 技能新增查找、询问、发消息和解除其他 Agent 阻塞的说明
+
 ## 0.17.5 - 2026-11-26
 
 - **批量归档工作区**：在侧边栏按住 Cmd/Ctrl 点击工作区即可多选，一步归档。([#10798](https://github.com/getpaseo/paseo/pull/10798), [#10821](https://github.com/getpaseo/paseo/pull/10821))
@@ -65,13 +72,6 @@
 - 新增启动包装，插件可以在沙箱中运行 Agent、终端和 worktree 命令 ([#10786](https://github.com/getpaseo/paseo/pull/10786)，贡献者：[@clkao](https://github.com/clkao), [@bendavid](https://github.com/bendavid))
 - 在插件的工作区快照中新增父工作区 ([#10781](https://github.com/getpaseo/paseo/pull/10781)，贡献者：[@spatenotte](https://github.com/spatenotte))
 - 将内置的 `paseo-plugin` 技能更新到当前的插件 API ([#10793](https://github.com/getpaseo/paseo/pull/10793))
-
-尚未发布。以下变更已合入 `main`，但不包含在 0.17.4 中；下一个版本的条目会包含它们。
-
-新增：
-
-- Agent 可用 `ask_agent` 向另一个 Agent 提问而不打断它：由它对话的一个隐藏只读副本回答，并通过返回的 `threadId` 保持开启以便追问，直到轮数上限；最后一轮后、空闲超时、任一方被归档或提问方主动关闭时副本即被删除。副本不能调用会修改状态的 Paseo 工具。支持同一主机或已连接的主机上的 Claude、Codex、OpenCode 和 OMP Agent；限制项在 `config.json` 的 `agents.askAgent` 中设置；`list_agents` 现在会返回每个 Agent 的 `workspaceId`
-- Agent 可用 `respond_to_permission` 的 `answers`（按问题 header）回答另一个 Agent 的提问框；`list_pending_permissions` 可按 `agentId` 过滤，两者都可通过 `serverId` 用于已连接主机上的 Agent。`paseo` 技能新增查找、询问、发消息和解除其他 Agent 阻塞的说明
 
 ## 0.17.4 - 2026-11-23
 

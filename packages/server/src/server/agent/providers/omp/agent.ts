@@ -263,6 +263,8 @@ interface OmpAgentSessionOptions {
    * timeline items.
    */
   live?: boolean;
+  /** Shown once after the replayed history: why the session runs on another model. */
+  resumeNotice?: string;
   /** Owned routing for this launch; `agentId` is the trusted host agent. */
   usageRouting?: { agentId: string; snapshotForAgent: AccountRoutingAuthority["snapshotForAgent"] };
 }
@@ -554,6 +556,23 @@ function modelToId(model: OmpModel | null | undefined): string | null {
   return model?.provider && model.id ? `${model.provider}/${model.id}` : null;
 }
 
+// A bare role name: OMP resolves it to the model its own config picks for that role.
+const OMP_DEFAULT_MODEL_ROLE = "default";
+
+const SESSION_MODEL_RESTORE_FAILURE = /SessionModelRestoreError: Could not restore model (\S+)/;
+
+// The model OMP could not restore, read from the startup failure that carries its stderr.
+function readMissingSessionModel(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  return SESSION_MODEL_RESTORE_FAILURE.exec(error.message)?.[1] ?? null;
+}
+
+function describeMissingSessionModel(missingModel: string, runningModel: string | null): string {
+  return runningModel
+    ? `Model ${missingModel} is no longer available in OMP. This agent now runs on ${runningModel}.`
+    : `Model ${missingModel} is no longer available in OMP. This agent now runs on OMP's default model.`;
+}
+
 function ompAssistantText(message: Extract<OmpAgentMessage, { role: "assistant" }>): string | null {
   const text = message.content
     .flatMap((part) => {
@@ -797,6 +816,7 @@ export class OmpAgentSession implements AgentSession {
   );
   private closed = false;
   private live: boolean;
+  private readonly resumeNotice: string | undefined;
   // A resumed session already has context usage, but OMP only reports it during turns.
   private usageRefreshPending: boolean;
   private readonly emittedUserMessageIds = new Set<string>();
@@ -842,6 +862,7 @@ export class OmpAgentSession implements AgentSession {
     this.currentModeId = options.currentModeId ?? null;
     this.logger = options.logger;
     this.live = options.live ?? true;
+    this.resumeNotice = options.resumeNotice;
     this.outputStyles = options.outputStyles;
     this.usageRefreshPending = !this.live;
     this.providerIdleScheduler = options.providerIdleScheduler ?? createOmpProviderIdleScheduler();
@@ -1177,6 +1198,13 @@ export class OmpAgentSession implements AgentSession {
         type: "session_metrics_updated",
         provider: this.provider,
         metrics: ompSessionMetrics(stats, this.lastReply),
+      };
+    }
+    if (this.resumeNotice) {
+      yield {
+        type: "timeline",
+        provider: this.provider,
+        item: { type: "notification", level: "warning", message: this.resumeNotice },
       };
     }
   }
@@ -2861,9 +2889,10 @@ export class OmpAgentClient implements AgentClient {
       outputStyles,
     });
     startInput.routing = this.routingFor(launchContext);
-    const runtimeSession = await this.resolveRuntime(
+    const { runtimeSession, missingModel } = await this.startResumeRuntime(
       resumeConfig.config.providerOptions,
-    ).startSession(startInput);
+      startInput,
+    );
     let hostTools: OmpHostToolRouter | undefined;
     try {
       hostTools = await this.configureNativePaseoTools(
@@ -2878,12 +2907,17 @@ export class OmpAgentClient implements AgentClient {
         model: modelToId(resumedState.model) ?? resumeConfig.config.model,
       };
       const initialState = await this.restoreFastMode(runtimeSession, config, resumedState);
+      const resumeNotice =
+        missingModel === null
+          ? undefined
+          : describeMissingSessionModel(missingModel, modelToId(initialState.model));
       return new OmpAgentSession({
         runtimeSession,
         hostTools,
         restartRuntime: this.buildRestartRuntime(startInput, config, launchContext, outputStyles),
         config,
         initialState,
+        ...(resumeNotice ? { resumeNotice } : {}),
         currentModeId: launchMode.modeId,
         logger: this.logger,
         providerIdleScheduler: this.providerIdleScheduler,
@@ -2898,6 +2932,32 @@ export class OmpAgentClient implements AgentClient {
       await hostTools?.close();
       await runtimeSession.close().catch(() => undefined);
       throw error;
+    }
+  }
+
+  // OMP's rpc mode refuses to open a session whose recorded model it no longer has: it
+  // exits with SessionModelRestoreError instead of falling back (only its TUI does). An
+  // explicit --model skips that restore, so retry once with OMP's own default role; the
+  // model the session then runs on replaces the stored one.
+  private async startResumeRuntime(
+    providerOptions: AgentSessionConfig["providerOptions"],
+    startInput: OmpStartSessionInput,
+  ): Promise<{ runtimeSession: OmpRuntimeSession; missingModel: string | null }> {
+    const runtime = this.resolveRuntime(providerOptions);
+    try {
+      return { runtimeSession: await runtime.startSession(startInput), missingModel: null };
+    } catch (error) {
+      const missingModel = readMissingSessionModel(error);
+      if (missingModel === null) throw error;
+      this.logger.warn(
+        { missingModel },
+        "OMP no longer has the session's model; resuming on OMP's default model",
+      );
+      const runtimeSession = await runtime.startSession({
+        ...startInput,
+        model: OMP_DEFAULT_MODEL_ROLE,
+      });
+      return { runtimeSession, missingModel };
     }
   }
 
