@@ -2,13 +2,20 @@ import { useCallback, useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
-import { ComposerTrackPill, ComposerTrackRow } from "@/composer/tracks";
+import {
+  ComposerTrackMark,
+  ComposerTrackPill,
+  ComposerTrackRow,
+  type ComposerTrackPillSegment,
+} from "@/composer/tracks";
 import { LiveElapsed } from "@/components/message";
 import { Button } from "@/components/ui/button";
 import type { PaseoAgentBackgroundWorkItem } from "@getpaseo/client";
+import type { AgentBackgroundWorkSummary } from "@getpaseo/protocol/messages";
 import { createHostBackgroundWorkModel } from "./host";
-import { backgroundWorkText } from "./presentation";
+import { backgroundWorkText, formatNextRunLabel, tallyBackgroundWork } from "./presentation";
 export { createHostBackgroundWorkModel } from "./host";
+export { formatNextRunLabel } from "./presentation";
 
 function kindKey(kind: string): "shell" | "monitor" | "heartbeat" | "other" {
   if (kind === "shell" || kind === "monitor" || kind === "heartbeat") return kind;
@@ -17,10 +24,10 @@ function kindKey(kind: string): "shell" | "monitor" | "heartbeat" | "other" {
 
 export function BackgroundWorkTrack({
   model,
-  count,
+  summary,
 }: {
   model: ReturnType<typeof createHostBackgroundWorkModel>;
-  count: number;
+  summary: AgentBackgroundWorkSummary;
 }) {
   const { t } = useTranslation();
   const { items, status, stops } = useSyncExternalStore(
@@ -32,21 +39,34 @@ export function BackgroundWorkTrack({
     (entry) => !items?.some((item) => item.stopToken === entry.item.stopToken),
   );
   const rows = [...(items ?? []), ...missing.map((entry) => entry.item)];
-  if (count === 0 && rows.length === 0) return null;
-  const visibleCount = items?.length || count;
+  if (summary.count === 0 && rows.length === 0) return null;
+  const tally = tallyBackgroundWork(items?.length ? items : null, summary);
+  const segments: ComposerTrackPillSegment[] = [];
+  if (tally.running > 0) {
+    segments.push({
+      bucket: "running",
+      text:
+        tally.running === 1
+          ? t("message.backgroundWork.pillOne")
+          : t("message.backgroundWork.pillMany", { count: tally.running }),
+    });
+  }
+  if (tally.nextRunAt) {
+    const next = formatNextRunLabel(tally.nextRunAt);
+    segments.push({
+      bucket: "done",
+      scheduled: true,
+      text:
+        tally.scheduled === 1
+          ? t("message.backgroundWork.scheduledOne", { next })
+          : t("message.backgroundWork.scheduledMany", { count: tally.scheduled, next }),
+    });
+  }
   return (
     <ComposerTrackPill
       testID="background-work"
       panelTitle={t("message.backgroundWork.title")}
-      segments={[
-        {
-          bucket: "running",
-          text:
-            visibleCount === 1
-              ? t("message.backgroundWork.pillOne")
-              : t("message.backgroundWork.pillMany", { count: visibleCount }),
-        },
-      ]}
+      segments={segments}
     >
       {status === "loading" || status === "stale" ? (
         <ComposerTrackRow>
@@ -116,14 +136,12 @@ function BackgroundWorkRow({
       <View style={styles.row}>
         <Text style={styles.title}>{title}</Text>
         {command ? <Text style={styles.facts}>{command}</Text> : null}
-        <Text style={styles.facts}>
-          {kind} ·{" "}
-          {live ? (
-            <LiveElapsed startedAt={new Date(item.startedAt)} active style={styles.facts} />
-          ) : (
-            detail
-          )}
-        </Text>
+        <View style={styles.factsLine}>
+          {live && item.nextRunAt ? <ComposerTrackMark bucket="done" scheduled /> : null}
+          <Text style={styles.facts}>
+            {kind} · <BackgroundWorkTiming item={item} live={live} detail={detail} />
+          </Text>
+        </View>
         {stopStatus === "error" ? (
           <Text style={styles.facts}>{t("message.backgroundWork.stopError")}</Text>
         ) : null}
@@ -148,8 +166,24 @@ function BackgroundWorkRow({
   );
 }
 
+/** Scheduled work says when it next runs; running work counts up; gone work says so. */
+function BackgroundWorkTiming({
+  item,
+  live,
+  detail,
+}: {
+  item: PaseoAgentBackgroundWorkItem;
+  live: boolean;
+  detail: string;
+}) {
+  if (!live) return detail;
+  if (item.nextRunAt) return formatNextRunLabel(item.nextRunAt);
+  return <LiveElapsed startedAt={new Date(item.startedAt)} active style={styles.facts} />;
+}
+
 const styles = StyleSheet.create((theme) => ({
   row: { flexGrow: 1, flexShrink: 1, flexBasis: "auto", minWidth: 0 },
   title: { fontSize: theme.fontSize.base, color: theme.colors.foreground },
   facts: { fontSize: theme.fontSize.sm, color: theme.colors.foregroundMuted },
+  factsLine: { flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
 }));

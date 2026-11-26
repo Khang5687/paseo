@@ -9,6 +9,7 @@ import { usePaneContext } from "@/panels/pane-context";
 import { useSettings } from "@/hooks/use-settings";
 import { PluginComposerPills } from "@/plugins";
 import { useSessionStore } from "@/stores/session-store";
+import { useShallow } from "zustand/shallow";
 import {
   useArchiveFinishedSubagents,
   useArchiveSubagent,
@@ -52,11 +53,18 @@ export const AgentTracks = memo(function AgentTracks({
     rows: subagentRows,
   });
   const { tabId } = usePaneContext();
-  const backgroundWorkCount = useSessionStore((state) => {
-    const session = state.sessions[serverId];
-    const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
-    return agent?.backgroundWork?.count ?? 0;
-  });
+  const backgroundWork = useSessionStore(
+    useShallow((state) => {
+      const session = state.sessions[serverId];
+      const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+      const summary = agent?.backgroundWork;
+      return {
+        count: summary?.count ?? 0,
+        runningCount: summary?.runningCount,
+        nextRunAt: summary?.nextRunAt,
+      };
+    }),
+  );
   const backgroundModel = useMemo(
     () => createHostBackgroundWorkModel(serverId, agentId),
     [serverId, agentId],
@@ -121,7 +129,7 @@ export const AgentTracks = memo(function AgentTracks({
 
   return (
     <ComposerTrackBar>
-      <BackgroundWorkTrack model={backgroundModel} count={backgroundWorkCount} />
+      <BackgroundWorkTrack model={backgroundModel} summary={backgroundWork} />
       {parentAgentId ? <ParentAgentPill serverId={serverId} parentAgentId={parentAgentId} /> : null}
       <AgentTaskList tasks={tasks} />
       <SubagentsTrack

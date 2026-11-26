@@ -6,11 +6,38 @@ export interface WorkspaceAgentActivity {
   agentId: string;
   status: WorkspaceDescriptor["status"];
   enteredAt: Date | null;
+  /** Earliest scheduled run among the workspace's root agents, whichever agent is latest. */
+  nextRunAt: string | null;
 }
 
 function workspaceAgentStatus(agent: Agent): Agent["status"] {
   if (agent.turn.phase === "open") return "running";
   return agent.status === "running" ? "idle" : agent.status;
+}
+
+/** A visible root agent of its workspace: the agents whose state the workspace row shows. */
+function isWorkspaceActivityRoot(
+  agent: Agent,
+  agents: ReadonlyMap<string, Agent>,
+): agent is Agent & { workspaceId: string } {
+  const parentAgent = agent.parentAgentId ? agents.get(agent.parentAgentId) : undefined;
+  return Boolean(
+    !agent.archivedAt &&
+    !agent.background &&
+    agent.workspaceId &&
+    isWorkspaceRootAgent(agent, parentAgent),
+  );
+}
+
+function keepEarliest(
+  byWorkspaceId: Map<string, string>,
+  workspaceId: string,
+  at: string | undefined,
+) {
+  const earliest = byWorkspaceId.get(workspaceId);
+  if (at && (!earliest || Date.parse(at) < Date.parse(earliest))) {
+    byWorkspaceId.set(workspaceId, at);
+  }
 }
 
 export function buildWorkspaceAgentActivityIndex(
@@ -19,17 +46,11 @@ export function buildWorkspaceAgentActivityIndex(
 ): Map<string, WorkspaceAgentActivity> {
   const activityByWorkspaceId = new Map<string, WorkspaceAgentActivity>();
   const latestActivityAtByWorkspaceId = new Map<string, Date>();
+  const nextRunAtByWorkspaceId = new Map<string, string>();
 
   for (const agent of agents.values()) {
-    const parentAgent = agent.parentAgentId ? agents.get(agent.parentAgentId) : undefined;
-    if (
-      agent.archivedAt ||
-      agent.background ||
-      !agent.workspaceId ||
-      !isWorkspaceRootAgent(agent, parentAgent)
-    ) {
-      continue;
-    }
+    if (!isWorkspaceActivityRoot(agent, agents)) continue;
+    keepEarliest(nextRunAtByWorkspaceId, agent.workspaceId, agent.backgroundWork?.nextRunAt);
 
     const enteredAt = agent.attentionTimestamp ?? agent.updatedAt;
     const latestActivityAt = latestActivityAtByWorkspaceId.get(agent.workspaceId);
@@ -49,14 +70,17 @@ export function buildWorkspaceAgentActivityIndex(
       agentId: agent.id,
       status,
       enteredAt,
+      nextRunAt: null,
     });
   }
 
   for (const [workspaceId, activity] of activityByWorkspaceId) {
+    activity.nextRunAt = nextRunAtByWorkspaceId.get(workspaceId) ?? null;
     const previousActivity = previous?.get(workspaceId);
     if (
       previousActivity?.agentId === activity.agentId &&
-      previousActivity.status === activity.status
+      previousActivity.status === activity.status &&
+      previousActivity.nextRunAt === activity.nextRunAt
     ) {
       activityByWorkspaceId.set(workspaceId, previousActivity);
     }

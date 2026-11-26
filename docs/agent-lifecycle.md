@@ -385,6 +385,20 @@ that leaves the lifecycle at `error`, and replaces unread `finished` attention; 
 agent would show the green dot or none. Subagents track marks are the exception: they follow the
 child's lifecycle, because the track is where a failed child stays visible.
 
+## Background work
+
+Background work is what an agent keeps going outside its turn: provider shells and monitors,
+daemon watches, and heartbeats. The daemon keeps one list per agent
+(`packages/server/src/server/agent/background-work/`) and puts a summary on the agent payload;
+the app shows it as the Background pill above the composer (`packages/app/src/background-work/`).
+
+Work that runs now and work that waits for a time look different. A shell counts as running and
+draws the running ring. A heartbeat is `countsAsRunning: false` and carries `nextRunAt`, so the
+agent and its workspace stay idle, and the pill, its list row and the sidebar row show a clock and
+"next <time>" instead of a spinner. The schedule service republishes `nextRunAt` on every schedule
+write, so the time moves on after each run. The sidebar takes the earliest `nextRunAt` among the
+workspace's root agents from the client-side activity index, not from the workspace descriptor.
+
 ## The subagents track
 
 The track is a pill at the foot of an agent's pane (`packages/app/src/subagents/track.tsx`): a count you can read at a glance, and a panel behind it — a popover on wide screens, a sheet on compact ones — holding the rows. It floats over the transcript rather than sitting in a band above the composer, so the timeline scrolls underneath it; `packages/app/src/panels/agent-tracks.tsx` owns that placement, and the pill frame is shared with the task list in `packages/app/src/composer/tracks.tsx`.

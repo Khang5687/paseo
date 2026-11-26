@@ -15,6 +15,7 @@ function agent(input: {
   archivedAt?: string | null;
   parentAgentId?: string | null;
   background?: boolean;
+  nextRunAt?: string;
 }): Agent {
   return {
     serverId: "host-a",
@@ -64,6 +65,9 @@ function agent(input: {
     parentAgentId: input.parentAgentId ?? null,
     background: input.background ?? false,
     labels: {},
+    ...(input.nextRunAt
+      ? { backgroundWork: { count: 1, runningCount: 0, nextRunAt: input.nextRunAt } }
+      : {}),
   };
 }
 
@@ -148,6 +152,7 @@ describe("workspace agent activity index", () => {
             agentId: "permission",
             status: "needs_input",
             enteredAt: new Date("2026-06-01T10:01:00.000Z"),
+            nextRunAt: null,
           },
         ],
         [
@@ -156,6 +161,7 @@ describe("workspace agent activity index", () => {
             agentId: "attention",
             status: "attention",
             enteredAt: new Date("2026-06-01T10:02:00.000Z"),
+            nextRunAt: null,
           },
         ],
       ]),
@@ -186,6 +192,7 @@ describe("workspace agent activity index", () => {
       agentId: "root",
       status: "done",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
+      nextRunAt: null,
     });
   });
 
@@ -229,6 +236,7 @@ describe("workspace agent activity index", () => {
       agentId: "root",
       status: "running",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
+      nextRunAt: null,
     });
   });
 
@@ -264,6 +272,7 @@ describe("workspace agent activity index", () => {
             agentId: "parent",
             status: "done",
             enteredAt: new Date("2026-06-01T10:00:00.000Z"),
+            nextRunAt: null,
           },
         ],
         [
@@ -272,6 +281,7 @@ describe("workspace agent activity index", () => {
             agentId: "child",
             status: "running",
             enteredAt: new Date("2026-06-01T10:03:00.000Z"),
+            nextRunAt: null,
           },
         ],
       ]),
@@ -348,6 +358,45 @@ describe("workspace agent activity index", () => {
       agentId: "root",
       status: "needs_input",
       enteredAt: new Date("2026-06-01T10:05:00.000Z"),
+      nextRunAt: null,
+    });
+  });
+
+  it("shows the earliest heartbeat of any root chat, even when a later chat is the latest", () => {
+    const index = buildWorkspaceAgentActivityIndex(
+      new Map([
+        [
+          "weekly",
+          agent({
+            id: "weekly",
+            workspaceId: "workspace-a",
+            updatedAt: "2026-06-01T10:00:00.000Z",
+            nextRunAt: "2026-06-06T09:00:00.000Z",
+          }),
+        ],
+        [
+          "hourly",
+          agent({
+            id: "hourly",
+            workspaceId: "workspace-a",
+            updatedAt: "2026-06-01T10:01:00.000Z",
+            nextRunAt: "2026-06-01T11:00:00.000Z",
+          }),
+        ],
+        [
+          "latest",
+          agent({
+            id: "latest",
+            workspaceId: "workspace-a",
+            updatedAt: "2026-06-01T10:02:00.000Z",
+          }),
+        ],
+      ]),
+    );
+
+    expect(index.get("workspace-a")).toMatchObject({
+      agentId: "latest",
+      nextRunAt: "2026-06-01T11:00:00.000Z",
     });
   });
 });

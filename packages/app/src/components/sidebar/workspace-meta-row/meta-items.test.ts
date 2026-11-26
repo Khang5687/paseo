@@ -25,6 +25,7 @@ function select(overrides: Partial<Parameters<typeof selectMetaRowItems>[0]> = {
     hasHostBadge: true,
     prHint: PR_HINT,
     serviceSummary: SERVICE,
+    nextRunAt: null,
     labels: LABELS,
     visible: DEFAULT_SIDEBAR_ROW_ITEMS,
     checksDisplay: DEFAULT_SIDEBAR_CHECKS_DISPLAY,
@@ -50,6 +51,19 @@ describe("selectMetaRowItems", () => {
 
   it("reads identity, then the change, then its state, then what is running, then labels", () => {
     expect(kinds(select())).toEqual(["host", "changeRequest", "checks", "services", "labels"]);
+  });
+
+  it("says when a heartbeat next runs after what is running and before labels", () => {
+    const items = select({ nextRunAt: "2026-06-06T09:00:00.000Z" });
+    expect(kinds(items)).toEqual([
+      "host",
+      "changeRequest",
+      "checks",
+      "services",
+      "nextRun",
+      "labels",
+    ]);
+    expect(items).toContainEqual({ kind: "nextRun", at: "2026-06-06T09:00:00.000Z" });
   });
 
   it("omits what the workspace does not have", () => {

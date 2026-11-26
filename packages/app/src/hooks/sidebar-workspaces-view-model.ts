@@ -55,6 +55,8 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   archiveUnpushedCommitCount: number | null;
   scripts: WorkspaceDescriptor["scripts"];
   hasRunningScripts: boolean;
+  /** When a heartbeat on one of its chats next fires. */
+  nextRunAt: string | null;
 }
 
 export interface SidebarProjectEntry {
@@ -180,6 +182,7 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
+    nextRunAt: input.workspaceAgentActivity?.get(input.workspace.id)?.nextRunAt ?? null,
   };
 }
 
