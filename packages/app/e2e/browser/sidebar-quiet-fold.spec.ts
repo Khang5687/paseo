@@ -94,6 +94,13 @@ test.describe("Quiet projects fold into More", () => {
         seedPinned("quiet-fold-pinned-long-name-a-"),
         seedPinned("quiet-fold-pinned-long-name-b-"),
       ]);
+      // A quiet project with only a background workspace: the list hides it while "Show
+      // background" is off, so the chip row must not count it either.
+      const background = await seedWorkspace({
+        repoPrefix: "quiet-fold-background-",
+        title: "Background work",
+        background: true,
+      });
       try {
         await moveClockAhead(page);
         await gotoAppShell(page);
@@ -105,20 +112,26 @@ test.describe("Quiet projects fold into More", () => {
           await expect(stripItem(page, "chip", project)).toBeVisible();
         }
         const more = page.getByTestId("sidebar-project-chip-more");
+        const listMore = page.getByTestId("sidebar-quiet-fold-row");
         await expect(more).toBeVisible();
         await expect(workspaceRow(page, waiting)).toBeVisible();
         await expect(workspaceRow(page, quiet)).toHaveCount(0);
-        await expect(page.getByTestId("sidebar-quiet-fold-row")).toBeVisible();
+        await expect(listMore).toBeVisible();
+        const listCount = (await listMore.innerText()).match(/(\d+) quiet/)?.[1];
+        expect(listCount).toBeDefined();
+        await expect(more).toContainText(`${listCount} quiet`);
         await page.screenshot({ path: test.info().outputPath("compact-quiet-fold.png") });
 
         await more.tap();
         await expect(more).toHaveAttribute("aria-expanded", "true");
         await expect(stripItem(page, "chip", quiet)).toBeInViewport();
         await expect(more).toBeInViewport();
+        await expect(stripItem(page, "chip", background)).toHaveCount(0);
         await page.screenshot({ path: test.info().outputPath("compact-quiet-open.png") });
       } finally {
         await quiet.cleanup();
         await waiting.cleanup();
+        await background.cleanup();
         await cleanupAll(pinned);
       }
     });
