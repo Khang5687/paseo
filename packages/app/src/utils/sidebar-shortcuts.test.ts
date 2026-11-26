@@ -45,6 +45,7 @@ function workspace(input: {
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    workingSubagentCount: 0,
   };
 }
 
@@ -95,7 +96,9 @@ describe("buildSidebarShortcutModel", () => {
             pathname: `/h/s/workspace/ws-${current}`,
             isMobile: false,
             sidebarShortcutTargets: model.shortcutTargets,
+            sidebarShortcutProjects: [],
             navigationActiveWorkspace: null,
+            waitingWorkspaces: [],
             commandCenterOpen: false,
             shortcutsDialogOpen: false,
           },

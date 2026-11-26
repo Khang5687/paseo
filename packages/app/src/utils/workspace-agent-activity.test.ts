@@ -1,3 +1,4 @@
+import { UNSEEN_AGENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import { describe, expect, it } from "vitest";
 import type { Agent } from "@/stores/session-store";
 import { buildWorkspaceAgentActivityIndex } from "./workspace-agent-activity";
@@ -14,6 +15,7 @@ function agent(input: {
   pendingPermissionCount?: number;
   archivedAt?: string | null;
   parentAgentId?: string | null;
+  labels?: Record<string, string>;
   background?: boolean;
   nextRunAt?: string;
 }): Agent {
@@ -63,8 +65,8 @@ function agent(input: {
     attentionTimestamp: input.attentionTimestamp ? new Date(input.attentionTimestamp) : null,
     archivedAt: input.archivedAt ? new Date(input.archivedAt) : null,
     parentAgentId: input.parentAgentId ?? null,
+    labels: input.labels ?? {},
     background: input.background ?? false,
-    labels: {},
     ...(input.nextRunAt
       ? { backgroundWork: { count: 1, runningCount: 0, nextRunAt: input.nextRunAt } }
       : {}),
@@ -153,6 +155,7 @@ describe("workspace agent activity index", () => {
             status: "needs_input",
             enteredAt: new Date("2026-06-01T10:01:00.000Z"),
             nextRunAt: null,
+            hasUnseenAgent: false,
           },
         ],
         [
@@ -162,6 +165,7 @@ describe("workspace agent activity index", () => {
             status: "attention",
             enteredAt: new Date("2026-06-01T10:02:00.000Z"),
             nextRunAt: null,
+            hasUnseenAgent: false,
           },
         ],
       ]),
@@ -193,6 +197,7 @@ describe("workspace agent activity index", () => {
       status: "done",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
       nextRunAt: null,
+      hasUnseenAgent: false,
     });
   });
 
@@ -237,7 +242,68 @@ describe("workspace agent activity index", () => {
       status: "running",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
       nextRunAt: null,
+      hasUnseenAgent: false,
     });
+  });
+
+  it("flags a workspace whose root agent is new and unopened, whichever root is latest", () => {
+    const unseen = { role: "main", [UNSEEN_AGENT_LABEL]: "true" };
+    const agents = new Map([
+      [
+        "new-main",
+        agent({
+          id: "new-main",
+          workspaceId: "workspace-a",
+          status: "running",
+          updatedAt: "2026-06-01T10:00:00.000Z",
+          labels: unseen,
+        }),
+      ],
+      [
+        "later-root",
+        agent({
+          id: "later-root",
+          workspaceId: "workspace-a",
+          updatedAt: "2026-06-01T10:05:00.000Z",
+        }),
+      ],
+      // Neither a subagent nor an archived agent makes its workspace new.
+      [
+        "root-b",
+        agent({ id: "root-b", workspaceId: "workspace-b", updatedAt: "2026-06-01T10:00:00.000Z" }),
+      ],
+      [
+        "child-b",
+        agent({
+          id: "child-b",
+          workspaceId: "workspace-b",
+          updatedAt: "2026-06-01T10:01:00.000Z",
+          parentAgentId: "root-b",
+          labels: unseen,
+        }),
+      ],
+      [
+        "archived-c",
+        agent({
+          id: "archived-c",
+          workspaceId: "workspace-c",
+          updatedAt: "2026-06-01T10:00:00.000Z",
+          archivedAt: "2026-06-01T10:02:00.000Z",
+          labels: unseen,
+        }),
+      ],
+    ]);
+    const index = buildWorkspaceAgentActivityIndex(agents);
+
+    expect(index.get("workspace-a")).toMatchObject({ agentId: "later-root", hasUnseenAgent: true });
+    expect(index.get("workspace-b")?.hasUnseenAgent).toBe(false);
+    expect(index.has("workspace-c")).toBe(false);
+
+    // Opening the agent drops the label; the entry changes so the row loses its highlight.
+    agents.set("new-main", { ...agents.get("new-main")!, labels: { role: "main" } });
+    const next = buildWorkspaceAgentActivityIndex(agents, index);
+    expect(next).not.toBe(index);
+    expect(next.get("workspace-a")?.hasUnseenAgent).toBe(false);
   });
 
   it("treats a cross-workspace subagent as activity in its own workspace", () => {
@@ -273,6 +339,7 @@ describe("workspace agent activity index", () => {
             status: "done",
             enteredAt: new Date("2026-06-01T10:00:00.000Z"),
             nextRunAt: null,
+            hasUnseenAgent: false,
           },
         ],
         [
@@ -282,6 +349,7 @@ describe("workspace agent activity index", () => {
             status: "running",
             enteredAt: new Date("2026-06-01T10:03:00.000Z"),
             nextRunAt: null,
+            hasUnseenAgent: false,
           },
         ],
       ]),
@@ -359,6 +427,7 @@ describe("workspace agent activity index", () => {
       status: "needs_input",
       enteredAt: new Date("2026-06-01T10:05:00.000Z"),
       nextRunAt: null,
+      hasUnseenAgent: false,
     });
   });
 

@@ -1,0 +1,6 @@
+{
+  "pr": 80,
+  "title": "feat(app): inline attachment references in the composer",
+  "tests": [],
+  "retired": "reverted in a38079a85 (replacing the composer text dropped attached images); re-landed with the fix as #83"
+}

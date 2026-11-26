@@ -1,0 +1,5 @@
+{
+  "pr": 34,
+  "title": "feat(client): OMP account-routing mutations and owned observations",
+  "tests": ["packages/client/src/daemon-client.test.ts", "packages/client/src/index.test.ts"]
+}

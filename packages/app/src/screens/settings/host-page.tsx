@@ -47,6 +47,7 @@ import {
   useHostRuntimeSnapshot,
   useHosts,
 } from "@/runtime/host-runtime";
+import { AccountRoutingSection } from "@/omp-account-routing/account-section";
 import { ProviderList } from "@/provider-settings";
 import { openProviderSettings } from "@/navigation/settings-navigation";
 import { HostUsageSection } from "@/usage";
@@ -62,9 +63,11 @@ import { ICON_SIZE } from "@/styles/theme";
 import type { Theme } from "@/styles/theme";
 import { useProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsRow } from "./browser-tools-card";
+import { DefaultOutputStyleCard } from "./default-output-style-card";
 import { HostPaseoToolsRow } from "./paseo-tools-card";
 import { RestartRecoveryRow } from "./restart-recovery-card";
 import { IdleRuntimeCleanupRow } from "./idle-runtime-cleanup-card";
+import { DraftHistoryRetentionCard } from "./draft-history-retention-card";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
 
 const ThemedRestart = withUnistyles(RotateCw);
@@ -265,6 +268,10 @@ export function HostToolsPage({ serverId }: { serverId: string }) {
               <BrowserToolsRow serverId={serverId} />
             </SettingsCard>
           </SettingsSection>
+          <SettingsSection title={t("settings.hostSections.agents")}>
+            <DefaultOutputStyleCard serverId={serverId} />
+            <DraftHistoryRetentionCard serverId={serverId} />
+          </SettingsSection>
         </>
       ) : (
         <View style={[settingsStyles.card, styles.emptyCard]}>
@@ -351,6 +358,7 @@ export function HostProvidersPage({ serverId }: { serverId: string }) {
   return (
     <View>
       <ProviderList serverId={serverId} onOpenProvider={openProvider} />
+      <AccountRoutingSection key={serverId} serverId={serverId} />
     </View>
   );
 }

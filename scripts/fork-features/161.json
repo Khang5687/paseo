@@ -1,0 +1,5 @@
+{
+  "pr": 161,
+  "title": "fix(client): keep connections alive while a large upload drains",
+  "tests": ["packages/client/src/daemon-client.test.ts"]
+}

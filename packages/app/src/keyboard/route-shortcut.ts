@@ -3,14 +3,20 @@ import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispat
 import { buildSettingsRoute, parseHostWorkspaceRouteFromPathname } from "@/utils/host-routes";
 import {
   getRelativeSidebarShortcutTarget,
+  type SidebarShortcutProjectTarget,
   type SidebarShortcutWorkspaceTarget,
 } from "@/utils/sidebar-shortcuts";
+import { type JumpTarget, nextWaitingWorkspace } from "@/components/sidebar/jump-targets";
 
 export interface ShortcutRoutingContext {
   pathname: string;
   isMobile: boolean;
   sidebarShortcutTargets: ReadonlyArray<SidebarShortcutWorkspaceTarget>;
+  /** Project strip entries in strip order; index 0 answers the first digit. */
+  sidebarShortcutProjects: ReadonlyArray<SidebarShortcutProjectTarget>;
   navigationActiveWorkspace: SidebarShortcutWorkspaceTarget | null;
+  /** Workspaces waiting on you in every project, the one that waited longest first. */
+  waitingWorkspaces: ReadonlyArray<JumpTarget>;
   commandCenterOpen: boolean;
   shortcutsDialogOpen: boolean;
 }
@@ -33,7 +39,14 @@ export type ShortcutAction =
   | { kind: "open-project-picker" }
   | { kind: "callback"; name: ShortcutCallbackName }
   | { kind: "command-center-toggle"; nextOpen: boolean; tab?: "files" }
-  | { kind: "shortcuts-dialog-toggle"; nextOpen: boolean };
+  | { kind: "shortcuts-dialog-toggle"; nextOpen: boolean }
+  | { kind: "walk-recent-workspaces"; delta: 1 | -1 }
+  | {
+      kind: "show-sidebar-project";
+      projectViewKey: string;
+      /** The workspace to reopen with the list; null when the jump only changes the list. */
+      lastChat: SidebarShortcutWorkspaceTarget | null;
+    };
 
 const NONE: ShortcutAction = { kind: "none" };
 
@@ -133,6 +146,21 @@ function routeWorkspaceNavigateIndex(
   };
 }
 
+function routeSidebarProjectNavigateIndex(
+  payload: KeyboardShortcutPayload,
+  ctx: ShortcutRoutingContext,
+): ShortcutAction {
+  if (!hasPayloadKey(payload, "index")) return NONE;
+  const project = ctx.sidebarShortcutProjects[payload.index - 1];
+  if (!project) return NONE;
+  // On a phone the list is the destination: you look before you open (the chip marks the chat).
+  return {
+    kind: "show-sidebar-project",
+    projectViewKey: project.projectViewKey,
+    lastChat: ctx.isMobile ? null : project.lastChat,
+  };
+}
+
 function routeWorkspaceNavigateRelative(
   payload: KeyboardShortcutPayload,
   ctx: ShortcutRoutingContext,
@@ -155,6 +183,19 @@ function routeWorkspaceNavigateRelative(
     serverId: target.serverId,
     workspaceId: target.workspaceId,
   };
+}
+
+function routeWaitingNext(ctx: ShortcutRoutingContext): ShortcutAction {
+  const current =
+    ctx.navigationActiveWorkspace ?? parseHostWorkspaceRouteFromPathname(ctx.pathname);
+  const target = nextWaitingWorkspace(ctx.waitingWorkspaces, current);
+  if (!target) return NONE;
+  return { kind: "navigate-workspace", serverId: target.serverId, workspaceId: target.workspaceId };
+}
+
+function routeRecentWalk(payload: KeyboardShortcutPayload): ShortcutAction {
+  if (!hasPayloadKey(payload, "delta")) return NONE;
+  return { kind: "walk-recent-workspaces", delta: payload.delta };
 }
 
 function routeMessageInputAction(payload: KeyboardShortcutPayload): ShortcutAction {
@@ -202,8 +243,14 @@ export function routeKeyboardShortcut(
       return routeWorkspaceTabNavigateRelative(input.payload);
     case "workspace.navigate.index":
       return routeWorkspaceNavigateIndex(input.payload, ctx);
+    case "sidebar.project.navigate.index":
+      return routeSidebarProjectNavigateIndex(input.payload, ctx);
     case "workspace.navigate.relative":
       return routeWorkspaceNavigateRelative(input.payload, ctx);
+    case "workspace.recent.walk":
+      return routeRecentWalk(input.payload);
+    case "workspace.waiting.next":
+      return routeWaitingNext(ctx);
     case "message-input.action":
       return routeMessageInputAction(input.payload);
     case "agent.new":

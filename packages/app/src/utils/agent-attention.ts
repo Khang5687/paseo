@@ -4,6 +4,8 @@ interface AttentionState {
   requiresAttention: boolean;
   attentionReason: "finished" | "error" | "permission" | null | undefined;
   focusRequest: object | null;
+  /** A new main agent nobody opened yet. Opening it is what clears that, whatever its attention. */
+  isUnseen?: boolean;
 }
 
 export function createAgentAttentionController(deps: {
@@ -17,7 +19,8 @@ export function createAgentAttentionController(deps: {
   function acknowledgeFocus() {
     if (!pendingFocus || !state?.focused || !state.ready) return;
     pendingFocus = false;
-    if (!state.requiresAttention || state.attentionReason === "permission" || inFlight) return;
+    const clearsAttention = state.requiresAttention && state.attentionReason !== "permission";
+    if ((!state.isUnseen && !clearsAttention) || inFlight) return;
     inFlight = true;
     void deps.clear().then(
       () => {

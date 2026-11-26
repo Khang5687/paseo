@@ -210,6 +210,8 @@ export function createHostActions(
         transportFactory: createHostChannelTransport(origin, serverId, scopeId, routeId),
         // Initial acquisition has a deadline; established scopes restore demand on loss.
         reconnect: { enabled: false },
+        // The origin and its host link run liveness and close this route on loss.
+        livenessHeartbeat: false,
       });
       const api = owner.api(client, { signal: owner.signal });
       const scope = owner.own(() => ({

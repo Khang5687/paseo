@@ -57,6 +57,11 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   hasRunningScripts: boolean;
   /** When a heartbeat on one of its chats next fires. */
   nextRunAt: string | null;
+  // Subagents still working under a root agent that waits on the user. Zero while
+  // the row already shows running, since the spinner says the same thing.
+  workingSubagentCount: number;
+  // A new main agent here that the user has not opened yet: the row shows a "New" tag.
+  isNew?: boolean;
 }
 
 export interface SidebarProjectEntry {
@@ -183,6 +188,8 @@ export function createSidebarWorkspaceEntry(input: {
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
     nextRunAt: input.workspaceAgentActivity?.get(input.workspace.id)?.nextRunAt ?? null,
+    workingSubagentCount: input.workspace.runningSubagentCount ?? 0,
+    isNew: input.workspaceAgentActivity?.get(input.workspace.id)?.hasUnseenAgent ?? false,
   };
 }
 
@@ -193,20 +200,24 @@ export interface ProjectStatusSession {
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
 }
 
-/**
- * Most urgent status among a project's workspaces. Backs the status dot on a collapsed
- * project row, which otherwise hides every workspace-level signal it contains.
- *
- * Workspaces the session hasn't hydrated yet are skipped rather than counted as done —
- * an unknown workspace shouldn't drag the aggregate anywhere. Reuses the same
- * activity-index + effective-status pipeline as per-workspace rows (one pass over the
- * session's agents per server, not per workspace) rather than re-deriving it.
- */
-export function deriveProjectStatusBucket(input: {
+export interface ProjectStatusInput {
   workspaces: readonly SidebarWorkspacePlacement[];
   sessions: Record<string, ProjectStatusSession | undefined>;
   pendingCreateAttempts?: Record<string, PendingCreateAttempt>;
-}): SidebarStateBucket {
+}
+
+/**
+ * Effective status of each of a project's workspaces the session knows about.
+ *
+ * Workspaces the session hasn't hydrated yet are skipped rather than counted as done —
+ * an unknown workspace shouldn't drag an aggregate anywhere. Reuses the same
+ * activity-index + effective-status pipeline as per-workspace rows (one pass over the
+ * session's agents per server, not per workspace) rather than re-deriving it.
+ */
+function forEachKnownProjectWorkspace(
+  input: ProjectStatusInput,
+  visit: (serverId: string, session: ProjectStatusSession, workspace: WorkspaceDescriptor) => void,
+): void {
   const workspaceIdsByServer = new Map<string, string[]>();
   for (const placement of input.workspaces) {
     const existing = workspaceIdsByServer.get(placement.serverId);
@@ -217,7 +228,6 @@ export function deriveProjectStatusBucket(input: {
     }
   }
 
-  const buckets: SidebarStateBucket[] = [];
   for (const [serverId, workspaceIds] of workspaceIdsByServer) {
     const session = input.sessions[serverId];
     if (!session) continue;
@@ -227,19 +237,78 @@ export function deriveProjectStatusBucket(input: {
         workspaceId,
       });
       const workspace = workspaceKey ? session.workspaces.get(workspaceKey) : undefined;
-      if (!workspace) continue;
-      buckets.push(
-        deriveEffectiveWorkspaceStatus({
-          serverId,
-          workspace,
-          pendingCreateAttempts: input.pendingCreateAttempts,
-          workspaceAgentActivity: session.workspaceAgentActivity,
-        }).status,
-      );
+      if (workspace) visit(serverId, session, workspace);
     }
   }
+}
 
-  return aggregateSidebarStateBuckets(buckets);
+function collectProjectWorkspaceStatuses(input: ProjectStatusInput): SidebarStateBucket[] {
+  const buckets: SidebarStateBucket[] = [];
+  forEachKnownProjectWorkspace(input, (serverId, session, workspace) => {
+    buckets.push(
+      deriveEffectiveWorkspaceStatus({
+        serverId,
+        workspace,
+        pendingCreateAttempts: input.pendingCreateAttempts,
+        workspaceAgentActivity: session.workspaceAgentActivity,
+      }).status,
+    );
+  });
+  return buckets;
+}
+
+export interface ProjectActivity {
+  /** Newest chat activity across the project's workspaces; null when none is known. */
+  lastActivityMs: number | null;
+  needsInput: boolean;
+}
+
+/**
+ * When a project last saw chat activity, and whether a chat in it waits on you. Activity is the
+ * newest of a workspace's creation, last prompt, status change, and agent status change.
+ */
+export function deriveProjectActivity(input: ProjectStatusInput): ProjectActivity {
+  let lastActivityMs: number | null = null;
+  let needsInput = false;
+  forEachKnownProjectWorkspace(input, (serverId, session, workspace) => {
+    const times = [
+      workspace.createdAt,
+      workspace.lastUserMessageAt,
+      workspace.statusEnteredAt,
+      session.workspaceAgentActivity.get(workspace.id)?.enteredAt ?? null,
+    ];
+    for (const time of times) {
+      const ms = time?.getTime();
+      if (
+        ms !== undefined &&
+        !Number.isNaN(ms) &&
+        (lastActivityMs === null || ms > lastActivityMs)
+      ) {
+        lastActivityMs = ms;
+      }
+    }
+    const status = deriveEffectiveWorkspaceStatus({
+      serverId,
+      workspace,
+      pendingCreateAttempts: input.pendingCreateAttempts,
+      workspaceAgentActivity: session.workspaceAgentActivity,
+    }).status;
+    if (status === "needs_input") needsInput = true;
+  });
+  return { lastActivityMs, needsInput };
+}
+
+/**
+ * Most urgent status among a project's workspaces. Backs the status dot on a collapsed
+ * project row, which otherwise hides every workspace-level signal it contains.
+ */
+export function deriveProjectStatusBucket(input: ProjectStatusInput): SidebarStateBucket {
+  return aggregateSidebarStateBuckets(collectProjectWorkspaceStatuses(input));
+}
+
+/** How many of a project's workspaces wait on the user. Backs the project strip's badge. */
+export function countProjectWorkspacesNeedingInput(input: ProjectStatusInput): number {
+  return collectProjectWorkspaceStatuses(input).filter((status) => status === "needs_input").length;
 }
 
 /** One bounded projection per sidebar; unchanged placements survive project reordering. */

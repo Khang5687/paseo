@@ -1,4 +1,13 @@
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { resolvePaseoHome } from "@getpaseo/server/daemon-control";
 
@@ -57,7 +66,7 @@ async function buildManagedAttachmentPath(input: {
   return path.join(dirPath, `${attachmentId}${extension}`);
 }
 
-function resolveManagedAttachmentPath(inputPath: unknown): string {
+export function resolveManagedAttachmentPath(inputPath: unknown): string {
   if (typeof inputPath !== "string" || inputPath.trim().length === 0) {
     throw new Error("Attachment path is required.");
   }
@@ -115,6 +124,30 @@ export async function writeAttachmentBytes(input: {
     extension: input.extension,
   });
   await writeFile(targetPath, bytes);
+  const fileInfo = await stat(targetPath);
+  return {
+    path: targetPath,
+    byteSize: fileInfo.size,
+  };
+}
+
+/** Adds bytes to a managed attachment file, so a big file arrives in pieces. `reset` starts it over. */
+export async function appendAttachmentBytes(input: {
+  attachmentId?: unknown;
+  bytes?: unknown;
+  extension?: unknown;
+  reset?: unknown;
+}): Promise<AttachmentFileResult> {
+  const bytes = normalizeBytes(input.bytes);
+  const targetPath = await buildManagedAttachmentPath({
+    attachmentId: input.attachmentId,
+    extension: input.extension,
+  });
+  if (input.reset === true) {
+    await writeFile(targetPath, bytes);
+  } else {
+    await appendFile(targetPath, bytes);
+  }
   const fileInfo = await stat(targetPath);
   return {
     path: targetPath,

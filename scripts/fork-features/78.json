@@ -1,0 +1,9 @@
+{
+  "pr": 78,
+  "title": "fix: let Mark as read dismiss a failed workspace",
+  "tests": [
+    "packages/server/src/server/agent/agent-manager.test.ts",
+    "packages/server/src/server/session.workspaces.test.ts"
+  ],
+  "retired": "upstream #8831 (59be8975a) makes the failed bucket follow unread error attention, so reading dismisses it; fork markAgentRead (error to idle) removed in the upstream sync"
+}

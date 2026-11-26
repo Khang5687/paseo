@@ -1,17 +1,22 @@
 import type { Agent } from "@/stores/session-store";
 import type { WorkspaceDraftTabSetup } from "@/workspace-tabs/model";
 
-export type ClientSlashCommandKind = "archive-agent" | "replace-agent-with-draft";
+export type ClientSlashCommandKind = "archive-agent" | "replace-agent-with-draft" | "fork-agent";
 export type ClientSlashCommandExecution = "immediate" | "insert";
 
 export interface ClientSlashCommand {
   name: string;
   aliases: readonly string[];
   description: string;
-  descriptionKey: "composer.clientCommands.archiveAgent" | "composer.clientCommands.freshDraft";
+  descriptionKey:
+    | "composer.clientCommands.archiveAgent"
+    | "composer.clientCommands.freshDraft"
+    | "composer.clientCommands.forkAgent";
   argumentHint: string;
   kind: ClientSlashCommandKind;
   execution: ClientSlashCommandExecution;
+  /** Only offered and runnable when the host reports `server_info.features.agentFork`. */
+  requiresAgentFork?: boolean;
 }
 
 export const CLIENT_SLASH_COMMANDS: readonly ClientSlashCommand[] = [
@@ -33,6 +38,16 @@ export const CLIENT_SLASH_COMMANDS: readonly ClientSlashCommand[] = [
     kind: "replace-agent-with-draft",
     execution: "immediate",
   },
+  {
+    name: "fork",
+    aliases: [],
+    description: "Fork this chat into a new tab",
+    descriptionKey: "composer.clientCommands.forkAgent",
+    argumentHint: "",
+    kind: "fork-agent",
+    execution: "immediate",
+    requiresAgentFork: true,
+  },
 ];
 
 const COMMAND_BY_NAME = new Map<string, ClientSlashCommand>();
@@ -43,9 +58,17 @@ for (const command of CLIENT_SLASH_COMMANDS) {
   }
 }
 
+export function isClientSlashCommandAvailable(
+  command: ClientSlashCommand,
+  host: { supportsAgentFork: boolean },
+): boolean {
+  return !command.requiresAgentFork || host.supportsAgentFork;
+}
+
 export function resolveClientSlashCommand(input: {
   text: string;
   hasAttachments: boolean;
+  supportsAgentFork: boolean;
 }): ClientSlashCommand | null {
   if (input.hasAttachments) {
     return null;
@@ -61,7 +84,8 @@ export function resolveClientSlashCommand(input: {
     return null;
   }
 
-  return COMMAND_BY_NAME.get(commandName) ?? null;
+  const command = COMMAND_BY_NAME.get(commandName) ?? null;
+  return command && isClientSlashCommandAvailable(command, input) ? command : null;
 }
 
 export function buildDraftAgentSetup(agent: Agent): WorkspaceDraftTabSetup {

@@ -1,0 +1,6 @@
+{
+  "pr": 5,
+  "title": "fix(fork): fork-update builds an app that opens",
+  "untested": "fork-update.sh signing; the packaged smoke launch in every build checks it",
+  "tests": []
+}

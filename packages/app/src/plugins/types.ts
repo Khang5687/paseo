@@ -7,6 +7,7 @@ import type {
   PluginCleanup,
   PluginThemeContribution as SDKPluginThemeContribution,
 } from "@getpaseo/plugin";
+import type { PluginSkinContribution } from "@getpaseo/plugin/client";
 import type {
   PluginFilePanelContribution as SDKPluginFilePanelContribution,
   PluginCommandCenterItemContribution as SDKPluginCommandCenterItemContribution,
@@ -69,6 +70,7 @@ export interface EvaluatedPlugin {
   clientSlashCommands: PluginClientSlashCommandContribution[];
   attachmentSources: PluginAttachmentSourceContribution[];
   themes: PluginThemeContribution[];
+  skins: PluginSkinContribution[];
   timelineTransformers: PluginTimelineTransformerContribution[];
   timelineRenderers: PluginTimelineRendererContribution[];
   notificationOpenHandlers: PluginNotificationOpenHandler[];

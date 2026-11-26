@@ -90,7 +90,18 @@ export function projectAgentSnapshot(agent: Agent): AgentSnapshotPayload {
     attentionReason: agent.attentionReason ?? null,
     attentionTimestamp: agent.attentionTimestamp?.toISOString() ?? null,
     archivedAt: agent.archivedAt?.toISOString() ?? null,
+    ...projectQueue(agent),
     ...(agent.background ? { background: true } : {}),
+  };
+}
+
+function projectQueue(
+  agent: Agent,
+): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused" | "queuePauseReason"> {
+  return {
+    ...(agent.queuedMessages ? { queuedMessages: agent.queuedMessages } : {}),
+    ...(agent.queuePaused ? { queuePaused: agent.queuePaused } : {}),
+    ...(agent.queuePauseReason ? { queuePauseReason: agent.queuePauseReason } : {}),
   };
 }
 
@@ -146,6 +157,11 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     background: snapshot.background === true,
     parentAgentId,
     labels: snapshot.labels,
+    queuedMessages: snapshot.queuedMessages ?? [],
+    // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+    queuePaused: snapshot.queuePaused ?? false,
+    // COMPAT(queuePauseReason): added in v0.13.x, remove gate after 2027-10-27.
+    queuePauseReason: snapshot.queuePauseReason ?? null,
     metadata: snapshot.metadata,
   };
 }

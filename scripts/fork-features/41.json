@@ -1,0 +1,9 @@
+{
+  "pr": 41,
+  "title": "feat(server): dispatch OMP account routing RPCs and advertise ompAccountRouting",
+  "tests": [
+    "packages/server/src/server/account-routing/routing.integration.test.ts",
+    "packages/server/src/server/authorization/index.test.ts",
+    "packages/server/src/server/session/account-routing-session.test.ts"
+  ]
+}

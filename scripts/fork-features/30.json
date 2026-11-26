@@ -1,0 +1,5 @@
+{
+  "pr": 30,
+  "title": "feat(cli): look up timeline rows by seq in paseo logs",
+  "tests": ["packages/cli/src/commands/agent/logs-seq.test.ts"]
+}

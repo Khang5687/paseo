@@ -1,0 +1,10 @@
+{
+  "pr": 61,
+  "title": "fix(queue): never drop or strand queued messages",
+  "tests": [
+    "packages/server/src/server/agent/agent-message-queue.test.ts",
+    "packages/server/src/server/agent/agent-manager.test.ts",
+    "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
+    "packages/app/src/utils/agent-snapshots.test.ts"
+  ]
+}

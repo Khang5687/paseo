@@ -1,5 +1,5 @@
 import { useHostFeatureMap } from "@/runtime/host-features";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { useSessionStore } from "@/stores/session-store";
@@ -12,7 +12,8 @@ import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import {
   createSidebarWorkspacePlacementSelector,
   computeSidebarOrderUpdates,
-  createSidebarWorkspaceEntry,
+  countProjectWorkspacesNeedingInput,
+  deriveProjectActivity,
   deriveProjectStatusBucket,
   deriveSidebarLoadingState,
   type ProjectStatusSession,
@@ -21,6 +22,7 @@ import {
   type SidebarWorkspacePlacement,
 } from "./sidebar-workspaces-view-model";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
+import { resolveQuietProjectKeys } from "@/components/sidebar/quiet-projects";
 
 export {
   appendMissingOrderKeys,
@@ -78,6 +80,80 @@ export function useSidebarProjectStatusBucket(input: {
   );
 
   return useStoreWithEqualityFn(useSessionStore, selector, Object.is);
+}
+
+/**
+ * How many of a project's workspaces wait on the user, for the project strip's badge.
+ * Same subscription shape as `useSidebarProjectStatusBucket`: a primitive, so the strip
+ * entry re-renders only when the count moves.
+ */
+export function useSidebarProjectNeedsInputCount(
+  workspaces: readonly SidebarWorkspacePlacement[],
+): number {
+  const pendingCreateAttempts = useStoreWithEqualityFn(
+    useCreateFlowStore,
+    (state) => state.pendingByDraftId,
+    workspaceEqualityFns.deep,
+  );
+
+  const selector = useCallback(
+    (state: { sessions: Record<string, ProjectStatusSession | undefined> }) =>
+      countProjectWorkspacesNeedingInput({
+        workspaces,
+        sessions: state.sessions,
+        pendingCreateAttempts,
+      }),
+    [pendingCreateAttempts, workspaces],
+  );
+
+  return useStoreWithEqualityFn(useSessionStore, selector, Object.is);
+}
+
+const QUIET_CLOCK_TICK_MS = 60 * 60 * 1000;
+
+/** Wall-clock time refreshed hourly: quietness is counted in days, so an hour is fine-grained. */
+function useHourlyNow(): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), QUIET_CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+/**
+ * The projects that fold into "More": no chat activity for 3 days, nothing waiting on you, and
+ * not in `keep`. The selector returns a joined string so unrelated session updates re-render
+ * nothing.
+ */
+export function useQuietProjectKeys(input: {
+  projects: readonly SidebarProjectEntry[];
+  keep: ReadonlySet<string>;
+}): ReadonlySet<string> {
+  const { projects, keep } = input;
+  const now = useHourlyNow();
+  const pendingCreateAttempts = useStoreWithEqualityFn(
+    useCreateFlowStore,
+    (state) => state.pendingByDraftId,
+    workspaceEqualityFns.deep,
+  );
+  const selector = useCallback(
+    (state: { sessions: Record<string, ProjectStatusSession | undefined> }) =>
+      resolveQuietProjectKeys({
+        projects,
+        keep,
+        now,
+        activityOf: (project) =>
+          deriveProjectActivity({
+            workspaces: project.workspaces,
+            sessions: state.sessions,
+            pendingCreateAttempts,
+          }),
+      }).join("\n"),
+    [keep, now, pendingCreateAttempts, projects],
+  );
+  const joined = useStoreWithEqualityFn(useSessionStore, selector, Object.is);
+  return useMemo(() => new Set(joined ? joined.split("\n") : []), [joined]);
 }
 
 const EMPTY_ORDER: string[] = [];

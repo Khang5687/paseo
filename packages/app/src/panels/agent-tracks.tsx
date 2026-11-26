@@ -20,6 +20,7 @@ import {
 import { ParentAgentPill } from "@/subagents/parent";
 import { SubagentsTrack } from "@/subagents/track";
 import type { TodoEntry } from "@/types/stream";
+import { confirmArchive } from "@/utils/archive-confirm";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { buildWorkspaceTabPersistenceKey, type WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { openPreferredWorkspaceTarget } from "@/workspace-tabs/open-beside";
@@ -52,6 +53,14 @@ export const AgentTracks = memo(function AgentTracks({
     parentAgentId: agentId,
     rows: subagentRows,
   });
+  const { archiveFinished } = archiveFinishedSubagents;
+  const handleArchiveFinished = useCallback(() => {
+    void (async () => {
+      if (await confirmArchive({ subject: "finishedSubagents" })) {
+        await archiveFinished();
+      }
+    })();
+  }, [archiveFinished]);
   const { tabId } = usePaneContext();
   const backgroundWork = useSessionStore(
     useShallow((state) => {
@@ -75,6 +84,12 @@ export const AgentTracks = memo(function AgentTracks({
   const canDetachSubagents = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.agentDetach === true,
   );
+  // Same rule as the sidebar's root activity: an open turn is the agent working, whatever the
+  // lifecycle says while a turn closes.
+  const yourTurn = useSessionStore((state) => {
+    const agent = state.sessions[serverId]?.agents.get(agentId);
+    return agent ? agent.turn.phase !== "open" && agent.status !== "initializing" : false;
+  });
   const archiveSubagent = useArchiveSubagent();
   const detachSubagent = useDetachSubagent();
   const openSubagentTarget = useCallback(
@@ -135,11 +150,12 @@ export const AgentTracks = memo(function AgentTracks({
       <SubagentsTrack
         serverId={serverId}
         rows={subagentRows}
+        yourTurn={yourTurn}
         onOpenSubagent={handleOpenSubagent}
         onOpenProviderSubagent={handleOpenProviderSubagent}
         sheetTabFor={sheetTabFor}
         onArchiveSubagent={archiveSubagent}
-        onArchiveFinished={archiveFinishedSubagents.archiveFinished}
+        onArchiveFinished={handleArchiveFinished}
         archiveFinishedStatus={archiveFinishedSubagents.status}
         onDetachSubagent={canDetachSubagents ? detachSubagent : undefined}
       />

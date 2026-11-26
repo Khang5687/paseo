@@ -9,6 +9,9 @@ import {
 } from "@/stores/navigation-active-workspace-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { findNote } from "@/notes/find-note";
+import { openNote } from "@/notes/open-note";
+import { useSendToStore } from "@/send-to/store";
 import { createNotificationOpenRouter } from "../model";
 import { createNotificationOpenSource } from "../source";
 
@@ -48,6 +51,9 @@ const notificationRouter = createNotificationOpenRouter({
       focusHost: (targetServerId) => useSidebarViewStore.getState().focusHost(targetServerId),
     }),
   openRoute: (route) => router.navigate(route as Href),
+  resolveNote: ({ serverId, noteId }) => findNote(serverId, noteId),
+  openNote,
+  openSentFile: async (target) => useSendToStore.getState().tap(target),
   whenReadyToNavigate: () =>
     ready
       ? Promise.resolve()

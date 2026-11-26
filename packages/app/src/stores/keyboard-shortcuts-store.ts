@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import type { CommandCenterTab } from "@/command-center/tabs";
-import type { SidebarShortcutWorkspaceTarget } from "@/utils/sidebar-shortcuts";
+import type { JumpTarget } from "@/components/sidebar/jump-targets";
+import type { ShortcutBadgeTarget } from "@/keyboard/keyboard-shortcuts";
+import type {
+  SidebarShortcutProjectTarget,
+  SidebarShortcutWorkspaceTarget,
+} from "@/utils/sidebar-shortcuts";
 
 const SHORTCUT_BADGE_DELAY_MS = 150;
 
@@ -10,19 +15,30 @@ interface KeyboardShortcutsState {
   commandCenterTab: CommandCenterTab;
   shortcutsDialogOpen: boolean;
   capturingShortcut: boolean;
-  altDown: boolean;
-  cmdOrCtrlDown: boolean;
-  showShortcutBadges: boolean;
+  /** The number-badge group whose modifiers are held right now. */
+  heldBadgeTarget: ShortcutBadgeTarget | null;
+  /** The number-badge group on screen: `heldBadgeTarget`, once it has been held for a moment. */
+  shortcutBadgeTarget: ShortcutBadgeTarget | null;
   /** Sidebar-visible workspace targets (up to 9), in top-to-bottom visual order. */
   sidebarShortcutWorkspaceTargets: SidebarShortcutWorkspaceTarget[];
+  /** Project strip entries by strip position: index 0 answers the first digit. */
+  sidebarShortcutProjects: SidebarShortcutProjectTarget[];
+  /** Workspaces waiting on you in every project, the one that waited longest first. */
+  waitingWorkspaces: JumpTarget[];
+  /** `serverId:workspaceId` of every workspace the sidebar lists, filters aside. */
+  listedWorkspaceKeys: ReadonlySet<string>;
 
   setCommandCenterOpen: (open: boolean, tab?: CommandCenterTab) => void;
   setCommandCenterTab: (tab: CommandCenterTab) => void;
   setShortcutsDialogOpen: (open: boolean) => void;
   setCapturingShortcut: (capturing: boolean) => void;
-  setAltDown: (down: boolean) => void;
-  setCmdOrCtrlDown: (down: boolean) => void;
+  setHeldBadgeTarget: (target: ShortcutBadgeTarget | null) => void;
   setSidebarShortcutWorkspaceTargets: (targets: SidebarShortcutWorkspaceTarget[]) => void;
+  setSidebarShortcutProjects: (projects: SidebarShortcutProjectTarget[]) => void;
+  setJumpTargets: (input: {
+    waitingWorkspaces: JumpTarget[];
+    listedWorkspaceKeys: ReadonlySet<string>;
+  }) => void;
   resetModifiers: () => void;
 }
 
@@ -32,20 +48,19 @@ function updateBadgeTimer(
   set: (partial: Partial<KeyboardShortcutsState>) => void,
   get: () => KeyboardShortcutsState,
 ) {
-  const { altDown, cmdOrCtrlDown } = get();
-  const modifierDown = altDown || cmdOrCtrlDown;
+  const { heldBadgeTarget } = get();
 
   if (badgeTimer) {
     clearTimeout(badgeTimer);
     badgeTimer = null;
   }
 
-  if (modifierDown) {
+  if (heldBadgeTarget) {
     badgeTimer = setTimeout(() => {
-      set({ showShortcutBadges: true });
+      set({ shortcutBadgeTarget: heldBadgeTarget });
     }, SHORTCUT_BADGE_DELAY_MS);
   } else {
-    set({ showShortcutBadges: false });
+    set({ shortcutBadgeTarget: null });
   }
 }
 
@@ -54,28 +69,30 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
   commandCenterTab: "all",
   shortcutsDialogOpen: false,
   capturingShortcut: false,
-  altDown: false,
-  cmdOrCtrlDown: false,
-  showShortcutBadges: false,
+  heldBadgeTarget: null,
+  shortcutBadgeTarget: null,
   sidebarShortcutWorkspaceTargets: [],
+  sidebarShortcutProjects: [],
+  waitingWorkspaces: [],
+  listedWorkspaceKeys: new Set(),
 
   setCommandCenterOpen: (open, tab = "all") =>
     set({ commandCenterOpen: open, commandCenterTab: open ? tab : "all" }),
   setCommandCenterTab: (tab) => set({ commandCenterTab: tab }),
   setShortcutsDialogOpen: (open) => set({ shortcutsDialogOpen: open }),
   setCapturingShortcut: (capturing) => set({ capturingShortcut: capturing }),
-  setAltDown: (down) => {
-    set({ altDown: down });
-    updateBadgeTimer(set, get);
-  },
-  setCmdOrCtrlDown: (down) => {
-    set({ cmdOrCtrlDown: down });
+  setHeldBadgeTarget: (target) => {
+    if (get().heldBadgeTarget === target) return;
+    set({ heldBadgeTarget: target });
     updateBadgeTimer(set, get);
   },
   setSidebarShortcutWorkspaceTargets: (targets) =>
     set({ sidebarShortcutWorkspaceTargets: targets }),
+  setSidebarShortcutProjects: (projects) => set({ sidebarShortcutProjects: projects }),
+  setJumpTargets: ({ waitingWorkspaces, listedWorkspaceKeys }) =>
+    set({ waitingWorkspaces, listedWorkspaceKeys }),
   resetModifiers: () => {
-    set({ altDown: false, cmdOrCtrlDown: false });
+    set({ heldBadgeTarget: null });
     updateBadgeTimer(set, get);
   },
 }));

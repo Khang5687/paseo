@@ -35,6 +35,7 @@ function ws(
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    workingSubagentCount: 0,
     workspaceKey: input.workspaceKey,
   };
 }

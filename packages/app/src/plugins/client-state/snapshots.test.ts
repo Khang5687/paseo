@@ -97,7 +97,13 @@ describe("sidebar entity snapshots", () => {
     const activity = new Map([
       [
         idle.id,
-        { agentId: agent.id, status: "needs_input" as const, enteredAt: null, nextRunAt: null },
+        {
+          agentId: agent.id,
+          status: "needs_input" as const,
+          enteredAt: null,
+          nextRunAt: null,
+          hasUnseenAgent: false,
+        },
       ],
     ]);
     const after = createPluginWorkspaceSnapshot(idle, "host-1", {

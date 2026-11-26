@@ -20,6 +20,7 @@ import { useSessionStore } from "@/stores/session-store";
 import { ChevronRight } from "lucide-react-native";
 import { useProviderIcon } from "@/components/provider-icons";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { confirmArchive } from "@/utils/archive-confirm";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { HighlightedText } from "@/components/ui/highlighted-text";
 import { ArchivedBadge } from "@/components/archived-badge";
@@ -387,7 +388,12 @@ export function AgentList({
         setActionAgent(agent);
         return;
       }
-      void archiveAgent({ serverId: agent.serverId, agentId: agent.id }).catch(() => {});
+      void (async () => {
+        if (!(await confirmArchive({ subject: "agent", name: agent.title }))) {
+          return;
+        }
+        await archiveAgent({ serverId: agent.serverId, agentId: agent.id }).catch(() => {});
+      })();
     },
     [archiveAgent],
   );

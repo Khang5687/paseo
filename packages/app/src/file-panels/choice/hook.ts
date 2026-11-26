@@ -19,12 +19,14 @@ export function useFilePanelChoice(input: {
   path: string;
   /** The kind the file's stat reports, or null before the stat. */
   fileKind: FilePanelFileKind | null;
+  /** The size the file's stat reports, or null before the stat. Omitted when the caller has no stat. */
+  fileSize?: number | null;
   /** The tab is on screen. */
   presentable: boolean;
   /** Identifies the tab's latest request to show a line, or null when it targets no line. */
   lineNavigation: number | null;
-}): { panel: FilePanel | null; choice: FilePanelChoice } {
-  const { targetKey, path, fileKind, presentable, lineNavigation } = input;
+}): { panel: FilePanel | null; oversized: boolean; choice: FilePanelChoice } {
+  const { targetKey, path, fileKind, fileSize, presentable, lineNavigation } = input;
   const { serverId, workspaceId, tabId } = usePaneContext();
   const candidates = useFilePanels(input.serverId);
   const { associations, remember } = useFilePanelAssociations();
@@ -35,13 +37,13 @@ export function useFilePanelChoice(input: {
     () =>
       fileKind
         ? resolveFilePanel({
-            file: { path, kind: fileKind },
+            file: { path, kind: fileKind, size: fileSize ?? undefined },
             candidates,
             associations,
             choice: chosenPanelId,
           })
         : null,
-    [associations, candidates, chosenPanelId, fileKind, path],
+    [associations, candidates, chosenPanelId, fileKind, fileSize, path],
   );
 
   useEffect(() => {
@@ -52,7 +54,11 @@ export function useFilePanelChoice(input: {
     [choice, serverId, tabId, workspaceId],
   );
 
-  return { panel: resolution?.panel ?? null, choice };
+  return {
+    panel: resolution?.panel ?? null,
+    oversized: resolution?.oversized ?? false,
+    choice,
+  };
 }
 
 const NO_CHOICE_SNAPSHOT: FilePanelChoiceSnapshot<FilePanel> = {

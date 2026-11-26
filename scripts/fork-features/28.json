@@ -1,0 +1,11 @@
+{
+  "pr": 28,
+  "title": "Output style picker for Claude and OMP, with per-provider feature defaults",
+  "tests": [
+    "packages/server/src/server/agent/agent-manager.test.ts",
+    "packages/server/src/server/agent/output-styles.test.ts",
+    "packages/server/src/server/agent/providers/claude/agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/agent.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/output-style.spec.ts"]
+}
