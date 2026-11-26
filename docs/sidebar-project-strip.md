@@ -20,11 +20,12 @@ The strip owns no store.
 
 On compact layouts the header sidebar items sit in one row of round icon buttons, with the close button at the right (`SidebarNavIconRow` in `components/sidebar/sidebar-nav-rows.tsx`). The row provides `SidebarNavIconRowContext`; `SidebarHeaderRow` with the `compact` variant reads it and draws `SidebarNavIconButton` instead of a full row. Built-in rows, plugin kit `SidebarRow`s and legacy plugin rows all render through `SidebarHeaderRow`, so a plugin item becomes an icon with no change on its side, and the kit's `SidebarSeparator` renders nothing there.
 
-- A tap does what the row did. A long press opens the button's menu as a sheet titled with its name; its one row, Buttons to show, opens a page that ticks each button on or off. On web, where `ContextMenuTrigger` opens only on right-click, the button also opens the menu on long press so a phone browser gets it.
+- A tap does what the row did. A long press opens the button's menu as a sheet titled with its name; its one row, Buttons to show, opens a page that ticks each button on or off. On web, where `ContextMenuTrigger` opens only on right-click, the button also opens the menu on long press so a phone browser gets it. That sheet mounts under the finger, and when the finger lifts the browser sends its compatibility mousedown and click to the sheet's backdrop, which closes it at once; `swallowTouchRelease` (`components/sidebar/swallow-touch-release.web.ts`) cancels that touch's `touchend` so the click never comes. Reuse it for any other web long press that opens an overlay.
 - The ticks write the same per-device `sidebarNavItems` preference as Settings > Sidebar, so Settings stays the way back. The last visible button cannot be unticked.
 - Defaults differ by layout: `COMPACT_HIDDEN_BY_DEFAULT` in `sidebar-nav/model.ts` lists the keys that start hidden on compact (Notes). A stored choice always wins, and any edit stores the whole list, so a phone edit keeps Notes hidden on that device until it is ticked on.
 - Trailing content (shortcut hints, a plugin row's `trailing`) is dropped in the icon row; there is no room for it.
 - The compact workspace list is lighter too: an empty project has no "+ New workspace" ghost row, since the project row's + and the New workspace button already create one, and chat rows have no copy-agent-ID icon; Copy agent ID stays in the row's ⋮ menu.
+- To check it again: `npx playwright test --project=browser e2e/browser/sidebar-phone-icons.spec.ts` from `packages/app` taps through all of the above at 390×844 with touch, plus the desktop sidebar at 1280, and writes `.scratch/phone-icons-*.png`.
 
 ## Last chat
 
