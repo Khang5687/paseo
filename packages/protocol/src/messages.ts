@@ -1620,9 +1620,17 @@ export const WaitForFinishRequestSchema = z.object({
   timeoutMs: z.number().int().positive().optional(),
 });
 
+export const DaemonTailscaleSetRequestSchema = z.object({
+  type: z.literal("daemon.tailscale.set.request"),
+  requestId: z.string(),
+  enabled: z.boolean(),
+  confirmed: z.boolean().optional(),
+});
+
 export const DaemonGetStatusRequestSchema = z.object({
   type: z.literal("daemon.get_status.request"),
   requestId: z.string(),
+  includeProviders: z.boolean().optional(),
 });
 
 export const DaemonGetPairingOfferRequestSchema = z.object({
@@ -4359,6 +4367,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SendAgentMessageRequestSchema,
   WaitForFinishRequestSchema,
   DaemonGetStatusRequestSchema,
+  DaemonTailscaleSetRequestSchema,
   DaemonGetPairingOfferRequestSchema,
   DaemonConfigReloadRequestSchema,
   HubManagementDaemonConnectRequestSchema,
@@ -4822,6 +4831,7 @@ export const ServerInfoStatusPayloadSchema = z
         forgeSearch: z.boolean().optional(),
         // COMPAT(daemonStatusRpc): added in v0.1.76, remove gate after 2026-11-18.
         daemonStatusRpc: z.boolean().optional(),
+        tailscale: z.boolean().optional(),
         // COMPAT(daemonConfigReload): added in v0.4.0, remove gate after 2027-02-14.
         daemonConfigReload: z.boolean().optional(),
         // COMPAT(speechSettings): added in v0.12.0, remove gate after 2027-04-18.
@@ -6556,6 +6566,32 @@ export const GetDaemonConfigResponseMessageSchema = z.object({
     .passthrough(),
 });
 
+const TailscaleStatusSchema = z.object({
+  ip: z.string().nullable(),
+  address: z.string().nullable(),
+  state: z.enum(["unavailable", "off", "waiting", "on"]),
+  lockedBy: z.enum(["main", "launch"]).optional(),
+  // COMPAT(tailscale): keep lockedBy "main" for older clients when the main listener is a socket.
+  mainIsSocket: z.literal(true).optional(),
+  // Whether turning off Tailscale would disconnect the source of this request.
+  disconnectsCurrentConnection: z.boolean().optional(),
+});
+
+const ExtraListenerStatusSchema = z.object({
+  address: z.string(),
+  state: z.enum(["waiting", "listening"]),
+});
+
+export const DaemonTailscaleSetResponseSchema = z.object({
+  type: z.literal("daemon.tailscale.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    confirmationRequired: z.boolean(),
+    tailscale: TailscaleStatusSchema,
+    extraListeners: z.array(ExtraListenerStatusSchema),
+  }),
+});
+
 export const DaemonGetStatusResponseSchema = z.object({
   type: z.literal("daemon.get_status.response"),
   payload: z
@@ -6567,6 +6603,8 @@ export const DaemonGetStatusResponseSchema = z.object({
       nodePath: z.string(),
       startedAt: z.string().nullable().optional(),
       listen: z.string().nullable(),
+      tailscale: TailscaleStatusSchema.optional(),
+      extraListeners: z.array(ExtraListenerStatusSchema).optional(),
       relay: z
         .object({
           enabled: z.boolean(),
@@ -8852,6 +8890,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SendAgentMessageResponseMessageSchema,
   SetVoiceModeResponseMessageSchema,
   DaemonGetStatusResponseSchema,
+  DaemonTailscaleSetResponseSchema,
   DaemonGetPairingOfferResponseSchema,
   DaemonConfigReloadResponseSchema,
   HubManagementDaemonConnectResponseSchema,
@@ -9669,3 +9708,6 @@ export function parseServerInfoStatusPayload(payload: unknown): ServerInfoStatus
   }
   return parsed.data;
 }
+
+export type TailscaleStatus = z.infer<typeof TailscaleStatusSchema>;
+export type DaemonTailscaleSetResponse = z.infer<typeof DaemonTailscaleSetResponseSchema>;

@@ -22,6 +22,12 @@ export interface AttachmentMetadata {
   createdAt: number;
   /** Daemon upload holding a copy, set when the draft syncs across devices. */
   uploadId?: string;
+  /**
+   * Send this picture at its original size instead of resized. Set only on the copy in an
+   * outgoing message, by the composer's "Send original size" switch; stored metadata never has
+   * it. It rides on the picture so queued messages and parent-managed sends keep the choice.
+   */
+  sendOriginal?: boolean;
 }
 
 export interface BrowserElementAttachment {

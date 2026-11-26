@@ -1188,6 +1188,23 @@
     ]
   },
   {
+    "pr": 140,
+    "title": "feat(app): add a Send original size switch to the attach menu",
+    "tests": [
+      "packages/app/src/attachments/image-downscale.test.ts",
+      "packages/app/src/attachments/image-codec.native.test.ts",
+      "packages/app/src/attachments/image-codec.browser.test.ts",
+      "packages/app/src/attachments/service.test.ts",
+      "packages/app/src/composer/attachments/submit.test.ts"
+    ]
+  },
+  {
+    "pr": 155,
+    "title": "fix(app): purple waiting badge on the project strip",
+    "tests": ["packages/app/src/components/sidebar/project-strip-model.test.ts"],
+    "e2e": ["packages/app/e2e/browser/sidebar-project-strip.spec.ts"]
+  },
+  {
     "pr": 156,
     "title": "feat(app): save big files up to 500 MB without holding them in memory",
     "tests": [

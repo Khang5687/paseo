@@ -102,6 +102,24 @@ describe("attachment service", () => {
     ]);
   });
 
+  it("refuses pictures that cannot fit one message before anything is sent", async () => {
+    const picture = "A".repeat(40 * 1024 * 1024);
+    __setAttachmentStoreForTests({
+      ...createRecordingStore(),
+      async encodeBase64() {
+        return picture;
+      },
+    });
+    const attachments = ["a", "b", "c"].map((id) =>
+      createAttachment({ id, mimeType: "image/jpeg" }),
+    );
+
+    await expect(encodeAttachmentsForSend(attachments)).rejects.toThrow(
+      "Attachments are 121 MB, limit is 99 MB; remove some.",
+    );
+    await expect(encodeAttachmentsForSend(attachments.slice(0, 2))).resolves.toHaveLength(2);
+  });
+
   it("does not collect an attachment persisted while garbage collection is starting", async () => {
     let releaseSave: () => void = () => undefined;
     let reportSaveStarted: () => void = () => undefined;

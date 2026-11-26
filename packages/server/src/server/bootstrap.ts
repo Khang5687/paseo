@@ -25,10 +25,16 @@ import type { Logger } from "pino";
 import { z } from "zod";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
 
-export type ListenTarget =
-  | { type: "tcp"; host: string; port: number }
-  | { type: "socket"; path: string }
-  | { type: "pipe"; path: string };
+import {
+  createDaemonListeners,
+  parseListenString,
+  formatListenTarget,
+  formatHostForHttpUrl,
+  splitListen,
+  type ListenTarget,
+  type TailscaleNetwork,
+} from "./listeners.js";
+export { parseListenString, formatListenTarget, type ListenTarget } from "./listeners.js";
 
 function resolveBoundListenTarget(
   listenTarget: ListenTarget,
@@ -48,60 +54,6 @@ function resolveBoundListenTarget(
     host: listenTarget.host,
     port: address.port,
   };
-}
-
-// Matches a Windows drive-letter path like C:\ or D:\
-const WINDOWS_DRIVE_RE = /^[A-Za-z]:\\/;
-
-export function parseListenString(listen: string): ListenTarget {
-  // 1. Windows named pipes: \\.\pipe\... or pipe://...
-  if (listen.startsWith("\\\\.\\pipe\\") || listen.startsWith("pipe://")) {
-    return {
-      type: "pipe",
-      path: listen.startsWith("pipe://") ? listen.slice("pipe://".length) : listen,
-    };
-  }
-  // 2. Explicit unix:// prefix
-  if (listen.startsWith("unix://")) {
-    return { type: "socket", path: listen.slice(7) };
-  }
-  // 3. Reject Windows absolute drive paths — they are not Unix sockets
-  if (WINDOWS_DRIVE_RE.test(listen)) {
-    throw new Error(`Invalid listen string (Windows path is not a valid listen target): ${listen}`);
-  }
-  // 4. POSIX absolute path (/ or ~) — Unix socket
-  if (listen.startsWith("/") || listen.startsWith("~")) {
-    return { type: "socket", path: listen };
-  }
-  // 5. Pure numeric — TCP port on 127.0.0.1
-  const trimmed = listen.trim();
-  if (/^\d+$/.test(trimmed)) {
-    const port = parseInt(trimmed, 10);
-    return { type: "tcp", host: "127.0.0.1", port };
-  }
-  // 6. host:port — TCP
-  if (listen.includes(":")) {
-    const lastColonIdx = listen.lastIndexOf(":");
-    const host = listen.slice(0, lastColonIdx);
-    const portStr = listen.slice(lastColonIdx + 1);
-    const parsedPort = parseInt(portStr, 10);
-    if (!Number.isFinite(parsedPort)) {
-      throw new Error(`Invalid port in listen string: ${listen}`);
-    }
-    const cleanHost = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
-    return { type: "tcp", host: cleanHost || "127.0.0.1", port: parsedPort };
-  }
-  throw new Error(`Invalid listen string: ${listen}`);
-}
-
-export function formatListenTarget(listenTarget: ListenTarget | null): string | null {
-  if (!listenTarget) {
-    return null;
-  }
-  if (listenTarget.type === "tcp") {
-    return `${formatHostForHttpUrl(listenTarget.host)}:${listenTarget.port}`;
-  }
-  return listenTarget.path;
 }
 
 export async function fanOutReconciledWorkspaceUpdates(input: {
@@ -194,6 +146,7 @@ import {
 import { createOrchestrationSkills } from "./orchestration-skills/index.js";
 import {
   resolveReloadableConfig,
+  resolveListenAddress,
   type ResolvedDaemonSettings,
   type CliConfigOverrides,
 } from "./config.js";
@@ -334,10 +287,6 @@ function disposeRoutingOnAgentClose(
     },
     { replayState: false },
   );
-}
-
-function formatHostForHttpUrl(host: string): string {
-  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
 function resolveAgentMcpClientHost(host: string): string {
@@ -593,6 +542,7 @@ export interface PaseoDaemon {
 export interface PaseoDaemonDependencies {
   builtinPlugins?: BuiltinPluginLoader;
   lazyTerminalWorker?: boolean;
+  getTailscaleNetwork?: () => TailscaleNetwork;
   hubRelationshipRemote?: HubRelationshipRemote;
   hubRelationshipClock?: HubRelationshipClock;
   hubRelationshipRetryPolicy?: HubRelationshipRetryPolicy;
@@ -749,6 +699,10 @@ function resolveReloadEnv(config: PaseoDaemonConfig): NodeJS.ProcessEnv {
   return config.configReload?.env ?? process.env;
 }
 
+function isListenOverridden(config: PaseoDaemonConfig): boolean {
+  return config.configReload?.overrideControlledPaths.includes("daemon.listen") === true;
+}
+
 function createInitialMutableDaemonConfig(config: ResolvedDaemonSettings): MutableDaemonConfig {
   const providers = config.providerOverrides ?? {};
 
@@ -840,6 +794,9 @@ export async function createPaseoDaemon(
         });
         return {
           mutable: createInitialMutableDaemonConfig(reloaded),
+          listen: config.configReload
+            ? resolveListenAddress(resolveReloadEnv(config), config.configReload.cli, persisted)
+            : persisted.daemon?.listen,
           overrideControlledPaths: reloaded.overrideControlledPaths,
         };
       },
@@ -894,7 +851,7 @@ export async function createPaseoDaemon(
   // pattern.
   const agentMcpAuthToken = randomUUID();
 
-  const listenTarget = parseListenString(config.listen);
+  const listenTarget = parseListenString(splitListen(config.listen)[0]);
 
   const app = express();
   app.set("trust proxy", resolveExpressTrustProxySetting(config));
@@ -965,17 +922,17 @@ export async function createPaseoDaemon(
   app.use(serviceProxy.middleware());
 
   // Host allowlist / DNS rebinding protection (vite-like semantics).
-  // For non-TCP (unix sockets), skip host validation.
-  if (listenTarget.type === "tcp") {
-    app.use((req, res, next) => {
+  // Validate the accepted connection so extra TCP listeners also enforce the allowlist.
+  app.use((req, res, next) => {
+    if (req.socket.localPort !== undefined) {
       const hostHeader = typeof req.headers.host === "string" ? req.headers.host : undefined;
       if (!isHostnameAllowed(hostHeader, configuredHostnames)) {
         res.status(403).json({ error: "Invalid Host header" });
         return;
       }
-      next();
-    });
-  }
+    }
+    next();
+  });
 
   // CORS - allow same-origin + configured origins
   const fixedAllowedOrigins = [
@@ -1116,6 +1073,14 @@ export async function createPaseoDaemon(
   });
 
   const httpServer = createHTTPServer(app);
+  const listeners = createDaemonListeners({
+    http: httpServer,
+    listen: config.listen,
+    overridden: isListenOverridden(config),
+    getMain: () => boundListenTarget,
+    getTailscaleNetwork: dependencies.getTailscaleNetwork,
+  });
+  daemonConfigStore.attachListeners(listeners);
 
   // Script proxy WebSocket upgrade handler — must be registered before the
   // VoiceAssistantWebSocketServer attaches its own "upgrade" listener so that
@@ -2216,6 +2181,9 @@ export async function createPaseoDaemon(
               providerSnapshotManager,
               {
                 listen: formatListenTarget(boundListenTarget ?? listenTarget),
+                getListenStatus: listeners.status,
+                setTailscaleEnabled: (enabled, localEndpoint, confirmed) =>
+                  daemonConfigStore.setTailscaleEnabled(enabled, localEndpoint, confirmed),
                 worktreesRoot: config.worktreesRoot,
                 get appBaseUrl() {
                   return appBaseUrl;
@@ -2253,6 +2221,7 @@ export async function createPaseoDaemon(
             restartRecovery.resumePending();
             await finishSubscriptions.start();
             await changeRequestWatches.start();
+            await listeners.apply(config.listen);
             wsServer.beginAcceptingConnections();
             // Queues stored with work in them drain without waiting for a client
             // to open their agent. Runs in the background so startup does not wait.
@@ -2324,6 +2293,7 @@ export async function createPaseoDaemon(
       unsubscribeAccountRoutingDisposal();
       unbindAccountRouting();
       disposeAccountRouting();
+      await listeners.stop();
       if (mainStarted) {
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
@@ -2405,6 +2375,7 @@ export async function createPaseoDaemon(
     unsubscribeNoteCommandFinished();
     await notesService.stop().catch(() => undefined);
     await relayRuntime?.stop().catch(() => undefined);
+    await listeners.stop();
     if (wsServer) {
       await wsServer.close();
     }

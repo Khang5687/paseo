@@ -53,6 +53,7 @@ import {
   FileText,
   GitPullRequest,
   Image as ImageIcon,
+  Maximize2,
   ClipboardPaste,
   Paperclip,
 } from "lucide-react-native";
@@ -179,7 +180,10 @@ import type {
   WorkspaceComposerAttachment,
 } from "@/attachments/types";
 import type { SelectedFile } from "@/attachments/selected-file";
-import { resolveComposerAttachmentSubmitFormat } from "@/composer/attachments/submit";
+import {
+  applySendOriginalToImages,
+  resolveComposerAttachmentSubmitFormat,
+} from "@/composer/attachments/submit";
 import { ComposerInputProvider, type ComposerInput } from "@/composer/session";
 import type { ComposerFocusOptions } from "@/composer/model";
 import { useRetainedPanelActive } from "@/components/retained-panel";
@@ -1621,6 +1625,9 @@ function ComposerContentImpl({
   );
 
   const { pickImages } = useImageAttachmentPicker();
+  // "Send original size" from the attach menu: applies to the next message that carries pictures,
+  // then turns itself off. Off by default and never remembered across composers or restarts.
+  const [sendOriginalImages, setSendOriginalImages] = useState(false);
   const { pickFiles } = useFilePicker();
   const agentIdRef = useRef(agentId);
   const sendAgentMessageRef = useRef<
@@ -1977,6 +1984,12 @@ function ComposerContentImpl({
         result,
         outgoingAttachments,
       });
+      if (
+        (result === "submitted" || result === "queued") &&
+        outgoingAttachments.some((attachment) => attachment.kind === "image")
+      ) {
+        setSendOriginalImages(false);
+      }
     },
     [
       allowEmptySubmit,
@@ -1996,7 +2009,10 @@ function ComposerContentImpl({
 
   const handleSubmit = useCallback(
     (payload: MessagePayload) => {
-      const outgoingAttachments = buildOutgoingAttachments(attachments);
+      const outgoingAttachments = applySendOriginalToImages(
+        buildOutgoingAttachments(attachments),
+        sendOriginalImages,
+      );
       const clientSlashCommand = resolveClientSlashCommand({
         text: payload.text,
         hasAttachments: outgoingAttachments.length > 0,
@@ -2031,6 +2047,7 @@ function ComposerContentImpl({
       pluginClientSlashCommands,
       runPluginClientSlashCommand,
       sendMessageWithContent,
+      sendOriginalImages,
     ],
   );
 
@@ -2649,6 +2666,16 @@ function ComposerContentImpl({
     }
     items.push(
       {
+        id: "send-original-size",
+        label: t("composer.attachments.sendOriginalSize"),
+        description: t("composer.attachments.sendOriginalSizeDescription"),
+        icon: <ThemedMaximize size={ICON_SIZE.md} uniProps={iconForegroundMutedMapping} />,
+        checked: sendOriginalImages,
+        onSelect: () => {
+          setSendOriginalImages((current) => !current);
+        },
+      },
+      {
         id: "github",
         label: t("composer.attachments.addIssueOrPr", {
           context: forgePresentation.changeRequestContext,
@@ -2675,6 +2702,7 @@ function ComposerContentImpl({
     handlePickFile,
     handlePickImage,
     pluginAttachments.menuItems,
+    sendOriginalImages,
     t,
   ]);
 
@@ -3153,6 +3181,7 @@ const ThemedCircleDot = withUnistyles(CircleDot);
 const ThemedAudioLines = withUnistyles(AudioLines);
 const ThemedPaperclip = withUnistyles(Paperclip);
 const ThemedImageIcon = withUnistyles(ImageIcon);
+const ThemedMaximize = withUnistyles(Maximize2);
 const ThemedClipboardPaste = withUnistyles(ClipboardPaste);
 const ThemedFileText = withUnistyles(FileText);
 const iconForegroundMapping = (theme: Theme) => ({ color: theme.colors.foreground });

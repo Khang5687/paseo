@@ -29,6 +29,8 @@ Each project remembers the workspace you last had open in it (`useSidebarLastCha
 
 Each project shows how many of its workspaces have the `needs_input` status, through `countProjectWorkspacesNeedingInput`. It counts every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
 
+The badge is the palette purple (`theme.colors.palette.purple[500]`), the same purple as the New main agent dot, not the orange `needs_input` status dot. The status dots on workspace rows keep the orange; only the strip badge is purple, so a project-level count reads apart from a single workspace's status.
+
 ## Jump keys
 
 Two keys move between workspaces across projects, whatever the strip shows. Their combos are in [the binding table](keyboard-shortcuts.md#jump-keys).

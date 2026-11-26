@@ -30,14 +30,17 @@ import type { AccountRoutingAuthority } from "../account-routing/authority.js";
 import type { OmpAccountLogin } from "../account-routing/login.js";
 import type { RoutingCatalog } from "../account-routing/types.js";
 import type { OmpRoutingBlock } from "@getpaseo/protocol/messages";
+import type { TailscaleNetwork } from "../listeners.js";
 
 interface TestPaseoDaemonOptions {
   daemonVersion?: string;
   desktopManaged?: boolean;
   downloadTokenTtlMs?: number;
   corsAllowedOrigins?: string[];
+  hostnames?: PaseoDaemonConfig["hostnames"];
   listen?: string;
   listenPort?: number;
+  getTailscaleNetwork?: () => TailscaleNetwork;
   logger?: Parameters<typeof createPaseoDaemon>[1];
   mcpEnabled?: boolean;
   mcpDebug?: boolean;
@@ -51,6 +54,7 @@ interface TestPaseoDaemonOptions {
   relayConfigCapability?: boolean;
   agentClients?: Partial<Record<AgentProvider, AgentClient>>;
   providerOverrides?: PaseoDaemonConfig["providerOverrides"];
+  providerCatalogRefreshTimeoutMs?: PaseoDaemonConfig["providerCatalogRefreshTimeoutMs"];
   paseoHomeRoot?: string;
   staticDir?: string;
   cleanup?: boolean;
@@ -194,6 +198,7 @@ export async function createTestPaseoDaemon(
       config.providerOverrides = { ...config.providerOverrides, omp: { enabled: true } };
     }
     const daemon = await createPaseoDaemon(config, logger, {
+      getTailscaleNetwork: options.getTailscaleNetwork,
       builtinPlugins: options.builtinPlugins ?? new BuiltinPluginLoader(undefined, []),
       accountLogin: options.ompAccountLogin,
       ompRuntime: options.ompRuntime,
@@ -439,13 +444,14 @@ async function prepareTestDaemonConfig(
     daemonVersion: options.daemonVersion,
     desktopManaged: options.desktopManaged,
     corsAllowedOrigins: options.corsAllowedOrigins ?? [],
-    hostnames: true,
+    hostnames: options.hostnames ?? true,
     mcpEnabled: options.mcpEnabled ?? true,
     staticDir,
     mcpDebug: options.mcpDebug ?? false,
     isDev: options.isDev,
     agentClients: options.agentClients ?? createTestAgentClients(),
     providerOverrides: options.providerOverrides,
+    providerCatalogRefreshTimeoutMs: options.providerCatalogRefreshTimeoutMs,
     agentStoragePath: path.join(paseoHome, "agents"),
     relayEnabled: options.relayEnabled ?? false,
     relayEndpoint: options.relayEndpoint ?? "relay.paseo.sh:443",
