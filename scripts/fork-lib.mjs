@@ -78,6 +78,24 @@ export function planTestRuns(files) {
   return [...runs.values()];
 }
 
+/**
+ * Playwright workers for the e2e step from free memory. Each extra worker costs about 1 GB (a
+ * Chromium renderer plus its test daemons); Metro, about 1.7 GB, is shared. `reserveGb` is what
+ * the typecheck and unit steps may still claim while the e2e step runs beside them.
+ */
+export function pickE2eWorkers(availableGb, reserveGb = 0) {
+  const free = availableGb - reserveGb;
+  if (free >= 9) return 3;
+  if (free >= 6) return 2;
+  return 1;
+}
+
+/** `MemAvailable` from /proc/meminfo text, in GB; null when the file has no such line. */
+export function memAvailableGb(meminfo) {
+  const kb = /^MemAvailable:\s+(\d+) kB/m.exec(meminfo)?.[1];
+  return kb === undefined ? null : Number(kb) / 1024 / 1024;
+}
+
 /** Per-file status from a Vitest JSON report; files absent from the report count as failed. */
 export function vitestFileResults(report, root, files) {
   const byFile = new Map();

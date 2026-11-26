@@ -11,7 +11,9 @@ import {
   loadFeatures,
   parseBlameOwners,
   parseHunks,
+  memAvailableGb,
   parseNameStatusLog,
+  pickE2eWorkers,
   planTestRuns,
   playwrightFileResults,
   riskReport,
@@ -287,4 +289,21 @@ test("features load from one file per PR, ordered by PR number", () => {
   } finally {
     rmSync(root, { recursive: true });
   }
+});
+
+test("e2e workers follow free memory, less what the parallel steps may still claim", () => {
+  assert.deepEqual(
+    [5.9, 6, 8.9, 9, 20].map((gb) => pickE2eWorkers(gb)),
+    [1, 2, 2, 3, 3],
+  );
+  assert.equal(pickE2eWorkers(14, 5), 3);
+  assert.equal(pickE2eWorkers(13.9, 5), 2);
+  assert.equal(pickE2eWorkers(11, 5), 2);
+  assert.equal(pickE2eWorkers(10.9, 5), 1);
+});
+
+test("MemAvailable is read from /proc/meminfo text", () => {
+  const meminfo = "MemTotal:       31457280 kB\nMemFree:  100 kB\nMemAvailable:   10485760 kB\n";
+  assert.equal(memAvailableGb(meminfo), 10);
+  assert.equal(memAvailableGb("MemTotal: 1 kB\n"), null);
 });

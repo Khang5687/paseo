@@ -266,6 +266,7 @@ Start each one as a subagent in your own workspace (or an existing workspace of 
 - A PR with nothing to test (docs, build scripts) gets an `"untested": "<reason>"` instead.
 - When upstream ships its own version of a fork feature and you delete ours, keep the entry and add `"retired": "<reason>"`. The check skips it.
 - fork-check fails when a merged fork PR has no entry or a listed test no longer exists. A missing test usually means upstream moved or deleted it, so find where the coverage went before you edit the list.
+- `--e2e` starts the specs once typecheck and lint are done, beside the unit tests; `--bail` keeps the old order, specs only after everything else passes. Playwright workers come from `MemAvailable` when the specs start, less 5 GB kept for the unit tests and other agents: 1 worker below 6 GB, 2 from 6, 3 from 9 (so 3 workers need 14 GB available). Override with `--e2e-workers <n>` or `E2E_WORKERS=<n>`; without /proc/meminfo (macOS) it is 1. Each worker costs about 1.5 GB on top of Metro's 1.7 GB.
 
 ### Syncing with upstream
 
