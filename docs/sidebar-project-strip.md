@@ -14,7 +14,7 @@ The strip owns no store.
 
 - The strip shows only with two or more projects. With one there is nothing to switch, and the digit keys publish no project targets.
 - The desktop rail sits inside the sidebar's width (52 px), below the window chrome row, so the titlebar drag region and the resize handle keep their places.
-- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to first, Move earlier, Move later. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan so the scroll wins.
+- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to first, Move earlier, Move later. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
 
 ## The phone's top buttons
 
