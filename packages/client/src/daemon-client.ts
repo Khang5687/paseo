@@ -477,8 +477,8 @@ export interface DaemonClientConfig {
   /**
    * Ping the daemon every 10 s and reconnect after missed replies (default true). Turn it off
    * only where the transport reports its own loss (a plugin's IPC channel, an in-process
-   * channel): there a ping cannot find a dead link the channel would not, and it costs both
-   * processes a wakeup per client every 10 s.
+   * channel, a route through a connected host): there a ping cannot find a dead link the
+   * channel would not, and it costs both processes a wakeup per client every 10 s.
    */
   livenessHeartbeat?: boolean;
 }
@@ -1801,6 +1801,7 @@ export class DaemonClient {
             transport.close(4003, "Invalid chunked transport");
           }
         }),
+        this.subscribeSendProgress(transport),
       ];
     } catch (error) {
       this.resetConnectTimeout();
@@ -1897,6 +1898,15 @@ export class DaemonClient {
   private recordTransportActivity(): void {
     this.consecutiveLivenessFailures = 0;
     if (this.pingProbe) this.pingProbe.receivedActivity = true;
+  }
+
+  // A long upload holds the ping behind it and the daemon has nothing to answer until it
+  // arrives; bytes leaving the socket prove the link is alive in the meantime.
+  private subscribeSendProgress(transport: DaemonTransport): () => void {
+    if (!transport.onSendProgress) return () => {};
+    return transport.onSendProgress(() => {
+      if (this.transport === transport) this.recordTransportActivity();
+    });
   }
 
   requireConnectedHosts(): void {
