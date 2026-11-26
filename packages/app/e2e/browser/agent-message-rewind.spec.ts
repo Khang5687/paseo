@@ -9,6 +9,9 @@ import {
   expectComposerNotFocused,
   expectComposerVisible,
   submitMessage,
+  submitMessageWithButton,
+  attachComposerTestImage,
+  expectAttachmentPill,
 } from "../support/helpers/composer";
 import { expectNearBottom, scrollChatAwayFromBottom } from "../support/helpers/agent-bottom-anchor";
 import { holdRewindCompletion } from "../support/helpers/agent-timeline-gate";
@@ -117,6 +120,40 @@ test.describe("Agent message rewind", () => {
       await expect(page.getByText(rewindError, { exact: true })).toBeVisible();
       await expectAgentReadyToInterrupt(page);
       await expectTurnCompletesNormally(page, agent);
+    } finally {
+      await agent.cleanup();
+    }
+  });
+
+  test("rewinds a prompt whose turn failed before the provider acknowledged it and restores its text and picture", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const prompt = "Fail synthetic turn before user message.";
+    const agent = await seedMockAgentWorkspace({
+      repoPrefix: "message-rewind-failed-before-ack-",
+      title: "Message rewind failed before ack",
+      model: "ten-second-stream",
+    });
+
+    try {
+      await openAgentRoute(page, agent);
+      await expectComposerVisible(page);
+      await attachComposerTestImage(page);
+      await expectAttachmentPill(page, "composer-image-attachment-pill");
+      await submitMessageWithButton(page, prompt);
+      const userMessage = page.getByTestId("user-message").filter({ hasText: prompt });
+      await expect(userMessage).toBeVisible();
+      await expect(page.getByTestId("composer-image-attachment-pill")).toHaveCount(0);
+      const finish = await agent.client.waitForFinish(agent.agentId, 30_000);
+      expect(finish.status).toBe("error");
+
+      await rewindConversation(page, userMessage, prompt);
+
+      await expect(page.getByTestId("user-message").filter({ hasText: prompt })).toHaveCount(0);
+      await expectComposerDraft(page, prompt);
+      await expectAttachmentPill(page, "composer-image-attachment-pill");
+      await expect(page.getByTestId("composer-image-attachment-pill")).toHaveCount(1);
     } finally {
       await agent.cleanup();
     }

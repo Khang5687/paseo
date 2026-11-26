@@ -13590,6 +13590,195 @@ test("canonical submitted prompt keeps wire identity while rewind resolves provi
   }
 });
 
+test("rewind drops a prompt whose turn ended before the provider acknowledged it, without calling the provider", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-rewind-unacknowledged-"));
+  const store = new RecordingTimelineStore();
+
+  class FailingBeforeAckSession extends TestAgentSession {
+    override readonly capabilities = {
+      ...TEST_CAPABILITIES,
+      supportsRewindConversation: true,
+    };
+    readonly rewindMessageIds: string[] = [];
+    turnCount = 0;
+
+    override async startTurn(
+      prompt: AgentPromptInput,
+      options?: AgentRunOptions,
+    ): Promise<{ turnId: string }> {
+      const turnId = `turn-${++this.turnCount}`;
+      const text = typeof prompt === "string" ? prompt : "";
+      const failsBeforeAck = text.startsWith("fail");
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (failsBeforeAck) {
+          this.pushEvent({
+            type: "turn_failed",
+            provider: this.provider,
+            turnId,
+            error: "No API key found for anthropic",
+          });
+          return;
+        }
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: {
+            type: "user_message",
+            text,
+            messageId: `provider-${turnId}`,
+            clientMessageId: options?.clientMessageId,
+          },
+        });
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: { type: "assistant_message", text: "ok" },
+        });
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+
+    override async revertConversation({ messageId }: { messageId: string }): Promise<void> {
+      this.rewindMessageIds.push(messageId);
+    }
+  }
+
+  class FailingBeforeAckClient extends TestAgentClient {
+    session: FailingBeforeAckSession | null = null;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.session = new FailingBeforeAckSession(config);
+      return this.session;
+    }
+  }
+
+  const client = new FailingBeforeAckClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    durableTimelineStore: store,
+    logger,
+  });
+  const events: AgentManagerEvent[] = [];
+  manager.subscribe((event) => events.push(event), { replayState: false });
+  let agentId = "";
+  const userTexts = () =>
+    manager
+      .getTimeline(agentId)
+      .flatMap((item) => (item.type === "user_message" ? [item.text] : []));
+
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = snapshot.id;
+
+    await manager.runAgent(agentId, "kept prompt", { clientMessageId: "msg-kept" });
+    await expect(
+      manager.runAgent(agentId, "fail before ack", { clientMessageId: "msg-failed" }),
+    ).rejects.toThrow("No API key found for anthropic");
+    expect(userTexts()).toEqual(["kept prompt", "fail before ack"]);
+    expect(manager.hasInFlightRun(agentId)).toBe(false);
+    const epochBefore = manager.fetchTimeline(agentId, { direction: "tail", limit: 20 }).epoch;
+
+    await manager.rewind(agentId, "msg-failed", "conversation");
+
+    expect(client.session?.rewindMessageIds).toEqual([]);
+    expect(userTexts()).toEqual(["kept prompt"]);
+    const after = manager.fetchTimeline(agentId, { direction: "tail", limit: 20 });
+    expect(after.epoch).not.toBe(epochBefore);
+    expect(JSON.stringify(after.rows)).not.toContain("fail before ack");
+    expect(events).toContainEqual({
+      type: "timeline_replacement",
+      agentId,
+      epoch: after.epoch,
+    });
+    await manager.flush();
+    const committed = await manager.getTimelineRows(agentId);
+    expect(JSON.stringify(committed)).not.toContain("fail before ack");
+    expect(committed.map((row) => row.item.type)).toEqual(["user_message", "assistant_message"]);
+
+    // The kept, acknowledged prompt still rewinds through the provider.
+    await manager.rewind(agentId, "msg-kept", "conversation");
+    expect(client.session?.rewindMessageIds).toEqual(["provider-turn-1"]);
+  } finally {
+    await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("rewind still refuses an unacknowledged prompt when a later prompt was acknowledged", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-rewind-unacknowledged-later-"));
+
+  class LaterAckSession extends TestAgentSession {
+    override readonly capabilities = {
+      ...TEST_CAPABILITIES,
+      supportsRewindConversation: true,
+    };
+    turnCount = 0;
+
+    override async startTurn(
+      prompt: AgentPromptInput,
+      options?: AgentRunOptions,
+    ): Promise<{ turnId: string }> {
+      const turnId = `turn-${++this.turnCount}`;
+      const text = typeof prompt === "string" ? prompt : "";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (text.startsWith("fail")) {
+          this.pushEvent({ type: "turn_failed", provider: this.provider, turnId, error: "boom" });
+          return;
+        }
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: {
+            type: "user_message",
+            text,
+            messageId: `provider-${turnId}`,
+            clientMessageId: options?.clientMessageId,
+          },
+        });
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  class LaterAckClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new LaterAckSession(config);
+    }
+  }
+
+  const manager = new AgentManager({ clients: { codex: new LaterAckClient() }, logger });
+  let agentId = "";
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = snapshot.id;
+    await expect(
+      manager.runAgent(agentId, "fail first", { clientMessageId: "msg-failed" }),
+    ).rejects.toThrow("boom");
+    await manager.runAgent(agentId, "then fine", { clientMessageId: "msg-later" });
+
+    await expect(manager.rewind(agentId, "msg-failed", "conversation")).rejects.toThrow(
+      "Cannot rewind before the provider acknowledges the submitted prompt",
+    );
+    expect(
+      manager.getTimeline(agentId).filter((item) => item.type === "user_message"),
+    ).toHaveLength(2);
+  } finally {
+    await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("authoritative timeline records a daemon-handled submitted prompt before its output", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-daemon-handled-prompt-"));
   const storagePath = join(workdir, "agents");
