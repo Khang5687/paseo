@@ -5,6 +5,9 @@ import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
 import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-client";
 import { getServerId } from "../support/helpers/server-id";
 
+// theme.colors.palette.purple[500], the same purple as the New main agent dot.
+const STRIP_BADGE_PURPLE = "rgb(168, 85, 247)";
+
 // The strip only appears with two or more projects, so every test seeds two.
 async function seedTwoProjects(): Promise<[SeededWorkspace, SeededWorkspace]> {
   const alpha = await seedWorkspace({ repoPrefix: "project-strip-alpha-", title: "Alpha work" });
@@ -103,9 +106,9 @@ test.describe("Sidebar project strip", () => {
         await expect(workspaceRow(page, alpha)).toBeVisible({ timeout: 30_000 });
         await expect(workspaceRow(page, beta)).toBeVisible({ timeout: 30_000 });
 
-        await expect(
-          railItem(page, beta).getByTestId("sidebar-project-strip-needs-input"),
-        ).toHaveText("1", { timeout: 60_000 });
+        const railBadge = railItem(page, beta).getByTestId("sidebar-project-strip-needs-input");
+        await expect(railBadge).toHaveText("1", { timeout: 60_000 });
+        await expect(railBadge).toHaveCSS("background-color", STRIP_BADGE_PURPLE);
         await expect(
           railItem(page, alpha).getByTestId("sidebar-project-strip-needs-input"),
         ).toHaveCount(0);
@@ -167,10 +170,9 @@ test.describe("Sidebar project strip", () => {
         await gotoAppShell(page);
         await page.getByRole("button", { name: "Open menu", exact: true }).tap();
         await expect(page.getByTestId("sidebar-project-chip-row")).toBeVisible({ timeout: 30_000 });
-        await expect(chip(page, beta).getByTestId("sidebar-project-strip-needs-input")).toHaveText(
-          "1",
-          { timeout: 60_000 },
-        );
+        const chipBadge = chip(page, beta).getByTestId("sidebar-project-strip-needs-input");
+        await expect(chipBadge).toHaveText("1", { timeout: 60_000 });
+        await expect(chipBadge).toHaveCSS("background-color", STRIP_BADGE_PURPLE);
 
         await chip(page, beta).tap();
         await expectOnlyProjectShown(page, beta, alpha);
