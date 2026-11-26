@@ -1,0 +1,18 @@
+{
+  "pr": 55,
+  "title": "feat(queue): reorder, delete, pause, clear, and collapse queued messages",
+  "tests": [
+    "packages/app/src/composer/daemon-queue.test.ts",
+    "packages/app/src/utils/agent-snapshots.test.ts",
+    "packages/server/src/server/agent/agent-message-queue.test.ts",
+    "packages/server/src/server/agent/agent-projections.test.ts",
+    "packages/server/src/server/agent/import-sessions.test.ts",
+    "packages/server/src/server/agent/mcp-server.test.ts",
+    "packages/server/src/server/agent/provider-snapshot-manager.test.ts",
+    "packages/server/src/server/daemon-e2e/message-queue.e2e.test.ts",
+    "packages/server/src/server/session.workspaces.test.ts",
+    "packages/server/src/server/session/agent-updates/agent-updates-service.test.ts",
+    "packages/server/src/server/wire-compat.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/queue-controls.spec.ts"]
+}

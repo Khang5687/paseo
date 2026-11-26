@@ -1,0 +1,16 @@
+{
+  "pr": 18,
+  "title": "fix: keep commas inside question answers for every provider",
+  "tests": [
+    "packages/app/src/components/question-form-card-core.test.ts",
+    "packages/app/src/components/question-form-card.browser.test.tsx",
+    "packages/server/src/server/agent/providers/claude/agent.test.ts",
+    "packages/server/src/server/agent/providers/codex-app-server-agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/ask.test.ts",
+    "packages/server/src/server/agent/providers/opencode-agent.full-access.test.ts",
+    "packages/server/src/server/agent/providers/opencode/v2/permissions.test.ts",
+    "packages/server/src/server/agent/providers/pi/extensions/rpiv-ask-user-question/index.test.ts",
+    "plugins/muse-provider/test/provider.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/question-card.spec.ts"]
+}

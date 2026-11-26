@@ -1,0 +1,5 @@
+{
+  "pr": 33,
+  "title": "feat(app): add ompAccountRouting copy in all locales",
+  "tests": ["packages/app/src/i18n/resources.test.ts"]
+}

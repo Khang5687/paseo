@@ -1,0 +1,5 @@
+{
+  "pr": 10,
+  "title": "fix(app): show newly installed skills in the / menu without restarting",
+  "tests": ["packages/server/src/server/agent/agent-manager.test.ts"]
+}

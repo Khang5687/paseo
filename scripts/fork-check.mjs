@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fork-only (Khang5687/paseo); never upstreamed.
-// Runs typecheck, lint, and every test listed in scripts/fork-features.json, then reports
+// Runs typecheck, lint, and every test listed in scripts/fork-features/<N>.json, then reports
 // which fork PRs pass. See "Fork features and fork-check" in CLAUDE.md.
 //
 //   node scripts/fork-check.mjs                  typecheck + lint + unit tests

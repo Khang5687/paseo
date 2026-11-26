@@ -1,0 +1,5 @@
+{
+  "pr": 132,
+  "title": "refactor(omp): pass the todo reader in the history input object (fork port of #128 update)",
+  "tests": ["packages/server/src/server/agent/providers/omp/agent.history-purpose.test.ts"]
+}

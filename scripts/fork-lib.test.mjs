@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import {
   conflictBlocks,
+  FEATURES_DIR,
   featureVerdicts,
   forkOwnersAt,
-  mergeFeatureRegistry,
+  loadFeatures,
   parseBlameOwners,
   parseHunks,
   parseNameStatusLog,
@@ -42,7 +46,7 @@ test("a merged fork PR without an entry, or an entry with nothing guarding it, f
     mergedPrs: [58, 59, 60],
   });
   assert.deepEqual(errors, [
-    "#59 is merged on main but has no entry in scripts/fork-features.json.",
+    "#59 is merged on main but has no scripts/fork-features/59.json.",
     '#60 lists no tests and no "untested" reason.',
   ]);
 });
@@ -267,42 +271,20 @@ test("the risk report groups touches by fork owner, most-touched first", () => {
   ]);
 });
 
-const registry = (...entries) =>
-  `[\n${entries.map((entry) => JSON.stringify(entry, null, 2).replace(/^/gm, "  ")).join(",\n")}\n]\n`;
-
-test("two PRs that each append an entry merge to both entries", () => {
-  const base = registry(docs);
-  const merged = mergeFeatureRegistry(base, registry(docs, queue), registry(docs, relay));
-  assert.equal(merged, registry(docs, queue, relay));
-  assert.deepEqual(
-    JSON.parse(merged).map((entry) => entry.pr),
-    [8, 58, 57],
-  );
-});
-
-test("a registry edit on one side is kept, and a clash on one entry stays a conflict", () => {
-  const retired = { ...docs, retired: "upstream shipped it" };
-  const base = registry(docs);
-  assert.equal(
-    mergeFeatureRegistry(base, registry(docs, queue), registry(retired)),
-    registry(retired, queue),
-  );
-  const otherRetired = { ...docs, retired: "replaced" };
-  assert.equal(mergeFeatureRegistry(base, registry(retired), registry(otherRetired)), null);
-});
-
-test("an entry one side deleted stays deleted", () => {
-  const base = registry(docs, relay);
-  assert.equal(
-    mergeFeatureRegistry(base, registry(docs), registry(docs, relay, queue)),
-    registry(docs, queue),
-  );
-});
-
-test("a registry not in the formatter's layout is left as a conflict", () => {
-  const base = registry(docs);
-  assert.equal(
-    mergeFeatureRegistry(base, JSON.stringify([docs, queue]), registry(docs, relay)),
-    null,
-  );
+test("features load from one file per PR, ordered by PR number", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "fork-features-"));
+  try {
+    mkdirSync(path.join(root, FEATURES_DIR), { recursive: true });
+    for (const feature of [queue, docs, relay]) {
+      writeFileSync(path.join(root, FEATURES_DIR, `${feature.pr}.json`), JSON.stringify(feature));
+    }
+    assert.deepEqual(
+      loadFeatures(root).map((feature) => feature.pr),
+      [8, 57, 58],
+    );
+    writeFileSync(path.join(root, FEATURES_DIR, "99.json"), JSON.stringify(relay));
+    assert.throws(() => loadFeatures(root), /99\.json has "pr": 57/);
+  } finally {
+    rmSync(root, { recursive: true });
+  }
 });

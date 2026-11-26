@@ -1,0 +1,5 @@
+{
+  "pr": 42,
+  "title": "test(server): synthetic end-to-end acceptance for OMP global account routing",
+  "tests": ["packages/server/src/server/account-routing/routing.acceptance.test.ts"]
+}

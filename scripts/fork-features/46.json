@@ -1,0 +1,16 @@
+{
+  "pr": 46,
+  "title": "feat: add Claude account from OMP account routing settings",
+  "tests": [
+    "packages/app/src/omp-account-routing/presentation.test.ts",
+    "packages/app/src/omp-account-routing/queries.test.ts",
+    "packages/client/src/daemon-client.test.ts",
+    "packages/protocol/src/messages.test.ts",
+    "packages/server/src/server/account-routing/login.test.ts",
+    "packages/server/src/server/account-routing/routing.integration.test.ts",
+    "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts",
+    "packages/server/src/server/authorization/index.test.ts",
+    "packages/server/src/server/session/account-routing-session.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
+}
