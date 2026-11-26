@@ -1,0 +1,5 @@
+{
+  "pr": 163,
+  "title": "test(server): keep the Claude resume test off the real ~/.claude",
+  "tests": ["packages/server/src/server/agent/providers/claude/agent.test.ts"]
+}
