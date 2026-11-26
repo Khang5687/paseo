@@ -60,10 +60,14 @@ else {
 
 function run() {
   // Test terminals run the owner's rc files, and a .bashrc that attaches to tmux over SSH would
-  // type the tests' input into the live session; fork scripts also expect a bash SHELL.
+  // type the tests' input into the live session; fork scripts also expect a bash SHELL. The
+  // resolver agent must start as a top-level agent, not in the workspace of whoever ran this by
+  // hand, so the caller's agent variables go too (the timer has none).
+  const dropped = new Set(["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]);
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
-      ([key]) => !["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"].includes(key),
+      ([key]) =>
+        !dropped.has(key) && !key.startsWith("PASEO_AGENT_") && key !== "PASEO_WORKSPACE_ID",
     ),
   );
   env.SHELL = "/bin/bash";

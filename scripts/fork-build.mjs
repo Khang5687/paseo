@@ -38,6 +38,7 @@ import {
   createTimer,
   formatSeconds,
   freeGb,
+  checkoutProblem,
   gitRoot,
   MIN_FREE_GB,
   planBuilds,
@@ -82,7 +83,7 @@ function finish(code) {
   writeFileSync(path.join(logDir, "summary.md"), `${text}\n`);
   // fork-build-bg.mjs reads this to tell its agent what happened; the summary text alone is not parsed.
   if (process.env.PASEO_FORK_BUILD_RESULT) {
-    const result = { code, merged, skipped, summaryPath: path.join(logDir, "summary.md") };
+    const result = { code, dryRun, merged, skipped, summaryPath: path.join(logDir, "summary.md") };
     writeFileSync(process.env.PASEO_FORK_BUILD_RESULT, `${JSON.stringify(result)}\n`);
   }
   process.stdout.write(`${text}\n`);
@@ -115,15 +116,13 @@ if (free < MIN_FREE_GB) {
 }
 
 // 2. Main and upstream.
-const branch = git(["branch", "--show-current"]).out;
-const dirty = git(["status", "--porcelain"]).out;
-if (branch !== "main" || dirty) {
-  const problem = branch !== "main" ? `on ${branch}, not main` : "uncommitted changes";
+const problem = checkoutProblem(root);
+if (problem) {
   if (!dryRun) {
-    summary.push(`- Stopped: the checkout is ${problem}.`);
+    summary.push(`- Stopped: ${problem}`);
     finish(1);
   }
-  summary.push(`- Checkout is ${problem} (dry run continues).`);
+  summary.push(`- ${problem} (dry run continues).`);
 }
 timer.run("fetch", () => {
   git(["fetch", "--quiet", "origin"]);

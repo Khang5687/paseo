@@ -16,7 +16,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildMessage, gitRoot, paseoCli } from "./fork-build-lib.mjs";
+import { buildMessage, checkoutProblem, gitRoot, paseoCli } from "./fork-build-lib.mjs";
 
 const argv = process.argv.slice(2);
 const takeFlag = (name) => {
@@ -42,6 +42,13 @@ launch();
 
 function launch() {
   const root = gitRoot();
+  // Refuse here, before detaching, so the asking agent sees the reason at once instead of in a
+  // message later. A dry run is read-only and may start anywhere.
+  const problem = buildArgs.includes("--dry-run") ? null : checkoutProblem(root);
+  if (problem) {
+    process.stderr.write(`Not starting the build: ${problem}\n`);
+    process.exit(1);
+  }
   const running = spawnSync(
     "systemctl",
     ["--user", "list-units", "paseo-fork-build-*", "--state=active,activating", "--no-legend"],

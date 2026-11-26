@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   ANDROID_MIN_FREE_GB,
   buildMessage,
+  checkoutProblem,
   hashInputs,
   MIN_FREE_GB,
   planBuilds,
@@ -36,6 +37,25 @@ test("a package stamp goes stale on an uncommitted edit or a new untracked sourc
 
   writeFileSync(path.join(root, "pkg/src/b.ts"), "b");
   assert.notEqual(hashInputs(root, ["pkg"]), edited);
+});
+
+test("a build refuses a checkout that is off main or has uncommitted changes", (t) => {
+  const root = repoWith({ "a.txt": "a" });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const git = (...args) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: root });
+  git("checkout", "--quiet", "-b", "feature");
+  git("commit", "--quiet", "-m", "one");
+  assert.match(checkoutProblem(root), /is on feature, not main/);
+
+  git("checkout", "--quiet", "-b", "main");
+  assert.equal(checkoutProblem(root), null);
+
+  writeFileSync(path.join(root, "a.txt"), "edited");
+  assert.match(
+    checkoutProblem(root),
+    /1 uncommitted change\(s\): M a\.txt.*editing the main checkout/,
+  );
 });
 
 test("build outputs and files outside the inputs leave the stamp fresh", (t) => {
@@ -105,6 +125,14 @@ test("a green build says so; skipped PRs and failed checks name the PRs and the 
 
   const crashed = buildMessage({ ...base, exitCode: 127, prs: [1], result: null });
   assert.match(crashed, /CRASHED \(exit 127\)/);
+
+  const dry = buildMessage({
+    ...base,
+    prs: [1],
+    result: { code: 0, dryRun: true, merged: [], skipped: ["#1 b: merged"] },
+  });
+  assert.match(dry, /DRY RUN finished/);
+  assert.doesNotMatch(dry, /pushed main/);
 });
 
 test("fork-sync exit codes pick no agent, a skip, a resolver agent, or a crash", () => {

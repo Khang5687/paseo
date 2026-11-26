@@ -27,6 +27,27 @@ export function gitRoot(cwd = process.cwd()) {
 }
 
 /**
+ * Why a build must not start in `root`, or null when it may: builds merge, check and push from
+ * the main checkout, so it has to be on main with a clean tree. An edit made there while a build
+ * runs (an agent working in the wrong checkout) crashes the check halfway.
+ */
+export function checkoutProblem(root) {
+  const git = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8" }).stdout.trim();
+  const branch = git(["branch", "--show-current"]);
+  if (branch !== "main") {
+    return `${root} is on ${branch || "a detached HEAD"}, not main. Builds run on main in the main checkout.`;
+  }
+  const changes = git(["status", "--porcelain"]).split("\n").filter(Boolean);
+  if (changes.length === 0) return null;
+  const shown = changes.slice(0, 5).join("; ");
+  return (
+    `${root} has ${changes.length} uncommitted change(s): ${shown}${changes.length > 5 ? "; ..." : ""}. ` +
+    "Someone is editing the main checkout. Builds merge and check there, so an edit mid-build breaks them. " +
+    "Commit or discard the change (agents work in their own worktree), then rerun."
+  );
+}
+
+/**
  * sha256 over `extra` strings and the content of every file under `paths` that git sees in the
  * working tree: tracked (including uncommitted edits) and untracked, minus ignored files, so build
  * outputs such as dist/ never feed their own stamp.
@@ -188,6 +209,10 @@ export function buildMessage({ result, exitCode, summary, notifyId, prs, logDir 
   if (result === null) {
     lines.push(
       `Fork build CRASHED (exit ${exitCode}) before it wrote a result. Read the log in ${logDir}, fix the cause, and rerun: ${rerun(prs)}`,
+    );
+  } else if (result.dryRun) {
+    lines.push(
+      `Fork build DRY RUN finished (exit ${code}): nothing was merged, pushed or built. The summary below says what a real run would do.`,
     );
   } else if (code === 0 && skipped.length === 0) {
     lines.push("Fork build finished: green. Every PR merged and every build passed.", next);
