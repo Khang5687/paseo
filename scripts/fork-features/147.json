@@ -1,0 +1,5 @@
+{
+  "pr": 147,
+  "title": "fix(app): keep the sidebar and recent chats when the replica cache is full",
+  "tests": ["packages/app/src/runtime/replica-cache/index.test.ts"]
+}

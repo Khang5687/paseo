@@ -97,6 +97,7 @@ function makeInstalledPlugin(input: {
     themes: [],
     timelineTransformers: [],
     timelineRenderers: [],
+    skins: [],
     notificationOpenHandlers: input.handlers ?? [],
   };
 }

@@ -10,7 +10,7 @@ import {
 import { useStatusRingRotation } from "@/components/status-ring/clock";
 
 /**
- * Native running indicator. The rotation is published by one shared UI-thread clock rather than
+ * Native running indicator. The rotation is published in steps by one shared clock rather than
  * per-instance timing, so a ring that mounts mid-flight is already in phase — see `clock.ts`.
  *
  * The rotated view carries no theme-tracked style; the coloured arc is nested inside it. Putting

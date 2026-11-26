@@ -103,6 +103,7 @@ describe("sidebar entity snapshots", () => {
           enteredAt: null,
           nextRunAt: null,
           waitingOn: null,
+          hasUnseenAgent: false,
         },
       ],
     ]);

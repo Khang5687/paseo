@@ -35,6 +35,7 @@ function workspace(
     hasRunningScripts: false,
     nextRunAt: null,
     waitingOn: null,
+    workingSubagentCount: 0,
   };
 }
 

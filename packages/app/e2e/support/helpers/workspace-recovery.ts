@@ -5,7 +5,8 @@ export async function restoreArchivedWorkspace(page: Page): Promise<void> {
   await expect(page.getByText("Workspace archived", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
-  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  // The label is "Restore" for worktrees and "Unarchive" for plain checkouts.
+  await page.getByTestId("workspace-recovery-action").click();
   await expect(page.getByText("Workspace archived", { exact: true })).toHaveCount(0, {
     timeout: 30_000,
   });

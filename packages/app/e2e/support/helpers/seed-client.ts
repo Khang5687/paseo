@@ -14,6 +14,7 @@ export interface SeedWorkspaceDescriptor {
   workspaceDirectory: string;
   diffStat: { additions: number; deletions: number } | null;
   labels?: string[];
+  background?: boolean;
 }
 
 interface SeedProjectDescriptor {
@@ -51,7 +52,10 @@ export interface SeedDaemonClient {
   }>;
   removeProject(projectId: string): Promise<{ removedWorkspaceIds: string[] }>;
   renameProject(projectId: string, customName: string | null): Promise<void>;
-  fetchWorkspaces(options?: { filter?: { projectId?: string } }): Promise<{
+  fetchWorkspaces(options?: {
+    filter?: { projectId?: string };
+    includeBackground?: boolean;
+  }): Promise<{
     entries: SeedWorkspaceDescriptor[];
   }>;
   setWorkspaceTitle(workspaceId: string, title: string | null): Promise<{ title: string | null }>;

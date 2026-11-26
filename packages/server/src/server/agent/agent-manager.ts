@@ -11,6 +11,7 @@ import { AgentTurnChangedError } from "./agent-prompt.js";
 import {
   continuesAssistantMessage,
   projectTimelineRows,
+  type ProjectedTimelineRow,
   TimelineProjection,
 } from "./timeline-projection.js";
 import type { PluginLifecycle } from "../plugins/lifecycle/index.js";
@@ -28,12 +29,20 @@ import {
   getParentAgentIdFromLabels,
   hasOpenAgentTab,
   isDelegatedAgent,
+  isMainAgentLabels,
   isOpenAgentTabLabel,
+  isUnseenAgentLabels,
   PARENT_AGENT_ID_LABEL,
+  PARENT_SERVER_ID_LABEL,
+  removeUnseenAgentLabel,
+  UNSEEN_AGENT_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
-import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
+import type {
+  ProviderFeatureDefaults,
+  ProviderPaseoToolsPolicy,
+} from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
 
@@ -50,10 +59,12 @@ import {
   type AgentLaunchContext,
   type AgentSlashCommand,
   type AgentMode,
+  type AgentModelDefinition,
   type AgentPermissionRequest,
   type AgentPermissionResponse,
   type AgentPermissionResult,
   type AgentPersistenceHandle,
+  type ForkedNativeSession,
   type AgentProviderNotice,
   type AgentPromptInput,
   type AgentProvider,
@@ -62,6 +73,7 @@ import {
   type AgentRunResult,
   type AgentSession,
   type AgentSessionConfig,
+  type McpServerConfig,
   type SteerResult,
   type AgentStreamEvent,
   type AgentTimelineItem,
@@ -73,6 +85,7 @@ import {
   type ListImportableSessionsOptions,
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
+import { assertModelEnabled, pickDefaultEnabledModel } from "./provider-disabled-models.js";
 import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
@@ -86,7 +99,9 @@ import {
   foldHookFeatureValues,
   type ProviderOptionsPatch,
 } from "./option-controls.js";
-import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
+import { replyAwaitsAnswer } from "./awaiting-answer.js";
+import type { AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -133,11 +148,19 @@ import {
   type DaemonBackgroundWorkKey,
 } from "./background-work/index.js";
 import { withTimeout } from "../../utils/promise-timeout.js";
-import { buildSessionConfig, extractAttention } from "../persistence-hooks.js";
+import {
+  buildSessionConfig,
+  extractAttention,
+  toAgentPersistenceHandle,
+} from "../persistence-hooks.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
 const IMPORTABLE_SESSION_LIST_TIMEOUT_MS = 90_000;
+// Listing draft commands can start a provider process. Identical requests share one listing,
+// and its result is reused this long so bursts of menu opens (several clients, panels) start
+// one process. Kept short: a longer window would hide newly installed skills.
+const DRAFT_COMMANDS_REUSE_MS = 2_000;
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
   supportsSessionPersistence: true,
@@ -166,6 +189,13 @@ export class AgentManagerShuttingDownError extends Error {
   constructor() {
     super("Agent manager is shutting down");
     this.name = "AgentManagerShuttingDownError";
+  }
+}
+
+export class AgentSessionForkUnsupportedError extends Error {
+  constructor(provider: string) {
+    super(`Provider '${provider}' cannot fork an agent's session`);
+    this.name = "AgentSessionForkUnsupportedError";
   }
 }
 
@@ -391,6 +421,15 @@ interface ProviderEnabledFlag {
     config: AgentSessionConfig,
     toolPolicy: ToolPolicy | undefined,
   ) => AgentSessionConfig;
+  disabledModels?: readonly string[];
+  mcpServers?: Record<string, McpServerConfig>;
+}
+
+interface RequireEnabledModelInput {
+  provider: AgentProvider;
+  cwd: string;
+  model: string | undefined;
+  client: AgentClient | undefined;
 }
 type ProviderEnabledMap = Partial<Record<AgentProvider, ProviderEnabledFlag>>;
 type ProviderClientMap = Partial<Record<AgentProvider, AgentClient>>;
@@ -427,6 +466,7 @@ export interface AgentManagerOptions {
   paseoToolsEnabled?: boolean;
   paseoToolCatalogFactory?: PaseoToolCatalogFactory;
   resolvePaseoToolPolicy?: (provider: AgentProvider) => ProviderPaseoToolsPolicy | undefined;
+  resolveFeatureDefaults?: (provider: AgentProvider) => ProviderFeatureDefaults | undefined;
   appendSystemPrompt?: string;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
@@ -468,6 +508,8 @@ export type AttentionState =
       requiresAttention: true;
       attentionReason: "finished" | "error" | "permission";
       attentionTimestamp: Date;
+      /** Only with `finished`: the reply that finished the turn asks the user a question. */
+      awaitingAnswer?: true;
     };
 
 /** Private helpers and background agents report to their creator, never to the user. */
@@ -490,6 +532,7 @@ function resolveInitialAttention(input: AttentionState | undefined): AttentionSt
     requiresAttention: true,
     attentionReason: input.attentionReason,
     attentionTimestamp: new Date(input.attentionTimestamp),
+    ...(input.awaitingAnswer ? { awaitingAnswer: true } : {}),
   };
 }
 
@@ -560,6 +603,22 @@ interface ManagedAgentBase {
    * User-defined labels for categorizing agents (e.g., { surface: "workspace" }).
    */
   labels: Record<string, string>;
+  /**
+   * Daemon-owned message queue, head first. Dispatched one at a time when the
+   * agent goes idle (see agent-message-queue.ts). Persisted with the record.
+   */
+  queuedMessages: AgentQueuedMessagePayload[];
+  /**
+   * Stops the automatic drain while true; send-now still dispatches. Persisted
+   * with the record so a pause survives a daemon restart.
+   */
+  queuePaused: boolean;
+  /**
+   * Why the daemon paused the queue itself: a queued message it could not
+   * send. Absent when the queue runs or the user paused it; cleared whenever
+   * the user pauses or resumes.
+   */
+  queuePauseReason?: string;
   /** Plugin-owned data. Paseo persists and forwards it and never reads a key. */
   metadata: AgentMetadata;
 }
@@ -908,6 +967,13 @@ function detachedAgentLabelPatch(labels: Record<string, string>): AgentLabelPatc
   return patch;
 }
 
+/** A new main agent starts unseen; the user reading it or its workspace removes the label. */
+function stampUnseenMainAgentLabel(
+  labels: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  return isMainAgentLabels(labels) ? { ...labels, [UNSEEN_AGENT_LABEL]: "true" } : labels;
+}
+
 /**
  * How long an archived internal agent stays readable by id. Storage plays this
  * role for public agents; internal agents never reach it, and a one-shot helper
@@ -919,6 +985,36 @@ const RETIRED_INTERNAL_AGENT_LIMIT = 500;
 export interface RetiredInternalAgent {
   record: ArchivedStoredAgentRecord;
   lastMessage: string | null;
+}
+
+function forkSessionConfig(
+  source: ManagedAgent,
+  title: string | null | undefined,
+): AgentSessionConfig {
+  return stripInternalPaseoMcpServer({
+    provider: source.provider,
+    cwd: source.cwd,
+    modeId: source.currentModeId ?? source.config.modeId,
+    model: source.config.model,
+    thinkingOptionId: source.config.thinkingOptionId,
+    providerOptions: source.config.providerOptions,
+    toolPolicy: source.config.toolPolicy,
+    systemPrompt: source.config.systemPrompt,
+    mcpServers: source.config.mcpServers,
+    ...(title ? { title } : {}),
+  });
+}
+
+// The fork is a top-level agent: parent links and per-client open-tab state belong to the source.
+function forkLabels(labels: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(labels).filter(
+      ([key]) =>
+        key !== PARENT_AGENT_ID_LABEL &&
+        key !== PARENT_SERVER_ID_LABEL &&
+        !isOpenAgentTabLabel(key),
+    ),
+  );
 }
 
 export class AgentManager {
@@ -957,6 +1053,7 @@ export class AgentManager {
   >();
   private readonly collectingRuntimes = new Set<string>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
+  private readonly draftCommandListings = new Map<string, Promise<AgentSlashCommand[]>>();
   private readonly pendingCancellations = new Map<string, Promise<unknown>>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
@@ -968,6 +1065,9 @@ export class AgentManager {
   private readonly resolvePaseoToolPolicy: (
     provider: AgentProvider,
   ) => ProviderPaseoToolsPolicy | undefined;
+  private readonly resolveFeatureDefaults?: (
+    provider: AgentProvider,
+  ) => ProviderFeatureDefaults | undefined;
   private appendSystemPrompt: string;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
@@ -990,6 +1090,7 @@ export class AgentManager {
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configurePaseoTools(options);
     this.resolvePaseoToolPolicy = options.resolvePaseoToolPolicy ?? (() => undefined);
+    this.resolveFeatureDefaults = options.resolveFeatureDefaults;
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
     this.logger = options.logger.child({ module: "agent", component: "agent-manager" });
     this.rescueTimeouts = {
@@ -1451,6 +1552,27 @@ export class AgentManager {
   }
 
   async listDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
+    const key = JSON.stringify(config);
+    const shared = this.draftCommandListings.get(key);
+    if (shared) {
+      return await shared;
+    }
+    const listing = this.loadDraftCommands(config);
+    this.draftCommandListings.set(key, listing);
+    const release = () => {
+      if (this.draftCommandListings.get(key) === listing) {
+        this.draftCommandListings.delete(key);
+      }
+    };
+    listing.then(
+      () => setTimeout(release, DRAFT_COMMANDS_REUSE_MS).unref(),
+      // A failed listing is not reused; the next request retries.
+      release,
+    );
+    return await listing;
+  }
+
+  private async loadDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
     const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
     const client = this.requireClient(normalizedConfig.provider);
     if (!normalizedConfig.model) {
@@ -1542,6 +1664,22 @@ export class AgentManager {
     // Loading during reload must wait for the replacement, not resume another writer.
     await this.lifecycleMutationTails.get(agentId);
     await this.inFlightAgentCloses?.get(agentId)?.catch(() => undefined);
+  }
+
+  /**
+   * Truncated first user message and latest assistant message from the in-memory
+   * timeline, or null when the timeline is not loaded. Never loads a runtime.
+   */
+  getSearchableMessages(
+    agentId: string,
+  ): { firstUserMessage: string | null; lastAssistantMessage: string | null } | null {
+    if (!this.timelineStore.has(agentId)) return null;
+    return {
+      firstUserMessage: toSearchableMessage(this.timelineStore.getFirstUserMessage(agentId)),
+      lastAssistantMessage: toSearchableMessage(
+        this.timelineStore.getLastAssistantMessage(agentId),
+      ),
+    };
   }
 
   getTimeline(id: string): AgentTimelineItem[] {
@@ -1750,6 +1888,12 @@ export class AgentManager {
     const client = await this.requireAvailableClient({
       provider: storedConfig.provider,
     });
+    await this.requireEnabledModel({
+      provider: storedConfig.provider,
+      cwd: storedConfig.cwd,
+      model: storedConfig.model,
+      client,
+    });
     this.paseoToolPolicies.set(resolvedAgentId, paseoToolPolicy);
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
@@ -1774,7 +1918,7 @@ export class AgentManager {
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
     const agent = await this.registerSession(session, storedConfig, resolvedAgentId, {
       launchedOptions,
-      labels: options.labels,
+      labels: config.internal ? options.labels : stampUnseenMainAgentLabel(options.labels),
       metadata: options.metadata,
       initialTitle: options.initialTitle,
       workspaceId: options.workspaceId,
@@ -1815,6 +1959,9 @@ export class AgentManager {
       owner?: AgentOwner;
       background?: boolean;
       attention?: AttentionState;
+      queuedMessages?: AgentQueuedMessagePayload[];
+      queuePaused?: boolean;
+      queuePauseReason?: string;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1861,6 +2008,9 @@ export class AgentManager {
       owner?: AgentOwner;
       background?: boolean;
       attention?: AttentionState;
+      queuedMessages?: AgentQueuedMessagePayload[];
+      queuePaused?: boolean;
+      queuePauseReason?: string;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1944,6 +2094,66 @@ export class AgentManager {
           : handle,
       restoring: true,
     });
+  }
+
+  supportsNativeFork(provider: AgentProvider): boolean {
+    const client = this.clients.get(provider);
+    return client?.capabilities.supportsNativeFork === true && client.forkSession !== undefined;
+  }
+
+  /**
+   * Fork without native provider support: a fresh agent with the source's configuration. The
+   * caller seeds it with the chat-history summary.
+   */
+  createForkSummaryAgent(agentId: string, input: { title?: string | null }): Promise<ManagedAgent> {
+    const source = this.requireSessionAgent(agentId);
+    return this.createAgent(forkSessionConfig(source, input.title), undefined, {
+      workspaceId: source.workspaceId,
+      labels: forkLabels(source.labels),
+      ...(input.title ? { initialTitle: input.title } : {}),
+    });
+  }
+
+  /**
+   * Fork an agent's provider session into a new agent. The source keeps running untouched. Call
+   * supportsNativeFork first. Callers hydrate the new agent's timeline.
+   */
+  async forkAgentIntoNew(
+    agentId: string,
+    input: { cutBeforeMessageId: string | null; title?: string | null },
+  ): Promise<{
+    agent: ManagedAgent;
+    contextWindowUsedTokens?: number;
+    contextWindowMaxTokens?: number;
+  }> {
+    const source = this.requireSessionAgent(agentId);
+    const client = this.requireClient(source.provider);
+    if (!this.supportsNativeFork(source.provider) || !client.forkSession) {
+      throw new Error(`Provider '${source.provider}' does not support native fork`);
+    }
+    if (!source.persistence) {
+      throw new Error("Agent has no durable session to fork yet");
+    }
+    const forked = await client.forkSession(source.persistence, {
+      cutBeforeMessageId: input.cutBeforeMessageId,
+      cwd: source.cwd,
+      providerOptions: source.config.providerOptions,
+    });
+    const agent = await this.resumeAgentFromPersistence(
+      forked.persistence,
+      forkSessionConfig(source, input.title),
+      undefined,
+      { workspaceId: source.workspaceId, labels: forkLabels(source.labels) },
+    );
+    return {
+      agent,
+      ...(forked.contextWindowUsedTokens !== undefined
+        ? { contextWindowUsedTokens: forked.contextWindowUsedTokens }
+        : {}),
+      ...(forked.contextWindowMaxTokens !== undefined
+        ? { contextWindowMaxTokens: forked.contextWindowMaxTokens }
+        : {}),
+    };
   }
 
   importProviderSession(input: {
@@ -2189,6 +2399,9 @@ export class AgentManager {
         sessionMetrics: preservedSessionMetrics,
         lastError: preservedLastError,
         attention: preservedAttention,
+        queuedMessages: existing.queuedMessages,
+        queuePaused: existing.queuePaused,
+        queuePauseReason: existing.queuePauseReason,
         restoring: true,
       });
     } catch (error) {
@@ -2376,6 +2589,9 @@ export class AgentManager {
       !agent.pendingReplacement &&
       agent.pendingPermissions.size === 0 &&
       agent.inFlightPermissionResponses.size === 0 &&
+      // A queue that will drain is pending work: unloading would strand it until
+      // something loads the agent again. A paused queue waits for a person.
+      (agent.queuePaused || agent.queuedMessages.length === 0) &&
       (this.collectingRuntimes.has(agent.id) || !this.lifecycleMutationTails.has(agent.id)) &&
       !this.foregroundMutationTails.has(agent.id) &&
       !this.replacementMutationTails.has(agent.id) &&
@@ -2505,6 +2721,7 @@ export class AgentManager {
 
     await this.registry.applySnapshot(agent, {
       internal: agent.internal,
+      messages: this.getSearchableMessages(agentId) ?? undefined,
     });
     const stored = await this.registry.get(agentId);
     if (!stored) {
@@ -2675,6 +2892,9 @@ export class AgentManager {
         lastError: record.lastError ?? undefined,
         attention,
         internal: record.internal,
+        queuedMessages: record.queuedMessages ?? [],
+        queuePaused: record.queuePaused ?? false,
+        queuePauseReason: record.queuePauseReason,
         background: record.background,
         labels: record.labels,
         metadata: record.metadata,
@@ -2711,6 +2931,14 @@ export class AgentManager {
       this.withLiveInteractiveSessionUnlocked(agentId, async (agent) => {
         const normalizedModelId =
           typeof modelId === "string" && modelId.trim().length > 0 ? modelId : null;
+        if (normalizedModelId && normalizedModelId !== agent.config.model) {
+          await this.requireEnabledModel({
+            provider: agent.provider,
+            cwd: agent.cwd,
+            model: normalizedModelId,
+            client: this.clients.get(agent.provider),
+          });
+        }
 
         const selection = await agent.session.setModel?.(normalizedModelId);
         await this.drainSessionEvents(agentId);
@@ -2924,6 +3152,219 @@ export class AgentManager {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Daemon-owned message queue. Dispatch policy lives in agent-message-queue.ts;
+  // these only mutate, persist, and broadcast the list.
+  // ---------------------------------------------------------------------------
+
+  async addQueuedMessage(
+    agentId: string,
+    input: {
+      text: string;
+      images?: AgentQueuedMessagePayload["images"];
+      attachments?: AgentQueuedMessagePayload["attachments"];
+      attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
+    },
+  ): Promise<AgentQueuedMessagePayload> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const message: AgentQueuedMessagePayload = {
+        id: randomUUID(),
+        text: input.text,
+        images: input.images ?? [],
+        attachments: input.attachments ?? [],
+        ...(input.attachmentRefs?.length ? { attachmentRefs: input.attachmentRefs } : {}),
+        createdAt: new Date().toISOString(),
+      };
+      await this.writeQueuedMessages(agent, [...agent.queuedMessages, message]);
+      return message;
+    });
+  }
+
+  async updateQueuedMessage(
+    agentId: string,
+    messageId: string,
+    text: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const existing = agent.queuedMessages.find((item) => item.id === messageId);
+      if (!existing) {
+        throw new Error(`Queued message '${messageId}' not found on agent '${agent.id}'`);
+      }
+      const updated = { ...existing, text };
+      await this.writeQueuedMessages(
+        agent,
+        agent.queuedMessages.map((item) => (item.id === messageId ? updated : item)),
+      );
+      return updated;
+    });
+  }
+
+  async removeQueuedMessage(
+    agentId: string,
+    messageId: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const existing = agent.queuedMessages.find((item) => item.id === messageId);
+      if (!existing) {
+        throw new Error(`Queued message '${messageId}' not found on agent '${agent.id}'`);
+      }
+      await this.writeQueuedMessages(
+        agent,
+        agent.queuedMessages.filter((item) => item.id !== messageId),
+      );
+      return existing;
+    });
+  }
+
+  /** Moves an entry to `toIndex`, clamped to the end of the remaining list. */
+  async moveQueuedMessage(agentId: string, messageId: string, toIndex: number): Promise<void> {
+    await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const existing = agent.queuedMessages.find((item) => item.id === messageId);
+      if (!existing) {
+        throw new Error(`Queued message '${messageId}' not found on agent '${agent.id}'`);
+      }
+      const next = agent.queuedMessages.filter((item) => item.id !== messageId);
+      next.splice(Math.min(toIndex, next.length), 0, existing);
+      await this.writeQueuedMessages(agent, next);
+    });
+  }
+
+  /** Empties the queue and returns how many entries were removed. */
+  async clearQueuedMessages(agentId: string): Promise<number> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      const removedCount = agent.queuedMessages.length;
+      await this.writeQueuedMessages(agent, []);
+      return removedCount;
+    });
+  }
+
+  /**
+   * Pauses or resumes the automatic drain. Either way the user has acted on the
+   * queue, so a daemon-set pause reason is cleared. The caller drains the head
+   * after a resume (see `AgentMessageQueueDispatcher.drainIfIdle`).
+   */
+  async setQueuePaused(agentId: string, paused: boolean): Promise<boolean> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.requireAgent(agentId);
+      agent.queuePaused = paused;
+      agent.queuePauseReason = undefined;
+      await this.persistSnapshot(agent);
+      this.emitState(agent, { persist: false });
+      return paused;
+    });
+  }
+
+  /**
+   * Puts an entry taken by `takeQueuedMessage` back at the head, in one
+   * persisted write, after a dispatch the provider never admitted. With
+   * `pauseReason` the drain also pauses (so a persistent failure cannot loop
+   * on every idle), the failure lands in the timeline, and the agent is flagged
+   * for attention, since nobody may be watching when an automatic drain fails.
+   * Works on a stored-only agent too: the runtime can be gone by the time the
+   * send fails.
+   */
+  async requeueQueuedMessage(
+    agentId: string,
+    message: AgentQueuedMessagePayload,
+    options?: { pauseReason?: string },
+  ): Promise<void> {
+    await this.runLifecycleMutation(agentId, async () => {
+      const pauseReason = options?.pauseReason;
+      const agent = this.agents.get(agentId);
+      if (!agent) {
+        const registry = this.requireRegistry();
+        const record = await registry.get(agentId);
+        if (!record) throw new Error(`Agent not found: ${agentId}`);
+        const updatedAt = this.nextStoredUpdatedAt(record);
+        const flag =
+          pauseReason !== undefined && !record.internal && record.attentionReason !== "error";
+        const nextRecord: StoredAgentRecord = {
+          ...record,
+          updatedAt,
+          queuedMessages: [
+            message,
+            ...(record.queuedMessages ?? []).filter((item) => item.id !== message.id),
+          ],
+          ...(pauseReason !== undefined
+            ? { queuePaused: true, queuePauseReason: pauseReason }
+            : {}),
+          ...(flag
+            ? {
+                requiresAttention: true,
+                attentionReason: "error" as const,
+                attentionTimestamp: updatedAt,
+              }
+            : {}),
+        };
+        await registry.upsert(nextRecord);
+        this.dispatchStoredAgentState(nextRecord);
+        return;
+      }
+      if (pauseReason !== undefined) {
+        agent.queuePaused = true;
+        agent.queuePauseReason = pauseReason;
+        await this.appendSystemErrorTimelineMessage(
+          agent,
+          agent.provider,
+          `Couldn't send a queued message, so the queue is paused: ${pauseReason}`,
+        );
+        // An unread "finished" from the turn that just ended is outranked: the
+        // agent now needs someone to look at the queue.
+        const alreadyFlagged =
+          agent.attention.requiresAttention && agent.attention.attentionReason === "error";
+        if (!agent.internal && !alreadyFlagged) {
+          agent.attention = {
+            requiresAttention: true,
+            attentionReason: "error",
+            attentionTimestamp: new Date(),
+          };
+          this.broadcastAgentAttention(agent, "error");
+        }
+      }
+      await this.writeQueuedMessages(agent, [
+        message,
+        ...agent.queuedMessages.filter((item) => item.id !== message.id),
+      ]);
+    });
+  }
+
+  /**
+   * Pops a queued message (the head when `messageId` is omitted) and returns it
+   * for dispatch. Returns null when nothing matches.
+   */
+  async takeQueuedMessage(
+    agentId: string,
+    messageId?: string,
+  ): Promise<AgentQueuedMessagePayload | null> {
+    return await this.runLifecycleMutation(agentId, async () => {
+      const agent = this.agents.get(agentId);
+      if (!agent) return null;
+      const target = messageId
+        ? agent.queuedMessages.find((item) => item.id === messageId)
+        : agent.queuedMessages[0];
+      if (!target) return null;
+      await this.writeQueuedMessages(
+        agent,
+        agent.queuedMessages.filter((item) => item.id !== target.id),
+      );
+      return target;
+    });
+  }
+
+  private async writeQueuedMessages(
+    agent: LiveManagedAgent,
+    next: AgentQueuedMessagePayload[],
+  ): Promise<void> {
+    agent.queuedMessages = next;
+    await this.persistSnapshot(agent);
+    this.emitState(agent, { persist: false });
+  }
+
   /** Applies a plugin-metadata patch (null removes a key) and returns the stored result. */
   async setMetadata(
     agentId: string,
@@ -3045,11 +3486,12 @@ export class AgentManager {
   private async clearAgentAttentionUnlocked(agentId: string): Promise<void> {
     const agent = this.agents.get(agentId);
     if (agent) {
-      if (agent.attention.requiresAttention) {
+      if (agent.attention.requiresAttention || isUnseenAgentLabels(agent.labels)) {
         if ((await this.registry?.get(agentId))?.archivedAt) {
           return;
         }
         agent.attention = { requiresAttention: false };
+        agent.labels = removeUnseenAgentLabel(agent.labels);
         await this.persistSnapshot(agent);
         this.emitState(agent, { persist: false });
       }
@@ -3058,7 +3500,12 @@ export class AgentManager {
 
     const registry = this.requireRegistry();
     const record = await registry.get(agentId);
-    if (!record || record.internal || record.archivedAt || record.requiresAttention !== true) {
+    if (
+      !record ||
+      record.internal ||
+      record.archivedAt ||
+      (record.requiresAttention !== true && !isUnseenAgentLabels(record.labels))
+    ) {
       return;
     }
     const nextRecord: StoredAgentRecord = {
@@ -3067,6 +3514,33 @@ export class AgentManager {
       requiresAttention: false,
       attentionReason: null,
       attentionTimestamp: null,
+      labels: removeUnseenAgentLabel(record.labels),
+    };
+    await registry.upsert(nextRecord);
+    this.dispatchStoredAgentState(nextRecord);
+  }
+
+  /** Drops the unseen label alone, for an agent whose attention must stay (a pending permission). */
+  async markAgentSeen(agentId: string): Promise<void> {
+    const liveAgent = this.agents.get(agentId);
+    if (liveAgent) {
+      if (!isUnseenAgentLabels(liveAgent.labels)) {
+        return;
+      }
+      liveAgent.labels = removeUnseenAgentLabel(liveAgent.labels);
+      await this.persistSnapshot(liveAgent);
+      this.emitState(liveAgent, { persist: false });
+      return;
+    }
+
+    const registry = this.requireRegistry();
+    const record = await registry.get(agentId);
+    if (!record || !isUnseenAgentLabels(record.labels)) {
+      return;
+    }
+    const nextRecord: StoredAgentRecord = {
+      ...record,
+      labels: removeUnseenAgentLabel(record.labels),
     };
     await registry.upsert(nextRecord);
     this.dispatchStoredAgentState(nextRecord);
@@ -3082,11 +3556,10 @@ export class AgentManager {
       if (!canMarkUnread) {
         throw new Error(`Agent is no longer settled and read: ${agentId}`);
       }
-      liveAgent.attention = {
-        requiresAttention: true,
-        attentionReason,
-        attentionTimestamp: new Date(),
-      };
+      liveAgent.attention =
+        attentionReason === "finished"
+          ? this.finishedAttention(liveAgent.id)
+          : { requiresAttention: true, attentionReason, attentionTimestamp: new Date() };
       await this.persistSnapshot(liveAgent);
       this.emitState(liveAgent, { persist: false });
       return;
@@ -3107,6 +3580,8 @@ export class AgentManager {
       requiresAttention: true,
       attentionReason,
       attentionTimestamp: updatedAt,
+      // The stored reply is truncated for search, so it cannot say whether the reply asked.
+      awaitingAnswer: undefined,
     };
     await registry.upsert(nextRecord);
     this.dispatchStoredAgentState(nextRecord);
@@ -4381,16 +4856,26 @@ export class AgentManager {
     }
     // An interactive session must acquire its rewind lock without yielding.
 
-    const submittedRow = this.timelineStore
-      .getRows(agentId)
-      .find(
-        (row) =>
-          row.item.type === "user_message" &&
-          row.item.messageId === messageId &&
-          row.item.clientMessageId === messageId,
-      );
+    const timelineRows = this.timelineStore.getRows(agentId);
+    const submittedRow = timelineRows.find(
+      (row) =>
+        row.item.type === "user_message" &&
+        row.item.messageId === messageId &&
+        row.item.clientMessageId === messageId,
+    );
     if (submittedRow && !submittedRow.providerMessageId) {
-      throw new Error("Cannot rewind before the provider acknowledges the submitted prompt");
+      // A running turn may still be acknowledged, so it is never dropped. A turn that ended
+      // without an acknowledgement (it failed before the provider took the prompt) never will
+      // be: the provider has nothing to rewind, so only Paseo's copy goes. Later rows the
+      // provider did acknowledge would be left behind in its history, so those still refuse.
+      const providerKnowsLaterPrompt = timelineRows.some(
+        (row) => row.seqStart > submittedRow.seqStart && row.providerMessageId,
+      );
+      if (this.hasInFlightRun(agentId) || providerKnowsLaterPrompt) {
+        throw new Error("Cannot rewind before the provider acknowledges the submitted prompt");
+      }
+      await this.discardUnacknowledgedPrompt(agent, submittedRow, mode);
+      return;
     }
     const providerMessageId = submittedRow?.providerMessageId ?? messageId;
 
@@ -4436,6 +4921,78 @@ export class AgentManager {
         "agent.rewind.failed",
       );
       throw error;
+    } finally {
+      this.runs.settleForegroundRun(agentId, lock.token);
+    }
+  }
+
+  /**
+   * Copy an agent's native session, leaving the agent and its running turn untouched.
+   * The caller owns the copy: resume fork.handle, then discard it.
+   */
+  async forkAgentSession(agentId: string): Promise<ForkedNativeSession> {
+    const live = this.agents.get(agentId);
+    const record = live ? null : await this.registry?.get(agentId);
+    if (!live && !record) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+    const persistence =
+      live?.persistence ?? toAgentPersistenceHandle(this.clients.keys(), record?.persistence);
+    if (!persistence) {
+      throw new Error(`Agent ${agentId} has no provider session to fork yet`);
+    }
+    const client = this.requireClient(persistence.provider);
+    if (!client.forkNativeSession) {
+      throw new AgentSessionForkUnsupportedError(persistence.provider);
+    }
+    return await client.forkNativeSession(persistence);
+  }
+
+  /** Delete a fork left behind by a previous daemon process, from its persisted handle. */
+  async discardForkedHandle(handle: AgentPersistenceHandle): Promise<void> {
+    const client = this.clients.get(handle.provider);
+    if (!client?.discardNativeFork) {
+      throw new Error(`Provider '${handle.provider}' cannot discard a forked session`);
+    }
+    await client.discardNativeFork(handle);
+  }
+
+  /**
+   * Removes a prompt the provider never acknowledged, and everything after it, from Paseo's
+   * timeline. The provider has no record of it, so its rewind is not called. Files are
+   * untouched by a prompt the provider never ran, so the files mode has nothing to do.
+   */
+  private async discardUnacknowledgedPrompt(
+    agent: ActiveManagedAgent,
+    submittedRow: ProjectedTimelineRow,
+    mode: RewindMode,
+  ): Promise<void> {
+    if (mode === "files") {
+      return;
+    }
+    const agentId = agent.id;
+    const lock = this.runs.createPendingRun(agentId);
+    try {
+      this.logger.info(
+        { agentId, provider: agent.provider, seq: submittedRow.seq, mode },
+        "agent.rewind.discard_unacknowledged",
+      );
+      await this.flush();
+      this.agentStreamCoalescer.flushAndDiscard(agentId);
+      const kept = this.timelineStore
+        .getRows(agentId)
+        .filter((row) => row.seqStart < submittedRow.seqStart);
+      await this.deleteCommittedTimeline(agentId);
+      this.timelineStore.delete(agentId);
+      this.timelineStore.initialize(agentId, { rows: kept, timestamp: new Date().toISOString() });
+      this.enqueueDurableTimelineBulkInsert(agentId, kept);
+      this.dispatch({
+        type: "timeline_replacement",
+        agentId,
+        epoch: this.timelineStore.getEpoch(agentId),
+      });
+      this.touchUpdatedAt(agent);
+      this.emitState(agent);
     } finally {
       this.runs.settleForegroundRun(agentId, lock.token);
     }
@@ -4708,6 +5265,9 @@ export class AgentManager {
       sessionMetrics?: AgentMetric[];
       lastError?: string;
       attention?: AttentionState;
+      queuedMessages?: AgentQueuedMessagePayload[];
+      queuePaused?: boolean;
+      queuePauseReason?: string;
       /**
        * Bringing a known agent back, rather than starting a new one. Its timestamps and
        * attention come from what was already recorded, and installing the session is not
@@ -4924,26 +5484,23 @@ export class AgentManager {
           persistence?: AgentPersistenceHandle;
           workspaceId?: string;
           owner?: AgentOwner;
+          queuedMessages?: AgentQueuedMessagePayload[];
+          queuePaused?: boolean;
+          queuePauseReason?: string;
           launchEnv?: Record<string, string>;
         }
       | undefined;
   }): ActiveManagedAgent {
-    const {
-      resolvedAgentId,
-      session,
-      config,
-      effectiveOptions,
-      now,
-      durableTimelineHasRows,
-      options,
-    } = params;
+    const { resolvedAgentId, session, config, effectiveOptions, now, durableTimelineHasRows } =
+      params;
+    const options = params.options ?? {};
     return {
       id: resolvedAgentId,
       provider: config.provider,
       cwd: config.cwd,
-      workspaceId: options?.workspaceId,
-      owner: options?.owner,
-      launchEnv: options?.launchEnv,
+      workspaceId: options.workspaceId,
+      owner: options.owner,
+      launchEnv: options.launchEnv,
       session,
       capabilities: session.capabilities,
       config,
@@ -4951,8 +5508,8 @@ export class AgentManager {
       effectiveOptions,
       runtimeInfo: undefined,
       lifecycle: "initializing",
-      createdAt: options?.createdAt ?? now,
-      updatedAt: options?.updatedAt ?? now,
+      createdAt: options.createdAt ?? now,
+      updatedAt: options.updatedAt ?? now,
       availableModes: [],
       currentModeId: null,
       pendingPermissions: new Map<string, AgentPermissionRequest>(),
@@ -4969,15 +5526,18 @@ export class AgentManager {
         options?.persistence ?? session.describePersistence(),
         config,
       ),
-      historyPrimed: options?.historyPrimed ?? durableTimelineHasRows,
-      lastUserMessageAt: options?.lastUserMessageAt ?? null,
-      lastUsage: options?.lastUsage,
-      sessionMetrics: options?.sessionMetrics,
-      lastError: options?.lastError,
-      attention: resolveInitialAttention(options?.attention),
+      historyPrimed: options.historyPrimed ?? durableTimelineHasRows,
+      lastUserMessageAt: options.lastUserMessageAt ?? null,
+      lastUsage: options.lastUsage,
+      sessionMetrics: options.sessionMetrics,
+      lastError: options.lastError,
+      attention: resolveInitialAttention(options.attention),
       internal: config.internal ?? false,
       background: params.background,
       ...agentEntityData(options),
+      queuedMessages: options.queuedMessages ?? [],
+      queuePaused: options.queuePaused ?? false,
+      queuePauseReason: options.queuePauseReason,
     } as ActiveManagedAgent;
   }
 
@@ -5227,7 +5787,10 @@ export class AgentManager {
     if (agent.internal) {
       return;
     }
-    await this.registry.applySnapshot(agent, options);
+    await this.registry.applySnapshot(agent, {
+      ...options,
+      messages: this.getSearchableMessages(agent.id) ?? undefined,
+    });
   }
 
   private requireRegistry(): AgentStorage {
@@ -6267,20 +6830,21 @@ export class AgentManager {
     }
 
     const finished = previousStatus === "running" && currentStatus === "idle";
+
+    // Skip if already requires attention. An unread finish stays one unread signal, but its
+    // question flag follows the newest reply: a turn started without the user reading (a queued
+    // message, another agent's prompt) may end with or without a question. The notifier knows
+    // whether the user was told about the unread finish.
     if (agent.attention.requiresAttention) {
-      // The unread finish stays the same; the notifier knows whether the user was told about it.
       if (finished && agent.attention.attentionReason === "finished") {
+        agent.attention = this.finishedAttention(agent.id, agent.attention.attentionTimestamp);
         this.broadcastAgentAttention(agent, "finished");
       }
       return;
     }
 
     if (finished) {
-      agent.attention = {
-        requiresAttention: true,
-        attentionReason: "finished",
-        attentionTimestamp: new Date(),
-      };
+      agent.attention = this.finishedAttention(agent.id);
       this.broadcastAgentAttention(agent, "finished");
     }
   }
@@ -6301,6 +6865,21 @@ export class AgentManager {
       attentionTimestamp: new Date(),
     };
     this.broadcastAgentAttention(agent, "error");
+  }
+
+  // Read when the turn ends, so the flag describes the reply the user has not seen yet. It clears
+  // with the attention that carries it (viewing the chat, mark-read); a newer turn outranks it
+  // while running and replaces it when it ends.
+  private finishedAttention(agentId: string, attentionTimestamp = new Date()): AttentionState {
+    const lastReply = this.timelineStore.has(agentId)
+      ? this.timelineStore.getLastAssistantMessage(agentId)
+      : null;
+    return {
+      requiresAttention: true,
+      attentionReason: "finished",
+      attentionTimestamp,
+      ...(replyAwaitsAnswer(lastReply) ? { awaitingAnswer: true } : {}),
+    };
   }
 
   private enqueueBackgroundPersist(agent: ManagedAgent): void {
@@ -6543,6 +7122,14 @@ export class AgentManager {
       }
     }
 
+    // Daemon work such as naming a branch keeps the provider's own behavior.
+    const featureDefaults = normalized.internal
+      ? undefined
+      : this.resolveFeatureDefaults?.(normalized.provider);
+    if (featureDefaults) {
+      normalized.providerOptions = { ...featureDefaults, ...normalized.providerOptions };
+    }
+
     return this.applyProviderConfiguration(normalized);
   }
 
@@ -6576,17 +7163,34 @@ export class AgentManager {
     if (!client) {
       return undefined;
     }
+    const models = await this.fetchCatalogModels(client, config.cwd);
+    const disabledModelIds = this.providerDefinitions.get(config.provider)?.disabledModels ?? [];
+    return models ? pickDefaultEnabledModel(models, disabledModelIds)?.id : undefined;
+  }
+
+  private async fetchCatalogModels(
+    client: AgentClient,
+    cwd: string,
+  ): Promise<AgentModelDefinition[] | null> {
     try {
-      const catalog = await client.fetchCatalog({
-        scope: "workspace",
-        cwd: config.cwd,
-        force: false,
-      });
-      return (catalog.models.find((model) => model.isDefault) ?? catalog.models[0])?.id;
+      const catalog = await client.fetchCatalog({ scope: "workspace", cwd, force: false });
+      return catalog.models;
     } catch {
-      // Provider may not support model listing — leave model undefined.
-      return undefined;
+      // Provider may not support model listing.
+      return null;
     }
+  }
+
+  /** Refuses new selections of models disabled in Provider settings; running agents are untouched. */
+  private async requireEnabledModel(input: RequireEnabledModelInput): Promise<void> {
+    const disabledModelIds = this.providerDefinitions.get(input.provider)?.disabledModels ?? [];
+    if (disabledModelIds.length === 0) return;
+    assertModelEnabled({
+      provider: input.provider,
+      requestedModel: input.model,
+      disabledModelIds,
+      catalog: input.client ? await this.fetchCatalogModels(input.client, input.cwd) : null,
+    });
   }
 
   /** The adapter a provider id runs on: a custom provider is named by the one it extends. */
@@ -6740,6 +7344,9 @@ export class AgentManager {
     launchConfig: AgentSessionConfig,
     launchContext: AgentLaunchContext,
   ): AgentSessionConfig {
+    // Provider config servers are launch-only: never written to the stored agent config, so a
+    // config edit reaches the next launch. Saved agent servers override them by name.
+    const providerServers = this.providerDefinitions.get(launchConfig.provider)?.mcpServers ?? {};
     const savedServerNames = new Set(
       Object.keys(stripInternalPaseoMcpServer(launchConfig).mcpServers ?? {}),
     );
@@ -6751,15 +7358,20 @@ export class AgentManager {
           : "Paseo internal MCP server";
         throw new Error(`MCP server '${name}' from plugin ${owner} collides with ${existingOwner}`);
       }
+      if (Object.hasOwn(providerServers, name)) {
+        throw new Error(
+          `MCP server '${name}' from plugin ${owner} collides with provider configuration`,
+        );
+      }
     }
     launchConfig = { ...launchConfig, pluginAppendSystemPrompt: launchContext.appendSystemPrompt };
+    const mcpServers = {
+      ...providerServers,
+      ...launchConfig.mcpServers,
+      ...launchContext.mcpServers,
+    };
     const merged =
-      Object.keys(launchContext.mcpServers ?? {}).length > 0
-        ? {
-            ...launchConfig,
-            mcpServers: { ...launchConfig.mcpServers, ...launchContext.mcpServers },
-          }
-        : launchConfig;
+      Object.keys(mcpServers).length > 0 ? { ...launchConfig, mcpServers } : launchConfig;
     return launchContext.paseoTools ? stripInternalPaseoMcpServer(merged) : merged;
   }
 

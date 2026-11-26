@@ -221,6 +221,24 @@ describe("translation resources", () => {
     expect(findInterpolationMismatches(zhCN)).toEqual([]);
   });
 
+  it("keeps the add-account sheet copy complete, plain and free of retired keys", () => {
+    for (const resource of [en, ar, es, fr, ja, ko, ptBR, ru, zhCN]) {
+      const login = resource.ompAccountRouting.login as Record<string, unknown>;
+      for (const retired of ["explain", "running", "saved", "cancelled"]) {
+        expect(login).not.toHaveProperty(retired);
+      }
+      expect(login.failure).not.toHaveProperty("paste_code_unsupported");
+      expect(login.failure).not.toHaveProperty("browser_open_failed");
+      expect(JSON.stringify(login)).not.toContain("\u2014");
+    }
+    expect(en.ompAccountRouting.login.paste.error).toMatchObject({
+      invalid_input: expect.any(String),
+      wrong_login: expect.any(String),
+      not_waiting: expect.any(String),
+      not_allowed: expect.any(String),
+    });
+  });
+
   it("keeps reported Spanish settings and scripts labels clean", () => {
     expect(es.workspace.scripts.title).toBe("Scripts");
     expect(es.settings.general.terminalScrollback.label).toBe("Historial de terminal");

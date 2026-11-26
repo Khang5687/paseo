@@ -66,6 +66,7 @@ describe("workspace file attachments", () => {
     expect(splitComposerAttachmentsForSubmit([attachment])).toEqual({
       images: [],
       attachments: [workspaceFileAttachmentToAgentAttachment(attachment)],
+      attachmentRefs: [],
     });
   });
 });

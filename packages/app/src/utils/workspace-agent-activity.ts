@@ -1,3 +1,4 @@
+import { isUnseenAgentLabels } from "@getpaseo/protocol/agent-labels";
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import { isWorkspaceRootAgent } from "@/subagents/policies";
 import { deriveSidebarStateBucket } from "./sidebar-agent-state";
@@ -13,6 +14,9 @@ export interface WorkspaceAgentActivity {
    * Null when the agent is not waiting.
    */
   waitingOn: string | null;
+  // Whether any root agent here is a new main agent the user has not opened yet. Any root agent,
+  // not only the latest, so a second agent starting does not hide the first one's highlight.
+  hasUnseenAgent: boolean;
 }
 
 function workspaceAgentStatus(agent: Agent): Agent["status"] {
@@ -58,11 +62,14 @@ export function buildWorkspaceAgentActivityIndex(
   const activityByWorkspaceId = new Map<string, WorkspaceAgentActivity>();
   const latestActivityAtByWorkspaceId = new Map<string, Date>();
   const nextRunAtByWorkspaceId = new Map<string, string>();
+  const unseenWorkspaceIds = new Set<string>();
 
   for (const agent of agents.values()) {
     if (!isWorkspaceActivityRoot(agent, agents)) continue;
     keepEarliest(nextRunAtByWorkspaceId, agent.workspaceId, agent.backgroundWork?.nextRunAt);
-
+    if (isUnseenAgentLabels(agent.labels)) {
+      unseenWorkspaceIds.add(agent.workspaceId);
+    }
     const enteredAt = agent.attentionTimestamp ?? agent.updatedAt;
     const latestActivityAt = latestActivityAtByWorkspaceId.get(agent.workspaceId);
     if (latestActivityAt && enteredAt <= latestActivityAt) {
@@ -83,17 +90,20 @@ export function buildWorkspaceAgentActivityIndex(
       enteredAt,
       nextRunAt: null,
       waitingOn: waitingOnTitle(agent),
+      hasUnseenAgent: false,
     });
   }
 
   for (const [workspaceId, activity] of activityByWorkspaceId) {
     activity.nextRunAt = nextRunAtByWorkspaceId.get(workspaceId) ?? null;
+    activity.hasUnseenAgent = unseenWorkspaceIds.has(workspaceId);
     const previousActivity = previous?.get(workspaceId);
     if (
       previousActivity?.agentId === activity.agentId &&
       previousActivity.status === activity.status &&
       previousActivity.nextRunAt === activity.nextRunAt &&
-      previousActivity.waitingOn === activity.waitingOn
+      previousActivity.waitingOn === activity.waitingOn &&
+      previousActivity.hasUnseenAgent === activity.hasUnseenAgent
     ) {
       activityByWorkspaceId.set(workspaceId, previousActivity);
     }

@@ -5,6 +5,7 @@ import { usePanelStore } from "@/stores/panel-store";
 import { revealExplorerDirectory } from "@/file-explorer/tree";
 import {
   loadExplorerDirectory,
+  reloadExplorerDirectory,
   type DirectoryListingResult,
   invalidateExplorerDirectoryListings,
 } from "@/file-explorer/directory-listings";
@@ -112,6 +113,19 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
     [client, normalizedWorkspaceRoot, t, updateExplorerState, workspaceStateKey],
   );
 
+  const reloadDirectoryListing = useCallback(
+    (path: string): Promise<void> => {
+      if (!workspaceStateKey || !normalizedWorkspaceRoot || !client) return Promise.resolve();
+      return reloadExplorerDirectory({
+        readState: () =>
+          useSessionStore.getState().sessions[serverId]?.fileExplorer.get(workspaceStateKey),
+        updateState: updateExplorerState,
+        listDirectory: () => client.listDirectory(normalizedWorkspaceRoot, path),
+      });
+    },
+    [client, normalizedWorkspaceRoot, serverId, updateExplorerState, workspaceStateKey],
+  );
+
   const revealDirectory = useCallback(
     async (directoryPath: string) => {
       if (!workspaceStateKey) return;
@@ -146,21 +160,6 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
         throw new Error(payload.error);
       }
       return payload;
-    },
-    [client, normalizedWorkspaceRoot, t],
-  );
-
-  const requestFileBytes = useCallback(
-    async (path: string, maxBytes: number) => {
-      if (!normalizedWorkspaceRoot) {
-        throw new Error(t("workspace.fileExplorer.states.unavailable"));
-      }
-      if (!client) {
-        throw new Error(t("workspace.terminal.hostDisconnected"));
-      }
-      // No request timeout: a large file over a slow relay legitimately takes longer than the
-      // 60 s default, and a dead connection still rejects on disconnect.
-      return client.readFile(normalizedWorkspaceRoot, path, undefined, maxBytes, 0);
     },
     [client, normalizedWorkspaceRoot, t],
   );
@@ -260,8 +259,8 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
     revealDirectory,
     requestDirectoryListing,
     invalidateDirectoryListings,
+    reloadDirectoryListing,
     requestFileDownloadToken,
-    requestFileBytes,
     createEntry,
     renameEntry,
     duplicateEntry,

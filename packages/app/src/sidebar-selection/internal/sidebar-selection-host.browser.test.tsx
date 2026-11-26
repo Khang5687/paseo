@@ -64,6 +64,7 @@ function makeEntry(id: string): SidebarWorkspaceEntry {
     waitingOn: null,
     archiveHasUncommittedChanges: null,
     archiveUnpushedCommitCount: null,
+    workingSubagentCount: 0,
   };
 }
 
@@ -116,6 +117,7 @@ function SelectableRowProbe({ entry }: { entry: SidebarWorkspaceEntry }) {
       workspace={entry}
       workspaceKey={entry.workspaceKey}
       enabled={!isSelectionMode}
+      draggable={false}
       accessibilityRole={isSelectionMode ? "checkbox" : "button"}
       aria-checked={isSelectionMode ? isBulkSelected : undefined}
       highlightStyle={undefined}

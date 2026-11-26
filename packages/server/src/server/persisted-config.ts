@@ -20,6 +20,7 @@ import { AgentProfileSchema, AgentSkillSelectionSchema } from "@getpaseo/protoco
 import { PluginIdSchema, PluginSourceSchema } from "@getpaseo/protocol/plugin-config";
 import { TerminalProfileSchema } from "@getpaseo/protocol/terminal-profile";
 import { PaseoServicePortAllocationSchema } from "@getpaseo/protocol/paseo-config-schema";
+import { ProviderFeatureDefaultsSchema } from "@getpaseo/protocol/provider-config";
 
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
@@ -366,14 +367,64 @@ export const PersistedConfigSchema = z
     pluginsEnabled: z.boolean().optional(),
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
     worktrees: WorktreesConfigSchema.optional(),
+    files: z
+      .object({
+        copies: z
+          .object({
+            targetServerId: z
+              .string()
+              .optional()
+              .describe(
+                "Server id of the always-on host this daemon pushes copies of files its agents mention to. Unset: no copies are pushed.",
+              ),
+            keepDays: z
+              .number()
+              .int()
+              .positive()
+              .optional()
+              .describe(
+                "Copies held for other hosts are removed this many days after their last mention. Defaults to 30.",
+              ),
+            maxTotalBytes: z
+              .number()
+              .int()
+              .positive()
+              .optional()
+              .describe("Total size of copies held for other hosts. Defaults to 5 GiB."),
+            maxFileBytes: z
+              .number()
+              .int()
+              .positive()
+              .optional()
+              .describe("Largest single file copied. Defaults to 64 MiB."),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     agents: z
       .object({
         providers: z.preprocess(normalizeAgentProviders, ProviderOverridesSchema).optional(),
         idleRuntimeCleanup: z.boolean().optional(),
+        draftHistoryRetentionDays: z.number().int().positive().max(3650).optional(),
         resumeOnStartup: z.boolean().optional(),
         resumePrompt: z.string().optional(),
         catalogRefreshTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
         metadataGeneration: AgentMetadataGenerationSchema.optional(),
+        featureDefaults: ProviderFeatureDefaultsSchema.optional().describe(
+          'Feature values every new agent starts with, e.g. { "output_style": "Concise" }. A provider\'s own featureDefaults win.',
+        ),
+        askAgent: z
+          .object({
+            maxRounds: z.number().int().positive().optional(),
+            maxOpenThreads: z.number().int().positive().optional(),
+            idleTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
+            replyCharLimit: z.number().int().positive().optional(),
+            replyStoreChars: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
         skills: z.object({ selection: AgentSkillSelectionSchema.optional() }).strict().optional(),
       })
       .strict()
@@ -398,6 +449,11 @@ export type PersistedConfig = Omit<PersistedConfigSchemaOutput, "agents"> & {
     providers?: AgentProviderRuntimeSettingsMap;
   };
 };
+
+/** `files.copies` in config.json: where this daemon pushes copies, and limits for copies it holds. */
+export type PersistedFileCopiesConfig = NonNullable<
+  NonNullable<PersistedConfigSchemaOutput["files"]>["copies"]
+>;
 
 const CONFIG_FILENAME = "config.json";
 const DEFAULT_PERSISTED_CONFIG = PersistedConfigSchema.parse({

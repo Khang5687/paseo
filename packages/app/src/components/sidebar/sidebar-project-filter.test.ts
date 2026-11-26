@@ -30,6 +30,7 @@ function workspace(workspaceId: string, projectViewKey: string): SidebarWorkspac
     hasRunningScripts: false,
     nextRunAt: null,
     waitingOn: null,
+    workingSubagentCount: 0,
   };
 }
 

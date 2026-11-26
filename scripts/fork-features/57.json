@@ -1,0 +1,5 @@
+{
+  "pr": 57,
+  "title": "fix(server): let relay clients read why their hello was refused",
+  "tests": ["packages/server/src/server/websocket-server.relay-reconnect.test.ts"]
+}

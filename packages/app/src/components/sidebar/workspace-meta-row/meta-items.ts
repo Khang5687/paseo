@@ -12,11 +12,16 @@ import type { WorkspaceServiceSummary } from "./service-summary";
  * A wait leads because it explains the hourglass in the status slot beside it; then identity,
  * then the work, then the work's state, then the labels a person put on it.
  *
+ * Working subagents come next whenever any are working. The row's status icon follows the
+ * root agent alone, so it stops spinning when the root's turn ends; this says work is still going
+ * on underneath it. It is not a toggle, because it is status rather than identity.
+ *
  * Labels are one item rather than one per label: they are drawn as a run of chips with a single
  * separator in front of them, so the line reads as four peers however many labels a workspace
  * carries.
  */
 export type MetaRowItem =
+  | { kind: "subagents"; count: number }
   | { kind: "branch"; name: string }
   | { kind: "project"; name: string }
   | { kind: "host" }
@@ -50,8 +55,10 @@ export function selectMetaRowItems(input: {
   labels: readonly WorkspaceLabelDefinition[];
   visible: SidebarRowItems;
   checksDisplay: SidebarChecksDisplay;
+  workingSubagentCount?: number;
 }): MetaRowItem[] {
   const {
+    workingSubagentCount = 0,
     currentBranch,
     projectName,
     hasHostBadge,
@@ -67,6 +74,9 @@ export function selectMetaRowItems(input: {
 
   if (waitingOn !== null) {
     items.push({ kind: "waiting", title: waitingOn });
+  }
+  if (workingSubagentCount > 0) {
+    items.push({ kind: "subagents", count: workingSubagentCount });
   }
   if (currentBranch && visible.branch) {
     items.push({ kind: "branch", name: currentBranch });

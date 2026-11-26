@@ -1,0 +1,9 @@
+{
+  "pr": 162,
+  "title": "feat(app): phone sidebar top buttons as an icon row, lighter list",
+  "tests": ["packages/app/src/sidebar-nav/model.test.ts"],
+  "e2e": [
+    "packages/app/e2e/browser/sidebar-phone-icons.spec.ts",
+    "packages/app/e2e/browser/sidebar-workspace-copy-agent-id.spec.ts"
+  ]
+}

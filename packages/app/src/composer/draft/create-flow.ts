@@ -9,7 +9,7 @@ import { isActiveCreateFlowForDraft, useCreateFlowStore } from "@/stores/create-
 import { handoffCreatedAgentMessageSubmission } from "@/composer/submission/writer";
 import { useSessionStore } from "@/stores/session-store";
 import { createUserMessage, type UserMessageImageAttachment } from "@/types/stream";
-import type { AgentAttachment } from "@getpaseo/protocol/messages";
+import type { AgentAttachment, InlineAttachmentRef } from "@getpaseo/protocol/messages";
 
 interface CreateAttempt {
   clientMessageId: string;
@@ -17,6 +17,7 @@ interface CreateAttempt {
   timestamp: Date;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
+  attachmentRefs?: InlineAttachmentRef[];
 }
 
 type DraftAgentMachineState<TDraftAgent> =
@@ -279,6 +280,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         timestamp: new Date(),
         ...(images.length > 0 ? { images } : {}),
         ...(wirePayload.attachments.length > 0 ? { attachments: wirePayload.attachments } : {}),
+        attachmentRefs: wirePayload.attachmentRefs,
       };
 
       startCreateAttempt(attempt);

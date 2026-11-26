@@ -646,7 +646,14 @@ describe("sidebar group visibility", () => {
         workspaceAgentActivity: new Map([
           [
             descriptor.id,
-            { agentId: "agent", status, enteredAt: null, nextRunAt: null, waitingOn: null },
+            {
+              agentId: "agent",
+              status,
+              enteredAt: null,
+              nextRunAt: null,
+              waitingOn: null,
+              hasUnseenAgent: false,
+            },
           ],
         ]),
       });

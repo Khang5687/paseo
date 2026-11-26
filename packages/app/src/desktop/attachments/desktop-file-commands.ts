@@ -29,6 +29,20 @@ export async function writeDesktopAttachmentBytes(input: {
   });
 }
 
+export async function appendDesktopAttachmentBytes(input: {
+  attachmentId: string;
+  bytes: Uint8Array;
+  extension?: string | null;
+  reset: boolean;
+}): Promise<AttachmentFileResult> {
+  return await invokeDesktopCommand<AttachmentFileResult>("append_attachment_bytes", {
+    attachmentId: input.attachmentId,
+    bytes: input.bytes,
+    extension: input.extension ?? null,
+    reset: input.reset,
+  });
+}
+
 export async function copyDesktopAttachmentFile(input: {
   attachmentId: string;
   sourcePath: string;

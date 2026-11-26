@@ -178,3 +178,34 @@ it("keeps a later selection when an earlier nested-file lookup finishes last", a
   await earlier;
   expect(opened).toEqual(["guide.md"]);
 });
+
+it("opens a file outside the workspace on the host that has it, and keeps workspace files on the chat host", async () => {
+  const { createInlinePathOpener } = await import("./path-open");
+  const asked: string[] = [];
+  const opened: Array<{ path: string; serverId?: string; lineStart?: number }> = [];
+  const opener = createInlinePathOpener({
+    workspaceRoot: "/Users/me/repo",
+    client: null,
+    pickHost: async (filePath) => {
+      asked.push(filePath);
+      if (filePath === "~/notes/plan.md") return { kind: "otherHost", serverId: "omen" };
+      if (filePath === "/tmp/cancelled.md") return { kind: "cancelled" };
+      return { kind: "chatHost" };
+    },
+    openFile: (location) => {
+      opened.push(location);
+    },
+    openDirectory: () => {},
+    openOutsideDirectory: () => {},
+  });
+  await opener.open({ raw: "~/notes/plan.md:4", path: "~/notes/plan.md", lineStart: 4 }, "main");
+  await opener.open({ raw: "/tmp/cancelled.md", path: "/tmp/cancelled.md" }, "main");
+  await opener.open({ raw: "/etc/hosts", path: "/etc/hosts" }, "main");
+  await opener.open({ raw: "src/a.ts", path: "/Users/me/repo/src/a.ts" }, "main");
+  expect(asked).toEqual(["~/notes/plan.md", "/tmp/cancelled.md", "/etc/hosts"]);
+  expect(opened).toEqual([
+    { path: "~/notes/plan.md", lineStart: 4, serverId: "omen" },
+    { path: "/etc/hosts" },
+    { path: "src/a.ts" },
+  ]);
+});

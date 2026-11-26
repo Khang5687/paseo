@@ -4,6 +4,7 @@ import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
 import { SidebarSeparator as AppSidebarSeparator } from "@/components/sidebar/sidebar-separator";
+import { useSidebarNavIconRow } from "@/components/sidebar/sidebar-nav-icon-button";
 import { parsePluginIcon, pluginIconComponent } from "../icons";
 import { useSidebarItemFrame } from "./frame";
 
@@ -53,6 +54,9 @@ export function SidebarRow({ id, icon, label, onPress, active, trailing }: Sideb
 /** The sidebar's separator line, run edge to edge across the section like the app's own. */
 export function SidebarSeparator() {
   const frame = useSidebarItemFrame("SidebarSeparator");
+  // The phone's icon row has no lines between its buttons.
+  const iconRow = useSidebarNavIconRow();
+  if (iconRow && frame.section === "header") return null;
   return (
     <View style={frame.section === "footer" ? styles.footer : styles.header}>
       <AppSidebarSeparator />

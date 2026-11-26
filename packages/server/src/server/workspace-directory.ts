@@ -285,11 +285,10 @@ export class WorkspaceDirectory {
       terminalContributions,
       descriptorsByWorkspaceId,
     );
-    this.applyProviderSubagentContributions({
+    this.applySubagentContributions({
       activeAgents,
       providerSubagentActivity,
       descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
     });
 
     const contributingAgentsByWorkspaceId = groupAgentsByWorkspaceId(
@@ -323,19 +322,38 @@ export class WorkspaceDirectory {
     return descriptorsByWorkspaceId;
   }
 
-  private applyProviderSubagentContributions(params: {
+  // Count running subagents per workspace: same-workspace Paseo descendants and
+  // provider-native subagents, both owned by the nearest workspace root. The
+  // count never changes the workspace status: the status follows the root
+  // agents, so a root whose turn ended reads `done` (or waits on the user)
+  // while its subagents keep working, and the client shows the count beside it.
+  private applySubagentContributions(params: {
     activeAgents: AgentSnapshotPayload[];
     providerSubagentActivity: ProviderSubagentWorkspaceActivity[];
     descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>;
-    activityEntriesByWorkspaceId: Map<string, WorkspaceBucketTimestampEntry[]>;
   }): void {
-    const {
-      activeAgents,
-      providerSubagentActivity,
-      descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
-    } = params;
+    const { activeAgents, providerSubagentActivity, descriptorsByWorkspaceId } = params;
     const activeAgentsById = new Map(activeAgents.map((agent) => [agent.id, agent] as const));
+    const runningCountByWorkspaceId = new Map<string, number>();
+    const countRunning = (workspaceId: string | undefined) => {
+      if (!workspaceId || !descriptorsByWorkspaceId.has(workspaceId)) {
+        return;
+      }
+      runningCountByWorkspaceId.set(
+        workspaceId,
+        (runningCountByWorkspaceId.get(workspaceId) ?? 0) + 1,
+      );
+    };
+
+    for (const agent of activeAgents) {
+      if (!isAgentRunning(agent)) {
+        continue;
+      }
+      const workspaceAgent = resolveWorkspaceRootAgent(agent, activeAgentsById);
+      if (workspaceAgent && workspaceAgent.id !== agent.id) {
+        countRunning(workspaceAgent.workspaceId);
+      }
+    }
 
     for (const subagent of providerSubagentActivity) {
       if (subagent.status !== "running") {
@@ -345,32 +363,23 @@ export class WorkspaceDirectory {
       if (!parent) {
         continue;
       }
-      const workspaceAgent = resolveWorkspaceRootAgent(parent, activeAgentsById);
-      const workspaceId = workspaceAgent?.workspaceId;
-      if (!workspaceId) {
-        continue;
-      }
+      countRunning(resolveWorkspaceRootAgent(parent, activeAgentsById)?.workspaceId);
+    }
+
+    for (const [workspaceId, count] of runningCountByWorkspaceId) {
       const descriptor = descriptorsByWorkspaceId.get(workspaceId);
       if (!descriptor) {
         continue;
       }
-      if (
-        getWorkspaceStateBucketPriority("running") <
-        getWorkspaceStateBucketPriority(descriptor.status)
-      ) {
-        descriptor.status = "running";
-      }
-      const entries = activityEntriesByWorkspaceId.get(workspaceId) ?? [];
-      entries.push({ bucket: "running", changedAtIso: subagent.updatedAt });
-      activityEntriesByWorkspaceId.set(workspaceId, entries);
+      descriptor.runningSubagentCount = count;
     }
   }
 
-  // Aggregate each agent's state bucket into its owning workspace descriptor,
-  // keeping the highest-priority bucket. A record's owner IS its `workspaceId`;
-  // status never fans out to same-cwd siblings. A subagent in another workspace
-  // is a root for that workspace. Same-workspace descendants contribute only
-  // running activity to the nearest ancestor in that workspace.
+  // Aggregate each workspace root agent's state bucket into its owning workspace
+  // descriptor, keeping the highest-priority bucket. A record's owner IS its
+  // `workspaceId`; status never fans out to same-cwd siblings. A subagent in
+  // another workspace is a root for that workspace. Same-workspace descendants
+  // are handled by `applySubagentContributions`.
   private applyAgentBucketContributions(params: {
     activeAgents: AgentSnapshotPayload[];
     descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>;
@@ -383,19 +392,17 @@ export class WorkspaceDirectory {
       if (!workspaceAgent) {
         continue;
       }
-      const isWorkspaceRoot = workspaceAgent.id === agent.id;
-      if (!isWorkspaceRoot && !isAgentRunning(agent)) {
+      if (workspaceAgent.id !== agent.id) {
         continue;
       }
-      const bucket = isWorkspaceRoot
-        ? deriveAgentStateBucket({
-            status: agent.status,
-            pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
-            requiresAttention: agent.requiresAttention,
-            attentionReason: agent.attentionReason ?? null,
-            backgroundWork: agent.backgroundWork,
-          })
-        : "running";
+      const bucket = deriveAgentStateBucket({
+        status: agent.status,
+        pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
+        requiresAttention: agent.requiresAttention,
+        attentionReason: agent.attentionReason ?? null,
+        awaitingAnswer: agent.awaitingAnswer,
+        backgroundWork: agent.backgroundWork,
+      });
 
       const workspaceId = workspaceAgent.workspaceId;
       if (!workspaceId) {
@@ -543,6 +550,7 @@ export class WorkspaceDirectory {
           pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
           requiresAttention: agent.requiresAttention,
           attentionReason: agent.attentionReason ?? null,
+          awaitingAnswer: agent.awaitingAnswer,
           backgroundWork: agent.backgroundWork,
         });
         return derived === winningBucket;

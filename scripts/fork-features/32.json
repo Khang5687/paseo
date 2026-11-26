@@ -1,0 +1,11 @@
+{
+  "pr": 32,
+  "title": "feat(client): OMP account-routing snapshot contract",
+  "tests": [
+    "packages/client/src/daemon-client.test.ts",
+    "packages/client/src/index.test.ts",
+    "packages/protocol/src/messages.test.ts",
+    "packages/protocol/src/messages.wire-compat.test.ts",
+    "packages/server/src/server/authorization/index.test.ts"
+  ]
+}

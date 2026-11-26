@@ -37,6 +37,7 @@ function makeEntry(
     waitingOn: null,
     archiveHasUncommittedChanges: null,
     archiveUnpushedCommitCount: null,
+    workingSubagentCount: 0,
     ...overrides,
   };
 }

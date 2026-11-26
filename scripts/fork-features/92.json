@@ -1,0 +1,9 @@
+{
+  "pr": 92,
+  "title": "fix(omp): show MCP mount notices as one compact row",
+  "tests": [
+    "packages/server/src/server/agent/providers/omp/event-mapper.test.ts",
+    "packages/protocol/src/tool-call-display.test.ts",
+    "packages/app/src/utils/tool-call-icon-name.test.ts"
+  ]
+}

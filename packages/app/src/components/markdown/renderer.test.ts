@@ -13,7 +13,12 @@ import { decodeMarkdownImage, getMarkdownImageStatus } from "./image-decoding";
 import { describe, expect, it } from "vitest";
 import { darkTheme, lightTheme } from "@/styles/theme";
 import { createMarkdownStyles } from "./styles";
-import { isRecognizedLink, prepareMarkdownSource, PENDING_MARKDOWN_IMAGE } from "./source";
+import {
+  collectFileMentions,
+  isRecognizedLink,
+  prepareMarkdownSource,
+  PENDING_MARKDOWN_IMAGE,
+} from "./source";
 import { normalizeMarkdownHtml } from "./html";
 
 it("recognizes complete known commands in inline code", () => {
@@ -451,6 +456,30 @@ it("lets the engine own code boundaries while classifying candidate values", asy
   ]);
 });
 
+describe("file mentions saved for offline use", () => {
+  it("collects prose, inline-code and linked paths but not code blocks or URLs", () => {
+    const source = [
+      "Edited /repo/src/app.ts and `/repo/README.md`.",
+      "See [the plan](/repo/docs/plan.md) and https://example.com/a.ts.",
+      "```ts",
+      'import x from "/repo/src/hidden.ts";',
+      "```",
+    ].join("\n");
+    const paths = collectFileMentions(source, { workspaceRoot: "/repo" }).map((mention) =>
+      mention.kind === "path" ? mention.path : `lookup:${mention.token}`,
+    );
+    expect(paths.sort()).toEqual(["/repo/README.md", "/repo/docs/plan.md", "/repo/src/app.ts"]);
+  });
+
+  it("keeps bare file names for the host to find", () => {
+    const mentions = collectFileMentions("Updated `notes.txt` twice: `notes.txt`.", {
+      workspaceRoot: "/repo",
+    });
+    expect(mentions).toHaveLength(1);
+    expect(mentions[0]).toMatchObject({ kind: "needsLookup", token: "notes.txt" });
+  });
+});
+
 it("recognizes forge references in prose but not in code, links or paths", async () => {
   const shorthand = createForgeShorthand({
     forge: "gitlab",
@@ -599,6 +628,23 @@ describe("bare URL sentence punctuation", () => {
   });
 });
 
+it("links schemeless web addresses and leaves host-led paths it cannot open as text", () => {
+  const source =
+    "Repo: github.com/Khang5687/throwback32 (private), guide at docs.example.org/guide/start. " +
+    "Built v1.2/build/out with Node.js/Bun/Deno; open src/app/index.ts and packages/app/src.";
+  const prepared = prepareMarkdownSource(source);
+  expect([...source.matchAll(prepared.linkRecognition.text)].map(([text]) => text)).toEqual([
+    "github.com/Khang5687/throwback32",
+    "docs.example.org/guide/start",
+    "src/app/index.ts",
+    "packages/app/src",
+  ]);
+  expect(toNativeLinkRecognition(prepared.linkRecognition).text).toMatchObject({
+    isDisabled: false,
+    isDefault: false,
+  });
+});
+
 it("requires workspace context for relative inline paths and escapes literal regex characters", () => {
   const source = "`src/app/[id].tsx` and `src/a+b.ts` and `README.md` and `/tmp/file.ts`";
   const withoutWorkspace = prepareMarkdownSource(source).linkRecognition.inlineCode;
@@ -634,22 +680,63 @@ it("keeps explicit and inline-code links distinct when their URL strings match",
 });
 
 it("extracts only Mermaid fences for the native diagram host", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
+  const { splitNativeFences } = await import("./fence/segments");
   const source =
     "First.\n\n```ts\nconst n = 1;\n```\n\n```mermaid\ngraph TD\nA-->B\n```\n\n> Last.";
-  expect(splitMermaidFences(source)).toEqual([
+  expect(splitNativeFences(source)).toEqual([
     { kind: "markdown", id: "0", source: "First.\n\n```ts\nconst n = 1;\n```\n\n" },
     { kind: "mermaid", id: "1", source: "graph TD\nA-->B" },
     { kind: "markdown", id: "2", source: "\n\n> Last." },
   ]);
-  expect(splitMermaidFences("```md\n```mermaid\n```")).toEqual([
+  expect(splitNativeFences("```md\n```mermaid\n```")).toEqual([
     { kind: "markdown", id: "0", source: "```md\n```mermaid\n```" },
   ]);
 });
 
+it("extracts runnable shell fences only when the message can run them", async () => {
+  const { splitNativeFences } = await import("./fence/segments");
+  const { isRunnableShellFence } = await import("@/code-run/fence");
+  const source = "Run:\n\n```bash\nnpm test\n```\n\n```ts\nconst n = 1;\n```\n\n```sh\n# note\n```";
+  expect(splitNativeFences(source)).toEqual([{ kind: "markdown", id: "0", source }]);
+  expect(splitNativeFences(source, isRunnableShellFence)).toEqual([
+    { kind: "markdown", id: "0", source: "Run:\n\n" },
+    { kind: "shell", id: "1", source: "npm test", language: "bash", meta: null },
+    { kind: "markdown", id: "2", source: "\n\n```ts\nconst n = 1;\n```\n\n```sh\n# note\n```" },
+  ]);
+});
+
+it("extracts an untagged fence only when it reads as a command", async () => {
+  const { splitNativeFences } = await import("./fence/segments");
+  const { isRunnableShellFence } = await import("@/code-run/fence");
+  const source = "Run this:\n```\nsudo bash /tmp/apply.sh\n```\n\nOutput:\n```\nDone in 3s.\n```";
+  expect(splitNativeFences(source, isRunnableShellFence)).toEqual([
+    { kind: "markdown", id: "0", source: "Run this:\n" },
+    { kind: "shell", id: "1", source: "sudo bash /tmp/apply.sh", language: "", meta: null },
+    { kind: "markdown", id: "2", source: "\n\nOutput:\n```\nDone in 3s.\n```" },
+  ]);
+});
+
+it("keeps a fence's host and folder, and web splits out only those fences", async () => {
+  const { splitNativeFences } = await import("./fence/segments");
+  const { isRunnableShellFence, isRunnableTaggedShellFence } = await import("@/code-run/fence");
+  const tagged = "```bash host=mac cwd=~/src\nls\n```";
+  const rest = "\n\n```bash\npwd\n```\n\n```mermaid\ngraph TD\n```";
+  const shell = {
+    kind: "shell",
+    id: "0",
+    source: "ls",
+    language: "bash",
+    meta: "host=mac cwd=~/src",
+  };
+  expect(splitNativeFences(tagged + rest, isRunnableShellFence)[0]).toEqual(shell);
+  expect(splitNativeFences(tagged + rest, isRunnableTaggedShellFence, { diagrams: false })).toEqual(
+    [shell, { kind: "markdown", id: "1", source: rest }],
+  );
+});
+
 it("keeps reference links available across native Mermaid boundaries", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
-  const parts = splitMermaidFences(
+  const { splitNativeFences } = await import("./fence/segments");
+  const parts = splitNativeFences(
     "[Before][file]\n\n```mermaid\ngraph TD\nA-->B\n```\n\n[After][file]\n\n[file]: src/file.ts",
   );
   for (const part of parts.filter((candidate) => candidate.kind === "markdown"))
@@ -657,25 +744,25 @@ it("keeps reference links available across native Mermaid boundaries", async () 
 });
 
 it("recognizes mixed-case Mermaid fence info and incomplete streaming fences", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
-  expect(splitMermaidFences("```Mermaid title\ngraph TD\nA-->B")).toEqual([
+  const { splitNativeFences } = await import("./fence/segments");
+  expect(splitNativeFences("```Mermaid title\ngraph TD\nA-->B")).toEqual([
     { kind: "mermaid", id: "0", source: "graph TD\nA-->B" },
   ]);
 });
 
 it("carries reference definitions nested in quotes across a diagram", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
-  const parts = splitMermaidFences(
+  const { splitNativeFences } = await import("./fence/segments");
+  const parts = splitNativeFences(
     "[open][file]\n\n```mermaid\ngraph TD\nA-->B\n```\n\n> [file]: src/file.ts",
   );
   expect(parts[0].source).toContain("[file]: <src/file.ts>");
 });
 
 it("keeps diagram identity when an earlier workspace image resolves", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
+  const { splitNativeFences } = await import("./fence/segments");
   const source = "![image](a.png)\n\n```mermaid\ngraph TD\nA-->B\n```";
-  const before = splitMermaidFences(source).find((part) => part.kind === "mermaid");
-  const after = splitMermaidFences(
+  const before = splitNativeFences(source).find((part) => part.kind === "mermaid");
+  const after = splitNativeFences(
     source.replace("a.png", "file:///long/cache/path/image.png"),
   ).find((part) => part.kind === "mermaid");
   expect(before).toHaveProperty("id");
@@ -922,14 +1009,14 @@ it("retries transient image decoding failures instead of caching an unavailable 
 });
 
 it("keeps the document's first reference definition across every native Mermaid segment", async () => {
-  const { splitMermaidFences } = await import("./fence/mermaid/segments");
+  const { splitNativeFences } = await import("./fence/segments");
   const before = '[first]: /repo/first.ts "Original"\n\n';
   const after = '\n\n[open][first]\n\n[first]: /repo/second.ts "Later"';
   const source = `${before}\`\`\`mermaid\ngraph TD\nA-->B\n\`\`\`${after}`;
   const firstDefinition = (markdown: string) =>
     fromMarkdown(markdown).children.find((node) => node.type === "definition");
   const canonical = firstDefinition(source);
-  const segments = splitMermaidFences(source);
+  const segments = splitNativeFences(source);
   for (const segment of segments.filter((candidate) => candidate.kind === "markdown")) {
     expect(firstDefinition(segment.source)).toMatchObject({
       identifier: canonical?.identifier,

@@ -1,0 +1,5 @@
+{
+  "pr": 54,
+  "title": "fix(omp): resolve the rewind entry ID when OMP's prompt echo has none",
+  "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
+}

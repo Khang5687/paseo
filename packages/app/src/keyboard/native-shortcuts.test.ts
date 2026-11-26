@@ -21,7 +21,7 @@ function keyboardEvent(key: string, code: string, isMac = true) {
 describe("shared keyboard source pipeline", () => {
   it.each([true, false])("resolves hardware input and user rebinds with mac=%s", (isMac) => {
     const actions: string[] = [];
-    const bindings = buildEffectiveBindings({ "command-center-toggle-cmd-k-mac": "Cmd+J" });
+    const bindings = buildEffectiveBindings({ "command-center-toggle-cmd-k-mac": "Cmd+Y" });
     const pipeline = createKeyboardPipeline({
       getContext: () => ({ isMac, usesDesktopBindings: true, commandCenterOpen: false }),
       getBindings: () => bindings,
@@ -34,7 +34,7 @@ describe("shared keyboard source pipeline", () => {
     });
     pipeline.keyDown(nativeKeyboardInput(keyboardEvent("k", "KeyK", isMac), "message-input"));
     expect(actions).toEqual(isMac ? [] : ["command-center.toggle"]);
-    pipeline.keyDown(nativeKeyboardInput(keyboardEvent("j", "KeyJ", isMac), "message-input"));
+    pipeline.keyDown(nativeKeyboardInput(keyboardEvent("y", "KeyY", isMac), "message-input"));
     expect(actions).toEqual(["command-center.toggle"]);
     pipeline.dispose();
   });
@@ -106,7 +106,7 @@ describe("overlay and focus precedence in the source pipeline", () => {
   });
 
   it.each([true, false])(
-    "uses hardware conventions for workspace index jumps with mac=%s",
+    "uses hardware conventions for project index jumps with mac=%s",
     (isMac) => {
       const payloads: unknown[] = [];
       const pipeline = createKeyboardPipeline({
@@ -120,7 +120,7 @@ describe("overlay and focus precedence in the source pipeline", () => {
         overlays: createOverlayRegistry(),
       });
       pipeline.keyDown(nativeKeyboardInput(keyboardEvent("3", "Digit3", isMac), "message-input"));
-      expect(payloads).toEqual([["workspace.navigate.index", { index: 3 }]]);
+      expect(payloads).toEqual([["sidebar.project.navigate.index", { index: 3 }]]);
       pipeline.dispose();
     },
   );
@@ -216,17 +216,19 @@ describe("hardware source adapter", () => {
       commandCenterOpen = open;
       for (const listener of commandCenterListeners) listener();
     };
-    // iPad tab switching uses Cmd+Shift+[ / ], which no text control types.
-    expect(claimed).toEqual([]);
+    // iPad tab switching uses Cmd+Shift+[ / ], which no text control types. Opt+Tab walks recent
+    // workspaces from anywhere, so it is claimed with no text control focused.
+    const walk = ["Alt+Shift+Tab", "Alt+Tab"];
+    expect(claimed).toEqual(walk);
 
     const releaseComposer = focusSurfaces.declare("message-input");
-    expect(claimed).toEqual(["Shift+Tab"]);
+    expect(claimed).toEqual([...walk, "Shift+Tab"]);
     setCommandCenterOpen(true);
     expect(claimed).toEqual([]);
     setCommandCenterOpen(false);
-    expect(claimed).toEqual(["Shift+Tab"]);
+    expect(claimed).toEqual([...walk, "Shift+Tab"]);
     releaseComposer();
-    expect(claimed).toEqual([]);
+    expect(claimed).toEqual(walk);
 
     source.publishPolicy({
       bindings: buildEffectiveBindings({ "message-input-mode-cycle-shift-tab": "Alt+M" }),
@@ -235,7 +237,7 @@ describe("hardware source adapter", () => {
       enabled: true,
     });
     const releaseRebound = focusSurfaces.declare("message-input");
-    expect(claimed).toEqual(["Alt+KeyM"]);
+    expect(claimed).toEqual(["Alt+KeyM", ...walk]);
     releaseRebound();
 
     // A chord's later step is only a shortcut while the chord is in progress;
@@ -247,7 +249,7 @@ describe("hardware source adapter", () => {
       enabled: true,
     });
     const releaseChord = focusSurfaces.declare("message-input");
-    expect(claimed).toEqual([]);
+    expect(claimed).toEqual(walk);
     releaseChord();
 
     const releaseFinal = focusSurfaces.declare("message-input");
@@ -264,7 +266,7 @@ describe("hardware source adapter", () => {
       usesDesktopBindings: true,
       enabled: true,
     });
-    expect(claimed).toEqual(["Shift+Tab"]);
+    expect(claimed).toEqual([...walk, "Shift+Tab"]);
     detach();
     expect(claimed).toEqual([]);
     releaseFinal();
