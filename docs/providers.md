@@ -150,6 +150,8 @@ Pi import discovery reads Pi's persisted JSONL session files because Pi RPC does
 
 OMP is a first-class built-in provider, disabled by default. Its launch contract, typed runtime, agent/session behavior, history, permissions, imports, and test fake live under `providers/omp/`; only the provider-neutral JSONL child-process transport is shared with Pi. It launches `omp --mode rpc-ui`, uses OMP's `get_available_commands` RPC for slash-command discovery, bridges OMP `rpc-ui` approval dialogs into Paseo permissions, and imports terminal-started sessions from `~/.omp/agent/sessions` when enabled.
 
+OMP's rpc mode will not open a session whose recorded model OMP no longer has: it exits with `SessionModelRestoreError: Could not restore model <id>` where the TUI would fall back. An explicit `--model` skips that restore. When a resume start fails with that error, `resumeSession` starts OMP once more on the same session file with `--model default` (a role name; OMP picks its own configured default), stores the model the session then runs on, and adds a warning notification after the replayed history naming the old and new model. Only that error is retried, once.
+
 OMP rewind is a branch, not an edit: `branch` writes a new session file whose header names the
 previous file as `parentSession` and leaves that previous file untouched. A rewind chain therefore
 adds one file to `~/.omp/agent/sessions` per step, and `omp --resume` lists all of them. The

@@ -127,6 +127,71 @@ test("OMP resumes a session on the requested model when it differs from the sess
   expect(session.describePersistence()?.metadata?.model).toBe("openrouter/requested");
 });
 
+// What the OMP rpc process prints, and Paseo carries in the startup error, when the model
+// recorded in a session file is gone: rpc mode exits instead of falling back.
+const MODEL_RESTORE_FAILURE = new Error(
+  [
+    "OMP RPC process exited with code 1 and signal null",
+    "SessionModelRestoreError: Could not restore model kiro/gpt-5.6-sol",
+    "      at t8 (/$bunfs/root/chunks/cli-214vxyxy.js:61470:13)",
+  ].join("\n"),
+);
+
+test("OMP resumes a session whose recorded model is gone by retrying on its default model", async () => {
+  const runtime = new FakeOmp();
+  runtime.failNextStart(MODEL_RESTORE_FAILURE);
+  runtime.queueSessionSetup((session) => {
+    session.state = { ...session.state, model: { provider: "anthropic", id: "claude-opus-5-5" } };
+  });
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+  const session = await client.resumeSession({
+    provider: "omp",
+    sessionId: "omp-session-1",
+    nativeHandle: "/tmp/omp-session.jsonl",
+    metadata: { cwd: "/workspace/project", model: "kiro/gpt-5.6-sol" },
+  });
+  onTestFinished(() => session.close());
+
+  expect(runtime.recordedLaunches).toHaveLength(1);
+  expect(runtime.recordedLaunches[0]).toMatchObject({
+    session: "/tmp/omp-session.jsonl",
+    model: "default",
+  });
+  await expect(session.getRuntimeInfo()).resolves.toMatchObject({
+    model: "anthropic/claude-opus-5-5",
+  });
+  expect(session.describePersistence()?.metadata?.model).toBe("anthropic/claude-opus-5-5");
+  const history: AgentStreamEvent[] = [];
+  for await (const event of session.streamHistory()) history.push(event);
+  expect(history).toContainEqual({
+    type: "timeline",
+    provider: "omp",
+    item: {
+      type: "notification",
+      level: "warning",
+      message:
+        "Model kiro/gpt-5.6-sol is no longer available in OMP. This agent now runs on anthropic/claude-opus-5-5.",
+    },
+  });
+});
+
+test("OMP does not retry a resume that failed for another reason", async () => {
+  const runtime = new FakeOmp();
+  runtime.failNextStart(new Error("OMP RPC process exited with code 1 and signal null\nboom"));
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+  await expect(
+    client.resumeSession({
+      provider: "omp",
+      sessionId: "omp-session-1",
+      nativeHandle: "/tmp/omp-session.jsonl",
+      metadata: { cwd: "/workspace/project", model: "kiro/gpt-5.6-sol" },
+    }),
+  ).rejects.toThrow("boom");
+  expect(runtime.recordedLaunches).toHaveLength(0);
+});
+
 class ManualIdleScheduler implements OmpProviderIdleScheduler {
   private readonly retries: Array<() => void> = [];
   private readonly waiters: Array<{ count: number; resolve: () => void }> = [];
