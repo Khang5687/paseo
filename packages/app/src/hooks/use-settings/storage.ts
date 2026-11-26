@@ -57,8 +57,8 @@ export const MAX_TERMINAL_SCROLLBACK_LINES = 1_000_000;
 /** Saved copies of chat files are bounded by these app-local limits. */
 export const OFFLINE_FILE_LIMITS = {
   retentionDays: { default: 30, min: 1, max: 365 },
-  maxTotalMb: { default: 500, min: 10, max: 10_000 },
-  // The session socket download cap is 64 MiB.
+  maxTotalMb: { default: 2048, min: 10, max: 10_000 },
+  // Only for files saved automatically. A file saved on purpose may be PINNED_FILE_MAX_MB.
   maxFileMb: { default: 10, min: 1, max: 64 },
 } as const;
 export function defaultUiBaseFontSize(native: boolean): number {

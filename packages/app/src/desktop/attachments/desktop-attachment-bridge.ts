@@ -5,6 +5,7 @@ import {
   garbageCollectDesktopAttachmentFiles,
   writeDesktopAttachmentBase64,
   writeDesktopAttachmentBytes,
+  appendDesktopAttachmentBytes,
 } from "@/desktop/attachments/desktop-file-commands";
 import {
   createBrowserObjectUrlMinter,
@@ -34,6 +35,13 @@ export interface DesktopAttachmentBridge {
     bytes: Uint8Array;
     extension?: string | null;
   }): Promise<DesktopAttachmentFileResult>;
+  /** Adds `bytes` to the attachment's file; `reset` starts the file over. */
+  appendBytes(input: {
+    attachmentId: string;
+    bytes: Uint8Array;
+    extension?: string | null;
+    reset: boolean;
+  }): Promise<DesktopAttachmentFileResult>;
   deleteFile(input: { path: string }): Promise<boolean>;
   garbageCollect(input: { referencedIds: readonly string[] }): Promise<number>;
   readFileBase64(path: string): Promise<string>;
@@ -50,6 +58,7 @@ export function createDesktopAttachmentBridge(): DesktopAttachmentBridge {
     copyFile: copyDesktopAttachmentFile,
     writeBase64: writeDesktopAttachmentBase64,
     writeBytes: writeDesktopAttachmentBytes,
+    appendBytes: appendDesktopAttachmentBytes,
     deleteFile: deleteDesktopAttachmentFile,
     garbageCollect: garbageCollectDesktopAttachmentFiles,
     readFileBase64: readDesktopFileBase64,

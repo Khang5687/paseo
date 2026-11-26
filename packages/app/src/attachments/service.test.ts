@@ -30,6 +30,9 @@ function createRecordingStore(): AttachmentStore & {
     storageType: "web-indexeddb",
     savedSources,
     releasedUrls,
+    async openWriter() {
+      throw new Error("openWriter is not used here");
+    },
     async save(input) {
       savedSources.push(input);
       return createAttachment({

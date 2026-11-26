@@ -9,11 +9,12 @@ export interface SavePreferences {
 }
 
 /**
- * The downloaded file. Bytes come from the session socket. The HTTP route hands over a Blob on
- * web and a file already in the app cache on native, so a big file never passes through JS memory
- * there. A platform rejects the kind it never produces.
+ * The downloaded file. A small file may be bytes. The HTTP route hands over a Blob on web and a
+ * file already in the app cache on native, and a file read over the session socket arrives as a
+ * Saved copy: a cache copy on native, a Blob in a browser, a path in managed storage on desktop.
+ * So a big file never passes through JS memory. A platform rejects the kind it never produces.
  */
-export type DownloadContent = Uint8Array | Blob | { uri: string };
+export type DownloadContent = Uint8Array | Blob | { uri: string } | { managedPath: string };
 
 export interface SaveRequest {
   content: DownloadContent;

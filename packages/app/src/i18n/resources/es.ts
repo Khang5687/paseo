@@ -2317,7 +2317,8 @@ export const es: TranslationResources = {
     },
     maxFileMb: {
       label: "Archivo más grande (MB)",
-      description: "Los archivos más grandes no se guardan.",
+      description:
+        "Los archivos más grandes no se guardan automáticamente. Un archivo que guardas tú puede llegar a 500 MB.",
     },
     saved: {
       label_one: "Guardado: {{count}} archivo, {{size}}",

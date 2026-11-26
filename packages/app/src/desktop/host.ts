@@ -55,7 +55,10 @@ export interface DesktopDialogBridge {
 
 export interface DesktopSaveFileInput {
   fileName: string;
-  bytes: Uint8Array;
+  /** The file's bytes. */
+  bytes?: Uint8Array;
+  /** Or a file in the app's managed attachment storage, which the shell copies itself. */
+  sourcePath?: string;
   /** Show the native Save dialog; off writes to Downloads › Paseo. */
   ask: boolean;
 }

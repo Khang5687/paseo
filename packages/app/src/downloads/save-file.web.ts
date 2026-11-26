@@ -12,10 +12,24 @@ export async function saveFile({
   mimeType,
   preferences,
 }: SaveRequest): Promise<SaveOutcome> {
-  if (!(content instanceof Uint8Array) && !(content instanceof Blob)) {
+  if ("uri" in content) {
     throw new Error("A cached file cannot be saved in a browser.");
   }
   const save = getDesktopHost()?.files?.save;
+  if ("managedPath" in content) {
+    if (!save) {
+      throw new Error("A managed file needs the desktop app.");
+    }
+    // The shell copies the file itself; a big file never crosses the bridge.
+    const copied = await save({
+      fileName,
+      sourcePath: content.managedPath,
+      ask: preferences.askWhere,
+    });
+    return copied.status === "cancelled"
+      ? { kind: "cancelled" }
+      : { kind: "saved", where: copied.folderLabel, revealPath: copied.path };
+  }
   // COMPAT(desktopFileSave): a desktop shell older than the Save dialog has no `files` bridge and
   // gets the browser's download. Added in v0.17.0, remove after 2027-05-26.
   if (!save) {

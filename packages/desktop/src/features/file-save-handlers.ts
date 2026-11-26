@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
+import { resolveManagedAttachmentPath } from "./attachments.js";
 import { saveFile } from "./file-save.js";
 
 /** Paths this app wrote; "show in folder" only opens those. */
@@ -10,6 +11,7 @@ export function registerFileSaveHandlers(): void {
     const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
     const result = await saveFile(input, {
       downloadsDir: app.getPath("downloads"),
+      resolveSourcePath: resolveManagedAttachmentPath,
       chooseSavePath: async (defaultPath) => {
         const options = { defaultPath, properties: ["showOverwriteConfirmation" as const] };
         const chosen = win

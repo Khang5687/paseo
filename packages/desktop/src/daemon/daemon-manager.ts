@@ -13,6 +13,7 @@ import {
   type DaemonInstance,
 } from "@getpaseo/server/daemon-control";
 import {
+  appendAttachmentBytes,
   copyAttachmentFileToManagedStorage,
   deleteManagedAttachmentFile,
   garbageCollectManagedAttachmentFiles,
@@ -548,6 +549,7 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     cli_daemon_status: () => getCliDaemonStatus(),
     write_attachment_base64: (args) => writeAttachmentBase64(args ?? {}),
     write_attachment_bytes: (args) => writeAttachmentBytes(args ?? {}),
+    append_attachment_bytes: (args) => appendAttachmentBytes(args ?? {}),
     copy_attachment_file: (args) => copyAttachmentFileToManagedStorage(args ?? {}),
     read_file_base64: (args) => readManagedFileBase64(args ?? {}),
     delete_attachment_file: (args) => deleteManagedAttachmentFile(args ?? {}),
