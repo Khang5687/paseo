@@ -891,6 +891,8 @@ export class Session {
   private readonly projectIcons: ProjectIconReader;
   private readonly worktreesRoot: string | undefined;
   private readonly rewindInitiators = new Map<string, object | undefined>();
+  /** The background work summary each agent payload last carried, to skip output-only updates. */
+  private readonly forwardedBackgroundWorkSummaries = new Map<string, string>();
 
   private agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
@@ -2462,13 +2464,16 @@ export class Session {
     if ("error" in target) return;
     const { agent, record } = target;
     // The inventory may have changed while resolving a dormant agent.
-    const items = this.agentManager.getAgentBackgroundWorkSummary(agentId)
-      ? this.agentManager.listAgentBackgroundWork(agentId)
-      : [];
+    const summary = this.agentManager.getAgentBackgroundWorkSummary(agentId);
+    const items = summary ? this.agentManager.listAgentBackgroundWork(agentId) : [];
     this.emit({
       type: "agent.background_work.update",
       payload: { agentId, items: this.projectBackgroundWorkItems(items) },
     });
+    // Live output changes the items every second; the agent payload only carries the summary.
+    const summaryKey = JSON.stringify(summary ?? null);
+    if (this.forwardedBackgroundWorkSummaries.get(agentId) === summaryKey) return;
+    this.forwardedBackgroundWorkSummaries.set(agentId, summaryKey);
     if (agent) await this.agentUpdates.forwardLiveAgent(agent);
     else if (record) await this.agentUpdates.forwardStoredAgent(record);
   }

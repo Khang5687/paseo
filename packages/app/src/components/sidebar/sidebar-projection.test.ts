@@ -39,6 +39,7 @@ function makeWorkspace(
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    waitingOn: null,
     workingSubagentCount: 0,
     labels,
   };

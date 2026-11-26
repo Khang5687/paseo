@@ -2,7 +2,15 @@ import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Check, CircleAlert, Folder, FolderGit2, Monitor, PencilLine } from "lucide-react-native";
+import {
+  Check,
+  CircleAlert,
+  Folder,
+  FolderGit2,
+  Hourglass,
+  Monitor,
+  PencilLine,
+} from "lucide-react-native";
 import { bySizing } from "@/components/ui/control-geometry";
 import { ProjectStatusIndicator } from "@/components/sidebar/project-leading-visual";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
@@ -48,12 +56,16 @@ const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
   fill: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
 });
+const waitingColorMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? undefined,
+});
 const checkedIconMapping = (theme: Theme) => ({
   color: theme.colors.accentForeground,
 });
 
 const ThemedCheck = withUnistyles(Check);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
+const ThemedHourglass = withUnistyles(Hourglass);
 const ThemedPencilLine = withUnistyles(PencilLine);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
@@ -191,6 +203,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         backdrop={backdrop}
         hasUnsentDraft={hasUnsentDraft}
         loading={isLoading}
+        waiting={workspace.waitingOn !== null}
         testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
       />
     );
@@ -200,6 +213,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         bucket={workspace.statusBucket}
         workspaceKind={workspace.workspaceKind}
         loading={isLoading}
+        waiting={workspace.waitingOn !== null}
         hasUnsentDraft={hasUnsentDraft}
         reserveIdleSpace={reserveIdleStatusIndicatorSpace}
       />
@@ -243,6 +257,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             prHint={workspace.prHint}
             serviceSummary={serviceSummary}
             nextRunAt={workspace.nextRunAt}
+            waitingOn={workspace.waitingOn}
             labels={labels}
             workingSubagentCount={workspace.workingSubagentCount}
             workspace={workspace}
@@ -293,12 +308,15 @@ function WorkspaceStatusIndicator({
   bucket,
   workspaceKind,
   loading = false,
+  waiting = false,
   reserveIdleSpace = true,
   hasUnsentDraft,
 }: {
   bucket: SidebarWorkspaceEntry["statusBucket"];
   workspaceKind: SidebarWorkspaceEntry["workspaceKind"];
   loading?: boolean;
+  /** The working chat is blocked on a background job: an hourglass, not the moving ring. */
+  waiting?: boolean;
   reserveIdleSpace?: boolean;
   hasUnsentDraft: boolean;
 }) {
@@ -314,6 +332,13 @@ function WorkspaceStatusIndicator({
     );
   }
 
+  if (waiting && bucket === "running") {
+    return (
+      <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-waiting">
+        <ThemedHourglass size={STATUS_INDICATOR_ALERT_SIZE} uniProps={waitingColorMapping} />
+      </View>
+    );
+  }
   if (shouldRenderSyncedStatusLoader({ bucket })) {
     return (
       <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-running">

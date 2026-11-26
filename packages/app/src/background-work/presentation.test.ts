@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { backgroundWorkText, tallyBackgroundWork } from "./presentation";
+import { backgroundWorkText, formatWaitingLabel, tallyBackgroundWork } from "./presentation";
 
 test("shows descriptions and commands once, with useful fallbacks", () => {
   expect(
@@ -17,6 +17,13 @@ test("shows descriptions and commands once, with useful fallbacks", () => {
     title: "Shell",
     command: null,
   });
+});
+
+test("a waiting label names the job, cuts long commands, and never reads as a bare word", () => {
+  expect(formatWaitingLabel("fork build")).toBe("Waiting: fork build");
+  expect(formatWaitingLabel("")).toBe("Waiting: background job");
+  expect(formatWaitingLabel("for i in $(seq 1 1200); do echo", 12)).toBe("Waiting: for i in $(…");
+  expect(formatWaitingLabel("npm test", 12)).toBe("Waiting: npm test");
 });
 
 test("a heartbeat waits for its time instead of counting as running work", () => {

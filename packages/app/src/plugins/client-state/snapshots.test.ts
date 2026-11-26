@@ -102,6 +102,7 @@ describe("sidebar entity snapshots", () => {
           status: "needs_input" as const,
           enteredAt: null,
           nextRunAt: null,
+          waitingOn: null,
           hasUnseenAgent: false,
         },
       ],

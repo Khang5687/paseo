@@ -9,6 +9,11 @@ export interface WorkspaceAgentActivity {
   enteredAt: Date | null;
   /** Earliest scheduled run among the workspace's root agents, whichever agent is latest. */
   nextRunAt: string | null;
+  /**
+   * The job the shown agent's turn waits on: its title, or "" when the provider names none.
+   * Null when the agent is not waiting.
+   */
+  waitingOn: string | null;
   // Whether any root agent here is a new main agent the user has not opened yet. Any root agent,
   // not only the latest, so a second agent starting does not hide the first one's highlight.
   hasUnseenAgent: boolean;
@@ -42,6 +47,12 @@ function keepEarliest(
   if (at && (!earliest || Date.parse(at) < Date.parse(earliest))) {
     byWorkspaceId.set(workspaceId, at);
   }
+}
+
+/** Only an open turn can be blocked; idle background work alone keeps the running ring. */
+function waitingOnTitle(agent: Agent): string | null {
+  if (agent.turn.phase !== "open") return null;
+  return agent.backgroundWork?.waitingOn?.title ?? null;
 }
 
 export function buildWorkspaceAgentActivityIndex(
@@ -78,6 +89,7 @@ export function buildWorkspaceAgentActivityIndex(
       status,
       enteredAt,
       nextRunAt: null,
+      waitingOn: waitingOnTitle(agent),
       hasUnseenAgent: false,
     });
   }
@@ -90,6 +102,7 @@ export function buildWorkspaceAgentActivityIndex(
       previousActivity?.agentId === activity.agentId &&
       previousActivity.status === activity.status &&
       previousActivity.nextRunAt === activity.nextRunAt &&
+      previousActivity.waitingOn === activity.waitingOn &&
       previousActivity.hasUnseenAgent === activity.hasUnseenAgent
     ) {
       activityByWorkspaceId.set(workspaceId, previousActivity);

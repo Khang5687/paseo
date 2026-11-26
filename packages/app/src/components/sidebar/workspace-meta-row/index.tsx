@@ -8,7 +8,7 @@ import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
 } from "@getpaseo/protocol/workspace-labels";
-import { formatNextRunLabel } from "@/background-work";
+import { formatNextRunLabel, formatWaitingLabel } from "@/background-work";
 import type { HostBadgeModel } from "@/hosts/appearance";
 import { HostBadge, HOST_BADGE_ICON_SIZE } from "@/hosts/host-badge";
 import { WorkspaceLabelChip, WORKSPACE_LABEL_CHIP_INSET } from "@/workspace-labels/chip";
@@ -78,6 +78,7 @@ export function WorkspaceMetaRow({
   prHint,
   serviceSummary,
   nextRunAt = null,
+  waitingOn = null,
   labels = EMPTY_LABELS,
   workingSubagentCount = 0,
   workspace = null,
@@ -90,6 +91,8 @@ export function WorkspaceMetaRow({
   serviceSummary: WorkspaceServiceSummary | null;
   /** When a heartbeat next wakes the workspace. Previews have none. */
   nextRunAt?: string | null;
+  /** The job the working chat waits on ("" when unnamed). Previews have none. */
+  waitingOn?: string | null;
   labels?: readonly WorkspaceLabelDefinition[];
   workingSubagentCount?: number;
   /** The real workspace behind the row; previews leave it out and get no plugin items. */
@@ -105,6 +108,7 @@ export function WorkspaceMetaRow({
     prHint,
     serviceSummary,
     nextRunAt,
+    waitingOn,
     labels,
     visible: rowItems,
     checksDisplay,
@@ -171,6 +175,9 @@ function MetaItemNode({
   }
   if (item.kind === "nextRun") {
     return <NextRunItem at={item.at} />;
+  }
+  if (item.kind === "waiting") {
+    return <WaitingItem title={item.title} />;
   }
   return <ServiceItem summary={item.summary} />;
 }
@@ -373,6 +380,17 @@ function NextRunItem({ at }: { at: string }) {
   );
 }
 
+/** Why the status slot shows an hourglass: the chat's turn is blocked on this job. */
+function WaitingItem({ title }: { title: string }) {
+  return (
+    <View style={styles.waitingItem} testID="sidebar-workspace-waiting">
+      <Text style={styles.prText} numberOfLines={1}>
+        {formatWaitingLabel(title)}
+      </Text>
+    </View>
+  );
+}
+
 const successMapping = (theme: Theme) => ({ color: theme.colors.statusSuccess });
 
 const PR_STATE_LABEL_KEYS = {
@@ -404,6 +422,13 @@ const styles = StyleSheet.create((theme) => ({
     gap: 3,
     minWidth: 0,
     flexShrink: 1,
+  },
+  // A long command shrinks before the identity beside it does.
+  waitingItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+    flexShrink: 2,
   },
   identityIcon: {
     flexShrink: 0,

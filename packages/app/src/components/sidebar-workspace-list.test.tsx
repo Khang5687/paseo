@@ -651,6 +651,7 @@ describe("sidebar group visibility", () => {
               status,
               enteredAt: null,
               nextRunAt: null,
+              waitingOn: null,
               hasUnseenAgent: false,
             },
           ],

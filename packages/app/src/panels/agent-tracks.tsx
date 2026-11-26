@@ -62,7 +62,7 @@ export const AgentTracks = memo(function AgentTracks({
     })();
   }, [archiveFinished]);
   const { tabId } = usePaneContext();
-  const backgroundWork = useSessionStore(
+  const backgroundWorkFields = useSessionStore(
     useShallow((state) => {
       const session = state.sessions[serverId];
       const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
@@ -71,9 +71,16 @@ export const AgentTracks = memo(function AgentTracks({
         count: summary?.count ?? 0,
         runningCount: summary?.runningCount,
         nextRunAt: summary?.nextRunAt,
+        waitingOnItemId: summary?.waitingOn?.itemId,
+        waitingOnTitle: summary?.waitingOn?.title,
       };
     }),
   );
+  const backgroundWork = useMemo(() => {
+    const { waitingOnItemId, waitingOnTitle, ...summary } = backgroundWorkFields;
+    if (waitingOnItemId === undefined) return summary;
+    return { ...summary, waitingOn: { itemId: waitingOnItemId, title: waitingOnTitle ?? "" } };
+  }, [backgroundWorkFields]);
   const backgroundModel = useMemo(
     () => createHostBackgroundWorkModel(serverId, agentId),
     [serverId, agentId],

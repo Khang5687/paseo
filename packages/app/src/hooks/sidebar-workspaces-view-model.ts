@@ -57,6 +57,8 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   hasRunningScripts: boolean;
   /** When a heartbeat on one of its chats next fires. */
   nextRunAt: string | null;
+  /** The job its working chat waits on ("" when unnamed); null when it is not waiting. */
+  waitingOn: string | null;
   // Subagents still working under a root agent that waits on the user. Zero while
   // the row already shows running, since the spinner says the same thing.
   workingSubagentCount: number;
@@ -157,6 +159,7 @@ export function createSidebarWorkspaceEntry(input: {
 }): SidebarWorkspaceEntry {
   const projectViewKey = input.projectViewKey ?? input.workspace.projectId;
   const effectiveStatus = deriveEffectiveWorkspaceStatus(input);
+  const activity = input.workspaceAgentActivity?.get(input.workspace.id);
   return {
     workspaceKey: `${input.serverId}:${input.workspace.id}`,
     serverId: input.serverId,
@@ -187,9 +190,10 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
-    nextRunAt: input.workspaceAgentActivity?.get(input.workspace.id)?.nextRunAt ?? null,
+    nextRunAt: activity?.nextRunAt ?? null,
+    waitingOn: activity?.waitingOn ?? null,
     workingSubagentCount: input.workspace.runningSubagentCount ?? 0,
-    isNew: input.workspaceAgentActivity?.get(input.workspace.id)?.hasUnseenAgent ?? false,
+    isNew: activity?.hasUnseenAgent ?? false,
   };
 }
 

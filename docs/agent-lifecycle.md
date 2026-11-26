@@ -547,6 +547,10 @@ Background work is what an agent keeps going outside its turn: provider shells a
 daemon watches, and heartbeats. The daemon keeps one list per agent
 (`packages/server/src/server/agent/background-work/`) and puts a summary on the agent payload;
 the app shows it as the Background pill above the composer (`packages/app/src/background-work/`).
+A running job row opens a details page: why the agent started it, the command, its run time, and
+its last 20 output lines, with Stop and Copy output. Providers that stream output send it as the
+item's `outputTail`. Output changes the list every second, so the session sends the agent payload
+again only when the summary changed (`forwardBackgroundWork` in `session.ts`).
 
 Work that runs now and work that waits for a time look different. A shell counts as running and
 draws the running ring. A heartbeat is `countsAsRunning: false` and carries `nextRunAt`, so the
@@ -554,6 +558,22 @@ agent and its workspace stay idle, and the pill, its list row and the sidebar ro
 "next <time>" instead of a spinner. The schedule service republishes `nextRunAt` on every schedule
 write, so the time moves on after each run. The sidebar takes the earliest `nextRunAt` among the
 workspace's root agents from the client-side activity index, not from the workspace descriptor.
+
+An agent whose turn is blocked on a job is waiting, not working. The provider marks that item
+`waitedOn`, and the summary names it in `waitingOn`. The chat shows a Waiting pill with an
+hourglass that opens the job's details, the turn footer swaps its loader for the same hourglass
+and label, and the sidebar row shows an hourglass and "Waiting: <job>" in place of the running
+ring. The app reads `waitingOn` only while the turn is open; when the turn moves on, the ring comes
+back. The "why" on the details page is the tool call's `intent`, which OMP sends only when intent
+tracing is on; without it the page starts at the command.
+
+OMP jobs come from its RPC events with no OMP change (`providers/omp/background-jobs.ts`). A
+`bash` or `eval` call with `async: true` ends with `details.async = {state: "running", jobId}`,
+then keeps sending `tool_execution_update` frames under the same tool call id, with the output so
+far and, last, a `completed`, `failed` or `cancelled` state. The `wait` tool reports the jobs it
+blocks on every 500 ms. Stop sends `/jobs kill <id>` as a prompt; OMP answers with
+`command_output`, which the provider swallows so it does not land in the chat. `task` jobs are
+subagents and stay in the subagents track.
 
 ## The subagents track
 

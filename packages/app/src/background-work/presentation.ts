@@ -18,6 +18,21 @@ export function formatNextRunLabel(iso: string, now = Date.now()): string {
     : i18n.t("message.backgroundWork.nextRunDue");
 }
 
+/** How much of a job's name fits in a one-line pill or footer; their panels carry all of it. */
+export const WAITING_SHORT_TITLE_CHARS = 32;
+
+/**
+ * "Waiting: fork build". A provider that names no job still gets a noun, never a bare word.
+ * `maxChars` cuts a long command for places that cannot ellipsize it themselves.
+ */
+export function formatWaitingLabel(title: string, maxChars?: number): string {
+  const job =
+    maxChars !== undefined && title.length > maxChars ? `${title.slice(0, maxChars - 1)}…` : title;
+  return i18n.t("message.backgroundWork.waitingOn", {
+    job: job || i18n.t("message.backgroundWork.unnamedJob"),
+  });
+}
+
 export interface BackgroundWorkTally {
   /** Work that is doing something now: shells, monitors, daemon watches. */
   running: number;

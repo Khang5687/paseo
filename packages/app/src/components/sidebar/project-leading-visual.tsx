@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { ActivityIndicator, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, CircleAlert, PencilLine } from "lucide-react-native";
+import { ChevronDown, ChevronRight, CircleAlert, Hourglass, PencilLine } from "lucide-react-native";
 import { ProjectIconView } from "@/components/project-icon-view";
 import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
 import { densityIconBox, densityIconProps } from "@/styles/density";
@@ -40,14 +40,17 @@ const STATUS_BADGE_OFFSET = -4;
 // no correction.
 //
 // The filled alert occupies the full badge shell so needs-input remains more prominent than
-// the passive status dots. The draft pencil leaves a margin so it reads as a mark, not a fill.
+// the passive status dots. The draft pencil and the waiting hourglass leave a margin so they read
+// as marks, not fills.
 const DRAFT_GLYPH_SIZE = 8;
+const WAITING_GLYPH_SIZE = 10;
 const DensityProjectIconView = withUnistyles(ProjectIconView);
 const projectIconProps = densityIconProps("md", () => ({}));
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedPencilLine = withUnistyles(PencilLine);
+const ThemedHourglass = withUnistyles(Hourglass);
 
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
@@ -55,6 +58,9 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
 const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
   fill: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
+});
+const waitingColorMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? undefined,
 });
 
 /**
@@ -122,6 +128,7 @@ export function ProjectStatusIndicator({
   backdrop,
   loading = false,
   hasUnsentDraft = false,
+  waiting = false,
   testID,
 }: {
   iconDataUri: string | null;
@@ -133,6 +140,8 @@ export function ProjectStatusIndicator({
   loading?: boolean;
   /** Marks an idle row whose chat tabs hold a prompt the user has not sent. */
   hasUnsentDraft?: boolean;
+  /** The working chat is blocked on a background job: an hourglass in place of the ring. */
+  waiting?: boolean;
   testID?: string;
 }) {
   const placeholderInitial = projectIconPlaceholderLabelFromDisplayName(displayName)
@@ -146,7 +155,12 @@ export function ProjectStatusIndicator({
   let badge: ReactNode = null;
   if (badgeContent !== null && badgeBucket !== null) {
     badge = (
-      <ProjectStatusBadge content={badgeContent} statusBucket={badgeBucket} backdrop={backdrop} />
+      <ProjectStatusBadge
+        content={badgeContent}
+        statusBucket={badgeBucket}
+        backdrop={backdrop}
+        waiting={waiting && !loading}
+      />
     );
   } else if (hasUnsentDraft) {
     badge = <ProjectDraftBadge backdrop={backdrop} />;
@@ -178,16 +192,32 @@ function ProjectStatusBadge({
   content,
   statusBucket,
   backdrop,
+  waiting,
 }: {
   content: ProjectStatusBadgeContent;
   statusBucket: SidebarStateBucket;
   backdrop: SidebarSurfaceBackdrop;
+  waiting: boolean;
 }) {
   const { t } = useTranslation();
+  const isRunning = content.kind === "dot" && content.bucket === "running";
+  // Waiting does not move, so it sits in the shell like the other glyphs.
+  if (isRunning && waiting) {
+    return (
+      <View
+        role="status"
+        accessibilityLabel={getStatusBucketLabel(statusBucket, t)}
+        style={[styles.statusBadge, getStatusBadgeBackdropStyle(backdrop)]}
+        testID="project-status-badge-waiting"
+      >
+        <ThemedHourglass size={WAITING_GLYPH_SIZE} uniProps={waitingColorMapping} />
+      </View>
+    );
+  }
   // Running skips the shell. The ring is wider than the 12pt shell and carries its own knockout,
   // so nesting it inside would clip it against the very thing that was meant to separate it from
   // the icon. It anchors to the same corner instead, growing around the centre the dot had.
-  if (content.kind === "dot" && content.bucket === "running") {
+  if (isRunning) {
     return (
       <View
         role="status"

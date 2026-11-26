@@ -973,6 +973,14 @@ export const AgentBackgroundWorkSummarySchema = z.object({
   runningCount: z.number().int().nonnegative().optional(),
   /** Earliest `nextRunAt` among the agent's scheduled items. */
   nextRunAt: z.string().optional(),
+  /** The job the agent's turn is blocked on, when it waits for one. */
+  waitingOn: z
+    .object({
+      itemId: z.string(),
+      /** The job's description or command; empty when the provider names neither. */
+      title: z.string(),
+    })
+    .optional(),
 });
 
 export type AgentBackgroundWorkSummary = z.infer<typeof AgentBackgroundWorkSummarySchema>;
@@ -6175,6 +6183,10 @@ export const AgentBackgroundWorkItemSchema = z.object({
   startedAt: z.string(),
   /** When scheduled work (a heartbeat) next fires. Scheduled work waits; it is not running. */
   nextRunAt: z.string().optional(),
+  /** The last lines the work printed, oldest first, at most 20. */
+  outputTail: z.array(z.string()).optional(),
+  /** The agent's turn is blocked until this work ends. */
+  waitedOn: z.boolean().optional(),
   canStop: z.boolean().optional(),
   stopToken: z.string().optional(),
 });

@@ -34,6 +34,7 @@ function makeEntry(
     scripts: [],
     hasRunningScripts: false,
     nextRunAt: null,
+    waitingOn: null,
     archiveHasUncommittedChanges: null,
     archiveUnpushedCommitCount: null,
     workingSubagentCount: 0,
