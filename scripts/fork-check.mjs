@@ -4,14 +4,17 @@
 // which fork PRs pass. See "Fork features and fork-check" in CLAUDE.md.
 //
 //   node scripts/fork-check.mjs                  typecheck + lint + unit tests
-//   node scripts/fork-check.mjs --e2e            also the Playwright specs (starts Metro + daemon)
-//   node scripts/fork-check.mjs --e2e --bail     skip the specs when static or unit checks already failed
+//   node scripts/fork-check.mjs --e2e            also the Playwright specs (starts Metro + daemon),
+//                                                beside the static and unit steps
+//   node scripts/fork-check.mjs --e2e --bail     run the specs after, and only if, those pass
+//   node scripts/fork-check.mjs --e2e-workers 2  Playwright workers (default: from free memory;
+//                                                E2E_WORKERS works too)
 //   node scripts/fork-check.mjs --pr 55 --pr 58  only those features' tests
 //   node scripts/fork-check.mjs --no-static      skip typecheck and lint
 //   node scripts/fork-check.mjs --report <file>  also write the Markdown report there
 //
 // Workspace declarations must be built first (npm run build:server && npm run build:plugin).
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,7 +22,9 @@ import { parseArgs } from "node:util";
 import {
   featureVerdicts,
   loadFeatures,
+  memAvailableGb,
   mergedForkPrs,
+  pickE2eWorkers,
   planTestRuns,
   playwrightFileResults,
   validateFeatures,
@@ -29,6 +34,7 @@ import {
 const { values: args } = parseArgs({
   options: {
     e2e: { type: "boolean", default: false },
+    "e2e-workers": { type: "string" },
     "no-static": { type: "boolean", default: false },
     bail: { type: "boolean", default: false },
     pr: { type: "string", multiple: true, default: [] },
@@ -50,20 +56,27 @@ const baseEnv = Object.fromEntries(
 );
 
 // Output goes straight to the log file, so a long step (the e2e run) can be followed with tail -f.
+// Async so the e2e step can run beside the static and unit steps.
 function run(name, command, commandArgs, { cwd = ".", env = {} } = {}) {
   const logPath = path.join(logDir, `${name}.log`);
   const started = Date.now();
   progress(`${name}: ${command} ${commandArgs.join(" ").slice(0, 160)}`);
   const log = openSync(logPath, "w");
-  const result = spawnSync(command, commandArgs, {
+  const child = spawn(command, commandArgs, {
     cwd: path.join(root, cwd),
     env: { ...baseEnv, ...env },
     stdio: ["ignore", log, log],
   });
   closeSync(log);
-  const seconds = Math.round((Date.now() - started) / 1000);
-  progress(`${name}: exit ${result.status} in ${seconds}s (log ${logPath})`);
-  return { ok: result.status === 0, logPath };
+  return new Promise((resolve) => {
+    const finish = (status) => {
+      const seconds = Math.round((Date.now() - started) / 1000);
+      progress(`${name}: exit ${status} in ${seconds}s (log ${logPath})`);
+      resolve({ ok: status === 0, logPath });
+    };
+    child.once("error", () => finish("error"));
+    child.once("close", finish);
+  });
 }
 
 function readJson(file) {
@@ -96,64 +109,91 @@ const listErrors = validateFeatures(features, {
 });
 
 const staticResults = [];
-if (!args["no-static"]) {
-  staticResults.push({ name: "typecheck", ...run("typecheck", "npm", ["run", "typecheck"]) });
-  staticResults.push({ name: "lint", ...run("lint", "npm", ["run", "lint"]) });
-}
-
 const results = new Map();
 // Files that failed, then passed when rerun alone. A nightly run shares the machine with
 // whatever else is going on, and timing-sensitive tests fail under load.
 const flaky = [];
 const active = features.filter((f) => f.retired === undefined);
 const testFiles = active.flatMap((f) => f.tests).filter((f) => existsSync(path.join(root, f)));
-for (const [index, testRun] of planTestRuns(testFiles).entries()) {
-  if (testRun.kind === "node-test") {
-    for (const file of testRun.files) {
-      results.set(file, run(`node-test-${path.basename(file)}`, "node", ["--test", file]).ok);
-    }
-    continue;
+
+// Typecheck, lint, then the unit tests one package at a time.
+async function staticAndUnitStep() {
+  if (!args["no-static"]) {
+    staticResults.push({
+      name: "typecheck",
+      ...(await run("typecheck", "npm", ["run", "typecheck"])),
+    });
+    staticResults.push({ name: "lint", ...(await run("lint", "npm", ["run", "lint"])) });
   }
-  const name = `vitest-${index}-${path.basename(testRun.cwd)}${testRun.project ? `-${testRun.project}` : ""}`;
-  const vitest = (attempt, files) => {
-    const jsonPath = path.join(logDir, `${attempt}.json`);
-    run(
-      attempt,
-      "npx",
-      [
-        "vitest",
-        "run",
-        ...(testRun.project ? ["--project", testRun.project] : []),
-        "--maxWorkers=2",
-        // fork-check looks for behavior regressions, not speed. Some upstream tests sit near
-        // Vitest's 5s default on macOS and fail whenever the machine is busy.
-        "--testTimeout=30000",
-        "--reporter=json",
-        `--outputFile=${jsonPath}`,
-        ...files.map((file) => path.relative(testRun.cwd, file)),
-      ],
-      { cwd: testRun.cwd },
-    );
-    return vitestFileResults(readJson(jsonPath), root, files);
-  };
-  const first = vitest(name, testRun.files);
-  const failedFirst = testRun.files.filter((file) => !first.get(file));
-  const retry = failedFirst.length > 0 ? vitest(`${name}-retry`, failedFirst) : new Map();
-  for (const file of testRun.files) {
-    const ok = first.get(file) || retry.get(file) === true;
-    if (!first.get(file) && ok) flaky.push(file);
-    results.set(file, ok);
+  for (const [index, testRun] of planTestRuns(testFiles).entries()) {
+    if (testRun.kind === "node-test") {
+      for (const file of testRun.files) {
+        results.set(
+          file,
+          (await run(`node-test-${path.basename(file)}`, "node", ["--test", file])).ok,
+        );
+      }
+      continue;
+    }
+    const name = `vitest-${index}-${path.basename(testRun.cwd)}${testRun.project ? `-${testRun.project}` : ""}`;
+    const vitest = async (attempt, files) => {
+      const jsonPath = path.join(logDir, `${attempt}.json`);
+      await run(
+        attempt,
+        "npx",
+        [
+          "vitest",
+          "run",
+          ...(testRun.project ? ["--project", testRun.project] : []),
+          "--maxWorkers=2",
+          // fork-check looks for behavior regressions, not speed. Some upstream tests sit near
+          // Vitest's 5s default on macOS and fail whenever the machine is busy.
+          "--testTimeout=30000",
+          "--reporter=json",
+          `--outputFile=${jsonPath}`,
+          ...files.map((file) => path.relative(testRun.cwd, file)),
+        ],
+        { cwd: testRun.cwd },
+      );
+      return vitestFileResults(readJson(jsonPath), root, files);
+    };
+    const first = await vitest(name, testRun.files);
+    const failedFirst = testRun.files.filter((file) => !first.get(file));
+    const retry = failedFirst.length > 0 ? await vitest(`${name}-retry`, failedFirst) : new Map();
+    for (const file of testRun.files) {
+      const ok = first.get(file) || retry.get(file) === true;
+      if (!first.get(file) && ok) flaky.push(file);
+      results.set(file, ok);
+    }
   }
 }
 
-const failedBeforeE2e =
-  listErrors.length > 0 ||
-  staticResults.some((r) => !r.ok) ||
-  [...results.values()].some((ok) => !ok);
-const e2eSkipped = args.e2e && args.bail && failedBeforeE2e;
-if (e2eSkipped) {
-  progress("e2e: skipped (--bail; static or unit checks already failed)");
-} else if (args.e2e) {
+// Typecheck and the unit tests may still be running when the e2e step starts (see below), so
+// leave them room: tsgo and two Vitest workers peak around 3 GB together.
+const PARALLEL_RESERVE_GB = 3;
+
+// `--e2e-workers` or E2E_WORKERS wins; otherwise free memory decides. Without /proc/meminfo
+// (macOS) that is one worker, as before.
+function chooseE2eWorkers(reserveGb) {
+  const forced = args["e2e-workers"] ?? process.env.E2E_WORKERS;
+  if (forced !== undefined) {
+    const workers = Number(forced);
+    if (!Number.isInteger(workers) || workers < 1) {
+      throw new Error(`e2e workers must be a positive integer, got "${forced}"`);
+    }
+    return { workers, why: "override" };
+  }
+  let availableGb = null;
+  try {
+    availableGb = memAvailableGb(readFileSync("/proc/meminfo", "utf8"));
+  } catch {}
+  if (availableGb === null) return { workers: 1, why: "free memory unknown" };
+  const workers = pickE2eWorkers(availableGb, reserveGb);
+  const reserved = reserveGb > 0 ? `, ${reserveGb} GB kept for the unit steps` : "";
+  return { workers, why: `${availableGb.toFixed(1)} GB available${reserved}` };
+}
+
+async function e2eStep({ reserveGb }) {
   const specs = [...new Set(active.flatMap((f) => f.e2e ?? []))].filter((f) =>
     existsSync(path.join(root, f)),
   );
@@ -161,32 +201,59 @@ if (e2eSkipped) {
   // fetch it; without it every spec fails at launch. A no-op when this version is installed.
   const browser =
     specs.length > 0
-      ? run("playwright-install", "npx", ["playwright", "install", "chromium"], {
+      ? await run("playwright-install", "npx", ["playwright", "install", "chromium"], {
           cwd: "packages/app",
         })
       : { ok: true };
   if (!browser.ok) {
     progress("e2e: not run (playwright install chromium failed); every spec counts as failed");
     for (const spec of specs) results.set(spec, false);
-  } else if (specs.length > 0) {
-    const jsonPath = path.join(logDir, "e2e.json");
-    run(
-      "e2e",
-      "npx",
-      [
-        "playwright",
-        "test",
-        "--project=browser",
-        "--retries=1",
-        // list streams each spec to the log as it finishes; json is what the verdicts read.
-        "--reporter=list,json",
-        ...specs.map((spec) => path.relative("packages/app", spec)),
-      ],
-      { cwd: "packages/app", env: { PLAYWRIGHT_JSON_OUTPUT_NAME: jsonPath } },
-    );
-    const report = readJson(jsonPath);
-    for (const [file, ok] of playwrightFileResults(report, "packages/app/e2e/browser", specs)) {
-      results.set(file, ok);
+    return;
+  }
+  if (specs.length === 0) return;
+  const { workers, why } = chooseE2eWorkers(reserveGb);
+  progress(`e2e: ${workers} Playwright worker${workers === 1 ? "" : "s"} (${why})`);
+  const jsonPath = path.join(logDir, "e2e.json");
+  await run(
+    "e2e",
+    "npx",
+    [
+      "playwright",
+      "test",
+      "--project=browser",
+      "--retries=1",
+      // list streams each spec to the log as it finishes; json is what the verdicts read.
+      "--reporter=list,json",
+      ...specs.map((spec) => path.relative("packages/app", spec)),
+    ],
+    {
+      cwd: "packages/app",
+      env: { PLAYWRIGHT_JSON_OUTPUT_NAME: jsonPath, E2E_WORKERS: String(workers) },
+    },
+  );
+  const report = readJson(jsonPath);
+  for (const [file, ok] of playwrightFileResults(report, "packages/app/e2e/browser", specs)) {
+    results.set(file, ok);
+  }
+}
+
+// The e2e step is the long one and starts its own Metro and daemon, so it runs beside the
+// static and unit steps. --bail keeps the old order: e2e only after those pass.
+let e2eSkipped = false;
+if (args.e2e && !args.bail) {
+  await Promise.all([staticAndUnitStep(), e2eStep({ reserveGb: PARALLEL_RESERVE_GB })]);
+} else {
+  await staticAndUnitStep();
+  if (args.e2e) {
+    const failedBeforeE2e =
+      listErrors.length > 0 ||
+      staticResults.some((r) => !r.ok) ||
+      [...results.values()].some((ok) => !ok);
+    if (failedBeforeE2e) {
+      e2eSkipped = true;
+      progress("e2e: skipped (--bail; static or unit checks already failed)");
+    } else {
+      await e2eStep({ reserveGb: 0 });
     }
   }
 }
