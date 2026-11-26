@@ -24,6 +24,7 @@ test("Settings > Files shows Ask where to save on, and a browser says it does no
   await expect(ask.getByRole("switch")).toBeChecked();
   await expect(ask.getByRole("switch")).toBeDisabled();
   await expect(ask.getByText("Your browser decides where downloads go")).toBeVisible();
+  await section.scrollIntoViewIfNeeded();
   await expect(section).toBeInViewport();
   await page.screenshot({ path: test.info().outputPath("save-location-setting.png") });
 });

@@ -122,13 +122,13 @@ interface NotificationOpenRouterDeps {
 export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
   const handledIds = new Set<string>();
   let launchTaken = false;
-  async function openPlace(target: NotificationPlaceTarget) {
+  function openPlace(target: NotificationPlaceTarget): void | Promise<void> {
     if (target.kind === "agent") {
       deps.openAgent({ serverId: target.serverId, agentId: target.agentId });
     } else if (target.kind === "terminal") {
       deps.openTerminal(target);
     } else if (target.kind === "plugin" && deps.openPlugin) {
-      await deps.openPlugin(target);
+      return deps.openPlugin(target);
     } else {
       deps.openRoute(buildHostRootRoute(target.serverId));
     }
@@ -150,7 +150,8 @@ export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
     } else if (target?.kind === "file") {
       await deps.openSentFile({ serverId: target.serverId, path: target.path }).catch(() => {});
     } else if (target) {
-      await openPlace(target);
+      const opened = openPlace(target);
+      if (opened) await opened;
     }
     deps.source.acknowledge(tap);
   }
