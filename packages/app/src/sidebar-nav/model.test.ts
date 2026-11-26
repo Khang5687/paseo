@@ -134,6 +134,38 @@ describe("resolveSidebarNavItems for the Usage item", () => {
   });
 });
 
+describe("resolveSidebarNavItems on the compact layout", () => {
+  const resolve = (preferences: SidebarNavPreference[], compact: boolean) =>
+    summarize(
+      resolveSidebarNavItems({ section: "header", pluginGroups: [kanban], preferences, compact }),
+    );
+
+  it("starts Notes hidden on the phone and shown on desktop", () => {
+    expect(resolve([], true)).toContainEqual({ key: "notes", visible: false });
+    expect(resolve([], true)).toContainEqual({ key: kanbanKey, visible: true });
+    expect(resolve([], false)).toContainEqual({ key: "notes", visible: true });
+  });
+
+  it("lets a stored choice win over the phone default", () => {
+    expect(resolve([{ key: "notes", visible: true }], true)).toContainEqual({
+      key: "notes",
+      visible: true,
+    });
+  });
+
+  it("keeps Notes hidden when another phone button is toggled", () => {
+    const items = resolveSidebarNavItems({
+      section: "header",
+      pluginGroups: [kanban],
+      preferences: [],
+      compact: true,
+    });
+    const next = setSidebarNavItemVisible({ items, key: "history", visible: false, previous: [] });
+    expect(next).toContainEqual({ key: "history", visible: false });
+    expect(next).toContainEqual({ key: "notes", visible: false });
+  });
+});
+
 describe("setSidebarNavItemVisible", () => {
   it("toggles one item and writes the full resolved order", () => {
     const items = resolveSidebarNavItems({

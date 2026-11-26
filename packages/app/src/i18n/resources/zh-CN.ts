@@ -1316,6 +1316,10 @@ export const zhCN: TranslationResources = {
       nextWaiting: "下一个等待中 · {{count}}",
       quietMore: "更多 · {{count}} 个安静项目",
     },
+    navButtons: {
+      title: "显示的按钮",
+      done: "完成",
+    },
     view: {
       failed: "无法加载侧边栏视图。",
       useDefault: "使用默认视图",

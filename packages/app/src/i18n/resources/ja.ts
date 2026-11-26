@@ -1340,6 +1340,10 @@ export const ja: TranslationResources = {
       nextWaiting: "次の待機中 · {{count}}",
       quietMore: "その他 · 静かな {{count}} 件",
     },
+    navButtons: {
+      title: "表示するボタン",
+      done: "完了",
+    },
     view: {
       failed: "サイドバーのビューを読み込めませんでした。",
       useDefault: "デフォルトのビューを使用",

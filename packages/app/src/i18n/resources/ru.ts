@@ -1344,6 +1344,10 @@ export const ru: TranslationResources = {
       nextWaiting: "Следующее ожидающее · {{count}}",
       quietMore: "Ещё · тихих: {{count}}",
     },
+    navButtons: {
+      title: "Показывать кнопки",
+      done: "Готово",
+    },
     view: {
       failed: "Не удалось загрузить вид боковой панели.",
       useDefault: "Использовать стандартный вид",

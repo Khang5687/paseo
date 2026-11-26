@@ -1,21 +1,8 @@
 import { SidebarViewPicker } from "@/plugins/sidebar-view";
-import { useCallback, useMemo, type ComponentType, type ReactElement } from "react";
+import { useCallback, useMemo, type ReactElement } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
-import {
-  ArrowDown,
-  ArrowUp,
-  Blocks,
-  CalendarClock,
-  Gauge,
-  HardDriveDownload,
-  History,
-  NotebookPen,
-  Plus,
-  Search,
-  type LucideIcon,
-} from "lucide-react-native";
+import { ArrowDown, ArrowUp } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -23,13 +10,15 @@ import { Switch } from "@/components/ui/switch";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import {
-  builtinSidebarNavLabelKey,
   builtinSidebarNavShortcutAction,
-  type BuiltinSidebarItemId,
   type SidebarNavItem,
   type SidebarSection,
 } from "@/sidebar-nav/model";
-import { pluginIconComponent } from "@/plugins/icons";
+import {
+  sidebarNavItemIcon,
+  sidebarNavItemLabel,
+  type SidebarNavIconComponent,
+} from "@/sidebar-nav/item-presentation";
 import { useSidebarNavItems } from "@/sidebar-nav/use-sidebar-nav-items";
 import { settingsStyles } from "@/styles/settings";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
@@ -42,35 +31,11 @@ const ThemedArrowDown = withUnistyles(ArrowDown);
 const moveUpIcon = <ThemedArrowUp size={ICON_SIZE.sm} uniProps={mutedColorMapping} />;
 const moveDownIcon = <ThemedArrowDown size={ICON_SIZE.sm} uniProps={mutedColorMapping} />;
 
-const BUILTIN_ICONS: Record<BuiltinSidebarItemId, LucideIcon> = {
-  "new-workspace": Plus,
-  history: History,
-  search: Search,
-  schedules: CalendarClock,
-  notes: NotebookPen,
-  usage: Gauge,
-  saved: HardDriveDownload,
-};
-
-/** Plugin items register no icon, so they share this one; a legacy `addSidebarItem` keeps its own. */
-const PLUGIN_ICON = Blocks;
-
-type NavIconComponent = ComponentType<{ size: number; color: string }>;
-
-function NavIcon({ Icon, color = "" }: { Icon: NavIconComponent; color?: string }) {
+function NavIcon({ Icon, color = "" }: { Icon: SidebarNavIconComponent; color?: string }) {
   return <Icon size={ICON_SIZE.md} color={color} />;
 }
 
 const ThemedNavIcon = withUnistyles(NavIcon);
-
-function navItemIcon(item: SidebarNavItem): NavIconComponent {
-  if (item.kind === "builtin") return BUILTIN_ICONS[item.id];
-  return item.group.kind === "legacy" ? pluginIconComponent(item.group.icon) : PLUGIN_ICON;
-}
-
-function navItemLabel(t: TFunction, item: SidebarNavItem): string {
-  return item.kind === "builtin" ? t(builtinSidebarNavLabelKey(item.id)) : item.group.title;
-}
 
 /** Own component so the row can stay hook-free about which items have a shortcut. */
 function NavItemShortcut({ item }: { item: SidebarNavItem }): ReactElement | null {
@@ -96,7 +61,7 @@ function SidebarNavRow({
   onSetVisible,
 }: SidebarNavRowProps): ReactElement {
   const { t } = useTranslation();
-  const label = navItemLabel(t, item);
+  const label = sidebarNavItemLabel(t, item);
 
   const handleMoveUp = useCallback(() => onMove(item.key, "up"), [item.key, onMove]);
   const handleMoveDown = useCallback(() => onMove(item.key, "down"), [item.key, onMove]);
@@ -113,7 +78,7 @@ function SidebarNavRow({
   return (
     <View style={rowStyle} testID={`sidebar-nav-item-${item.key}`}>
       <View style={styles.rowMain}>
-        <ThemedNavIcon Icon={navItemIcon(item)} uniProps={mutedColorMapping} />
+        <ThemedNavIcon Icon={sidebarNavItemIcon(item)} uniProps={mutedColorMapping} />
         <Text style={settingsStyles.rowTitle} numberOfLines={1}>
           {label}
         </Text>

@@ -1336,6 +1336,10 @@ export const en = {
       nextWaiting: "Next waiting · {{count}}",
       quietMore: "More · {{count}} quiet",
     },
+    navButtons: {
+      title: "Buttons to show",
+      done: "Done",
+    },
     view: {
       failed: "Sidebar view failed to load.",
       useDefault: "Use default view",

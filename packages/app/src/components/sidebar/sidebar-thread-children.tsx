@@ -259,12 +259,14 @@ const SidebarThreadChildRow = memo(function SidebarThreadChildRow({
             <SidebarNoteBadge badge={noteBadge} />
             {noteAgentId && showActions ? (
               <View style={styles.rowAction}>
-                <SidebarWorkspaceIconButton
-                  renderIcon={renderCopyAgentIdIcon}
-                  label={t("sidebar.workspace.actions.copyAgentId")}
-                  onPress={handleCopyAgentId}
-                  testID={`sidebar-thread-child-copy-agent-id-${row.id}`}
-                />
+                {isCompact ? null : (
+                  <SidebarWorkspaceIconButton
+                    renderIcon={renderCopyAgentIdIcon}
+                    label={t("sidebar.workspace.actions.copyAgentId")}
+                    onPress={handleCopyAgentId}
+                    testID={`sidebar-thread-child-copy-agent-id-${row.id}`}
+                  />
+                )}
                 <SidebarThreadChildMenu
                   {...kebab.menuProps}
                   agentId={noteAgentId}

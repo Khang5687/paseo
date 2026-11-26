@@ -1680,6 +1680,7 @@ function ProjectBlock({
   const activeServerId = activeWorkspaceSelection?.serverId ?? null;
   const activeHostStatus = useHostRuntimeConnectionStatus(activeServerId ?? "");
   const preferredServerId = activeHostStatus === "online" ? activeServerId : null;
+  const isCompact = useIsCompactFormFactor();
   const rowModel = useMemo(
     () =>
       buildSidebarProjectRowModel({
@@ -1880,7 +1881,9 @@ function ProjectBlock({
           ) : null}
         </>
       );
-    } else if (rowModel.trailingAction.kind === "new_workspace") {
+    } else if (rowModel.trailingAction.kind === "new_workspace" && !isCompact) {
+      // On the compact layout the + on the project header is the one way in, which keeps the
+      // list light; the ghost row stays on desktop.
       projectChildren = (
         <NewWorkspaceGhostRow
           project={project}
