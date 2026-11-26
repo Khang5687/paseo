@@ -116,15 +116,17 @@ const flaky = [];
 const active = features.filter((f) => f.retired === undefined);
 const testFiles = active.flatMap((f) => f.tests).filter((f) => existsSync(path.join(root, f)));
 
-// Typecheck, lint, then the unit tests one package at a time.
-async function staticAndUnitStep() {
-  if (!args["no-static"]) {
-    staticResults.push({
-      name: "typecheck",
-      ...(await run("typecheck", "npm", ["run", "typecheck"])),
-    });
-    staticResults.push({ name: "lint", ...(await run("lint", "npm", ["run", "lint"])) });
-  }
+async function staticStep() {
+  if (args["no-static"]) return;
+  staticResults.push({
+    name: "typecheck",
+    ...(await run("typecheck", "npm", ["run", "typecheck"])),
+  });
+  staticResults.push({ name: "lint", ...(await run("lint", "npm", ["run", "lint"])) });
+}
+
+// The unit tests, one package at a time.
+async function unitStep() {
   for (const [index, testRun] of planTestRuns(testFiles).entries()) {
     if (testRun.kind === "node-test") {
       for (const file of testRun.files) {
@@ -168,9 +170,11 @@ async function staticAndUnitStep() {
   }
 }
 
-// Typecheck and the unit tests may still be running when the e2e step starts (see below), so
-// leave them room: tsgo and two Vitest workers peak around 3 GB together.
-const PARALLEL_RESERVE_GB = 3;
+// The unit tests may still be running when the e2e step starts (see below), so leave them
+// room. Measured on the Omen: with 3 workers the run itself took about 10 GB, and
+// MemAvailable should stay above 5 GB so earlyoom has nothing to kill. Other agents' builds
+// and emulators take memory too, which is why the reserve is generous.
+const PARALLEL_RESERVE_GB = 5;
 
 // `--e2e-workers` or E2E_WORKERS wins; otherwise free memory decides. Without /proc/meminfo
 // (macOS) that is one worker, as before.
@@ -237,13 +241,16 @@ async function e2eStep({ reserveGb }) {
   }
 }
 
-// The e2e step is the long one and starts its own Metro and daemon, so it runs beside the
-// static and unit steps. --bail keeps the old order: e2e only after those pass.
+// The e2e step is the long one and starts its own Metro and daemon, so it runs beside the unit
+// tests. It waits for typecheck and lint: Metro's first bundle compile is CPU-bound, and under
+// a busy machine it ran past its 2 minute warmup while typecheck was still going. --bail keeps
+// the old order: e2e only after everything else passes.
 let e2eSkipped = false;
+await staticStep();
 if (args.e2e && !args.bail) {
-  await Promise.all([staticAndUnitStep(), e2eStep({ reserveGb: PARALLEL_RESERVE_GB })]);
+  await Promise.all([unitStep(), e2eStep({ reserveGb: PARALLEL_RESERVE_GB })]);
 } else {
-  await staticAndUnitStep();
+  await unitStep();
   if (args.e2e) {
     const failedBeforeE2e =
       listErrors.length > 0 ||
