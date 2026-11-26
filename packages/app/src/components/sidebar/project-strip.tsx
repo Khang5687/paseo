@@ -1,7 +1,15 @@
-import { Ellipsis, LayoutGrid } from "lucide-react-native";
-import { memo, type ReactNode, type RefObject, useCallback, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Ellipsis, LayoutGrid } from "lucide-react-native";
+import {
+  memo,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { ScrollView, Text, View } from "react-native";
+import { type LayoutChangeEvent, ScrollView, Text, View } from "react-native";
 import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { DraggableList, DraggableListHandle } from "@/components/draggable-list";
@@ -47,10 +55,14 @@ import {
 
 const RAIL_ICON_SIZE = 28;
 const CHIP_ICON_SIZE = 18;
+/** The chip row's left and right padding; theme spacing 3. */
+const CHIP_ROW_INSET = 12;
 const PROJECT_JUMP_HELP_ID = "sidebar-project-jump-index";
 
 const ThemedLayoutGrid = withUnistyles(LayoutGrid);
 const ThemedEllipsis = withUnistyles(Ellipsis);
+const ThemedChevronLeft = withUnistyles(ChevronLeft);
+const ThemedChevronRight = withUnistyles(ChevronRight);
 const allIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 /** Hover state for the docs/hover.md pattern: the outer View listens, the inner press is separate. */
@@ -414,10 +426,14 @@ export function SidebarProjectChipRow({
   // instead of closing the sidebar. The relation lives on a Native gesture: the gesture-handler
   // ScrollView's blocksHandlers prop reaches native unconverted, and copying the close pan's ref
   // through it ran Android out of memory at launch.
+  // Android's Native gesture cancels itself when the finger leaves the view, which freed the
+  // waiting close pan mid-drag: a drag that slid down off the row onto the list closed the
+  // sidebar. Keeping it alive outside the row makes the drag the row's until the finger lifts.
   const chipScrollGesture = useMemo(
-    () => Gesture.Native().blocksExternalGesture(closeGestureRef),
+    () => Gesture.Native().shouldCancelWhenOutside(false).blocksExternalGesture(closeGestureRef),
     [closeGestureRef],
   );
+  const chipScrollRef = useRef<ScrollView>(null);
 
   if (!model) return null;
 
@@ -445,13 +461,14 @@ export function SidebarProjectChipRow({
         />
       ))}
       {model.quietProjects.length > 0 ? (
-        <QuietChips model={model} showNumber={showNumbers} />
+        <QuietChips model={model} showNumber={showNumbers} scrollRef={chipScrollRef} />
       ) : null}
     </>
   );
 
   const chipScroll = (
     <ScrollView
+      ref={chipScrollRef}
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.chipRowContent}
@@ -476,18 +493,50 @@ export function SidebarProjectChipRow({
   );
 }
 
-/** The chip row's "More": a chip that opens the quiet projects as chips after it. */
-function QuietChips({ model, showNumber }: { model: ProjectStripModel; showNumber: boolean }) {
+/**
+ * The chip row's "More": a chip that opens the quiet projects as chips after it. "More" sits at
+ * the row's end, so the opened chips land past the right edge; opening scrolls the row to show
+ * them, or the tap looks like it did nothing.
+ */
+function QuietChips({
+  model,
+  showNumber,
+  scrollRef,
+}: {
+  model: ProjectStripModel;
+  showNumber: boolean;
+  scrollRef: RefObject<ScrollView | null>;
+}) {
   const { t } = useTranslation();
   const open = useSidebarQuietFoldStore((state) => state.open);
   const toggle = useSidebarQuietFoldStore((state) => state.toggle);
+  const moreXRef = useRef(0);
+  const revealRef = useRef(false);
+  const handleMoreLayout = useCallback((event: LayoutChangeEvent) => {
+    moreXRef.current = event.nativeEvent.layout.x;
+  }, []);
+  const handlePress = useCallback(() => {
+    revealRef.current = !open;
+    toggle();
+  }, [open, toggle]);
+  // Runs once the opened chips have laid out, so the row's content is already wide enough to
+  // scroll to. "More" lands at the row's left inset with the quiet chips after it.
+  const handleQuietLayout = useCallback(() => {
+    if (!revealRef.current) return;
+    revealRef.current = false;
+    scrollRef.current?.scrollTo({
+      x: Math.max(0, moreXRef.current - CHIP_ROW_INSET),
+      animated: true,
+    });
+  }, [scrollRef]);
   return (
     <>
       <PressHighlight
         accessibilityRole="button"
         aria-expanded={open}
         highlightStyle={styles.chipPressed}
-        onPress={toggle}
+        onLayout={handleMoreLayout}
+        onPress={handlePress}
         style={[styles.chip, open ? styles.chipOpen : null]}
         testID="sidebar-project-chip-more"
       >
@@ -495,9 +544,15 @@ function QuietChips({ model, showNumber }: { model: ProjectStripModel; showNumbe
         <Text style={styles.chipMutedText} numberOfLines={1}>
           {t("sidebar.projectStrip.quietMore", { count: model.quietProjects.length })}
         </Text>
+        {open ? (
+          <ThemedChevronLeft size={14} uniProps={allIconMapping} />
+        ) : (
+          <ThemedChevronRight size={14} uniProps={allIconMapping} />
+        )}
       </PressHighlight>
-      {open
-        ? model.quietProjects.map((project, index) => (
+      {open ? (
+        <View style={styles.quietChips} onLayout={handleQuietLayout}>
+          {model.quietProjects.map((project, index) => (
             <ProjectChip
               key={project.viewKey}
               project={project}
@@ -507,8 +562,9 @@ function QuietChips({ model, showNumber }: { model: ProjectStripModel; showNumbe
               selected={model.selectedKeys.has(project.viewKey)}
               showNumber={showNumber}
             />
-          ))
-        : null}
+          ))}
+        </View>
+      ) : null}
     </>
   );
 }
@@ -728,6 +784,11 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: 10,
     fontWeight: theme.fontWeight.semibold,
     lineHeight: 12,
+  },
+  quietChips: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
   },
   tooltipRow: {
     flexDirection: "row",

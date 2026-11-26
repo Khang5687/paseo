@@ -8,13 +8,14 @@ The strip owns no store.
 
 - **Selection is the project filter.** Picking a project calls `showOnlyProject`, which sets `projectFilters` to that one key; All clears it. The display menu's Project filter and the strip are two views of one value, so a filter picked in either shows in both. A multi-project filter from the menu marks each of its projects selected in the strip.
 - **Order is the sidebar's project order.** `useSidebarOrderStore.projectOrder` orders the strip and the project groups in the list. Moving a project in one moves it in the other. Saves go through `mergeWithRemainder`, so projects a host filter hides keep their place.
+- **Projects are the ones the list can show.** The strip skips a project whose every workspace the display filters hide (background workspaces while Show background is off, a label filter), so a chip never opens an empty list. The project filter does not narrow the strip: it is the strip's own selection.
 - **Numbers are strip positions.** The first nine projects get Cmd/Ctrl+1-9 (Alt+1-9 on web), published through `sidebarShortcutProjects` by `WorkspaceShortcutTargetsSubscriber`. See [keyboard-shortcuts.md](keyboard-shortcuts.md#digit-groups) for how the three digit groups split the modifiers.
 
 ## Layout rules
 
 - The strip shows only with two or more projects. With one there is nothing to switch, and the digit keys publish no project targets.
 - The desktop rail sits inside the sidebar's width (52 px), below the window chrome row, so the titlebar drag region and the resize handle keep their places.
-- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to first, Move earlier, Move later. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan so the scroll wins.
+- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to first, Move earlier, Move later. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
 
 ## The phone's top buttons
 
@@ -56,7 +57,8 @@ A project with no chat activity for 3 days folds into "More": on the rail, on th
 - **Activity** is the newest of a workspace's creation, last prompt, status change, and its root agent's last status change, across the project (`deriveProjectActivity`). A project with nothing known stays out: unknown is not quiet.
 - **Never folds:** a project with a workspace waiting on you, the project of the open workspace, a project with a pinned workspace, and a project the filter picked. When every project would fold, none does.
 - **Time** is read hourly (`useQuietProjectKeys`), so a project folds within an hour of crossing 3 days.
-- **One toggle.** "More" opens on the rail, the chips and the list together (`useSidebarQuietFoldStore`, not persisted, so quiet projects start folded each launch). Opened projects list after the ones that show and don't drag on the rail.
+- **One toggle.** "More" opens on the rail, the chips and the list together (`useSidebarQuietFoldStore`, not persisted, so quiet projects start folded each launch). Opened projects list after the ones that show and don't drag on the rail. Opening it on the chip row scrolls the row so "More" sits at its left edge with the opened chips after it; without that they land past the right edge.
+- **One count.** The strip and the list fold from the same projects (`displayProjects` in `sidebar-model.tsx`), so the chip and the list's "More" row show the same number.
 - **Digits** count the projects that show first, then the quiet ones, matching the rail.
 - The list folds only in project grouping with no project filter. Status grouping has no project rows to fold.
 

@@ -125,6 +125,10 @@ definition, no longer eligible to begin.
   sidebar chip row passed the close pan's ref through it, Android copied the whole gesture into the
   handler config, and the app ran out of memory at launch with its JS thread stuck in
   `createGestureHandler`.
+- A `Gesture.Native()` that blocks a panel gesture needs `.shouldCancelWhenOutside(false)`. On
+  Android it defaults to `true`, so the scroller's handler cancels when the finger leaves its view,
+  and the panel gesture it was blocking activates mid-drag. A sideways drag on the sidebar chip row
+  that slid down onto the list closed the sidebar this way.
 - Sidebars render through `MobilePanelOverlay`; do not duplicate overlay lifecycle or motion styles
   in sidebar components. The wide left sidebar keeps the same content and gesture hosts when switching
   between dock and overlay. App chrome owns mounting and presentation; settled panel activity owns

@@ -34,6 +34,17 @@ async function seedQuietAndWaiting(): Promise<[SeededWorkspace, SeededWorkspace]
   return [quiet, waiting];
 }
 
+/** A pinned project never folds, however quiet. */
+async function seedPinned(repoPrefix: string): Promise<SeededWorkspace> {
+  const seeded = await seedWorkspace({ repoPrefix, title: "Pinned work" });
+  await seeded.client.setWorkspacePinned(seeded.workspaceId, true);
+  return seeded;
+}
+
+async function cleanupAll(projects: SeededWorkspace[]): Promise<void> {
+  await Promise.all(projects.map((project) => project.cleanup()));
+}
+
 function workspaceRow(page: Page, project: SeededWorkspace): Locator {
   return page.getByTestId(`sidebar-workspace-row-${getServerId()}:${project.workspaceId}`);
 }
@@ -77,6 +88,19 @@ test.describe("Quiet projects fold into More", () => {
 
     test("the chip row folds a quiet project behind More", async ({ page }) => {
       const [quiet, waiting] = await seedQuietAndWaiting();
+      // Two pinned projects with long names push "More" to the row's end, so the chips it
+      // opens land past the right edge unless the row scrolls to them.
+      const pinned = await Promise.all([
+        seedPinned("quiet-fold-pinned-long-name-a-"),
+        seedPinned("quiet-fold-pinned-long-name-b-"),
+      ]);
+      // A quiet project with only a background workspace: the list hides it while "Show
+      // background" is off, so the chip row must not count it either.
+      const background = await seedWorkspace({
+        repoPrefix: "quiet-fold-background-",
+        title: "Background work",
+        background: true,
+      });
       try {
         await moveClockAhead(page);
         await gotoAppShell(page);
@@ -84,18 +108,32 @@ test.describe("Quiet projects fold into More", () => {
 
         await expect(stripItem(page, "chip", waiting)).toBeVisible({ timeout: 30_000 });
         await expect(stripItem(page, "chip", quiet)).toHaveCount(0, { timeout: 30_000 });
+        for (const project of pinned) {
+          await expect(stripItem(page, "chip", project)).toBeVisible();
+        }
         const more = page.getByTestId("sidebar-project-chip-more");
+        const listMore = page.getByTestId("sidebar-quiet-fold-row");
         await expect(more).toBeVisible();
         await expect(workspaceRow(page, waiting)).toBeVisible();
         await expect(workspaceRow(page, quiet)).toHaveCount(0);
-        await expect(page.getByTestId("sidebar-quiet-fold-row")).toBeVisible();
+        await expect(listMore).toBeVisible();
+        const listCount = (await listMore.innerText()).match(/(\d+) quiet/)?.[1];
+        expect(listCount).toBeDefined();
+        await expect(more).toContainText(`${listCount} quiet`);
         await page.screenshot({ path: test.info().outputPath("compact-quiet-fold.png") });
 
         await more.tap();
-        await expect(stripItem(page, "chip", quiet)).toBeVisible();
+        await expect(more).toHaveAttribute("aria-expanded", "true");
+        // Whole chips, not a sliver at the edge: the row has finished scrolling to them.
+        await expect(stripItem(page, "chip", quiet)).toBeInViewport({ ratio: 1 });
+        await expect(more).toBeInViewport({ ratio: 1 });
+        await expect(stripItem(page, "chip", background)).toHaveCount(0);
+        await page.screenshot({ path: test.info().outputPath("compact-quiet-open.png") });
       } finally {
         await quiet.cleanup();
         await waiting.cleanup();
+        await background.cleanup();
+        await cleanupAll(pinned);
       }
     });
   });

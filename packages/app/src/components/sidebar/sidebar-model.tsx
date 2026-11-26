@@ -131,50 +131,47 @@ export function SidebarModelProvider({
     list.workspacePlacements,
     modelActive || needsWorkspaceEntries,
   );
+  // Background and label filters decide which workspaces show at all; the project filter only
+  // narrows the list. The strip lists every project the display filters leave, so the project
+  // filter can never hide the chip you would tap to clear it.
+  const displayWorkspaceEntries = useMemo(
+    () =>
+      filterWorkspacesByLabels({
+        workspaces: [...workspaceEntriesByKey.values()].filter(
+          (workspace) => showBackground || !workspace.background,
+        ),
+        ...labelFilter,
+      }),
+    [showBackground, labelFilter, workspaceEntriesByKey],
+  );
   const filteredWorkspaceEntriesByKey = useMemo(() => {
-    const byProject = filterWorkspacesByProjects({
-      workspaces: [...workspaceEntriesByKey.values()],
+    const filtered = filterWorkspacesByProjects({
+      workspaces: displayWorkspaceEntries,
       projectFilters: resolvedProjectFilters,
     });
-    const filtered = filterWorkspacesByLabels({
-      workspaces: byProject.filter((workspace) => showBackground || !workspace.background),
-      ...labelFilter,
-    });
     return new Map(filtered.map((workspace) => [workspace.workspaceKey, workspace]));
-  }, [showBackground, labelFilter, resolvedProjectFilters, workspaceEntriesByKey]);
-  const visibleWorkspaceKeys = useMemo(
-    () => new Set(filteredWorkspaceEntriesByKey.keys()),
-    [filteredWorkspaceEntriesByKey],
-  );
+  }, [displayWorkspaceEntries, resolvedProjectFilters]);
   // The two filters prune differently on purpose. The project filter is a membership test on the
   // project itself, so a project you filtered TO survives even with no workspaces — it still owns
   // a header row you can create your first workspace under. The label filter can only ask about
   // workspaces, so a project it empties has nothing left to show.
+  const displayProjects = useMemo(() => {
+    if (!hasActiveLabelFilter && showBackground) return list.projects;
+    const displayKeys = new Set(displayWorkspaceEntries.map((workspace) => workspace.workspaceKey));
+    return list.projects.flatMap((project) => {
+      const workspaces = project.workspaces.filter((workspace) =>
+        displayKeys.has(workspace.workspaceKey),
+      );
+      return workspaces.length > 0 || (!hasActiveLabelFilter && project.workspaces.length === 0)
+        ? [workspaces.length === project.workspaces.length ? project : { ...project, workspaces }]
+        : [];
+    });
+  }, [showBackground, hasActiveLabelFilter, list.projects, displayWorkspaceEntries]);
   const filteredProjects = useMemo(() => {
-    let projects = list.projects;
-    if (hasActiveProjectFilter) {
-      const included = new Set(resolvedProjectFilters);
-      projects = projects.filter((project) => included.has(project.viewKey));
-    }
-    if (hasActiveLabelFilter || !showBackground) {
-      projects = projects.flatMap((project) => {
-        const workspaces = project.workspaces.filter((workspace) =>
-          visibleWorkspaceKeys.has(workspace.workspaceKey),
-        );
-        return workspaces.length > 0 || (!hasActiveLabelFilter && project.workspaces.length === 0)
-          ? [workspaces.length === project.workspaces.length ? project : { ...project, workspaces }]
-          : [];
-      });
-    }
-    return projects;
-  }, [
-    showBackground,
-    hasActiveLabelFilter,
-    hasActiveProjectFilter,
-    resolvedProjectFilters,
-    list.projects,
-    visibleWorkspaceKeys,
-  ]);
+    if (!hasActiveProjectFilter) return displayProjects;
+    const included = new Set(resolvedProjectFilters);
+    return displayProjects.filter((project) => included.has(project.viewKey));
+  }, [displayProjects, hasActiveProjectFilter, resolvedProjectFilters]);
   const workspaceSort = useSidebarViewStore((state) => state.workspaceSort);
   // Urgent first reorders by live status, which only the hydrated entries carry.
   const orderedProjects = useMemo(
@@ -200,10 +197,12 @@ export function SidebarModelProvider({
       }),
     [list.projects, openWorkspace, pinnedKeys.pinnedWorkspaceKeys, resolvedProjectFilters],
   );
-  const quietProjectKeys = useQuietProjectKeys({ projects: list.projects, keep: quietKeep });
+  // Both the strip and the list fold from the projects the display filters leave, so "More · N
+  // quiet" counts the same projects in both places and never offers a chip whose list is empty.
+  const quietProjectKeys = useQuietProjectKeys({ projects: displayProjects, keep: quietKeep });
   const stripProjects = useMemo(
-    () => splitQuietProjects(list.projects, quietProjectKeys),
-    [list.projects, quietProjectKeys],
+    () => splitQuietProjects(displayProjects, quietProjectKeys),
+    [displayProjects, quietProjectKeys],
   );
   const quietOpen = useSidebarQuietFoldStore((state) => state.open);
   // The list folds only while it shows every project: a filter is an explicit pick.
