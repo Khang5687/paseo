@@ -1193,6 +1193,7 @@
     "tests": [
       "packages/client/src/daemon-client.test.ts",
       "packages/app/src/offline-files/saver.test.ts",
+      "packages/app/src/hooks/use-settings/migrations.test.ts",
       "packages/app/src/stores/download-store.test.ts",
       "packages/app/src/send-to/open-sent-file.test.ts",
       "packages/app/src/attachments/web/indexeddb-attachment-store.test.ts",

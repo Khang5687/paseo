@@ -33,7 +33,7 @@ None of these ask. Where a Download goes outside Paseo is a separate choice: [do
 
 ## Limits and pinning
 
-The limits in Settings → Files (keep for N days, total MB, largest file MB) apply to unpinned copies. Pinned copies never age out, and the total cap counts them first, so over the cap the oldest unpinned copies go. A pinned copy has its own fixed cap, `PINNED_FILE_MAX_MB` (500 MB), instead of the largest-file setting, so a file saved on purpose works up to 500 MB. A pinned file over 500 MB, or one that does not fit in the total cap, is refused with a message that names the limit. The total defaults to 2 GB; devices that already stored the old 500 MB keep it until the user changes it. Saving an unchanged pinned copy again keeps it pinned; opening it only touches its timestamp.
+The limits in Settings → Files (keep for N days, total MB, largest file MB) apply to unpinned copies. Pinned copies never age out, and the total cap counts them first, so over the cap the oldest unpinned copies go. A pinned copy has its own fixed cap, `PINNED_FILE_MAX_MB` (500 MB), instead of the largest-file setting, so a file saved on purpose works up to 500 MB. A pinned file over 500 MB, or one that does not fit in the total cap, is refused with a message that names the limit. The total defaults to 2 GB. A stored 500 MB (the old default, written to storage like every default, so it cannot be told from a choice) moves to 2 GB once, through the `offline-total-2gb` entry in `hooks/use-settings/migrations.ts`; any other stored value stays, and picking 500 MB afterwards sticks. Saving an unchanged pinned copy again keeps it pinned; opening it only touches its timestamp.
 
 ## The Saved file view has no workspace
 
