@@ -1,5 +1,10 @@
 import { isSyntaxThemeId, type SyntaxThemeId } from "@getpaseo/highlight";
 import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  normalizeNotificationPreferences,
+  type NotificationPreferences,
+} from "@getpaseo/protocol/notification-preferences";
 import type { QueryClient } from "@tanstack/react-query";
 import type { DesktopSettings } from "@/desktop/settings/desktop-settings";
 import type { AppLanguage } from "@/i18n/locales";
@@ -141,6 +146,7 @@ export interface AppSettings {
   downloadAskWhere: boolean;
   /** Android: the folder picked the first time a download needs one while asking is off. */
   downloadFolderUri: string | null;
+  notifications: NotificationPreferences;
 }
 
 export type AppSettingsUpdate =
@@ -206,6 +212,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   offlineFilesMaxFileMb: OFFLINE_FILE_LIMITS.maxFileMb.default,
   downloadAskWhere: true,
   downloadFolderUri: null,
+  notifications: DEFAULT_NOTIFICATION_PREFERENCES,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -349,6 +356,10 @@ const StoredAppSettingsSchema = z
     offlineFilesMaxFileMb: offlineFileLimit("maxFileMb"),
     downloadAskWhere: z.boolean().catch(true),
     downloadFolderUri: z.string().nullable().catch(null),
+    notifications: z
+      .unknown()
+      .transform((value) => normalizeNotificationPreferences(value))
+      .catch(DEFAULT_NOTIFICATION_PREFERENCES),
     // COMPAT(explorerSidebarRouting): replaced by source-specific side-pane preferences in v0.6.
     openSupportingTabsInSidePanel: z.boolean().optional().catch(undefined),
     // COMPAT(rendererDesktopSettings): these fields used to share this renderer-owned key.

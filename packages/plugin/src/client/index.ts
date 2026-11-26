@@ -1,5 +1,6 @@
 export type {
   PluginHostProps,
+  PluginHostNavigationActions,
   PluginTab,
   PluginPanelProps,
   PluginWorkspacePanelParams,
@@ -47,6 +48,11 @@ export type {
   PluginSkinImage,
   SettingsState,
 } from "./contracts.js";
+export type {
+  PluginNotificationOpenEvent,
+  PluginNotificationOpenContext,
+  PluginNotificationOpenHandler,
+} from "./notifications.js";
 export type {
   PluginButton,
   PluginButtonBehavior,

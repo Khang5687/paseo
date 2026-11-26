@@ -104,7 +104,7 @@ test.describe("Files from a sleeping host", () => {
       await page.getByRole("button", { name: "Close", exact: true }).last().tap();
       await page.getByRole("button", { name: "Open menu", exact: true }).first().tap();
       await page.locator('[data-testid="sidebar-settings"]:visible').first().tap();
-      await openSettingsSection(page, "files");
+      await openSettingsSection(page, "chat");
       const copies = page.getByTestId(`host-copies-${omenServerId}`);
       await expect(copies.getByText("Copies on Omen box")).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId(`host-copies-usage-${omenServerId}`)).toContainText("1 file,");

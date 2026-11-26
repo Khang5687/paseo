@@ -637,6 +637,11 @@ then retry only when a requested row changes during the read. Unrelated agent st
 invalidate the read. Directory baseline replacements and host removal or renaming still invalidate
 the affected reads.
 
+On web and Electron, tabs share IndexedDB but hold independent directory snapshots in memory. A
+tab can commit directory deltas only while the persisted checkpoint revision matches the one it
+read or wrote. If a different tab evicts or rewrites that baseline, the next full directory refresh
+can replace it. Timeline writes do not depend on the directory checkpoint.
+
 The cache is capped at 64 MiB across every host. Over the cap it drops timeline rows, least recently
 saved first, and keeps every directory row, so the sidebar and every other cached chat still open
 offline. Chats stay in the cache until something newer pushes them out; there is no age limit. A

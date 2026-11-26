@@ -238,7 +238,7 @@ export const LeftSidebar = memo(function LeftSidebar({
       openSettingsFromSidebar({
         workspace: activeWorkspace,
         isCompact: isCompactLayout,
-        route: buildSettingsHostSectionRoute(serverId, "host"),
+        route: buildSettingsHostSectionRoute(serverId, "daemon"),
       });
     },
     [activeWorkspace, isCompactLayout],

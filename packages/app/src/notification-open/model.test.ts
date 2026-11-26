@@ -83,6 +83,26 @@ describe("notification open", () => {
       { serverId: "h", noteId: " ", agentId: "a" },
       { kind: "agent", serverId: "h", agentId: "a" },
     ],
+    [{ kind: "plugin", serverId: "h", pluginId: "p" }, null],
+    [{ kind: "plugin", serverId: "h", notificationId: "n" }, null],
+    [
+      {
+        kind: "plugin",
+        serverId: "h",
+        pluginId: "ci",
+        notificationId: "n-1",
+        open: { type: "screen", screenId: "report", params: { id: "42" } },
+        data: { buildId: 42 },
+      },
+      {
+        kind: "plugin",
+        serverId: "h",
+        pluginId: "ci",
+        notificationId: "n-1",
+        open: { type: "screen", screenId: "report", params: { id: "42" } },
+        data: { buildId: 42 },
+      },
+    ],
   ])("parses %j", (data, expected) => {
     expect(parseNotificationOpenTarget(data)).toEqual(expected);
   });

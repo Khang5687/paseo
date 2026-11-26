@@ -107,7 +107,7 @@ test.describe("Download in the desktop app", () => {
 
     // Turn asking off in Settings > Files, then download again.
     await page.locator('[data-testid="sidebar-settings"]:visible').first().click();
-    await openSettingsSection(page, "files");
+    await openSettingsSection(page, "chat");
     const askSwitch = page.getByTestId("save-location-ask").getByRole("switch");
     await expect(askSwitch).toBeChecked({ timeout: 30_000 });
     await askSwitch.click();

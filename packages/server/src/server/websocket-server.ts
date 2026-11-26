@@ -610,6 +610,26 @@ function requireWebSocketServices(params: {
 /**
  * WebSocket server that only accepts sockets + parses/forwards messages to the session layer.
  */
+function initPushNotifications(
+  logger: pino.Logger,
+  paseoHome: string,
+  pushNotifications?: PushNotifications,
+  pushNotificationSender?: PushNotificationSender,
+  onTokenRevoked?: (token: string) => void,
+): { pushNotifications: PushNotifications; pushNotificationSender: PushNotificationSender } {
+  const notifications =
+    pushNotifications ??
+    createPushNotifications({
+      logger: logger.child({ module: "push" }),
+      filePath: join(paseoHome, "push-tokens.json"),
+      onTokenRevoked,
+    });
+  return {
+    pushNotifications: notifications,
+    pushNotificationSender: pushNotificationSender ?? notifications,
+  };
+}
+
 export class VoiceAssistantWebSocketServer {
   private readonly logger: pino.Logger;
   private readonly wss: WebSocketServer;
@@ -791,6 +811,7 @@ export class VoiceAssistantWebSocketServer {
     agentDrafts?: AgentDraftService,
     fileCopies?: FileCopies,
     workspaceArchiveOperations?: WorkspaceArchiveOperations,
+    pushNotifications?: PushNotifications,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -941,14 +962,16 @@ export class VoiceAssistantWebSocketServer {
       unsubscribeChange();
     };
 
-    const pushLogger = this.logger.child({ module: "push" });
     this.fileDevices = resolveFileDevices(wsConfig.fileDevices);
-    this.pushNotifications = createPushNotifications({
-      logger: pushLogger,
-      filePath: join(paseoHome, "push-tokens.json"),
-      onTokenRevoked: (token) => this.fileDevices.removeByToken(token),
-    });
-    this.pushNotificationSender = pushNotificationSender ?? this.pushNotifications;
+    const push = initPushNotifications(
+      this.logger,
+      paseoHome,
+      pushNotifications,
+      pushNotificationSender,
+      (token) => this.fileDevices.removeByToken(token),
+    );
+    this.pushNotifications = push.pushNotifications;
+    this.pushNotificationSender = push.pushNotificationSender;
     this.fileSend = new FileSendService({
       registry: this.fileDevices,
       serverId,
@@ -2324,6 +2347,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.advertiseRelayConfig ? { relayConfig: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: true,
+        // COMPAT(pushNotificationPreferences): added in v0.18.0, remove gate after 2027-06-01.
+        pushNotificationPreferences: true,
         // COMPAT(plugins): added in v0.3.0, remove gate after 2027-08-07.
         plugins: true,
         pluginManagement: true,
@@ -2339,6 +2364,8 @@ export class VoiceAssistantWebSocketServer {
         pluginTimelineItems: true,
         // COMPAT(pluginSubscriptions): added in v0.15.0, remove gate after 2027-05-02.
         pluginSubscriptions: true,
+        // COMPAT(pluginNotifications): added in v0.18.0, remove gate after 2027-06-01.
+        pluginNotifications: true,
         // COMPAT(skillManagement): added in v0.4.0, remove gate after 2027-08-16.
         skillManagement: true,
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
@@ -3225,9 +3252,11 @@ export class VoiceAssistantWebSocketServer {
     );
 
     if (plan.shouldPush) {
-      void this.pushNotificationSender.send(notification).catch((err) => {
-        this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
-      });
+      void this.pushNotificationSender
+        .send(notification, { kind: "agent", reason: params.reason })
+        .catch((err) => {
+          this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
+        });
     }
 
     for (const { ws } of clientEntries) {
@@ -3415,16 +3444,19 @@ export class VoiceAssistantWebSocketServer {
 
     if (plan.shouldPush) {
       void this.pushNotificationSender
-        .send({
-          title,
-          body,
-          data: {
-            serverId: this.serverId,
-            terminalId: params.terminalId,
-            cwd: params.cwd,
-            ...(workspaceId ? { workspaceId } : {}),
+        .send(
+          {
+            title,
+            body,
+            data: {
+              serverId: this.serverId,
+              terminalId: params.terminalId,
+              cwd: params.cwd,
+              ...(workspaceId ? { workspaceId } : {}),
+            },
           },
-        })
+          { kind: "terminal", reason: params.reason },
+        )
         .catch((err) => {
           this.logger.warn(
             { err, terminalId: params.terminalId },
@@ -3447,6 +3479,95 @@ export class VoiceAssistantWebSocketServer {
           reason: params.reason,
           title,
           body,
+          shouldNotify,
+        },
+      });
+      if (message.type === "session" && this.sessions.get(ws)?.session.delivery.isModern(ws))
+        this.sessions.get(ws)!.session.publishToSource(ws, message.message);
+      else this.sendToClient(ws, message);
+    }
+  }
+
+  public sendPluginNotification(params: {
+    pluginId: string;
+    notificationId: string;
+    title: string;
+    body: string;
+    open?: import("@getpaseo/protocol/messages").PluginNotificationOpenTarget;
+    data?: Record<string, import("@getpaseo/protocol/agent-types").JsonValue>;
+  }): void {
+    const clientEntries: Array<{
+      ws: WebSocketLike;
+      state: ClientPresenceState;
+    }> = [];
+
+    for (const [ws, connection] of this.sessions) {
+      if (this.pluginSocketIds.has(ws)) {
+        continue;
+      }
+      if (!connection.session.wantsSourceEvent(ws, "plugin.notification")) {
+        continue;
+      }
+      clientEntries.push({
+        ws,
+        state: this.getClientActivityState(connection.session, ws),
+      });
+    }
+
+    const notificationEntries = clientEntries.filter(({ ws }) =>
+      this.sessions.get(ws)?.session.wantsSourceNotification(ws, "plugin.notification"),
+    );
+    const allStates = notificationEntries.map((entry) => entry.state);
+    const nowMs = Date.now();
+    const focusTarget =
+      params.open?.type === "agent" ? { kind: "agent" as const, id: params.open.agentId } : null;
+
+    const plan = computeNotificationPlan({
+      allStates,
+      focusTarget,
+      pushEligible: true,
+      nowMs,
+    });
+
+    if (plan.shouldPush) {
+      void this.pushNotificationSender
+        .send(
+          {
+            title: params.title,
+            body: params.body,
+            data: {
+              kind: "plugin",
+              serverId: this.serverId,
+              pluginId: params.pluginId,
+              notificationId: params.notificationId,
+              ...(params.open ? { open: params.open } : {}),
+              ...(params.data ? { data: params.data } : {}),
+            },
+          },
+          { kind: "plugin", pluginId: params.pluginId },
+        )
+        .catch((err) => {
+          this.logger.warn(
+            { err, pluginId: params.pluginId, notificationId: params.notificationId },
+            "Failed to send plugin push notification",
+          );
+        });
+    }
+
+    for (const { ws } of clientEntries) {
+      const shouldNotify =
+        plan.inAppRecipientIndex !== null &&
+        notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
+      const message = wrapSessionMessage({
+        type: "plugin.notification",
+        payload: {
+          serverId: this.serverId,
+          pluginId: params.pluginId,
+          notificationId: params.notificationId,
+          title: params.title,
+          body: params.body,
+          ...(params.open ? { open: params.open } : {}),
+          ...(params.data ? { data: params.data } : {}),
           shouldNotify,
         },
       });

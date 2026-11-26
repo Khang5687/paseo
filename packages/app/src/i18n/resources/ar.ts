@@ -325,6 +325,7 @@ export const ar: TranslationResources = {
     archived: {
       callout: "تمت أرشفة هذا الوكيل",
       unarchive: "إلغاء الأرشفة",
+      unarchiving: "جارٍ إلغاء الأرشفة...",
     },
   },
   sessions: {
@@ -2964,7 +2965,7 @@ export const ar: TranslationResources = {
     title: "إعدادات",
     loading: "جارٍ تحميل الإعدادات...",
     groups: {
-      app: "برنامج",
+      app: "هذا الجهاز",
       host: "Host",
     },
     hostPicker: {
@@ -2982,7 +2983,9 @@ export const ar: TranslationResources = {
     groupInfo: "حول{{title}}",
     sections: {
       general: "عام",
+      hosts: "المضيفون",
       chat: "الدردشة",
+      chatAndPanes: "الدردشة والأجزاء",
       appearance: "مظهر",
       sidebar: "الشريط الجانبي",
       terminal: "الطرفية",
@@ -2995,6 +2998,16 @@ export const ar: TranslationResources = {
       permissions: "الأذونات",
       diagnostics: "التشخيص",
       about: "عن",
+    },
+    clientHosts: {
+      title: "المضيفون المحفوظون",
+      info: "المضيفون الذين يتصل بهم هذا الجهاز. الأسماء والأيقونات والشارات والمسارات هنا تؤثر على هذا الجهاز فقط.",
+      backToHosts: "العودة إلى المضيفين",
+      routesTitle: "كيف يتصل هذا الجهاز",
+      routesInfo:
+        "المسارات المحفوظة التي يستخدمها هذا الجهاز للوصول إلى هذا المضيف. يختار Paseo أسرع مسار متاح.",
+      addRoute: "إضافة مسار",
+      activeRoute: "نشط",
     },
     layout: en.settings.layout,
     editor: {
@@ -3027,6 +3040,47 @@ export const ar: TranslationResources = {
     },
     notifications: {
       title: "الإشعارات",
+      enabled: {
+        label: "تفعيل الإشعارات",
+        description: "تلقّي الإشعارات من الوكلاء والطرفيات والإضافات على هذا الجهاز",
+        pausedDescription: "جميع الإشعارات، بما في ذلك الإضافات، متوقفة مؤقتًا على هذا الجهاز",
+      },
+      events: {
+        title: "الأحداث",
+        agentPermission: {
+          label: "الوكيل يحتاج إلى إذن",
+          description: "الموافقات والخطط والأسئلة",
+        },
+        agentError: {
+          label: "تعطّل الوكيل بخطأ",
+          description: "عندما يتوقف الوكيل بسبب خطأ",
+        },
+        agentFinished: {
+          label: "انتهى الوكيل",
+          description: "عندما يكمل الوكيل دورة عمل",
+        },
+        terminalNeedsInput: {
+          label: "الطرفية تنتظر إدخالًا",
+          description: "عندما ينتظر أمر الطرفية إدخالًا",
+        },
+        terminalFinished: {
+          label: "انتهى أمر الطرفية",
+          description: "عندما ينتهي أمر في الطرفية",
+        },
+      },
+      plugins: {
+        title: "الإضافات",
+        enabled: {
+          label: "إشعارات الإضافات",
+          description: "السماح للإضافات المثبتة بإرسال إشعارات",
+        },
+        empty: "تظهر الإضافات المثبتة هنا لكتمها بشكل فردي",
+      },
+      legacyHostTitle: "حدّث المضيف لتفضيلات الإشعارات الفورية",
+      legacyHostHint: "حدّث المضيفين المتصلين لمزامنة تفضيلات الإشعارات المخصصة من هذا الجهاز",
+      desktop: {
+        title: "النظام",
+      },
       permission: "إذن الإشعارات",
       refreshAccessibility: "تحديث إذن الإشعارات",
       playSound: "تشغيل صوت",
@@ -3044,6 +3098,7 @@ export const ar: TranslationResources = {
       projects: "المشاريع",
       connections: "اتصالات",
       agents: "Agents",
+      tools: "الأدوات والتعليمات",
       agentProfiles: "ملفات الوكيل",
       metadata: "البيانات الوصفية",
       voice: "الصوت",
@@ -3053,6 +3108,7 @@ export const ar: TranslationResources = {
       terminals: "Terminals",
       plugins: "Plugins",
       host: "نظرة عامة",
+      daemon: "الخدمة",
     },
     plugins: pluginSettings.ar,
     metadataGeneration: {
@@ -3687,6 +3743,10 @@ export const ar: TranslationResources = {
           delete: "حذف المهارة",
         },
       },
+      tools: {
+        instructionsTitle: "التعليمات",
+        toolsTitle: "أدوات الوكلاء",
+      },
       orchestration: {
         title: "التنسيق",
         unavailable: "اتصل بهذا المضيف لإدارة التنسيق",
@@ -3826,6 +3886,7 @@ export const ar: TranslationResources = {
         },
       },
       daemon: {
+        runtimeTitle: "بيئة تشغيل الوكلاء",
         rename: {
           editLabel: "تحرير التسمية",
           title: "إعادة تسمية المضيف",

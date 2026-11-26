@@ -68,6 +68,7 @@ function installation(
     skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
+    notificationOpenHandlers: [],
   };
 }
 

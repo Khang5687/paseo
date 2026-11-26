@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { SettingsCard, SettingsRow, SettingsSection } from "@/components/settings";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ import {
 import { HostCopiesSection } from "@/offline-files/host-copies-section";
 import { OfflineFilesSection } from "@/offline-files/settings-section";
 import { PluginIconView } from "@/plugins/icons";
-import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
 import { SaveLocationSection } from "./save-location-section";
 
@@ -43,26 +42,21 @@ export function FilesSection() {
 function FilePanelsSection() {
   const { t } = useTranslation();
   const { rows, choose, askAgain } = useFilePanelSettings();
+  if (rows.length === 0) {
+    return null;
+  }
   return (
     <SettingsSection title={t("settings.files.title")} testID="file-panel-settings">
-      {rows.length === 0 ? (
-        <View style={settingsStyles.card} testID="file-panel-settings-empty">
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>{t("settings.files.empty")}</Text>
-          </View>
-        </View>
-      ) : (
-        <SettingsCard testID="file-panel-settings-card">
-          {rows.map((row) => (
-            <FilePanelSettingsRowView
-              key={row.selectorKey}
-              row={row}
-              onChoose={choose}
-              onAskAgain={askAgain}
-            />
-          ))}
-        </SettingsCard>
-      )}
+      <SettingsCard testID="file-panel-settings-card">
+        {rows.map((row) => (
+          <FilePanelSettingsRowView
+            key={row.selectorKey}
+            row={row}
+            onChoose={choose}
+            onAskAgain={askAgain}
+          />
+        ))}
+      </SettingsCard>
     </SettingsSection>
   );
 }
@@ -167,13 +161,5 @@ const styles = StyleSheet.create((theme) => ({
     flexWrap: "wrap",
     alignItems: "center",
     gap: theme.spacing[2],
-  },
-  emptyCard: {
-    padding: theme.spacing[4],
-    alignItems: "center",
-  },
-  emptyText: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.base,
   },
 }));

@@ -719,6 +719,7 @@ function createToolCall(input: {
 export class MockLoadTestAgentClient implements AgentClient {
   readonly provider: AgentProvider = MOCK_LOAD_TEST_PROVIDER_ID;
   readonly capabilities = CAPABILITIES;
+  private readonly sessionHistories = new Map<string, AgentStreamEvent[]>();
 
   constructor(private readonly logger?: Logger) {}
 
@@ -726,9 +727,13 @@ export class MockLoadTestAgentClient implements AgentClient {
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
+    const sessionId = randomUUID();
+    const history: AgentStreamEvent[] = [];
+    this.sessionHistories.set(sessionId, history);
     return new MockLoadTestAgentSession({
       config,
-      sessionId: randomUUID(),
+      sessionId,
+      history,
       logger: this.logger,
     });
   }
@@ -739,6 +744,11 @@ export class MockLoadTestAgentClient implements AgentClient {
     _launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
     const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
+    let history = this.sessionHistories.get(handle.sessionId);
+    if (!history) {
+      history = [];
+      this.sessionHistories.set(handle.sessionId, history);
+    }
     return new MockLoadTestAgentSession({
       config: {
         cwd: metadata.cwd ?? overrides?.cwd ?? process.cwd(),
@@ -747,6 +757,7 @@ export class MockLoadTestAgentClient implements AgentClient {
         provider: MOCK_LOAD_TEST_PROVIDER_ID,
       },
       sessionId: handle.sessionId,
+      history,
       logger: this.logger,
     });
   }
@@ -796,7 +807,7 @@ export class MockLoadTestAgentSession implements AgentSession {
   private readonly usageSessionKey = randomUUID();
 
   private readonly listeners = new Set<(event: AgentStreamEvent) => void>();
-  private readonly history: AgentStreamEvent[] = [];
+  private readonly history: AgentStreamEvent[];
   private readonly logger?: Logger;
   private activeTurn: ActiveTurn | null = null;
   private pendingPermissions = new Map<string, AgentPermissionRequest>();
@@ -810,8 +821,14 @@ export class MockLoadTestAgentSession implements AgentSession {
   private remainingPromptRejections: number;
   private remainingSteerFailures: number;
 
-  constructor(options: { config: AgentSessionConfig; sessionId: string; logger?: Logger }) {
+  constructor(options: {
+    config: AgentSessionConfig;
+    sessionId: string;
+    history?: AgentStreamEvent[];
+    logger?: Logger;
+  }) {
     this.id = options.sessionId;
+    this.history = options.history ?? [];
     this.logger = options.logger;
     this.modeId = options.config.modeId ?? MOCK_LOAD_TEST_MODE_ID;
     this.modelId = options.config.model ?? MOCK_LOAD_TEST_DEFAULT_MODEL_ID;
