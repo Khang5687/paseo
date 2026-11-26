@@ -1,0 +1,8 @@
+{
+  "pr": 2,
+  "title": "feat(omp): add /goal slash command backed by OMP goal RPC",
+  "tests": [
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/commands.test.ts"
+  ]
+}

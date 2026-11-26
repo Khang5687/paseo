@@ -1,0 +1,10 @@
+{
+  "pr": 141,
+  "title": "fix(server): give every upload a short dated path the agent can see",
+  "tests": [
+    "packages/server/src/server/file-upload/index.test.ts",
+    "packages/server/src/server/file-upload/upload-location.test.ts",
+    "packages/server/src/server/agent/prompt-image-files.test.ts",
+    "packages/server/src/server/agent/agent-message-queue.test.ts"
+  ]
+}

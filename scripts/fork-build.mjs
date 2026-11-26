@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Fork-only (Khang5687/paseo); never upstreamed.
-// "Build it" in one command, run by the integrator in the main checkout on fork main. See
-// "Build it" in CLAUDE.md.
+// "Build it" in one command, run in the main checkout on fork main. See "Build it" in CLAUDE.md.
 //
 //   node scripts/fork-build.mjs --pr 81 --pr 83   sync upstream, merge those PRs in that order,
 //                                                 check once, push, then build everything
@@ -26,7 +25,9 @@
 //    `local` line in ~/.paseo-fork-remotes builds this machine's own fork daemon.
 //
 // Logs and the summary go to ~/.paseo-fork-build/<time>/. Exit codes: 0 pushed and every build
-// passed, 1 something failed (see the summary), 4 not enough disk.
+// passed, 1 something failed (see the summary), 4 not enough disk. When PASEO_FORK_BUILD_RESULT
+// names a file, the exit code, merged PRs and skipped PRs are also written there as JSON.
+// Agents do not run this directly; they start scripts/fork-build-bg.mjs, which runs it detached.
 import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -41,7 +42,6 @@ import {
   MIN_FREE_GB,
   planBuilds,
 } from "./fork-build-lib.mjs";
-import { FEATURES_PATH, mergeFeatureRegistry } from "./fork-lib.mjs";
 
 const { values: args } = parseArgs({
   options: {
@@ -65,6 +65,8 @@ const logDir = path.join(os.homedir(), ".paseo-fork-build", stamp);
 mkdirSync(logDir, { recursive: true });
 
 const summary = [];
+const merged = [];
+const skipped = [];
 function finish(code) {
   const text = [
     `# Fork build ${stamp}${dryRun ? " (dry run)" : ""}`,
@@ -78,6 +80,11 @@ function finish(code) {
     `Logs: ${logDir}`,
   ].join("\n");
   writeFileSync(path.join(logDir, "summary.md"), `${text}\n`);
+  // fork-build-bg.mjs reads this to tell its agent what happened; the summary text alone is not parsed.
+  if (process.env.PASEO_FORK_BUILD_RESULT) {
+    const result = { code, merged, skipped, summaryPath: path.join(logDir, "summary.md") };
+    writeFileSync(process.env.PASEO_FORK_BUILD_RESULT, `${JSON.stringify(result)}\n`);
+  }
   process.stdout.write(`${text}\n`);
   process.exit(code);
 }
@@ -171,8 +178,6 @@ if (incoming === 0) {
 // 3. PRs.
 const originUrl = git(["remote", "get-url", "origin"]).out;
 const repo = /github\.com[:/](.+?)(\.git)?$/.exec(originUrl)?.[1];
-const merged = [];
-const skipped = [];
 let last = synced ? "the upstream sync" : null;
 for (const pr of prs) {
   const view = spawnSync(
@@ -218,30 +223,17 @@ for (const pr of prs) {
       allowFail: true,
     }),
   );
-  if (!merge.ok && !resolveRegistryOnlyConflict()) {
+  if (!merge.ok) {
+    const files = git(["diff", "--name-only", "--diff-filter=U"], { allowFail: true }).out;
     git(["merge", "--abort"], { allowFail: true });
-    skipped.push(`#${pr} ${info.headRefName}: conflicts with main${last ? ` after ${last}` : ""}`);
+    const where = files ? ` in ${files.split("\n").join(", ")}` : "";
+    skipped.push(
+      `#${pr} ${info.headRefName}: conflicts with main${last ? ` after ${last}` : ""}${where}`,
+    );
     continue;
   }
   merged.push(`#${pr} ${info.title}`);
   last = `#${pr}`;
-}
-
-// Every PR appends to the feature registry, so the second PR of a build always conflicts there.
-// When that file is the only conflict, merge it entry by entry and finish the merge commit.
-function resolveRegistryOnlyConflict() {
-  const conflicted = git(["diff", "--name-only", "--diff-filter=U"], { allowFail: true }).out;
-  if (conflicted !== FEATURES_PATH) return false;
-  const stage = (n) =>
-    spawnSync("git", ["show", `:${n}:${FEATURES_PATH}`], { cwd: root, encoding: "utf8" });
-  const [base, ours, theirs] = [1, 2, 3].map(stage);
-  if (![base, ours, theirs].every((side) => side.status === 0)) return false;
-  const text = mergeFeatureRegistry(base.stdout, ours.stdout, theirs.stdout);
-  if (text === null) return false;
-  writeFileSync(path.join(root, FEATURES_PATH), text);
-  git(["add", FEATURES_PATH]);
-  // Same as a clean merge: no pre-commit hook, the message git prepared from -m.
-  return git(["commit", "--quiet", "--no-verify", "--no-edit"], { allowFail: true }).ok;
 }
 if (merged.length > 0) summary.push(`- Merged: ${merged.join("; ")}.`);
 for (const line of skipped) summary.push(`- Skipped ${line}.`);

@@ -1,0 +1,9 @@
+{
+  "pr": 99,
+  "title": "feat(server): fork an agent with a native provider cut",
+  "tests": [
+    "packages/server/src/server/agent/fork-agent.test.ts",
+    "packages/server/src/server/agent/activity-curator.test.ts",
+    "packages/server/src/server/agent/providers/omp/agent.test.ts"
+  ]
+}

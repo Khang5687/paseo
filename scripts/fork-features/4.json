@@ -1,0 +1,6 @@
+{
+  "pr": 4,
+  "title": "chore(fork): build and install the desktop app from fork main",
+  "untested": "fork-update.sh desktop build; exercised by every Build it",
+  "tests": []
+}

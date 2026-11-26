@@ -4,7 +4,8 @@
 // and step timing.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 // Below this, no build starts (CLAUDE.md "Build it" step 1).
@@ -156,4 +157,86 @@ export function planBuilds({ freeGb: free, android }) {
   if (!android) return { android: "skip" };
   if (free >= MIN_FREE_GB + ANDROID_MIN_FREE_GB) return { android: "parallel" };
   return { android: free >= ANDROID_MIN_FREE_GB ? "after-desktop" : "no-disk" };
+}
+
+/**
+ * The paseo CLI the fork scripts use to start and message agents: $PASEO_CLI, else the build the
+ * host's daemon runs (~/paseo-fork/current, see fork-remote-daemon.sh), else `paseo` on PATH.
+ * Timer and systemd units have a clean environment, so PATH alone is not enough there.
+ */
+export function paseoCli() {
+  if (process.env.PASEO_CLI) return process.env.PASEO_CLI;
+  const fork = path.join(os.homedir(), "paseo-fork/current/packages/cli/bin/paseo");
+  return existsSync(fork) ? fork : "paseo";
+}
+
+/**
+ * The message fork-build-bg.mjs sends the agent that asked for a build, built from the result
+ * file fork-build wrote (`result` is null when it crashed before writing one). `notifyId` and
+ * `prs` rebuild the rerun command. A green build says so in one line; anything else names the PRs
+ * and the next step, so the woken agent does not have to work it out from the summary.
+ */
+export function buildMessage({ result, exitCode, summary, notifyId, prs, logDir }) {
+  const rerun = (list) =>
+    `node scripts/fork-build-bg.mjs --notify ${notifyId} ${list.map((pr) => `--pr ${pr}`).join(" ")}`.trim();
+  const skipped = result?.skipped ?? [];
+  const skippedPrs = skipped.map((line) => /^#(\d+)/.exec(line)?.[1]).filter(Boolean);
+  const code = result?.code ?? exitCode;
+  const next =
+    'Next: CLAUDE.md "Build it" step 3 onward (remote daemons, handoff file, report to the owner).';
+  const lines = [];
+  if (result === null) {
+    lines.push(
+      `Fork build CRASHED (exit ${exitCode}) before it wrote a result. Read the log in ${logDir}, fix the cause, and rerun: ${rerun(prs)}`,
+    );
+  } else if (code === 0 && skipped.length === 0) {
+    lines.push("Fork build finished: green. Every PR merged and every build passed.", next);
+  } else if (code === 0) {
+    lines.push(
+      `Fork build finished and pushed main, but ${skipped.length} PR(s) were skipped: ${skippedPrs.map((pr) => `#${pr}`).join(", ")} (a conflict, a draft or a closed PR; the lines below say which).`,
+      "Fix a conflict on that PR's own branch, never on main: in its worktree run `git fetch origin && git merge origin/main`, resolve, push the branch. Then rerun only the skipped PRs:",
+      rerun(skippedPrs),
+      next,
+    );
+  } else if (code === 4) {
+    lines.push(
+      "Fork build did not start its builds: not enough free disk. Tell the owner to free space (agents do not delete the owner's files), then rerun:",
+      rerun(prs),
+    );
+  } else {
+    lines.push(
+      `Fork build FAILED (exit ${code}).${skipped.length > 0 ? ` Skipped PRs: ${skippedPrs.map((pr) => `#${pr}`).join(", ")}.` : ""}`,
+      "If the summary says the check failed: nothing was pushed and local main still has the merges. Find the PR that broke it in the report, run `git reset --hard origin/main` in the main checkout, set that PR's handoff entry to blocked, and rerun without it. If it says another fork-sync is running or the push was refused, wait and rerun. Rerun command (drop the blocked PRs):",
+      rerun(prs),
+    );
+  }
+  lines.push("", "---", summary.trim(), "", `Logs: ${logDir}`);
+  return lines.join("\n");
+}
+
+/**
+ * What the nightly sync does with fork-sync's exit code (see its header): 0 and 3 need no agent,
+ * 1 (checks failed) and 2 (conflicts) start one resolver, anything else is a crash.
+ */
+export function syncOutcome(code) {
+  if (code === 0) return { kind: "done", note: "main is level with upstream or merged cleanly" };
+  if (code === 3) return { kind: "skip", note: "another fork-sync is running" };
+  if (code === 1) return { kind: "agent", note: "the checks failed on the merged tree" };
+  if (code === 2) return { kind: "agent", note: "the merge conflicts" };
+  return { kind: "crash", note: `fork-sync exited ${code}` };
+}
+
+/** The brief the nightly sync gives its resolver agent. */
+export function syncAgentPrompt({ code, why, reportPath, checkout, worktree }) {
+  return [
+    `The nightly upstream sync did not finish green: ${why} (fork-sync exit ${code}).`,
+    `Report: ${reportPath}`,
+    "",
+    `Resolve it per CLAUDE.md "Syncing with upstream" in ${checkout}/CLAUDE.md. Use absolute paths and edit only in the sync worktree ${worktree}, never in ${checkout}.`,
+    code === 2
+      ? `Conflicts: the nightly run aborted its merge, so redo it with \`node scripts/fork-sync.mjs --apply\` from ${checkout} (it leaves the conflicts in the worktree), resolve them, commit, then \`node scripts/fork-sync.mjs --apply --resume\`.`
+      : `Checks failed: the merge is committed in the worktree. Fix what upstream broke as commits on top of it, then \`node scripts/fork-sync.mjs --apply --resume\` from ${checkout}.`,
+    "Run fork scripts as `SHELL=/bin/bash env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY mise exec -- node scripts/<name>.mjs`. Watch a long job with one async watcher and end the turn; never repeat waits.",
+    "Never restart the 6767 daemon, never pass --now, never install the Mac app, never push to main by hand. Do not contact the owner. Your final reply is the result: what conflicted or broke, how you resolved it, and whether main was pushed.",
+  ].join("\n");
 }

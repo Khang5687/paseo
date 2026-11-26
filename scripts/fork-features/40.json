@@ -1,0 +1,8 @@
+{
+  "pr": 40,
+  "title": "feat(server): attribute OMP usage to the account actually serving",
+  "tests": [
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/plugins/usage-sources/index.test.ts"
+  ]
+}

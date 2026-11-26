@@ -4,7 +4,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { ANDROID_MIN_FREE_GB, MIN_FREE_GB, hashInputs, planBuilds } from "./fork-build-lib.mjs";
+import {
+  ANDROID_MIN_FREE_GB,
+  buildMessage,
+  hashInputs,
+  MIN_FREE_GB,
+  planBuilds,
+  syncAgentPrompt,
+  syncOutcome,
+} from "./fork-build-lib.mjs";
 
 function repoWith(files) {
   const root = mkdtempSync(path.join(os.tmpdir(), "fork-build-lib-"));
@@ -61,4 +69,51 @@ test("the APK runs beside the desktop build only when the disk holds both", () =
   assert.equal(planBuilds({ freeGb: both, android: true }).android, "parallel");
   assert.equal(planBuilds({ freeGb: both - 0.1, android: true }).android, "after-desktop");
   assert.equal(planBuilds({ freeGb: MIN_FREE_GB, android: true }).android, "after-desktop");
+});
+
+test("a green build says so; skipped PRs and failed checks name the PRs and the way on", () => {
+  const base = { exitCode: 0, summary: "# Fork build\n- ok", notifyId: "abc", logDir: "/logs" };
+  const green = buildMessage({
+    ...base,
+    prs: [1],
+    result: { code: 0, merged: ["#1 t"], skipped: [] },
+  });
+  assert.match(green, /^Fork build finished: green/);
+  assert.match(green, /# Fork build/);
+
+  const partial = buildMessage({
+    ...base,
+    prs: [1, 2, 3],
+    result: {
+      code: 0,
+      merged: ["#1 t"],
+      skipped: ["#2 b: conflicts with main in a.ts", "#3 c: draft"],
+    },
+  });
+  assert.match(partial, /#2, #3/);
+  assert.match(partial, /--notify abc --pr 2 --pr 3\n/);
+
+  const failed = buildMessage({
+    ...base,
+    exitCode: 1,
+    prs: [1, 2],
+    result: { code: 1, merged: ["#1 t"], skipped: [] },
+  });
+  assert.match(failed, /FAILED \(exit 1\)/);
+  assert.match(failed, /origin\/main/);
+  assert.match(failed, /--notify abc --pr 1 --pr 2/);
+
+  const crashed = buildMessage({ ...base, exitCode: 127, prs: [1], result: null });
+  assert.match(crashed, /CRASHED \(exit 127\)/);
+});
+
+test("fork-sync exit codes pick no agent, a skip, a resolver agent, or a crash", () => {
+  assert.equal(syncOutcome(0).kind, "done");
+  assert.equal(syncOutcome(3).kind, "skip");
+  assert.equal(syncOutcome(1).kind, "agent");
+  assert.equal(syncOutcome(2).kind, "agent");
+  assert.equal(syncOutcome(137).kind, "crash");
+  const input = { why: "w", reportPath: "/r.md", checkout: "/c", worktree: "/c-sync" };
+  assert.match(syncAgentPrompt({ ...input, code: 2 }), /fork-sync\.mjs --apply` from \/c/);
+  assert.match(syncAgentPrompt({ ...input, code: 1 }), /commits on top of it/);
 });

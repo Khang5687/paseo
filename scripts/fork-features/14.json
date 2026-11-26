@@ -1,0 +1,9 @@
+{
+  "pr": 14,
+  "title": "feat(app): pick the default editor in Settings",
+  "tests": [
+    "packages/app/src/hooks/use-preferred-editor.test.ts",
+    "packages/app/src/screens/settings/open-location/default-editor.test.tsx",
+    "packages/app/src/workspace/open-in-editor/preferred.test.tsx"
+  ]
+}

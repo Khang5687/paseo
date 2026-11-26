@@ -1,0 +1,9 @@
+{
+  "pr": 136,
+  "title": "feat(app): open files from another host's copy while their host sleeps",
+  "tests": [
+    "packages/app/src/offline-files/saved-list.test.ts",
+    "packages/app/src/offline-files/store.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/offline-files-host-copy.spec.ts"]
+}
