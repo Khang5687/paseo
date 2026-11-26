@@ -72,7 +72,6 @@ describe("native downscaleAttachmentForSend", () => {
       downscaleAttachmentForSend({
         attachment: nativePicture("image/png"),
         readBase64,
-        sendOriginal: false,
       }),
     ).resolves.toEqual({ data: "resized-2000x1500", mimeType: "image/jpeg" });
     expect(manipulator.calls.manipulate[0]).toBe(
@@ -92,7 +91,6 @@ describe("native downscaleAttachmentForSend", () => {
       downscaleAttachmentForSend({
         attachment: nativePicture("image/jpeg"),
         readBase64,
-        sendOriginal: false,
       }),
     ).resolves.toEqual({ data: "original-bytes", mimeType: "image/jpeg" });
     expect(manipulator.calls.resize).toEqual([]);
@@ -104,9 +102,8 @@ describe("native downscaleAttachmentForSend", () => {
 
     await expect(
       downscaleAttachmentForSend({
-        attachment: nativePicture("image/jpeg"),
+        attachment: { ...nativePicture("image/jpeg"), sendOriginal: true },
         readBase64,
-        sendOriginal: true,
       }),
     ).resolves.toEqual({ data: "original-bytes", mimeType: "image/jpeg" });
     expect(manipulator.calls.manipulate).toEqual([]);

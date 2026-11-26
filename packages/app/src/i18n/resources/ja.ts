@@ -185,6 +185,8 @@ export const ja: TranslationResources = {
     attachments: {
       addImage: "画像を追加",
       pasteImage: "画像を貼り付け",
+      sendOriginalSize: "元のサイズで送信",
+      sendOriginalSizeDescription: "次のメッセージの画像を縮小しない",
       addFile: "ファイルをアップロード",
       addIssueOrPr: "イシューまたはPRを追加",
       addIssueOrPr_mr: "イシューまたはMRを追加",

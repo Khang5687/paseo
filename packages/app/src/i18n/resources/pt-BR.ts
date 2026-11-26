@@ -185,6 +185,8 @@ export const ptBR: TranslationResources = {
     attachments: {
       addImage: "Adicionar imagem",
       pasteImage: "Colar imagem",
+      sendOriginalSize: "Enviar no tamanho original",
+      sendOriginalSizeDescription: "Imagens da próxima mensagem, sem reduzir",
       addFile: "Enviar arquivo",
       addIssueOrPr: "Adicionar issue ou PR",
       addIssueOrPr_mr: "Adicionar issue ou MR",

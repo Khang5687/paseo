@@ -182,6 +182,8 @@ export const en = {
     attachments: {
       addImage: "Add image",
       pasteImage: "Paste image",
+      sendOriginalSize: "Send original size",
+      sendOriginalSizeDescription: "Next message's pictures, not resized",
       addFile: "Upload file",
       addIssueOrPr: "Add issue or PR",
       addIssueOrPr_mr: "Add issue or MR",

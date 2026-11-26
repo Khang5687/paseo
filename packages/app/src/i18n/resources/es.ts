@@ -185,6 +185,8 @@ export const es: TranslationResources = {
     attachments: {
       addImage: "Agregar imagen",
       pasteImage: "Pegar imagen",
+      sendOriginalSize: "Enviar en tamaño original",
+      sendOriginalSizeDescription: "Imágenes del próximo mensaje, sin reducir",
       addFile: "Upload file",
       addIssueOrPr: "Agregar problema oPR",
       addIssueOrPr_mr: "Agregar problema o MR",

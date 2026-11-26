@@ -184,6 +184,8 @@ export const zhCN: TranslationResources = {
     attachments: {
       addImage: "添加图片",
       pasteImage: "粘贴图片",
+      sendOriginalSize: "发送原图",
+      sendOriginalSizeDescription: "下一条消息的图片不压缩",
       addFile: "Upload file",
       addIssueOrPr: "添加 issue 或 PR",
       addIssueOrPr_mr: "添加 issue 或 MR",

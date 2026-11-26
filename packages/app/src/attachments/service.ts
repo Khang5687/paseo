@@ -116,18 +116,12 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export interface EncodeAttachmentsForSendOptions {
-  /** The "send original size" switch: skip resizing. */
-  sendOriginal?: boolean;
-}
-
 /**
- * Reads the pictures for the wire, resized to the send size, and refuses the send
- * with a size error when they cannot fit one message.
+ * Reads the pictures for the wire, resized to the send size unless a picture is marked
+ * `sendOriginal`, and refuses the send with a size error when they cannot fit one message.
  */
 export async function encodeAttachmentsForSend(
   attachments: readonly AttachmentMetadata[] | undefined,
-  options: EncodeAttachmentsForSendOptions = {},
 ): Promise<EncodedImage[] | undefined> {
   if (!attachments || attachments.length === 0) {
     return undefined;
@@ -139,7 +133,6 @@ export async function encodeAttachmentsForSend(
       return await downscaleAttachmentForSend({
         attachment,
         readBase64: () => store.encodeBase64({ attachment }),
-        sendOriginal: options.sendOriginal === true,
       });
     } catch (error) {
       console.error("[attachments] Failed to encode attachment for send", {

@@ -688,16 +688,19 @@ can't read, and write them back on every save. A value that isn't a JSON array i
 
 Stores binary attachment blobs keyed by attachment ID.
 
-Every store keeps the picture as attached. Resizing happens only when a message is sent (`encodeAttachmentsForSend` in `packages/app/src/attachments/service.ts`): each picture goes to 2000 px on its long side as JPEG, so a message with many phone photos fits the 100 MiB WebSocket message limit, and previews and the original-size option still read the full picture. A send whose pictures still exceed the limit is refused in the composer before anything goes on the wire.
+Every store keeps the picture as attached. Resizing happens only when a message is sent (`encodeAttachmentsForSend` in `packages/app/src/attachments/service.ts`): each picture goes to 2000 px on its long side as JPEG, so a message with many phone photos fits the 100 MiB WebSocket message limit, and previews still read the full picture. A send whose pictures still exceed the limit is refused in the composer before anything goes on the wire.
+
+The "Send original size" row in the composer's attach menu skips the resize for the next message that carries pictures, then turns itself off. The composer marks the outgoing copies with `sendOriginal`, not the stored metadata, so the choice survives the queue and parent-managed sends without any of them taking a flag.
 
 ### AttachmentMetadata
 
-| Field         | Type      | Description                    |
-| ------------- | --------- | ------------------------------ |
-| `id`          | `string`  | Unique attachment ID           |
-| `mimeType`    | `string`  | MIME type                      |
-| `storageType` | `string`  | Storage backend identifier     |
-| `storageKey`  | `string`  | Key within the storage backend |
-| `createdAt`   | `number`  | Epoch ms                       |
-| `fileName`    | `string?` | Original filename              |
-| `byteSize`    | `number?` | Size in bytes                  |
+| Field          | Type       | Description                                 |
+| -------------- | ---------- | ------------------------------------------- |
+| `id`           | `string`   | Unique attachment ID                        |
+| `mimeType`     | `string`   | MIME type                                   |
+| `storageType`  | `string`   | Storage backend identifier                  |
+| `storageKey`   | `string`   | Key within the storage backend              |
+| `createdAt`    | `number`   | Epoch ms                                    |
+| `fileName`     | `string?`  | Original filename                           |
+| `byteSize`     | `number?`  | Size in bytes                               |
+| `sendOriginal` | `boolean?` | Outgoing copies only: send at original size |

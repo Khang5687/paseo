@@ -14,7 +14,7 @@ export async function downscaleAttachmentForSend(
     mimeType: attachment.mimeType,
   });
   if (
-    input.sendOriginal ||
+    attachment.sendOriginal === true ||
     attachment.storageType !== "native-file" ||
     !isDownscalableImageMimeType(attachment.mimeType)
   ) {
@@ -30,7 +30,6 @@ export async function downscaleAttachmentForSend(
       width: image.width,
       height: image.height,
       mimeType: attachment.mimeType,
-      sendOriginal: false,
     });
     if (plan.kind === "keep") return await keep();
     const resizeContext = ImageManipulator.manipulate(image).resize({

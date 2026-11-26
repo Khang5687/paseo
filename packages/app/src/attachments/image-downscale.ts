@@ -30,9 +30,8 @@ export function planImageDownscale(input: {
   width: number;
   height: number;
   mimeType: string;
-  sendOriginal: boolean;
 }): ImageDownscalePlan {
-  if (input.sendOriginal || !isDownscalableImageMimeType(input.mimeType)) return { kind: "keep" };
+  if (!isDownscalableImageMimeType(input.mimeType)) return { kind: "keep" };
   if (!(input.width > 0) || !(input.height > 0)) return { kind: "keep" };
   const longSide = Math.max(input.width, input.height);
   const scale = Math.min(1, IMAGE_MAX_LONG_SIDE_PX / longSide);

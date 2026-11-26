@@ -50,7 +50,6 @@ describe("web downscaleAttachmentForSend", () => {
     const sent = await downscaleAttachmentForSend({
       attachment: stored("image/png"),
       readBase64: async () => original,
-      sendOriginal: false,
     });
 
     expect(sent.mimeType).toBe("image/jpeg");
@@ -65,7 +64,6 @@ describe("web downscaleAttachmentForSend", () => {
       downscaleAttachmentForSend({
         attachment: stored("image/jpeg"),
         readBase64: async () => original,
-        sendOriginal: false,
       }),
     ).resolves.toEqual({ data: original, mimeType: "image/jpeg" });
   });
@@ -75,9 +73,8 @@ describe("web downscaleAttachmentForSend", () => {
 
     await expect(
       downscaleAttachmentForSend({
-        attachment: stored("image/png"),
+        attachment: { ...stored("image/png"), sendOriginal: true },
         readBase64: async () => original,
-        sendOriginal: true,
       }),
     ).resolves.toEqual({ data: original, mimeType: "image/png" });
   });

@@ -39,7 +39,9 @@ export async function downscaleAttachmentForSend(
     data: await input.readBase64(),
     mimeType: input.attachment.mimeType,
   };
-  if (input.sendOriginal || !isDownscalableImageMimeType(original.mimeType)) return original;
+  if (input.attachment.sendOriginal === true || !isDownscalableImageMimeType(original.mimeType)) {
+    return original;
+  }
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(base64ToBlob(original.data, original.mimeType));
@@ -56,7 +58,6 @@ export async function downscaleAttachmentForSend(
       width: bitmap.width,
       height: bitmap.height,
       mimeType: original.mimeType,
-      sendOriginal: false,
     });
     if (plan.kind === "keep") return original;
     const blob = await encodeJpeg({

@@ -185,6 +185,8 @@ export const ru: TranslationResources = {
     attachments: {
       addImage: "Добавить изображение",
       pasteImage: "Вставить изображение",
+      sendOriginalSize: "Отправить в исходном размере",
+      sendOriginalSizeDescription: "Изображения следующего сообщения без уменьшения",
       addFile: "Загрузить файл",
       addIssueOrPr: "Добавить проблему или PR",
       addIssueOrPr_mr: "Добавить проблему или MR",
