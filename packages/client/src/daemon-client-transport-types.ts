@@ -3,6 +3,11 @@ export interface DaemonTransport {
   supportsDrain?: boolean;
   maxFrameBytes?: number;
   send: (data: string | Uint8Array | ArrayBuffer) => void | Promise<void>;
+  /**
+   * Calls the handler while queued outbound bytes leave the socket. Absent when the socket
+   * cannot report its send buffer.
+   */
+  onSendProgress?: (handler: () => void) => () => void;
   close: (code?: number, reason?: string) => void;
   onMessage: (handler: (data: unknown, isBinary: boolean) => void | Promise<void>) => () => void;
   onOpen: (handler: () => void) => () => void;

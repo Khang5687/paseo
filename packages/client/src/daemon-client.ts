@@ -685,8 +685,8 @@ export interface DaemonClientConfig {
   /**
    * Ping the daemon every 10 s and reconnect after missed replies (default true). Turn it off
    * only where the transport reports its own loss (a plugin's IPC channel, an in-process
-   * channel): there a ping cannot find a dead link the channel would not, and it costs both
-   * processes a wakeup per client every 10 s.
+   * channel, a route through a connected host): there a ping cannot find a dead link the
+   * channel would not, and it costs both processes a wakeup per client every 10 s.
    */
   livenessHeartbeat?: boolean;
 }
@@ -1462,6 +1462,16 @@ function toTimeoutError(error: unknown, label: string, timeoutMs: number): Error
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30000;
 const DEFAULT_SESSION_RPC_TIMEOUT_MS = 60_000;
+// The answer to a message with pictures cannot arrive before its last byte does, which takes
+// minutes on a slow link. Such sends get the default deadline plus the time their bytes need at
+// 1 Mbit/s (125 bytes per ms); a dead link is still caught by the liveness check.
+const SLOW_LINK_BYTES_PER_MS = 125;
+
+function sendDeadlineMs(images: ReadonlyArray<{ data: string }> | undefined): number {
+  const bytes = images?.reduce((sum, image) => sum + image.data.length, 0) ?? 0;
+  return DEFAULT_SESSION_RPC_TIMEOUT_MS + Math.ceil(bytes / SLOW_LINK_BYTES_PER_MS);
+}
+
 // The daemon allows 90s per provider; retain its result through the delivery margin.
 const RECENT_PROVIDER_SESSIONS_TIMEOUT_MS = 100_000;
 const PUSH_TOKEN_REVOCATION_TIMEOUT_MS = 2_000;
@@ -2104,6 +2114,7 @@ export class DaemonClient {
             transport.close(4003, "Invalid chunked transport");
           }
         }),
+        this.subscribeSendProgress(transport),
       ];
     } catch (error) {
       this.resetConnectTimeout();
@@ -2224,6 +2235,15 @@ export class DaemonClient {
   private recordTransportActivity(): void {
     this.consecutiveLivenessFailures = 0;
     if (this.pingProbe) this.pingProbe.receivedActivity = true;
+  }
+
+  // A long upload holds the ping behind it and the daemon has nothing to answer until it
+  // arrives; bytes leaving the socket prove the link is alive in the meantime.
+  private subscribeSendProgress(transport: DaemonTransport): () => void {
+    if (!transport.onSendProgress) return () => {};
+    return transport.onSendProgress(() => {
+      if (this.transport === transport) this.recordTransportActivity();
+    });
   }
 
   requireConnectedHosts(): void {
@@ -4566,6 +4586,7 @@ export class DaemonClient {
       requestId,
       message,
       options: { skipQueue: true },
+      timeout: sendDeadlineMs(options.images),
       select: (msg) => {
         if (msg.type !== "status") {
           return null;
@@ -5453,6 +5474,7 @@ export class DaemonClient {
       requestId,
       message,
       options: { skipQueue: true },
+      timeout: sendDeadlineMs(options.images),
       select: (msg) => {
         if (msg.type !== "send_agent_message_response") {
           return null;

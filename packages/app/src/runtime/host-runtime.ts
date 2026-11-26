@@ -629,6 +629,10 @@ function createDefaultDeps(
           ...base,
           url: "ws://routed-host/ws",
           transportFactory: createHostChannelTransport(origin, host.serverId, clientId, null),
+          // The origin connection and the origin daemon's host link each run liveness and close
+          // the route on loss. A routed ping queues behind uploads on the slower link, so it would
+          // tear down a healthy route during a large send.
+          livenessHeartbeat: false,
         });
       }
       if (connection.type === "directSocket" || connection.type === "directPipe") {
@@ -700,6 +704,7 @@ function createDefaultDeps(
           logger: createHostLogger(() => host.serverId),
           appVersion: resolveAppVersion() ?? undefined,
           createPluginClientBundleStore: createHostPluginClientBundleStore,
+          livenessHeartbeat: false,
         });
         try {
           await client.connect();
