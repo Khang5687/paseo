@@ -11,6 +11,6 @@ Black covers the whole window in pure `#000` while voice keeps listening and spe
 - Android back does not wake it. The modal has no `onRequestClose` for the same pocket reason.
 - Escape wakes it on a hardware keyboard, and a screen reader's activate action wakes it.
 - The state lives in the panel. Stopping voice unmounts the panel, which ends black with it.
-- The status bar is hidden while black. The Android navigation bar stays: hiding it needs immersive mode, which React Native does not expose.
+- The status bar is hidden while black. On Android the modal is its own dialog window, and React Native hides the bar only on windows it already knows, so `StatusBar hidden` mounts after the modal's `onShow`. Mounted with the modal, it hides the bar behind the dialog and the clock stays visible. The Android navigation bar stays: hiding it needs immersive mode, which React Native does not expose.
 
-Check route: start realtime voice in a chat, tap Black. The screen goes black and voice keeps going. Tap once: nothing. Double-tap: the panel is back and voice is still on. On web at 390×844 the same taps work with the mouse, and Escape wakes it too.
+Check route: start realtime voice in a chat, tap Black. The screen goes black, the status bar (clock, battery) is gone, and voice keeps going. Tap once: nothing. Double-tap: the panel is back with the status bar, and voice is still on. On Android, screenshot with `adb -s <device> exec-out screencap -p`; the black frame has no lit pixels except the navigation pill. On web at 390×844 the same taps work with the mouse, and Escape wakes it too.

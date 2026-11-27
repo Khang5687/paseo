@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type AccessibilityActionEvent,
@@ -34,6 +34,11 @@ export function VoiceBlackScreen({ onWake }: VoiceBlackScreenProps) {
   const modalLayer = useGlobalOverlayLayer("modal", true);
   const pressStartRef = useRef<WakeTapPoint | null>(null);
   const pendingTapRef = useRef<WakeTap | null>(null);
+  // On Android the modal is its own dialog window. React Native hides the status bar on every
+  // dialog window it already knows, so `StatusBar hidden` must mount after the dialog is shown;
+  // mounted with the modal, it hides the bar on the app's window only and the dialog keeps it.
+  const [shown, setShown] = useState(false);
+  const handleShow = useCallback(() => setShown(true), []);
 
   const handleKeyDown = useCallback(
     (event: KeyboardInputEvent) => {
@@ -80,8 +85,8 @@ export function VoiceBlackScreen({ onWake }: VoiceBlackScreenProps) {
   );
 
   return (
-    <Modal visible transparent statusBarTranslucent navigationBarTranslucent>
-      <StatusBar hidden />
+    <Modal visible transparent statusBarTranslucent navigationBarTranslucent onShow={handleShow}>
+      {shown ? <StatusBar hidden /> : null}
       <View
         ref={setOverlayScope}
         testID="voice-black-screen"
