@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import type { AgentOpenQuestion, AgentQuestionAnswer } from "@getpaseo/protocol/messages";
 import { PermissionRequestCard } from "@/agent-stream/view";
 import { Button } from "@/components/ui/button";
@@ -76,7 +76,8 @@ export function ProjectPeek({
   const handleOpen = useCallback(() => {
     if (chat) navigateToWorkspace({ serverId: chat.serverId, workspaceId: chat.workspaceId });
   }, [chat]);
-  const handleMore = useCallback(() => router.push(buildNeedsYouRoute()), []);
+  // Cast like project-strip.tsx: a generated router.d.ts older than /needs-you rejects the literal.
+  const handleMore = useCallback(() => router.push(buildNeedsYouRoute() as Href), []);
   const held = heldChat !== null;
   useEffect(() => {
     if (!held || !onHoldChange) return;
