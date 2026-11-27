@@ -6921,6 +6921,96 @@ test("finished attention flags a reply that asks the user a question until it is
   expect((await storage.get(snapshot.id))?.awaitingAnswer).toBeUndefined();
 });
 
+test("open questions from replies stay through reading and close when a message answers them", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-open-questions-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const replies: string[] = [];
+  class ReplyingSession extends TestAgentSession {
+    private turns = 0;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turnId = `question-turn-${++this.turns}`;
+      const text = replies.shift() ?? "";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (text) {
+          this.pushEvent({
+            type: "timeline",
+            provider: this.provider,
+            turnId,
+            item: { type: "assistant_message", text },
+          });
+        }
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+  class ReplyingClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new ReplyingSession(config);
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new ReplyingClient() },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000136",
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const openIds = () =>
+    (toAgentPayload(manager.getAgent(snapshot.id)!).openQuestions ?? []).map((q) => q.id);
+  let sent = 0;
+  // Clients send prompts with a message id; that is what records the user message.
+  const send = (text: string) =>
+    manager.runAgent(snapshot.id, text, { clientMessageId: `open-questions-${++sent}` });
+
+  replies.push(
+    [
+      "❓ **Q1** - **Storage**: SQLite or Postgres?",
+      "",
+      "➡️ SQLite in one file",
+      "",
+      "❓ **Q2** - **Port**: 6767 or 6768?",
+      "",
+      "➡️ 6768",
+    ].join("\n"),
+  );
+  await send("plan it");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q1", "Q2"]);
+  expect(toAgentPayload(manager.getAgent(snapshot.id)!).openQuestions?.[0]?.pick).toBe(
+    "SQLite in one file",
+  );
+
+  // Reading the chat clears the unread flag, not the questions.
+  await manager.clearAgentAttention(snapshot.id);
+  // A message about something else, and a turn that ends without text, leave them open.
+  await send("also check the build log");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q1", "Q2"]);
+  expect((await storage.get(snapshot.id))?.openQuestions?.map((q) => q.id)).toEqual(["Q1", "Q2"]);
+
+  replies.push("Noted.");
+  await send("Q1 (Storage) yes: SQLite in one file");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q2"]);
+
+  // Another agent's message names Q2, but only the user's own words answer.
+  await send(
+    '<paseo-system version="1" kind="agent-message" source-agent-id="helper" message-id="m1">\nQ2 is done on my side\n</paseo-system>',
+  );
+  await manager.flush();
+  expect(openIds()).toEqual(["Q2"]);
+
+  await send("gwr");
+  await manager.flush();
+  expect(openIds()).toEqual([]);
+  expect((await storage.get(snapshot.id))?.openQuestions).toBeUndefined();
+});
+
 test("archiveSnapshot clears persisted attention and normalizes running status", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-archive-attention-"));
   const storagePath = join(workdir, "agents");

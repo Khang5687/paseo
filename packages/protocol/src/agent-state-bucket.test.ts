@@ -132,6 +132,12 @@ describe("deriveAgentStateBucket", () => {
     ).toBe("done");
   });
 
+  it("keeps a settled agent with open questions in needs_input after it is read", () => {
+    expect(deriveAgentStateBucket({ status: "idle", openQuestionCount: 2 })).toBe("needs_input");
+    expect(deriveAgentStateBucket({ status: "running", openQuestionCount: 2 })).toBe("running");
+    expect(deriveAgentStateBucket({ status: "idle", openQuestionCount: 0 })).toBe("done");
+  });
+
   it("does not count initializing agents as running for workspace buckets", () => {
     expect(
       deriveAgentStateBucket({

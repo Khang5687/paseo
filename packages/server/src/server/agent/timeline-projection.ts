@@ -540,6 +540,16 @@ export class TimelineProjection {
     return row?.item.type === "assistant_message" ? row.item.text : null;
   }
 
+  /** The last assistant message, when no user message came after it. */
+  getLastAssistantMessageSinceUserMessage(): string | null {
+    for (let index = this.rows.length - 1; index >= 0; index -= 1) {
+      const item = this.rows[index].item;
+      if (item.type === "user_message") return null;
+      if (item.type === "assistant_message") return item.text;
+    }
+    return null;
+  }
+
   getFirstUserMessage(): string | null {
     for (const row of this.rows) {
       if (row.item.type === "user_message") return row.item.text;
