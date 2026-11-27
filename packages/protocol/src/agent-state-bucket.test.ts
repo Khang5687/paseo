@@ -3,6 +3,7 @@ import {
   deriveAgentStateBucket,
   getAgentStatusPriority,
   getWorkspaceStateBucketPriority,
+  isAgentWaiting,
 } from "./agent-state-bucket.js";
 
 describe("deriveAgentStateBucket", () => {
@@ -140,9 +141,9 @@ describe("deriveAgentStateBucket", () => {
 
   it("keeps a settled agent that asks the user in needs_input while its background jobs run", () => {
     const backgroundWork = { count: 1, runningCount: 1 };
-    expect(
-      deriveAgentStateBucket({ status: "idle", backgroundWork, openQuestionCount: 2 }),
-    ).toBe("needs_input");
+    expect(deriveAgentStateBucket({ status: "idle", backgroundWork, openQuestionCount: 2 })).toBe(
+      "needs_input",
+    );
     expect(
       deriveAgentStateBucket({
         status: "idle",
@@ -206,5 +207,42 @@ describe("getAgentStatusPriority", () => {
     expect(getAgentStatusPriority({ status: "error", requiresAttention: false })).toBe(
       getAgentStatusPriority({ status: "idle" }),
     );
+  });
+});
+
+describe("isAgentWaiting", () => {
+  const job = { count: 1 };
+
+  it("waits on its jobs and subagents once its own turn ends", () => {
+    expect(isAgentWaiting({ status: "idle", backgroundWork: job })).toBe(true);
+    expect(
+      isAgentWaiting({
+        status: "idle",
+        requiresAttention: true,
+        attentionReason: "finished",
+        runningSubagentCount: 2,
+      }),
+    ).toBe(true);
+  });
+
+  it("works rather than waits while its own turn runs", () => {
+    expect(isAgentWaiting({ status: "running", backgroundWork: job })).toBe(false);
+    expect(isAgentWaiting({ status: "running", runningSubagentCount: 1 })).toBe(false);
+  });
+
+  it("asks the user rather than waits when it has open questions", () => {
+    expect(isAgentWaiting({ status: "idle", openQuestionCount: 1, backgroundWork: job })).toBe(
+      false,
+    );
+    expect(isAgentWaiting({ status: "idle", openQuestionCount: 1, runningSubagentCount: 1 })).toBe(
+      false,
+    );
+  });
+
+  it("does not wait on scheduled work or on nothing", () => {
+    expect(isAgentWaiting({ status: "idle", backgroundWork: { count: 1, runningCount: 0 } })).toBe(
+      false,
+    );
+    expect(isAgentWaiting({ status: "idle" })).toBe(false);
   });
 });

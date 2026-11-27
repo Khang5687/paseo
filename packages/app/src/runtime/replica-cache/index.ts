@@ -342,6 +342,7 @@ const StoredWorkspaceSchema = z.strictObject({
   statusEnteredAt: IsoDateSchema.nullable(),
   // Optional because entries written before the count existed have none.
   runningSubagentCount: z.number().optional(),
+  waiting: z.object({ backgroundTaskCount: z.number(), subagentCount: z.number() }).optional(),
   activityAt: z.null(),
   archivingAt: z.string().nullable(),
   diffStat: z.strictObject({ additions: z.number(), deletions: z.number() }).nullable(),
@@ -783,6 +784,7 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     status: workspace.status,
     statusEnteredAt: workspace.statusEnteredAt?.toISOString() ?? null,
     runningSubagentCount: workspace.runningSubagentCount,
+    waiting: workspace.waiting,
     activityAt: null,
     archivingAt: workspace.archivingAt,
     diffStat: workspace.diffStat,

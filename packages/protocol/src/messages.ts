@@ -5238,6 +5238,16 @@ export const WorkspaceDescriptorPayloadSchema = z
     // and by daemons that predate it; those let subagents mask a waiting root as
     // running.
     runningSubagentCount: z.number().int().nonnegative().optional(),
+    // The workspace waits: no root agent's own turn runs and nothing is for the user, but
+    // background jobs or subagents still run for it. `status` keeps its older meaning for
+    // clients that predate this field (running while jobs run, done or attention while only
+    // subagents run). Omitted when the workspace does not wait, and by older daemons.
+    waiting: z
+      .object({
+        backgroundTaskCount: z.number().int().nonnegative(),
+        subagentCount: z.number().int().nonnegative(),
+      })
+      .optional(),
     activityAt: z.string().nullable(),
     createdAt: z.string().optional(),
     lastUserMessageAt: z.string().nullable().optional(),

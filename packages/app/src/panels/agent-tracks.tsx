@@ -26,6 +26,7 @@ import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { buildWorkspaceTabPersistenceKey, type WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { openPreferredWorkspaceTarget } from "@/workspace-tabs/open-beside";
 import { openComposerChanges } from "@/workspace-tabs/open-supporting-view";
+import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
 
 /**
  * The pane's ambient context — workspace changes, subagents, and tasks — as a row of pills above
@@ -92,11 +93,21 @@ export const AgentTracks = memo(function AgentTracks({
   const canDetachSubagents = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.agentDetach === true,
   );
+  // The chat waits when its own turn ended and nothing in it is for you: the jobs and subagents
+  // still running are what it waits on, so their pills show the hourglass instead of the ring.
   // Same rule as the sidebar's root activity: an open turn is the agent working, whatever the
   // lifecycle says while a turn closes.
-  const yourTurn = useSessionStore((state) => {
+  const waits = useSessionStore((state) => {
     const agent = state.sessions[serverId]?.agents.get(agentId);
-    return agent ? agent.turn.phase !== "open" && agent.status !== "initializing" : false;
+    if (!agent || agent.turn.phase === "open" || agent.status === "initializing") return false;
+    const bucket = deriveSidebarStateBucket({
+      status: agent.status === "running" ? "idle" : agent.status,
+      pendingPermissionCount: agent.pendingPermissions.length,
+      requiresAttention: agent.requiresAttention,
+      attentionReason: agent.attentionReason,
+      openQuestionCount: agent.openQuestions?.length,
+    });
+    return bucket !== "needs_input" && bucket !== "failed";
   });
   const archiveSubagent = useArchiveSubagent();
   const detachSubagent = useDetachSubagent();
@@ -153,13 +164,13 @@ export const AgentTracks = memo(function AgentTracks({
   return (
     <ComposerTrackBar>
       <OpenQuestionsTrack serverId={serverId} agentId={agentId} />
-      <BackgroundWorkTrack model={backgroundModel} summary={backgroundWork} />
+      <BackgroundWorkTrack model={backgroundModel} summary={backgroundWork} waits={waits} />
       {parentAgentId ? <ParentAgentPill serverId={serverId} parentAgentId={parentAgentId} /> : null}
       <AgentTaskList tasks={tasks} />
       <SubagentsTrack
         serverId={serverId}
         rows={subagentRows}
-        yourTurn={yourTurn}
+        waits={waits}
         onOpenSubagent={handleOpenSubagent}
         onOpenProviderSubagent={handleOpenProviderSubagent}
         sheetTabFor={sheetTabFor}

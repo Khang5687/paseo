@@ -591,4 +591,29 @@ describe("MockLoadTestAgentClient", () => {
       rmSync(workdir, { recursive: true, force: true });
     }
   });
+
+  test("a synthetic background job keeps running after the turn ends", async () => {
+    const workdir = mkdtempSync(join(tmpdir(), "paseo-mock-load-test-"));
+    try {
+      const manager = new AgentManager({
+        clients: { mock: new MockLoadTestAgentClient() },
+        logger: createTestLogger(),
+      });
+      const agent = await manager.createAgent(
+        { provider: "mock", cwd: workdir, model: "e2e-fast-stream" },
+        undefined,
+        { workspaceId: undefined },
+      );
+
+      await manager.runAgent(agent.id, "Start a synthetic background job.");
+
+      // One provider job, and it runs: the summary leaves runningCount out when it equals count.
+      await vi.waitFor(() =>
+        expect(manager.getAgentBackgroundWorkSummary(agent.id)).toEqual({ count: 1 }),
+      );
+      expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
 });
