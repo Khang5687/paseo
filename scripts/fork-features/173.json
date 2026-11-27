@@ -1,0 +1,10 @@
+{
+  "pr": 173,
+  "title": "feat(app): give each chat its own terminal drawer",
+  "tests": [
+    "packages/app/src/terminal-drawer/model.test.ts",
+    "packages/app/src/screens/workspace/terminals/state.test.ts",
+    "packages/app/src/utils/terminal-list.test.ts",
+    "packages/app/src/keyboard/keyboard-shortcuts.test.ts"
+  ]
+}

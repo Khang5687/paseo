@@ -62,9 +62,11 @@ import { ICON_SIZE } from "@/styles/theme";
 import type { Theme } from "@/styles/theme";
 import { useProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsRow } from "./browser-tools-card";
+import { DefaultOutputStyleCard } from "./default-output-style-card";
 import { HostPaseoToolsRow } from "./paseo-tools-card";
 import { RestartRecoveryRow } from "./restart-recovery-card";
 import { IdleRuntimeCleanupRow } from "./idle-runtime-cleanup-card";
+import { DraftHistoryRetentionCard } from "./draft-history-retention-card";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
 
 const ThemedRestart = withUnistyles(RotateCw);
@@ -264,6 +266,10 @@ export function HostToolsPage({ serverId }: { serverId: string }) {
               <HostPaseoToolsRow serverId={serverId} />
               <BrowserToolsRow serverId={serverId} />
             </SettingsCard>
+          </SettingsSection>
+          <SettingsSection title={t("settings.hostSections.agents")}>
+            <DefaultOutputStyleCard serverId={serverId} />
+            <DraftHistoryRetentionCard serverId={serverId} />
           </SettingsSection>
         </>
       ) : (

@@ -1,0 +1,5 @@
+{
+  "pr": 100,
+  "title": "feat(app): /fork slash command",
+  "tests": ["packages/app/src/client-slash-commands/index.test.ts"]
+}

@@ -48,6 +48,7 @@ async function runClientSlashCommand(page: Page, command: "/quit" | "/clear"): P
   await expect(input).toBeEditable({ timeout: 30_000 });
   await input.fill(command);
   await expect(input).toHaveValue(command);
+  page.once("dialog", (dialog) => void dialog.accept());
   await input.press("Enter");
 }
 
@@ -56,6 +57,7 @@ async function selectClientSlashCommand(page: Page, query: string, label: string
   await expect(input).toBeEditable({ timeout: 30_000 });
   await input.fill(query);
   await expect(page.getByText(label, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  page.once("dialog", (dialog) => void dialog.accept());
   await input.press("Enter");
 }
 

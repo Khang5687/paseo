@@ -428,6 +428,26 @@ export function buildSchedulesRoute() {
   return "/schedules" as const;
 }
 
+export function buildNotesRoute() {
+  return "/notes" as const;
+}
+
+export function buildNeedsYouRoute() {
+  return "/needs-you" as const;
+}
+
+export function buildSavedRoute() {
+  return "/saved" as const;
+}
+
+/** One saved file, opened from this device's copy. */
+export function buildSavedFileRoute(input: { serverId: string; path: string }) {
+  return {
+    pathname: "/saved/file" as const,
+    params: { serverId: input.serverId, path: input.path },
+  };
+}
+
 export function buildOpenProjectRoute() {
   return "/open-project" as const;
 }

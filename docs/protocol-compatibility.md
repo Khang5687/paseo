@@ -40,6 +40,8 @@ The app checks for the capability and either runs the feature or tells the user 
 
 Existing functionality keeps working across versions. Never gate an established request on a new enhancement: negotiate the optional enhancement at the client boundary and preserve the existing request for older hosts. Whole-turn pagination can require a capability; reading conversation history cannot.
 
+Chat file links search git-ignored files through `directory_suggestions_request.includeIgnored`, gated on `server_info.features.directorySuggestionsIncludeIgnored`. The app sends the field only to hosts that advertise it; on older hosts the link ladder skips the ignored pass and a git-ignored file still misses.
+
 ## Client capability ownership
 
 The client package advertises the protocol behavior it implements. Add each new capability to

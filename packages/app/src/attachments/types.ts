@@ -20,6 +20,14 @@ export interface AttachmentMetadata {
   fileName?: string | null;
   byteSize?: number | null;
   createdAt: number;
+  /** Daemon upload holding a copy, set when the draft syncs across devices. */
+  uploadId?: string;
+  /**
+   * Send this picture at its original size instead of resized. Set only on the copy in an
+   * outgoing message, by the composer's "Send original size" switch; stored metadata never has
+   * it. It rides on the picture so queued messages and parent-managed sends keep the choice.
+   */
+  sendOriginal?: boolean;
 }
 
 export interface BrowserElementAttachment {
@@ -171,12 +179,31 @@ export interface GarbageCollectInput {
 }
 
 /**
+ * Writes one attachment from chunks as they arrive, so a big file never sits in memory whole.
+ * The attachment can be read only after `finish`.
+ */
+export interface AttachmentWriter {
+  readonly id: string;
+  write(chunk: Uint8Array): Promise<void>;
+  finish(): Promise<AttachmentMetadata>;
+  /** Drops what was written so far. */
+  abort(): Promise<void>;
+}
+
+export interface OpenAttachmentWriterInput {
+  id?: string;
+  mimeType?: string;
+  fileName?: string | null;
+}
+
+/**
  * Async storage contract for attachment bytes.
  * Metadata is persisted in drafts/messages; bytes live in platform stores.
  */
 export interface AttachmentStore {
   readonly storageType: AttachmentStorageType;
   save(input: SaveAttachmentInput): Promise<AttachmentMetadata>;
+  openWriter(input: OpenAttachmentWriterInput): Promise<AttachmentWriter>;
   encodeBase64(input: EncodeAttachmentInput): Promise<string>;
   resolvePreviewUrl(input: ResolvePreviewUrlInput): Promise<string>;
   releasePreviewUrl?(input: ReleasePreviewUrlInput): Promise<void>;

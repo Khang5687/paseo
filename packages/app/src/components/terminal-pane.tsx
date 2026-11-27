@@ -23,7 +23,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useKeyboardShiftStyle } from "@/keyboard/shift";
-import { useAppActivelyVisible } from "@/hooks/use-app-visible";
+import { useAppActivelyVisible, useAppVisible } from "@/hooks/use-app-visible";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import {
   hasPendingTerminalModifiers,
@@ -77,13 +77,17 @@ import { useBlockMobilePanelOpenGestures } from "@/mobile-panels/provider";
 import { useSessionStore } from "@/stores/session-store";
 import { toXtermTheme } from "@/utils/to-xterm-theme";
 import TerminalEmulator, { type TerminalEmulatorHandle } from "./terminal-emulator";
-import { TerminalFloatingCopyAction, TerminalPasteAction } from "./terminal-copy-paste-actions";
+import {
+  TerminalFloatingAddNoteAction,
+  TerminalFloatingCopyAction,
+  TerminalPasteAction,
+} from "./terminal-copy-paste-actions";
 import {
   createTerminalResizeDebouncer,
   type TerminalResizeRequest,
 } from "./terminal-resize-debouncer";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { isNative } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
 import { useKeyboardFocusSurface } from "@/keyboard";
 import {
   applyTerminalRendererReadyChange,
@@ -98,19 +102,30 @@ import type {
   TerminalLocalFileLinkTarget,
 } from "@/terminal/local-links/terminal-local-link-provider";
 import {
+  TerminalFileLinkMenu,
+  type TerminalFileLinkMenuRequest,
+} from "@/terminal/local-links/terminal-file-link-menu";
+import {
   normalizeWorkspaceFileLocation,
   type OpenFileDisposition,
   type WorkspaceFileOpenRequest,
 } from "@/workspace/file-open";
+import {
+  TerminalSelectionNoteAction,
+  useTerminalPaneNotes,
+} from "@/terminal/notes/terminal-pane-notes";
 
 interface TerminalPaneProps {
   serverId: string;
   cwd: string;
   terminalId: string;
+  workspaceId: string;
   isWorkspaceFocused: boolean;
   isPaneFocused: boolean;
   onOpenFileExplorer: () => void;
   onOpenWorkspaceFile: (request: WorkspaceFileOpenRequest) => void;
+  /** Replaces the phone swipe that opens the sidebar or the explorer; -1 is a swipe right. */
+  onSwipe?: (delta: 1 | -1) => void;
 }
 
 const TERMINAL_REFIT_DELAYS_MS = [0, 48, 144, 320];
@@ -261,14 +276,17 @@ export function TerminalPane({
   serverId,
   cwd,
   terminalId,
+  workspaceId,
   isWorkspaceFocused,
   isPaneFocused,
   onOpenFileExplorer,
   onOpenWorkspaceFile,
+  onSwipe,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
   const retainedPanelActive = useRetainedPanelActive();
   const isAppActivelyVisible = useAppActivelyVisible();
+  const isAppVisible = useAppVisible();
   const { theme } = useUnistyles();
   const { settings } = useAppSettings();
   const xtermTheme = useMemo(() => toXtermTheme(theme.colors.terminal), [theme]);
@@ -423,6 +441,17 @@ export function TerminalPane({
   const handleSelectionChange = useCallback((nextHasSelection: boolean) => {
     setHasSelection(nextHasSelection);
   }, []);
+
+  const notes = useTerminalPaneNotes({
+    serverId,
+    cwd,
+    terminalId,
+    workspaceId,
+    emulatorRef,
+    isTerminalPresented,
+    isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+    isAttaching,
+  });
 
   const requestTerminalFocus = useCallback(() => {
     setFocusRequestToken((current) => current + 1);
@@ -652,25 +681,21 @@ export function TerminalPane({
     isConnected,
   ]);
 
-  useEffect(() => {
-    pendingTerminalInputRef.current = [];
-    const nextTerminalId = resolveTerminalStreamTarget({
-      terminalId,
-      terminalStreamKey,
-      rendererReadyStreamKey,
-      isWorkspaceFocused,
-    });
-    streamControllerRef.current?.setTerminal({
-      terminalId: nextTerminalId,
-    });
-  }, [
-    client,
-    isConnected,
-    isWorkspaceFocused,
-    rendererReadyStreamKey,
+  const streamTargetTerminalId = resolveTerminalStreamTarget({
     terminalId,
     terminalStreamKey,
-  ]);
+    rendererReadyStreamKey,
+    isWorkspaceFocused,
+    isPanelActive: retainedPanelActive,
+    isAppVisible,
+    streamHiddenTabs: !isNative,
+  });
+  useEffect(() => {
+    pendingTerminalInputRef.current = [];
+    streamControllerRef.current?.setTerminal({
+      terminalId: streamTargetTerminalId,
+    });
+  }, [client, isConnected, streamTargetTerminalId]);
 
   const enqueuePendingTerminalInput = useCallback((entry: PendingTerminalInput) => {
     const queue = pendingTerminalInputRef.current;
@@ -1051,6 +1076,15 @@ export function TerminalPane({
     },
     [onOpenWorkspaceFile],
   );
+  const [fileLinkMenuRequest, setFileLinkMenuRequest] =
+    useState<TerminalFileLinkMenuRequest | null>(null);
+  // Right click only: on a phone a long press in the terminal selects text.
+  const handleLocalFileLinkContextMenu = useCallback(
+    (target: TerminalLocalFileLinkTarget, point: { x: number; y: number }) => {
+      setFileLinkMenuRequest((current) => ({ id: (current?.id ?? 0) + 1, target, point }));
+    },
+    [],
+  );
 
   const toggleModifier = useCallback(
     (modifier: keyof ModifierState) => {
@@ -1097,15 +1131,23 @@ export function TerminalPane({
 
   const handleSwipeRight = useCallback(() => {
     if (!swipeGesturesEnabled) return;
+    if (onSwipe) {
+      onSwipe(-1);
+      return;
+    }
     emulatorRef.current?.blur();
     showMobileAgentList();
-  }, [swipeGesturesEnabled, showMobileAgentList]);
+  }, [swipeGesturesEnabled, onSwipe, showMobileAgentList]);
 
   const handleSwipeLeft = useCallback(() => {
     if (!swipeGesturesEnabled) return;
+    if (onSwipe) {
+      onSwipe(1);
+      return;
+    }
     emulatorRef.current?.blur();
     onOpenFileExplorer();
-  }, [swipeGesturesEnabled, onOpenFileExplorer]);
+  }, [swipeGesturesEnabled, onSwipe, onOpenFileExplorer]);
   const showPasteAction = shouldShowTerminalPasteAction({ isNative });
   const showFloatingCopyAction = shouldShowTerminalFloatingCopyAction({
     hasSelection,
@@ -1201,14 +1243,24 @@ export function TerminalPane({
             onFilePaste={handleFilePaste}
             onInputModeChange={handleInputModeChange}
             onSelectionChange={handleSelectionChange}
+            {...notes.emulatorProps}
             onResolveLocalFileLink={handleResolveLocalFileLink}
             onOpenLocalFileLink={handleOpenLocalFileLink}
+            onLocalFileLinkContextMenu={isWeb ? handleLocalFileLinkContextMenu : undefined}
             onPendingModifiersConsumed={handlePendingModifiersConsumed}
             pendingModifiers={modifiers}
             focusRequestToken={focusRequestToken}
             resizeRequestToken={resizeRequestToken}
           />
         </View>
+        {fileLinkMenuRequest ? (
+          <TerminalFileLinkMenu
+            key={fileLinkMenuRequest.id}
+            serverId={serverId}
+            cwd={cwd}
+            request={fileLinkMenuRequest}
+          />
+        ) : null}
 
         <TerminalFind
           key={terminalStreamKey}
@@ -1228,9 +1280,16 @@ export function TerminalPane({
 
         {showFloatingCopyAction ? (
           <View pointerEvents="box-none" style={styles.floatingCopyContainer}>
+            <TerminalFloatingAddNoteAction
+              enabled={notes.supportsNotes}
+              hasSelection={hasSelection}
+              onAddNote={notes.addNote}
+            />
             <TerminalFloatingCopyAction hasSelection={hasSelection} onCopy={handleTerminalCopy} />
           </View>
         ) : null}
+
+        <TerminalSelectionNoteAction action={notes.selectionAction} onAddNote={notes.addNote} />
       </FileDropZone>
 
       {streamError ? (
@@ -1290,6 +1349,8 @@ const styles = StyleSheet.create((theme) => ({
     right: theme.spacing[3],
     bottom: theme.spacing[12],
     zIndex: 2,
+    flexDirection: "row",
+    gap: theme.spacing[2],
   },
   errorRow: {
     paddingHorizontal: theme.spacing[3],

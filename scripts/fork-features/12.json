@@ -1,0 +1,6 @@
+{
+  "pr": 12,
+  "title": "feat(sidebar): mark workspaces holding an unsent prompt",
+  "tests": ["packages/app/src/stores/workspace-unsent-draft.test.ts"],
+  "e2e": ["packages/app/e2e/browser/sidebar-unsent-prompt.spec.ts"]
+}

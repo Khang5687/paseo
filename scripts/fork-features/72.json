@@ -1,0 +1,14 @@
+{
+  "pr": 72,
+  "title": "feat(app): notes on chat and terminal selections with waiting-on reminders",
+  "tests": [
+    "packages/server/src/server/notes/notes-service.test.ts",
+    "packages/server/src/server/daemon-e2e/notes.e2e.test.ts",
+    "packages/server/src/terminal/terminal.test.ts",
+    "packages/app/src/notes/model.test.ts",
+    "packages/app/src/notes/composer/parse-reminder-time.test.ts",
+    "packages/app/src/notification-open/model.test.ts",
+    "packages/app/src/terminal/notes/quote-location.test.ts",
+    "packages/desktop/src/features/menu.test.ts"
+  ]
+}

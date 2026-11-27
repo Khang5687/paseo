@@ -1,4 +1,5 @@
 import type { AgentOptionControl, AgentOptionToggleControl } from "../../agent-sdk-types.js";
+import { buildOutputStyleControl, type OutputStyle } from "../../output-styles.js";
 import {
   claudeManifestModelSupportsFastMode,
   claudeManifestModelSupportsUltracode,
@@ -27,6 +28,7 @@ export function claudeModelSupportsFastMode(modelId: string | null | undefined):
 
 export function buildClaudeControls(
   modelId: string | null | undefined,
+  outputStyles: readonly OutputStyle[],
   independentUltracode: boolean,
 ): AgentOptionControl[] {
   return [
@@ -34,5 +36,6 @@ export function buildClaudeControls(
     ...(independentUltracode && claudeManifestModelSupportsUltracode(modelId)
       ? [{ ...CLAUDE_ULTRACODE_CONTROL }]
       : []),
+    buildOutputStyleControl({ styles: outputStyles }),
   ];
 }

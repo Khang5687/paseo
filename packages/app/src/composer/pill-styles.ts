@@ -1,5 +1,6 @@
 import { StyleSheet } from "react-native-unistyles";
 import { SPACING } from "@/styles/theme";
+import { COMPOSER_STATUS_LINE_HEIGHT, useComposerStatusLine } from "./status-line";
 
 export const COMPOSER_PILL_CLEARANCE = {
   compact: SPACING[2],
@@ -38,6 +39,17 @@ export const composerPillStyles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.borderAccent,
     backgroundColor: theme.colors.surface1,
   },
+  // Inside the phone's status line the line is the chrome: a pill is its mark and label, and the
+  // hover and press fill is its only shape.
+  bodyLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    minHeight: COMPOSER_STATUS_LINE_HEIGHT,
+    paddingHorizontal: theme.spacing[2],
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: "transparent",
+  },
   bodyActive: {
     backgroundColor: theme.colors.surface2,
   },
@@ -49,3 +61,8 @@ export const composerPillStyles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
   },
 }));
+
+/** The pill body for where the pill draws: the bordered pill, or its status-line form. */
+export function useComposerPillBody() {
+  return useComposerStatusLine() ? composerPillStyles.bodyLine : composerPillStyles.body;
+}

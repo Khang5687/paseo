@@ -1,0 +1,9 @@
+{
+  "pr": 102,
+  "title": "feat(app): confirm every archive; archive via menu on touch layouts",
+  "tests": ["packages/app/src/utils/archive-confirm.test.ts"],
+  "e2e": [
+    "packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts",
+    "packages/app/e2e/browser/sidebar-thread-child-archive.spec.ts"
+  ]
+}

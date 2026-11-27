@@ -1,8 +1,16 @@
-import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { Pressable, Text, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { Clock, Hourglass } from "lucide-react-native";
 import {
   MENU_ITEM_HEIGHT,
   MenuRoot,
@@ -25,9 +33,21 @@ import { CHAT_COLUMN_RAIL_DATASET } from "@/chat-rail";
 import { isWeb } from "@/constants/platform";
 import { usePanelAwareHorizontalScrollGesture } from "@/mobile-panels/gestures";
 import { getStatusDotColor } from "@/utils/status-dot-color";
-import { STATUS_INDICATOR_FILLED_DOT_SIZE } from "@/utils/status-indicator-geometry";
+import {
+  STATUS_INDICATOR_ALERT_SIZE,
+  STATUS_INDICATOR_FILLED_DOT_SIZE,
+} from "@/utils/status-indicator-geometry";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
-import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
+import type { Theme } from "@/styles/theme";
+import { COMPOSER_PILL_CLEARANCE, composerPillStyles, useComposerPillBody } from "./pill-styles";
+import { useComposerStatusLine } from "./status-line";
+
+const ThemedClock = withUnistyles(Clock);
+const ThemedHourglass = withUnistyles(Hourglass);
+const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const waitingIconMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? undefined,
+});
 
 /**
  * The strip of pills where a pane's ambient trackers and plugin actions live.
@@ -37,16 +57,33 @@ import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
  * pane. Built-in and contributed pills share this one-line rail and its deterministic geometry
  * on every platform.
  *
- * The bar floats over the transcript with no background, so content remains visible underneath.
- * Its host gives the scroll viewport a small bottom inset for as long as the bar is mounted, with
- * or without pills: that keeps the final footer clear, and pills that come and go every turn do not
- * move the transcript.
+ * On wide layouts the bar floats over the transcript with no background, so content remains
+ * visible underneath. Its host gives the scroll viewport a small bottom inset for as long as the
+ * bar is mounted, with or without pills: that keeps the final footer clear, and pills that come
+ * and go every turn do not move the transcript. Inside a `ComposerStatusLine` (the phone) it is
+ * part of the composer's layout instead, and needs no inset.
  */
 export function ComposerTrackBar({ children }: { children: ReactNode }): ReactElement {
   const scrollGesture = usePanelAwareHorizontalScrollGesture();
   const scrollBoundary = useHorizontalScrollBoundary();
+  // In the phone's status line the bar is part of the composer's layout, not an overlay, and it
+  // tells the line whether it has any pill to show.
+  const statusLine = useComposerStatusLine();
+  const { onContentSizeChange: onBoundaryContentSizeChange } = scrollBoundary;
+  const handleContentSizeChange = useCallback(
+    (width: number) => {
+      onBoundaryContentSizeChange(width);
+      statusLine?.reportStatusWidth(width);
+    },
+    [onBoundaryContentSizeChange, statusLine],
+  );
+  useEffect(() => () => statusLine?.reportStatusWidth(0), [statusLine]);
   return (
-    <View style={styles.bar} dataSet={CHAT_COLUMN_RAIL_DATASET} pointerEvents="box-none">
+    <View
+      style={statusLine ? styles.lineBar : styles.bar}
+      dataSet={statusLine ? undefined : CHAT_COLUMN_RAIL_DATASET}
+      pointerEvents="box-none"
+    >
       <View style={styles.trackViewport} pointerEvents="box-none">
         <GestureDetector gesture={scrollGesture}>
           <Animated.ScrollView
@@ -56,7 +93,7 @@ export function ComposerTrackBar({ children }: { children: ReactNode }): ReactEl
             keyboardShouldPersistTaps="handled"
             showsHorizontalScrollIndicator={false}
             onLayout={scrollBoundary.onLayout}
-            onContentSizeChange={scrollBoundary.onContentSizeChange}
+            onContentSizeChange={handleContentSizeChange}
             onScroll={scrollBoundary.onScroll}
             scrollEventThrottle={16}
           >
@@ -83,6 +120,16 @@ export interface ComposerTrackPillSegment {
   bucket: SidebarStateBucket | null;
   /** Short enough to stay on one line alongside its siblings: "1 failed", "2/7 tasks", "3". */
   text: string;
+  /**
+   * Draws a clock in place of the bucket's mark, for work that waits for a time rather than
+   * running. The bucket still says what state the work is in.
+   */
+  scheduled?: boolean;
+  /**
+   * Draws an hourglass in place of the running ring, for a turn that is blocked on a job rather
+   * than working.
+   */
+  waiting?: boolean;
 }
 
 export interface ComposerTrackPillProps {
@@ -166,12 +213,13 @@ function ComposerTrackPillTrigger({
   // React Native Web does not map `accessibilityState.expanded` to `aria-expanded`, so the web
   // attribute is set by hand — the same workaround header toggles use.
   const ariaExpandedProps = isWeb ? { "aria-expanded": open } : null;
+  const pillBody = useComposerPillBody();
   const pillStyle = useCallback(
     ({ hovered, pressed, open: isOpen }: MenuTriggerState) => [
-      composerPillStyles.body,
+      pillBody,
       (hovered || pressed || isOpen) && composerPillStyles.bodyActive,
     ],
-    [],
+    [pillBody],
   );
   const labelStyle = useMemo(
     () => [composerPillStyles.label, open && composerPillStyles.labelActive],
@@ -194,7 +242,11 @@ function ComposerTrackPillTrigger({
             style={styles.segment}
             testID={`${testID}-segment-${index}`}
           >
-            <ComposerTrackMark bucket={segment.bucket} />
+            <ComposerTrackMark
+              bucket={segment.bucket}
+              scheduled={segment.scheduled}
+              waiting={segment.waiting}
+            />
             <Text style={labelStyle} numberOfLines={1}>
               {segment.text}
             </Text>
@@ -336,9 +388,19 @@ export function ComposerTrackRow({
  */
 export function ComposerTrackMark({
   bucket,
+  scheduled = false,
+  waiting = false,
 }: {
   bucket: SidebarStateBucket | null;
+  scheduled?: boolean;
+  waiting?: boolean;
 }): ReactElement | null {
+  if (scheduled) {
+    return <ThemedClock size={STATUS_INDICATOR_ALERT_SIZE} uniProps={mutedIconMapping} />;
+  }
+  if (waiting) {
+    return <ThemedHourglass size={STATUS_INDICATOR_ALERT_SIZE} uniProps={waitingIconMapping} />;
+  }
   if (!bucket) {
     return null;
   }
@@ -404,6 +466,9 @@ const styles = StyleSheet.create((theme) => {
         xs: COMPOSER_PILL_CLEARANCE.compact,
         md: COMPOSER_PILL_CLEARANCE.wide,
       },
+    },
+    lineBar: {
+      minWidth: 0,
     },
     trackViewport: {
       width: "100%",

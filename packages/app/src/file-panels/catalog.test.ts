@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filePanelCatalog } from "./catalog";
+import { filePanelCatalog, MEDIA_PREVIEW_MAX_BYTES } from "./catalog";
 import { resolveFilePanel, type FilePanelCandidate, type FilePanelFile } from "./resolve";
 
 const builtins = filePanelCatalog([]);
@@ -85,4 +85,49 @@ describe("built-in file panels", () => {
       ).toBeNull();
     },
   );
+
+  it.each([
+    ...["mp4", "mov", "webm", "m4v"].map((extension) => [extension, "builtin:video"]),
+    ...["mp3", "m4a", "wav", "ogg", "aac", "flac"].map((extension) => [extension, "builtin:audio"]),
+    ["pdf", "builtin:pdf"],
+  ])("opens a binary .%s file with %s", (extension, id) => {
+    const file = { path: `/out/clip.${extension.toUpperCase()}`, kind: "binary", size: 1 } as const;
+    expect(candidateIds(file)).toEqual([id]);
+    expect(resolveFilePanel({ file, candidates: builtins, associations: {} }).oversized).toBe(
+      false,
+    );
+  });
+
+  it.each(["clip.mp4", "song.mp3", "report.pdf"])(
+    "opens %s with Download once it is over the media size cap",
+    (path) => {
+      const atCap = { path, kind: "binary", size: MEDIA_PREVIEW_MAX_BYTES } as const;
+      expect(panelId(atCap)).not.toBeNull();
+      const resolution = resolveFilePanel({
+        file: { ...atCap, size: MEDIA_PREVIEW_MAX_BYTES + 1 },
+        candidates: builtins,
+        associations: {},
+      });
+      expect(resolution.panel).toBeNull();
+      expect(resolution.oversized).toBe(true);
+    },
+  );
+
+  it("keeps a plugin panel for a media file over the cap", () => {
+    const player: FilePanelCandidate = {
+      id: "plugin:player/video",
+      builtin: false,
+      files: { extensions: ["mp4"] },
+    };
+    const file = { path: "clip.mp4", kind: "binary", size: MEDIA_PREVIEW_MAX_BYTES * 2 } as const;
+    expect(panelId(file, filePanelCatalog([player]))).toBe(player.id);
+  });
+
+  it("offers no PDF panel on a device that cannot embed PDFs", () => {
+    const file = { path: "report.pdf", kind: "binary", size: 1 } as const;
+    expect(panelId(file, filePanelCatalog([], { inlinePdf: false }))).toBeNull();
+    expect(panelId({ ...file, path: "clip.mp4" }, filePanelCatalog([], { inlinePdf: false }))).toBe(
+      "builtin:video",
+    );
+  });
 });

@@ -12,6 +12,7 @@ import type {
   AgentTimelineItem,
 } from "../../../agent-sdk-types.js";
 import type { PaseoToolCatalog } from "../../../tools/types.js";
+import type { OutputStyle } from "../../../output-styles.js";
 import {
   OmpAgentClient,
   OmpAgentSession,
@@ -23,9 +24,10 @@ import type {
   OmpAgentMessage,
   OmpRpcSlashCommand,
   OmpRuntimeEvent,
+  OmpSessionState,
   OmpSessionStats,
 } from "../rpc-types.js";
-import { FakeOmp } from "./fake-omp.js";
+import { FakeOmp, type FakeOmpSession } from "./fake-omp.js";
 
 const CWD = "/tmp/paseo-omp-agent-test";
 
@@ -78,21 +80,29 @@ export class OmpHarness {
       usagePollScheduler?: OmpUsagePollScheduler;
       providerIdleDeadlineMs?: number;
       runtimeEnv?: Record<string, string>;
+      /** Custom output styles; the real user's Claude config dir is never read. */
+      outputStyles?: OutputStyle[];
     } = {},
   ) {
+    const logger = pino({ level: "silent" });
     this.client = new OmpAgentClient({
-      logger: pino({ level: "silent" }),
+      logger,
       runtimeSettings: { env: options.runtimeEnv },
       runtime: this.omp,
       providerIdleScheduler: options.providerIdleScheduler,
       noTurnScheduler: options.noTurnScheduler,
       usagePollScheduler: options.usagePollScheduler,
       providerIdleDeadlineMs: options.providerIdleDeadlineMs,
+      discoverOutputStyles: async () => options.outputStyles ?? [],
     });
   }
 
   queueCommands(commands: OmpRpcSlashCommand[]): void {
     this.omp.queueCommands(commands);
+  }
+
+  queueSessionSetup(setup: (session: FakeOmpSession) => void): void {
+    this.omp.queueSessionSetup(setup);
   }
 
   failEventSubscription(error: Error): void {
@@ -186,6 +196,34 @@ export class OmpHarness {
     return [...emitted, ...this.events.slice(sessionEventCount)];
   }
 
+  /** Runs a `/compact …` line; `onPrompt` plays OMP's side once Paseo sends a prompt. */
+  async runCompactCommand(
+    text: string,
+    onPrompt?: (runtime: FakeOmpSession) => void,
+  ): Promise<{
+    events: AgentStreamEvent[];
+    prompts: string[];
+    compactRequests: Array<{ customInstructions?: string }>;
+  }> {
+    const handler = this.requireSession().tryHandleOutOfBand(text);
+    if (!handler) throw new Error(`OMP session did not handle ${text} out-of-band`);
+    const runtime = this.omp.latestSession();
+    const sessionEventCount = this.events.length;
+    const emitted: AgentStreamEvent[] = [];
+    const promptSent = runtime.nextPrompt();
+    const run = handler.run({ emit: (event) => emitted.push(event) });
+    if (onPrompt) {
+      await promptSent;
+      onPrompt(runtime);
+    }
+    await run;
+    return {
+      events: [...emitted, ...this.events.slice(sessionEventCount)],
+      prompts: runtime.prompts.map((prompt) => prompt.message),
+      compactRequests: [...runtime.compactRequests],
+    };
+  }
+
   async runPrompt(
     input: string,
     output: string,
@@ -205,7 +243,6 @@ export class OmpHarness {
     runtime.finishTurn();
     return await run;
   }
-
   async runPromptWithCustomMessage(
     input: string,
     customMessage: Extract<OmpAgentMessage, { role: "custom" }>,
@@ -287,7 +324,11 @@ export class OmpHarness {
     return this.omp.latestSession().waitForStateRequests(count);
   }
 
-  reportProviderState(state: { isStreaming: boolean; isCompacting: boolean }): void {
+  reportProviderState(
+    state: Partial<
+      Pick<OmpSessionState, "isStreaming" | "isCompacting" | "isSettled" | "hasPendingAsyncWork">
+    >,
+  ): void {
     const runtime = this.omp.latestSession();
     runtime.state = { ...runtime.state, ...state };
   }
@@ -503,6 +544,30 @@ export class OmpHarness {
 
   emit(event: OmpRuntimeEvent): void {
     this.omp.latestSession().emit(event);
+  }
+
+  async runOutOfBandCommand(input: string): Promise<AgentStreamEvent[]> {
+    const handler = this.requireSession().tryHandleOutOfBand(input);
+    if (!handler) throw new Error(`OMP session did not handle ${input} out of band`);
+    const events: AgentStreamEvent[] = [];
+    await handler.run({ emit: (event) => events.push(event) });
+    return events;
+  }
+
+  configureCompact(options: { error?: Error }): void {
+    this.omp.latestSession().compactError = options.error ?? null;
+  }
+
+  compactRequests() {
+    return this.omp.latestSession().compactRequests;
+  }
+
+  configureGoal(options: { error?: Error }): void {
+    this.omp.latestSession().goalError = options.error ?? null;
+  }
+
+  goalRequests() {
+    return this.omp.latestSession().goalRequests;
   }
 
   pendingPermissions() {

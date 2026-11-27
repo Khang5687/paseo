@@ -20,6 +20,8 @@ export interface ComposerInputModePresentation {
   isMonospace: boolean;
   /** i18n key for the text input's accessible name. */
   accessibilityLabelKey: string;
+  /** i18n key for the fullscreen editor's title bar. */
+  fullscreenTitleKey: string;
 }
 
 const PRESENTATION_BY_MODE: Record<ComposerInputMode, ComposerInputModePresentation> = {
@@ -30,6 +32,7 @@ const PRESENTATION_BY_MODE: Record<ComposerInputMode, ComposerInputModePresentat
     showAgentControls: true,
     isMonospace: false,
     accessibilityLabelKey: "composer.input.accessibilityLabel",
+    fullscreenTitleKey: "composer.input.fullscreenTitle",
   },
   terminal: {
     showAttachments: false,
@@ -38,6 +41,7 @@ const PRESENTATION_BY_MODE: Record<ComposerInputMode, ComposerInputModePresentat
     showAgentControls: false,
     isMonospace: true,
     accessibilityLabelKey: "composer.input.terminalAccessibilityLabel",
+    fullscreenTitleKey: "composer.placeholders.terminal",
   },
 };
 

@@ -412,6 +412,7 @@ function SortPage({
   const selectManual = useCallback(() => setWorkspaceSort("manual"), [setWorkspaceSort]);
   const selectCreated = useCallback(() => setWorkspaceSort("created"), [setWorkspaceSort]);
   const selectLastPrompt = useCallback(() => setWorkspaceSort("lastPrompt"), [setWorkspaceSort]);
+  const selectUrgent = useCallback(() => setWorkspaceSort("urgent"), [setWorkspaceSort]);
   return (
     <>
       <MenuItem selected={preferences.workspaceSort === "manual"} onSelect={selectManual}>
@@ -427,6 +428,9 @@ function SortPage({
             onSelect={selectLastPrompt}
           >
             {t("sidebar.display.sort.lastPrompt")}
+          </MenuItem>
+          <MenuItem selected={preferences.workspaceSort === "urgent"} onSelect={selectUrgent}>
+            {t("sidebar.display.sort.urgent")}
           </MenuItem>
         </>
       ) : (

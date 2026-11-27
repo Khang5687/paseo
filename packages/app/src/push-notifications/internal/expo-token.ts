@@ -1,9 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
+import {
+  ensureDefaultNotificationChannel,
+  ensureNotificationPermission,
+} from "../native-notifications";
 
 const STORAGE_PREFIX = "@paseo:expo-push-token:";
 const ExpoPushTokenSchema = z.string().trim().min(1);
@@ -19,14 +22,6 @@ function getExpoProjectId(): string | null {
   return fromExtra.success ? fromExtra.data : null;
 }
 
-async function ensurePushPermission(): Promise<boolean> {
-  const existing = await Notifications.getPermissionsAsync();
-  if (existing.status === Notifications.PermissionStatus.GRANTED) return true;
-  if (!existing.canAskAgain) return false;
-  const requested = await Notifications.requestPermissionsAsync();
-  return requested.status === Notifications.PermissionStatus.GRANTED;
-}
-
 export async function readCachedExpoPushToken(serverId: string): Promise<string | null> {
   return readValidatedString(AsyncStorage, storageKey(serverId), ExpoPushTokenSchema);
 }
@@ -38,17 +33,12 @@ export async function removeCachedExpoPushToken(serverId: string): Promise<void>
 export async function resolveExpoPushToken(serverId: string): Promise<string | null> {
   const key = storageKey(serverId);
   const cached = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
-  if (!(await ensurePushPermission())) {
+  if (!(await ensureNotificationPermission())) {
     await AsyncStorage.removeItem(key);
     return null;
   }
 
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-  }
+  await ensureDefaultNotificationChannel();
 
   const projectId = getExpoProjectId();
   if (!projectId) {

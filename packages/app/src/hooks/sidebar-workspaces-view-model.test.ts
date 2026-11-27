@@ -1,3 +1,4 @@
+import { UNSEEN_AGENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import { describe, expect, it } from "vitest";
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import type { WorkspaceStructureProject } from "@/projects/workspace-structure";
@@ -11,9 +12,12 @@ import {
   computeSidebarOrderUpdates,
   createSidebarWorkspacePlacementSelector,
   createSidebarWorkspaceEntry,
-  deriveProjectStatusBucket,
+  countProjectWorkspaceStatuses,
+  deriveProjectActivity,
+  deriveProjectStatus,
   deriveSidebarLoadingState,
   shouldShowSidebarHostLabels,
+  type ProjectStatusInput,
   type ProjectStatusSession,
   type SidebarProjectEntry,
   type SidebarWorkspacePlacement,
@@ -68,6 +72,68 @@ describe("createSidebarWorkspaceEntry forge threading", () => {
       workspace: workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42"),
     });
     expect(entry.prHint).toMatchObject({ number: 42, forge: "github" });
+  });
+});
+
+describe("createSidebarWorkspaceEntry working subagents", () => {
+  function entryFor(status: WorkspaceDescriptor["status"], runningSubagentCount?: number) {
+    const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");
+    return createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: { ...descriptor, status, runningSubagentCount },
+    });
+  }
+
+  it("counts working subagents beside whatever the root agent's status is", () => {
+    expect(entryFor("done", 3)).toMatchObject({
+      statusBucket: "done",
+      workingSubagentCount: 3,
+    });
+    expect(entryFor("needs_input", 1).workingSubagentCount).toBe(1);
+    expect(entryFor("running", 2)).toMatchObject({
+      statusBucket: "running",
+      workingSubagentCount: 2,
+    });
+  });
+
+  it("shows no count when an old daemon omits it", () => {
+    expect(entryFor("attention").workingSubagentCount).toBe(0);
+  });
+});
+
+describe("createSidebarWorkspaceEntry new main agent", () => {
+  function entryWith(agents: Agent[]) {
+    return createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42"),
+      workspaceAgentActivity: buildWorkspaceAgentActivityIndex(
+        new Map(agents.map((entry) => [entry.id, entry])),
+      ),
+    });
+  }
+
+  it("marks the row new while its main agent is unopened", () => {
+    const labels = { role: "main", [UNSEEN_AGENT_LABEL]: "true" };
+    expect(
+      entryWith([agent({ id: "a", workspaceId: "ws-1", status: "running", labels })]).isNew,
+    ).toBe(true);
+  });
+
+  it("does not mark the row once the agent was opened, or for a helper", () => {
+    const opened = agent({
+      id: "a",
+      workspaceId: "ws-1",
+      status: "idle",
+      labels: { role: "main" },
+    });
+    const helper = agent({
+      id: "h",
+      workspaceId: "ws-1",
+      status: "idle",
+      labels: { role: "helper" },
+    });
+    expect(entryWith([opened, helper]).isNew).toBe(false);
+    expect(entryWith([]).isNew).toBe(false);
   });
 });
 
@@ -721,6 +787,9 @@ function agent(input: {
   updatedAt?: Date;
   parentAgentId?: string | null;
   archivedAt?: Date | null;
+  labels?: Record<string, string>;
+  /** The open turn waits on this background job. */
+  waitingOn?: string;
 }): Agent {
   return {
     serverId: "srv",
@@ -746,7 +815,10 @@ function agent(input: {
     model: null,
     parentAgentId: input.parentAgentId ?? null,
     archivedAt: input.archivedAt ?? null,
-    labels: {},
+    labels: input.labels ?? {},
+    ...(input.waitingOn !== undefined
+      ? { backgroundWork: { count: 1, waitingOn: { itemId: "bg_1", title: input.waitingOn } } }
+      : {}),
   };
 }
 
@@ -772,14 +844,18 @@ function projectWorkspace(id: string, status: WorkspaceDescriptor["status"]): Wo
   });
 }
 
-describe("deriveProjectStatusBucket", () => {
+function projectBucket(input: ProjectStatusInput) {
+  return deriveProjectStatus(input).bucket;
+}
+
+describe("deriveProjectStatus bucket", () => {
   it("is done when the project has no workspaces", () => {
-    expect(deriveProjectStatusBucket({ workspaces: [], sessions: {} })).toBe("done");
+    expect(projectBucket({ workspaces: [], sessions: {} })).toBe("done");
   });
 
   it("is done when every workspace is done", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ workspaceId: "ws-1" }),
           workspacePlacement({ workspaceId: "ws-2" }),
@@ -795,7 +871,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("surfaces the most urgent workspace status in the project", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ workspaceId: "ws-1" }),
           workspacePlacement({ workspaceId: "ws-2" }),
@@ -816,7 +892,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("keeps a working project on running when a finished workspace also awaits review", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ workspaceId: "ws-1" }),
           workspacePlacement({ workspaceId: "ws-2" }),
@@ -835,7 +911,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("surfaces needs_input over a concurrently running workspace", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ workspaceId: "ws-1" }),
           workspacePlacement({ workspaceId: "ws-2" }),
@@ -854,7 +930,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("surfaces failed over a concurrently running workspace", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ workspaceId: "ws-1" }),
           workspacePlacement({ workspaceId: "ws-2" }),
@@ -870,7 +946,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("keeps a project on attention when only one workspace awaits review", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ workspaceId: "ws-1" }),
           workspacePlacement({ workspaceId: "ws-2" }),
@@ -886,7 +962,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("aggregates across the hosts a project spans", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ serverId: "srv", workspaceId: "ws-1" }),
           workspacePlacement({ serverId: "other", workspaceId: "ws-9" }),
@@ -901,7 +977,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("skips workspaces whose session has not hydrated yet", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [
           workspacePlacement({ workspaceId: "ws-1" }),
           workspacePlacement({ serverId: "offline", workspaceId: "ws-2" }),
@@ -915,7 +991,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("lifts a done workspace when one of its root agents is still working", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [workspacePlacement({ workspaceId: "ws-1" })],
         sessions: {
           srv: sessionWith({
@@ -929,7 +1005,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("ignores archived agents and subagents", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [workspacePlacement({ workspaceId: "ws-1" })],
         sessions: {
           srv: sessionWith({
@@ -956,7 +1032,7 @@ describe("deriveProjectStatusBucket", () => {
 
   it("ignores agents belonging to workspaces outside the project", () => {
     expect(
-      deriveProjectStatusBucket({
+      projectBucket({
         workspaces: [workspacePlacement({ workspaceId: "ws-1" })],
         sessions: {
           srv: sessionWith({
@@ -966,6 +1042,126 @@ describe("deriveProjectStatusBucket", () => {
         },
       }),
     ).toBe("done");
+  });
+});
+
+describe("deriveProjectStatus waiting", () => {
+  const twoWorking = (agents: Agent[]): ProjectStatusInput => ({
+    workspaces: [
+      workspacePlacement({ workspaceId: "ws-1" }),
+      workspacePlacement({ workspaceId: "ws-2" }),
+    ],
+    sessions: {
+      srv: sessionWith({
+        workspaces: [projectWorkspace("ws-1", "done"), projectWorkspace("ws-2", "done")],
+        agents,
+      }),
+    },
+  });
+
+  it("is waiting when every working chat waits on a background job", () => {
+    expect(
+      deriveProjectStatus(
+        twoWorking([
+          agent({ id: "a1", workspaceId: "ws-1", status: "running", waitingOn: "build" }),
+          agent({ id: "a2", workspaceId: "ws-2", status: "running", waitingOn: "" }),
+        ]),
+      ),
+    ).toEqual({ bucket: "running", waiting: true });
+  });
+
+  it("keeps the working ring while any chat works on its own", () => {
+    expect(
+      deriveProjectStatus(
+        twoWorking([
+          agent({ id: "a1", workspaceId: "ws-1", status: "running", waitingOn: "build" }),
+          agent({ id: "a2", workspaceId: "ws-2", status: "running" }),
+        ]),
+      ),
+    ).toEqual({ bucket: "running", waiting: false });
+  });
+
+  it("is not waiting when a more urgent status wins", () => {
+    expect(
+      deriveProjectStatus({
+        workspaces: [
+          workspacePlacement({ workspaceId: "ws-1" }),
+          workspacePlacement({ workspaceId: "ws-2" }),
+        ],
+        sessions: {
+          srv: sessionWith({
+            workspaces: [projectWorkspace("ws-1", "done"), projectWorkspace("ws-2", "needs_input")],
+            agents: [
+              agent({ id: "a1", workspaceId: "ws-1", status: "running", waitingOn: "build" }),
+            ],
+          }),
+        },
+      }),
+    ).toEqual({ bucket: "needs_input", waiting: false });
+  });
+});
+
+describe("countProjectWorkspaceStatuses", () => {
+  it("counts each dotted status across the hosts a project spans", () => {
+    expect(
+      countProjectWorkspaceStatuses({
+        workspaces: [
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-1" }),
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-2" }),
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-3" }),
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-4" }),
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-5" }),
+          workspacePlacement({ serverId: "other", workspaceId: "ws-9" }),
+        ],
+        sessions: {
+          srv: sessionWith({
+            workspaces: [
+              projectWorkspace("ws-1", "needs_input"),
+              projectWorkspace("ws-2", "running"),
+              projectWorkspace("ws-3", "attention"),
+              projectWorkspace("ws-4", "failed"),
+              projectWorkspace("ws-5", "done"),
+            ],
+          }),
+          other: sessionWith({ workspaces: [projectWorkspace("ws-9", "needs_input")] }),
+        },
+      }),
+    ).toEqual({ needsInput: 2, failed: 1, attention: 1, running: 1 });
+  });
+});
+
+describe("deriveProjectActivity", () => {
+  it("takes the newest activity across the project's workspaces and hosts", () => {
+    const older = {
+      ...projectWorkspace("ws-1", "done"),
+      createdAt: new Date("2026-11-01T00:00:00.000Z"),
+      lastUserMessageAt: new Date("2026-11-10T00:00:00.000Z"),
+    };
+    const newer = {
+      ...projectWorkspace("ws-9", "running"),
+      statusEnteredAt: new Date("2026-11-20T00:00:00.000Z"),
+    };
+    expect(
+      deriveProjectActivity({
+        workspaces: [
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-1" }),
+          workspacePlacement({ serverId: "other", workspaceId: "ws-9" }),
+        ],
+        sessions: {
+          srv: sessionWith({ workspaces: [older] }),
+          other: sessionWith({ workspaces: [newer] }),
+        },
+      }),
+    ).toEqual({ lastActivityMs: Date.parse("2026-11-20T00:00:00.000Z"), needsInput: false });
+  });
+
+  it("reports a waiting workspace and no time when none is known", () => {
+    expect(
+      deriveProjectActivity({
+        workspaces: [workspacePlacement({ workspaceId: "ws-1" })],
+        sessions: { srv: sessionWith({ workspaces: [projectWorkspace("ws-1", "needs_input")] }) },
+      }),
+    ).toEqual({ lastActivityMs: null, needsInput: true });
   });
 });
 

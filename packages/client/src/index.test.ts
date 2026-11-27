@@ -2,8 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, expect, test, vi } from "vitest";
 import { createPaseoApi, createPaseoClient } from "./index.js";
-import { DaemonClient } from "./daemon-client.js";
-import type { PaseoAgent, PaseoClient, PaseoWorkspace } from "./index.js";
+import { DaemonClient, type DaemonClientConfig } from "./daemon-client.js";
+import type { PaseoAgent, PaseoClient, PaseoClientConfig, PaseoWorkspace } from "./index.js";
 
 type FakeWebSocketHandler = (...args: unknown[]) => void;
 
@@ -102,13 +102,22 @@ async function connectClient(
     ownedSubscriptions: true,
   },
 ): Promise<{ client: PaseoClient; ws: FakeWebSocket }> {
-  const client = createPaseoClient({
+  // createPaseoClient spreads its config into DaemonClient, so the test-only socket factory passes
+  // through even though PaseoClientConfig does not declare it.
+  const config: PaseoClientConfig & Pick<DaemonClientConfig, "webSocketFactory"> = {
     url: "ws://daemon.test",
     webSocketFactory: (url) => new FakeWebSocket(url),
     reconnect: { enabled: false },
-  });
+  };
+  const client = createPaseoClient(config);
+  const ws = await completeHandshake(client.connect(), features);
+  return { client, ws };
+}
 
-  const connectPromise = client.connect();
+async function completeHandshake(
+  connectPromise: Promise<unknown>,
+  features: Record<string, boolean>,
+): Promise<FakeWebSocket> {
   const ws = FakeWebSocket.instances[0];
   ws.open();
   const hello = parseSentFrame(ws.sent.at(-1));
@@ -131,8 +140,7 @@ async function connectClient(
     }),
   );
   await connectPromise;
-
-  return { client, ws };
+  return ws;
 }
 
 function acknowledgeObservation(ws: FakeWebSocket, subscriptionId: string): void {
@@ -208,7 +216,6 @@ function createAgent(input: Partial<PaseoAgent> = {}): PaseoAgent {
     ...input,
   };
 }
-
 test("createPaseoClient exposes workspace list through the daemon client", async () => {
   const { client, ws } = await connectClient();
 
@@ -278,7 +285,6 @@ test("createPaseoApi borrows daemon capabilities without exposing connection own
   expect("close" in paseo).toBe(false);
   expect("skills" in paseo.agents).toBe(false);
 });
-
 test("agent handles send permission responses for their agent", async () => {
   const { client, ws } = await connectClient();
 

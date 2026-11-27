@@ -91,6 +91,7 @@ MCP does not expose an agent-detach tool. Detaching is a manual user action in t
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `create_agent`       | Create an agent, optionally placing it in an existing workspace with `workspaceId`. Use `initialPrompt` to start work; returns without waiting for completion. `background: true` hides it from tabs, default lists, your subagent track and notifications; you still get its finish notification. Omission inherits your own value. |
 | `send_agent_prompt`  | Send a prompt using `agentId` and `prompt`; returns without waiting for completion. From an agent, the prompt waits for a running turn to end unless `activeTurnBehavior` is `steer` or `interrupt`.                                                                                                                                 |
+| `fork_agent`         | Fork an agent (default: yourself) into a new main agent that inherits the conversation and starts on `prompt`; the source is untouched. Use it to offload a second task.                                                                                                                                                             |
 | `get_agent_status`   | Return the latest snapshot for an agent.                                                                                                                                                                                                                                                                                             |
 | `list_agents`        | List recent agents as compact metadata; `includeBackground: true` includes background work.                                                                                                                                                                                                                                          |
 | `cancel_agent`       | Abort an agent's current run but keep the agent alive.                                                                                                                                                                                                                                                                               |
@@ -98,6 +99,7 @@ MCP does not expose an agent-detach tool. Detaching is a manual user action in t
 | `kill_agent`         | Terminate an agent session permanently.                                                                                                                                                                                                                                                                                              |
 | `update_agent`       | Update an agent name, labels, or runtime settings such as mode/model/thinking/features.                                                                                                                                                                                                                                              |
 | `get_agent_activity` | Return recent agent timeline entries as a curated summary.                                                                                                                                                                                                                                                                           |
+| `ask_agent`          | Ask an agent a question without interrupting it. A hidden read-only copy of its conversation answers and stays open for follow-ups with `threadId`; `close` ends the thread and `status` reports rounds left. Claude, Codex, OpenCode, and OMP agents.                                                                               |
 | `set_agent_mode`     | Switch an agent's session mode.                                                                                                                                                                                                                                                                                                      |
 
 Paseo agents receive finish, error, and permission notifications by default; set `notifyOnFinish: false` to disable them. External MCP clients use `get_agent_status` and `get_agent_activity` to check results.
@@ -187,10 +189,16 @@ Omit absent optional settings. If no profile fits, use provider discovery to cho
 
 ### Permissions
 
-| Tool                       | Function                                          |
-| -------------------------- | ------------------------------------------------- |
-| `list_pending_permissions` | Return pending permission requests across agents. |
-| `respond_to_permission`    | Approve or deny a pending permission request.     |
+| Tool                       | Function                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `list_pending_permissions` | List the question boxes and approval prompts agents wait on; `agentId` filters to one agent.         |
+| `respond_to_permission`    | Answer one as the user's tap would: `answers` keyed by question header, or an allow/deny `response`. |
+
+### Files
+
+| Tool                  | Function                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send_file_to_device` | Send a file on the host to the user's phone, desktop app or browser; they get a "ready" note and tapping it opens the file. `device` names it. |
 
 ### Browser
 

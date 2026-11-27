@@ -26,6 +26,7 @@ export function createPluginClientRuntime(
     ...capabilities,
     i18n: installation.i18n,
     playAudio: createPlayAudio(audio, installation.lifetime.signal),
+    serverId: installation.serverId,
     hosts: getPluginClientApi(installation).hosts,
     addComposerPill(contribution) {
       return pluginButtonStore.addComposerPill(installation, contribution);

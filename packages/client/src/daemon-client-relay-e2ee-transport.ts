@@ -252,6 +252,7 @@ export function createEncryptedTransport(
       }
       emitClose({ code, reason });
     },
+    onSendProgress: (handler) => base.onSendProgress?.(handler) ?? (() => {}),
     onMessage: (handler) => {
       messageHandlers.add(handler);
       return () => messageHandlers.delete(handler);

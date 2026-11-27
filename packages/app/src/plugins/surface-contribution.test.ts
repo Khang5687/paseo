@@ -52,6 +52,7 @@ function installation(
     sidebarViews: [],
     sidebarItems: { header: [], footer: [] },
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     legacySidebarItems: sidebarItems.map((item) => ({
       ...item,
       title: item.id,
@@ -65,6 +66,7 @@ function installation(
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
     notificationOpenHandlers: [],

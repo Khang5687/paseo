@@ -16,6 +16,7 @@ import * as Zod from "zod";
 import { type PluginCleanup } from "@getpaseo/plugin";
 import {
   type PluginClientContext,
+  type PluginSkinContribution,
   type PluginAgentPanelContribution,
   type PluginWorkspacePanelContribution as WorkspacePanelInput,
   type PluginScreenProps,
@@ -39,10 +40,14 @@ import type {
   PluginSidebarItemContribution,
   PluginWorkspacePanelContribution,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemContribution,
+  PluginProjectRailItemContribution,
 } from "./types";
 import type { ComponentType } from "react";
 import { parsePluginIcon, parseSerializablePluginIcon } from "./icons";
 import { parsePluginThemeContribution } from "./themes";
+import { parsePluginSkinContribution } from "./skins";
+import { applyPluginSkin } from "@/skins/plugin-cache";
 
 const CONTRIBUTION_ID = /^[a-z][a-z0-9-]*$/;
 const PANEL_LOCATIONS = ["workspace", "explorer"] as const;
@@ -117,7 +122,11 @@ export type PluginClientRuntime = Pick<
   | "subscribe"
   | "addComposerPill"
   | "addHeaderButton"
-> & { hosts: ReturnType<typeof createPluginHosts> };
+> & {
+  hosts: ReturnType<typeof createPluginHosts>;
+  /** Host the plugin was installed from; skins applied by the plugin are attributed to it. */
+  serverId: string;
+};
 
 // COMPAT(pluginReactNativeEntrypoint): added in v0.13.0, remove after 2027-04-20
 // The 0.12 entry exposed the reveal hook as well as UI components.
@@ -136,6 +145,7 @@ export function runPluginClientBundle(
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     filePanels: [],
     composerItems: [],
     newWorkspaceItems: [],
@@ -144,6 +154,7 @@ export function runPluginClientBundle(
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [],
     timelineRenderers: [],
     notificationOpenHandlers: [],
@@ -156,14 +167,18 @@ export function runPluginClientBundle(
     footer: new Set(),
   };
   const workspaceRowItemIds = new Set<string>();
+  const needsYouItems: PluginNeedsYouItemContribution[] = [];
+  const needsYouItemIds = new Set<string>();
   const filePanelIds = new Set<string>();
   const composerItemIds = new Set<string>();
+  const projectRailItemIds = new Set<string>();
   const newWorkspaceItemIds = new Set<string>();
   const workspacePanelIds = new Set<string>();
   const commandCenterItemIds = new Set<string>();
   const clientSlashCommandNames = new Set<string>();
   const attachmentSourceIds = new Set<string>();
   const themeIds = new Set<string>();
+  const skinIds = new Set<string>();
   const timelineTransformerIds = new Set<string>();
   const timelineRendererIds = new Set<string>();
   const removals = new Set<PluginCleanup>();
@@ -345,6 +360,51 @@ export function runPluginClientBundle(
         () => workspaceRowItemIds.delete(itemId),
       );
     },
+    addNeedsYouItem(contribution: PluginNeedsYouItemContribution) {
+      const itemId = requireId(contribution.id, "needs you item id");
+      if (needsYouItemIds.has(itemId)) throw new Error(`Duplicate needs you item: ${itemId}`);
+      const title = normalizePluginText(contribution.title);
+      if (!title) throw new Error(`Needs you item ${itemId} has no title`);
+      const icon = parsePluginIcon(`Needs you item ${itemId}`, contribution.icon);
+      if (typeof contribution.useCount !== "function") {
+        throw new Error(`Needs you item ${itemId} has no useCount`);
+      }
+      if (!isComponentType(contribution.Component)) {
+        throw new Error(`Needs you item ${itemId} is not a component`);
+      }
+      needsYouItemIds.add(itemId);
+      return register(
+        needsYouItems,
+        {
+          id: itemId,
+          title,
+          icon,
+          useCount: contribution.useCount,
+          Component: contribution.Component,
+        },
+        () => needsYouItemIds.delete(itemId),
+      );
+    },
+    addProjectRailItem(contribution: PluginProjectRailItemContribution) {
+      const itemId = requireId(contribution.id, "project rail item id");
+      if (projectRailItemIds.has(itemId)) {
+        throw new Error(`Duplicate project rail item: ${itemId}`);
+      }
+      const title = normalizePluginText(contribution.title);
+      if (!title) throw new Error(`Project rail item ${itemId} has no title`);
+      const icon = parsePluginIcon(`Project rail item ${itemId}`, contribution.icon);
+      // The screen may be added after the button, so the rail checks it exists when it draws.
+      const screen = requireId(contribution.screen, `project rail item ${itemId} screen`);
+      if (contribution.useBadge !== undefined && typeof contribution.useBadge !== "function") {
+        throw new Error(`Project rail item ${itemId} useBadge is not a function`);
+      }
+      projectRailItemIds.add(itemId);
+      return register(
+        collector.projectRailItems,
+        { id: itemId, title, icon, screen, useBadge: contribution.useBadge },
+        () => projectRailItemIds.delete(itemId),
+      );
+    },
     // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
     // Titled by its id; a legacy item pointing at it lends the header its own title instead.
     addSurface(surfaceId: string, Component: ComponentType<PluginSurfaceProps>) {
@@ -523,6 +583,23 @@ export function runPluginClientBundle(
       themeIds.add(normalizedId);
       return register(collector.themes, theme, () => themeIds.delete(normalizedId));
     },
+    addSkin(contribution: PluginSkinContribution) {
+      const normalizedId = requireId(contribution.id, "skin id");
+      if (skinIds.has(normalizedId)) throw new Error(`Duplicate skin: ${normalizedId}`);
+      const skin = parsePluginSkinContribution({ ...contribution, id: normalizedId });
+      skinIds.add(normalizedId);
+      return register(collector.skins, skin, () => skinIds.delete(normalizedId));
+    },
+    async applySkin(skinId: string) {
+      const normalizedId = typeof skinId === "string" ? skinId.trim() : "";
+      const contribution = collector.skins.find((skin) => skin.id === normalizedId);
+      if (!contribution) throw new Error(`Unknown skin: ${skinId}`);
+      await applyPluginSkin({
+        id: `${id}/skin/${normalizedId}`,
+        serverId: runtime.serverId,
+        contribution,
+      });
+    },
     addTimelineTransformer(contribution: PluginTimelineTransformerContribution) {
       const normalizedId = requireId(contribution.id, "timeline transformer id");
       if (timelineTransformerIds.has(normalizedId)) {
@@ -663,6 +740,8 @@ export function runPluginClientBundle(
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     workspaceRowBadgeItems: collector.workspaceRowBadgeItems,
+    needsYouItems,
+    projectRailItems: collector.projectRailItems,
     filePanels: collector.filePanels,
     composerItems: collector.composerItems,
     newWorkspaceItems: collector.newWorkspaceItems,
@@ -671,6 +750,7 @@ export function runPluginClientBundle(
     clientSlashCommands: collector.clientSlashCommands,
     attachmentSources: collector.attachmentSources,
     themes: collector.themes,
+    skins: collector.skins,
     timelineTransformers: collector.timelineTransformers,
     timelineRenderers: collector.timelineRenderers,
     notificationOpenHandlers: collector.notificationOpenHandlers,

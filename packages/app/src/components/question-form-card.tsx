@@ -1,5 +1,7 @@
 import { Alert } from "@/components/ui/alert";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Button } from "@/components/ui/button";
+import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { useState, useCallback, useMemo, useRef, type RefObject } from "react";
 import {
   View,
@@ -13,30 +15,48 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { Check, X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import type { PendingPermission } from "@/types/shared";
-import type { AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentPermissionDraft,
+  AgentPermissionDraftFile,
+  AgentPermissionResponse,
+} from "@getpaseo/protocol/agent-types";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { isWeb } from "@/constants/platform";
 import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 import { ScrollableCodeSurface } from "@/components/ui/scrollable-code-surface";
-import { MarkdownRenderer } from "@/components/markdown/renderer";
+import { AnswerFileList, AttachFilesButton } from "@/questions/answer-files";
 import {
+  NO_ANSWER_YET,
   areQuestionsAnswered,
+  buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
+  isOneTapQuestion,
   isQuestionAnswered,
   parseQuestionFormQuestions,
+  questionFormFromDraft,
   questionShowsTextInput,
   resolveDismissLabel,
   shouldSubmitEmptyOnDismiss,
+  type QuestionFiles,
+  type QuestionFormDraftState,
   type QuestionFormQuestion,
   type QuestionOption,
 } from "./question-form-card-core";
+import { useQuestionFormDraftSync } from "./question-form-draft";
 
 interface QuestionFormCardProps {
   permission: PendingPermission;
   onRespond: (response: AgentPermissionResponse) => void;
   isResponding: boolean;
   responseError: string | null;
+  /** Uploads the files a box's answers carry; without it the box takes no files. */
+  client?: DaemonClient | null;
+  /** Saves the box's picks for every device; absent where the host cannot keep them. */
+  onDraftChange?: (draft: AgentPermissionDraft) => void;
 }
+
+const NO_FILES: readonly AgentPermissionDraftFile[] = [];
 
 const IS_WEB = isWeb;
 // Native previews are uncapped: inside the option's Pressable, Android never hands a
@@ -353,25 +373,199 @@ function QuestionOtherInput({
   );
 }
 
-export function QuestionFormCard({
+interface OneTapOptionButtonProps {
+  optIndex: number;
+  label: string;
+  size: "sm" | "md";
+  isResponding: boolean;
+  isRespondingOption: boolean;
+  onAnswer: (optIndex: number) => void;
+}
+
+function OneTapOptionButton({
+  optIndex,
+  label,
+  size,
+  isResponding,
+  isRespondingOption,
+  onAnswer,
+}: OneTapOptionButtonProps) {
+  const handlePress = useCallback(() => onAnswer(optIndex), [onAnswer, optIndex]);
+  return (
+    <Button
+      variant="secondary"
+      size={size}
+      onPress={handlePress}
+      disabled={isResponding}
+      loading={isRespondingOption}
+      accessibilityLabel={label}
+      testID={`question-form-answer-${optIndex + 1}`}
+    >
+      {label}
+    </Button>
+  );
+}
+
+function QuestionText({ text }: { text: string }) {
+  return (
+    <View style={styles.questionHeader}>
+      <View testID="question-form-current-question" style={styles.questionText}>
+        <MarkdownRenderer text={text} compact />
+      </View>
+    </View>
+  );
+}
+
+interface QuestionCardBodyProps extends QuestionFormCardProps {
+  questions: QuestionFormQuestion[];
+}
+
+// Each option is its own button, so one tap answers. Phones stack them full width.
+function OneTapQuestionCard({
   permission,
+  questions,
   onRespond,
   isResponding,
   responseError,
-}: QuestionFormCardProps) {
+}: QuestionCardBodyProps) {
+  const { t } = useTranslation();
+  const isMobile = useIsCompactFormFactor();
+  const [respondingOption, setRespondingOption] = useState<number | null>(null);
+  const [isDismissing, setIsDismissing] = useState(false);
+  const [question] = questions;
+  const size = isMobile ? "md" : "sm";
+  const dismissLabel = resolveDismissLabel(questions, t("common.actions.dismiss"));
+  const actionsStyle = useMemo(
+    () => [styles.oneTapActions, !isMobile && styles.oneTapActionsDesktop],
+    [isMobile],
+  );
+
+  const handleAnswer = useCallback(
+    (optIndex: number) => {
+      if (isResponding) return;
+      setRespondingOption(optIndex);
+      setIsDismissing(false);
+      onRespond({
+        behavior: "allow",
+        updatedInput: {
+          ...permission.request.input,
+          answers: buildQuestionFormAnswers(questions, { 0: new Set([optIndex]) }, {}),
+          answerLists: buildQuestionFormAnswerLists(questions, { 0: new Set([optIndex]) }, {}),
+        },
+      });
+    },
+    [isResponding, onRespond, permission.request.input, questions],
+  );
+  const handleDismiss = useCallback(() => {
+    if (isResponding) return;
+    setRespondingOption(null);
+    setIsDismissing(true);
+    onRespond({ behavior: "deny", message: "Dismissed by user" });
+  }, [isResponding, onRespond]);
+
+  return (
+    <View style={styles.container} testID="question-form-card">
+      <QuestionText text={question.question} />
+      <View style={actionsStyle} accessibilityLabel={question.question}>
+        {question.options.map((option, optIndex) => (
+          <OneTapOptionButton
+            key={option.label}
+            optIndex={optIndex}
+            label={option.label}
+            size={size}
+            isResponding={isResponding}
+            isRespondingOption={isResponding && respondingOption === optIndex}
+            onAnswer={handleAnswer}
+          />
+        ))}
+        <Button
+          variant="ghost"
+          size={size}
+          leftIcon={X}
+          onPress={handleDismiss}
+          disabled={isResponding}
+          loading={isResponding && isDismissing}
+          accessibilityLabel={dismissLabel}
+          testID="question-form-dismiss"
+        >
+          {dismissLabel}
+        </Button>
+      </View>
+      {responseError ? <Alert variant="error" description={responseError} size="sm" /> : null}
+    </View>
+  );
+}
+
+export function QuestionFormCard(props: QuestionFormCardProps) {
+  const questions = useMemo(
+    () => parseQuestionFormQuestions(props.permission.request.input),
+    [props.permission.request.input],
+  );
+  if (!questions) return null;
+  return isOneTapQuestion(questions) ? (
+    <OneTapQuestionCard {...props} questions={questions} />
+  ) : (
+    <QuestionForm {...props} questions={questions} />
+  );
+}
+
+function QuestionForm({
+  permission,
+  questions,
+  onRespond,
+  isResponding,
+  responseError,
+  client,
+  onDraftChange,
+}: QuestionCardBodyProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
-  const questions = useMemo(
-    () => parseQuestionFormQuestions(permission.request.input),
-    [permission.request.input],
-  );
 
-  const [selections, setSelections] = useState<Record<number, Set<number>>>({});
-  const [otherTexts, setOtherTexts] = useState<Record<number, string>>({});
+  // Picks start from the host's draft, so a box half filled on another device opens the same.
+  const [initial] = useState(() => questionFormFromDraft(permission.request.draftAnswers));
+  const [selections, setSelections] = useState<Record<number, Set<number>>>(initial.selections);
+  const [otherTexts, setOtherTexts] = useState<Record<number, string>>(initial.otherTexts);
+  const [files, setFiles] = useState<QuestionFiles>(initial.files);
   const otherInputRef = useRef<EditingTextInputHandle | null>(null);
   const [respondingAction, setRespondingAction] = useState<"submit" | "dismiss" | null>(null);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+  const activeIndexRef = useRef(0);
+  activeIndexRef.current = activeQuestionIndex;
+  const applyRemote = useCallback((next: QuestionFormDraftState) => {
+    setSelections(next.selections);
+    setOtherTexts(next.otherTexts);
+    setFiles(next.files);
+    // The editing surface owns its text and never replays state (docs/forms.md).
+    otherInputRef.current?.replaceText(next.otherTexts[activeIndexRef.current] ?? "");
+  }, []);
+  const markEdited = useQuestionFormDraftSync({
+    selections,
+    otherTexts,
+    files,
+    remoteDraft: permission.request.draftAnswers,
+    onDraftChange,
+    applyRemote,
+  });
+  const setActiveFiles = useCallback(
+    (next: AgentPermissionDraftFile[]) => {
+      setFiles((prev) => ({ ...prev, [activeIndexRef.current]: next }));
+      markEdited();
+    },
+    [markEdited],
+  );
+  const removeActiveFile = useCallback(
+    (fileId: string) => {
+      setFiles((prev) => ({
+        ...prev,
+        [activeIndexRef.current]: (prev[activeIndexRef.current] ?? []).filter(
+          (file) => file.id !== fileId,
+        ),
+      }));
+      markEdited();
+    },
+    [markEdited],
+  );
 
   const toggleOption = useCallback(
     (qIndex: number, optIndex: number, multiSelect: boolean) => {
@@ -391,6 +585,7 @@ export function QuestionFormCard({
       }
 
       setSelections((prev) => ({ ...prev, [qIndex]: next }));
+      markEdited();
 
       // Single-select: an option and a custom answer replace each other, as in Claude Code.
       // Multi-select keeps both. The editing surface owns its text and never replays state
@@ -405,41 +600,44 @@ export function QuestionFormCard({
         otherInputRef.current?.replaceText("");
       }
     },
-    [otherTexts, selections],
+    [markEdited, otherTexts, selections],
   );
 
   const setOtherText = useCallback(
     (qIndex: number, text: string) => {
       setOtherTexts((prev) => ({ ...prev, [qIndex]: text }));
-      const multiSelect = questions?.[qIndex]?.multiSelect ?? false;
+      const multiSelect = questions[qIndex]?.multiSelect ?? false;
       if (!multiSelect && text.length > 0) {
         setSelections((prev) => {
           if (!prev[qIndex] || prev[qIndex].size === 0) return prev;
           return { ...prev, [qIndex]: new Set<number>() };
         });
       }
+      markEdited();
     },
-    [questions],
+    [markEdited, questions],
   );
 
   const allAnswered = areQuestionsAnswered(questions, selections, otherTexts);
-  const resolvedActiveQuestionIndex = questions
-    ? Math.min(activeQuestionIndex, questions.length - 1)
-    : 0;
-  const activeQuestion = questions?.[resolvedActiveQuestionIndex];
-  const activeQuestionAnswered = activeQuestion
-    ? isQuestionAnswered(activeQuestion, resolvedActiveQuestionIndex, selections, otherTexts)
-    : false;
-  const isLastQuestion = questions ? resolvedActiveQuestionIndex === questions.length - 1 : true;
+  const resolvedActiveQuestionIndex = Math.min(activeQuestionIndex, questions.length - 1);
+  const activeQuestion = questions[resolvedActiveQuestionIndex];
+  const activeQuestionAnswered = isQuestionAnswered(
+    activeQuestion,
+    resolvedActiveQuestionIndex,
+    selections,
+    otherTexts,
+  );
+  const isLastQuestion = resolvedActiveQuestionIndex === questions.length - 1;
 
   const handleSubmit = useCallback(() => {
-    if (!questions || !allAnswered || isResponding) return;
+    if (!allAnswered || isResponding) return;
     setRespondingAction("submit");
     onRespond({
       behavior: "allow",
       updatedInput: {
         ...permission.request.input,
-        answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+        answers: buildQuestionFormAnswers(questions, selections, otherTexts, { files }),
+        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts, { files }),
       },
     });
   }, [
@@ -448,9 +646,26 @@ export function QuestionFormCard({
     isResponding,
     selections,
     otherTexts,
+    files,
     onRespond,
     permission.request.input,
   ]);
+
+  // Send what I have (owner decision Q105): answered questions go as answered, the rest as
+  // "No answer yet", so the agent goes on with what it has.
+  const handleSendWhatIHave = useCallback(() => {
+    if (isResponding) return;
+    setRespondingAction("submit");
+    const extras = { files, fillUnanswered: NO_ANSWER_YET };
+    onRespond({
+      behavior: "allow",
+      updatedInput: {
+        ...permission.request.input,
+        answers: buildQuestionFormAnswers(questions, selections, otherTexts, extras),
+        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts, extras),
+      },
+    });
+  }, [files, isResponding, onRespond, otherTexts, permission.request.input, questions, selections]);
 
   const handleDeny = useCallback(() => {
     if (!questions || isResponding) return;
@@ -461,6 +676,7 @@ export function QuestionFormCard({
         updatedInput: {
           ...permission.request.input,
           answers: buildQuestionFormAnswers(questions, selections, otherTexts),
+          answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
         },
       });
       return;
@@ -476,19 +692,18 @@ export function QuestionFormCard({
   }, []);
 
   const navIsAnswered = useCallback(
-    (qIndex: number) =>
-      questions ? isQuestionAnswered(questions[qIndex], qIndex, selections, otherTexts) : false,
+    (qIndex: number) => isQuestionAnswered(questions[qIndex], qIndex, selections, otherTexts),
     [questions, selections, otherTexts],
   );
 
   const handlePrimaryAction = useCallback(() => {
     if (!isLastQuestion) {
       if (!activeQuestionAnswered || isResponding) return;
-      setActiveQuestionIndex((index) => Math.min(index + 1, (questions?.length ?? 1) - 1));
+      setActiveQuestionIndex((index) => Math.min(index + 1, questions.length - 1));
       return;
     }
     handleSubmit();
-  }, [activeQuestionAnswered, handleSubmit, isLastQuestion, isResponding, questions?.length]);
+  }, [activeQuestionAnswered, handleSubmit, isLastQuestion, isResponding, questions.length]);
 
   const dismissButtonStyle = useCallback(
     ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -520,20 +735,10 @@ export function QuestionFormCard({
     [primaryDisabled, theme.colors.accent],
   );
 
-  const containerStyle = useMemo(
-    () => [
-      styles.container,
-      {
-        backgroundColor: theme.colors.surface1,
-        borderColor: theme.colors.border,
-      },
-    ],
-    [theme.colors.surface1, theme.colors.border],
-  );
   // Single-select radios need a group; checkboxes are valid standalone.
   const optionsGroupAccessibility = useMemo(
     () =>
-      activeQuestion && !activeQuestion.multiSelect
+      !activeQuestion.multiSelect
         ? ({
             accessibilityRole: "radiogroup",
             accessibilityLabel: activeQuestion.question,
@@ -555,17 +760,22 @@ export function QuestionFormCard({
     [submitActionTextColor],
   );
 
-  if (!questions) {
-    return null;
-  }
-
   const dismissLabel = resolveDismissLabel(questions, t("common.actions.dismiss"));
   const selected = selections[resolvedActiveQuestionIndex] ?? new Set<number>();
   const otherText = otherTexts[resolvedActiveQuestionIndex] ?? "";
-  const showTextInput = questionShowsTextInput(questions[resolvedActiveQuestionIndex]);
+  const showTextInput = questionShowsTextInput(activeQuestion);
+  const activeFiles = files[resolvedActiveQuestionIndex] ?? NO_FILES;
+  const canSendWhatIHave =
+    questions.length > 1 &&
+    !allAnswered &&
+    questions.some(
+      (question, index) =>
+        isQuestionAnswered(question, index, selections, otherTexts) ||
+        (files[index]?.length ?? 0) > 0,
+    );
 
   return (
-    <View style={containerStyle} testID="question-form-card">
+    <View style={styles.container} testID="question-form-card">
       <QuestionNav
         questions={questions}
         activeIndex={resolvedActiveQuestionIndex}
@@ -573,52 +783,67 @@ export function QuestionFormCard({
         isResponding={isResponding}
         onSelect={handleSelectQuestion}
       />
-      <View style={styles.questionHeader}>
-        <View testID="question-form-current-question" style={styles.questionText}>
-          <MarkdownRenderer text={questions[resolvedActiveQuestionIndex].question} compact />
-        </View>
-      </View>
+      <QuestionText text={activeQuestion.question} />
 
-      {activeQuestion ? (
-        <View key={activeQuestion.question} style={styles.questionBlock}>
-          {activeQuestion.options.length > 0 ? (
-            <View style={styles.optionsWrap} {...optionsGroupAccessibility}>
-              {activeQuestion.options.map((opt, optIndex) => (
-                <QuestionOptionRow
-                  key={opt.label}
-                  qIndex={resolvedActiveQuestionIndex}
-                  optIndex={optIndex}
-                  option={opt}
-                  isSelected={selected.has(optIndex)}
-                  multiSelect={activeQuestion.multiSelect}
-                  isResponding={isResponding}
-                  onToggle={toggleOption}
-                />
-              ))}
-            </View>
-          ) : null}
-          {showTextInput ? (
-            <QuestionOtherInput
-              qIndex={resolvedActiveQuestionIndex}
-              inputRef={otherInputRef}
-              accessibilityLabel={activeQuestion.question}
-              value={otherText}
-              placeholder={getQuestionInputPlaceholder({
-                question: activeQuestion,
-                answerPlaceholder: t("message.question.answerPlaceholder"),
-                otherPlaceholder: t("message.question.otherPlaceholder"),
-              })}
-              isResponding={isResponding}
-              onChange={setOtherText}
-              onSubmit={handlePrimaryAction}
+      <View key={activeQuestion.question} style={styles.questionBlock}>
+        {activeQuestion.options.length > 0 ? (
+          <View style={styles.optionsWrap} {...optionsGroupAccessibility}>
+            {activeQuestion.options.map((opt, optIndex) => (
+              <QuestionOptionRow
+                key={opt.label}
+                qIndex={resolvedActiveQuestionIndex}
+                optIndex={optIndex}
+                option={opt}
+                isSelected={selected.has(optIndex)}
+                multiSelect={activeQuestion.multiSelect}
+                isResponding={isResponding}
+                onToggle={toggleOption}
+              />
+            ))}
+          </View>
+        ) : null}
+        {showTextInput ? (
+          <QuestionOtherInput
+            qIndex={resolvedActiveQuestionIndex}
+            inputRef={otherInputRef}
+            accessibilityLabel={activeQuestion.question}
+            value={otherText}
+            placeholder={getQuestionInputPlaceholder({
+              question: activeQuestion,
+              answerPlaceholder: t("message.question.answerPlaceholder"),
+              otherPlaceholder: t("message.question.otherPlaceholder"),
+            })}
+            isResponding={isResponding}
+            onChange={setOtherText}
+            onSubmit={handlePrimaryAction}
+          />
+        ) : null}
+        {client ? (
+          <View style={styles.filesRow}>
+            <AttachFilesButton
+              client={client}
+              files={activeFiles}
+              onChange={setActiveFiles}
+              testID={`question-form-attach-${resolvedActiveQuestionIndex}`}
             />
-          ) : null}
-        </View>
-      ) : null}
+            <AnswerFileList files={activeFiles} onRemove={removeActiveFile} />
+          </View>
+        ) : null}
+      </View>
 
       {responseError ? <Alert variant="error" description={responseError} size="sm" /> : null}
 
       <View style={actionsContainerStyle}>
+        {canSendWhatIHave ? (
+          <Button
+            variant="secondary"
+            disabled={isResponding}
+            onPress={handleSendWhatIHave}
+            testID="question-form-send-partial"
+          >
+            {t("message.question.sendWhatIHave")}
+          </Button>
+        ) : null}
         <Pressable
           style={dismissButtonStyle}
           onPress={handleDeny}
@@ -665,9 +890,17 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.spacing[2],
     borderWidth: 1,
     gap: theme.spacing[3],
+    backgroundColor: theme.colors.surface1,
+    borderColor: theme.colors.border,
   },
   questionBlock: {
     gap: theme.spacing[2],
+  },
+  filesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: theme.spacing[1],
   },
   questionHeader: {
     flexDirection: "row",
@@ -679,6 +912,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   questionText: {
     flex: 1,
+    minWidth: 0,
   },
   optionsWrap: {
     gap: theme.spacing[1],
@@ -760,6 +994,16 @@ const styles = StyleSheet.create((theme) => ({
   actionsContainerDesktop: {
     flexDirection: "row",
     justifyContent: "flex-start",
+    alignItems: "center",
+  },
+  // Same inset as the question, so the buttons line up with the command's code block.
+  oneTapActions: {
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+  },
+  oneTapActionsDesktop: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
   },
   actionButton: {

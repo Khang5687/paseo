@@ -19,8 +19,13 @@ export type {
   PluginSidebarViewProps,
   PluginSidebarViewContribution,
   PluginSidebarItemContribution,
+  PluginActiveRefs,
+  PluginBadge,
+  PluginProjectRailItemContribution,
   PluginWorkspaceRowBadgeItemProps,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemProps,
+  PluginNeedsYouItemContribution,
   PluginIcon,
   PluginPanelLocation,
   PluginOpenPanelOptions,
@@ -44,6 +49,8 @@ export type {
   PluginAgentCommandContext,
   PluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution,
+  PluginSkinContribution,
+  PluginSkinImage,
   SettingsState,
 } from "./contracts.js";
 export type {

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { AgentPermissionRequest } from "../../../../agent-sdk-types.js";
+import type { AgentMetadata, AgentPermissionRequest } from "../../../../agent-sdk-types.js";
+import { readQuestionAnswerList } from "../../../../question-answers.js";
 import type { PiExtension, PiExtensionDialog, PiExtensionUiResponse } from "../contract.js";
 
 const Params = z
@@ -55,22 +56,29 @@ const Result = z.object({
 type Question = z.infer<typeof Params>["questions"][number];
 const PERMISSION_PREFIX = "rpiv-question:";
 
-function answerFor(answers: Record<string, unknown>, question: Question): string | null {
-  const answer = answers[question.header];
-  return typeof answer === "string" ? answer : null;
+function answerFor(updatedInput: AgentMetadata, question: Question): string[] | null {
+  const answerList = readQuestionAnswerList(updatedInput, question.header);
+  if (answerList) return answerList;
+  const answers = updatedInput.answers;
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) return null;
+  const answer: unknown = Reflect.get(answers, question.header);
+  if (typeof answer !== "string") return null;
+  // COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before
+  // v0.11.0 send only a comma-joined answer, so a comma inside a label still splits it here.
+  return question.multiSelect ? answer.split(", ") : [answer];
 }
 
 function replyToDialog(
   dialog: PiExtensionDialog,
   question: Question,
-  answer: string,
+  answerList: string[],
   customInput: boolean,
 ): { response: PiExtensionUiResponse; customInput: boolean } {
   const options = z.array(z.string()).safeParse(dialog.options).data;
+  const answer = answerList.join(", ");
   if (customInput) return { response: { value: answer }, customInput: false };
   if (question.multiSelect) {
-    const labels = answer.split(", ");
-    const indices = labels.map((label) =>
+    const indices = answerList.map((label) =>
       question.options.findIndex((option) => option.label === label),
     );
     if (indices.every((index) => index >= 0)) {
@@ -79,6 +87,7 @@ function replyToDialog(
         customInput: false,
       };
     }
+    // rpiv takes plain text as the custom answer to a multi-select question.
     return { response: { value: answer }, customInput: false };
   }
   const index = question.options.findIndex((option) => option.label === answer);
@@ -106,7 +115,7 @@ export const rpivAskUserQuestion: PiExtension = {
     let active: {
       callId: string;
       questions: Question[];
-      answers: Record<string, unknown> | null;
+      input: AgentMetadata | null;
       cancelled: boolean;
       index: number;
       customInput: boolean;
@@ -116,8 +125,8 @@ export const rpivAskUserQuestion: PiExtension = {
     function answerDialog(dialog: PiExtensionDialog): PiExtensionUiResponse {
       if (!active || active.cancelled) return { cancelled: true };
       const question = active.questions[active.index];
-      if (!question || !active.answers) return { cancelled: true };
-      const answer = answerFor(active.answers, question);
+      if (!question || !active.input) return { cancelled: true };
+      const answer = answerFor(active.input, question);
       if (answer === null) return { cancelled: true };
       const mapped = replyToDialog(dialog, question, answer, active.customInput);
       active.customInput = mapped.customInput;
@@ -133,7 +142,7 @@ export const rpivAskUserQuestion: PiExtension = {
         active = {
           callId: call.callId,
           questions: parsed.data.questions,
-          answers: null,
+          input: null,
           cancelled: false,
           index: 0,
           customInput: false,
@@ -161,7 +170,7 @@ export const rpivAskUserQuestion: PiExtension = {
       },
       mapDialog(dialog) {
         if (!active || (dialog.method !== "select" && dialog.method !== "input")) return undefined;
-        if (!active.answers && !active.cancelled) {
+        if (!active.input && !active.cancelled) {
           active.deferred = dialog;
           return { type: "deferred" };
         }
@@ -169,12 +178,8 @@ export const rpivAskUserQuestion: PiExtension = {
       },
       respondToPermission(request, response) {
         if (!active || request.id !== `${PERMISSION_PREFIX}${active.callId}`) return undefined;
-        const answers = response.behavior === "allow" ? response.updatedInput?.answers : undefined;
-        active.answers =
-          answers && typeof answers === "object" && !Array.isArray(answers)
-            ? (answers as Record<string, unknown>)
-            : null;
-        active.cancelled = response.behavior === "deny" || !active.answers;
+        active.input = response.behavior === "allow" ? (response.updatedInput ?? null) : null;
+        active.cancelled = !active.input;
         const deferred = active.deferred;
         active.deferred = null;
         return {

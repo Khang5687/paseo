@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cp, copyFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import path from "node:path";
+import path, { basename, join } from "node:path";
 
 import type {
   OmpRuntime,
@@ -15,6 +16,8 @@ import type {
   OmpRpcHostToolResult,
   OmpRpcHostToolUpdate,
   OmpAgentMessage,
+  OmpGoalAction,
+  OmpGoalModeState,
   OmpModel,
   OmpPromptAck,
   OmpRpcSlashCommand,
@@ -104,8 +107,16 @@ export class FakeOmp implements OmpRuntime {
     const sessionId =
       (launch.session ? this.sessionIdsByFile.get(launch.session) : undefined) ??
       `omp-session-${++this.nextSessionId}`;
-    const session = new FakeOmpSession(launch, sessionId, this.removedModels);
-    if (!launch.noSession) this.sessionIdsByFile.set(session.state.sessionFile, sessionId);
+    const forkSource = readFlagValue(launch.extraArgs, "--fork");
+    const session = new FakeOmpSession(
+      forkSource
+        ? { ...launch, session: await forkSessionFile(launch, forkSource, sessionId) }
+        : launch,
+      sessionId,
+      this.removedModels,
+    );
+    const sessionFile = session.state.sessionFile;
+    if (!launch.noSession && sessionFile) this.sessionIdsByFile.set(sessionFile, sessionId);
     session.commands = this.queuedCommands.shift() ?? [];
     for (const [level, error] of this.queuedSubagentSubscriptionErrors) {
       session.subagentSubscriptionErrors.set(level, error);
@@ -150,6 +161,30 @@ export class FakeOmp implements OmpRuntime {
   }
 }
 
+function readFlagValue(args: readonly string[] | undefined, flag: string): string | undefined {
+  const index = args?.indexOf(flag) ?? -1;
+  return index >= 0 ? args?.[index + 1] : undefined;
+}
+
+// Like `omp --fork <source> --session-dir <dir>`: copies the journal and its artifacts directory
+// under a new id, leaving the source alone, and keeps the publish-lock sidecar OMP leaves behind.
+async function forkSessionFile(
+  launch: OmpRuntimeLaunch,
+  source: string,
+  sessionId: string,
+): Promise<string> {
+  const directory = readFlagValue(launch.extraArgs, "--session-dir") ?? launch.cwd;
+  const forkFile = join(directory, `fork_${sessionId}.jsonl`);
+  await copyFile(source, forkFile);
+  await cp(source.slice(0, -".jsonl".length), forkFile.slice(0, -".jsonl".length), {
+    recursive: true,
+  }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  await writeFile(join(directory, `.${basename(forkFile)}.lock.os`), "");
+  return forkFile;
+}
+
 export class FakeOmpSession implements OmpRuntimeSession {
   readonly environment: Record<string, string>;
   fastModeResult = { enabled: false, active: false };
@@ -161,6 +196,9 @@ export class FakeOmpSession implements OmpRuntimeSession {
   }> = [];
   readonly compactRequests: Array<{ customInstructions?: string }> = [];
   readonly setAutoCompactionRequests: boolean[] = [];
+  readonly goalRequests: OmpGoalAction[] = [];
+  goalState: OmpGoalModeState | null = null;
+  goalError: Error | null = null;
   readonly subagentSubscriptionRequests: FakeOmpSubagentSubscriptionLevel[] = [];
   readonly subagentMessageRequests: FakeOmpSubagentMessagesSelector[] = [];
   readonly setModelRequests: Array<{ provider: string; modelId: string }> = [];
@@ -189,6 +227,8 @@ export class FakeOmpSession implements OmpRuntimeSession {
     cost: 0,
   };
   commands: OmpRpcSlashCommand[] = [];
+  refreshCommandsRequestCount = 0;
+  refreshCommandsError: Error | null = null;
   subagents: FakeOmpSubagentSnapshot[] = [];
   readonly subagentSubscriptionErrors = new Map<FakeOmpSubagentSubscriptionLevel, Error>();
   compactError: Error | null = null;
@@ -228,7 +268,8 @@ export class FakeOmpSession implements OmpRuntimeSession {
       autoCompactionEnabled: true,
       fastModeEnabled: false,
       fastModeActive: false,
-      sessionFile: launch.session ?? nextFakeSessionFile(sessionId),
+      sessionFile:
+        launch.session ?? (launch.fork ? `${launch.fork}.forked` : nextFakeSessionFile(sessionId)),
       sessionId,
       messageCount: 0,
       queuedMessageCount: 0,
@@ -307,6 +348,56 @@ export class FakeOmpSession implements OmpRuntimeSession {
     }
   }
 
+  async goal(action: OmpGoalAction): Promise<OmpGoalModeState | null> {
+    this.goalRequests.push(action);
+    if (this.goalError) {
+      throw this.goalError;
+    }
+    switch (action.op) {
+      case "get":
+        return this.goalState;
+      case "create": {
+        const now = Date.now();
+        const existing = this.goalState?.goal;
+        const goal = {
+          id: existing?.id ?? `goal-${this.goalRequests.length}`,
+          objective: action.objective ?? "",
+          status: "active",
+          ...(action.token_budget !== undefined ? { tokenBudget: action.token_budget } : {}),
+          tokensUsed: 0,
+          timeUsedSeconds: 0,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        this.goalState = { enabled: true, mode: "active", goal };
+        this.emit({ type: "goal_updated", goal, state: this.goalState });
+        return this.goalState;
+      }
+      case "pause":
+      case "resume": {
+        if (!this.goalState?.goal) {
+          throw new Error(
+            action.op === "pause" ? "No active goal to pause." : "No paused goal to resume.",
+          );
+        }
+        const status = action.op === "pause" ? "paused" : "active";
+        const goal = { ...this.goalState.goal, status, updatedAt: Date.now() };
+        this.goalState = { enabled: status === "active", mode: "active", goal };
+        this.emit({ type: "goal_updated", goal, state: this.goalState });
+        return this.goalState;
+      }
+      case "drop": {
+        if (!this.goalState?.goal) {
+          throw new Error("No goal to drop.");
+        }
+        const goal = { ...this.goalState.goal, status: "dropped", updatedAt: Date.now() };
+        this.goalState = null;
+        this.emit({ type: "goal_updated", goal, state: { enabled: false, mode: "none" } });
+        return null;
+      }
+    }
+  }
+
   async setAutoCompaction(enabled: boolean): Promise<void> {
     this.setAutoCompactionRequests.push(enabled);
     this.state = {
@@ -341,7 +432,8 @@ export class FakeOmpSession implements OmpRuntimeSession {
     if (report) {
       this.state = report;
     }
-    return this.state;
+    // Real OMP reports the goal mode state alongside the session state.
+    return { ...this.state, goal: this.goalState };
   }
 
   async setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }> {
@@ -432,6 +524,11 @@ export class FakeOmpSession implements OmpRuntimeSession {
       throw new Error("FakeOmp branch response requires text");
     }
     this.activeBranchEntryId = entryId;
+    // Like OMP, a branch continues in a new session file and leaves the old one as it was.
+    this.state = {
+      ...this.state,
+      sessionFile: `${this.state.sessionFile}.cut-before-${entryId}`,
+    };
     return { text: this.branchResponse.text };
   }
 
@@ -487,6 +584,12 @@ export class FakeOmpSession implements OmpRuntimeSession {
   }
 
   async getCommands(): Promise<OmpRpcSlashCommand[]> {
+    return this.commands;
+  }
+
+  async refreshCommands(): Promise<OmpRpcSlashCommand[]> {
+    this.refreshCommandsRequestCount += 1;
+    if (this.refreshCommandsError) throw this.refreshCommandsError;
     return this.commands;
   }
 

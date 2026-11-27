@@ -113,6 +113,21 @@ test("revokes a stop token while inventory ownership is being re-established", (
   expect(store.apply("agent", [item])![0].stopToken).not.toBe(first.stopToken);
 });
 
+test("names the waited job in the summary and republishes when only its output moves", () => {
+  const store = new AgentBackgroundWorkStore();
+  const job = { id: "bg_1", kind: "shell", description: null, command: "npm test" };
+  const [item] = store.apply("agent", [{ ...job, outputTail: ["1 passed"], waitedOn: true }])!;
+  expect(store.summary("agent")).toEqual({
+    count: 1,
+    waitingOn: { itemId: item.id, title: "npm test" },
+  });
+  expect(store.apply("agent", [{ ...job, outputTail: ["2 passed"], waitedOn: true }])).toEqual([
+    expect.objectContaining({ outputTail: ["2 passed"], waitedOn: true }),
+  ]);
+  store.apply("agent", [job]);
+  expect(store.summary("agent")).toEqual({ count: 1 });
+});
+
 test("publishes command changes without replacing a live item's identity", () => {
   const store = new AgentBackgroundWorkStore();
   const item = {

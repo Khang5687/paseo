@@ -193,8 +193,8 @@ async function expectNewWorkspaceHeaderVisible(page: Page): Promise<void> {
  */
 async function expectNewWorkspaceFullscreen(page: Page, submitLabel: string): Promise<void> {
   const frame = page.getByTestId("composer-fullscreen");
-  await expect(page.getByRole("button", { name: "Exit fullscreen", exact: true })).toBeVisible();
-  await expect(frame.getByRole("button")).toHaveCount(2);
+  await expect(frame.getByRole("button", { name: "Exit fullscreen", exact: true })).toBeVisible();
+  await expect(frame.getByRole("heading")).toBeVisible();
   await expect(frame.getByRole("button", { name: submitLabel })).toBeVisible();
   await expectNewWorkspaceHeaderHidden(page);
   const picker = (await page.getByRole("button", { name: "Workspace project" }).boundingBox())!;
@@ -270,7 +270,7 @@ test.describe("New workspace: fullscreen composer across the compact breakpoint"
     });
 
     // Exercise the terminal prompt's fullscreen and compact launch sheet on the phone.
-    await test.step("terminal: the prompt's fullscreen shows only exit and Launch", async () => {
+    await test.step("terminal: the prompt's fullscreen keeps its bar and Launch", async () => {
       await resizeComposerViewport(page, "portrait");
       // The compact launch control opens a sheet, not the desktop menu.
       await launchTrigger(page).click();

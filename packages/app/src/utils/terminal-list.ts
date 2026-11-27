@@ -8,6 +8,10 @@ function toTerminalListEntry(input: { terminal: CreatedTerminal }): TerminalList
     id: input.terminal.id,
     name: input.terminal.name,
     ...(input.terminal.title ? { title: input.terminal.title } : {}),
+    // The chat drawer reads the owner; without it a new drawer terminal opens as a workspace tab
+    // until the next list refresh.
+    ...(input.terminal.ownerAgentId ? { ownerAgentId: input.terminal.ownerAgentId } : {}),
+    ...(input.terminal.createdAt ? { createdAt: input.terminal.createdAt } : {}),
   };
 }
 

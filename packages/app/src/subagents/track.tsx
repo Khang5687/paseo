@@ -39,6 +39,11 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
 export interface SubagentsTrackProps {
   serverId: string;
   rows: SubagentRow[];
+  /**
+   * The chat's own turn has ended. Working children then read "Your turn · N working". False for
+   * a read-only transcript, where the user has no turn to take.
+   */
+  yourTurn: boolean;
   onOpenSubagent: (address: AgentAddress) => void;
   onOpenProviderSubagent: (parentAgentId: string, subagentId: string) => void;
   /**
@@ -56,7 +61,10 @@ const IDLE_ARCHIVE_FINISHED_STATUS: ArchiveFinishedStatus = { kind: "idle" };
 
 const ROW_ICON_SIZE = 14;
 
-function useRowPresentation(row: SubagentRow, serverId: string): WorkspaceTabPresentation {
+export function useSubagentRowPresentation(
+  row: SubagentRow,
+  serverId: string,
+): WorkspaceTabPresentation {
   const icon = useProviderIcon(row.provider, serverId);
   const data = buildSubagentRowPresentationData(row);
   return {
@@ -71,6 +79,7 @@ function useRowPresentation(row: SubagentRow, serverId: string): WorkspaceTabPre
 export function SubagentsTrack({
   serverId,
   rows,
+  yourTurn,
   onOpenSubagent,
   onOpenProviderSubagent,
   sheetTabFor,
@@ -88,7 +97,7 @@ export function SubagentsTrack({
     return null;
   }
 
-  const pill = buildSubagentPillPresentation(t, rows);
+  const pill = buildSubagentPillPresentation(t, rows, { yourTurn });
   const finishedCount = countFinishedSubagents(rows);
   const showArchiveFinished = finishedCount > 0 || isArchivingFinished || isArchiveFinishedFailed;
   const sheets = rows.map(sheetTabFor);
@@ -209,7 +218,7 @@ function SubagentsTrackRow({
   const isCompact = useIsCompactFormFactor();
   const rowServerId = row.kind === "paseo" ? row.address.serverId : serverId;
   const hostLabel = useHosts().find((host) => host.serverId === rowServerId)?.label ?? rowServerId;
-  const presentation = useRowPresentation(row, rowServerId);
+  const presentation = useSubagentRowPresentation(row, rowServerId);
   const displayLabel =
     presentation.titleState === "loading" ? t("common.states.loading") : presentation.label;
   const handlePress = useCallback(() => {

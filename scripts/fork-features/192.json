@@ -1,0 +1,6 @@
+{
+  "pr": 192,
+  "title": "fix(app): ArrowUp in a long model list reaches the last row",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/model-search-across-providers.spec.ts"]
+}

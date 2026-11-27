@@ -1,0 +1,12 @@
+{
+  "pr": 7,
+  "title": "feat(sidebar): settle workspaces into a collapsible Settled section",
+  "retired": "removed by #25",
+  "tests": [
+    "packages/app/src/components/sidebar/sidebar-projection.test.ts",
+    "packages/app/src/stores/sidebar-collapsed-sections-store/state.test.ts",
+    "packages/server/src/server/session.workspaces.test.ts",
+    "packages/server/src/server/workspace-reconciliation-service.test.ts",
+    "packages/server/src/server/workspace-settle.test.ts"
+  ]
+}

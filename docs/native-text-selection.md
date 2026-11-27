@@ -2,11 +2,11 @@
 
 Keep completed assistant prose in one native text view so selection crosses paragraphs, headings and lists. The shared [Markdown renderer](markdown-renderer.md) owns that view.
 
-## Diagrams in lists and quotes
+## Extracted fences in lists and quotes
 
-Selection stops at a Mermaid diagram. Native extracts Mermaid fences into separate views because the library exposes no native block renderer override. A diagram inside a list or quote therefore appears outside that container, and its following prose starts a separate Markdown fragment.
+Selection stops at a Mermaid diagram and, in an agent's chat, at a runnable shell fence. Native extracts those fences into separate views because the library exposes no native block renderer override. A fence inside a list or quote therefore appears outside that container, and its following prose starts a separate Markdown fragment.
 
-Reopening a list marker or quote prefix on the following fragment cannot place the diagram inside the original container or continue its quote rule. Preserving the group requires a native block renderer hook or a host that owns the whole group. Keep native diagrams at the top level until that exists; nested grouping remains a known limitation.
+Reopening a list marker or quote prefix on the following fragment cannot place the fence inside the original container or continue its quote rule. Preserving the group requires a native block renderer hook or a host that owns the whole group. Keep extracted fences at the top level until that exists; nested grouping remains a known limitation.
 
 ## Leading inline images
 

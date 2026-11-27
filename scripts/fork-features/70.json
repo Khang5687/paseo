@@ -1,0 +1,11 @@
+{
+  "pr": 70,
+  "title": "feat(server): ask_agent asks a forked copy of an agent without interrupting it",
+  "tests": [
+    "packages/server/src/server/agent/ask-agent.test.ts",
+    "packages/server/src/server/agent/providers/claude/rewind.test.ts",
+    "packages/server/src/server/agent/providers/codex-app-server-agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/agent/providers/opencode-agent.test.ts"
+  ]
+}
