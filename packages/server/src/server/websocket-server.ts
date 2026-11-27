@@ -26,6 +26,7 @@ import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import { CreationService } from "./creation/index.js";
 import { MessageReceipts } from "./message-receipts/index.js";
 import { AgentMessageQueueDispatcher } from "./agent/agent-message-queue.js";
+import { SidebarSyncStore } from "./sidebar-sync/index.js";
 import { WebSocket, WebSocketServer } from "ws";
 import type { IncomingMessage, Server as HTTPServer } from "http";
 import { join } from "path";
@@ -648,6 +649,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentStorage: AgentStorage;
   private readonly messageReceipts: MessageReceipts;
   private readonly agentMessageQueue: AgentMessageQueueDispatcher;
+  private readonly sidebarSync: SidebarSyncStore;
   readonly agentMessages: AgentMessageDelivery;
   private readonly askThreads: AskAgentThreads | undefined;
   private readonly creationService: CreationService;
@@ -888,6 +890,7 @@ export class VoiceAssistantWebSocketServer {
       paseoHome,
     });
     this.agentMessageQueue.attach();
+    this.sidebarSync = new SidebarSyncStore(join(paseoHome, "sidebar-sync.json"));
     this.creationService = new CreationService(
       join(paseoHome, "creations"),
       this.logger.child({ module: "creation" }),
@@ -1894,6 +1897,7 @@ export class VoiceAssistantWebSocketServer {
       agentStorage: this.agentStorage,
       messageReceipts: this.messageReceipts,
       agentMessageQueue: this.agentMessageQueue,
+      sidebarSync: this.sidebarSync,
       agentMessages: this.agentMessages,
       askThreads: this.askThreads,
       creationService: this.creationService,
@@ -2304,6 +2308,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.accountRoutingSupported && this.accountLogin?.linkSupported
           ? { ompAccountLoginLink: true }
           : {}),
+        // COMPAT(sidebarProjectOrder): added after v0.17.6, remove gate after 2027-12-01.
+        sidebarProjectOrder: true,
         terminalCollection: true,
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
