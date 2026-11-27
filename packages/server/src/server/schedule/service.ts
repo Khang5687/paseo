@@ -543,7 +543,7 @@ export class ScheduleService {
       return;
     }
     const { agentId } = schedule.target;
-    const { id, name, createdAt } = schedule;
+    const { id, name, createdAt, nextRunAt } = schedule;
     if (change === "delete" || schedule.status !== "active") {
       this.heartbeatStops.delete(id);
       this.agentManager.removeDaemonBackgroundWork({ agentId, namespace: "heartbeat", id });
@@ -577,6 +577,7 @@ export class ScheduleService {
       countsAsRunning: false,
       description: name,
       startedAt: createdAt,
+      ...(nextRunAt ? { nextRunAt } : {}),
       stop,
     });
   }

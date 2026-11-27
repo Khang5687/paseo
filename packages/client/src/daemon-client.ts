@@ -44,11 +44,16 @@ import {
   CheckoutRenameBranchResponseSchema,
   parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
+  SetTerminalOwnerResponseSchema,
   RestartRequestedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
+  AGENT_ASK_DEFAULT_TIMEOUT_MS,
   SessionInboundMessageSchema,
+  type ActiveTurnBehavior,
   type AgentActiveTurnBehavior,
+  type AgentAskReplyInfo,
+  type AgentAskThreadInfo,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
@@ -63,9 +68,11 @@ import type {
   FileUploadResponse,
   FileExplorerResponse,
   FileVersion,
+  AgentDraftSetRequest,
   FileWriteResult,
   FetchAgentTimelineResponseMessage,
   AgentForkContextResponseMessage,
+  AgentForkResponseMessage,
   GitSetupOptions,
   CheckoutStatusResponse,
   CheckoutCommit,
@@ -155,9 +162,14 @@ import type {
   AgentSkillSelection,
   AgentSkillsStatus,
   AgentSkillsSaveResult,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
+  AgentQuestionAnswer,
+  AgentAttachment,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentOptionControl,
+  AgentPermissionDraft,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentPersistenceHandle,
@@ -478,8 +490,8 @@ export interface DaemonClientConfig {
   /**
    * Ping the daemon every 10 s and reconnect after missed replies (default true). Turn it off
    * only where the transport reports its own loss (a plugin's IPC channel, an in-process
-   * channel): there a ping cannot find a dead link the channel would not, and it costs both
-   * processes a wakeup per client every 10 s.
+   * channel, a route through a connected host): there a ping cannot find a dead link the
+   * channel would not, and it costs both processes a wakeup per client every 10 s.
    */
   livenessHeartbeat?: boolean;
 }
@@ -509,6 +521,7 @@ export interface SendMessageOptions {
   activeTurnBehavior?: AgentActiveTurnBehavior;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
+  attachmentRefs?: SendAgentMessageRequest["attachmentRefs"];
 }
 
 export interface AgentAttentionRequiredNotification {
@@ -536,6 +549,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
   outputSchema?: Record<string, unknown>;
   images?: CreateAgentRequestMessage["images"];
   attachments?: CreateAgentRequestMessage["attachments"];
+  attachmentRefs?: CreateAgentRequestMessage["attachmentRefs"];
   /** @deprecated Use createWorkspace({ source, agent, idempotencyKey }); rejected by createAgent. */
   git?: GitSetupOptions;
   worktree?: CreateAgentRequestMessage["worktree"];
@@ -633,6 +647,17 @@ export interface FileReadResult {
   modifiedAt: string;
   revision?: string;
 }
+
+/** A file's metadata without its bytes: what a streamed read returns. */
+export type FileReadMeta = Omit<FileReadResult, "bytes">;
+
+/** Where a streamed read puts the bytes, so a big file never sits in memory whole. */
+export interface FileReadSink {
+  /** Runs once, before the first chunk of a binary transfer. */
+  begin?(meta: FileReadMeta): void | Promise<void>;
+  /** Chunks arrive in order; the next one waits for this to settle. */
+  write(chunk: Uint8Array): void | Promise<void>;
+}
 export interface FileUploadInput {
   fileName: string;
   mimeType: string;
@@ -704,6 +729,7 @@ type AgentPermissionResolvedPayload = AgentPermissionResolvedMessage["payload"];
 type ListTerminalsPayload = ListTerminalsResponse["payload"];
 type CreateTerminalPayload = CreateTerminalResponse["payload"];
 export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>["payload"];
+export type SetTerminalOwnerResult = z.infer<typeof SetTerminalOwnerResponseSchema>["payload"];
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
@@ -746,6 +772,7 @@ type ScheduleUpdatePayload = Extract<
 >["payload"];
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
+export type AgentForkPayload = AgentForkResponseMessage["payload"];
 
 export type FetchAgentTimelineDirection = FetchAgentTimelinePayload["direction"];
 export type FetchAgentTimelineProjection = FetchAgentTimelinePayload["projection"];
@@ -833,6 +860,8 @@ export interface AgentForkContextOptions {
   requestId?: string;
 }
 
+export type AgentForkOptions = AgentForkContextOptions;
+
 type AgentRefreshedStatusPayload = z.infer<typeof AgentRefreshedStatusPayloadSchema>;
 type RestartRequestedStatusPayload = z.infer<typeof RestartRequestedStatusPayloadSchema>;
 type ShutdownRequestedStatusPayload = z.infer<typeof ShutdownRequestedStatusPayloadSchema>;
@@ -908,6 +937,22 @@ export type WorkspaceLabelListPayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.label.list.response" }
 >["payload"];
+export type SidebarProjectOrderPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.project_order.get.response" }
+>["payload"];
+export type SidebarProjectOrderSetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.project_order.set.response" }
+>["payload"];
+export type SidebarWorkspaceOrderPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.workspace_order.get.response" }
+>["payload"];
+export type SidebarWorkspaceOrderSetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.workspace_order.set.response" }
+>["payload"];
 export type WorkspaceLabelAssignmentPayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.label.assignment.set.response" }
@@ -936,6 +981,52 @@ export type ProjectListPayload = Extract<
   SessionOutboundMessage,
   { type: "project.list.response" }
 >["payload"];
+export type NotesListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "notes.list.response" }
+>["payload"];
+type NotesCreateRequest = Extract<SessionInboundMessage, { type: "notes.create.request" }>;
+type NotesEditRequest = Extract<SessionInboundMessage, { type: "notes.edit.request" }>;
+export type CreateNoteOptions = Omit<NotesCreateRequest, "type" | "requestId">;
+export type EditNoteOptions = Omit<NotesEditRequest, "type" | "requestId">;
+export type NoteRecord = NotesListPayload["notes"][number];
+export type FileCopyEntry = NonNullable<
+  Extract<SessionOutboundMessage, { type: "files.copies.put.response" }>["payload"]["entry"]
+>;
+export type FileCopiesSettingsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "files.copies.get_settings.response" }
+>["payload"];
+export type FileCopiesListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "files.copies.list.response" }
+>["payload"];
+type FileCopiesPutRequest = Extract<SessionInboundMessage, { type: "files.copies.put.request" }>;
+type FileCopiesListRequest = Extract<SessionInboundMessage, { type: "files.copies.list.request" }>;
+type FileCopiesUpdateSettingsRequest = Extract<
+  SessionInboundMessage,
+  { type: "files.copies.update_settings.request" }
+>;
+export type PutFileCopyOptions = Omit<FileCopiesPutRequest, "type" | "requestId">;
+export type ListFileCopiesOptions = Omit<FileCopiesListRequest, "type" | "requestId">;
+export type UpdateFileCopySettingsOptions = Omit<
+  FileCopiesUpdateSettingsRequest,
+  "type" | "requestId"
+>;
+type FileDevicesRegisterRequest = Extract<
+  SessionInboundMessage,
+  { type: "files.devices.register.request" }
+>;
+export type FileDeviceRegistration = Omit<FileDevicesRegisterRequest, "type" | "requestId">;
+export type FileDevice = Extract<
+  SessionOutboundMessage,
+  { type: "files.devices.list.response" }
+>["payload"]["devices"][number];
+export interface FileSendReceipt {
+  deviceName: string;
+  /** `push` reached the push service; `live` reached the app over its connection. */
+  delivery: string;
+}
 type ProjectListRequest = Extract<SessionInboundMessage, { type: "project.list.request" }>;
 export type ProjectListOptions = Omit<ProjectListRequest, "type" | "requestId"> & {
   requestId?: string;
@@ -1015,6 +1106,12 @@ export interface RenameTerminalInput {
   title: string;
   requestId?: string;
 }
+export interface SetTerminalOwnerInput {
+  terminalId: string;
+  /** The chat whose drawer holds the terminal; null makes it a workspace tab terminal. */
+  ownerAgentId: string | null;
+  requestId?: string;
+}
 type OpenProjectPayload = OpenProjectResponseMessage["payload"];
 type ProjectAddPayload = ProjectAddResponse["payload"];
 export type ProjectCreateDirectoryPayload = ProjectCreateDirectoryResponse["payload"];
@@ -1053,6 +1150,7 @@ interface WaitHandle<T> {
 interface WaitOptions {
   skipQueue?: boolean;
   requestId?: string;
+  signal?: AbortSignal;
   requestType?: SessionInboundMessage["type"];
 }
 
@@ -1065,6 +1163,12 @@ interface PendingBinaryFileRead {
   cwd: string;
   path: string;
   maxBytes?: number;
+  // A `files.copies.read` transfer completes through its own JSON response, not a synthesized
+  // `file_explorer_response`.
+  fileCopy?: true;
+  // Chunks go here as they arrive instead of piling up in memory.
+  sink?: FileReadSink;
+  onProgress?: (received: number, total: number) => void;
 }
 
 interface BinaryFileTransferState extends PendingBinaryFileRead {
@@ -1077,6 +1181,10 @@ interface BinaryFileTransferState extends PendingBinaryFileRead {
   modifiedAt: string;
   revision?: string;
   chunks: Uint8Array[];
+  received: number;
+  /** Sink writes run one at a time, in arrival order. */
+  sinkWrites: Promise<void>;
+  sinkError?: unknown;
 }
 
 type RpcWaitResult<T> = { kind: "ok"; value: T } | { kind: "error"; error: DaemonRpcError };
@@ -1182,6 +1290,16 @@ function toTimeoutError(error: unknown, label: string, timeoutMs: number): Error
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30000;
 const DEFAULT_SESSION_RPC_TIMEOUT_MS = 60_000;
+// The answer to a message with pictures cannot arrive before its last byte does, which takes
+// minutes on a slow link. Such sends get the default deadline plus the time their bytes need at
+// 1 Mbit/s (125 bytes per ms); a dead link is still caught by the liveness check.
+const SLOW_LINK_BYTES_PER_MS = 125;
+
+function sendDeadlineMs(images: ReadonlyArray<{ data: string }> | undefined): number {
+  const bytes = images?.reduce((sum, image) => sum + image.data.length, 0) ?? 0;
+  return DEFAULT_SESSION_RPC_TIMEOUT_MS + Math.ceil(bytes / SLOW_LINK_BYTES_PER_MS);
+}
+
 // The daemon allows 90s per provider; retain its result through the delivery margin.
 const RECENT_PROVIDER_SESSIONS_TIMEOUT_MS = 100_000;
 const PUSH_TOKEN_REVOCATION_TIMEOUT_MS = 2_000;
@@ -1430,6 +1548,27 @@ function buildFetchAgentsRequest(
       ? { includeBackground: options.includeBackground }
       : {}),
   });
+}
+
+/** Only the fields the caller set go on the wire, so old daemons see old-shaped requests. */
+function askRequestFields(
+  options: {
+    askedBy?: string;
+    askerAgentId?: string;
+    threadId?: string;
+    threadAction?: "ask" | "status" | "close" | "read";
+    readCursor?: string;
+  },
+  pagedReplies: boolean,
+) {
+  return {
+    ...(options.askedBy ? { askedBy: options.askedBy } : {}),
+    ...(options.askerAgentId ? { askerAgentId: options.askerAgentId } : {}),
+    ...(options.threadId ? { threadId: options.threadId } : {}),
+    ...(options.threadAction ? { threadAction: options.threadAction } : {}),
+    ...(options.readCursor !== undefined ? { readCursor: options.readCursor } : {}),
+    ...(pagedReplies ? { replyPaging: {} } : {}),
+  };
 }
 
 export class DaemonClient {
@@ -1802,6 +1941,7 @@ export class DaemonClient {
             transport.close(4003, "Invalid chunked transport");
           }
         }),
+        this.subscribeSendProgress(transport),
       ];
     } catch (error) {
       this.resetConnectTimeout();
@@ -1895,9 +2035,41 @@ export class DaemonClient {
     );
   }
 
+  /**
+   * Closes the socket and stops reconnecting until the next `ensureConnected()`. Unlike `close()`,
+   * the client stays usable: owned subscriptions are restored when it connects again. Apps call
+   * this when they are backgrounded so an idle socket, its liveness pings and its reconnect
+   * backoff stop costing battery.
+   */
+  suspend(): void {
+    if (this.connectionState.status === "disposed" || !this.shouldReconnect) {
+      return;
+    }
+    this.shouldReconnect = false;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.disposeTransport(1000, "Client suspended");
+    this.scheduleReconnect({
+      reason: "Client suspended",
+      event: "SUSPEND",
+      reasonCode: "suspended",
+    });
+  }
+
   private recordTransportActivity(): void {
     this.consecutiveLivenessFailures = 0;
     if (this.pingProbe) this.pingProbe.receivedActivity = true;
+  }
+
+  // A long upload holds the ping behind it and the daemon has nothing to answer until it
+  // arrives; bytes leaving the socket prove the link is alive in the meantime.
+  private subscribeSendProgress(transport: DaemonTransport): () => void {
+    if (!transport.onSendProgress) return () => {};
+    return transport.onSendProgress(() => {
+      if (this.transport === transport) this.recordTransportActivity();
+    });
   }
 
   requireConnectedHosts(): void {
@@ -2365,7 +2537,7 @@ export class DaemonClient {
     message: SessionInboundMessage;
     timeout?: number;
     select: (msg: SessionOutboundMessage) => T | null;
-    options?: { skipQueue?: boolean };
+    options?: { skipQueue?: boolean; signal?: AbortSignal };
     /** Sends the request in another form, such as a binary frame; defaults to `message`. */
     transmit?: () => Promise<void>;
   }): Promise<T> {
@@ -2392,12 +2564,21 @@ export class DaemonClient {
         return { kind: "ok", value };
       },
       timeout,
-      { ...params.options, requestId: params.requestId, requestType: params.message.type },
+      {
+        ...params.options,
+        requestId: params.requestId,
+        requestType: params.message.type,
+        signal: params.options?.signal,
+      },
     );
 
     // The response deadline still applies while the transport waits for drain.
     void promise.catch(() => undefined);
     try {
+      if (params.options?.signal?.aborted) {
+        const reason = params.options.signal.reason;
+        throw reason instanceof Error ? reason : new Error("Request aborted");
+      }
       const sent = params.transmit
         ? params.transmit()
         : this.sendSessionMessageOrThrow(wire.message);
@@ -2422,6 +2603,7 @@ export class DaemonClient {
     timeout?: number;
     responseType: TResponseType;
     options?: { skipQueue?: boolean };
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
     transmit?: () => Promise<void>;
   }): Promise<TResult> {
@@ -2429,7 +2611,7 @@ export class DaemonClient {
       requestId: params.requestId,
       message: params.message,
       timeout: params.timeout,
-      options: params.options,
+      options: { ...params.options, signal: params.signal },
       ...(params.transmit ? { transmit: params.transmit } : {}),
       select: (msg) => {
         const correlated = msg as CorrelatedResponseMessage;
@@ -2456,6 +2638,7 @@ export class DaemonClient {
     message: { type: SessionInboundMessage["type"] } & Record<string, unknown>;
     responseType: TResponseType;
     timeout?: number;
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const resolvedRequestId = this.createRequestId(params.requestId);
@@ -2468,7 +2651,7 @@ export class DaemonClient {
       message,
       responseType: params.responseType,
       timeout: params.timeout,
-      options: { skipQueue: true },
+      signal: params.signal,
       ...(params.selectPayload ? { selectPayload: params.selectPayload } : {}),
     });
   }
@@ -2483,6 +2666,7 @@ export class DaemonClient {
       unknown
     >;
     timeout?: number;
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const responseType = params.message.type.replace(/\.request$/, ".response") as TResponseType;
@@ -2572,6 +2756,191 @@ export class DaemonClient {
     if (!response.success) {
       throw new Error(response.error ?? "Failed to mark workspace unread");
     }
+  }
+
+  // Agent message queue (daemon-owned). Gate on `serverInfo.features.messageQueue`.
+
+  async addQueuedAgentMessage(
+    input: {
+      agentId: string;
+      text: string;
+      images?: AgentQueuedMessagePayload["images"];
+      attachments?: AgentAttachment[];
+      attachmentRefs?: AgentQueuedMessagePayload["attachmentRefs"];
+    },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.add.response">({
+      requestId,
+      message: {
+        type: "agent.queue.add.request",
+        agentId: input.agentId,
+        text: input.text,
+        images: input.images,
+        attachments: input.attachments,
+        attachmentRefs: input.attachmentRefs,
+      },
+    });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to queue agent message");
+    }
+    return response.message;
+  }
+
+  async removeQueuedAgentMessage(
+    input: { agentId: string; messageId: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessagePayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.remove.response">({
+        requestId,
+        message: {
+          type: "agent.queue.remove.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to remove queued agent message");
+    }
+    return response.message;
+  }
+
+  async updateQueuedAgentMessage(
+    input: { agentId: string; messageId: string; text: string },
+    requestId?: string,
+  ): Promise<AgentQueuedMessageSummaryPayload> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.update.response">({
+        requestId,
+        message: {
+          type: "agent.queue.update.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          text: input.text,
+        },
+      });
+    if (!response.success || !response.message) {
+      throw new Error(response.error ?? "Failed to update queued agent message");
+    }
+    return response.message;
+  }
+
+  /** Saves a half-written answer to an open question. Needs `features.questionAnswers`. */
+  async setAgentQuestionAnswer(
+    input: { agentId: string; questionId: string; answer: AgentQuestionAnswer },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.question.answer.set.response">({
+        requestId,
+        message: {
+          type: "agent.question.answer.set.request",
+          agentId: input.agentId,
+          questionId: input.questionId,
+          answer: input.answer,
+        },
+      });
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    return response.accepted;
+  }
+
+  /** Saves the picks of a half-filled question box. Needs `features.questionBoxDrafts`. */
+  async setAgentPermissionDraft(
+    input: { agentId: string; permissionId: string; draft: AgentPermissionDraft },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.permission.draft.set.response">({
+        requestId,
+        message: {
+          type: "agent.permission.draft.set.request",
+          agentId: input.agentId,
+          permissionId: input.permissionId,
+          draft: input.draft,
+        },
+      });
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    return response.accepted;
+  }
+
+  async sendQueuedAgentMessageNow(
+    input: { agentId: string; messageId: string; activeTurnBehavior?: ActiveTurnBehavior },
+    requestId?: string,
+  ): Promise<void> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.send_now.response">({
+        requestId,
+        message: {
+          type: "agent.queue.send_now.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          activeTurnBehavior: input.activeTurnBehavior,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to send queued agent message");
+    }
+  }
+
+  // Queue controls. Gate on `serverInfo.features.messageQueueControls`.
+
+  async moveQueuedAgentMessage(
+    input: { agentId: string; messageId: string; toIndex: number },
+    requestId?: string,
+  ): Promise<void> {
+    const response = await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.move.response">(
+      {
+        requestId,
+        message: {
+          type: "agent.queue.move.request",
+          agentId: input.agentId,
+          messageId: input.messageId,
+          toIndex: input.toIndex,
+        },
+      },
+    );
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to move queued agent message");
+    }
+  }
+
+  async clearQueuedAgentMessages(input: { agentId: string }, requestId?: string): Promise<number> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.clear.response">({
+        requestId,
+        message: {
+          type: "agent.queue.clear.request",
+          agentId: input.agentId,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to clear queued agent messages");
+    }
+    return response.removedCount;
+  }
+
+  async setAgentQueuePaused(
+    input: { agentId: string; paused: boolean },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.queue.set_paused.response">({
+        requestId,
+        message: {
+          type: "agent.queue.set_paused.request",
+          agentId: input.agentId,
+          paused: input.paused,
+        },
+      });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to set agent queue paused state");
+    }
+    return response.paused;
   }
 
   sendHeartbeat(params: {
@@ -2766,6 +3135,13 @@ export class DaemonClient {
       this.livenessHeartbeatTimer = null;
       this.tickLivenessHeartbeat();
     }, LIVENESS_HEARTBEAT_INTERVAL_MS);
+  }
+
+  private getEffectiveClientCapabilities(): Partial<Record<ClientCapability, unknown>> {
+    return {
+      ...DEFAULT_CLIENT_CAPABILITIES,
+      ...this.config.capabilities,
+    };
   }
 
   /**
@@ -3115,6 +3491,60 @@ export class DaemonClient {
     );
   }
 
+  /** The host's shared sidebar project order, then a `sidebar.project_order.update` per change. */
+  observeSidebarProjectOrder(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<SidebarProjectOrderPayload> {
+    return this.observe(
+      "sidebar.project_order.get.response",
+      { type: "sidebar.project_order.get.request", subscribe: {} },
+      options,
+    );
+  }
+
+  /** Stores `order` unless the host holds a newer one; the reply carries whichever is kept. */
+  setSidebarProjectOrder(options: {
+    order: string[];
+    updatedAt: number;
+    requestId?: string;
+  }): Promise<SidebarProjectOrderSetPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "sidebar.project_order.set.request",
+        order: options.order,
+        updatedAt: options.updatedAt,
+      },
+    });
+  }
+
+  /** Each project's shared workspace order and the sort, then a `sidebar.workspace_order.update` per change. */
+  observeSidebarWorkspaceOrder(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<SidebarWorkspaceOrderPayload> {
+    return this.observe(
+      "sidebar.workspace_order.get.response",
+      { type: "sidebar.workspace_order.get.request", subscribe: {} },
+      options,
+    );
+  }
+
+  /** Merges these entries into the host's, newest stamp wins each; the reply carries the result. */
+  setSidebarWorkspaceOrder(options: {
+    projects: Record<string, { order: string[]; updatedAt: number }>;
+    sort?: { value: string; updatedAt: number };
+    requestId?: string;
+  }): Promise<SidebarWorkspaceOrderSetPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "sidebar.workspace_order.set.request",
+        projects: options.projects,
+        ...(options.sort ? { sort: options.sort } : {}),
+      },
+    });
+  }
+
   setWorkspaceLabel(options: {
     workspaceId: string;
     label: Extract<
@@ -3172,6 +3602,238 @@ export class DaemonClient {
         type: "workspace.label.delete.inspect.request",
         name: options.name,
       },
+    });
+  }
+
+  listNotes(): Promise<NoteRecord[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.list.response", NoteRecord[]>({
+      message: { type: "notes.list.request" },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.noteError("notes.list.request", payload);
+        return payload.notes;
+      },
+    });
+  }
+
+  /** Snapshot plus `notes.changed` updates while the caller holds the subscription. */
+  observeNotes(options?: { signal?: AbortSignal }): OwnedSubscription<NotesListPayload> {
+    return this.observe(
+      "notes.list.response",
+      { type: "notes.list.request", subscribe: {} },
+      options,
+    );
+  }
+
+  createNote(options: CreateNoteOptions): Promise<NoteRecord> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.create.response", NoteRecord>({
+      message: { type: "notes.create.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.note) throw this.noteError("notes.create.request", payload);
+        return payload.note;
+      },
+    });
+  }
+
+  editNote(options: EditNoteOptions): Promise<NoteRecord> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.edit.response", NoteRecord>({
+      message: { type: "notes.edit.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.note) throw this.noteError("notes.edit.request", payload);
+        return payload.note;
+      },
+    });
+  }
+
+  deleteNote(noteId: string): Promise<void> {
+    return this.sendNamespacedCorrelatedSessionRequest<"notes.delete.response", void>({
+      message: { type: "notes.delete.request", noteId },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.noteError("notes.delete.request", payload);
+      },
+    });
+  }
+
+  private noteError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "Note request failed",
+    });
+  }
+
+  // ============================================================================
+  // File copies (gate on server_info.features.fileCopies)
+  // ============================================================================
+
+  /** Returns the mentioned paths the host has no copy of at the sent revision. */
+  recordFileCopyMentions(options: {
+    sourceHome: string;
+    files: { path: string; revision: string }[];
+  }): Promise<string[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<
+      "files.copies.record_mentions.response",
+      string[]
+    >({
+      message: { type: "files.copies.record_mentions.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error)
+          throw this.fileCopyError("files.copies.record_mentions.request", payload);
+        return payload.needed;
+      },
+    });
+  }
+
+  /** Stores a copy from bytes already sent with `uploadFile`. */
+  putFileCopy(options: PutFileCopyOptions): Promise<FileCopyEntry> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.put.response", FileCopyEntry>({
+      message: { type: "files.copies.put.request", ...options },
+      selectPayload: (payload) => {
+        if (!payload.entry) throw this.fileCopyError("files.copies.put.request", payload);
+        return payload.entry;
+      },
+    });
+  }
+
+  /** Reads the copy this host keeps of `path` on `sourceServerId` (absolute, or `~/…`). */
+  async readFileCopy(options: {
+    sourceServerId: string;
+    path: string;
+    timeout?: number;
+  }): Promise<FileReadResult & { entry: FileCopyEntry }> {
+    const requestId = this.createRequestId();
+    this.pendingBinaryFileReads.set(requestId, { cwd: "", path: options.path, fileCopy: true });
+    try {
+      const entry = await this.sendNamespacedCorrelatedSessionRequest<
+        "files.copies.read.response",
+        FileCopyEntry
+      >({
+        requestId,
+        message: {
+          type: "files.copies.read.request",
+          sourceServerId: options.sourceServerId,
+          path: options.path,
+        },
+        timeout: options.timeout,
+        selectPayload: (payload) => {
+          if (!payload.entry) throw this.fileCopyError("files.copies.read.request", payload);
+          return payload.entry;
+        },
+      });
+      const file = this.completedBinaryFileReads.get(requestId);
+      if (!file) throw new Error("File copy transfer did not arrive.");
+      return { ...file, path: entry.path, entry };
+    } finally {
+      this.pendingBinaryFileReads.delete(requestId);
+      this.activeBinaryFileTransfers.delete(requestId);
+      this.completedBinaryFileReads.delete(requestId);
+    }
+  }
+
+  listFileCopies(options: ListFileCopiesOptions = {}): Promise<FileCopiesListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.list.response">({
+      message: { type: "files.copies.list.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.list.request", payload);
+        return payload;
+      },
+    });
+  }
+
+  removeFileCopy(options: { sourceServerId: string; path: string }): Promise<boolean> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.remove.response", boolean>({
+      message: { type: "files.copies.remove.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.remove.request", payload);
+        return payload.removed;
+      },
+    });
+  }
+
+  getFileCopySettings(): Promise<FileCopiesSettingsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.get_settings.response">({
+      message: { type: "files.copies.get_settings.request" },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileCopyError("files.copies.get_settings.request", payload);
+        return payload;
+      },
+    });
+  }
+
+  updateFileCopySettings(
+    options: UpdateFileCopySettingsOptions,
+  ): Promise<FileCopiesSettingsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.copies.update_settings.response">({
+      message: { type: "files.copies.update_settings.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) {
+          throw this.fileCopyError("files.copies.update_settings.request", payload);
+        }
+        return payload;
+      },
+    });
+  }
+
+  // ============================================================================
+  // Send to device (gate on server_info.features.sendToDevice)
+  // ============================================================================
+
+  /** Tells the host what this device is called and where its pushes go. Call on every connect. */
+  registerFileDevice(options: FileDeviceRegistration): Promise<void> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.devices.register.response", void>({
+      message: { type: "files.devices.register.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileSendError("files.devices.register.request", payload);
+      },
+    });
+  }
+
+  listFileDevices(): Promise<FileDevice[]> {
+    return this.sendNamespacedCorrelatedSessionRequest<"files.devices.list.response", FileDevice[]>(
+      {
+        message: { type: "files.devices.list.request" },
+        selectPayload: (payload) => {
+          if (payload.error) throw this.fileSendError("files.devices.list.request", payload);
+          return payload.devices;
+        },
+      },
+    );
+  }
+
+  sendFileToDevice(options: { deviceId: string; path: string }): Promise<FileSendReceipt> {
+    return this.sendNamespacedCorrelatedSessionRequest<
+      "files.send_to_device.response",
+      FileSendReceipt
+    >({
+      message: { type: "files.send_to_device.request", ...options },
+      selectPayload: (payload) => {
+        if (payload.error) throw this.fileSendError("files.send_to_device.request", payload);
+        return { deviceName: payload.deviceName ?? "", delivery: payload.delivery ?? "" };
+      },
+    });
+  }
+
+  private fileSendError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "Send to device failed",
+    });
+  }
+
+  private fileCopyError(
+    requestType: string,
+    payload: { requestId: string; error: string | null },
+  ): DaemonRpcError {
+    return new DaemonRpcError({
+      requestId: payload.requestId,
+      requestType,
+      error: payload.error ?? "File copy request failed",
     });
   }
 
@@ -3365,6 +4027,54 @@ export class DaemonClient {
       { type: "workspace.setup.subscribe.request", workspaceId },
       options,
     );
+  }
+
+  /** Requires `server_info.features.agentDraftSync`. Resubscribes with a fresh snapshot after reconnects. */
+  observeAgentDraft(
+    agentId: string,
+    options?: { signal?: AbortSignal },
+  ): OwnedSubscription<CorrelatedResponsePayload<"agent.draft.subscribe.response">> {
+    return this.observe(
+      "agent.draft.subscribe.response",
+      { type: "agent.draft.subscribe.request", agentId },
+      options,
+    );
+  }
+
+  async setAgentDraft(
+    input: Omit<AgentDraftSetRequest, "type" | "requestId">,
+  ): Promise<CorrelatedResponsePayload<"agent.draft.set.response">> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.set.response">({
+      message: { type: "agent.draft.set.request", ...input },
+    });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
+  }
+
+  async restoreAgentDraft(
+    agentId: string,
+    snapshotId: string,
+  ): Promise<CorrelatedResponsePayload<"agent.draft.restore.response">> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.restore.response">({
+        message: { type: "agent.draft.restore.request", agentId, snapshotId },
+      });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
+  }
+
+  /** Fetches a draft attachment's bytes (base64) by upload id. */
+  async getAgentDraftUpload(
+    agentId: string,
+    uploadId: string,
+  ): Promise<{ fileName: string | null; data: string }> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.draft.upload.get.response">({
+        message: { type: "agent.draft.upload.get.request", agentId, uploadId },
+      });
+    if (payload.error || payload.data === null)
+      throw new Error(payload.error ?? "Upload not found.");
+    return { fileName: payload.fileName, data: payload.data };
   }
 
   private requireWorkspaceSetupObservation(): void {
@@ -3583,6 +4293,7 @@ export class DaemonClient {
       ...(options.attachments && options.attachments.length > 0
         ? { attachments: options.attachments }
         : {}),
+      attachmentRefs: options.attachmentRefs,
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktree ? { worktree: options.worktree } : {}),
       ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
@@ -3597,6 +4308,7 @@ export class DaemonClient {
       requestId,
       message,
       options: { skipQueue: true },
+      timeout: sendDeadlineMs(options.images),
       select: (msg) => {
         if (msg.type !== "status") {
           return null;
@@ -3678,6 +4390,57 @@ export class DaemonClient {
     }
   }
 
+  /** Ends the agent's session without archiving or deleting it. Requires `server_info.features.agentCloseSearch`. */
+  async closeAgent(agentId: string): Promise<void> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.close.response">({
+      message: { type: "agent.close.request", agentId },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "closeAgent rejected");
+    }
+  }
+
+  /** Requires `server_info.features.agentCloseSearch`. */
+  async searchAgents(
+    input: Omit<
+      Extract<SessionInboundMessage, { type: "agent.search.request" }>,
+      "type" | "requestId"
+    >,
+  ) {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.search.response">({
+      message: { type: "agent.search.request", ...input },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "searchAgents rejected");
+    }
+    return {
+      matches: payload.matches ?? [],
+      scanned: payload.scanned ?? 0,
+      truncated: payload.truncated ?? false,
+    };
+  }
+
+  /** Requires `server_info.features.agentUnarchive`. */
+  async unarchiveAgent(agentId: string): Promise<{
+    wasArchived: boolean;
+    workspaceId: string | null;
+    workspaceRestored: boolean;
+    warning: string | null;
+  }> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.unarchive.response">({
+      message: { type: "agent.unarchive.request", agentId },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "unarchiveAgent rejected");
+    }
+    return {
+      wasArchived: payload.wasArchived ?? false,
+      workspaceId: payload.workspaceId ?? null,
+      workspaceRestored: payload.workspaceRestored ?? false,
+      warning: payload.warning ?? null,
+    };
+  }
+
   async updateAgent(
     agentId: string,
     updates: { name?: string; labels?: Record<string, string> },
@@ -3741,6 +4504,21 @@ export class DaemonClient {
       message: { type: "project.icon.set.request", projectId, source },
     });
     if (!payload.accepted) throw new Error(payload.error ?? "setProjectIcon rejected");
+  }
+
+  /** Snoozes a project until `snoozedUntil` (ISO), or wakes it with null. Needs `features.projectSnooze`. */
+  async setProjectSnooze(
+    projectId: string,
+    snoozedUntil: string | null,
+    requestId?: string,
+  ): Promise<{ snoozedUntil: string | null }> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"project.snooze.set.response">({
+        requestId,
+        message: { type: "project.snooze.set.request", projectId, snoozedUntil },
+      });
+    if (!payload.accepted) throw new Error(payload.error ?? "setProjectSnooze rejected");
+    return { snoozedUntil: payload.snoozedUntil };
   }
 
   async removeProject(
@@ -4282,6 +5060,115 @@ export class DaemonClient {
     return payload;
   }
 
+  /**
+   * Fork an agent into a new agent. Gate on `server_info.features.agentFork`. Resolves with the
+   * new agent's id and how it was seeded.
+   */
+  async forkAgent(
+    agentId: string,
+    options: AgentForkOptions = {},
+  ): Promise<AgentForkPayload & { forkedAgentId: string }> {
+    // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03.
+    if (this.lastServerInfoMessage?.features?.agentFork !== true) {
+      throw new Error("Update the host to fork agents.");
+    }
+    const resolvedRequestId = this.createRequestId(options.requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.fork.request",
+      agentId,
+      requestId: resolvedRequestId,
+      ...(options.boundaryCursor ? { boundaryCursor: options.boundaryCursor } : {}),
+      ...(options.boundaryMessageId ? { boundaryMessageId: options.boundaryMessageId } : {}),
+    });
+
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      timeout: 120000,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.fork.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== resolvedRequestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+
+    if (payload.error || !payload.forkedAgentId) {
+      throw new Error(payload.error ?? "Fork did not return an agent");
+    }
+    return { ...payload, forkedAgentId: payload.forkedAgentId };
+  }
+
+  /**
+   * Ask a forked copy of an agent's conversation; the agent itself is never interrupted.
+   * With the thread options, rounds continue with the same copy until it closes.
+   */
+  async askAgent(
+    agentId: string,
+    question: string,
+    options: {
+      askedBy?: string;
+      askerAgentId?: string;
+      threadId?: string;
+      threadAction?: "ask" | "status" | "close" | "read";
+      /** Cursor from an earlier reply's nextCursor; with threadAction "read". */
+      readCursor?: string;
+      timeoutMs?: number;
+      requestId?: string;
+    } = {},
+  ): Promise<{ answer: string | null; thread?: AgentAskThreadInfo; reply?: AgentAskReplyInfo }> {
+    // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
+    const features = this.getLastServerInfoMessage()?.features;
+    if (features?.agentAsk !== true) {
+      throw new Error("Update Paseo on that host to ask its agents.");
+    }
+    // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
+    if (
+      features.agentAskThreads !== true &&
+      (options.threadId !== undefined || (options.threadAction ?? "ask") !== "ask")
+    ) {
+      throw new Error("Update Paseo on that host to continue ask_agent threads.");
+    }
+    // COMPAT(agentAskReplyPaging): added in v0.16.0, remove gate after 2027-05-06.
+    const pagedReplies = features.agentAskReplyPaging === true;
+    if (!pagedReplies && options.readCursor !== undefined) {
+      throw new Error("Update Paseo on that host to read long replies.");
+    }
+    const resolvedRequestId = this.createRequestId(options.requestId);
+    const timeoutMs = options.timeoutMs ?? AGENT_ASK_DEFAULT_TIMEOUT_MS;
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.ask.request",
+      agentId,
+      question,
+      requestId: resolvedRequestId,
+      timeoutMs,
+      ...askRequestFields(options, pagedReplies),
+    });
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      // The daemon enforces timeoutMs; the margin covers forking and cleanup.
+      timeout: timeoutMs + 60_000,
+      options: { skipQueue: true },
+      select: (msg) =>
+        msg.type === "agent.ask.response" && msg.payload.requestId === resolvedRequestId
+          ? msg.payload
+          : null,
+    });
+    if (payload.error !== null) {
+      throw new Error(payload.error);
+    }
+    return {
+      answer: payload.answer,
+      ...(payload.thread ? { thread: payload.thread } : {}),
+      ...(payload.reply ? { reply: payload.reply } : {}),
+    };
+  }
+
   // ============================================================================
   // Agent Interaction
   // ============================================================================
@@ -4318,11 +5205,13 @@ export class DaemonClient {
       activeTurnBehavior,
       images: options.images,
       attachments: options.attachments,
+      attachmentRefs: options.attachmentRefs,
     });
     const payload = await this.sendRequest({
       requestId,
       message,
       options: { skipQueue: true },
+      timeout: sendDeadlineMs(options.images),
       select: (msg) => {
         if (msg.type !== "send_agent_message_response") {
           return null;
@@ -5663,6 +6552,7 @@ export class DaemonClient {
       includeFiles?: boolean;
       includeDirectories?: boolean;
       matchMode?: "fuzzy" | "suffix";
+      includeIgnored?: boolean;
     },
     requestId?: string,
   ): Promise<DirectorySuggestionsPayload> {
@@ -5676,6 +6566,7 @@ export class DaemonClient {
         includeDirectories: options.includeDirectories,
         matchMode: options.matchMode,
         limit: options.limit,
+        ...(options.includeIgnored ? { includeIgnored: true } : {}),
       },
       responseType: "directory_suggestions_response",
       // Home-tree scans on large home dirs can take several seconds; don't cut
@@ -5738,8 +6629,47 @@ export class DaemonClient {
     maxBytes?: number,
     timeout?: number,
   ): Promise<FileReadResult> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    this.pendingBinaryFileReads.set(resolvedRequestId, { cwd, path, maxBytes });
+    return this.readFileInternal({ cwd, path, requestId, maxBytes, timeout });
+  }
+
+  /**
+   * Like `readFile`, but each chunk goes to `sink` as it arrives and the result carries no bytes,
+   * so a file of any size reads in constant memory. `onProgress` reports bytes received so far.
+   * A daemon without the binary channel sends the file whole; it reaches the sink in one write.
+   */
+  async readFileToSink(
+    cwd: string,
+    path: string,
+    sink: FileReadSink,
+    options: {
+      maxBytes?: number;
+      timeout?: number;
+      onProgress?: (received: number, total: number) => void;
+    } = {},
+  ): Promise<FileReadMeta> {
+    const { bytes: _bytes, ...meta } = await this.readFileInternal({
+      cwd,
+      path,
+      sink,
+      maxBytes: options.maxBytes,
+      timeout: options.timeout,
+      onProgress: options.onProgress,
+    });
+    return meta;
+  }
+
+  private async readFileInternal(input: {
+    cwd: string;
+    path: string;
+    requestId?: string;
+    maxBytes?: number;
+    timeout?: number;
+    sink?: FileReadSink;
+    onProgress?: (received: number, total: number) => void;
+  }): Promise<FileReadResult> {
+    const { cwd, path, maxBytes, sink, onProgress } = input;
+    const resolvedRequestId = this.createRequestId(input.requestId);
+    this.pendingBinaryFileReads.set(resolvedRequestId, { cwd, path, maxBytes, sink, onProgress });
     try {
       const payload = await this.requestFileExplorer(
         cwd,
@@ -5748,7 +6678,7 @@ export class DaemonClient {
         resolvedRequestId,
         true,
         maxBytes,
-        timeout,
+        input.timeout,
       );
       if (payload.error) {
         throw new Error(payload.error);
@@ -5761,7 +6691,22 @@ export class DaemonClient {
       if (!payload.file) {
         throw new Error("File unavailable.");
       }
-      return legacyExplorerFileToBytes(payload.file);
+      const legacy = legacyExplorerFileToBytes(payload.file);
+      if (sink) {
+        // A daemon without a binary channel answers a binary file with its size and no content.
+        // Never hand that on as a complete file.
+        if (legacy.bytes.byteLength !== legacy.size) {
+          throw new Error(
+            `File transfer incomplete: expected ${legacy.size} bytes, received ${legacy.bytes.byteLength}.`,
+          );
+        }
+        const { bytes: _unused, ...meta } = legacy;
+        await sink.begin?.(meta);
+        await sink.write(legacy.bytes);
+        onProgress?.(legacy.bytes.byteLength, legacy.size);
+        return { ...legacy, bytes: new Uint8Array() };
+      }
+      return legacy;
     } finally {
       this.pendingBinaryFileReads.delete(resolvedRequestId);
       this.activeBinaryFileTransfers.delete(resolvedRequestId);
@@ -5802,6 +6747,34 @@ export class DaemonClient {
     });
     const snapshot = await subscription.ready;
     return { initial: snapshot.initial, subscription, unsubscribe: subscription.release };
+  }
+
+  /**
+   * Watches the entry names of one directory. `onChange` runs when they change and again
+   * after a reconnect, since changes made while disconnected were missed.
+   * Requires `server_info.features.fsDirectorySubscriptions`.
+   */
+  async subscribeDirectory(
+    input: { cwd: string; path: string; signal?: AbortSignal },
+    onChange: () => void,
+  ): Promise<{ unsubscribe: () => Promise<void> }> {
+    const subscription = this.observe(
+      "fs.directory.subscribe.response",
+      { type: "fs.directory.subscribe.request", cwd: input.cwd, path: input.path },
+      { signal: input.signal },
+    );
+    let initial = true;
+    subscription.subscribe({
+      snapshot: () => {
+        if (!initial) onChange();
+        initial = false;
+      },
+      update: (message) => {
+        if (message.type === "fs.directory.update") onChange();
+      },
+    });
+    await subscription.ready;
+    return { unsubscribe: subscription.release };
   }
 
   async writeFile(input: {
@@ -7146,6 +8119,8 @@ export class DaemonClient {
       args?: string[];
       workspaceId?: string;
       size?: { rows: number; cols: number };
+      /** Needs `features.chatTerminals`; older hosts ignore it. */
+      ownerAgentId?: string;
     },
   ): Promise<CreateTerminalPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
@@ -7158,6 +8133,7 @@ export class DaemonClient {
       args: options?.args,
       ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       ...(options?.size !== undefined ? { size: options.size } : {}),
+      ...(options?.ownerAgentId !== undefined ? { ownerAgentId: options.ownerAgentId } : {}),
       requestId: resolvedRequestId,
     });
     return this.sendCorrelatedRequest({
@@ -7177,6 +8153,18 @@ export class DaemonClient {
         title: input.title,
       },
       responseType: "terminal.rename.response",
+    });
+  }
+
+  async setTerminalOwner(input: SetTerminalOwnerInput): Promise<SetTerminalOwnerResult> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "terminal.owner.set.request",
+        terminalId: input.terminalId,
+        ownerAgentId: input.ownerAgentId,
+      },
+      responseType: "terminal.owner.set.response",
     });
   }
 
@@ -7521,10 +8509,7 @@ export class DaemonClient {
         clientType: this.config.clientType ?? "cli",
         protocolVersion: 1,
         ...(auth ? { auth } : {}),
-        capabilities: {
-          ...DEFAULT_CLIENT_CAPABILITIES,
-          ...this.config.capabilities,
-        },
+        capabilities: this.getEffectiveClientCapabilities(),
         ...(this.config.appVersion ? { appVersion: this.config.appVersion } : {}),
       });
     } catch (error) {
@@ -7791,7 +8776,7 @@ export class DaemonClient {
       if (!pending) {
         return;
       }
-      this.activeBinaryFileTransfers.set(frame.requestId, {
+      const transfer: BinaryFileTransferState = {
         ...pending,
         mime: frame.metadata.mime,
         size: frame.metadata.size,
@@ -7799,7 +8784,24 @@ export class DaemonClient {
         modifiedAt: frame.metadata.modifiedAt,
         revision: frame.metadata.revision,
         chunks: [],
-      });
+        received: 0,
+        sinkWrites: Promise.resolve(),
+      };
+      this.activeBinaryFileTransfers.set(frame.requestId, transfer);
+      const { sink } = transfer;
+      // COMPAT(fileReadByteBudget): added in v0.5.0, remove after 2027-02-21 once daemon floor >= v0.5.0.
+      // An old daemon streams despite maxBytes; the sink never sees a file over the budget.
+      if (sink?.begin && !(transfer.maxBytes && transfer.size > transfer.maxBytes)) {
+        const meta: FileReadMeta = {
+          mime: transfer.mime,
+          size: transfer.size,
+          path: transfer.path,
+          kind: binaryFileKind(transfer.mime, transfer.encoding),
+          modifiedAt: transfer.modifiedAt,
+          revision: transfer.revision,
+        };
+        this.queueSinkWrite(frame.requestId, transfer, () => sink.begin?.(meta));
+      }
       return;
     }
 
@@ -7814,7 +8816,14 @@ export class DaemonClient {
       if (transfer.maxBytes && transfer.size > transfer.maxBytes) {
         return;
       }
-      transfer.chunks.push(frame.payload);
+      transfer.received += frame.payload.byteLength;
+      const { sink } = transfer;
+      if (sink) {
+        this.queueSinkWrite(frame.requestId, transfer, () => sink.write(frame.payload));
+      } else {
+        transfer.chunks.push(frame.payload);
+      }
+      transfer.onProgress?.(transfer.received, transfer.size);
       return;
     }
 
@@ -7836,21 +8845,69 @@ export class DaemonClient {
       return;
     }
 
-    const received = transfer.chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-    if (received !== transfer.size) {
+    if (transfer.received !== transfer.size) {
       this.activeBinaryFileTransfers.delete(frame.requestId);
       this.rejectWaitersForRequestId(
         frame.requestId,
         new Error(
-          `File transfer incomplete: expected ${transfer.size} bytes, received ${received}.`,
+          `File transfer incomplete: expected ${transfer.size} bytes, received ${transfer.received}.`,
         ),
       );
       return;
     }
 
-    const bytes = concatByteChunks(transfer.chunks, transfer.size);
-    this.activeBinaryFileTransfers.delete(frame.requestId);
-    this.completedBinaryFileReads.set(frame.requestId, {
+    if (!transfer.sink) {
+      this.finishBinaryFileTransfer(frame.requestId, transfer);
+      return;
+    }
+    // Every queued sink write has to land before the read counts as done.
+    void transfer.sinkWrites.then(() => this.finishAfterSinkWrites(frame.requestId, transfer));
+  }
+
+  private finishAfterSinkWrites(requestId: string, transfer: BinaryFileTransferState): void {
+    if (this.activeBinaryFileTransfers.get(requestId) !== transfer) {
+      return;
+    }
+    this.finishBinaryFileTransfer(requestId, transfer);
+  }
+
+  private queueSinkWrite(
+    requestId: string,
+    transfer: BinaryFileTransferState,
+    write: () => void | Promise<void>,
+  ): void {
+    transfer.sinkWrites = transfer.sinkWrites.then(() =>
+      this.runSinkWrite(requestId, transfer, write),
+    );
+  }
+
+  private async runSinkWrite(
+    requestId: string,
+    transfer: BinaryFileTransferState,
+    write: () => void | Promise<void>,
+  ): Promise<void> {
+    if (transfer.sinkError !== undefined) {
+      return;
+    }
+    try {
+      await write();
+    } catch (error) {
+      transfer.sinkError = error ?? new Error("File sink failed.");
+      // Later frames find no transfer and are dropped.
+      this.activeBinaryFileTransfers.delete(requestId);
+      this.rejectWaitersForRequestId(
+        requestId,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+  }
+
+  private finishBinaryFileTransfer(requestId: string, transfer: BinaryFileTransferState): void {
+    const bytes = transfer.sink
+      ? new Uint8Array()
+      : concatByteChunks(transfer.chunks, transfer.size);
+    this.activeBinaryFileTransfers.delete(requestId);
+    this.completedBinaryFileReads.set(requestId, {
       bytes,
       mime: transfer.mime,
       size: transfer.size,
@@ -7859,6 +8916,7 @@ export class DaemonClient {
       modifiedAt: transfer.modifiedAt,
       revision: transfer.revision,
     });
+    if (transfer.fileCopy) return;
     this.handleSessionMessage({
       type: "file_explorer_response",
       payload: {
@@ -7868,7 +8926,7 @@ export class DaemonClient {
         directory: null,
         file: null,
         error: null,
-        requestId: frame.requestId,
+        requestId,
       },
     });
   }
@@ -8120,10 +9178,7 @@ export class DaemonClient {
           this.updateConnectionState({ status: "connected" }, { event: "HELLO_SERVER_INFO" });
           this.startLivenessHeartbeat();
           this.diffStreams.connected(serverInfo.features?.diffSubscription === true);
-          this.owned.restore(serverInfo, {
-            ...DEFAULT_CLIENT_CAPABILITIES,
-            ...this.config.capabilities,
-          });
+          this.owned.restore(serverInfo, this.getEffectiveClientCapabilities());
           this.creations.reconnect();
           this.flushPendingSendQueue();
           this.resolveConnect();
@@ -8291,15 +9346,21 @@ export class DaemonClient {
     let settled = false;
     let rejectFn: ((error: Error) => void) | null = null;
 
+    let abortHandler: (() => void) | null = null;
     const promise = new Promise<T>((resolve, reject) => {
+      const cleanupAbort = () => {
+        if (abortHandler) options?.signal?.removeEventListener("abort", abortHandler);
+      };
       const wrappedResolve = (value: T) => {
         if (settled) return;
         settled = true;
+        cleanupAbort();
         resolve(value);
       };
       const wrappedReject = (error: Error) => {
         if (settled) return;
         settled = true;
+        cleanupAbort();
         reject(error);
       };
       rejectFn = wrappedReject;
@@ -8323,6 +9384,18 @@ export class DaemonClient {
         submitted: false,
       };
       this.waiters.add(waiter);
+      if (options?.signal) {
+        abortHandler = () => {
+          if (waiter) {
+            this.waiters.delete(waiter);
+            if (waiter.timeoutHandle) clearTimeout(waiter.timeoutHandle);
+          }
+          const reason = options.signal?.reason;
+          wrappedReject(reason instanceof Error ? reason : new Error("Request aborted"));
+        };
+        if (options.signal.aborted) abortHandler();
+        else options.signal.addEventListener("abort", abortHandler, { once: true });
+      }
     });
 
     const cancel = (error: Error) => {
@@ -8366,6 +9439,7 @@ function resolveAgentConfig(options: CreateAgentRequestOptions): AgentSessionCon
     callerAgentId: _callerAgentId,
     outputSchema: _outputSchema,
     attachments: _attachments,
+    attachmentRefs: _attachmentRefs,
     worktree: _worktree,
     autoArchive: _autoArchive,
     background: _background,

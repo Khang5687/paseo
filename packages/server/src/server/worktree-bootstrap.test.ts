@@ -210,6 +210,8 @@ describe("runWorktreeAutoTerminals", () => {
             onTitleChange: () => () => {},
             getSize: () => ({ rows: 0, cols: 0 }),
             getTitle: () => undefined,
+            getOwnerAgentId: () => null,
+            setOwnerAgentId: () => {},
             getExitInfo: () => null,
             hasOutput: () => false,
 
@@ -316,6 +318,8 @@ describe("runWorktreeAutoTerminals", () => {
           onActivityChange: () => () => {},
           getSize: () => ({ rows: 1, cols: 1 }),
           getTitle: () => undefined,
+          getOwnerAgentId: () => null,
+          setOwnerAgentId: () => {},
           getActivity: () => null,
           setActivity: () => {},
           getExitInfo: () => null,

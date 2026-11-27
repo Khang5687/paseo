@@ -1,0 +1,6 @@
+{
+  "id": "skins-example",
+  "requirements": {
+    "paseo": ">=0.11.0"
+  }
+}

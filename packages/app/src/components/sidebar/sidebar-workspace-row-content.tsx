@@ -1,7 +1,16 @@
 import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Check, CircleAlert, Folder, FolderGit2, Monitor } from "lucide-react-native";
+import {
+  Check,
+  CircleAlert,
+  Folder,
+  FolderGit2,
+  Hourglass,
+  Monitor,
+  PencilLine,
+} from "lucide-react-native";
 import { bySizing } from "@/components/ui/control-geometry";
 import { ProjectStatusIndicator } from "@/components/sidebar/project-leading-visual";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
@@ -17,6 +26,9 @@ import {
   type SidebarWorkspaceTrailing,
 } from "@/components/sidebar/workspace-trailing";
 import { useAppSettings } from "@/hooks/use-settings";
+import { useWorkspaceHasUnsentDraft } from "@/hooks/use-workspace-has-unsent-draft";
+import { useWorkspaceNoteBadge } from "@/notes/chat-badges-store";
+import { SidebarNoteBadge } from "@/components/sidebar/sidebar-note-badge";
 import { densityIconBox } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
@@ -31,15 +43,24 @@ import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   ARCHIVE_BUTTON_FOOTPRINT,
   SidebarWorkspaceArchiveButton,
 } from "@/components/sidebar/sidebar-workspace-menu";
+import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatWaitingOnLabel, type WaitCounts } from "@/workspace-status/waiting-label";
+import type { TFunction } from "i18next";
 
 const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
   fill: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
+});
+const waitingColorMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? undefined,
 });
 const checkedIconMapping = (theme: Theme) => ({
   color: theme.colors.accentForeground,
@@ -47,6 +68,14 @@ const checkedIconMapping = (theme: Theme) => ({
 
 const ThemedCheck = withUnistyles(Check);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
+const ThemedHourglass = withUnistyles(Hourglass);
+const ThemedPencilLine = withUnistyles(PencilLine);
+const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+
+// The copy-agent-id button leads the overlay's actions; the scrim widens by its pointer box and
+// the gap after it.
+const COPY_AGENT_ID_BUTTON_GAP = 2;
+const COPY_AGENT_ID_BUTTON_FOOTPRINT = 18 + COPY_AGENT_ID_BUTTON_GAP;
 
 export function SidebarWorkspaceRowFrame({
   workspace,
@@ -115,6 +144,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   shortcutNumber = null,
   showShortcutBadge = false,
   reserveIdleStatusIndicatorSpace = true,
+  lastOpen = false,
   titleEditor = null,
   children,
 }: {
@@ -135,6 +165,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   showShortcutBadge?: boolean;
   /** Keep the empty leading slot when the workspace has no active status. */
   reserveIdleStatusIndicatorSpace?: boolean;
+  /** Marks the chat you last had open in this project (phone, one project shown). */
+  lastOpen?: boolean;
   /** Takes the title's place, in a box exactly one title line tall, while renaming in place. */
   titleEditor?: ReactNode;
   children?: ReactNode;
@@ -143,16 +175,23 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     settings: { workspaceTitleSource },
   } = useAppSettings();
   const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource });
+  const hasUnsentDraft = useWorkspaceHasUnsentDraft(workspace);
+  const noteBadge = useWorkspaceNoteBadge(workspace.serverId, workspace.workspaceId);
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
+  const isNew = workspace.isNew === true;
+  const { t } = useTranslation();
+  const isCompact = useIsCompactFormFactor();
+  const { isWaiting, waitingLabel, waitingFor } = describeRowWaiting(t, workspace, isCompact);
   const workspaceBranchTextStyle = useMemo(
     () => [
       styles.workspaceBranchText,
       (isHovered || isBulkSelected) && styles.workspaceBranchTextHovered,
       isCreating && styles.workspaceBranchTextCreating,
+      isNew && styles.workspaceBranchTextNew,
     ],
-    [isHovered, isBulkSelected, isCreating],
+    [isHovered, isBulkSelected, isCreating, isNew],
   );
 
   let leadingVisual: ReactNode;
@@ -168,7 +207,9 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         projectViewKey={workspace.projectViewKey}
         statusBucket={workspace.statusBucket}
         backdrop={backdrop}
+        hasUnsentDraft={hasUnsentDraft}
         loading={isLoading}
+        waiting={isWaiting}
         testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
       />
     );
@@ -178,6 +219,9 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         bucket={workspace.statusBucket}
         workspaceKind={workspace.workspaceKind}
         loading={isLoading}
+        waiting={isWaiting}
+        waitingLabel={waitingLabel}
+        hasUnsentDraft={hasUnsentDraft}
         reserveIdleSpace={reserveIdleStatusIndicatorSpace}
       />
     );
@@ -200,7 +244,17 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
                 {workspaceLabel}
               </Text>
             )}
-            <View style={sidebarWorkspaceRowStyles.rowRight}>{children}</View>
+            <LastOpenTag show={lastOpen} editing={titleEditor !== null} />
+            <View style={sidebarWorkspaceRowStyles.rowRight}>
+              {isNew ? (
+                <NewAgentBadge testID={`sidebar-workspace-new-${workspace.workspaceKey}`} />
+              ) : null}
+              <SidebarNoteBadge
+                badge={noteBadge}
+                testID={`sidebar-workspace-note-badge-${workspace.workspaceKey}`}
+              />
+              {children}
+            </View>
           </View>
           <WorkspaceMetaRow
             backdrop={backdrop}
@@ -209,7 +263,10 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             hostBadge={hostBadge ?? null}
             prHint={workspace.prHint}
             serviceSummary={serviceSummary}
+            nextRunAt={workspace.nextRunAt}
+            waitingOn={workspace.waitingOn}
             labels={labels}
+            waitingFor={waitingFor}
             workspace={workspace}
           />
         </View>
@@ -222,6 +279,21 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     </View>
   );
 });
+
+function LastOpenTag({ show, editing }: { show: boolean; editing: boolean }) {
+  return show && !editing ? <LastOpenTagLabel /> : null;
+}
+
+function LastOpenTagLabel() {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.lastOpenTag} testID="sidebar-workspace-last-open">
+      <Text style={styles.lastOpenTagText} numberOfLines={1}>
+        {t("sidebar.projectStrip.lastOpen")}
+      </Text>
+    </View>
+  );
+}
 
 function WorkspaceSelectionCheckbox({
   checked,
@@ -239,16 +311,46 @@ function WorkspaceSelectionCheckbox({
   );
 }
 
+/**
+ * Whether the row shows the hourglass, and what it waits on in words: the hourglass's tooltip on
+ * desktop, the meta line on a phone, where there is no hover.
+ */
+function describeRowWaiting(
+  t: TFunction,
+  workspace: SidebarWorkspaceEntry,
+  isCompact: boolean,
+): { isWaiting: boolean; waitingLabel: string | null; waitingFor: WaitCounts | null } {
+  const isWaiting =
+    workspace.statusBucket === "running" &&
+    (workspace.waitingOn !== null || workspace.waiting !== null);
+  return {
+    isWaiting,
+    waitingLabel: workspace.waiting ? formatWaitingOnLabel(t, workspace.waiting) : null,
+    waitingFor: isCompact && isWaiting ? workspace.waiting : null,
+  };
+}
+
 function WorkspaceStatusIndicator({
   bucket,
   workspaceKind,
   loading = false,
+  waiting = false,
+  waitingLabel = null,
   reserveIdleSpace = true,
+  hasUnsentDraft,
 }: {
   bucket: SidebarWorkspaceEntry["statusBucket"];
   workspaceKind: SidebarWorkspaceEntry["workspaceKind"];
   loading?: boolean;
+  /**
+   * The chat waits rather than works: its turn is blocked on a job, or it ended and only its
+   * background jobs or subagents run. An hourglass, not the moving ring.
+   */
+  waiting?: boolean;
+  /** What it waits on in words, for the hourglass's tooltip on desktop. */
+  waitingLabel?: string | null;
   reserveIdleSpace?: boolean;
+  hasUnsentDraft: boolean;
 }) {
   // Busy is the only status that moves, and it is the ring rather than a dot for the same
   // reason it is a dot elsewhere: every status in the sidebar sits in this one slot, so busy
@@ -262,6 +364,29 @@ function WorkspaceStatusIndicator({
     );
   }
 
+  if (waiting && bucket === "running") {
+    const hourglass = (
+      <View
+        style={styles.workspaceStatusDot}
+        testID="workspace-status-indicator-waiting"
+        accessibilityLabel={waitingLabel ?? undefined}
+        aria-label={waitingLabel ?? undefined}
+      >
+        <ThemedHourglass size={STATUS_INDICATOR_ALERT_SIZE} uniProps={waitingColorMapping} />
+      </View>
+    );
+    if (!waitingLabel) return hourglass;
+    return (
+      <Tooltip delayDuration={300} enabledOnDesktop enabledOnMobile={false}>
+        <TooltipTrigger asChild>{hourglass}</TooltipTrigger>
+        <TooltipContent side="right" align="center" offset={8}>
+          <Text style={styles.waitingTooltipText} testID="workspace-status-waiting-tooltip">
+            {waitingLabel}
+          </Text>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   if (shouldRenderSyncedStatusLoader({ bucket })) {
     return (
       <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-running">
@@ -287,6 +412,18 @@ function WorkspaceStatusIndicator({
   }
 
   if (bucket === "done") {
+    // A prompt the user started here and walked away from. It takes the idle slot only:
+    // a busy or alerting row already pulls the user back, and they find the draft then.
+    if (hasUnsentDraft) {
+      return (
+        <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-draft">
+          <ThemedPencilLine
+            size={STATUS_INDICATOR_ALERT_SIZE}
+            uniProps={foregroundMutedColorMapping}
+          />
+        </View>
+      );
+    }
     // An idle row still gets a dot rather than an empty slot. Nested rows are marked as
     // workspaces by indentation alone, and with nothing in the leading slot the rail has no
     // edge to read against — a workspace carrying its own glyph starts looking like a project
@@ -316,6 +453,18 @@ function StatusDotOverlay({ dotColorStyle }: { dotColorStyle: ViewStyle }) {
   return <View style={[styles.statusDotOverlay, dotColorStyle]} />;
 }
 
+// A new main agent nobody has opened yet. Always visible (no hover), so phones see it too;
+// it leaves once the agent is opened or the workspace is marked read.
+function NewAgentBadge({ testID }: { testID: string }) {
+  const { t } = useTranslation();
+  const dot = useMemo(() => <View style={styles.newAgentDot} />, []);
+  return (
+    <View testID={testID}>
+      <StatusBadge size="xs" label={t("sidebar.workspace.newAgent")} leading={dot} />
+    </View>
+  );
+}
+
 function getStatusDotColorStyle(bucket: SidebarStateBucket) {
   switch (bucket) {
     case "needs_input":
@@ -343,6 +492,11 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
   rowIndented: {
     paddingLeft: theme.spacing[2] + theme.spacing[2],
   },
+  // A subagent workspace row under its parent row: `level` steps of the same indent, so each
+  // level of nesting is its own rail and a child's status dot lines up under its parent's title.
+  rowNested: (level: number) => ({
+    paddingLeft: theme.spacing[2] + level * (theme.spacing[2] + theme.spacing[2]),
+  }),
   rowRight: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -385,12 +539,24 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     alignItems: "flex-end",
     justifyContent: "flex-start",
   },
+  // Touch shows the copy-agent-id button, the archive button and the kebab permanently, so the
+  // slot holds all three: their compact boxes net of the margins that pull them onto the
+  // trailing rail.
+  trailingActionSlotReservedForActions: {
+    position: "relative",
+    minWidth: { xs: 62, md: 56 },
+    minHeight: 20,
+    flexShrink: 0,
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+  },
   trailingActionOverlay: {
     position: "absolute",
     top: 0,
     right: 0,
     flexDirection: "row",
     alignItems: "flex-start",
+    gap: COPY_AGENT_ID_BUTTON_GAP,
   },
 }));
 
@@ -403,6 +569,9 @@ export function SidebarWorkspaceShortcutBadge({ number }: { number: number }) {
 }
 
 export type SidebarWorkspaceTrailingPresentation = "visible" | "hidden" | "absent";
+
+/** What the trailing slot holds width for: nothing, its trailing content, or the touch actions. */
+export type SidebarWorkspaceTrailingSlotReservation = "none" | "content" | "actions";
 
 /**
  * What the trailing slot shows for a row. Derived in one place because three row renderers
@@ -436,7 +605,7 @@ export function resolveTrailingActionVisibility({
   showArchiveButton: boolean;
   showScrim: boolean;
   renderSlot: boolean;
-  reserveSlotWidth: boolean;
+  reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation;
 } {
   const hasTrailing = hasSidebarWorkspaceTrailing({ workspace, trailing });
   const allowRowActions = hasArchiveAction && !isSelectionMode;
@@ -446,6 +615,13 @@ export function resolveTrailingActionVisibility({
   const hasContent = hasTrailing && !(allowRowActions && isTouchPlatform);
   let trailingPresentation: SidebarWorkspaceTrailingPresentation = "absent";
   if (hasContent) trailingPresentation = showShortcut ? "hidden" : "visible";
+  // The slot only holds width for something that permanently sits in it. Trailing content
+  // does; the archive button and kebab only do on touch, where there is no hover for them to
+  // appear on and so no scrim to let them overlay the title. Everywhere else the width goes
+  // back to the title and the actions fade in over its tail.
+  let reserveSlotWidth: SidebarWorkspaceTrailingSlotReservation = "none";
+  if (hasContent) reserveSlotWidth = "content";
+  if (allowRowActions && isTouchPlatform) reserveSlotWidth = "actions";
   return {
     trailingPresentation,
     showKebab,
@@ -457,11 +633,7 @@ export function resolveTrailingActionVisibility({
     // touch, which shows the kebab without ever hovering, never gets one.
     showScrim: showKebab && isHovered,
     renderSlot: allowRowActions || hasTrailing,
-    // The slot only holds width for something that permanently sits in it. Trailing content
-    // does; the kebab only does on touch, where there is no hover for it to appear on and so
-    // no scrim to let it overlay the title. Everywhere else the width goes back to the title
-    // and the kebab fades in over its tail.
-    reserveSlotWidth: hasContent || (allowRowActions && isTouchPlatform),
+    reserveSlotWidth,
   };
 }
 
@@ -469,20 +641,15 @@ export function SidebarWorkspaceTrailingActionSlot({
   reserveWidth,
   children,
 }: {
-  reserveWidth: boolean;
+  reserveWidth: SidebarWorkspaceTrailingSlotReservation;
   children: ReactNode;
 }) {
-  return (
-    <View
-      style={
-        reserveWidth
-          ? sidebarWorkspaceRowStyles.trailingActionSlotReserved
-          : sidebarWorkspaceRowStyles.trailingActionSlot
-      }
-    >
-      {children}
-    </View>
-  );
+  let style = sidebarWorkspaceRowStyles.trailingActionSlot;
+  if (reserveWidth === "content") style = sidebarWorkspaceRowStyles.trailingActionSlotReserved;
+  if (reserveWidth === "actions") {
+    style = sidebarWorkspaceRowStyles.trailingActionSlotReservedForActions;
+  }
+  return <View style={style}>{children}</View>;
 }
 
 export function SidebarWorkspaceTrailingActionBase({
@@ -504,13 +671,21 @@ export function SidebarWorkspaceTrailingActionOverlay({
   visible,
   scrimBackdrop,
   workspaceKey,
+  serverId,
+  workspaceId,
   onArchiveButtonPress,
   children,
 }: {
   visible: boolean;
-  /** Fade the row into the kebab when something (the diff stat) is still rendered behind it. */
+  /** Fade the row into the actions when something (the diff stat) is still rendered behind it. */
   scrimBackdrop?: SidebarSurfaceBackdrop;
   workspaceKey: string;
+  /**
+   * With both set, shows the copy-agent-id button first, ahead of the archive button. Not on the
+   * compact layout: there the row's ⋮ menu carries Copy agent ID, which keeps phone rows light.
+   */
+  serverId?: string;
+  workspaceId?: string;
   /**
    * Shows the archive button left of the kebab. It overlays the title like the kebab does, so
    * the scrim widens to cover it rather than the slot reserving its width.
@@ -518,17 +693,30 @@ export function SidebarWorkspaceTrailingActionOverlay({
   onArchiveButtonPress?: () => void;
   children: ReactNode;
 }) {
+  const isCompact = useIsCompactFormFactor();
   if (!visible || !children) return null;
+  const showCopyAgentId = serverId !== undefined && workspaceId !== undefined && !isCompact;
   return (
     <>
       {scrimBackdrop ? (
         <TrailingActionScrim
           backdrop={scrimBackdrop}
-          width={onArchiveButtonPress ? SCRIM_WIDTH + ARCHIVE_BUTTON_FOOTPRINT : SCRIM_WIDTH}
+          width={
+            SCRIM_WIDTH +
+            (showCopyAgentId ? COPY_AGENT_ID_BUTTON_FOOTPRINT : 0) +
+            (onArchiveButtonPress ? ARCHIVE_BUTTON_FOOTPRINT : 0)
+          }
           testID="sidebar-workspace-trailing-scrim"
         />
       ) : null}
       <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>
+        {showCopyAgentId ? (
+          <SidebarWorkspaceCopyAgentIdButton
+            workspaceKey={workspaceKey}
+            serverId={serverId}
+            workspaceId={workspaceId}
+          />
+        ) : null}
         {onArchiveButtonPress ? (
           <SidebarWorkspaceArchiveButton
             workspaceKey={workspaceKey}
@@ -564,6 +752,20 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "space-between",
     gap: theme.spacing[2],
   },
+  lastOpenTag: {
+    flexShrink: 0,
+    marginTop: 1,
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+  },
+  lastOpenTagText: {
+    color: theme.colors.accent,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    lineHeight: 16,
+  },
   shortcutBadgeOverlay: {
     position: "absolute",
     top: 1,
@@ -577,6 +779,10 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
+  },
+  waitingTooltipText: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base,
   },
   selectionCheckbox: {
     width: bySizing({ touch: 18, pointer: 15 }),
@@ -640,6 +846,17 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceBranchTextHovered: {
     opacity: 1,
+  },
+  workspaceBranchTextNew: {
+    fontWeight: theme.fontWeight.semibold,
+    opacity: 1,
+  },
+  newAgentDot: {
+    width: STATUS_INDICATOR_FILLED_DOT_SIZE,
+    height: STATUS_INDICATOR_FILLED_DOT_SIZE,
+    borderRadius: theme.borderRadius.full,
+    // The palette purple, not the green accent: the owner's pick for the New dot.
+    backgroundColor: theme.colors.palette.purple[500],
   },
   statusDotNeedsInput: {
     backgroundColor: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,

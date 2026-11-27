@@ -83,6 +83,7 @@ MCP 不提供解除 Agent 父子关系的工具。解除关系是用户在应用
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `create_agent`       | 创建 Agent，可用 `workspaceId` 把它放到已有的工作区。用 `initialPrompt` 开始工作；不等待完成就返回。`background: true` 会把它从标签页、默认列表、你的子 Agent 列表和通知中隐藏；你仍会收到它的完成通知。省略时继承你自己的设置。 |
 | `send_agent_prompt`  | 用 `agentId` 和 `prompt` 发送提示词；不等待完成就返回。由 Agent 发送时，除非 `activeTurnBehavior` 是 `steer` 或 `interrupt`，提示词会等到正在进行的轮次结束。                                                                    |
+| `fork_agent`         | 把 Agent（默认是自己）分叉成一个新的主 Agent，继承当前对话，并用 `prompt` 开始另一项任务；原 Agent 不受影响。                                                                                                                    |
 | `get_agent_status`   | 返回 Agent 的最新快照。                                                                                                                                                                                                          |
 | `list_agents`        | 以精简元数据列出最近的 Agent；`includeBackground: true` 会包含后台工作。                                                                                                                                                         |
 | `cancel_agent`       | 中止 Agent 当前的运行，但保留该 Agent。                                                                                                                                                                                          |
@@ -90,6 +91,7 @@ MCP 不提供解除 Agent 父子关系的工具。解除关系是用户在应用
 | `kill_agent`         | 永久终止 Agent 会话。                                                                                                                                                                                                            |
 | `update_agent`       | 更新 Agent 的名称、标签或运行时设置，例如模式、模型、思考选项和功能。                                                                                                                                                            |
 | `get_agent_activity` | 以整理后的摘要返回 Agent 最近的时间线条目。                                                                                                                                                                                      |
+| `ask_agent`          | 向 Agent 提问而不打断它。由它对话的一个隐藏只读副本回答，并通过 `threadId` 保持开启以便追问；`close` 结束对话，`status` 返回剩余轮数。支持 Claude、Codex、OpenCode 和 OMP Agent。                                                |
 | `set_agent_mode`     | 切换 Agent 的会话模式。                                                                                                                                                                                                          |
 
 Paseo Agent 默认会收到完成、错误和权限通知；设置 `notifyOnFinish: false` 可以关闭它们。外部 MCP 客户端使用 `get_agent_status` 和 `get_agent_activity` 查看结果。
@@ -179,10 +181,16 @@ MCP heartbeat 是临时的：只能创建或删除。要修改一个 heartbeat�
 
 ### 权限 {#permissions}
 
-| 工具                       | 功能                                |
-| -------------------------- | ----------------------------------- |
-| `list_pending_permissions` | 返回所有 Agent 中待处理的权限请求。 |
-| `respond_to_permission`    | 批准或拒绝一个待处理的权限请求。    |
+| 工具                       | 功能                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------- |
+| `list_pending_permissions` | 列出 Agent 正在等待的提问框和批准请求；`agentId` 只看某一个 Agent。          |
+| `respond_to_permission`    | 像用户点按一样回答：按问题 header 传 `answers`，或传允许/拒绝的 `response`。 |
+
+### 文件 {#files}
+
+| 工具                  | 功能                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `send_file_to_device` | 把主机上的文件发送到用户的手机、桌面应用或浏览器；对方收到“已就绪”通知，点按即可打开。`device` 指定设备。 |
 
 ### 浏览器 {#browser}
 

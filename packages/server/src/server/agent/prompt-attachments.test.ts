@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { envelopeMessage, projectAgentMessages } from "./agent-messages/envelope.js";
 import {
   buildAgentBranchNameSeed,
   buildAgentPrompt,
@@ -35,6 +36,141 @@ describe("prompt attachments", () => {
       { type: "image", data: "image-data", mimeType: "image/png" },
       issue,
     ]);
+  });
+
+  it("introduces each referenced attachment with its inline label after the text", () => {
+    const file = {
+      type: "uploaded_file" as const,
+      id: "f1",
+      fileName: "notes.pdf",
+      mimeType: "application/pdf",
+      size: 10,
+      path: "/tmp/uploads/notes.pdf",
+    };
+    const unreferenced = {
+      type: "uploaded_file" as const,
+      id: "f2",
+      fileName: "other.txt",
+      mimeType: "text/plain",
+      size: 3,
+      path: "/tmp/uploads/other.txt",
+    };
+
+    expect(
+      buildAgentPrompt(
+        "Compare [Image #1] with [File #2]",
+        [
+          { data: "first", mimeType: "image/png" },
+          { data: "second", mimeType: "image/png" },
+        ],
+        [unreferenced, file],
+        [
+          { label: "Image #1", imageIndex: 0 },
+          { label: "File #2", attachmentIndex: 1 },
+          { label: "Image #9", imageIndex: 7 },
+        ],
+      ),
+    ).toEqual([
+      {
+        type: "text",
+        text: "Compare [Image #1] with [File #2]",
+        placeholders: ["[Image #1]", "[File #2]"],
+      },
+      { type: "text", mimeType: "text/plain", text: "[Image #1]:" },
+      { type: "image", data: "first", mimeType: "image/png" },
+      { type: "image", data: "second", mimeType: "image/png" },
+      unreferenced,
+      { type: "text", mimeType: "text/plain", text: "[File #2]: /tmp/uploads/notes.pdf" },
+    ]);
+  });
+
+  it("replays a labeled prompt as the text the user typed, with the files its notes name", () => {
+    const typed = "Compare [Image #1] with [File #2]\n[Image #1]: the left side";
+    const prompt = buildAgentPrompt(
+      typed,
+      [{ data: "first", mimeType: "image/png" }],
+      [
+        {
+          type: "uploaded_file",
+          id: "f1",
+          fileName: "notes.pdf",
+          mimeType: "application/pdf",
+          size: 10,
+          path: "/tmp/uploads/notes.pdf",
+        },
+      ],
+      [
+        { label: "Image #1", imageIndex: 0 },
+        { label: "File #2", attachmentIndex: 0 },
+      ],
+      ["/tmp/uploads/image-1.png"],
+    );
+    if (!Array.isArray(prompt)) throw new Error("expected content blocks");
+    // Provider history returns every text part of the turn, as Claude and OMP transcripts do.
+    const replayed = prompt
+      .flatMap((block) =>
+        block.type === "image"
+          ? []
+          : [block.type === "text" ? block.text : renderPromptAttachmentAsText(block)],
+      )
+      .join("\n\n");
+
+    expect(projectAgentMessages({ type: "user_message", text: replayed })).toEqual([
+      {
+        type: "user_message",
+        text: typed,
+        attachmentFiles: [
+          { label: "Image #1", path: "/tmp/uploads/image-1.png" },
+          { label: "File #2", path: "/tmp/uploads/notes.pdf" },
+        ],
+      },
+    ]);
+  });
+
+  it("gives each enveloped message only the files its own notes name", () => {
+    const human = envelopeMessage(
+      buildAgentPrompt(
+        "look at this",
+        [{ data: "a", mimeType: "image/png" }],
+        [],
+        [],
+        ["/tmp/uploads/image-1.png"],
+      ),
+      null,
+      "human-1",
+    );
+    const agent = envelopeMessage(
+      buildAgentPrompt(
+        "from the helper",
+        [{ data: "b", mimeType: "image/png" }],
+        [],
+        [],
+        ["/tmp/uploads/image-9.png"],
+      ),
+      { kind: "agent-message", agentId: "helper" },
+      "agent-1",
+    );
+    if (!Array.isArray(human.prompt) || !Array.isArray(agent.prompt)) {
+      throw new Error("expected content blocks");
+    }
+    const [agentEnvelope] = agent.prompt;
+    const [humanEnvelope] = human.prompt;
+    if (agentEnvelope?.type !== "text" || humanEnvelope?.type !== "text") {
+      throw new Error("expected an envelope text block first");
+    }
+    // Delivery joins a person's message and an agent's into one provider prompt.
+    const replayed = `${agentEnvelope.text}\n\n${humanEnvelope.text}`;
+
+    const projected = projectAgentMessages({ type: "user_message", text: replayed });
+    expect(projected.filter((item) => item.type === "user_message")).toEqual([
+      {
+        type: "user_message",
+        text: "look at this",
+        clientMessageId: "human-1",
+        attachmentFiles: [{ label: "Image #1", path: "/tmp/uploads/image-1.png" }],
+      },
+    ]);
+    expect(JSON.stringify(projected)).not.toContain("image-9.png");
   });
 
   it("renders github_pr attachments as readable text", () => {

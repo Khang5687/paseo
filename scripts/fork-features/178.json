@@ -1,0 +1,9 @@
+{
+  "pr": 178,
+  "title": "Questions bar: answer an agent's open questions from the composer",
+  "tests": [
+    "packages/app/src/questions/answer-message.test.ts",
+    "packages/server/src/server/agent/agent-manager.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/open-questions-bar.spec.ts"]
+}

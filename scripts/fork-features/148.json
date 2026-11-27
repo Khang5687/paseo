@@ -1,0 +1,11 @@
+{
+  "pr": 148,
+  "title": "feat(app): project jump reopens the project's last chat",
+  "tests": [
+    "packages/app/src/components/sidebar/project-last-chat.test.ts",
+    "packages/app/src/keyboard/route-shortcut.test.ts",
+    "packages/app/src/stores/keyboard-shortcuts-store.test.ts",
+    "packages/app/src/utils/sidebar-shortcuts.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/sidebar-project-last-chat.spec.ts"]
+}

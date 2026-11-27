@@ -1,0 +1,5 @@
+{
+  "pr": 198,
+  "title": "feat(app): black screen during realtime voice",
+  "tests": ["packages/app/src/voice/black-screen-wake.test.ts"]
+}

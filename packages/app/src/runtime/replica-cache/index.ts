@@ -19,6 +19,7 @@ import {
   type WorkspaceDescriptor,
 } from "@/stores/session-store";
 import {
+  createUserMessage,
   isUnreconciledLocalUserMessage,
   type AgentToolCallData,
   type StreamItem,
@@ -77,7 +78,9 @@ export interface CachedTimeline {
 
 const PERSIST_DELAY_MS = 1_000;
 const MAX_TIMELINE_ITEMS = 50;
-const MAX_CACHE_BYTES = 32 * 1024 * 1024;
+// Room for about 270 chats of the 240 KB a real chat tail averages. The budget is shared by every
+// host, and only timelines are evicted to meet it, least recently saved first.
+const MAX_CACHE_BYTES = 64 * 1024 * 1024;
 const IsoDateSchema = z.iso.datetime();
 const TimelinePositionSchema = z.strictObject({
   epoch: z.string(),
@@ -125,6 +128,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     clientMessageId: z.string().optional(),
     messageId: z.string().optional(),
     text: z.string(),
+    attachmentFiles: z.array(z.object({ label: z.string(), path: z.string() })).optional(),
   }),
   z.strictObject({
     ...TimelineItemBaseShape,
@@ -190,6 +194,7 @@ const AgentCapabilitiesSchema = z.strictObject({
   supportsRewindConversation: z.boolean().optional(),
   supportsRewindFiles: z.boolean().optional(),
   supportsRewindBoth: z.boolean().optional(),
+  supportsNativeFork: z.boolean().optional(),
 });
 
 const StoredProjectCheckoutSchema = z.union([
@@ -317,6 +322,8 @@ const StoredWorkspaceSchema = z.strictObject({
   projectDisplayName: z.string(),
   projectCustomName: z.string().nullable(),
   projectCustomIconRevision: z.string().nullable(),
+  // Optional because entries written before snooze have none.
+  projectSnoozedUntil: z.string().nullable().optional(),
   projectRootPath: z.string(),
   workspaceDirectory: z.string(),
   worktreeSlug: z.string().optional(),
@@ -333,6 +340,9 @@ const StoredWorkspaceSchema = z.strictObject({
   labels: z.array(z.string()).optional(),
   status: z.enum(["needs_input", "failed", "running", "attention", "done"]),
   statusEnteredAt: IsoDateSchema.nullable(),
+  // Optional because entries written before the count existed have none.
+  runningSubagentCount: z.number().optional(),
+  waiting: z.object({ backgroundTaskCount: z.number(), subagentCount: z.number() }).optional(),
   activityAt: z.null(),
   archivingAt: z.string().nullable(),
   diffStat: z.strictObject({ additions: z.number(), deletions: z.number() }).nullable(),
@@ -349,12 +359,16 @@ const StoredProjectSchema = z.strictObject({
   projectDisplayName: z.string(),
   projectCustomName: z.string().nullable(),
   projectCustomIconRevision: z.string().nullable(),
+  // Optional because entries written before snooze have none.
+  projectSnoozedUntil: z.string().nullable().optional(),
   projectIconRevision: z.string().optional(),
   projectRootPath: z.string(),
   projectKind: z.enum(["git", "non_git", "directory"]),
 });
 
 const StoredTimelineSchema = z.strictObject({
+  // Optional: rows written before eviction kept recency have none and count as the oldest.
+  savedAt: IsoDateSchema.optional(),
   agentId: z.string(),
   items: z.array(StoredTimelineItemSchema),
   range: z
@@ -450,6 +464,25 @@ function timelineBase(item: StreamItem) {
   };
 }
 
+const OPTIONAL_CAPABILITY_KEYS = [
+  "supportsSessionListing",
+  "supportsRewindConversation",
+  "supportsRewindFiles",
+  "supportsRewindBoth",
+  "supportsNativeFork",
+] as const;
+
+function pickDefinedCapabilities(
+  capabilities: Agent["capabilities"],
+): Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> {
+  const picked: Partial<Record<(typeof OPTIONAL_CAPABILITY_KEYS)[number], boolean>> = {};
+  for (const key of OPTIONAL_CAPABILITY_KEYS) {
+    const value = capabilities[key];
+    if (value !== undefined) picked[key] = value;
+  }
+  return picked;
+}
+
 function serializeAgentToolCall(data: AgentToolCallData): StoredToolCall {
   const base = {
     type: "tool_call" as const,
@@ -479,6 +512,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),
         text: item.text,
+        ...(item.attachmentFiles ? { attachmentFiles: item.attachmentFiles } : {}),
       };
     case "assistant_message":
       return {
@@ -568,13 +602,7 @@ function deserializeBuiltinTimelineItem(
   };
   switch (item.kind) {
     case "user_message":
-      return {
-        ...base,
-        kind: item.kind,
-        ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
-        ...(item.messageId ? { messageId: item.messageId } : {}),
-        text: item.text,
-      };
+      return createUserMessage({ ...item, ...base });
     case "assistant_message":
       return {
         ...base,
@@ -655,22 +683,11 @@ function serializeAgentCapabilities(
   return {
     supportsStreaming: capabilities.supportsStreaming,
     supportsSessionPersistence: capabilities.supportsSessionPersistence,
-    ...(capabilities.supportsSessionListing !== undefined
-      ? { supportsSessionListing: capabilities.supportsSessionListing }
-      : {}),
     supportsDynamicModes: capabilities.supportsDynamicModes,
     supportsMcpServers: capabilities.supportsMcpServers,
     supportsReasoningStream: capabilities.supportsReasoningStream,
     supportsToolInvocations: capabilities.supportsToolInvocations,
-    ...(capabilities.supportsRewindConversation !== undefined
-      ? { supportsRewindConversation: capabilities.supportsRewindConversation }
-      : {}),
-    ...(capabilities.supportsRewindFiles !== undefined
-      ? { supportsRewindFiles: capabilities.supportsRewindFiles }
-      : {}),
-    ...(capabilities.supportsRewindBoth !== undefined
-      ? { supportsRewindBoth: capabilities.supportsRewindBoth }
-      : {}),
+    ...pickDefinedCapabilities(capabilities),
   };
 }
 
@@ -751,6 +768,9 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     projectDisplayName: workspace.projectDisplayName,
     projectCustomName: workspace.projectCustomName ?? null,
     projectCustomIconRevision: workspace.projectCustomIconRevision ?? null,
+    ...(workspace.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: workspace.projectSnoozedUntil }
+      : {}),
     projectRootPath: workspace.projectRootPath,
     workspaceDirectory: workspace.workspaceDirectory,
     worktreeSlug: workspace.worktreeSlug,
@@ -763,6 +783,8 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     labels: workspace.labels,
     status: workspace.status,
     statusEnteredAt: workspace.statusEnteredAt?.toISOString() ?? null,
+    runningSubagentCount: workspace.runningSubagentCount,
+    waiting: workspace.waiting,
     activityAt: null,
     archivingAt: workspace.archivingAt,
     diffStat: workspace.diffStat,
@@ -793,6 +815,9 @@ function serializeProject(project: ProjectDescriptor): StoredProject {
     projectDisplayName: project.projectDisplayName,
     projectCustomName: project.projectCustomName,
     projectCustomIconRevision: project.projectCustomIconRevision ?? null,
+    ...(project.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: project.projectSnoozedUntil }
+      : {}),
     projectIconRevision: project.projectIconRevision,
     projectRootPath: project.projectRootPath,
     projectKind: project.projectKind,
@@ -810,7 +835,7 @@ function isTimelineItemStoredLosslessly(item: StreamItem): boolean {
   }
 }
 
-function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
+function serializeTimeline(timeline: CachedTimeline, savedAt: Date): StoredTimeline | null {
   const canonicalItems = timeline.items.filter(
     (item) => item.kind !== "user_message" || !isUnreconciledLocalUserMessage(item),
   );
@@ -837,6 +862,8 @@ function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
     ) &&
     canonicalItems.some((item) => item.timelineCursor?.seq === range.endSeq);
   return {
+    // First key, so the index reads it from the payload's prefix without parsing the rest.
+    savedAt: savedAt.toISOString(),
     agentId: timeline.agentId,
     items,
     range: canPersistCoverage
@@ -862,9 +889,27 @@ function pendingRowKey(key: ReplicaRowKey): string {
   return `${key.serverId}\u0000${rowKey(key)}`;
 }
 
-// Budget accounting runs over every stored row of a touched host on each persist. Rows are
-// immutable once stored, so their size is computed once. The count itself avoids the JS Buffer
-// polyfill, which materialises the whole byte array just to measure it.
+const SAVED_AT_PREFIX = '{"savedAt":"';
+
+function readTimelineSavedAt(payload: string): number {
+  if (!payload.startsWith(SAVED_AT_PREFIX)) return 0;
+  const end = payload.indexOf('"', SAVED_AT_PREFIX.length);
+  const savedAt = Date.parse(payload.slice(SAVED_AT_PREFIX.length, end));
+  return Number.isFinite(savedAt) ? savedAt : 0;
+}
+
+/** What the budget needs to know about a stored row. The payload itself stays on disk. */
+interface StoredRowEntry extends ReplicaRowKey {
+  bytes: number;
+}
+
+function storedRowEntry(row: ReplicaRow): StoredRowEntry {
+  return { serverId: row.serverId, kind: row.kind, id: row.id, bytes: rowBytes(row) };
+}
+
+// A written row is measured by the budget check and again when the index takes it, so its size is
+// computed once. The count itself avoids the JS Buffer polyfill, which materialises the whole byte
+// array just to measure it.
 const rowBytesCache = new WeakMap<ReplicaRow, number>();
 
 function utf8ByteLength(text: string): number {
@@ -973,9 +1018,11 @@ function matchesReplicaRead(read: ReplicaRead, row: ReplicaRowKey): boolean {
 export class ReplicaCache {
   private readonly activeServerIds = new Set<string>();
   private readonly activeReads = new Set<ReplicaRead>();
-  private readonly storedRows = new Map<string, Map<string, ReplicaRow>>();
+  private readonly storedRows = new Map<string, Map<string, StoredRowEntry>>();
   private readonly hostBytes = new Map<string, number>();
   private readonly hostWriteOrder = new Map<string, true>();
+  // Stored timeline rows, least recently saved first. Eviction drops chats from the front.
+  private readonly timelineSaveOrder = new Map<string, StoredRowEntry>();
   private pendingUpserts = new Map<string, StructuredReplicaUpsert>();
   private pendingDeletes = new Map<string, ReplicaRowKey>();
   private pendingBaselines = new Set<string>();
@@ -1276,18 +1323,24 @@ export class ReplicaCache {
     this.invalidateHostReads(newServerId);
     const rows = this.storedRows.get(oldServerId);
     if (rows) {
-      const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaRow>();
+      const newRows = this.storedRows.get(newServerId) ?? new Map<string, StoredRowEntry>();
       this.totalBytes -=
         (this.hostBytes.get(oldServerId) ?? 0) + (this.hostBytes.get(newServerId) ?? 0);
       this.storedRows.delete(oldServerId);
       for (const [key, row] of rows) newRows.set(key, { ...row, serverId: newServerId });
       this.storedRows.set(newServerId, newRows);
-      const bytes = [...newRows.values()].reduce((sum, row) => sum + rowBytes(row), 0);
+      const bytes = [...newRows.values()].reduce((sum, row) => sum + row.bytes, 0);
       this.hostBytes.delete(oldServerId);
       this.hostBytes.set(newServerId, bytes);
       this.totalBytes += bytes;
       this.hostWriteOrder.delete(oldServerId);
       this.touchHost(newServerId);
+      const saveOrder = [...this.timelineSaveOrder.values()];
+      this.timelineSaveOrder.clear();
+      for (const entry of saveOrder) {
+        const renamed = entry.serverId === oldServerId ? newRows.get(rowKey(entry)) : entry;
+        if (renamed) this.timelineSaveOrder.set(pendingRowKey(renamed), renamed);
+      }
     }
     this.renamePendingHostChanges(oldServerId, newServerId);
     if (this.activeServerIds.delete(oldServerId)) this.activeServerIds.add(newServerId);
@@ -1474,7 +1527,7 @@ export class ReplicaCache {
         value = serializeProject(upsert.value);
         break;
       case "timeline":
-        value = serializeTimeline(upsert.value);
+        value = serializeTimeline(upsert.value, new Date());
         if (!value) return null;
         break;
       case "checkpoint":
@@ -1522,17 +1575,22 @@ export class ReplicaCache {
       const previous = rows?.get(rowKey(key));
       if (previous) {
         rows?.delete(rowKey(key));
-        this.adjustHostBytes(key.serverId, -rowBytes(previous));
+        this.timelineSaveOrder.delete(pendingRowKey(key));
+        this.adjustHostBytes(key.serverId, -previous.bytes);
       }
       touchedServerIds.add(key.serverId);
     }
     for (const row of changes.upserts) {
-      const rows = this.storedRows.get(row.serverId) ?? new Map<string, ReplicaRow>();
+      const rows = this.storedRows.get(row.serverId) ?? new Map<string, StoredRowEntry>();
       const previous = rows.get(rowKey(row));
-      const previousBytes = previous ? rowBytes(previous) : 0;
-      rows.set(rowKey(row), row);
+      const entry = storedRowEntry(row);
+      rows.set(rowKey(row), entry);
       this.storedRows.set(row.serverId, rows);
-      this.adjustHostBytes(row.serverId, rowBytes(row) - previousBytes);
+      this.adjustHostBytes(row.serverId, entry.bytes - (previous?.bytes ?? 0));
+      if (row.kind === "timeline") {
+        this.timelineSaveOrder.delete(pendingRowKey(row));
+        this.timelineSaveOrder.set(pendingRowKey(row), entry);
+      }
       touchedServerIds.add(row.serverId);
     }
     for (const serverId of touchedServerIds) {
@@ -1561,7 +1619,7 @@ export class ReplicaCache {
     for (const key of changes.deletes) touchedServerIds.add(key.serverId);
     for (const row of changes.upserts) touchedServerIds.add(row.serverId);
 
-    const projectedRows = new Map<string, Map<string, ReplicaRow>>();
+    const projectedRows = new Map<string, Map<string, StoredRowEntry>>();
     const projectedBytes = new Map(this.hostBytes);
     for (const serverId of touchedServerIds) {
       projectedRows.set(serverId, new Map(this.storedRows.get(serverId)));
@@ -1570,20 +1628,37 @@ export class ReplicaCache {
       projectedRows.get(key.serverId)?.delete(rowKey(key));
     }
     for (const row of changes.upserts) {
-      projectedRows.get(row.serverId)?.set(rowKey(row), row);
+      projectedRows.get(row.serverId)?.set(rowKey(row), storedRowEntry(row));
     }
     for (const [serverId, rows] of projectedRows) {
       projectedBytes.set(
         serverId,
-        [...rows.values()].reduce((sum, row) => sum + rowBytes(row), 0),
+        [...rows.values()].reduce((sum, row) => sum + row.bytes, 0),
       );
     }
+    let projectedTotal = [...projectedBytes.values()].reduce((sum, bytes) => sum + bytes, 0);
 
+    // Drop the least recently saved chats first, across every host. The sidebar rows stay, so
+    // every other cached chat still opens offline. Timelines in this write are kept: one of them
+    // is usually the chat on screen.
+    const writtenKeys = new Set(changes.upserts.map(pendingRowKey));
+    const evictedTimelines: ReplicaRowKey[] = [];
+    for (const [key, entry] of this.timelineSaveOrder) {
+      if (projectedTotal <= this.maxBytes) break;
+      if (writtenKeys.has(key)) continue;
+      const rows = projectedRows.get(entry.serverId);
+      if (rows && !rows.delete(rowKey(entry))) continue;
+      projectedTotal -= entry.bytes;
+      projectedBytes.set(entry.serverId, (projectedBytes.get(entry.serverId) ?? 0) - entry.bytes);
+      evictedTimelines.push({ serverId: entry.serverId, kind: entry.kind, id: entry.id });
+    }
+
+    // Still over: the directories alone, or the chats just written, pass the budget. Evict whole
+    // hosts, oldest written first.
     const writeOrder = [...this.hostWriteOrder.keys()].filter(
       (serverId) => !touchedServerIds.has(serverId),
     );
     writeOrder.push(...touchedServerIds);
-    let projectedTotal = [...projectedBytes.values()].reduce((sum, bytes) => sum + bytes, 0);
     const evicted = new Set<string>();
     while (projectedTotal > this.maxBytes) {
       const serverId = writeOrder.shift();
@@ -1602,7 +1677,9 @@ export class ReplicaCache {
     return {
       changes: {
         upserts: changes.upserts.filter((row) => !evicted.has(row.serverId)),
-        deletes: changes.deletes.filter((key) => !evicted.has(key.serverId)),
+        deletes: [...changes.deletes, ...evictedTimelines].filter(
+          (key) => !evicted.has(key.serverId),
+        ),
       },
       evicted,
     };
@@ -1610,6 +1687,9 @@ export class ReplicaCache {
 
   private removeStoredHost(serverId: string): void {
     this.totalBytes -= this.hostBytes.get(serverId) ?? 0;
+    for (const row of this.storedRows.get(serverId)?.values() ?? []) {
+      if (row.kind === "timeline") this.timelineSaveOrder.delete(pendingRowKey(row));
+    }
     this.storedRows.delete(serverId);
     this.hostBytes.delete(serverId);
     this.hostWriteOrder.delete(serverId);
@@ -1653,19 +1733,31 @@ export class ReplicaCache {
       this.storedRows.clear();
       this.hostBytes.clear();
       this.hostWriteOrder.clear();
+      this.timelineSaveOrder.clear();
       this.totalBytes = 0;
+      const timelines: Array<{ entry: StoredRowEntry; savedAt: number }> = [];
       for (const host of hosts) {
         if (!this.activeServerIds.has(host.serverId)) {
           await this.rowStore.deleteHost(host.serverId);
           continue;
         }
-        const rows = new Map(host.rows.map((row) => [rowKey(row), row]));
-        const bytes = host.rows.reduce((sum, row) => sum + rowBytes(row), 0);
+        const rows = new Map<string, StoredRowEntry>();
+        let bytes = 0;
+        for (const row of host.rows) {
+          const entry = storedRowEntry(row);
+          rows.set(rowKey(row), entry);
+          bytes += entry.bytes;
+          if (row.kind === "timeline") {
+            timelines.push({ entry, savedAt: readTimelineSavedAt(row.payload) });
+          }
+        }
         this.storedRows.set(host.serverId, rows);
         this.hostBytes.set(host.serverId, bytes);
         this.totalBytes += bytes;
         this.touchHost(host.serverId);
       }
+      timelines.sort((left, right) => left.savedAt - right.savedAt);
+      for (const { entry } of timelines) this.timelineSaveOrder.set(pendingRowKey(entry), entry);
       return undefined;
     });
     return this.storedIndexPromise;

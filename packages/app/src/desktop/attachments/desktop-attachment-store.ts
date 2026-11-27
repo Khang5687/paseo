@@ -1,4 +1,9 @@
-import type { AttachmentMetadata, AttachmentStore } from "@/attachments/types";
+import type {
+  AttachmentMetadata,
+  AttachmentStore,
+  AttachmentWriter,
+  OpenAttachmentWriterInput,
+} from "@/attachments/types";
 import {
   blobToBase64,
   fileUriToPath,
@@ -163,9 +168,77 @@ function assertDesktopAttachment(attachment: AttachmentMetadata): void {
   }
 }
 
+// Bytes wait here until there are this many, so a big file costs few round trips to the shell.
+const WRITER_FLUSH_BYTES = 4 * 1024 * 1024;
+
+function createDesktopAttachmentWriter(
+  bridge: DesktopAttachmentBridge,
+  input: OpenAttachmentWriterInput,
+): AttachmentWriter {
+  const id = input.id ?? generateAttachmentId();
+  const fileName = input.fileName ?? null;
+  const mimeType = normalizeMimeType(input.mimeType);
+  const extension = extensionForAttachment({ fileName, mimeType });
+  let pending: Uint8Array[] = [];
+  let pendingBytes = 0;
+  let started = false;
+  let storagePath = "";
+  let byteSize = 0;
+
+  async function flush(): Promise<void> {
+    if (pending.length === 0 && started) {
+      return;
+    }
+    const bytes = new Uint8Array(pendingBytes);
+    let offset = 0;
+    for (const chunk of pending) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    pending = [];
+    pendingBytes = 0;
+    const result = await bridge.appendBytes({
+      attachmentId: id,
+      bytes,
+      extension,
+      reset: !started,
+    });
+    started = true;
+    storagePath = result.path;
+    byteSize = result.byteSize;
+  }
+
+  return {
+    id,
+    async write(chunk) {
+      pending.push(chunk);
+      pendingBytes += chunk.byteLength;
+      if (pendingBytes >= WRITER_FLUSH_BYTES) {
+        await flush();
+      }
+    },
+    async finish() {
+      // An empty file still needs its (empty) file on disk.
+      await flush();
+      return toDesktopMetadata({ id, mimeType, storagePath, byteSize, fileName });
+    },
+    async abort() {
+      pending = [];
+      pendingBytes = 0;
+      if (started) {
+        await bridge.deleteFile({ path: storagePath });
+      }
+    },
+  };
+}
+
 export function createDesktopAttachmentStore(bridge: DesktopAttachmentBridge): AttachmentStore {
   return {
     storageType: "desktop-file",
+
+    async openWriter(input) {
+      return createDesktopAttachmentWriter(bridge, input);
+    },
 
     async save(input): Promise<AttachmentMetadata> {
       const id = input.id ?? generateAttachmentId();

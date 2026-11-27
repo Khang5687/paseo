@@ -10,6 +10,7 @@ import {
   FileExplorerRequestSchema,
   PaseoWorktreeArchiveRequestSchema,
   parseServerInfoStatusPayload,
+  UsageSubscriptionSchema,
   SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WorkspaceProjectDescriptorPayloadSchema,
@@ -573,6 +574,17 @@ test("agent messages are an optional semantic payload on existing tool rows", ()
       agentMessage: { ...agentMessage, sender: { id: 42 } },
     }).success,
   ).toBe(false);
+});
+
+describe("usage subscription metadata", () => {
+  test("subscription keeps explicit nulls as unknown and rejects unknown sources", () => {
+    const nulls = { subscriptionType: null, rateLimitTier: null, observedAt: null };
+    expect(UsageSubscriptionSchema.parse({ ...nulls, source: "unknown" })).toEqual({
+      ...nulls,
+      source: "unknown",
+    });
+    expect(UsageSubscriptionSchema.safeParse({ ...nulls, source: "guess" }).success).toBe(false);
+  });
 });
 
 test.each(["all", "base", "uncommitted"] as const)(

@@ -114,6 +114,9 @@ export interface TerminalSession {
   setActivity(state: TerminalActivityState): void;
   clearActivityAttention(): boolean;
   setTitle(title: string): void;
+  /** The chat whose terminal drawer holds this terminal; null for a workspace tab terminal. */
+  getOwnerAgentId(): string | null;
+  setOwnerAgentId(ownerAgentId: string | null): void;
   getExitInfo(): TerminalExitInfo | null;
   kill(): void;
   killAndWait(options?: { gracefulTimeoutMs?: number; forceTimeoutMs?: number }): Promise<void>;
@@ -159,6 +162,7 @@ export interface CreateTerminalOptions {
   title?: string;
   command?: string;
   args?: string[];
+  ownerAgentId?: string;
   // Environment the terminal starts from instead of this process's own. A detached terminal
   // worker outlives the daemon that launched it, so each create carries the controlling
   // daemon's environment and its resolved Paseo CLI path.
@@ -349,21 +353,26 @@ export function resolveZshShellIntegrationDir(): string {
   return fileURLToPath(new URL("./shell-integration/zsh", import.meta.url));
 }
 
-function resolveZshShellIntegrationRuntimeDir(): string {
+export function resolveBashShellIntegrationDir(): string {
+  return fileURLToPath(new URL("./shell-integration/bash", import.meta.url));
+}
+
+function prepareShellIntegrationRuntimeDir(shell: "zsh" | "bash"): string {
   let username = "unknown";
   try {
     username = userInfo().username || username;
   } catch {
     // keep fallback
   }
-  return join(tmpdir(), `${username}-paseo-zsh-${process.pid}`);
+  const runtimeDir = join(tmpdir(), `${username}-paseo-${shell}-${process.pid}`);
+  mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
+  chmodSync(runtimeDir, 0o700);
+  return runtimeDir;
 }
 
 function prepareZshShellIntegrationRuntimeDir(sourceDir = resolveZshShellIntegrationDir()): string {
   const readableSourceDir = resolveExternalProcessPath(sourceDir);
-  const runtimeDir = resolveZshShellIntegrationRuntimeDir();
-  mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
-  chmodSync(runtimeDir, 0o700);
+  const runtimeDir = prepareShellIntegrationRuntimeDir("zsh");
   writePrivateFileAtomicSync(
     join(runtimeDir, ".zshenv"),
     readFileSync(join(readableSourceDir, ".zshenv")),
@@ -373,6 +382,23 @@ function prepareZshShellIntegrationRuntimeDir(sourceDir = resolveZshShellIntegra
     readFileSync(join(readableSourceDir, "paseo-integration.zsh")),
   );
   return runtimeDir;
+}
+
+/**
+ * Arguments that start the default shell with Paseo's shell integration. bash has no ZDOTDIR
+ * equivalent, so it gets `--rcfile` pointing at a wrapper that loads the user's ~/.bashrc first.
+ */
+export function resolveShellIntegrationArgs(
+  shell: string,
+  bashShellIntegrationDir = resolveBashShellIntegrationDir(),
+): string[] {
+  if (basename(shell) !== "bash") return [];
+  const rcfile = join(prepareShellIntegrationRuntimeDir("bash"), "paseo-bashrc");
+  writePrivateFileAtomicSync(
+    rcfile,
+    readFileSync(join(resolveExternalProcessPath(bashShellIntegrationDir), "paseo-bashrc")),
+  );
+  return ["--rcfile", rcfile];
 }
 
 export function buildTerminalEnvironment(
@@ -734,7 +760,7 @@ export async function createTerminal(
   // Create PTY
   const { command: spawnCommand, args: spawnArgs } = command
     ? await resolveTerminalSpawnCommand(command, args)
-    : { command: resolvedShell, args: [] as string[] };
+    : { command: resolvedShell, args: resolveShellIntegrationArgs(resolvedShell) };
   const terminalEnv = buildTerminalEnvironment({
     shell: spawnCommand,
     env: {
@@ -1205,6 +1231,8 @@ export async function createTerminal(
     return title;
   }
 
+  let ownerAgentId = options.ownerAgentId ?? null;
+
   function getActivity(): TerminalActivity | null {
     return toTerminalActivity(activityTracker.getSnapshot());
   }
@@ -1334,6 +1362,10 @@ export async function createTerminal(
     setActivity,
     clearActivityAttention,
     setTitle,
+    getOwnerAgentId: () => ownerAgentId,
+    setOwnerAgentId: (nextOwnerAgentId) => {
+      ownerAgentId = nextOwnerAgentId;
+    },
     getExitInfo,
     kill,
     killAndWait,

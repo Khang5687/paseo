@@ -49,6 +49,11 @@ function toggleFilterEntry(list: readonly string[], key: string): string[] {
 interface SidebarViewStoreState {
   groupMode: SidebarGroupMode;
   workspaceSort: WorkspaceSort;
+  /**
+   * Device clock in epoch ms when a person last picked the sort; 0 when nobody has. Hosts keep the
+   * newest pick, so every device shows the same sort (`sidebar-sync/workspace-order.ts`).
+   */
+  workspaceSortUpdatedAt: number;
   showBackground: boolean;
   // Empty means "all hosts". A non-empty list pins the sidebar to those hosts.
   hostFilters: string[];
@@ -66,11 +71,16 @@ interface SidebarViewStoreState {
   labelFilter: SidebarLabelFilter;
   toggleBackground: () => void;
   setGroupMode: (mode: SidebarGroupMode) => void;
+  /** A person's pick: stamps it so it wins on every host. */
   setWorkspaceSort: (sort: WorkspaceSort) => void;
+  /** Takes a host's sort when it is newer than this device's. */
+  applySyncedWorkspaceSort: (sort: WorkspaceSort, updatedAt: number) => boolean;
   toggleHostFilter: (serverId: string) => void;
   clearHostFilters: () => void;
   focusHost: (serverId: string) => void;
   toggleProjectFilter: (viewKey: string) => void;
+  /** Narrow the sidebar to one project: the project strip's pick. */
+  showOnlyProject: (viewKey: string) => void;
   clearProjectFilters: () => void;
   toggleLabelFilter: (name: string) => void;
   clearLabelFilter: () => void;
@@ -81,6 +91,7 @@ interface SidebarViewStoreState {
 interface SidebarViewPersistedState {
   groupMode: SidebarGroupMode;
   workspaceSort: WorkspaceSort;
+  workspaceSortUpdatedAt?: number;
   showBackground: boolean;
   hostFilters: string[];
   projectFilters: string[];
@@ -92,7 +103,8 @@ const SidebarLabelFilterSchema = z.object({
   labels: z.array(z.string()),
 });
 const SidebarViewPersistedStateSchema = z.strictObject({
-  workspaceSort: z.enum(["manual", "created", "lastPrompt"]).optional(),
+  workspaceSort: z.enum(["manual", "created", "lastPrompt", "urgent"]).optional(),
+  workspaceSortUpdatedAt: z.number().optional(),
   showBackground: z.boolean().optional(),
   groupMode: PersistedSidebarGroupModeSchema.optional(),
   hostFilters: z.array(z.string()).optional(),
@@ -193,16 +205,27 @@ export function createSidebarViewStorage(
 
 export const useSidebarViewStore = create<SidebarViewStoreState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       showBackground: false,
       groupMode: "project",
       workspaceSort: "created",
+      workspaceSortUpdatedAt: 0,
       hostFilters: [],
       projectFilters: [],
       labelFilter: emptyLabelFilter(),
       toggleBackground: () => set((state) => ({ showBackground: !state.showBackground })),
       setGroupMode: (mode) => set({ groupMode: mode }),
-      setWorkspaceSort: (workspaceSort) => set({ workspaceSort }),
+      setWorkspaceSort: (workspaceSort) =>
+        set((state) => ({
+          workspaceSort,
+          // Never older than the pick it replaces, even if this device's clock went back.
+          workspaceSortUpdatedAt: Math.max(Date.now(), state.workspaceSortUpdatedAt + 1),
+        })),
+      applySyncedWorkspaceSort: (workspaceSort, updatedAt) => {
+        if (updatedAt <= get().workspaceSortUpdatedAt) return false;
+        set({ workspaceSort, workspaceSortUpdatedAt: updatedAt });
+        return true;
+      },
       toggleHostFilter: (serverId) =>
         set((state) => ({ hostFilters: toggleFilterEntry(state.hostFilters, serverId) })),
       clearHostFilters: () => set({ hostFilters: [] }),
@@ -211,6 +234,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
         set({ hostFilters: [serverId], projectFilters: [], labelFilter: emptyLabelFilter() }),
       toggleProjectFilter: (viewKey) =>
         set((state) => ({ projectFilters: toggleFilterEntry(state.projectFilters, viewKey) })),
+      showOnlyProject: (viewKey) => set({ projectFilters: [viewKey] }),
       clearProjectFilters: () => set({ projectFilters: [] }),
       toggleLabelFilter: (name) =>
         set((state) => {
@@ -254,6 +278,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
         showBackground: state.showBackground ?? false,
         groupMode: state.groupMode,
         workspaceSort: state.workspaceSort,
+        workspaceSortUpdatedAt: state.workspaceSortUpdatedAt,
         hostFilters: state.hostFilters,
         projectFilters: state.projectFilters,
         labelFilter: state.labelFilter,

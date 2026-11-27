@@ -838,21 +838,22 @@ export default function contribute(client: PluginClientContext) {
 
 `Component` 接收 `PluginSidebarItemProps`：
 
-| 字段                      | 含义                                                                             |
-| ------------------------- | -------------------------------------------------------------------------------- |
-| `theme`, `host`, `layout` | 与 `PluginScreenProps` 中相同。                                                  |
-| `currentScreen`           | 在该项所属主机上打开的、此插件的界面的 `{ screenId, params }`，没有时为 `null`。 |
-| `openScreen(input)`       | 打开此插件的某个界面：`{ screenId, params? }`。未知的界面 ID 会抛出错误。        |
-| `openPopover(Content)`    | 在宽布局中把 `Content` 锚定在被按下的行旁边打开，在紧凑布局中以底部面板打开。    |
+| 字段                      | 含义                                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `theme`, `host`, `layout` | 与 `PluginScreenProps` 中相同。                                                                                                  |
+| `currentScreen`           | 在该项所属主机上打开的、此插件的界面的 `{ screenId, params }`，没有时为 `null`。                                                 |
+| `active`                  | `{ workspace, agent }`：应用中当前打开的聊天的引用，可在任意主机上。没有打开时字段为 `null`；聊天标签页获得焦点时 `agent` 有值。 |
+| `openScreen(input)`       | 打开此插件的某个界面：`{ screenId, params? }`。未知的界面 ID 会抛出错误。                                                        |
+| `openPopover(Content)`    | 在宽布局中把 `Content` 锚定在被按下的行旁边打开，在紧凑布局中以底部面板打开。                                                    |
 
 `Content` 接收 `theme`、`host`、`layout`、`close()` 和 `openScreen(input)`。打开界面会关闭弹出框。
 
 用 `@getpaseo/plugin/client/ui` 中的侧边栏组件渲染该项：
 
-| 组件               | 属性与行为                                                                                                                                                                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SidebarRow`       | 必填 `onPress`；可选 `icon`（任意一种[图标](#icons)形式）、`label`、`active`、`trailing`、`id`。占满整行宽度。`trailing` 渲染在行的可按区域旁边，因此其中的按钮可以单独按下；按下其中其他位置则相当于按下该行。`id` 用于在测试 ID 中区分同一项的多行。 |
-| `SidebarSeparator` | 没有属性。侧边栏的分隔线，放在各组行之间。                                                                                                                                                                                                             |
+| 组件               | 属性与行为                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SidebarRow`       | 必填 `onPress`；可选 `icon`（任意一种[图标](#icons)形式）、`label`、`active`、`trailing`、`badge`、`id`。占满整行宽度。`trailing` 渲染在行的可按区域旁边，因此其中的按钮可以单独按下；按下其中其他位置则相当于按下该行。`badge` 为 `{ count?, tone: "attention" \| "warning" }`：红色或琥珀色的数字，省略 `count` 时为圆点。它显示在标签之后；手机把顶部行画成圆形按钮时，它显示在按钮角上，而 `trailing` 在那里没有位置。`id` 用于在测试 ID 中区分同一项的多行。 |
+| `SidebarSeparator` | 没有属性。侧边栏的分隔线，放在各组行之间。                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 弹出框锚定在被按下的那一行，无论按下的是行本身还是它的 `trailing` 内容，因此每行的“More”按钮会在它自己的行旁边打开弹出框。
 
@@ -992,6 +993,30 @@ client.addWorkspaceRowBadgeItem({
 早于此 API 的应用没有 `addWorkspaceRowBadgeItem`；调用前请先检查它是否存在。
 
 参见[工作区行徽章示例](https://github.com/getpaseo/paseo/tree/main/plugin-examples/workspace-row-badges)。
+
+### 项目栏按钮 {#project-rail-items}
+
+`addProjectRailItem({ id, title, icon, screen, useBadge? })` 在桌面端项目栏的项目下方添加一个按钮。它打开插件的 `screen`（某个 `addScreen` 的 id），该界面打开时按钮显示为选中。收起的项目栏只显示图标，`title` 作为提示；展开的项目栏在图标旁写出 `title`。项目栏只在宽布局且有两个或以上项目时显示，因此手机上从不显示这些按钮：请为该界面另设入口，例如侧边栏项。
+
+`useBadge` 是按钮渲染时在插件运行时中调用的 React hook，因此可以使用插件的查询。返回 `{ count?, tone: "attention" | "warning" }` 会在按钮角上显示红色或琥珀色数字（省略 `count` 时为圆点），返回 `null` 则不显示。hook 抛出错误时按钮照常显示，只是没有徽章。插件装在多台主机上时，项目栏只显示一个按钮，在插件界面上次使用的主机上打开界面。
+
+```tsx
+function useAccountsBadge(): PluginBadge | null {
+  const low = useLowAccounts();
+  return low.length > 0 ? { count: low.length, tone: "warning" } : null;
+}
+
+client.addScreen({ id: "accounts", title: "Accounts", Component: AccountsScreen });
+client.addProjectRailItem?.({
+  id: "accounts",
+  title: "Accounts",
+  icon: "Gauge",
+  screen: "accounts",
+  useBadge: useAccountsBadge,
+});
+```
+
+早于此 API 的应用没有 `addProjectRailItem`；调用前请先检查它是否存在。
 
 ## 宿主 UI {#host-ui}
 

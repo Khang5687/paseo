@@ -41,6 +41,8 @@ import type {
   AgentBackgroundWorkSummary,
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
+  AgentQueuedMessageSummaryPayload,
+  AgentOpenQuestion,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
@@ -58,6 +60,8 @@ import {
   buildWorkspaceAgentActivityIndex,
   type WorkspaceAgentActivity,
 } from "@/utils/workspace-agent-activity";
+import { buildThreadAgentIndex, buildWorkspaceParentIndex } from "@/subagents/policies";
+import type { ThreadAgents } from "@/subagents/thread-children";
 import {
   resolveTimelineTurnPresentation,
   resolveTurnPresentation,
@@ -115,6 +119,14 @@ export interface Agent {
   labels: Record<string, string>;
   metadata?: Record<string, JsonValue>;
   projectPlacement?: ProjectPlacementPayload | null;
+  /** Daemon-owned queue summaries. Absent or empty on hosts without `features.messageQueue`. */
+  queuedMessages?: AgentQueuedMessageSummaryPayload[];
+  /** Whether the host holds the queue instead of draining it. Absent on older hosts. */
+  queuePaused?: boolean;
+  /** Why the host paused the queue itself (a send it could not complete); null otherwise. */
+  queuePauseReason?: string | null;
+  /** ❓ questions from the agent's replies that no user message has answered yet. */
+  openQuestions?: AgentOpenQuestion[];
 }
 
 export interface WorkspaceDescriptor {
@@ -126,6 +138,8 @@ export interface WorkspaceDescriptor {
   projectDisplayName: string;
   projectCustomName?: string | null;
   projectCustomIconRevision?: string | null;
+  // COMPAT(projectSnooze): ISO time a snoozed project comes back; absent or null when awake.
+  projectSnoozedUntil?: string | null;
   projectRootPath: string;
   workspaceDirectory: string;
   worktreeSlug?: WorkspaceDescriptorPayload["worktreeSlug"];
@@ -139,6 +153,10 @@ export interface WorkspaceDescriptor {
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
+  // Absent when no subagent runs, or when the daemon predates the count.
+  runningSubagentCount?: number;
+  // Absent unless the workspace only waits on background jobs or subagents.
+  waiting?: WorkspaceDescriptorPayload["waiting"];
   archivingAt: string | null;
   diffStat: { additions: number; deletions: number } | null;
   scripts: WorkspaceDescriptorPayload["scripts"];
@@ -166,6 +184,9 @@ export function normalizeWorkspaceDescriptor(
     projectDisplayName: payload.projectDisplayName,
     projectCustomName: payload.projectCustomName ?? null,
     projectCustomIconRevision: payload.projectCustomIconRevision ?? null,
+    ...(payload.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: payload.projectSnoozedUntil }
+      : {}),
     projectRootPath: payload.projectRootPath,
     // Canonicalize the workspace directory once, at the store boundary, so every
     // consumer can read workspace.workspaceDirectory directly. Empty means "no
@@ -185,6 +206,8 @@ export function normalizeWorkspaceDescriptor(
     labels: payload.labels ?? [],
     status: payload.status,
     statusEnteredAt,
+    runningSubagentCount: payload.runningSubagentCount,
+    waiting: payload.waiting,
     archivingAt: payload.archivingAt ?? null,
     diffStat: payload.diffStat ?? null,
     scripts: (payload.scripts ?? []).map((s) => Object.assign({}, s)),
@@ -202,6 +225,8 @@ export interface ProjectDescriptor {
   projectDisplayName: string;
   projectCustomName: string | null;
   projectCustomIconRevision?: string | null;
+  // COMPAT(projectSnooze): ISO time a snoozed project comes back; absent or null when awake.
+  projectSnoozedUntil?: string | null;
   projectIconRevision?: string;
   projectRootPath: string;
   projectKind: WorkspaceDescriptorPayload["projectKind"];
@@ -216,6 +241,9 @@ export function normalizeProjectDescriptor(
     projectDisplayName: payload.projectDisplayName,
     projectCustomName: payload.projectCustomName ?? null,
     projectCustomIconRevision: payload.projectCustomIconRevision ?? null,
+    ...(payload.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: payload.projectSnoozedUntil }
+      : {}),
     projectIconRevision: payload.projectIconRevision,
     projectRootPath: payload.projectRootPath,
     projectKind: payload.projectKind,
@@ -294,6 +322,7 @@ export interface DaemonServerInfo {
   serverId: string;
   hostname: string | null;
   version: string | null;
+  homeDirectory?: string;
   machineKind?: string | null;
   desktopManaged?: boolean;
   capabilities?: ServerCapabilities;
@@ -305,6 +334,7 @@ export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonS
     serverId: serverInfo.serverId,
     hostname: serverInfo.hostname ?? null,
     version: serverInfo.version ?? null,
+    ...(serverInfo.homeDirectory ? { homeDirectory: serverInfo.homeDirectory } : {}),
     ...(serverInfo.machineKind !== undefined ? { machineKind: serverInfo.machineKind } : {}),
     ...(serverInfo.desktopManaged !== undefined
       ? { desktopManaged: serverInfo.desktopManaged }
@@ -510,6 +540,10 @@ export interface SessionState {
   // Agents
   agents: Map<string, Agent>;
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
+  // Subagent workspace id -> the workspace id it nests under in the sidebar.
+  workspaceParents: Map<string, string>;
+  // Workspace id -> its agents, and the same-workspace subagents that show as its child rows.
+  threadAgents: Map<string, ThreadAgents>;
   agentDetails: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   // All active project descriptors, keyed by host-local projectId.
@@ -763,6 +797,8 @@ function createInitialSessionState(
     initializingAgents: new Map(),
     agents: new Map(),
     workspaceAgentActivity: new Map(),
+    workspaceParents: new Map(),
+    threadAgents: new Map(),
     agentDetails: new Map(),
     workspaces: new Map(),
     projects: new Map(),
@@ -787,10 +823,12 @@ function areServerInfoFeaturesEqual(
   return JSON.stringify(current ?? null) === JSON.stringify(next ?? null);
 }
 
+// oxlint-disable-next-line complexity
 function isSessionServerInfoUnchanged(input: {
   currentServerInfo: SessionState["serverInfo"] | undefined;
   nextHostname: string | null;
   nextVersion: string | null;
+  nextHomeDirectory: string | undefined;
   nextMachineKind: string | null;
   nextDesktopManaged: boolean | undefined;
   nextCapabilities: ServerCapabilities | undefined;
@@ -801,6 +839,7 @@ function isSessionServerInfoUnchanged(input: {
     currentServerInfo,
     nextHostname,
     nextVersion,
+    nextHomeDirectory,
     nextMachineKind,
     nextDesktopManaged,
     nextCapabilities,
@@ -813,6 +852,7 @@ function isSessionServerInfoUnchanged(input: {
     currentServerInfo?.serverId === input.nextServerId &&
     prevHostname === nextHostname &&
     prevVersion === nextVersion &&
+    currentServerInfo?.homeDirectory === nextHomeDirectory &&
     prevMachineKind === nextMachineKind &&
     currentServerInfo?.desktopManaged === nextDesktopManaged &&
     areServerCapabilitiesEqual(currentServerInfo?.capabilities, nextCapabilities) &&
@@ -952,6 +992,7 @@ export const useSessionStore = create<SessionStore>()(
 
           const nextHostname = info.hostname?.trim() || null;
           const nextVersion = info.version?.trim() || null;
+          const nextHomeDirectory = info.homeDirectory?.trim() || undefined;
           const nextMachineKind = info.machineKind?.trim() || null;
           const nextDesktopManaged = info.desktopManaged;
           const nextCapabilities = info.capabilities;
@@ -962,6 +1003,7 @@ export const useSessionStore = create<SessionStore>()(
               currentServerInfo: session.serverInfo,
               nextHostname,
               nextVersion,
+              nextHomeDirectory,
               nextMachineKind,
               nextDesktopManaged,
               nextCapabilities,
@@ -982,6 +1024,7 @@ export const useSessionStore = create<SessionStore>()(
                   serverId: info.serverId,
                   hostname: nextHostname,
                   version: nextVersion,
+                  ...(nextHomeDirectory ? { homeDirectory: nextHomeDirectory } : {}),
                   ...(nextMachineKind !== null ? { machineKind: nextMachineKind } : {}),
                   ...(nextDesktopManaged !== undefined
                     ? { desktopManaged: nextDesktopManaged }
@@ -1666,6 +1709,8 @@ export const useSessionStore = create<SessionStore>()(
                   nextAgents,
                   session.workspaceAgentActivity,
                 ),
+                workspaceParents: buildWorkspaceParentIndex(nextAgents, session.workspaceParents),
+                threadAgents: buildThreadAgentIndex(nextAgents, session.threadAgents),
               },
             },
           };

@@ -1,0 +1,7 @@
+{
+  "pr": 26,
+  "title": "feat(app): one-press archive button on sidebar workspace rows",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/sidebar-workspace-archive-button.spec.ts"],
+  "retired": "upstream #8904 ships its own hover archive button on sidebar rows; the fork button was removed in the upstream sync (spec kept under #102)"
+}

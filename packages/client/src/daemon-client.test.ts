@@ -1,9 +1,10 @@
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import {
-  DaemonClient,
   DaemonConnectionError,
+  DaemonClient,
   supportsUsageReports,
   type DaemonClientTrace,
   type CreateAgentRequestOptions,
@@ -12,6 +13,8 @@ import {
   type PluginClientBundle,
   type PluginClientBundleStore,
 } from "./daemon-client";
+import type { WebSocketLike } from "./daemon-client-transport-types";
+import { createWebSocketTransportFactory } from "./daemon-client-websocket-transport";
 import { createHostChannelTransport } from "./hosts/index.js";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
 import { ChunkedTransport } from "@getpaseo/protocol/chunked-transport";
@@ -77,9 +80,25 @@ function createMockTransport() {
       if (typeof data !== "string") {
         return;
       }
-      const frame = JSON.parse(data) as { type?: string };
+      const frame = JSON.parse(data) as {
+        type?: string;
+        message?: { type?: string; requestId?: string; subscriptionId?: string };
+      };
       if (frame.type === "ping") {
         onMessage(JSON.stringify({ type: "pong" }));
+      } else if (
+        frame.type === "session" &&
+        frame.message?.type === "subscription.release.request"
+      ) {
+        onMessage(
+          wrapSessionMessage({
+            type: "subscription.release.response",
+            payload: {
+              requestId: frame.message.requestId,
+              subscriptionId: frame.message.subscriptionId,
+            },
+          }),
+        );
       }
     },
     close: () => {},
@@ -104,7 +123,11 @@ function createMockTransport() {
   return {
     transport,
     sent,
-    triggerOpen: (options?: { preserveSent?: boolean; features?: Record<string, boolean> }) => {
+    triggerOpen: (options?: {
+      preserveSent?: boolean;
+      features?: Record<string, boolean>;
+      capabilities?: Record<string, unknown>;
+    }) => {
       onOpen();
       if (!options?.preserveSent) {
         // Ignore HELLO handshake payloads in assertions.
@@ -121,6 +144,7 @@ function createMockTransport() {
               hostname: null,
               version: null,
               features: options?.features ?? { ownedSubscriptions: true },
+              ...(options?.capabilities ? { capabilities: options.capabilities } : {}),
             },
           },
         }),
@@ -1476,6 +1500,51 @@ test("disabling reconnect cancels a pending retry until explicitly resumed", asy
   }
 });
 
+test("suspend closes the socket and stays down until ensureConnected", async () => {
+  useHeartbeatClock();
+  try {
+    const first = createMockTransport();
+    const second = createMockTransport();
+    const transports = [first, second];
+    let transportIndex = 0;
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: "clsk_suspended",
+      reconnect: { enabled: true, baseDelayMs: 1_500, maxDelayMs: 1_500 },
+      transportFactory: () => {
+        const transport = transports[transportIndex];
+        if (!transport) throw new Error("unexpected extra reconnect");
+        transportIndex += 1;
+        return transport.transport;
+      },
+    });
+    clients.push(client);
+
+    const initialConnect = client.connect();
+    first.triggerOpen();
+    await initialConnect;
+    const close = vi.spyOn(first.transport, "close");
+
+    client.suspend();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect({
+      closed: close.mock.calls,
+      status: client.getConnectionState().status,
+      transportsOpened: transportIndex,
+    }).toEqual({
+      closed: [[1000, "Client suspended"]],
+      status: "disconnected",
+      transportsOpened: 1,
+    });
+
+    client.ensureConnected();
+    expect(client.getConnectionState().status).toBe("connecting");
+    expect(transportIndex).toBe(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("keeps the transport connected when a session RPC ping times out", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
@@ -1665,6 +1734,50 @@ test("defaults session RPC waiters to sixty seconds", async () => {
   await vi.advanceTimersByTimeAsync(1);
   await expect(responsePromise).rejects.toThrow("No response to fetch_agent_request after 60000ms");
 });
+
+test.each([
+  ["without pictures", [], 60_000],
+  // 1.25 MB of picture data takes 10 s at 1 Mbit/s.
+  [
+    "with pictures",
+    [
+      { data: "a".repeat(500_000), mimeType: "image/jpeg" },
+      { data: "b".repeat(750_000), mimeType: "image/jpeg" },
+    ],
+    70_000,
+  ],
+] as const)(
+  "gives a message %s the default deadline plus its bytes at 1 Mbit/s",
+  async (_label, images, deadlineMs) => {
+    useHeartbeatClock();
+    const mock = createMockTransport();
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: "clsk_unit_test",
+      logger: createMockLogger(),
+      reconnect: { enabled: false },
+      transportFactory: () => mock.transport,
+    });
+    clients.push(client);
+    const connectPromise = client.connect();
+    mock.triggerOpen();
+    await connectPromise;
+
+    const sent = client.sendAgentMessage("agent-1", "look", { images: [...images] });
+    let settled = false;
+    void sent.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+
+    await vi.advanceTimersByTimeAsync(deadlineMs - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(sent).rejects.toThrow(
+      `No response to send_agent_message_request after ${deadlineMs}ms`,
+    );
+  },
+);
 
 test.each([
   [
@@ -3400,6 +3513,106 @@ test("tears down and reports a liveness timeout after the daemon goes silent for
   expect(session.teardownCount()).toBe(1);
 });
 
+// A socket behind a slow uplink: sent bytes queue in bufferedAmount and leave at the link's
+// rate. The daemon answers a ping only once the bytes queued ahead of it have left.
+class SlowLinkSocket extends EventEmitter {
+  readyState = 0;
+  bufferedAmount = 0;
+  bytesPerSecond = 100 * 1024;
+  readonly closes: string[] = [];
+  private sentBytes = 0;
+  private drainedBytes = 0;
+  private pingsEndAt: number[] = [];
+  private readonly network = setInterval(() => this.tick(), 100);
+
+  open(): void {
+    this.readyState = 1;
+    this.emit("open");
+    this.emit(
+      "message",
+      wrapSessionMessage({
+        type: "status",
+        payload: {
+          status: "server_info",
+          serverId: "srv_slow_link_test",
+          features: { binaryChunkingV1: true },
+          hostname: null,
+          version: null,
+        },
+      }),
+      false,
+    );
+  }
+
+  send(data: string | Uint8Array | ArrayBuffer): void {
+    const bytes = typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
+    this.sentBytes += bytes;
+    this.bufferedAmount += bytes;
+    if (typeof data === "string" && JSON.parse(data).type === "ping") {
+      this.pingsEndAt.push(this.sentBytes);
+    }
+  }
+
+  close(_code?: number, reason?: string): void {
+    this.closes.push(reason ?? "");
+    this.readyState = 3;
+    clearInterval(this.network);
+  }
+
+  private tick(): void {
+    const drained = Math.min(this.bufferedAmount, this.bytesPerSecond / 10);
+    this.bufferedAmount -= drained;
+    this.drainedBytes += drained;
+    while (this.pingsEndAt.length > 0 && this.pingsEndAt[0]! <= this.drainedBytes) {
+      this.pingsEndAt.shift();
+      this.emit("message", JSON.stringify({ type: "pong" }), false);
+    }
+  }
+}
+
+async function startUploadOverSlowLink(): Promise<{
+  client: DaemonClient;
+  socket: SlowLinkSocket;
+}> {
+  const socket = new SlowLinkSocket();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_slow_link_test",
+    logger: noopLogger,
+    reconnect: { enabled: false },
+    transportFactory: createWebSocketTransportFactory(() => socket as unknown as WebSocketLike),
+  });
+  clients.push(client);
+  const connection = client.connect();
+  socket.open();
+  await connection;
+  // Six MiB at 100 KiB/s: about a minute on the wire, past two missed 15 s ping windows.
+  void client.sendAgentMessage("agent_slow_link", "x".repeat(6 * 1024 * 1024)).catch(() => {});
+  return { client, socket };
+}
+
+test("stays online while an upload drains for longer than two ping windows", async () => {
+  useHeartbeatClock();
+  const { client, socket } = await startUploadOverSlowLink();
+
+  await vi.advanceTimersByTimeAsync(75_000);
+
+  expect(socket.closes).toEqual([]);
+  expect(client.getConnectionState()).toEqual({ status: "connected" });
+});
+
+test("tears down when an upload stops draining", async () => {
+  useHeartbeatClock();
+  const { client, socket } = await startUploadOverSlowLink();
+  await vi.advanceTimersByTimeAsync(5_000);
+  socket.bytesPerSecond = 0;
+
+  await vi.advanceTimersByTimeAsync(60_000);
+
+  expect(socket.closes).toEqual(["Liveness check timed out"]);
+  expect(client.getConnectionState()).toMatchObject({ status: "disconnected" });
+});
+
 test("survives a single missed pong when answers resume", async () => {
   useHeartbeatClock();
   const session = new DaemonClientSession();
@@ -4025,6 +4238,185 @@ test("readFile resolves from binary file frames when the daemon supports them", 
     modifiedAt: "2026-05-02T00:00:00.000Z",
   });
   expect(new TextDecoder().decode(result.bytes)).toBe("hello");
+});
+
+async function connectedFileClient(clientId: string) {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId,
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+  return { client, mock };
+}
+
+/** The request id the client generated for its first sent file read. */
+function sentRequestId(frame: unknown): string {
+  const parsed: unknown = JSON.parse(assertStr(frame));
+  if (typeof parsed === "object" && parsed !== null && "message" in parsed) {
+    const { message } = parsed;
+    if (typeof message === "object" && message !== null && "requestId" in message) {
+      if (typeof message.requestId === "string") return message.requestId;
+    }
+  }
+  throw new Error("The sent frame has no request id.");
+}
+
+test("readFileToSink streams a file past the old 64 MB cap without collecting it", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_big");
+  const total = 100 * 1024 * 1024;
+  const chunk = new Uint8Array(256 * 1024).fill(7);
+  const events: string[] = [];
+  let received = 0;
+  let progress = 0;
+
+  const responsePromise = client.readFileToSink(
+    "/tmp/project",
+    "big.bin",
+    {
+      begin: (meta) => {
+        events.push(`begin:${meta.size}`);
+      },
+      write: (bytes) => {
+        received += bytes.byteLength;
+      },
+    },
+    { timeout: 0, onProgress: (bytes) => (progress = bytes) },
+  );
+  const requestId = sentRequestId(mock.sent[0]);
+
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId,
+      metadata: { mime: "video/mp4", size: total, encoding: "binary", modifiedAt: "2026-05-02" },
+    }),
+  );
+  for (let sent = 0; sent < total; sent += chunk.byteLength) {
+    mock.triggerMessage(
+      encodeFileTransferFrame({ opcode: FileTransferOpcode.FileChunk, requestId, payload: chunk }),
+    );
+  }
+  mock.triggerMessage(encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }));
+
+  const meta = await responsePromise;
+  expect(events).toEqual([`begin:${total}`]);
+  expect(received).toBe(total);
+  expect(progress).toBe(total);
+  expect(meta).toMatchObject({ mime: "video/mp4", size: total, path: "big.bin" });
+  expect(meta).not.toHaveProperty("bytes");
+});
+
+test("readFileToSink rejects when the sink fails and ignores the frames after it", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_fail");
+  let writes = 0;
+
+  const responsePromise = client.readFileToSink("/tmp/project", "full.bin", {
+    write: () => {
+      writes += 1;
+      throw new Error("Disk full");
+    },
+  });
+  const rejection = expect(responsePromise).rejects.toThrow("Disk full");
+  const requestId = sentRequestId(mock.sent[0]);
+
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId,
+      metadata: {
+        mime: "application/octet-stream",
+        size: 6,
+        encoding: "binary",
+        modifiedAt: "2026-05-02",
+      },
+    }),
+  );
+  const payload = new Uint8Array(3);
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileChunk, requestId, payload }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileChunk, requestId, payload }),
+  );
+  mock.triggerMessage(encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }));
+
+  await rejection;
+  expect(writes).toBe(1);
+});
+
+test("readFileToSink gives a daemon without the binary channel the file in one write", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_legacy");
+  const written: string[] = [];
+
+  const responsePromise = client.readFileToSink("/tmp/project", "logo.png", {
+    write: (bytes) => {
+      written.push(new TextDecoder().decode(bytes));
+    },
+  });
+  const requestId = sentRequestId(mock.sent[0]);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "file_explorer_response",
+      payload: {
+        cwd: "/tmp/project",
+        path: "logo.png",
+        mode: "file",
+        directory: null,
+        file: {
+          path: "logo.png",
+          kind: "image",
+          encoding: "base64",
+          content: "aGVsbG8=",
+          mimeType: "image/png",
+          size: 5,
+          modifiedAt: "2026-05-02T00:00:00.000Z",
+        },
+        error: null,
+        requestId,
+      },
+    }),
+  );
+
+  await expect(responsePromise).resolves.toMatchObject({ size: 5, kind: "image" });
+  expect(written).toEqual(["hello"]);
+});
+
+test("readFileToSink refuses a binary file a legacy daemon answered with no content", async () => {
+  const { client, mock } = await connectedFileClient("clsk_sink_none");
+  const responsePromise = client.readFileToSink("/tmp/project", "clip.bin", { write: () => {} });
+  const requestId = sentRequestId(mock.sent[0]);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "file_explorer_response",
+      payload: {
+        cwd: "/tmp/project",
+        path: "clip.bin",
+        mode: "file",
+        directory: null,
+        file: {
+          path: "clip.bin",
+          kind: "binary",
+          encoding: "none",
+          mimeType: "application/octet-stream",
+          size: 6,
+          modifiedAt: "2026-05-02T00:00:00.000Z",
+        },
+        error: null,
+        requestId,
+      },
+    }),
+  );
+
+  await expect(responsePromise).rejects.toThrow(
+    "File transfer incomplete: expected 6 bytes, received 0.",
+  );
 });
 
 test("readFile drops an old daemon's over-budget binary chunks and reports the refusal", async () => {

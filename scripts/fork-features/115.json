@@ -1,0 +1,8 @@
+{
+  "pr": 115,
+  "title": "fix(server): keep finish subscriptions through a host outage",
+  "tests": [
+    "packages/server/src/server/agent/finish-subscriptions/finish-subscriptions.test.ts",
+    "packages/server/src/server/agent/finish-subscriptions/internal/observation-stream.test.ts"
+  ]
+}

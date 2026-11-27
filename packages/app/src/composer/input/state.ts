@@ -13,6 +13,21 @@ export function resolveActiveSendBehavior(
   return sendBehavior === "queue" && hasPendingPermission ? "interrupt" : sendBehavior;
 }
 
+/**
+ * The turn behavior for a send that cannot queue: a queued message's Send now, review feedback,
+ * and either send action while queueing is unavailable. The alternate comes first because it is
+ * the action people reach for to skip the default; when both queue, steer, which keeps the
+ * running turn alive.
+ */
+export function resolveSendNowBehavior(settings: {
+  sendBehavior: SendBehavior;
+  alternateSendBehavior: SendBehavior;
+}): ActiveTurnBehavior {
+  if (settings.alternateSendBehavior !== "queue") return settings.alternateSendBehavior;
+  if (settings.sendBehavior !== "queue") return settings.sendBehavior;
+  return "steer";
+}
+
 interface ComposerSurfaceState {
   opacity: 0 | 1;
   pointerEvents: "auto" | "none";
@@ -48,16 +63,19 @@ interface StopRealtimeVoiceContext {
 }
 
 interface SendActionContext {
+  /** Already adjusted for a pending permission by `resolveActiveSendBehavior`. */
   defaultSendBehavior: SendBehavior;
+  alternateSendBehavior: SendBehavior;
   isAgentRunning: boolean;
   onQueue: ((payload: MessagePayload) => void) | undefined;
-  handleSendMessage: () => void;
+  handleSendMessage: (activeTurnBehavior: ActiveTurnBehavior) => void;
   handleQueueMessage: () => void;
 }
 
 interface DictationTranscriptContext {
   value: string;
   defaultSendBehavior: SendBehavior;
+  sendNowBehavior: ActiveTurnBehavior;
   isAgentRunning: boolean;
   onQueue: ((payload: MessagePayload) => void) | undefined;
   onSubmit: (payload: MessagePayload) => void;
@@ -90,6 +108,8 @@ export function applyDictationTranscript(text: string, ctx: DictationTranscriptC
     attachments: ctx.attachments,
     cwd: ctx.cwd,
     forceSend: ctx.isAgentRunning || undefined,
+    activeTurnBehavior:
+      ctx.defaultSendBehavior === "queue" ? ctx.sendNowBehavior : ctx.defaultSendBehavior,
   });
 }
 
@@ -118,38 +138,41 @@ export function computeCanStartDictation(input: {
   );
 }
 
-export function runDefaultSendAction(ctx: SendActionContext): void {
-  if (ctx.defaultSendBehavior === "queue" && ctx.isAgentRunning && ctx.onQueue) {
+/** Queue while a turn runs and the composer can queue; otherwise send. */
+function runSendAction(behavior: SendBehavior, ctx: SendActionContext): void {
+  if (behavior !== "queue") {
+    ctx.handleSendMessage(behavior);
+    return;
+  }
+  if (ctx.isAgentRunning && ctx.onQueue) {
     ctx.handleQueueMessage();
     return;
   }
-  ctx.handleSendMessage();
+  ctx.handleSendMessage(
+    resolveSendNowBehavior({
+      sendBehavior: ctx.defaultSendBehavior,
+      alternateSendBehavior: ctx.alternateSendBehavior,
+    }),
+  );
 }
 
-export type AlternateSendAction = "queue" | "send";
+export function runDefaultSendAction(ctx: SendActionContext): void {
+  runSendAction(ctx.defaultSendBehavior, ctx);
+}
 
 /**
  * What Mod+Enter and a long-press on Send do instead of the default send. Null while
  * no turn is running, where both fall back to the default send.
  */
 export function resolveAlternateSendAction(
-  ctx: Pick<SendActionContext, "defaultSendBehavior" | "isAgentRunning" | "onQueue">,
-): AlternateSendAction | null {
+  ctx: Pick<SendActionContext, "alternateSendBehavior" | "isAgentRunning" | "onQueue">,
+): SendBehavior | null {
   if (!ctx.isAgentRunning || !ctx.onQueue) return null;
-  return ctx.defaultSendBehavior === "queue" ? "send" : "queue";
+  return ctx.alternateSendBehavior;
 }
 
 export function runAlternateSendAction(ctx: SendActionContext): void {
-  const action = resolveAlternateSendAction(ctx);
-  if (action === "queue") {
-    ctx.handleQueueMessage();
-    return;
-  }
-  if (action === "send") {
-    ctx.handleSendMessage();
-    return;
-  }
-  runDefaultSendAction(ctx);
+  runSendAction(resolveAlternateSendAction(ctx) ?? ctx.defaultSendBehavior, ctx);
 }
 
 export type MessageInputEnterAction = "alternate-send" | "default-send";
@@ -262,4 +285,46 @@ export function resolveRetainedSelection(
   const end = Math.min(Math.max(retained.end, 0), textLength);
   const start = Math.min(Math.max(retained.start, 0), end);
   return { start, end };
+}
+
+/** The phone default. A desktop default never drops below it either. */
+const COMPOSER_DEFAULT_MAX_INPUT_HEIGHT = 160;
+const WIDE_DEFAULT_MAX_INPUT_RATIO = 1 / 3;
+// A dragged composer still leaves room to see the conversation it answers.
+const MAX_INPUT_CEILING_RATIO = 0.8;
+
+/** Holds an input height between one line and 80% of the window. */
+export function clampComposerInputHeight(
+  height: number,
+  bounds: { windowHeight: number; minHeight: number },
+): number {
+  const floored = Math.max(bounds.minHeight, Math.round(height));
+  // Before the first layout the window can report 0; only the floor applies then.
+  if (!(bounds.windowHeight > 0)) return floored;
+  const ceiling = Math.max(
+    bounds.minHeight,
+    Math.floor(bounds.windowHeight * MAX_INPUT_CEILING_RATIO),
+  );
+  return Math.min(ceiling, floored);
+}
+
+/**
+ * How tall the input may grow before it scrolls. A size the user dragged wins
+ * over the layout default; either way the window bounds it, so a size saved in
+ * a tall window still fits a short one.
+ */
+export function resolveComposerMaxInputHeight(input: {
+  windowHeight: number;
+  compact: boolean;
+  minHeight: number;
+  preferredHeight: number | null;
+}): number {
+  const defaultHeight =
+    input.compact || !(input.windowHeight > 0)
+      ? COMPOSER_DEFAULT_MAX_INPUT_HEIGHT
+      : Math.max(
+          COMPOSER_DEFAULT_MAX_INPUT_HEIGHT,
+          Math.floor(input.windowHeight * WIDE_DEFAULT_MAX_INPUT_RATIO),
+        );
+  return clampComposerInputHeight(input.preferredHeight ?? defaultHeight, input);
 }

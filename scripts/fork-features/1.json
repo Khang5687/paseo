@@ -1,0 +1,5 @@
+{
+  "pr": 1,
+  "title": "fix(omp): settle /compact when OMP replies without compaction events",
+  "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
+}

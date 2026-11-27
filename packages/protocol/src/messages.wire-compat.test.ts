@@ -13,6 +13,7 @@ import {
   WorkspaceSetupSnapshotSchema,
   WorkspaceSetupProgressMessageSchema,
   AgentTimelineEntryPayloadSchema,
+  SessionInboundMessageSchema,
   CheckoutStatusResponseSchema,
   BranchSuggestionsRequestSchema,
   WorkspaceBaseBranchSetRequestSchema,
@@ -528,6 +529,92 @@ test("blocked setup preserves the legacy failed shape and optional provenance", 
   );
 });
 
+describe("agent message queue", () => {
+  test("snapshots without queuedMessages still parse, and old clients ignore the new field", () => {
+    const base = {
+      id: "agent-1",
+      provider: "codex",
+      cwd: "/workspace",
+      status: "idle",
+      model: "gpt-5",
+      lastUserMessageAt: null,
+      createdAt: "2026-10-02T00:00:00.000Z",
+      updatedAt: "2026-10-02T00:00:00.000Z",
+      capabilities: {
+        supportsStreaming: true,
+        supportsSessionPersistence: true,
+        supportsDynamicModes: false,
+        supportsMcpServers: false,
+        supportsReasoningStream: false,
+        supportsToolInvocations: true,
+        supportsRewindConversation: false,
+        supportsRewindFiles: false,
+        supportsRewindBoth: false,
+      },
+      currentModeId: null,
+      availableModes: [],
+      pendingPermissions: [],
+      persistence: null,
+      title: null,
+      labels: {},
+    };
+    expect(AgentSnapshotPayloadSchema.parse(base)).toMatchObject(base);
+
+    const withQueue = {
+      ...base,
+      queuedMessages: [
+        {
+          id: "q-1",
+          text: "after this, run the tests",
+          imageCount: 0,
+          attachmentCount: 1,
+          createdAt: "2026-10-02T00:00:01.000Z",
+        },
+      ],
+    };
+    expect(AgentSnapshotPayloadSchema.parse(withQueue)).toMatchObject(withQueue);
+    // The pre-queue snapshot shape (copied from v0.9) must still accept the new payload.
+    const LegacyAgentSnapshotSchema = AgentSnapshotPayloadSchema.omit({ queuedMessages: true });
+    expect(LegacyAgentSnapshotSchema.parse(withQueue)).not.toHaveProperty("queuedMessages");
+  });
+
+  test("queue RPC request/response pairs round-trip", () => {
+    const add = {
+      type: "agent.queue.add.request",
+      requestId: "r1",
+      agentId: "agent-1",
+      text: "queued text",
+      attachments: [{ type: "text", mimeType: "text/plain", title: "note", text: "context" }],
+    };
+    expect(SessionInboundMessageSchema.parse(add)).toEqual(add);
+    const remove = {
+      type: "agent.queue.remove.response",
+      payload: {
+        requestId: "r2",
+        agentId: "agent-1",
+        message: {
+          id: "q-1",
+          text: "queued text",
+          createdAt: "2026-10-02T00:00:01.000Z",
+          images: [],
+          attachments: [{ type: "text", mimeType: "text/plain", title: "note", text: "context" }],
+        },
+        success: true,
+        error: null,
+      },
+    };
+    expect(SessionOutboundMessageSchema.parse(remove)).toEqual(remove);
+    const sendNow = {
+      type: "agent.queue.send_now.request",
+      requestId: "r3",
+      agentId: "agent-1",
+      messageId: "q-1",
+      activeTurnBehavior: "steer",
+    };
+    expect(SessionInboundMessageSchema.parse(sendNow)).toEqual(sendNow);
+  });
+});
+
 test("usage login errors are additive and older reports still parse", () => {
   const entry = {
     id: "codex:account",
@@ -573,6 +660,50 @@ test("usage login errors are additive and older reports still parse", () => {
   expect(SessionOutboundMessageSchema.parse(oldMessage)).toEqual(oldMessage);
   expect(SessionOutboundMessageSchema.parse(newMessage)).toEqual(newMessage);
   expect(legacy.parse(newMessage)).toEqual(oldMessage);
+});
+
+test("usage subscription metadata is optional, nullable-unknown and strictly typed", () => {
+  const legacyEntry = {
+    id: "claude:a",
+    account: {},
+    fetchedAt: "2026-10-05T00:00:00.000Z",
+    sourceId: "claude",
+    sourceLabel: "Claude",
+    report: { status: "available", windows: [] },
+  };
+  const message = (report: unknown) => ({
+    type: "usage.list_reports.update",
+    payload: { requestId: "usage", report },
+  });
+  const extended = {
+    ...legacyEntry,
+    report: {
+      status: "available",
+      windows: [],
+      quotaIdentity: { accountUuid: "a", organizationUuid: "o" },
+      subscription: {
+        subscriptionType: null,
+        rateLimitTier: "max_5x",
+        observedAt: null,
+        source: "claude-supported-login",
+      },
+    },
+  };
+  expect(SessionOutboundMessageSchema.parse(message(legacyEntry))).toEqual(message(legacyEntry));
+  expect(SessionOutboundMessageSchema.parse(message(extended))).toEqual(message(extended));
+  const bad = [
+    { ...legacyEntry, report: { ...extended.report, quotaIdentity: { accountUuid: "a" } } },
+    {
+      ...legacyEntry,
+      report: {
+        ...extended.report,
+        subscription: { ...extended.report.subscription, source: "x" },
+      },
+    },
+  ];
+  for (const report of bad) {
+    expect(SessionOutboundMessageSchema.safeParse(message(report)).success).toBe(false);
+  }
 });
 
 test("usage entries accept older failures and additive successful snapshots", () => {

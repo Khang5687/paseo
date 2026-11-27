@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useAppSettings } from "@/hooks/use-settings";
 import type { AppSettings } from "@/hooks/use-settings/storage";
 import { useInstalledPlugins } from "@/plugins/registry";
@@ -31,10 +32,11 @@ export function useSidebarNavItems<Section extends SidebarSection>(
   const field = PREFERENCE_FIELDS[section];
   const preferences = settings[field];
   const pluginGroups = useMemo(() => groupPluginSidebarItems(plugins, section), [plugins, section]);
+  const compact = useIsCompactFormFactor();
 
   const items = useMemo(
-    () => resolveSidebarNavItems({ section, pluginGroups, preferences }),
-    [pluginGroups, preferences, section],
+    () => resolveSidebarNavItems({ section, pluginGroups, preferences, compact }),
+    [compact, pluginGroups, preferences, section],
   );
 
   const setVisible = useCallback(
@@ -45,13 +47,14 @@ export function useSidebarNavItems<Section extends SidebarSection>(
           section,
           pluginGroups,
           preferences: previous,
+          compact,
         });
         return {
           [field]: setSidebarNavItemVisible({ items: currentItems, key, visible, previous }),
         };
       });
     },
-    [field, pluginGroups, section, updateSettings],
+    [compact, field, pluginGroups, section, updateSettings],
   );
 
   const move = useCallback(
@@ -62,13 +65,14 @@ export function useSidebarNavItems<Section extends SidebarSection>(
           section,
           pluginGroups,
           preferences: previous,
+          compact,
         });
         return {
           [field]: moveSidebarNavItem({ items: currentItems, key, direction, previous }),
         };
       });
     },
-    [field, pluginGroups, section, updateSettings],
+    [compact, field, pluginGroups, section, updateSettings],
   );
 
   return { items, setVisible, move };

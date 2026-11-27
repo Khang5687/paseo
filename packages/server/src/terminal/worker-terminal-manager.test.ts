@@ -1691,8 +1691,8 @@ async function leaveWorkerWithTerminal(
   };
 }
 
-it.each([1, 4])(
-  "hard cuts unreleased worker protocol %s, closing its terminals",
+it.each([1, 4, 5])(
+  "hard cuts obsolete worker protocol %s, closing its terminals",
   async (version) => {
     const paseoHome = createTemporaryHome();
     const old = await leaveWorkerWithTerminal(paseoHome, version);
@@ -1718,19 +1718,19 @@ it.each([1, 4])(
     expect(manager.getTerminal(old.terminalId)).toBeUndefined();
     const workers = await workerRecords(paseoHome);
     expect(workers).toHaveLength(1);
-    expect(workers[0]!.protocolVersion).toBe(6);
+    expect(workers[0]!.protocolVersion).toBe(TERMINAL_WORKER_PROTOCOL_VERSION);
   },
 );
 
 it("leaves a worker from a newer Paseo running, reports it incompatible, and closes it on a kill stop", async () => {
   const paseoHome = createTemporaryHome();
-  const newer = await leaveWorkerWithTerminal(paseoHome, 7);
+  const newer = await leaveWorkerWithTerminal(paseoHome, TERMINAL_WORKER_PROTOCOL_VERSION + 1);
 
   manager = await startRealWorkerManager({ paseoHome });
 
   const unavailable = manager.getUnavailableError?.();
   expect(unavailable).toBeInstanceOf(TerminalWorkerIncompatibleError);
-  expect(unavailable?.message).toContain("worker protocol 7");
+  expect(unavailable?.message).toContain(`worker protocol ${TERMINAL_WORKER_PROTOCOL_VERSION + 1}`);
   await expect(manager.getTerminals(newer.cwd)).rejects.toBeInstanceOf(
     TerminalWorkerIncompatibleError,
   );
@@ -2852,6 +2852,34 @@ it("adopts terminals over the authenticated socket after a daemon restart", asyn
   expect(adopted).toBeDefined();
   await expectEcho(adopted!, "adopted:", "after-restart");
   expect(await workerRecords(paseoHome)).toHaveLength(1);
+}, 30000);
+
+it("keeps each terminal's chat owner, and owner moves, across a daemon restart", async () => {
+  const paseoHome = createTemporaryHome();
+  const first = await startRealWorkerManager({ paseoHome });
+  const drawer = await first.createTerminal({
+    workspaceId: "ws-owner",
+    cwd: paseoHome,
+    ownerAgentId: "agent-a",
+    ...echoTerminalCommand("drawer:"),
+  });
+  const tab = await first.createTerminal({
+    workspaceId: "ws-owner",
+    cwd: paseoHome,
+    ...echoTerminalCommand("tab:"),
+  });
+  expect(drawer.getOwnerAgentId()).toBe("agent-a");
+  expect(tab.getOwnerAgentId()).toBeNull();
+
+  // Pop the drawer terminal out to a tab, and move the tab terminal into another chat's drawer.
+  expect(first.setTerminalOwner(drawer.id, null)).toBe(true);
+  expect(first.setTerminalOwner(tab.id, "agent-b")).toBe(true);
+  await first.detach({ afterPendingRequests: true });
+
+  manager = await startRealWorkerManager({ paseoHome });
+
+  expect(manager.getTerminal(drawer.id)?.getOwnerAgentId()).toBeNull();
+  expect(manager.getTerminal(tab.id)?.getOwnerAgentId()).toBe("agent-b");
 }, 30000);
 
 it("closes terminals and their worker through authenticated shutdown", async () => {

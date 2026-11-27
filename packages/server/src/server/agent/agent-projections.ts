@@ -1,6 +1,8 @@
 import { isSameOrDescendantPath } from "../path-utils.js";
 import type {
   AgentListItemPayload,
+  AgentQueuedMessagePayload,
+  AgentQueuedMessageSummaryPayload,
   AgentSnapshotPayload,
   RecentProviderSessionDescriptorPayload,
 } from "../messages.js";
@@ -105,14 +107,16 @@ export function toStoredAgentRecord(
     persistence,
     ...projectSessionMetrics(agent.sessionMetrics),
     lastError: agent.lastError ?? undefined,
-    requiresAttention: agent.attention.requiresAttention,
-    attentionReason: agent.attention.requiresAttention ? agent.attention.attentionReason : null,
-    attentionTimestamp: agent.attention.requiresAttention
-      ? agent.attention.attentionTimestamp.toISOString()
-      : null,
+    ...projectAttention(agent.attention),
     internal: options?.internal,
     ...(agent.background ? { background: true } : {}),
     owner: agent.owner,
+    queuedMessages: agent.queuedMessages,
+    ...projectOpenQuestions(agent.openQuestions),
+    ...(agent.queuePaused ? { queuePaused: true } : {}),
+    ...(agent.queuePaused && agent.queuePauseReason
+      ? { queuePauseReason: agent.queuePauseReason }
+      : {}),
   } satisfies StoredAgentRecord;
 }
 
@@ -167,6 +171,8 @@ export function toAgentPayload(
     labels: agent.labels,
     metadata: agent.metadata,
     archivedAt: options?.archivedAt ?? null,
+    ...projectStoredQueue(agent),
+    ...projectOpenQuestions(agent.openQuestions),
     ...visibilityFlags(agent),
     ...projectSessionMetrics(agent.sessionMetrics),
   };
@@ -185,17 +191,33 @@ export function toAgentPayload(
     payload.lastError = agent.lastError;
   }
 
-  // Handle attention state
-  payload.requiresAttention = agent.attention.requiresAttention;
-  if (agent.attention.requiresAttention) {
-    payload.attentionReason = agent.attention.attentionReason;
-    payload.attentionTimestamp = agent.attention.attentionTimestamp.toISOString();
-  } else {
-    payload.attentionReason = null;
-    payload.attentionTimestamp = null;
-  }
+  return Object.assign(payload, projectAttention(agent.attention));
+}
 
-  return payload;
+type AttentionPayload = Pick<
+  AgentSnapshotPayload,
+  "requiresAttention" | "attentionReason" | "attentionTimestamp" | "awaitingAnswer"
+>;
+
+function projectAttention(attention: ManagedAgent["attention"]): AttentionPayload {
+  if (!attention.requiresAttention) {
+    return { requiresAttention: false, attentionReason: null, attentionTimestamp: null };
+  }
+  return {
+    requiresAttention: true,
+    attentionReason: attention.attentionReason,
+    attentionTimestamp: attention.attentionTimestamp.toISOString(),
+    ...(attention.awaitingAnswer ? { awaitingAnswer: true } : {}),
+  };
+}
+
+// The flag only means something on the unread finish it was recorded with.
+function projectStoredAwaitingAnswer(
+  record: StoredAgentRecord,
+): Pick<AttentionPayload, "awaitingAnswer"> {
+  return record.requiresAttention && record.attentionReason === "finished" && record.awaitingAnswer
+    ? { awaitingAnswer: true }
+    : {};
 }
 
 function buildStoredRuntimeInfo(record: StoredAgentRecord): AgentRuntimeInfo | undefined {
@@ -326,13 +348,49 @@ export function buildStoredAgentPayload(
     requiresAttention: record.requiresAttention ?? false,
     attentionReason: record.attentionReason ?? null,
     attentionTimestamp: record.attentionTimestamp ?? null,
+    ...projectStoredAwaitingAnswer(record),
     archivedAt: record.archivedAt ?? null,
     ...visibilityFlags(record),
     labels: normalizeLabels(record.labels),
+    ...projectStoredQueue(record),
+    ...projectOpenQuestions(record.openQuestions),
     metadata: record.metadata,
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...projectSessionMetrics(record.sessionMetrics),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
+  };
+}
+
+function projectStoredQueue(
+  record: Pick<StoredAgentRecord, "queuedMessages" | "queuePaused" | "queuePauseReason">,
+): Pick<AgentSnapshotPayload, "queuedMessages" | "queuePaused" | "queuePauseReason"> {
+  return {
+    queuedMessages: (record.queuedMessages ?? []).map(summarizeQueuedMessage),
+    ...(record.queuePaused ? { queuePaused: true } : {}),
+    ...(record.queuePaused && record.queuePauseReason
+      ? { queuePauseReason: record.queuePauseReason }
+      : {}),
+  };
+}
+
+// An agent with nothing open carries no field, so old records and snapshots stay unchanged.
+function projectOpenQuestions(
+  questions: AgentSnapshotPayload["openQuestions"],
+): Pick<AgentSnapshotPayload, "openQuestions"> {
+  return questions?.length ? { openQuestions: questions } : {};
+}
+
+// Snapshots carry summaries only: image bytes stay in the record and are
+// replayed by the daemon on dispatch.
+export function summarizeQueuedMessage(
+  message: AgentQueuedMessagePayload,
+): AgentQueuedMessageSummaryPayload {
+  return {
+    id: message.id,
+    text: message.text,
+    imageCount: message.images.length,
+    attachmentCount: message.attachments.length,
+    createdAt: message.createdAt,
   };
 }
 
@@ -348,6 +406,7 @@ export function toAgentListItemPayload(agent: AgentSnapshotPayload): AgentListIt
     status: agent.status,
     ...(agent.backgroundWork ? { backgroundWork: agent.backgroundWork } : {}),
     cwd: agent.cwd,
+    ...(agent.workspaceId ? { workspaceId: agent.workspaceId } : {}),
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
     lastUserMessageAt: agent.lastUserMessageAt,
@@ -400,24 +459,33 @@ function compareAgentListItems(a: AgentListItemPayload, b: AgentListItemPayload)
   return resolveAgentListActivityTime(b) - resolveAgentListActivityTime(a);
 }
 
-export function selectAgentListItems(
+export const DEFAULT_AGENT_LIST_LIMIT = 20;
+
+export interface AgentListSelection {
+  cwd?: string;
+  statuses?: AgentSnapshotPayload["status"][];
+  sinceHours?: number;
+  limit?: number;
+  /** Case-insensitive substring of the agent title. */
+  query?: string;
+}
+
+export function selectAgentListPage(
   agents: readonly AgentSnapshotPayload[],
-  options: {
-    cwd?: string;
-    statuses?: AgentSnapshotPayload["status"][];
-    sinceHours?: number;
-    limit?: number;
-  } = {},
-): AgentListItemPayload[] {
+  options: AgentListSelection = {},
+): { agents: AgentListItemPayload[]; more: number } {
   const statusFilter = options.statuses?.length ? new Set(options.statuses) : null;
   const sinceMs = Date.now() - (options.sinceHours ?? 48) * 60 * 60 * 1000;
-  return agents
+  const query = options.query?.trim().toLowerCase();
+  const limit = options.limit ?? DEFAULT_AGENT_LIST_LIMIT;
+  const matches = agents
     .map(toAgentListItemPayload)
     .filter((agent) => !options.cwd || isSameOrDescendantPath(options.cwd, agent.cwd))
     .filter((agent) => !statusFilter || statusFilter.has(agent.status))
+    .filter((agent) => !query || (agent.title ?? "").toLowerCase().includes(query))
     .filter((agent) => !agent.archivedAt || resolveAgentListActivityTime(agent) >= sinceMs)
-    .sort(compareAgentListItems)
-    .slice(0, options.limit ?? 50);
+    .sort(compareAgentListItems);
+  return { agents: matches.slice(0, limit), more: Math.max(0, matches.length - limit) };
 }
 
 export function toRecentProviderSessionDescriptorPayload(

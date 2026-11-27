@@ -62,8 +62,17 @@ async function expectFooterRow(page: Page, row: Locator) {
     .toEqual({ aboveBottomLine: true, alignedLeft: true, alignedRight: true });
 }
 
+function botRowTestId(rowId: string): string {
+  return `plugin-sidebar-${BOTS_PLUGIN_ID}-bots-${rowId}`;
+}
+
 function botRow(page: Page, rowId: string): Locator {
-  return headerRow(page, BOTS_PLUGIN_ID, `bots-${rowId}`);
+  return visibleTestId(page, botRowTestId(rowId));
+}
+
+/** A button the phone's icon row had no room for, as a row of its More sheet. */
+function moreItem(page: Page, buttonTestId: string): Locator {
+  return visibleTestId(page, `sidebar-nav-more-item-${buttonTestId}`);
 }
 
 async function boxOf(locator: Locator) {
@@ -177,26 +186,27 @@ test.describe("Plugin sidebar items", () => {
     await cleanup();
   });
 
-  test("a short compact sidebar keeps workspaces usable while navigation scrolls", async ({
+  test("a short compact sidebar keeps its buttons on one line and the rest in More", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 600 });
     await gotoAppShell(page);
     await page.getByRole("button", { name: "Open menu", exact: true }).first().click();
-    await expect(botRow(page, "status")).toBeAttached();
     const workspace = visibleTestId(page, `sidebar-workspace-row-${getServerId()}:${workspaceId}`);
     await expect(workspace).toBeInViewport({ ratio: 1 });
 
-    await test.step("scrolling navigation reaches its last row without moving workspaces", async () => {
+    await test.step("the last plugin button opens from More without moving workspaces", async () => {
       const before = await boxOf(workspace);
-      await visibleTestId(page, "sidebar-global-new-workspace").hover();
-      await page.mouse.wheel(0, 800);
-      await expect(botRow(page, "status")).toBeInViewport({ ratio: 1 });
-      await expect(workspace).toBeInViewport({ ratio: 1 });
-      expect((await boxOf(workspace)).y).toBe(before.y);
-      await botRow(page, "status").click();
+      const row = await boxOf(visibleTestId(page, "sidebar-nav-icon-row"));
+      const more = visibleTestId(page, "sidebar-nav-more");
+      expect(row.height).toBeLessThan(60);
+      await expect(botRow(page, "status")).toHaveCount(0);
+      await more.click();
+      await moreItem(page, botRowTestId("status")).click();
       await expect(page.getByText("Bot status details", { exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Close bot status", exact: true }).click();
+      await expect(workspace).toBeInViewport({ ratio: 1 });
+      expect((await boxOf(workspace)).y).toBe(before.y);
     });
 
     await test.step("the workspace still opens and closes the sidebar", async () => {
@@ -346,10 +356,12 @@ test.describe("Plugin sidebar items", () => {
       const compactSync = footerItem(page, SHOWCASE_PLUGIN_ID, "sync");
       await expect(compactSync).toBeInViewport();
       await expectFooterRow(page, compactSync);
-      // The compact nav block is capped at half the sidebar and scrolls past it.
-      const compactDeploys = headerRow(page, SHOWCASE_PLUGIN_ID, "deploys");
-      await compactDeploys.scrollIntoViewIfNeeded();
-      await expect(compactDeploys).toBeInViewport();
+      // The phone row stays one line; Deploys is past what fits, so it waits in More.
+      await expect(headerRow(page, SHOWCASE_PLUGIN_ID, "deploys")).toHaveCount(0);
+      await visibleTestId(page, "sidebar-nav-more").click();
+      await expect(moreItem(page, `plugin-sidebar-${SHOWCASE_PLUGIN_ID}-deploys`)).toBeVisible();
+      await page.getByRole("button", { name: "Bottom sheet backdrop", exact: true }).click();
+      await expect(moreItem(page, `plugin-sidebar-${SHOWCASE_PLUGIN_ID}-deploys`)).toHaveCount(0);
       await qaScreenshot(page, "phase2-compact-sidebar");
       await qaScreenshot(page, "phase5-compact-footer", sidebarFooter(page));
       await compactSync.click();
@@ -574,11 +586,12 @@ test.describe("Plugin sidebar items", () => {
       await leaveSettings(page);
     });
 
-    await test.step("the compact sidebar shows the same group", async () => {
+    await test.step("the compact sidebar lists the same group in More", async () => {
       await page.setViewportSize(COMPACT);
       await page.getByRole("button", { name: "Open menu", exact: true }).first().click();
-      await expect(botRow(page, "bot-1")).toBeInViewport();
-      await expect(botRow(page, "status")).toBeInViewport();
+      await visibleTestId(page, "sidebar-nav-more").click();
+      await expect(moreItem(page, botRowTestId("bot-1"))).toBeInViewport();
+      await expect(moreItem(page, botRowTestId("status"))).toBeInViewport();
       await qaScreenshot(page, "phase6-compact-sidebar-bots");
     });
   });

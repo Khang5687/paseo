@@ -6,6 +6,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { VoiceSession, type VoiceSessionHost } from "./voice-session.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
+import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
 import type { SessionOutboundMessage } from "../../messages.js";
 import type {
   SpeechToTextProvider,
@@ -62,17 +63,31 @@ interface FakeVoiceHost extends VoiceSessionHost {
   readonly spokenInput: Array<{ agentId: string; text: string }>;
   readonly reloadedAgentIds: string[];
   speakUnavailable: string | null;
+  readonly speakToolReady: boolean[];
+  readonly reloads: Array<Partial<AgentSessionConfig>>;
+  /** Starts or ends the agent's run; ending it releases every waitForAgentIdle. */
+  setRunActive(active: boolean): void;
 }
 
 function createFakeHost(): FakeVoiceHost {
   const emitted: SessionOutboundMessage[] = [];
   const spokenInput: Array<{ agentId: string; text: string }> = [];
   const reloadedAgentIds: string[] = [];
+  const speakToolReady: boolean[] = [];
+  const reloads: Array<Partial<AgentSessionConfig>> = [];
+  const idleWaiters: Array<() => void> = [];
+  let runActive = false;
   const host: FakeVoiceHost = {
     emitted,
     spokenInput,
     reloadedAgentIds,
     speakUnavailable: null,
+    speakToolReady,
+    reloads,
+    setRunActive: (active) => {
+      runActive = active;
+      if (!active) for (const release of idleWaiters.splice(0)) release();
+    },
     emit: (msg) => {
       emitted.push(msg);
     },
@@ -83,15 +98,22 @@ function createFakeHost(): FakeVoiceHost {
         config: { systemPrompt: undefined },
       }) as unknown as ManagedAgent,
     speakToolUnavailableReason: () => host.speakUnavailable,
-    reloadAgentSession: async (agentId) => {
+    reloadAgentSession: async (agentId, overrides) => {
       reloadedAgentIds.push(agentId);
+      reloads.push(overrides);
       return { id: agentId } as unknown as ManagedAgent;
     },
-    sendSpokenInput: async (agentId, text) => {
+    sendSpokenInput: async (agentId, text, options) => {
       spokenInput.push({ agentId, text });
+      speakToolReady.push(options.speakToolReady);
     },
-    interruptAgentIfRunning: async () => {},
-    hasActiveAgentRun: () => false,
+    interruptAgentIfRunning: vi.fn(async () => {}),
+    hasActiveAgentRun: () => runActive,
+    waitForAgentIdle: (_agentId, signal) =>
+      new Promise<void>((resolve) => {
+        idleWaiters.push(resolve);
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      }),
   };
   return host;
 }
@@ -150,19 +172,15 @@ async function settle(): Promise<void> {
 }
 
 describe("VoiceSession streaming transcription", () => {
-  test("interrupts playback and the agent on speech detection without partial transcripts", async () => {
+  test("speech detection stops playback but leaves the agent's run alone", async () => {
     const tts: TextToSpeechProvider = {
       async synthesizeSpeech() {
         return { stream: Readable.from([Buffer.from("audio")]), format: "pcm;rate=24000" };
       },
     };
     const { voiceSession, detector, host, speak } = createVoiceSession(tts);
-    const interrupted: string[] = [];
-    async function recordInterruption(agentId: string) {
-      interrupted.push(agentId);
-    }
-    host.interruptAgentIfRunning = recordInterruption;
     await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    host.setRunActive(true);
     const playback = speak({ text: "A spoken response." });
     try {
       await waitForAudioOutput(host);
@@ -172,8 +190,143 @@ describe("VoiceSession streaming transcription", () => {
         type: "voice_input_state",
         payload: { isSpeaking: true },
       });
-      expect(interrupted).toEqual([VOICE_AGENT_ID]);
+      // Playback only resolves once the client confirms it or it is cancelled.
       await playback;
+      expect(host.interruptAgentIfRunning).not.toHaveBeenCalled();
+    } finally {
+      await voiceSession.cleanup();
+      await playback.catch(() => {});
+    }
+  });
+
+  test("an explicit abort request stops playback and interrupts the agent's run", async () => {
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech() {
+        return { stream: Readable.from([Buffer.from("audio")]), format: "pcm;rate=24000" };
+      },
+    };
+    const { voiceSession, host, speak } = createVoiceSession(tts);
+    host.interruptAgentIfRunning = vi.fn(async () => {});
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    const playback = speak({ text: "A spoken response." });
+    try {
+      await waitForAudioOutput(host);
+      await voiceSession.handleAbort();
+      await playback;
+      expect(host.interruptAgentIfRunning).toHaveBeenCalledWith(VOICE_AGENT_ID);
+    } finally {
+      await voiceSession.cleanup();
+      await playback.catch(() => {});
+    }
+  });
+
+  test("a spoken turn during a run reaches the agent without interrupting it", async () => {
+    const { voiceSession, detector, sttSession, host } = createVoiceSession();
+    host.interruptAgentIfRunning = vi.fn(async () => {});
+
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    host.setRunActive(true);
+    detector.emit("speech_started");
+    await settle();
+    detector.emit("speech_stopped");
+    await settle();
+    sttSession.emitCommitted({ segmentId: "segment-1", previousSegmentId: null });
+    sttSession.emitTranscript({
+      segmentId: "segment-1",
+      transcript: "also check the logs",
+      isFinal: true,
+      avgLogprob: -0.1,
+      isLowConfidence: false,
+    });
+    await settle();
+
+    expect(host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "also check the logs" }]);
+    expect(host.interruptAgentIfRunning).not.toHaveBeenCalled();
+
+    await voiceSession.cleanup();
+  });
+
+  test("voice mode started during a run waits for the run to end before reloading the agent", async () => {
+    const { voiceSession, host } = createVoiceSession();
+    host.setRunActive(true);
+
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    await settle();
+    expect(host.reloads).toEqual([]);
+    expect(host.interruptAgentIfRunning).not.toHaveBeenCalled();
+
+    host.setRunActive(false);
+    await vi.waitFor(() => expect(host.reloads).toHaveLength(1));
+    expect(host.reloads[0]?.systemPrompt).toContain("Paseo voice mode is now on.");
+
+    await voiceSession.cleanup();
+  });
+
+  test("a spoken turn before the deferred voice prompt lands is sent without the speak tool", async () => {
+    const { voiceSession, detector, sttSession, host } = createVoiceSession();
+    host.setRunActive(true);
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+
+    detector.emit("speech_started");
+    await settle();
+    detector.emit("speech_stopped");
+    await settle();
+    sttSession.emitCommitted({ segmentId: "segment-1", previousSegmentId: null });
+    sttSession.emitTranscript({
+      segmentId: "segment-1",
+      transcript: "keep going",
+      isFinal: true,
+      avgLogprob: -0.1,
+      isLowConfidence: false,
+    });
+    await settle();
+    expect(host.speakToolReady).toEqual([false]);
+
+    host.setRunActive(false);
+    await vi.waitFor(() => expect(host.reloads).toHaveLength(1));
+    await voiceSession.cleanup();
+  });
+
+  test("turning voice mode off during a run neither interrupts it nor reloads before it ends", async () => {
+    const { voiceSession, host } = createVoiceSession();
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    expect(host.reloads).toHaveLength(1);
+    host.setRunActive(true);
+
+    await voiceSession.handleSetVoiceMode(false);
+    expect(host.reloads).toHaveLength(1);
+    expect(host.interruptAgentIfRunning).not.toHaveBeenCalled();
+
+    host.setRunActive(false);
+    await vi.waitFor(() => expect(host.reloads).toHaveLength(2));
+    expect(host.reloads[1]?.systemPrompt).toContain("Paseo voice mode is now off.");
+  });
+
+  test("the agent's next spoken reply still plays after speech that produced no transcript", async () => {
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech() {
+        return { stream: Readable.from([Buffer.from("audio")]), format: "pcm;rate=24000" };
+      },
+    };
+    const { voiceSession, detector, sttSession, host, speak } = createVoiceSession(tts);
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    detector.emit("speech_started");
+    await settle();
+    detector.emit("speech_stopped");
+    await settle();
+    sttSession.emitCommitted({ segmentId: "segment-1", previousSegmentId: null });
+    sttSession.emitTranscript({
+      segmentId: "segment-1",
+      transcript: "background noise",
+      isFinal: true,
+      avgLogprob: -2.5,
+      isLowConfidence: true,
+    });
+    await settle();
+
+    const playback = speak({ text: "Still working on it." });
+    try {
+      await waitForAudioOutput(host);
     } finally {
       await voiceSession.cleanup();
       await playback.catch(() => {});

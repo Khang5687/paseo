@@ -124,7 +124,8 @@ test("focusing the feed preserves assistant text selection and code copy control
 
     const code = feed.locator('[data-paseo-markdown-language="bash"]');
     await code.hover();
-    await code.locator("[data-paseo-markdown-ignore]").click();
+    // A bash block also has a Run button; both controls sit outside the copied text.
+    await code.getByRole("button", { name: "Copy code" }).click();
     await expect(feed).not.toBeFocused();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("echo example");
     await expectComposerDraft(page, "Keep this draft");

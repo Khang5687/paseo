@@ -128,6 +128,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;
@@ -409,8 +411,23 @@ export interface AgentTaskItem {
   activeForm?: string;
 }
 
+/**
+ * A file the daemon saved for a user message and named in the prompt as `[Image #N]: <path>` or
+ * `[File #N]: <path>`. `label` is the token without brackets, as typed in the text.
+ */
+export interface UserMessageAttachmentFile {
+  label: string;
+  path: string;
+}
+
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      attachmentFiles?: UserMessageAttachmentFile[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem
@@ -511,6 +528,34 @@ export interface AgentPermissionRequest {
   suggestions?: AgentPermissionUpdate[];
   actions?: AgentPermissionAction[];
   metadata?: AgentMetadata;
+  // COMPAT(questionBoxDrafts): fork. Absent until someone picks something in a question box.
+  draftAnswers?: AgentPermissionDraft;
+}
+
+/** A file attached to a question box answer, already uploaded to the host. */
+export interface AgentPermissionDraftFile {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  path: string;
+}
+
+/** One question's half answer in a question box: option indexes, typed words, files. */
+export interface AgentPermissionDraftAnswer {
+  selected: number[];
+  text: string;
+  files: AgentPermissionDraftFile[];
+}
+
+/**
+ * The picks of a half-filled question box (`kind: "question"`), kept on the pending permission
+ * so every device shows them. Keyed by question index. The newer `updatedAt` wins.
+ */
+export interface AgentPermissionDraft {
+  answers: Record<string, AgentPermissionDraftAnswer>;
+  /** Ms since epoch, as on question answers. */
+  updatedAt: number;
 }
 
 export type AgentPermissionResponse =

@@ -1,0 +1,6 @@
+{
+  "pr": 186,
+  "title": "Peek and answer a waiting project's question from the rail or its chip",
+  "tests": ["packages/app/src/needs-you/model.test.ts"],
+  "e2e": ["packages/app/e2e/browser/project-peek.spec.ts"]
+}

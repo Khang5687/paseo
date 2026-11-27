@@ -15,6 +15,7 @@ import {
   TerminalStreamOpcode,
 } from "@getpaseo/protocol/binary-frames/index";
 import { DaemonClient } from "./test-utils/daemon-client.js";
+import { workspaceDirectoryObserver } from "./file-explorer/directory-observer.js";
 import { createTestAgentClients } from "./test-utils/fake-agent-client.js";
 import { createTestPaseoDaemon } from "./test-utils/paseo-daemon.js";
 import { withTimeout } from "../utils/promise-timeout.js";
@@ -531,6 +532,69 @@ test("identical file observations get server IDs and release independently", asy
           version: expect.objectContaining({ status: "ready" }),
         }),
       ]);
+  } finally {
+    peer?.close();
+    await daemon.close();
+  }
+});
+
+test("directory observations report new entries and release on release and on disconnect", async () => {
+  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  let peer: SubscriptionPeer | undefined;
+  const directoryUpdates = (from: SubscriptionPeer) =>
+    from.frames.flatMap((frame) =>
+      frame.type === "session" && frame.message.type === "fs.directory.update"
+        ? [frame.message.payload]
+        : [],
+    );
+  try {
+    await mkdir(path.join(daemon.staticDir, "out"), { recursive: true });
+    peer = await SubscriptionPeer.connect(daemon.port, "directory-observers");
+    await peer.request({
+      type: "fs.directory.subscribe.request",
+      requestId: "dir-a",
+      cwd: daemon.staticDir,
+      path: "out",
+    });
+    await peer.request({
+      type: "fs.directory.subscribe.request",
+      requestId: "dir-b",
+      cwd: daemon.staticDir,
+      path: "out",
+    });
+    await peer.request({
+      type: "fs.directory.subscribe.request",
+      requestId: "dir-missing",
+      cwd: daemon.staticDir,
+      path: "missing",
+    });
+    const snapshots = peer.frames.flatMap((frame) =>
+      frame.type === "session" && frame.message.type === "fs.directory.subscribe.response"
+        ? [frame.message.payload]
+        : [],
+    );
+    expect(snapshots.map((snapshot) => snapshot.error)).toEqual([
+      null,
+      null,
+      "Directory not found",
+    ]);
+    expect(workspaceDirectoryObserver.size).toBe(1);
+
+    await peer.request({
+      type: "subscription.release.request",
+      requestId: "release-dir-a",
+      subscriptionId: snapshots[0].subscriptionId,
+    });
+    peer.frames.length = 0;
+    await writeFile(path.join(daemon.staticDir, "out", "clip.mp4"), "video");
+    await expect
+      .poll(() => directoryUpdates(peer!), { timeout: 5000 })
+      .toEqual([
+        { subscriptionId: snapshots[1].subscriptionId, cwd: daemon.staticDir, path: "out" },
+      ]);
+
+    peer.close();
+    await expect.poll(() => workspaceDirectoryObserver.size, { timeout: 5000 }).toBe(0);
   } finally {
     peer?.close();
     await daemon.close();
