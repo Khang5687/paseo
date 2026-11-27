@@ -19,7 +19,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { router, usePathname } from "expo-router";
+import { router, usePathname, type Href } from "expo-router";
 import { type LayoutChangeEvent, ScrollView, Text, View } from "react-native";
 import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -513,7 +513,9 @@ function useOpenNeedsYou(beforeOpen?: () => void) {
   const selected = pathname === buildNeedsYouRoute();
   const open = useCallback(() => {
     beforeOpen?.();
-    router.push(buildNeedsYouRoute());
+    // Typed routes come from Metro's generated router.d.ts; a copy older than this route would
+    // reject the literal, so cast like the other route builders' callers.
+    router.push(buildNeedsYouRoute() as Href);
   }, [beforeOpen]);
   return { selected, open };
 }

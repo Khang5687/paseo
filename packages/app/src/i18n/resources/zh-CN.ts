@@ -490,6 +490,7 @@ export const zhCN: TranslationResources = {
       next: "下一步",
       answerPlaceholder: "输入你的回答...",
       otherPlaceholder: "其他...",
+      sendWhatIHave: "发送已有回答",
     },
     backgroundWork: {
       heartbeat: "心跳",

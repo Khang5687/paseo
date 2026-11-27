@@ -15,31 +15,48 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { Check, X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import type { PendingPermission } from "@/types/shared";
-import type { AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentPermissionDraft,
+  AgentPermissionDraftFile,
+  AgentPermissionResponse,
+} from "@getpaseo/protocol/agent-types";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { isWeb } from "@/constants/platform";
 import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 import { ScrollableCodeSurface } from "@/components/ui/scrollable-code-surface";
+import { AnswerFileList, AttachFilesButton } from "@/questions/answer-files";
 import {
+  NO_ANSWER_YET,
   areQuestionsAnswered,
   buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
   isOneTapQuestion,
   isQuestionAnswered,
   parseQuestionFormQuestions,
+  questionFormFromDraft,
   questionShowsTextInput,
   resolveDismissLabel,
   shouldSubmitEmptyOnDismiss,
+  type QuestionFiles,
+  type QuestionFormDraftState,
   type QuestionFormQuestion,
   type QuestionOption,
 } from "./question-form-card-core";
+import { useQuestionFormDraftSync } from "./question-form-draft";
 
 interface QuestionFormCardProps {
   permission: PendingPermission;
   onRespond: (response: AgentPermissionResponse) => void;
   isResponding: boolean;
   responseError: string | null;
+  /** Uploads the files a box's answers carry; without it the box takes no files. */
+  client?: DaemonClient | null;
+  /** Saves the box's picks for every device; absent where the host cannot keep them. */
+  onDraftChange?: (draft: AgentPermissionDraft) => void;
 }
+
+const NO_FILES: readonly AgentPermissionDraftFile[] = [];
 
 const IS_WEB = isWeb;
 // Native previews are uncapped: inside the option's Pressable, Android never hands a
@@ -498,16 +515,57 @@ function QuestionForm({
   onRespond,
   isResponding,
   responseError,
+  client,
+  onDraftChange,
 }: QuestionCardBodyProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
 
-  const [selections, setSelections] = useState<Record<number, Set<number>>>({});
-  const [otherTexts, setOtherTexts] = useState<Record<number, string>>({});
+  // Picks start from the host's draft, so a box half filled on another device opens the same.
+  const [initial] = useState(() => questionFormFromDraft(permission.request.draftAnswers));
+  const [selections, setSelections] = useState<Record<number, Set<number>>>(initial.selections);
+  const [otherTexts, setOtherTexts] = useState<Record<number, string>>(initial.otherTexts);
+  const [files, setFiles] = useState<QuestionFiles>(initial.files);
   const otherInputRef = useRef<EditingTextInputHandle | null>(null);
   const [respondingAction, setRespondingAction] = useState<"submit" | "dismiss" | null>(null);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+  const activeIndexRef = useRef(0);
+  activeIndexRef.current = activeQuestionIndex;
+  const applyRemote = useCallback((next: QuestionFormDraftState) => {
+    setSelections(next.selections);
+    setOtherTexts(next.otherTexts);
+    setFiles(next.files);
+    // The editing surface owns its text and never replays state (docs/forms.md).
+    otherInputRef.current?.replaceText(next.otherTexts[activeIndexRef.current] ?? "");
+  }, []);
+  const markEdited = useQuestionFormDraftSync({
+    selections,
+    otherTexts,
+    files,
+    remoteDraft: permission.request.draftAnswers,
+    onDraftChange,
+    applyRemote,
+  });
+  const setActiveFiles = useCallback(
+    (next: AgentPermissionDraftFile[]) => {
+      setFiles((prev) => ({ ...prev, [activeIndexRef.current]: next }));
+      markEdited();
+    },
+    [markEdited],
+  );
+  const removeActiveFile = useCallback(
+    (fileId: string) => {
+      setFiles((prev) => ({
+        ...prev,
+        [activeIndexRef.current]: (prev[activeIndexRef.current] ?? []).filter(
+          (file) => file.id !== fileId,
+        ),
+      }));
+      markEdited();
+    },
+    [markEdited],
+  );
 
   const toggleOption = useCallback(
     (qIndex: number, optIndex: number, multiSelect: boolean) => {
@@ -527,6 +585,7 @@ function QuestionForm({
       }
 
       setSelections((prev) => ({ ...prev, [qIndex]: next }));
+      markEdited();
 
       // Single-select: an option and a custom answer replace each other, as in Claude Code.
       // Multi-select keeps both. The editing surface owns its text and never replays state
@@ -541,7 +600,7 @@ function QuestionForm({
         otherInputRef.current?.replaceText("");
       }
     },
-    [otherTexts, selections],
+    [markEdited, otherTexts, selections],
   );
 
   const setOtherText = useCallback(
@@ -554,8 +613,9 @@ function QuestionForm({
           return { ...prev, [qIndex]: new Set<number>() };
         });
       }
+      markEdited();
     },
-    [questions],
+    [markEdited, questions],
   );
 
   const allAnswered = areQuestionsAnswered(questions, selections, otherTexts);
@@ -576,8 +636,8 @@ function QuestionForm({
       behavior: "allow",
       updatedInput: {
         ...permission.request.input,
-        answers: buildQuestionFormAnswers(questions, selections, otherTexts),
-        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts),
+        answers: buildQuestionFormAnswers(questions, selections, otherTexts, { files }),
+        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts, { files }),
       },
     });
   }, [
@@ -586,9 +646,26 @@ function QuestionForm({
     isResponding,
     selections,
     otherTexts,
+    files,
     onRespond,
     permission.request.input,
   ]);
+
+  // Send what I have (owner decision Q105): answered questions go as answered, the rest as
+  // "No answer yet", so the agent goes on with what it has.
+  const handleSendWhatIHave = useCallback(() => {
+    if (isResponding) return;
+    setRespondingAction("submit");
+    const extras = { files, fillUnanswered: NO_ANSWER_YET };
+    onRespond({
+      behavior: "allow",
+      updatedInput: {
+        ...permission.request.input,
+        answers: buildQuestionFormAnswers(questions, selections, otherTexts, extras),
+        answerLists: buildQuestionFormAnswerLists(questions, selections, otherTexts, extras),
+      },
+    });
+  }, [files, isResponding, onRespond, otherTexts, permission.request.input, questions, selections]);
 
   const handleDeny = useCallback(() => {
     if (!questions || isResponding) return;
@@ -687,6 +764,15 @@ function QuestionForm({
   const selected = selections[resolvedActiveQuestionIndex] ?? new Set<number>();
   const otherText = otherTexts[resolvedActiveQuestionIndex] ?? "";
   const showTextInput = questionShowsTextInput(activeQuestion);
+  const activeFiles = files[resolvedActiveQuestionIndex] ?? NO_FILES;
+  const canSendWhatIHave =
+    questions.length > 1 &&
+    !allAnswered &&
+    questions.some(
+      (question, index) =>
+        isQuestionAnswered(question, index, selections, otherTexts) ||
+        (files[index]?.length ?? 0) > 0,
+    );
 
   return (
     <View style={styles.container} testID="question-form-card">
@@ -732,11 +818,32 @@ function QuestionForm({
             onSubmit={handlePrimaryAction}
           />
         ) : null}
+        {client ? (
+          <View style={styles.filesRow}>
+            <AttachFilesButton
+              client={client}
+              files={activeFiles}
+              onChange={setActiveFiles}
+              testID={`question-form-attach-${resolvedActiveQuestionIndex}`}
+            />
+            <AnswerFileList files={activeFiles} onRemove={removeActiveFile} />
+          </View>
+        ) : null}
       </View>
 
       {responseError ? <Alert variant="error" description={responseError} size="sm" /> : null}
 
       <View style={actionsContainerStyle}>
+        {canSendWhatIHave ? (
+          <Button
+            variant="secondary"
+            disabled={isResponding}
+            onPress={handleSendWhatIHave}
+            testID="question-form-send-partial"
+          >
+            {t("message.question.sendWhatIHave")}
+          </Button>
+        ) : null}
         <Pressable
           style={dismissButtonStyle}
           onPress={handleDeny}
@@ -788,6 +895,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   questionBlock: {
     gap: theme.spacing[2],
+  },
+  filesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: theme.spacing[1],
   },
   questionHeader: {
     flexDirection: "row",

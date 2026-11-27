@@ -49,6 +49,7 @@ import type { PendingPermission } from "@/types/shared";
 import type {
   AgentCapabilityFlags,
   AgentPermissionAction,
+  AgentPermissionDraft,
   AgentPermissionResponse,
 } from "@getpaseo/protocol/agent-types";
 import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
@@ -1766,6 +1767,22 @@ export function PermissionRequestCard({
     },
     [handleResponse],
   );
+  // COMPAT(questionBoxDrafts): older hosts cannot keep a box's picks; they stay on this device.
+  const handleDraftChange = useCallback(
+    (draft: AgentPermissionDraft) => {
+      if (client?.getLastServerInfoMessage()?.features?.questionBoxDrafts !== true) return;
+      client
+        .setAgentPermissionDraft({
+          agentId: permission.agentId,
+          permissionId: permission.request.id,
+          draft,
+        })
+        .catch((error) => {
+          console.error("[PermissionRequestCard] Failed to save question box picks:", error);
+        });
+    },
+    [client, permission.agentId, permission.request.id],
+  );
 
   const optionsContainerStyle = useMemo(
     () => [
@@ -1787,6 +1804,8 @@ export function PermissionRequestCard({
         onRespond={handleResponse}
         isResponding={isResponding}
         responseError={responseError}
+        client={client}
+        onDraftChange={handleDraftChange}
       />
     );
   }

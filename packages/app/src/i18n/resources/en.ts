@@ -490,6 +490,7 @@ export const en = {
       next: "Next",
       answerPlaceholder: "Type your answer...",
       otherPlaceholder: "Other...",
+      sendWhatIHave: "Send what I have",
     },
     backgroundWork: {
       heartbeat: "Heartbeat",

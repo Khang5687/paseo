@@ -497,6 +497,7 @@ export const es: TranslationResources = {
       next: "Siguiente",
       answerPlaceholder: "Escribe tu respuesta...",
       otherPlaceholder: "Otro...",
+      sendWhatIHave: "Enviar lo que tengo",
     },
     backgroundWork: {
       heartbeat: "Latido",
