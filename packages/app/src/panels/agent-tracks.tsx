@@ -9,6 +9,7 @@ import { usePaneContext } from "@/panels/pane-context";
 import { useSettings } from "@/hooks/use-settings";
 import { PluginComposerPills } from "@/plugins";
 import { useSessionStore } from "@/stores/session-store";
+import { useShallow } from "zustand/shallow";
 import {
   useArchiveFinishedSubagents,
   useArchiveSubagent,
@@ -19,6 +20,7 @@ import {
 import { ParentAgentPill } from "@/subagents/parent";
 import { SubagentsTrack } from "@/subagents/track";
 import type { TodoEntry } from "@/types/stream";
+import { confirmArchive } from "@/utils/archive-confirm";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { buildWorkspaceTabPersistenceKey, type WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { openPreferredWorkspaceTarget } from "@/workspace-tabs/open-beside";
@@ -51,12 +53,34 @@ export const AgentTracks = memo(function AgentTracks({
     parentAgentId: agentId,
     rows: subagentRows,
   });
+  const { archiveFinished } = archiveFinishedSubagents;
+  const handleArchiveFinished = useCallback(() => {
+    void (async () => {
+      if (await confirmArchive({ subject: "finishedSubagents" })) {
+        await archiveFinished();
+      }
+    })();
+  }, [archiveFinished]);
   const { tabId } = usePaneContext();
-  const backgroundWorkCount = useSessionStore((state) => {
-    const session = state.sessions[serverId];
-    const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
-    return agent?.backgroundWork?.count ?? 0;
-  });
+  const backgroundWorkFields = useSessionStore(
+    useShallow((state) => {
+      const session = state.sessions[serverId];
+      const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+      const summary = agent?.backgroundWork;
+      return {
+        count: summary?.count ?? 0,
+        runningCount: summary?.runningCount,
+        nextRunAt: summary?.nextRunAt,
+        waitingOnItemId: summary?.waitingOn?.itemId,
+        waitingOnTitle: summary?.waitingOn?.title,
+      };
+    }),
+  );
+  const backgroundWork = useMemo(() => {
+    const { waitingOnItemId, waitingOnTitle, ...summary } = backgroundWorkFields;
+    if (waitingOnItemId === undefined) return summary;
+    return { ...summary, waitingOn: { itemId: waitingOnItemId, title: waitingOnTitle ?? "" } };
+  }, [backgroundWorkFields]);
   const backgroundModel = useMemo(
     () => createHostBackgroundWorkModel(serverId, agentId),
     [serverId, agentId],
@@ -67,6 +91,12 @@ export const AgentTracks = memo(function AgentTracks({
   const canDetachSubagents = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.agentDetach === true,
   );
+  // Same rule as the sidebar's root activity: an open turn is the agent working, whatever the
+  // lifecycle says while a turn closes.
+  const yourTurn = useSessionStore((state) => {
+    const agent = state.sessions[serverId]?.agents.get(agentId);
+    return agent ? agent.turn.phase !== "open" && agent.status !== "initializing" : false;
+  });
   const archiveSubagent = useArchiveSubagent();
   const detachSubagent = useDetachSubagent();
   const openSubagentTarget = useCallback(
@@ -121,17 +151,18 @@ export const AgentTracks = memo(function AgentTracks({
 
   return (
     <ComposerTrackBar>
-      <BackgroundWorkTrack model={backgroundModel} count={backgroundWorkCount} />
+      <BackgroundWorkTrack model={backgroundModel} summary={backgroundWork} />
       {parentAgentId ? <ParentAgentPill serverId={serverId} parentAgentId={parentAgentId} /> : null}
       <AgentTaskList tasks={tasks} />
       <SubagentsTrack
         serverId={serverId}
         rows={subagentRows}
+        yourTurn={yourTurn}
         onOpenSubagent={handleOpenSubagent}
         onOpenProviderSubagent={handleOpenProviderSubagent}
         sheetTabFor={sheetTabFor}
         onArchiveSubagent={archiveSubagent}
-        onArchiveFinished={archiveFinishedSubagents.archiveFinished}
+        onArchiveFinished={handleArchiveFinished}
         archiveFinishedStatus={archiveFinishedSubagents.status}
         onDetachSubagent={canDetachSubagents ? detachSubagent : undefined}
       />

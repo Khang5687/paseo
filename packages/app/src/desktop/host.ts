@@ -53,6 +53,26 @@ export interface DesktopDialogBridge {
   open?: (options?: DesktopDialogOpenOptions) => Promise<string | string[] | null>;
 }
 
+export interface DesktopSaveFileInput {
+  fileName: string;
+  /** The file's bytes. */
+  bytes?: Uint8Array;
+  /** Or a file in the app's managed attachment storage, which the shell copies itself. */
+  sourcePath?: string;
+  /** Show the native Save dialog; off writes to Downloads › Paseo. */
+  ask: boolean;
+}
+
+export type DesktopSaveFileResult =
+  | { status: "saved"; path: string; folderLabel: string }
+  | { status: "cancelled" };
+
+export interface DesktopFilesBridge {
+  save?: (input: DesktopSaveFileInput) => Promise<DesktopSaveFileResult>;
+  /** Shows a file this app saved in the system file manager. */
+  reveal?: (path: string) => Promise<void>;
+}
+
 export interface DesktopNotificationBridge {
   isSupported?: () => Promise<boolean>;
   sendNotification?: (
@@ -88,8 +108,23 @@ export interface DesktopWebUtilsBridge {
   getPathForFile?: (file: File) => string;
 }
 
+export interface DesktopTerminalContextMenuInput {
+  kind?: "terminal";
+  hasSelection?: boolean;
+  /** Adds an "Add note" item; desktops that predate notes ignore it. */
+  addNoteLabel?: string;
+  /** Echoed in the `terminal-context-menu-action` event so the right terminal handles it. */
+  requestId?: string;
+}
+
+/** Payload of the desktop `terminal-context-menu-action` event. */
+export interface DesktopTerminalContextMenuActionEvent {
+  action: "add-note";
+  requestId?: string;
+}
+
 export interface DesktopMenuBridge {
-  showContextMenu?: (input?: { kind?: "terminal"; hasSelection?: boolean }) => Promise<void>;
+  showContextMenu?: (input?: DesktopTerminalContextMenuInput) => Promise<void>;
   setCapturingShortcut?: (capturing: boolean) => Promise<void>;
 }
 
@@ -183,6 +218,7 @@ export interface DesktopHostBridge {
   events?: DesktopEventsBridge;
   window?: DesktopWindowModuleBridge;
   dialog?: DesktopDialogBridge;
+  files?: DesktopFilesBridge;
   notification?: DesktopNotificationBridge;
   opener?: DesktopOpenerBridge;
   editor?: DesktopEditorBridge;

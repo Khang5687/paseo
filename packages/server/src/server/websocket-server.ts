@@ -7,6 +7,7 @@ import {
   createAgentMessageDelivery,
   type AgentMessageDelivery,
 } from "./agent/agent-messages/index.js";
+import type { AskAgentThreads } from "./agent/ask-agent.js";
 import {
   sendPreparedPromptToAgent,
   waitForAgentRunStartWithTimeout,
@@ -16,6 +17,7 @@ import { HOST_ROUTE_OPCODE } from "@getpaseo/protocol/binary-frames/index";
 import { DaemonLinkEndpoint, VirtualHostSocket } from "./connected-hosts/index.js";
 import { ConnectedHosts } from "./connected-hosts/index.js";
 import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import {
   createWorkspaceBaseBranchService,
   type WorkspaceBaseBranchService,
@@ -23,6 +25,7 @@ import {
 import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import { CreationService } from "./creation/index.js";
 import { MessageReceipts } from "./message-receipts/index.js";
+import { AgentMessageQueueDispatcher } from "./agent/agent-message-queue.js";
 import { WebSocket, WebSocketServer } from "ws";
 import type { IncomingMessage, Server as HTTPServer } from "http";
 import { join } from "path";
@@ -95,6 +98,7 @@ import {
   createPushNotifications,
   type PushNotifications,
   type PushNotificationSender,
+  type PushPayload,
 } from "./push/index.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
 import type { ServiceProxySubsystem } from "./service-proxy.js";
@@ -139,6 +143,15 @@ import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
+import type { AgentDraftService } from "./agent-draft/agent-draft-service.js";
+import type { NoteFiredEvent, NotesService } from "./notes/notes-service.js";
+import type { FileCopies } from "./file-copies/service.js";
+import { FileDeviceRegistry } from "./file-send/device-registry.js";
+import { FileSendService, type FileSendLiveTarget } from "./file-send/service.js";
+import { FileCopySender } from "./file-copies/sender.js";
+import type { Note } from "@getpaseo/protocol/notes/schemas";
+import type { AccountRoutingAuthority } from "./account-routing/authority.js";
+import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -201,6 +214,13 @@ interface WebSocketServerConfig {
   daemonStatusRpc?: boolean;
   relayConfig?: boolean;
   startPaused?: boolean;
+  askThreads?: AskAgentThreads;
+  /** Devices that can receive sent files, loaded from disk at startup. */
+  fileDevices?: FileDeviceRegistry;
+}
+
+function resolveFileDevices(injected: FileDeviceRegistry | undefined): FileDeviceRegistry {
+  return injected ?? FileDeviceRegistry.inMemory();
 }
 
 type WebSocketRuntimeMetrics = SessionRuntimeMetrics & CheckoutDiffMetrics;
@@ -538,11 +558,28 @@ const WS_CLOSE_INVALID_HELLO = 4002;
 const WS_CLOSE_INCOMPATIBLE_PROTOCOL = 4003;
 const WS_CLOSE_SERVER_SHUTDOWN = 1001;
 const WS_PROTOCOL_VERSION = 1;
+// The hosted relay replaces a daemon close with its own `1012 Server disconnected` and drops
+// frames still in flight when the daemon side closes, so a relay client learns why its hello
+// was refused only from a `hello.rejected` frame that reached it before the close.
+export const RELAY_HELLO_REJECTION_CLOSE_DELAY_MS = 1_000;
 const WS_RUNTIME_METRICS_FLUSH_MS = 30_000;
 const OWNER_SESSION_ADMISSION: SessionAdmission = {
   principalId: "owner",
   permissions: OWNER_PERMISSIONS,
 };
+
+/** Resolves when the peer closes the socket or after `timeoutMs`, whichever comes first. */
+async function waitForPeerClose(ws: WebSocketLike, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const elapsed = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  const closed = new Promise<void>((resolve) => {
+    ws.once("close", () => resolve());
+  });
+  await Promise.race([elapsed, closed]);
+  clearTimeout(timer);
+}
 
 export class MissingDaemonVersionError extends Error {
   constructor() {
@@ -578,12 +615,14 @@ function initPushNotifications(
   paseoHome: string,
   pushNotifications?: PushNotifications,
   pushNotificationSender?: PushNotificationSender,
+  onTokenRevoked?: (token: string) => void,
 ): { pushNotifications: PushNotifications; pushNotificationSender: PushNotificationSender } {
   const notifications =
     pushNotifications ??
     createPushNotifications({
       logger: logger.child({ module: "push" }),
       filePath: join(paseoHome, "push-tokens.json"),
+      onTokenRevoked,
     });
   return {
     pushNotifications: notifications,
@@ -608,12 +647,26 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
   private readonly messageReceipts: MessageReceipts;
+  private readonly agentMessageQueue: AgentMessageQueueDispatcher;
   readonly agentMessages: AgentMessageDelivery;
+  private readonly askThreads: AskAgentThreads | undefined;
   private readonly creationService: CreationService;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceBaseBranch: WorkspaceBaseBranchService;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly agentDrafts: AgentDraftService | undefined;
+  private readonly notesService: NotesService | null;
+  private readonly fileCopies: FileCopies | undefined;
+  private readonly fileDevices: FileDeviceRegistry;
+  readonly fileSend: FileSendService;
+  private readonly detachFileCopySender: () => void;
+  private readonly accountRouting: AccountRoutingAuthority | undefined;
+  private readonly accountLogin: OmpAccountLogin | undefined;
+  // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
+  private accountRoutingSupported = false;
+  private releaseAccountRoutingObserver: (() => void) | null = null;
+  private releaseLoginLinkObserver: (() => void) | null = null;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -625,6 +678,15 @@ export class VoiceAssistantWebSocketServer {
 
   toolHosts() {
     return createToolHosts(this.connectedHosts);
+  }
+  private attachFileCopySender(agentManager: AgentManager): () => void {
+    if (!this.fileCopies) return () => undefined;
+    return new FileCopySender({
+      agentManager,
+      hosts: this.toolHosts(),
+      fileCopies: this.fileCopies,
+      logger: this.logger,
+    }).attach();
   }
   private readonly passwordHash: string | undefined;
   private readonly credentialSource: DaemonAuthConfig | undefined;
@@ -743,6 +805,11 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
+    accountRouting?: AccountRoutingAuthority,
+    accountLogin?: OmpAccountLogin,
+    notesService?: NotesService,
+    agentDrafts?: AgentDraftService,
+    fileCopies?: FileCopies,
     workspaceArchiveOperations?: WorkspaceArchiveOperations,
     pushNotifications?: PushNotifications,
   ) {
@@ -751,6 +818,7 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceArchiveOperations = resolveWorkspaceArchiveOperations(workspaceArchiveOperations);
     this.advertiseDaemonStatusRpc = wsConfig.daemonStatusRpc !== false;
     this.advertiseRelayConfig = wsConfig.relayConfig !== false;
+    this.askThreads = wsConfig.askThreads;
     this.connectionLifecycle = wsConfig.startPaused === true ? "starting" : "accepting";
     this.serverId = serverId;
     if (typeof daemonVersion !== "string" || daemonVersion.trim().length === 0) {
@@ -812,6 +880,14 @@ export class VoiceAssistantWebSocketServer {
         ),
     });
     this.messageReceipts = new MessageReceipts(join(paseoHome, "agent-requests"));
+    this.agentMessageQueue = new AgentMessageQueueDispatcher({
+      agentManager,
+      agentStorage,
+      agentMessages: this.agentMessages,
+      logger: this.logger.child({ module: "agent-message-queue" }),
+      paseoHome,
+    });
+    this.agentMessageQueue.attach();
     this.creationService = new CreationService(
       join(paseoHome, "creations"),
       this.logger.child({ module: "creation" }),
@@ -821,6 +897,10 @@ export class VoiceAssistantWebSocketServer {
     this.projectRegistry = projectRegistry ?? createNoopProjectRegistry();
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
+    this.agentDrafts = agentDrafts;
+    this.accountRouting = accountRouting;
+    this.accountLogin = accountLogin;
+    this.observeAccountRoutingCapability();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -840,6 +920,8 @@ export class VoiceAssistantWebSocketServer {
     this.downloadTokenStore = downloadTokenStore;
     this.paseoHome = paseoHome;
     this.connectedHosts = new ConnectedHosts(paseoHome, { serverId, label: getHostName() });
+    this.fileCopies = fileCopies;
+    this.detachFileCopySender = this.attachFileCopySender(agentManager);
     this.passwordHash = auth?.password;
     this.daemonConfigStore = daemonConfigStore;
     this.mcpBaseUrl = mcpBaseUrl;
@@ -880,16 +962,28 @@ export class VoiceAssistantWebSocketServer {
       unsubscribeChange();
     };
 
+    this.fileDevices = resolveFileDevices(wsConfig.fileDevices);
     const push = initPushNotifications(
       this.logger,
       paseoHome,
       pushNotifications,
       pushNotificationSender,
+      (token) => this.fileDevices.removeByToken(token),
     );
     this.pushNotifications = push.pushNotifications;
     this.pushNotificationSender = push.pushNotificationSender;
+    this.fileSend = new FileSendService({
+      registry: this.fileDevices,
+      serverId,
+      hostName: getHostName,
+      sendPush: (tokens, payload) => this.sendFilePush(tokens, payload),
+      liveTargets: (deviceId) => this.liveFileSendTargets(deviceId),
+      logger: this.logger.child({ module: "file-send" }),
+    });
 
+    this.notesService = this.wireFiredNotes(notesService);
     this.agentManager.setAgentAttentionCallback((params) => {
+      this.notesService?.handleAgentAttention(params);
       void this.broadcastAgentAttention(params).catch((err) => {
         this.logger.warn({ err, agentId: params.agentId }, "Failed to broadcast agent attention");
       });
@@ -900,6 +994,15 @@ export class VoiceAssistantWebSocketServer {
     this.startApplicationSocketLeaseInterval();
 
     this.logger.info("WebSocket server initialized on /ws");
+  }
+
+  private wireFiredNotes(notesService: NotesService | undefined): NotesService | null {
+    notesService?.setFiredHandler((event) => {
+      void this.broadcastNoteFired(event).catch((err) => {
+        this.logger.warn({ err, noteId: event.note.id }, "Failed to broadcast fired note");
+      });
+    });
+    return notesService ?? null;
   }
 
   private assignOptionalServices(params: {
@@ -1151,6 +1254,30 @@ export class VoiceAssistantWebSocketServer {
     this.updateServerCapabilities(buildServerCapabilities({ readiness }));
   }
 
+  /** The advertised feature follows the authority's negotiated runtime coverage, never code presence. */
+  private observeAccountRoutingCapability(): void {
+    const authority = this.accountRouting;
+    if (!authority) return;
+    this.releaseLoginLinkObserver =
+      this.accountLogin?.onLinkSupportChange(() => this.broadcastCapabilitiesUpdate()) ?? null;
+    const apply = (supported: boolean): void => {
+      if (supported === this.accountRoutingSupported) return;
+      this.accountRoutingSupported = supported;
+      this.broadcastCapabilitiesUpdate();
+    };
+    void (async () => {
+      try {
+        const { state, release } = await authority.observe((next) =>
+          apply(next.capability.status === "supported"),
+        );
+        this.releaseAccountRoutingObserver = release;
+        apply(state.capability.status === "supported");
+      } catch (error) {
+        this.logger.warn({ err: error }, "Account routing observer failed");
+      }
+    })();
+  }
+
   public updateServerCapabilities(capabilities: ServerCapabilities | null | undefined): void {
     const next = capabilities ?? undefined;
     if (areServerCapabilitiesEqual(this.serverCapabilities, next)) {
@@ -1231,12 +1358,23 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
+  /** See `AgentMessageQueueDispatcher.drainStoredQueues`. Daemon start only. */
+  public drainStoredAgentQueues(): Promise<void> {
+    return this.agentMessageQueue.drainStoredQueues();
+  }
+
   public async close(): Promise<void> {
     this.prepareForShutdown();
+    this.agentMessageQueue.detach();
     await this.agentMessages.close();
+    this.detachFileCopySender();
     await this.connectedHosts.close();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
+    this.releaseAccountRoutingObserver?.();
+    this.releaseAccountRoutingObserver = null;
+    this.releaseLoginLinkObserver?.();
+    this.releaseLoginLinkObserver = null;
     this.unsubscribeDaemonConfigChange?.();
     this.unsubscribeDaemonConfigChange = null;
     this.unsubscribeTerminalActivity?.();
@@ -1755,12 +1893,27 @@ export class VoiceAssistantWebSocketServer {
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
       messageReceipts: this.messageReceipts,
+      agentMessageQueue: this.agentMessageQueue,
       agentMessages: this.agentMessages,
+      askThreads: this.askThreads,
       creationService: this.creationService,
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       workspaceBaseBranch: this.workspaceBaseBranch,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      agentDrafts: this.agentDrafts,
+      notesService: this.notesService ?? undefined,
+      fileCopies: this.fileCopies,
+      fileSend: { service: this.fileSend, registry: this.fileDevices },
+      accountRouting: this.accountRouting,
+      accountLogin: this.accountLogin,
+      isHostLocalSource: (source) => {
+        const identity = source ? this.socketIdentities.get(source as WebSocketLike) : undefined;
+        return (
+          identity?.transport === "direct" &&
+          (identity.peer === "loopback" || identity.peer === "local_ipc")
+        );
+      },
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -1854,7 +2007,7 @@ export class VoiceAssistantWebSocketServer {
         },
         "Rejected hello due to protocol version mismatch",
       );
-      await this.rejectHello(ws, message, "incompatible_protocol");
+      await this.rejectHello(ws, message, "incompatible_protocol", pending.identity.transport);
       return;
     }
 
@@ -1977,7 +2130,7 @@ export class VoiceAssistantWebSocketServer {
       if (this.pendingConnections.get(ws) !== pending) return false;
       if ("rejection" in resolved) {
         this.clearPendingConnection(ws);
-        await this.rejectHello(ws, message, resolved.rejection);
+        await this.rejectHello(ws, message, resolved.rejection, pending.identity.transport);
         return false;
       }
       pending.admission = resolved.admission;
@@ -1986,7 +2139,7 @@ export class VoiceAssistantWebSocketServer {
       pending.connectionLogger.error({ err: error }, "Failed to resolve hello credential");
       if (this.pendingConnections.get(ws) === pending) {
         this.clearPendingConnection(ws);
-        await this.rejectHello(ws, message, "incorrect_password");
+        await this.rejectHello(ws, message, "incorrect_password", pending.identity.transport);
       }
       return false;
     }
@@ -1996,15 +2149,21 @@ export class VoiceAssistantWebSocketServer {
     ws: WebSocketLike,
     hello: WSHelloMessage,
     reason: "password_required" | "incorrect_password" | "incompatible_protocol",
+    transport: WebSocketConnectionIdentity["transport"],
   ): Promise<void> {
     // Older clients discard unknown frames, then use the close code and reason.
     // They never send hello.auth, so avoid sending an unknown envelope to them.
+    let sentRejection = false;
     if (hello.auth || hello.capabilities?.[CLIENT_CAPS.helloRejection] === true) {
       try {
         await ws.send(JSON.stringify({ type: "hello.rejected", reason, accepts: ["password"] }));
+        sentRejection = true;
       } catch {
         // The close reason remains the compatibility signal.
       }
+    }
+    if (sentRejection && transport === "relay") {
+      await waitForPeerClose(ws, RELAY_HELLO_REJECTION_CLOSE_DELAY_MS);
     }
     const closeReason = {
       password_required: "Password required",
@@ -2080,12 +2239,11 @@ export class VoiceAssistantWebSocketServer {
     pluginId?: string,
   ): void {
     if (pluginId) return;
-    const producer = hello.producer;
-    const sourceId =
-      hello.routed && producer
-        ? `route:${[principalId, producer.serverId, producer.sourceId].map(encodeURIComponent).join(":")}`
-        : principalId;
-    connection.session.setHostSource(sourceId);
+    const producer = hello.routed ? hello.producer : undefined;
+    const sourceId = producer
+      ? `route:${[principalId, producer.serverId, producer.sourceId].map(encodeURIComponent).join(":")}`
+      : principalId;
+    connection.session.setHostSource(sourceId, producer?.serverId ?? null);
   }
 
   private buildServerInfoStatusPayload(session: Session): ServerInfoStatusPayload {
@@ -2095,6 +2253,7 @@ export class VoiceAssistantWebSocketServer {
       protocolVersion: WS_PROTOCOL_VERSION,
       serverId: this.serverId,
       hostname: getHostName(),
+      homeDirectory: homedir(),
       version: this.daemonVersion,
       ...(machineKind ? { machineKind } : {}),
       sourceId: session.getHostSourceId(),
@@ -2131,6 +2290,20 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
+        ...(this.agentDrafts ? { agentDraftSync: true } : {}),
+        // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
+        ...(this.notesService ? { notes: true } : {}),
+        // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.
+        ...(this.fileCopies ? { fileCopies: true } : {}),
+        // COMPAT(sendToDevice): added in v0.16.2, remove gate after 2027-06-01.
+        sendToDevice: true,
+        ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
+        // The host can open a browser and sign a Claude account in; only advertised with routing.
+        ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
+        ...(this.accountRoutingSupported && this.accountLogin?.linkSupported
+          ? { ompAccountLoginLink: true }
+          : {}),
         terminalCollection: true,
         // COMPAT(chatTerminals): added after v0.17.5, remove gate after 2027-11-27.
         chatTerminals: true,
@@ -2235,12 +2408,18 @@ export class VoiceAssistantWebSocketServer {
         workspaceArchiveUndo: true,
         // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
         workspaceFileEditing: true,
+        // COMPAT(directorySuggestionsIncludeIgnored): added in v0.16.2, remove gate after 2027-05-25.
+        directorySuggestionsIncludeIgnored: true,
         // COMPAT(fileByteWrites): added in v0.13.0, remove gate after 2027-04-20.
         fileByteWrites: true,
         // COMPAT(providerUsageList): added in v0.1.98, drop the gate when daemon floor >= v0.1.98.
         providerUsageList: true,
         // COMPAT(agentDetach): added in v0.1.98, remove gate after 2026-12-19 once daemon floor >= v0.1.98.
         agentDetach: true,
+        // COMPAT(agentUnarchive): added in v0.15.0, remove gate after 2027-05-02.
+        agentUnarchive: true,
+        // COMPAT(agentCloseSearch): added in v0.15.0, remove gate after 2027-05-08.
+        agentCloseSearch: true,
         // COMPAT(agentThinkingUpdate): added in v0.2.4, remove gate after 2027-01-28.
         agentThinkingUpdate: true,
         // COMPAT(daemonDiagnostics): added in v0.1.100, remove gate after 2026-12-25 once daemon floor >= v0.1.100.
@@ -2253,6 +2432,14 @@ export class VoiceAssistantWebSocketServer {
         agentForkContext: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
+        // COMPAT(agentFork): added in v0.15.0, remove gate after 2027-03-03.
+        agentFork: true,
+        // COMPAT(agentAsk): added in v0.14.0, remove gate after 2027-05-01.
+        agentAsk: true,
+        // COMPAT(agentAskThreads): added in v0.16.0, remove gate after 2027-05-05.
+        agentAskThreads: this.askThreads !== undefined,
+        // COMPAT(agentAskReplyPaging): added in v0.16.0, remove gate after 2027-05-06.
+        agentAskReplyPaging: this.askThreads !== undefined,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: true,
         // COMPAT(agentBackgroundWork): added after v0.11.0-beta.5, remove gate after 2027-04-06.
@@ -2282,6 +2469,10 @@ export class VoiceAssistantWebSocketServer {
         commitBaseClassification: true,
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
         providerRemoval: true,
+        // COMPAT(providerFeatureDefaults): added in v0.11.2, remove gate after 2027-04-08.
+        providerFeatureDefaults: true,
+        // COMPAT(globalFeatureDefaults): added in v0.11.3, remove gate after 2027-04-14.
+        globalFeatureDefaults: true,
         hopliteProvider: this.providerSnapshotManager.supportsConfigRequiredProvider("hoplite"),
         // COMPAT(fxProvider): added after v0.15.3, remove after 2027-05-09 once host floor includes the bundled adapter.
         fxProvider: this.providerSnapshotManager.supportsConfigRequiredProvider("fx"),
@@ -2305,6 +2496,8 @@ export class VoiceAssistantWebSocketServer {
         canonicalSubmittedPrompts: true,
         agentMessageProvenance: true,
         agentMessageBatching: true,
+        // COMPAT(inlineAttachmentRefs): added in v0.14.1, remove gate after 2027-05-01.
+        inlineAttachmentRefs: true,
         // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove gate after 2027-05-22.
         agentActiveTurnBehaviors: true,
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -2317,6 +2510,8 @@ export class VoiceAssistantWebSocketServer {
         fsEntryOps: true,
         // COMPAT(fsEntryDuplicate): added in v0.3.0, remove gate after 2027-02-09.
         fsEntryDuplicate: true,
+        // COMPAT(fsDirectorySubscriptions): added after v0.17.4, remove gate after 2027-05-25.
+        fsDirectorySubscriptions: true,
         // COMPAT(checkoutDiscardChanges): added in v0.3.0, remove gate after 2027-02-08.
         checkoutDiscardChanges: true,
         checkoutDiffAll: true,
@@ -2324,6 +2519,12 @@ export class VoiceAssistantWebSocketServer {
         agentProfiles: true,
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: true,
+        // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02.
+        messageQueue: true,
+        // COMPAT(messageQueueControls): added in v0.11.x, remove gate after 2027-10-24.
+        messageQueueControls: true,
+        // COMPAT(providerDisabledModels): added in v0.11.2, remove gate after 2027-04-08.
+        providerDisabledModels: true,
       },
     };
   }
@@ -3103,6 +3304,77 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
+  private sendFilePush(tokens: string[], payload: PushPayload): Promise<void> {
+    const sender = this.pushNotificationSender;
+    return sender.sendToTokens
+      ? sender.sendToTokens(tokens, payload)
+      : this.pushNotifications.sendToTokens(tokens, payload);
+  }
+
+  private liveFileSendTargets(deviceId: string): FileSendLiveTarget[] {
+    const targets: FileSendLiveTarget[] = [];
+    for (const [ws, connection] of this.sessions) {
+      const { session } = connection;
+      if (session.getDeviceId() !== deviceId) continue;
+      // Older apps cannot parse files.sent; only sources that subscribed to it receive it.
+      if (!session.delivery.isModern(ws) || !session.wantsSourceEvent(ws, "files.sent")) continue;
+      targets.push({
+        appVisible: session.getClientActivity(ws)?.appVisible === true,
+        publish: (message) => session.publishToSource(ws, message),
+      });
+    }
+    return targets;
+  }
+
+  private async broadcastNoteFired(event: NoteFiredEvent): Promise<void> {
+    const entries: Array<{ ws: WebSocketLike; session: Session; state: ClientPresenceState }> = [];
+    for (const [ws, connection] of this.sessions) {
+      // Older apps cannot parse notes.fired; only sources that subscribed to it receive it.
+      if (!connection.session.delivery.isModern(ws)) continue;
+      if (!connection.session.wantsSourceEvent(ws, "notes.fired")) continue;
+      if (!connection.session.wantsSourceNotification(ws, "notes.fired")) continue;
+      entries.push({
+        ws,
+        session: connection.session,
+        state: this.getClientActivityState(connection.session, ws),
+      });
+    }
+    const plan = computeNotificationPlan({
+      allStates: entries.map((entry) => entry.state),
+      focusTarget: null,
+      pushEligible: event.push,
+      nowMs: Date.now(),
+    });
+    const { note } = event;
+    if (plan.shouldPush) {
+      void this.pushNotificationSender
+        .send({
+          title: event.title,
+          body: event.body,
+          data: {
+            serverId: this.serverId,
+            noteId: note.id,
+            ...noteNotificationTarget(note),
+          },
+        })
+        .catch((err) => {
+          this.logger.warn({ err, noteId: note.id }, "Failed to send push notification");
+        });
+    }
+    for (const [index, entry] of entries.entries()) {
+      entry.session.publishToSource(entry.ws, {
+        type: "notes.fired",
+        payload: {
+          serverId: this.serverId,
+          note,
+          title: event.title,
+          body: event.body,
+          shouldNotify: plan.inAppRecipientIndex === index,
+        },
+      });
+    }
+  }
+
   // An agent can finish many times while its first finish is unread, for example when it
   // reacts to each event of a background task. The user hears about an unread finish once.
   // A finish that was not delivered, because the user had the agent on screen, does not count.
@@ -3306,6 +3578,22 @@ export class VoiceAssistantWebSocketServer {
       else this.sendToClient(ws, message);
     }
   }
+}
+
+// Where a note notification tap should open: the agent or terminal the note was made on.
+function noteNotificationTarget(note: Note): Record<string, string> {
+  const { anchor } = note;
+  if (anchor.kind === "agent") {
+    return {
+      agentId: anchor.agentId,
+      ...(anchor.workspaceId ? { workspaceId: anchor.workspaceId } : {}),
+    };
+  }
+  return {
+    terminalId: anchor.terminalId,
+    ...(anchor.workspaceId ? { workspaceId: anchor.workspaceId } : {}),
+    ...(anchor.cwd ? { cwd: anchor.cwd } : {}),
+  };
 }
 
 interface SocketRequestMetadata {

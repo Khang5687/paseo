@@ -419,6 +419,31 @@ describe("provider overrides (new format)", () => {
     ]);
   });
 
+  test("disabledModels lists model IDs and is absent when not configured", () => {
+    const parsed = PersistedConfigSchema.parse({
+      agents: {
+        providers: {
+          omp: { disabledModels: ["anthropic/claude-opus-4-1", "openai/gpt-5.4"] },
+          codex: { enabled: true },
+        },
+      },
+    });
+
+    expect(parsed.agents?.providers?.omp?.disabledModels).toEqual([
+      "anthropic/claude-opus-4-1",
+      "openai/gpt-5.4",
+    ]);
+    expect(parsed.agents?.providers?.codex).toEqual({ enabled: true });
+  });
+
+  test("disabledModels rejects empty model IDs", () => {
+    expect(() =>
+      PersistedConfigSchema.parse({
+        agents: { providers: { omp: { disabledModels: [""] } } },
+      }),
+    ).toThrow();
+  });
+
   test("order field accepted", () => {
     const parsed = PersistedConfigSchema.parse({
       agents: {
@@ -487,6 +512,22 @@ describe("provider overrides (new format)", () => {
           zai: {
             extends: "unknown",
             label: "ZAI",
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test("provider MCP server named paseo → error", () => {
+    const result = PersistedConfigSchema.safeParse({
+      agents: {
+        providers: {
+          "omp-rea": {
+            extends: "omp",
+            label: "OMP (REA)",
+            mcpServers: { paseo: { type: "stdio", command: "fake-paseo" } },
           },
         },
       },

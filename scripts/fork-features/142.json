@@ -1,0 +1,10 @@
+{
+  "pr": 142,
+  "title": "Files tree refreshes itself when a folder changes",
+  "tests": [
+    "packages/server/src/server/file-explorer/directory-observer.test.ts",
+    "packages/server/src/server/owned-subscriptions.e2e.test.ts",
+    "packages/app/src/file-explorer/live-directories.test.ts",
+    "packages/app/src/file-explorer/directory-listings.test.ts"
+  ]
+}

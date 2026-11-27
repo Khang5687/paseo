@@ -1,6 +1,8 @@
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
+import { AGENT_ASK_DEFAULT_TIMEOUT_MS } from "@getpaseo/protocol/messages";
 import { applyProviderOptionsPatch } from "../option-controls.js";
 import { assertChangesAreLive, validateProviderOptions } from "../provider-options.js";
+import { PASEO_MCP_SERVER_NAME } from "../runtime-mcp-config.js";
 import { CodexBackgroundInventory } from "./codex/background-inventory.js";
 import {
   AgentTurnStartCanceledError,
@@ -36,6 +38,7 @@ import {
   type ToolCallTimelineItem,
   type AgentUsage,
   type FetchCatalogOptions,
+  type ForkedNativeSession,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
   type ImportProviderSessionInput,
@@ -44,6 +47,7 @@ import {
   type ProviderRefreshContext,
   type ResolveAgentDefaultModeInput,
 } from "../agent-sdk-types.js";
+import { requireSafeNativeId } from "../fork-handle.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
 import type { Logger } from "pino";
@@ -57,6 +61,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
+import { readQuestionAnswerList } from "../question-answers.js";
 import { composeAgentSystemPrompt, composeSystemPromptParts } from "../system-prompt.js";
 import { CodexInstructionSnapshot } from "./codex/instruction-snapshot.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
@@ -170,6 +175,20 @@ function isArchivedCodexThreadResumeError(error: unknown, threadId: string): boo
 function isCodexAlreadyUnarchivedError(error: unknown, threadId: string): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes(`no archived rollout found for thread id ${threadId}`);
+}
+
+function isCodexMissingRolloutError(error: unknown, threadId: string): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes(`no rollout found for thread id ${threadId}`);
+}
+
+// The app-server rejects a method it does not know as an invalid request naming the variant.
+function isCodexUnknownMethodError(error: unknown, method: string): boolean {
+  if (!(error instanceof CodexAppServerRpcError)) return false;
+  return (
+    error.code === -32601 ||
+    (error.code === -32600 && error.message.includes(`unknown variant \`${method}\``))
+  );
 }
 
 const TURN_START_TIMEOUT_MS = 90 * 1000;
@@ -313,6 +332,8 @@ const CODEX_MODES: AgentMode[] = [
 ];
 
 const DEFAULT_CODEX_MODE_ID = "auto";
+// Reads the workspace; edits and commands outside the sandbox need approval.
+const CODEX_READ_ONLY_MODE_ID = "read-only";
 
 interface CodexAppServerClientLike {
   request(method: string, params?: unknown, timeoutMs?: number): Promise<unknown>;
@@ -986,6 +1007,33 @@ function toCodexMcpConfig(config: McpServerConfig): CodexMcpServerConfig {
   }
 }
 
+function buildCodexThreadConfig(input: {
+  providerOptions: CodexProviderOptions;
+  customCodexConfig?: CodexCustomProviderConfig | null;
+  mcpServers?: AgentSessionConfig["mcpServers"];
+  toolPolicy?: AgentSessionConfig["toolPolicy"];
+}): Record<string, unknown> | null {
+  const innerConfig: Record<string, unknown> = {};
+  const { service_tier: _tier, plan_mode: _plan, ...codexConfig } = input.providerOptions;
+  Object.assign(innerConfig, codexConfig);
+  if (input.customCodexConfig) {
+    Object.assign(innerConfig, input.customCodexConfig);
+  }
+  if (input.mcpServers) {
+    const mcpServers: Record<string, CodexMcpServerConfig> = {};
+    for (const [name, serverConfig] of Object.entries(input.mcpServers)) {
+      mcpServers[name] = toCodexMcpConfig(serverConfig);
+    }
+    // Codex gives MCP tool calls 60 seconds; ask_agent waits for a whole turn of another agent.
+    if (mcpServers[PASEO_MCP_SERVER_NAME]) {
+      mcpServers[PASEO_MCP_SERVER_NAME].tool_timeout_sec = AGENT_ASK_DEFAULT_TIMEOUT_MS / 1000 + 60;
+    }
+    innerConfig.mcp_servers = mcpServers;
+  }
+  const configured = applyCodexToolPolicy(innerConfig, input.toolPolicy);
+  return Object.keys(configured).length > 0 ? configured : null;
+}
+
 function toObjectRecord(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined;
 }
@@ -1462,26 +1510,30 @@ function mapCodexQuestionResponseByHeader(params: {
 
   const answers: Record<string, { answers: string[] }> = {};
   for (const question of params.questions) {
-    const rawAnswer = answersRecord[question.header];
-    if (typeof rawAnswer !== "string") {
-      continue;
-    }
-    const normalizedAnswer = rawAnswer.trim();
-    if (!normalizedAnswer) {
-      continue;
-    }
-    const values = question.multiSelect
-      ? normalizedAnswer
-          .split(",")
-          .map((entry) => entry.trim())
-          .filter((entry) => entry.length > 0)
-      : [normalizedAnswer];
+    const answerList = readQuestionAnswerList(updatedInputRecord, question.header);
+    const values = (answerList ?? legacyCodexQuestionAnswers(question, answersRecord))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
     if (values.length > 0) {
       answers[question.id] = { answers: values };
     }
   }
 
   return Object.keys(answers).length > 0 ? answers : null;
+}
+
+// COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before
+// v0.11.0 send only the comma-joined `answers` string, so a comma inside a label or custom
+// answer still splits it here.
+function legacyCodexQuestionAnswers(
+  question: CodexQuestionPrompt,
+  answersRecord: Record<string, unknown>,
+): string[] {
+  const rawAnswer = answersRecord[question.header];
+  if (typeof rawAnswer !== "string") {
+    return [];
+  }
+  return question.multiSelect ? rawAnswer.split(",") : [rawAnswer];
 }
 
 interface CodexPatchFileChange {
@@ -3624,7 +3676,7 @@ export async function codexAppServerTurnInputFromPrompt(
   let previousTextBlock = false;
   for (const block of prompt) {
     if (block.type === "text") {
-      output.push(toCodexTextInput(block.text));
+      output.push(toCodexTextInput(block.text, "placeholders" in block ? block.placeholders : []));
       previousTextBlock = block.text.length > 0;
       continue;
     }
@@ -3659,12 +3711,37 @@ export async function codexAppServerTurnInputFromPrompt(
   return output;
 }
 
-function toCodexTextInput(text: string): Extract<CodexAppServerUserInput, { type: "text" }> {
+function toCodexTextInput(
+  text: string,
+  placeholders: readonly string[] = [],
+): Extract<CodexAppServerUserInput, { type: "text" }> {
   return {
     type: "text",
     text,
-    text_elements: [],
+    text_elements: codexPlaceholderElements(text, placeholders),
   };
+}
+
+// Codex marks attachment placeholders such as `[Image #1]` by UTF-8 byte range.
+function codexPlaceholderElements(
+  text: string,
+  placeholders: readonly string[],
+): CodexTextElement[] {
+  const elements: CodexTextElement[] = [];
+  for (const placeholder of new Set(placeholders)) {
+    for (
+      let at = text.indexOf(placeholder);
+      at !== -1;
+      at = text.indexOf(placeholder, at + placeholder.length)
+    ) {
+      const start = Buffer.byteLength(text.slice(0, at));
+      elements.push({
+        byteRange: { start, end: start + Buffer.byteLength(placeholder) },
+        placeholder,
+      });
+    }
+  }
+  return elements.sort((a, b) => a.byteRange.start - b.byteRange.start);
 }
 
 export function buildCodexAppServerEnv(
@@ -6116,21 +6193,12 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private buildCodexInnerConfig(): Record<string, unknown> | null {
-    const innerConfig: Record<string, unknown> = {};
-    const { service_tier: _tier, plan_mode: _plan, ...codexConfig } = this.providerOptions;
-    Object.assign(innerConfig, codexConfig);
-    if (this.deps.customCodexConfig) {
-      Object.assign(innerConfig, this.deps.customCodexConfig);
-    }
-    if (this.config.mcpServers) {
-      const mcpServers: Record<string, CodexMcpServerConfig> = {};
-      for (const [name, serverConfig] of Object.entries(this.config.mcpServers)) {
-        mcpServers[name] = toCodexMcpConfig(serverConfig);
-      }
-      innerConfig.mcp_servers = mcpServers;
-    }
-    const configured = applyCodexToolPolicy(innerConfig, this.config.toolPolicy);
-    return Object.keys(configured).length > 0 ? configured : null;
+    return buildCodexThreadConfig({
+      providerOptions: this.providerOptions,
+      customCodexConfig: this.deps.customCodexConfig,
+      mcpServers: this.config.mcpServers,
+      toolPolicy: this.config.toolPolicy,
+    });
   }
 
   private async buildUserInput(prompt: CodexPromptInput): Promise<CodexAppServerUserInput[]> {
@@ -8557,6 +8625,81 @@ export class CodexAppServerAgentClient implements AgentClient {
     await this.updateNativeThreadArchiveState(handle, "restore");
   }
 
+  async forkNativeSession(handle: AgentPersistenceHandle): Promise<ForkedNativeSession> {
+    const sourceThreadId = handle.nativeHandle ?? handle.sessionId;
+    const storedConfig = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
+    const customCodexConfig = this.customProviderConfig();
+    const config = buildCodexThreadConfig({
+      providerOptions: {},
+      customCodexConfig,
+      mcpServers: storedConfig.mcpServers,
+      toolPolicy: storedConfig.toolPolicy,
+    });
+    const readOnly = MODE_PRESETS[CODEX_READ_ONLY_MODE_ID];
+    // A persisted copy: the caller resumes it in a fresh app-server process, where an
+    // ephemeral thread does not exist. Codex does not carry the parent thread's config
+    // into a fork; without it the copy falls back to the default model provider.
+    const forked = await this.withOneOffAppServerClient((client) =>
+      forkCodexThread(client, {
+        threadId: sourceThreadId,
+        cwd: storedConfig.cwd ?? null,
+        model: storedConfig.model ?? null,
+        ...(customCodexConfig ? { modelProvider: customCodexConfig.model_provider } : {}),
+        ...(config ? { config } : {}),
+        approvalPolicy: readOnly.approvalPolicy,
+        sandbox: readOnly.sandbox,
+        approvalsReviewer: readOnly.approvalsReviewer,
+        // The copy is read through paged history when resumed, not from the fork reply.
+        excludeTurns: true,
+        persistExtendedHistory: true,
+      }),
+    );
+    const threadId = forked.thread.id;
+    // Outstanding user questions belong to the source session, not the copy.
+    const { asyncQuestions: _sourceQuestions, ...metadata } = handle.metadata ?? {};
+    let discarded: Promise<void> | null = null;
+    return {
+      handle: {
+        provider: CODEX_PROVIDER,
+        sessionId: threadId,
+        nativeHandle: threadId,
+        metadata: { ...metadata, threadId },
+      },
+      readOnlyModeId: CODEX_READ_ONLY_MODE_ID,
+      discard: () => {
+        discarded ??= this.deleteNativeThread(threadId).catch((error: unknown) => {
+          discarded = null;
+          throw error;
+        });
+        return discarded;
+      },
+    };
+  }
+
+  async discardNativeFork(handle: AgentPersistenceHandle): Promise<void> {
+    await this.deleteNativeThread(
+      requireSafeNativeId(handle.nativeHandle ?? handle.sessionId, "Codex thread id"),
+    );
+  }
+
+  private async deleteNativeThread(threadId: string): Promise<void> {
+    await this.withOneOffAppServerClient(async (client) => {
+      try {
+        await client.request("thread/delete", { threadId });
+        return;
+      } catch (error) {
+        if (isCodexMissingRolloutError(error, threadId)) return;
+        if (!isCodexUnknownMethodError(error, "thread/delete")) throw error;
+      }
+      // COMPAT(codexThreadDelete): Codex builds without `thread/delete` can only archive.
+      try {
+        await client.request("thread/archive", { threadId });
+      } catch (error) {
+        if (!isCodexMissingRolloutError(error, threadId)) throw error;
+      }
+    });
+  }
+
   private async updateNativeThreadArchiveState(
     handle: AgentPersistenceHandle,
     state: "archive" | "restore",
@@ -8564,9 +8707,7 @@ export class CodexAppServerAgentClient implements AgentClient {
     const threadId = handle.nativeHandle ?? handle.sessionId;
     if (!threadId) return;
 
-    const client = await this.startAppServer();
-
-    try {
+    await this.withOneOffAppServerClient(async (client) => {
       if (state === "archive") {
         await client.request("thread/archive", { threadId });
         return;
@@ -8581,6 +8722,15 @@ export class CodexAppServerAgentClient implements AgentClient {
           throw error;
         }
       }
+    });
+  }
+
+  private async withOneOffAppServerClient<T>(
+    run: (client: CodexAppServerClient) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.startAppServer();
+    try {
+      return await run(client);
     } finally {
       await client.dispose();
     }

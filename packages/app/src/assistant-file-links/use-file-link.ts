@@ -1,18 +1,28 @@
 import { useCallback, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import type { OpenFileDisposition } from "@/workspace/file-open";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { formatFileLinkTooltipPath } from "./tooltip-path";
 import type { InlinePathTarget } from "./parse";
+import { chooseFileFrom } from "./file-link-choice";
+import {
+  FileLinkPickCancelledError,
+  lookupFileCandidatesOnDaemon,
+  matchKnownFileTargets,
+  resolveFileLinkCandidates,
+  type FileLinkLadderInput,
+} from "./ladder";
 import {
   useAssistantFileLinkResolverContext,
+  type AssistantFileLinkResolverConfig,
   type AssistantFileLinkResolverContextValue,
 } from "./provider";
 import {
   classifyForResolution,
-  fetchDaemonResolution,
+  getAssistantFileLinkToken,
+  UnresolvedFileLinkError,
   type AssistantFileLinkResolution,
   type AssistantFileLinkSource,
   type AssistantFileLinkContext,
@@ -20,10 +30,21 @@ import {
 
 export interface UseFileLinkResult {
   target: InlinePathTarget | null;
+  /**
+   * The file this link names before any daemon lookup, or null when it is not a local file.
+   * An ambiguous token's real path is only known after `resolveFile`.
+   */
+  fileCandidate: InlinePathTarget | null;
   tooltipPath: string | null;
   onHoverIn: () => void;
   onPress: () => void;
   open: (source: AssistantFileLinkSource, disposition: OpenFileDisposition) => void;
+  /**
+   * The link's file, looked up through the ladder when the token is ambiguous. Asks which file
+   * the link means when several match, and rejects with `FileLinkPickCancelledError` when the
+   * user dismisses the question.
+   */
+  resolveFile: () => Promise<InlinePathTarget>;
 }
 
 export interface AssistantFileLinkActions {
@@ -37,6 +58,10 @@ interface AssistantFileLinkLookupKey {
   path: string;
   lineStart: number | null;
   lineEnd: number | null;
+  /** The extra roots the lookup searches, joined. */
+  roots: string;
+  /** Whether the lookup also searches Git-ignored files. */
+  ignored: boolean;
 }
 
 type AssistantFileLinkQueryKey = readonly [
@@ -45,6 +70,8 @@ type AssistantFileLinkQueryKey = readonly [
   string | null,
   AssistantFileLinkLookupKey | null,
 ];
+
+type NeedsLookupResolution = Extract<AssistantFileLinkResolution, { kind: "needsLookup" }>;
 
 const DISABLED_QUERY_KEY = ["assistantFileLink", null, null, null] as const;
 
@@ -57,6 +84,8 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
   const workspaceRoot = activeConfig.workspaceRoot;
   const relativePathBase = activeConfig.relativePathBase;
   const serverId = activeConfig.serverId;
+  const searchRoots = activeConfig.searchRoots;
+  const searchIgnored = context.supportsIgnoredLookup();
   const resolution = useMemo(
     () =>
       classifyForResolution(stableSource, {
@@ -71,26 +100,27 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
         ? assistantFileLinkQueryKey({
             serverId,
             workspaceRoot,
+            searchRoots,
+            searchIgnored,
             resolution,
           })
         : DISABLED_QUERY_KEY,
-    [resolution, serverId, workspaceRoot],
+    [resolution, searchIgnored, searchRoots, serverId, workspaceRoot],
   );
+
+  const fetchLookup = useStableEvent(() => {
+    if (resolution.kind !== "needsLookup") {
+      throw new Error("Assistant file link lookup requested for a sync link.");
+    }
+    return fetchDaemonCandidates(
+      buildLadderInput({ resolution, config: context.configRef.current, context }),
+      resolution.token,
+    );
+  });
 
   const query = useQuery({
     queryKey,
-    queryFn: () => {
-      if (resolution.kind !== "needsLookup") {
-        throw new Error("Assistant file link lookup requested for a sync link.");
-      }
-      return fetchDaemonResolution({
-        ambiguousQuery: resolution.ambiguousQuery,
-        token: resolution.token,
-        target: resolution.target,
-        workspaceRoot,
-        getDirectorySuggestions: context.getDirectorySuggestions,
-      });
-    },
+    queryFn: fetchLookup,
     enabled: false,
     retry: 0,
     staleTime: Infinity,
@@ -115,14 +145,7 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
 
     void queryClient.prefetchQuery({
       queryKey,
-      queryFn: () =>
-        fetchDaemonResolution({
-          ambiguousQuery: resolution.ambiguousQuery,
-          token: resolution.token,
-          target: resolution.target,
-          workspaceRoot,
-          getDirectorySuggestions: context.getDirectorySuggestions,
-        }),
+      queryFn: fetchLookup,
       retry: 0,
       staleTime: Infinity,
     });
@@ -132,17 +155,51 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
     open(stableSource, "preferred");
   });
 
+  const knownTargets = useMemo(
+    () =>
+      resolution.kind === "needsLookup"
+        ? matchKnownFileTargets(
+            buildLadderInput({ resolution, config: context.configRef.current, context }),
+          )
+        : [],
+    [context, resolution],
+  );
+
   const target = useMemo(() => {
     if (resolution.kind === "resolved") {
       return resolution.value.kind === "file" ? resolution.value.target : null;
     }
-    return query.data ?? null;
-  }, [query.data, resolution]);
+    // Several matches leave the link ambiguous until the user picks one.
+    const candidates = knownTargets.length > 0 ? knownTargets : (query.data ?? []);
+    return candidates.length === 1 ? candidates[0] : null;
+  }, [knownTargets, query.data, resolution]);
+
+  const fileCandidate = useMemo(() => {
+    if (resolution.kind === "needsLookup") {
+      return resolution.target;
+    }
+    return resolution.value.kind === "file" ? resolution.value.target : null;
+  }, [resolution]);
+
+  const resolveFile = useStableEvent(async (): Promise<InlinePathTarget> => {
+    if (resolution.kind === "needsLookup") {
+      return resolveFileLinkLookup({
+        resolution,
+        config: context.configRef.current,
+        context,
+        queryClient,
+      });
+    }
+    if (resolution.value.kind === "file") {
+      return resolution.value.target;
+    }
+    throw new UnresolvedFileLinkError(getAssistantFileLinkToken(stableSource));
+  });
 
   const tooltipPath = target ? formatFileLinkTooltipPath({ target, workspaceRoot }) : null;
   return useMemo(
-    () => ({ target, tooltipPath, onHoverIn, onPress, open }),
-    [target, tooltipPath, onHoverIn, onPress, open],
+    () => ({ target, fileCandidate, tooltipPath, onHoverIn, onPress, open, resolveFile }),
+    [target, fileCandidate, tooltipPath, onHoverIn, onPress, open, resolveFile],
   );
 }
 
@@ -173,7 +230,7 @@ function openAssistantFileLink(input: {
   source: AssistantFileLinkSource;
   disposition: OpenFileDisposition;
   context: AssistantFileLinkResolverContextValue;
-  queryClient: ReturnType<typeof useQueryClient>;
+  queryClient: QueryClient;
   formatNoFileFoundMessage: (token: string) => string;
 }): void {
   const capturedConfig = input.context.configRef.current;
@@ -193,26 +250,13 @@ function openAssistantFileLink(input: {
     return;
   }
 
-  const capturedQueryKey = assistantFileLinkQueryKey({
-    serverId: capturedConfig.serverId,
-    workspaceRoot: capturedConfig.workspaceRoot,
-    resolution: capturedResolution,
-  });
-
   const run = async () => {
     try {
-      const target = await input.queryClient.fetchQuery({
-        queryKey: capturedQueryKey,
-        queryFn: () =>
-          fetchDaemonResolution({
-            ambiguousQuery: capturedResolution.ambiguousQuery,
-            token: capturedResolution.token,
-            target: capturedResolution.target,
-            workspaceRoot: capturedConfig.workspaceRoot,
-            getDirectorySuggestions: input.context.getDirectorySuggestions,
-          }),
-        retry: 0,
-        staleTime: Infinity,
+      const target = await resolveFileLinkLookup({
+        resolution: capturedResolution,
+        config: capturedConfig,
+        context: input.context,
+        queryClient: input.queryClient,
       });
       await dispatchFileTarget({
         target,
@@ -222,6 +266,7 @@ function openAssistantFileLink(input: {
         context: input.context,
       });
     } catch (error) {
+      if (error instanceof FileLinkPickCancelledError) return;
       await dispatchUnresolvedError({
         error,
         noFileFoundMessage: input.formatNoFileFoundMessage(capturedResolution.token),
@@ -233,6 +278,78 @@ function openAssistantFileLink(input: {
   };
 
   void run();
+}
+
+function buildLadderInput(input: {
+  resolution: NeedsLookupResolution;
+  config: AssistantFileLinkResolverConfig;
+  context: AssistantFileLinkResolverContextValue;
+}): FileLinkLadderInput {
+  return {
+    query: input.resolution.ambiguousQuery,
+    target: input.resolution.target,
+    cwd: input.config.workspaceRoot?.trim() ?? "",
+    extraRoots: input.config.searchRoots ?? [],
+    knownPaths: input.config.getKnownFilePaths?.() ?? [],
+    searchIgnored: input.context.supportsIgnoredLookup(),
+    getDirectorySuggestions: input.context.getDirectorySuggestions,
+  };
+}
+
+/** The daemon steps of the ladder. A miss throws so a file created later is looked up again. */
+async function fetchDaemonCandidates(
+  ladder: FileLinkLadderInput,
+  token: string,
+): Promise<InlinePathTarget[]> {
+  if (!ladder.cwd) throw new UnresolvedFileLinkError(token);
+  const found = await lookupFileCandidatesOnDaemon(ladder);
+  if (found.length === 0) throw new UnresolvedFileLinkError(token);
+  return found;
+}
+
+/**
+ * Walks the ladder for a link that needs a lookup and settles on one file: the only match, or the
+ * one the user picks when several match. Rejects with `UnresolvedFileLinkError` when nothing
+ * matches and `FileLinkPickCancelledError` when the user dismisses the question.
+ */
+export async function resolveFileLinkLookup(input: {
+  resolution: NeedsLookupResolution;
+  config: AssistantFileLinkResolverConfig;
+  context: AssistantFileLinkResolverContextValue;
+  queryClient: QueryClient;
+}): Promise<InlinePathTarget> {
+  const { resolution, config, context, queryClient } = input;
+  const ladder = buildLadderInput({ resolution, config, context });
+  if (!ladder.cwd) throw new UnresolvedFileLinkError(resolution.token);
+  const queryKey = assistantFileLinkQueryKey({
+    serverId: config.serverId,
+    workspaceRoot: config.workspaceRoot,
+    searchRoots: config.searchRoots,
+    searchIgnored: ladder.searchIgnored,
+    resolution,
+  });
+  const candidates = await resolveFileLinkCandidates(ladder, async (lookupInput) => {
+    try {
+      return await queryClient.fetchQuery({
+        queryKey,
+        queryFn: () => fetchDaemonCandidates(lookupInput, resolution.token),
+        retry: 0,
+        staleTime: Infinity,
+      });
+    } catch (error) {
+      if (error instanceof UnresolvedFileLinkError) return [];
+      throw error;
+    }
+  });
+  if (candidates.length === 0) throw new UnresolvedFileLinkError(resolution.token);
+  if (candidates.length === 1) return candidates[0];
+  const chosen = await chooseFileFrom({
+    paths: candidates.map((candidate) => candidate.path),
+    workspaceRoot: ladder.cwd,
+  });
+  const picked = candidates.find((candidate) => candidate.path === chosen);
+  if (!picked) throw new FileLinkPickCancelledError();
+  return picked;
 }
 
 function canOpenAssistantFileLink(
@@ -262,7 +379,9 @@ function useStableSource(source: AssistantFileLinkSource): AssistantFileLinkSour
 function assistantFileLinkQueryKey(input: {
   serverId?: string;
   workspaceRoot?: string;
-  resolution: Extract<AssistantFileLinkResolution, { kind: "needsLookup" }>;
+  searchRoots?: readonly string[];
+  searchIgnored: boolean;
+  resolution: NeedsLookupResolution;
 }): AssistantFileLinkQueryKey {
   return [
     "assistantFileLink",
@@ -273,6 +392,8 @@ function assistantFileLinkQueryKey(input: {
       path: input.resolution.target.path,
       lineStart: input.resolution.target.lineStart ?? null,
       lineEnd: input.resolution.target.lineEnd ?? null,
+      roots: (input.searchRoots ?? []).join("\n"),
+      ignored: input.searchIgnored,
     },
   ];
 }

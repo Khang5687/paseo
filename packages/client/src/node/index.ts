@@ -40,6 +40,7 @@ export function createHostTransportFactory(
     const closes = new Set<(event?: unknown) => void>();
     const errors = new Set<(event?: unknown) => void>();
     const messages = new Set<(data: unknown, binary: boolean) => void>();
+    const sendProgress = new Set<() => void>();
     let closed = false;
     let closeEvent: unknown;
     let transport: DaemonTransport | undefined;
@@ -167,6 +168,9 @@ export function createHostTransportFactory(
       transport.onMessage((data, binary) => {
         if (!closed) for (const handler of messages) handler(data, binary);
       });
+      transport.onSendProgress?.(() => {
+        if (!closed) for (const handler of sendProgress) handler();
+      });
     })().catch(() => {
       for (const handler of errors) handler(new Error("Host transport failed"));
       close();
@@ -198,6 +202,10 @@ export function createHostTransportFactory(
       onMessage(handler) {
         messages.add(handler);
         return () => messages.delete(handler);
+      },
+      onSendProgress(handler) {
+        sendProgress.add(handler);
+        return () => sendProgress.delete(handler);
       },
     };
   };

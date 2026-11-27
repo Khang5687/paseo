@@ -1,0 +1,17 @@
+{
+  "pr": 48,
+  "title": "feat(server): OMP account sign-in link, paste fallback and add-only guard",
+  "tests": [
+    "packages/client/src/daemon-client.test.ts",
+    "packages/protocol/src/messages.test.ts",
+    "packages/protocol/src/messages.wire-compat.test.ts",
+    "packages/server/src/server/account-routing/authority.test.ts",
+    "packages/server/src/server/account-routing/login.test.ts",
+    "packages/server/src/server/account-routing/probe.test.ts",
+    "packages/server/src/server/account-routing/routing.integration.test.ts",
+    "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts",
+    "packages/server/src/server/authorization/index.test.ts",
+    "packages/server/src/server/session/account-routing-session.test.ts",
+    "packages/server/src/server/websocket-server.relay-reconnect.test.ts"
+  ]
+}

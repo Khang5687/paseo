@@ -1,0 +1,6 @@
+{
+  "pr": 56,
+  "title": "fix(app): keep skins visible after the Expo Router upgrade",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
+}

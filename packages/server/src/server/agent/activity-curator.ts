@@ -244,6 +244,7 @@ function selectForkContextRows(input: {
   items: AgentTimelineItem[];
   boundaryCursor: { epoch: string; seq: number } | null;
   boundaryMessageId: string | null;
+  boundarySeq: number | null;
 } {
   const projectedRows = projectTimelineRows({ rows: input.rows, mode: "projected" });
   const boundaryCursor = input.cursorBoundary?.cursor ?? null;
@@ -253,6 +254,7 @@ function selectForkContextRows(input: {
       items: projectedRows.map((entry) => entry.item),
       boundaryCursor: null,
       boundaryMessageId: null,
+      boundarySeq: null,
     };
   }
 
@@ -284,7 +286,7 @@ function selectForkContextRows(input: {
     return [toolCallAtCheckpoint(row.item)];
   });
 
-  return { items, boundaryCursor, boundaryMessageId };
+  return { items, boundaryCursor, boundaryMessageId, boundarySeq };
 }
 
 /**
@@ -294,6 +296,45 @@ function selectForkContextRows(input: {
  */
 function toolCallAtCheckpoint(item: ToolCallTimelineItem): ToolCallTimelineItem {
   return { ...item, status: "running", error: null };
+}
+
+/**
+ * Where a native fork cuts the provider session for a fork boundary. The cut is the first user
+ * message after the boundary (null keeps the whole session). compactedRows are the timeline rows
+ * the source's last completed compaction folded away; a fork of the provider session no longer
+ * carries them verbatim.
+ */
+export function resolveForkCutPoint(input: {
+  rows: readonly AgentTimelineRow[];
+  cursorBoundary?: ForkCursorBoundary | null;
+  boundaryMessageId?: string | null;
+}): { cutBeforeMessageId: string | null; compactedRows: AgentTimelineRow[] } {
+  const { boundarySeq } = selectForkContextRows(input);
+  const projected = projectTimelineRows({ rows: input.rows, mode: "projected" });
+  let cutBeforeMessageId: string | null = null;
+  if (boundarySeq !== null) {
+    const next = projected.find(
+      (row) => row.seqStart > boundarySeq && row.item.type === "user_message",
+    );
+    if (next && next.item.type === "user_message") {
+      const submittedByPaseo = next.item.clientMessageId === next.item.messageId;
+      if (submittedByPaseo && !next.providerMessageId) {
+        throw new Error("The provider has not acknowledged the message after this point yet.");
+      }
+      cutBeforeMessageId = next.providerMessageId ?? next.item.messageId ?? null;
+      if (!cutBeforeMessageId) {
+        throw new Error("The message after this point has no provider message id.");
+      }
+    }
+  }
+  const compaction = projected.findLast(
+    (row) =>
+      row.item.type === "compaction" &&
+      row.item.status === "completed" &&
+      (boundarySeq === null || row.seqEnd <= boundarySeq),
+  );
+  const compactedRows = compaction ? input.rows.filter((row) => row.seq < compaction.seqStart) : [];
+  return { cutBeforeMessageId, compactedRows };
 }
 
 function trimContextMetadata(value: string | null | undefined): string | null {

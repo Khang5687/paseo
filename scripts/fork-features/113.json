@@ -1,0 +1,6 @@
+{
+  "pr": 113,
+  "title": "fix(fork): wait for the unit to stop before starting the switched daemon",
+  "untested": "fork-remote-daemon.sh drives a real SSH host and systemd; checked against a throwaway systemd user unit that exits 0.2 s after stop (PR body)",
+  "tests": []
+}

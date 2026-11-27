@@ -1,0 +1,6 @@
+{
+  "pr": 17,
+  "title": "fix(app): keep skin art visible in light themes",
+  "tests": ["packages/app/src/skins/contrast.test.ts"],
+  "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
+}

@@ -1,0 +1,9 @@
+{
+  "pr": 79,
+  "title": "fix(app): keep a waiting main agent visible while sub-agents work",
+  "tests": [
+    "packages/server/src/server/workspace-directory.test.ts",
+    "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
+    "packages/app/src/components/sidebar/workspace-meta-row/meta-items.test.ts"
+  ]
+}

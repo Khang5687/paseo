@@ -1,0 +1,7 @@
+{
+  "pr": 96,
+  "title": "fix(server): keep a linked worktree under its project",
+  "tests": [
+    "packages/server/src/server/session/workspace-provisioning/workspace-provisioning-service.test.ts"
+  ]
+}

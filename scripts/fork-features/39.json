@@ -1,0 +1,9 @@
+{
+  "pr": 39,
+  "title": "feat(server): bridge OMP account.routing JSONL frames to the host authority",
+  "tests": [
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts",
+    "packages/server/src/server/agent/providers/omp/runtime.test.ts"
+  ]
+}

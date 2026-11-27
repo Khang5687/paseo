@@ -3,11 +3,12 @@ import { Fragment, useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
+import { Clock, ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
 import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
 } from "@getpaseo/protocol/workspace-labels";
+import { formatNextRunLabel, formatWaitingLabel } from "@/background-work";
 import type { HostBadgeModel } from "@/hosts/appearance";
 import { HostBadge, HOST_BADGE_ICON_SIZE } from "@/hosts/host-badge";
 import { WorkspaceLabelChip, WORKSPACE_LABEL_CHIP_INSET } from "@/workspace-labels/chip";
@@ -40,6 +41,7 @@ export {
  */
 const META_ICON_SIZE = HOST_BADGE_ICON_SIZE;
 
+const ThemedClock = withUnistyles(Clock);
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolder = withUnistyles(Folder);
 const ThemedGitBranch = withUnistyles(GitBranch);
@@ -75,7 +77,10 @@ export function WorkspaceMetaRow({
   hostBadge,
   prHint,
   serviceSummary,
+  nextRunAt = null,
+  waitingOn = null,
   labels = EMPTY_LABELS,
+  workingSubagentCount = 0,
   workspace = null,
   backdrop,
 }: {
@@ -84,18 +89,26 @@ export function WorkspaceMetaRow({
   hostBadge: HostBadgeModel | null;
   prHint: PrHint | null;
   serviceSummary: WorkspaceServiceSummary | null;
+  /** When a heartbeat next wakes the workspace. Previews have none. */
+  nextRunAt?: string | null;
+  /** The job the working chat waits on ("" when unnamed). Previews have none. */
+  waitingOn?: string | null;
   labels?: readonly WorkspaceLabelDefinition[];
+  workingSubagentCount?: number;
   /** The real workspace behind the row; previews leave it out and get no plugin items. */
   workspace?: { serverId: string; workspaceId: string } | null;
   backdrop: SidebarSurfaceBackdrop;
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
   const items = selectMetaRowItems({
+    workingSubagentCount,
     currentBranch,
     projectName,
     hasHostBadge: hostBadge !== null,
     prHint,
     serviceSummary,
+    nextRunAt,
+    waitingOn,
     labels,
     visible: rowItems,
     checksDisplay,
@@ -139,6 +152,9 @@ function MetaItemNode({
   /** First on the line, so this item's ink sets the rail the title above it already uses. */
   leading: boolean;
 }): ReactNode {
+  if (item.kind === "subagents") {
+    return <SubagentsItem count={item.count} />;
+  }
   if (item.kind === "branch") {
     return <IdentityItem kind="branch" name={item.name} />;
   }
@@ -157,6 +173,12 @@ function MetaItemNode({
   if (item.kind === "labels") {
     return <LabelsItem labels={item.labels} leading={leading} />;
   }
+  if (item.kind === "nextRun") {
+    return <NextRunItem at={item.at} />;
+  }
+  if (item.kind === "waiting") {
+    return <WaitingItem title={item.title} />;
+  }
   return <ServiceItem summary={item.summary} />;
 }
 
@@ -169,6 +191,22 @@ function IdentityItem({ kind, name }: { kind: "branch" | "project"; name: string
       </View>
       <Text style={styles.identityText} numberOfLines={1}>
         {name}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * How many subagents are still working while the row reports that the root agent waits on you.
+ * Muted text with no spinner: the leading slot owns the row's status, and a second spinner would
+ * read as the row itself working.
+ */
+function SubagentsItem({ count }: { count: number }) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.item} testID="sidebar-workspace-working-subagents">
+      <Text style={styles.subagentsText} numberOfLines={1}>
+        {t("sidebar.workspace.workingSubagents", { count })}
       </Text>
     </View>
   );
@@ -326,6 +364,33 @@ function ServiceItem({ summary }: { summary: WorkspaceServiceSummary }) {
   );
 }
 
+/**
+ * When a heartbeat next wakes one of the workspace's chats. A clock, not the running ring: the
+ * row is idle until then, and a ring would say it is working.
+ */
+function NextRunItem({ at }: { at: string }) {
+  const label = formatNextRunLabel(at);
+  return (
+    <View style={styles.item} testID="sidebar-workspace-next-run">
+      <ThemedClock size={META_ICON_SIZE} uniProps={mutedMapping} />
+      <Text style={styles.prText} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** Why the status slot shows an hourglass: the chat's turn is blocked on this job. */
+function WaitingItem({ title }: { title: string }) {
+  return (
+    <View style={styles.waitingItem} testID="sidebar-workspace-waiting">
+      <Text style={styles.prText} numberOfLines={1}>
+        {formatWaitingLabel(title)}
+      </Text>
+    </View>
+  );
+}
+
 const successMapping = (theme: Theme) => ({ color: theme.colors.statusSuccess });
 
 const PR_STATE_LABEL_KEYS = {
@@ -358,6 +423,13 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     flexShrink: 1,
   },
+  // A long command shrinks before the identity beside it does.
+  waitingItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+    flexShrink: 2,
+  },
   identityIcon: {
     flexShrink: 0,
   },
@@ -369,6 +441,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   itemPressed: {
     opacity: 0.82,
+  },
+  subagentsText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 16,
+    flexShrink: 0,
   },
   separator: {
     color: theme.colors.foregroundExtraMuted,

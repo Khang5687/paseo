@@ -38,6 +38,7 @@ import {
 import { pruneTerminalWorkerRuntimes } from "./terminal-worker-runtime.js";
 import type {
   TerminalActivityListener,
+  TerminalCommandFinishedListener,
   TerminalActivityTransitionEvent,
   TerminalListItem,
   TerminalManager,
@@ -179,6 +180,7 @@ export function createWorkerTerminalManager(
   const pendingCreationsById = new Map<string, { session: TerminalSession | null }>();
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
   const terminalActivityListeners = new Set<TerminalActivityListener>();
+  const globalCommandFinishedListeners = new Set<TerminalCommandFinishedListener>();
   const terminalWorkspaceContributionChangedListeners =
     new Set<TerminalWorkspaceContributionChangedListener>();
   let workerDisconnected = false;
@@ -519,6 +521,13 @@ export function createWorkerTerminalManager(
     }
     for (const listener of Array.from(record.commandFinishedListeners)) {
       listener(message.info);
+    }
+    for (const listener of Array.from(globalCommandFinishedListeners)) {
+      try {
+        listener({ terminalId: record.info.id, exitCode: message.info.exitCode });
+      } catch {
+        // no-op
+      }
     }
   }
 
@@ -1007,6 +1016,13 @@ export function createWorkerTerminalManager(
       terminalActivityListeners.add(listener);
       return () => {
         terminalActivityListeners.delete(listener);
+      };
+    },
+
+    subscribeTerminalCommandFinished(listener: TerminalCommandFinishedListener): () => void {
+      globalCommandFinishedListeners.add(listener);
+      return () => {
+        globalCommandFinishedListeners.delete(listener);
       };
     },
 

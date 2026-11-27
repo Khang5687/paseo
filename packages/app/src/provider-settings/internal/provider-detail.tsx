@@ -25,6 +25,7 @@ import {
 } from "./detail-sections";
 import { DiagnosticSheet } from "./diagnostic-sheet";
 import { useProviderConfigActions, type ProviderEntry } from "./provider-config";
+import { ProviderFeatureDefaultsSection } from "./provider-feature-defaults";
 import { ProviderModels } from "./provider-models";
 import { ProviderNotice } from "./provider-notice";
 import { ProviderRefreshButton, useCheckedLabel, type ProviderRefresh } from "./provider-refresh";
@@ -127,6 +128,7 @@ export function ProviderDetail({
         updates={installation.updates}
         action={installation.action}
       />
+      <ProviderFeatureDefaultsSection serverId={serverId} provider={provider} />
       {sections.models ? (
         <ProviderModels
           serverId={serverId}

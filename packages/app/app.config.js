@@ -98,6 +98,20 @@ const variants = {
 const variant = variants[appVariant] ?? variants.production;
 const nativeReleaseVersion = getNativeReleaseVersion(pkg.version);
 
+// Fork-only (Khang5687/paseo). Push tokens belong to the Expo project in extra.eas.projectId, and
+// Expo delivers through that project's FCM credentials, so the fork's own APK needs the owner's
+// project, not getpaseo's. ./.secrets/eas.json ({ "projectId", "owner" }, gitignored) holds it;
+// without the file the config is upstream's.
+const forkEasProject = (() => {
+  const file = path.resolve(__dirname, "./.secrets/eas.json");
+  if (!fs.existsSync(file)) return null;
+  const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (typeof parsed.projectId !== "string" || typeof parsed.owner !== "string") {
+    throw new Error(`${file} needs string "projectId" and "owner" fields.`);
+  }
+  return { projectId: parsed.projectId, owner: parsed.owner };
+})();
+
 export default {
   expo: {
     name: variant.name,
@@ -113,6 +127,10 @@ export default {
       infoPlist: {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
+        // Documents shows in the Files app as "On My iPhone › Paseo": that is where Download
+        // saves when "Ask where to save" is off.
+        UIFileSharingEnabled: true,
+        LSSupportsOpeningDocumentsInPlace: true,
       },
       bundleIdentifier: variant.packageId,
       ...(variant.googleServiceInfoPlist
@@ -200,9 +218,9 @@ export default {
       diagnosticBuildTime: process.env.PASEO_DIAGNOSTIC_BUILD_TIME,
       router: {},
       eas: {
-        projectId: "0e7f65ce-0367-46c8-a238-2b65963d235a",
+        projectId: forkEasProject?.projectId ?? "0e7f65ce-0367-46c8-a238-2b65963d235a",
       },
     },
-    owner: "getpaseo",
+    owner: forkEasProject?.owner ?? "getpaseo",
   },
 };

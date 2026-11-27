@@ -11,6 +11,9 @@ import { PENDING_MARKDOWN_IMAGE } from "./source";
 
 const memoryStore: AttachmentStore = {
   storageType: "web-indexeddb",
+  async openWriter() {
+    throw new Error("openWriter is not used here");
+  },
   async save(input) {
     return {
       id: input.id ?? "att_chart",

@@ -1,4 +1,5 @@
 import { ChatFind, ChatFindExpansion } from "@/agent-stream/chat-find";
+import type { ChatFindProps } from "@/agent-stream/chat-find/types";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import React, {
   forwardRef,
@@ -83,7 +84,7 @@ import { type NearBottom, useIsNearBottom, useNearBottom } from "./near-bottom";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
 import { CHAT_COLUMN_RAIL_DATASET, useChatOutlineRail } from "@/chat-rail";
-import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import { getHostRuntimeStore, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 import {
   CompletedTurnFooterRow,
@@ -101,7 +102,15 @@ import {
 } from "./bottom-anchor-controller";
 import { createAssistantImageOccurrenceKey } from "@/assistant-image/acquisition-cache";
 import { AssistantSelectionCopySurface } from "@/assistant-selection-copy/surface";
+import { ChatNoteRowProvider, ChatNotesProvider } from "@/chat-notes/context";
+import { ChatNotesSurface } from "@/chat-notes/surface";
 import { AssistantFileLinkResolverProvider, createInlinePathOpener } from "@/assistant-file-links";
+import { pickFileHostForChat } from "@/assistant-file-links/host-pick-runtime";
+import { resolveFileLinkSearchRoots } from "@/assistant-file-links/ladder";
+import { createToolCallPathIndex } from "@/assistant-file-links/tool-call-paths";
+import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
+import { useOfflineAutoSave } from "@/offline-files/use-auto-save";
+import { CodeRunScopeProvider } from "@/code-run/scope";
 import { useOpenOutsideWorkspaceFolder } from "@/workspace/open-in-file-manager/outside-folder";
 import {
   createWorkspaceFileTabTarget,
@@ -281,6 +290,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
   "supportsRewindConversation",
   "supportsRewindFiles",
   "supportsRewindBoth",
+  "supportsNativeFork",
 ];
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
@@ -297,6 +307,15 @@ const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
 
 function resolveBottomOverlayControlOffset(clearance: number | undefined): number {
   return Math.max(16, clearance ?? 0);
+}
+
+/** Read-only transcripts (provider subagent threads) show commands without running them. */
+function resolveCodeRunWorkspaceId(input: {
+  readOnly: boolean;
+  workspaceId: string | null | undefined;
+}): string | null {
+  if (input.readOnly || !input.workspaceId) return null;
+  return input.workspaceId;
 }
 
 // Keep entry/exit animations off on Android due to RN dispatchDraw crashes
@@ -396,6 +415,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const transformTimelineItem = useInstalledTimelineTransform(resolvedServerId);
 
     const client = useSessionStore((state) => state.sessions[resolvedServerId]?.client ?? null);
+    // The job the open turn is blocked on, so the footer shows an hourglass, not the loader.
+    const waitingOn = useSessionStore(
+      (state) =>
+        state.sessions[resolvedServerId]?.agents.get(agentId)?.backgroundWork?.waitingOn?.title ??
+        null,
+    );
     const sessionStreamHead = useSessionStore((state) =>
       state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
     );
@@ -413,6 +438,31 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const workspaceRoot = context.cwd?.trim() || "";
+    // Folders above the agent's cwd that a chat file name is searched in when the cwd misses it.
+    const workspaceFolder = useSessionStore((state) => {
+      const workspaces = state.sessions[resolvedServerId]?.workspaces;
+      const key = resolveWorkspaceMapKeyByIdentity({
+        workspaces,
+        workspaceId: context.workspaceId,
+      });
+      return key ? workspaces?.get(key)?.workspaceDirectory : undefined;
+    });
+    const projectFolder = useSessionStore((state) => {
+      const workspaces = state.sessions[resolvedServerId]?.workspaces;
+      const key = resolveWorkspaceMapKeyByIdentity({
+        workspaces,
+        workspaceId: context.workspaceId,
+      });
+      return key ? workspaces?.get(key)?.projectRootPath : undefined;
+    });
+    const searchRoots = useMemo(
+      () => resolveFileLinkSearchRoots({ workspaceRoot, workspaceFolder, projectFolder }),
+      [workspaceRoot, workspaceFolder, projectFolder],
+    );
+    const codeRunWorkspaceId = resolveCodeRunWorkspaceId({
+      readOnly,
+      workspaceId: context.workspaceId,
+    });
     const { revealDirectory } = useFileExplorerActions({
       serverId: resolvedServerId,
       workspaceId: context.workspaceId,
@@ -463,17 +513,32 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       });
     });
     const openInlineOutsideDirectory = useOpenOutsideWorkspaceFolder(resolvedServerId);
+    // A sleeping host can't answer the folder check, so open the file tab straight away and
+    // let the file pane fall back to a saved copy or another host's copy.
+    const isHostConnected = useHostRuntimeIsConnected(resolvedServerId);
+    const lookupClient = isHostConnected ? client : null;
+    const pickInlineFileHost = useStableEvent((path: string) =>
+      pickFileHostForChat({ path, chatServerId: resolvedServerId }),
+    );
     const inlinePathOpener = useMemo(
       () =>
         createInlinePathOpener({
           workspaceRoot,
           resolveRelativeFiles: true,
-          client,
+          client: lookupClient,
+          pickHost: pickInlineFileHost,
           openFile: openInlineFile,
           openDirectory: openInlineDirectory,
           openOutsideDirectory: openInlineOutsideDirectory,
         }),
-      [workspaceRoot, client, openInlineFile, openInlineDirectory, openInlineOutsideDirectory],
+      [
+        workspaceRoot,
+        lookupClient,
+        pickInlineFileHost,
+        openInlineFile,
+        openInlineDirectory,
+        openInlineOutsideDirectory,
+      ],
     );
     useEffect(() => {
       if (!isActive) inlinePathOpener.cancel();
@@ -482,6 +547,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const handleInlinePathPress = useStableEvent(
       (target: InlinePathTarget, disposition: OpenFileDisposition) => {
         if (isActive) void inlinePathOpener.open(target, disposition);
+      },
+    );
+    const openCodeRunTerminal = useStableEvent(
+      (input: { serverId: string; workspaceId: string; terminalId: string }) => {
+        navigateToWorkspace({
+          serverId: input.serverId,
+          workspaceId: input.workspaceId,
+          target: { kind: "terminal", terminalId: input.terminalId },
+        });
       },
     );
 
@@ -520,6 +594,22 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // the component reads the current (fresh) streamItems/streamHead from props.
     const effectiveStreamItems = useRetainedValue(streamItems, isActive);
     const effectiveStreamHead = useRetainedValue(streamHead, isActive);
+    // The files this agent's tool calls named: the first place a bare chat file name is looked up.
+    const toolCallPathIndex = useMemo(() => createToolCallPathIndex(), []);
+    const getKnownFilePaths = useStableEvent(() =>
+      toolCallPathIndex(
+        effectiveStreamItems,
+        effectiveStreamHead ?? EMPTY_STREAM_HEAD,
+        workspaceRoot,
+      ),
+    );
+    useOfflineAutoSave({
+      serverId: resolvedServerId,
+      workspaceRoot,
+      client,
+      items: effectiveStreamItems,
+      active: isActive,
+    });
     const effectiveTurnPresentation = useRetainedValue(turnPresentation, isActive);
     const isTurnActive = effectiveTurnPresentation.isActive;
     const presentStream = useMemo(() => createStreamPresentation(), []);
@@ -714,25 +804,28 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
         return (
-          <UserMessage
-            itemId={item.id}
-            serverId={resolvedServerId}
-            agentId={agentId}
-            messageId={item.messageId}
-            message={item.text}
-            sender={item.sender}
-            images={item.images}
-            attachments={item.attachments}
-            timestamp={item.timestamp.getTime()}
-            capabilities={context.capabilities}
-            client={client}
-            isFirstInGroup={layoutItem.isFirstInUserGroup}
-            isLastInGroup={layoutItem.isLastInUserGroup}
-            isPending={
-              item.clientMessageId !== undefined &&
-              pendingClientMessageIds.has(item.clientMessageId)
-            }
-          />
+          <ChatNoteRowProvider rowId={item.id} messageId={getStreamItemMessageId(item)} role="user">
+            <UserMessage
+              itemId={item.id}
+              serverId={resolvedServerId}
+              agentId={agentId}
+              messageId={item.messageId}
+              clientMessageId={item.clientMessageId}
+              message={item.text}
+              sender={item.sender}
+              images={item.images}
+              attachments={item.attachments}
+              timestamp={item.timestamp.getTime()}
+              capabilities={context.capabilities}
+              client={client}
+              isFirstInGroup={layoutItem.isFirstInUserGroup}
+              isLastInGroup={layoutItem.isLastInUserGroup}
+              isPending={
+                item.clientMessageId !== undefined &&
+                pendingClientMessageIds.has(item.clientMessageId)
+              }
+            />
+          </ChatNoteRowProvider>
         );
       },
       [context.capabilities, agentId, client, pendingClientMessageIds, resolvedServerId],
@@ -740,16 +833,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderAssistantMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "assistant_message" }>) => {
-        return (
-          <AssistantFileLinkResolverProvider
-            client={client}
-            serverId={resolvedServerId}
-            workspaceRoot={workspaceRoot}
-            onOpenWorkspaceFile={handleInlinePathPress}
-            toast={toast}
-          >
-            <ChatFindExpansion messageId={getStreamItemMessageId(item)}>
-              {(renderFullContent) => (
+        const message = (
+          <ChatFindExpansion messageId={getStreamItemMessageId(item)}>
+            {(renderFullContent) => (
+              <ChatNoteRowProvider
+                rowId={item.id}
+                messageId={getStreamItemMessageId(item)}
+                role="assistant"
+              >
                 <AssistantMessage
                   renderFullContent={renderFullContent}
                   occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
@@ -761,12 +852,49 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   spacing={layoutItem.assistantSpacing}
                   phase={layoutItem.phase}
                 />
-              )}
-            </ChatFindExpansion>
+              </ChatNoteRowProvider>
+            )}
+          </ChatFindExpansion>
+        );
+        return (
+          <AssistantFileLinkResolverProvider
+            client={client}
+            serverId={resolvedServerId}
+            workspaceRoot={workspaceRoot}
+            searchRoots={searchRoots}
+            getKnownFilePaths={getKnownFilePaths}
+            onOpenWorkspaceFile={handleInlinePathPress}
+            toast={toast}
+          >
+            {codeRunWorkspaceId && workspaceRoot ? (
+              <CodeRunScopeProvider
+                serverId={resolvedServerId}
+                agentId={agentId}
+                workspaceId={codeRunWorkspaceId}
+                cwd={workspaceRoot}
+                messageKey={item.messageId ?? item.id}
+                openTerminal={openCodeRunTerminal}
+              >
+                {message}
+              </CodeRunScopeProvider>
+            ) : (
+              message
+            )}
           </AssistantFileLinkResolverProvider>
         );
       },
-      [agentId, client, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
+      [
+        agentId,
+        client,
+        codeRunWorkspaceId,
+        handleInlinePathPress,
+        openCodeRunTerminal,
+        resolvedServerId,
+        toast,
+        searchRoots,
+        getKnownFilePaths,
+        workspaceRoot,
+      ],
     );
 
     const renderThoughtItem = useCallback(
@@ -1003,6 +1131,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           <TurnFooter
             isRunning={isTurnActive}
             inFlightTurnStartedAt={baseRenderModel.turnTiming.runningStartedAt}
+            waitingOn={waitingOn}
             host={bottomTurnFooterHost}
             strategy={streamRenderStrategy}
             supportsTimelineCursor={supportsAgentForkContextCursor}
@@ -1016,6 +1145,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         readOnly,
         isTurnActive,
         baseRenderModel.turnTiming.runningStartedAt,
+        waitingOn,
         bottomTurnFooterHost,
         streamRenderStrategy,
         supportsAgentForkContextCursor,
@@ -1162,9 +1292,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [effectiveStreamItems, effectiveStreamHead],
     );
     return (
-      <ChatFind
+      <ChatNotesFindScope
         agentId={agentId}
         serverId={resolvedServerId}
+        workspaceId={context.workspaceId}
         epoch={timelineEpoch}
         items={findItems}
         viewportRef={viewportRef}
@@ -1221,10 +1352,31 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             />
           </AssistantSelectionCopySurface>
         </ToolCallSheetProvider>
-      </ChatFind>
+      </ChatNotesFindScope>
     );
   },
 );
+
+/** Chat notes and find share the viewport and the loaded rows, so they wrap the stream together. */
+function ChatNotesFindScope({
+  workspaceId,
+  children,
+  ...find
+}: ChatFindProps & { workspaceId: ComponentProps<typeof ChatNotesProvider>["workspaceId"] }) {
+  return (
+    <ChatNotesProvider serverId={find.serverId} agentId={find.agentId} workspaceId={workspaceId}>
+      <ChatFind {...find}>
+        <ChatNotesSurface
+          viewportRef={find.viewportRef}
+          revealLoadedMessage={find.revealLoadedMessage}
+          visibleMessageIds={find.visibleMessageIds}
+        >
+          {children}
+        </ChatNotesSurface>
+      </ChatFind>
+    </ChatNotesProvider>
+  );
+}
 
 function agentCapabilityFlagsEqual(
   left: AgentCapabilityFlags | undefined,
@@ -1713,7 +1865,7 @@ function PermissionRequestCard({
 const stylesheet = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   contentWrapper: {
     width: "100%",

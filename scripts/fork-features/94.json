@@ -1,0 +1,5 @@
+{
+  "pr": 94,
+  "title": "fix(omp): skip OMP metadata records when mapping history",
+  "tests": ["packages/server/src/server/agent/providers/omp/history-mapper.test.ts"]
+}

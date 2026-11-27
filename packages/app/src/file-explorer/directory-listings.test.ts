@@ -10,6 +10,7 @@ import {
   DIRECTORY_LISTING_INVALIDATED,
   invalidateExplorerDirectoryListings,
   loadExplorerDirectory,
+  reloadExplorerDirectory,
 } from "./directory-listings";
 
 function directory(path: string, names: string[]): ExplorerDirectory {
@@ -63,8 +64,59 @@ function explorer() {
       }),
     refresh: (retained: readonly string[]) =>
       invalidateExplorerDirectoryListings(updateState, retained),
+    reload: (result: Promise<ExplorerDirectory>) =>
+      reloadExplorerDirectory({
+        readState: () => state,
+        updateState,
+        listDirectory: () => result,
+      }),
   };
 }
+
+describe("live re-list of a changed folder", () => {
+  it("shows the new entry without a spinner and keeps selection", async () => {
+    const model = explorer();
+    model.state().selectedEntryPath = "./docs";
+    const fresh = directory(".", ["docs", "clip.mp4"]);
+    const reload = deferred<ExplorerDirectory>();
+    const pending = model.reload(reload.promise);
+
+    expect(model.state().isLoading).toBe(false);
+    expect(model.state().pendingRequest).toBeNull();
+    reload.resolve(fresh);
+    await pending;
+
+    expect(model.state().directories.get(".")).toEqual(fresh);
+    expect(model.state().selectedEntryPath).toBe("./docs");
+  });
+
+  it("keeps the same state object when nothing changed", async () => {
+    const model = explorer();
+    const before = model.state();
+    await model.reload(Promise.resolve(directory(".", ["docs"])));
+    expect(model.state()).toBe(before);
+  });
+
+  it("keeps the old listing and shows no error when the re-list fails", async () => {
+    const model = explorer();
+    const before = model.state().directories.get(".");
+    await model.reload(Promise.reject(new Error("gone")));
+    expect(model.state().directories.get(".")).toBe(before);
+    expect(model.state().lastError).toBeNull();
+  });
+
+  it("drops a re-list that Refresh made stale", async () => {
+    const model = explorer();
+    const reload = deferred<ExplorerDirectory>();
+    const pending = model.reload(reload.promise);
+    model.refresh(["."]);
+    const refreshed = directory(".", ["docs", "NEW.md"]);
+    await model.load(".", Promise.resolve(refreshed));
+    reload.resolve(directory(".", ["docs"]));
+    await pending;
+    expect(model.state().directories.get(".")).toEqual(refreshed);
+  });
+});
 
 describe("directory listings across Refresh", () => {
   it("ignores an earlier reply for a collapsed folder while the fresh root is loading", async () => {
