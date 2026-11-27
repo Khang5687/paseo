@@ -94,6 +94,11 @@ export function buildPermissionSpeech(request: AgentPermissionRequest): string {
     .join(" ");
 }
 
+/** Said when the listener speaks while a permission prompt waits. The words are not forwarded. */
+export function buildPermissionReminderSpeech(): string {
+  return "A permission prompt is waiting. Answer it on screen.";
+}
+
 function normalize(text: string): string {
   return text
     .toLowerCase()

@@ -328,28 +328,59 @@ describe("VoiceSession question read-back", () => {
 });
 
 describe("VoiceSession permission read-back", () => {
-  test("reads the prompt aloud but sends the next spoken reply to the agent, never as an approval", async () => {
+  const bashPrompt = {
+    id: "p1",
+    provider: "omp",
+    name: "bash",
+    kind: "tool" as const,
+    title: "Allow tool: bash",
+    description: "Run the build",
+  };
+
+  test("reads the prompt aloud", async () => {
     const t = setup();
     await t.voice.handleSetVoiceMode(true, AGENT_ID);
 
-    t.voice.announcePermissionRequest(AGENT_ID, {
-      id: "p1",
-      provider: "omp",
-      name: "bash",
-      kind: "tool",
-      title: "Allow tool: bash",
-      description: "Run the build",
-    });
+    t.voice.announcePermissionRequest(AGENT_ID, bashPrompt);
+
     await vi.waitFor(() =>
       expect(t.spoken()).toBe(
         "Permission needed. Allow tool: bash Run the build Answer it on screen.",
       ),
     );
+    await t.voice.cleanup();
+  });
+
+  test("speaking while the prompt waits reminds the listener and neither approves it, interrupts the run, nor reaches the agent", async () => {
+    const t = setup();
+    await t.voice.handleSetVoiceMode(true, AGENT_ID);
+    t.voice.announcePermissionRequest(AGENT_ID, bashPrompt);
+    await vi.waitFor(() => expect(t.spoken()).toContain("Answer it on screen."));
+    const readBack = t.synthesized.length;
 
     await t.say("yes");
 
+    await vi.waitFor(() =>
+      expect(t.synthesized.slice(readBack).join(" ")).toBe(
+        "A permission prompt is waiting. Answer it on screen.",
+      ),
+    );
     expect(t.permissionResponses).toEqual([]);
-    expect(t.spokenInput).toEqual(["yes"]);
+    expect(t.interrupted).toEqual([]);
+    expect(t.spokenInput).toEqual([]);
+    await t.voice.cleanup();
+  });
+
+  test("once the prompt is answered on screen, speech goes to the agent again", async () => {
+    const t = setup();
+    await t.voice.handleSetVoiceMode(true, AGENT_ID);
+    t.voice.announcePermissionRequest(AGENT_ID, bashPrompt);
+    t.voice.handlePermissionResolved(AGENT_ID, bashPrompt.id);
+
+    await t.say("stop that");
+
+    expect(t.interrupted).toEqual([AGENT_ID]);
+    expect(t.spokenInput).toEqual(["stop that"]);
     await t.voice.cleanup();
   });
 });

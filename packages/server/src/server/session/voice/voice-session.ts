@@ -26,6 +26,7 @@ import type {
 } from "../../agent/agent-sdk-types.js";
 import { prepareTextForSpeech } from "./speech-text.js";
 import {
+  buildPermissionReminderSpeech,
   buildPermissionSpeech,
   buildQuestionSpeech,
   buildUnclearAnswerSpeech,
@@ -241,6 +242,8 @@ export class VoiceSession {
 
   private pendingQuestion: PendingSpokenQuestion | null = null;
   private readonly announcedRequestIds = new Set<string>();
+  /** Permission prompts read aloud and still waiting for an on-screen answer. */
+  private readonly pendingPermissionIds = new Set<string>();
   private announcementChain: Promise<void> = Promise.resolve();
 
   constructor(options: VoiceSessionOptions) {
@@ -565,6 +568,7 @@ export class VoiceSession {
 
   private async disableVoiceModeForActiveAgent(restoreAgentConfig: boolean): Promise<void> {
     this.pendingQuestion = null;
+    this.pendingPermissionIds.clear();
     await this.stopVoiceTurnController();
 
     const agentId = this.voiceModeAgentId;
@@ -1089,6 +1093,14 @@ export class VoiceSession {
       return;
     }
 
+    // A permission prompt is answered on screen only. The words must not approve it, interrupt the
+    // run that waits on it, or reach the agent as chat.
+    if (this.pendingPermissionIds.size > 0) {
+      this.queueAnnouncement(buildPermissionReminderSpeech());
+      await this.flushPendingAudioSegments("permission prompt waiting");
+      return;
+    }
+
     await this.host.sendSpokenInput(agentId, result.text);
     await this.flushPendingAudioSegments("transcription complete");
   }
@@ -1179,6 +1191,7 @@ export class VoiceSession {
 
     const questions = request.kind === "question" ? parseSpokenQuestions(request.input) : null;
     if (!questions) {
+      this.pendingPermissionIds.add(request.id);
       this.queueAnnouncement(buildPermissionSpeech(request));
       return;
     }
@@ -1190,6 +1203,7 @@ export class VoiceSession {
 
   /** The card was answered or withdrawn somewhere else (the screen, another client, the agent). */
   handlePermissionResolved(agentId: string, requestId: string): void {
+    this.pendingPermissionIds.delete(requestId);
     if (
       this.pendingQuestion?.agentId === agentId &&
       this.pendingQuestion.request.id === requestId
@@ -1345,7 +1359,9 @@ export class VoiceSession {
     this.clearBufferTimeout();
 
     this.abortController.abort();
-    await this.handleAbort({ interruptAgent: this.pendingQuestion === null });
+    await this.handleAbort({
+      interruptAgent: this.pendingQuestion === null && this.pendingPermissionIds.size === 0,
+    });
 
     const latencyMs = Date.now() - chunkReceivedAt;
     this.sessionLogger.debug(
