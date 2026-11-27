@@ -169,7 +169,6 @@ export const en = {
       unmuteVoice: "Unmute voice",
       muteVoice: "Mute voice",
       dictation: "Dictation",
-      interruptBeforeVoice: "Interrupt the agent before starting voice mode",
     },
     attachments: {
       addImage: "Add image",

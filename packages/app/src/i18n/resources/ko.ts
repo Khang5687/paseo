@@ -171,7 +171,6 @@ export const ko: TranslationResources = {
       unmuteVoice: "음성 음소거 해제",
       muteVoice: "음성 음소거",
       dictation: "받아쓰기",
-      interruptBeforeVoice: "음성 모드를 시작하기 전에 에이전트를 중단하세요",
     },
     attachments: {
       addImage: "이미지 추가",

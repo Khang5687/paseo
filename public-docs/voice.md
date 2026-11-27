@@ -23,6 +23,15 @@ This keeps credentials and execution in your environment and avoids introducing 
 - Voice LLM orchestration: hidden agent session using your configured provider (`claude`, `codex`, or `opencode`)
 - Tooling path: MCP stdio bridge for voice tools and agent control
 
+## Talking While the Agent Works
+
+You can start voice mode while the agent is running, and talk at any time.
+
+- When you start speaking, spoken replies stop playing at once. The agent keeps working.
+- When you finish speaking, your message joins the agent's running turn, the same as a typed message sent with the **Steer** send behavior. If the agent is idle, it starts a turn.
+- To stop the agent, press **Stop**. Speaking never stops it.
+- Voice mode gives the agent a voice prompt and a `speak` tool by reloading its session, and a reload ends a running turn. If you start voice mode during a run, Paseo waits for the run to finish and then applies them. Until then your messages reach the agent without the `speak` tool, so it answers in normal chat messages instead of speaking. Turning voice mode off during a run waits for the run to finish in the same way.
+
 ## Local Speech
 
 Local speech defaults to model IDs `parakeet-tdt-0.6b-v2-int8` (STT) and `kokoro-en-v0_19` (TTS, speaker 0 / voice 00).

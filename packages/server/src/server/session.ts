@@ -1416,7 +1416,7 @@ export class Session {
             }),
           reloadAgentSession: (agentId, overrides) =>
             this.agentManager.reloadAgentSession(agentId, overrides),
-          sendSpokenInput: async (agentId, text) => {
+          sendSpokenInput: async (agentId, text, { speakToolReady }) => {
             await this.handleSendAgentMessage(
               agentId,
               text,
@@ -1424,11 +1424,12 @@ export class Session {
               undefined,
               undefined,
               undefined,
-              { spokenInput: true },
+              { spokenInput: true, speakToolReady },
             );
           },
           interruptAgentIfRunning: (agentId) => this.interruptAgentIfRunning(agentId),
           hasActiveAgentRun: (agentId) => this.hasActiveAgentRun(agentId),
+          waitForAgentIdle: (agentId, signal) => this.waitForAgentIdle(agentId, signal),
         },
         logger: this.sessionLogger,
         sessionId: this.sessionId,
@@ -1905,6 +1906,28 @@ export class Session {
       return false;
     }
     return this.agentManager.hasInFlightRun(agentId);
+  }
+
+  /** Resolves once the agent has no run in flight, or the signal aborts. */
+  private waitForAgentIdle(agentId: string, signal?: AbortSignal): Promise<void> {
+    return new Promise((settle) => {
+      if (signal?.aborted || !this.agentManager.hasInFlightRun(agentId)) {
+        settle();
+        return;
+      }
+      const done = () => {
+        unsubscribe();
+        signal?.removeEventListener("abort", done);
+        settle();
+      };
+      const unsubscribe = this.agentManager.subscribe(
+        () => {
+          if (!this.agentManager.hasInFlightRun(agentId)) done();
+        },
+        { agentId, replayState: false },
+      );
+      signal?.addEventListener("abort", done, { once: true });
+    });
   }
 
   private handleAgentRunError(agentId: string, error: unknown, context: string): void {
@@ -4647,7 +4670,7 @@ export class Session {
     images?: Array<{ data: string; mimeType: string }>,
     attachments?: AgentAttachment[],
     runOptions?: AgentRunOptions,
-    options?: { spokenInput?: boolean },
+    options?: { spokenInput?: boolean; speakToolReady?: boolean },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     this.sessionLogger.info(
       {
@@ -4665,7 +4688,9 @@ export class Session {
       }`,
     );
 
-    const promptText = options?.spokenInput ? wrapSpokenInput(text) : text;
+    const promptText = options?.spokenInput
+      ? wrapSpokenInput(text, options.speakToolReady ?? true)
+      : text;
     const prompt = buildAgentPrompt(promptText, images, attachments);
 
     try {
@@ -4677,6 +4702,9 @@ export class Session {
         prompt,
         messageId,
         runOptions,
+        // Speech never replaces a run in progress: a spoken turn joins it, like a typed
+        // message sent with the default "steer" send behavior.
+        activeTurnBehavior: options?.spokenInput ? "steer" : undefined,
         // A typed or spoken message from the human answers any permission the
         // agent is blocked on.
         clearPendingPermissions: true,
