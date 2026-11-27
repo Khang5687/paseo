@@ -143,7 +143,11 @@ test.describe("Sidebar project strip", () => {
         );
         // A waiting project's hover is its peek card, not the name tooltip.
         await railItem(page, beta).hover();
-        await expect(page.locator('[data-testid^="sidebar-project-rail-peek-"]')).toBeVisible();
+        await expect(
+          page.getByTestId(
+            `sidebar-project-rail-peek-${projectEquivalenceViewKey(beta.projectKey)}`,
+          ),
+        ).toBeVisible();
         await screenshot(page, "desktop-rail-dots.png");
 
         // The open rail writes the exact counts beside the name.
