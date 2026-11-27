@@ -1493,6 +1493,16 @@ export const en = {
         remove: "Remove project",
         removing: "Removing...",
       },
+      snooze: {
+        title: "Snooze",
+        tomorrow: "Until tomorrow",
+        monday: "Until Monday",
+        date: "Until a date…",
+        datePage: "Until a date",
+        wake: "Wake now",
+        until: "Until {{time}}",
+        failed: "Couldn't snooze {{name}}",
+      },
       confirmations: {
         removeTitle: "Remove project?",
         removeMessage:

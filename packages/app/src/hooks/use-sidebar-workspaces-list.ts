@@ -24,6 +24,7 @@ import {
   type SidebarWorkspacePlacement,
 } from "./sidebar-workspaces-view-model";
 import { resolveQuietProjectKeys } from "@/components/sidebar/quiet-projects";
+import { nextSnoozeWakeMs, resolveSnoozedProjectKeys } from "@/components/sidebar/project-snooze";
 
 export {
   appendMissingOrderKeys,
@@ -128,27 +129,39 @@ function sameStatusCounts(a: ProjectStatusCounts, b: ProjectStatusCounts) {
 
 const QUIET_CLOCK_TICK_MS = 60 * 60 * 1000;
 
-/** Wall-clock time refreshed hourly: quietness is counted in days, so an hour is fine-grained. */
-function useHourlyNow(): number {
+/**
+ * Wall-clock time refreshed hourly: quietness is counted in days, so an hour is fine-grained.
+ * The soonest snoozed project's return adds one exact refresh, so it comes back on time.
+ */
+function useSidebarNow(projects: readonly SidebarProjectEntry[]): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), QUIET_CLOCK_TICK_MS);
     return () => clearInterval(timer);
   }, []);
+  const wakeAt = nextSnoozeWakeMs(projects, now);
+  useEffect(() => {
+    if (wakeAt === null) return;
+    // A snooze further out than the hourly tick waits for the tick to bring it nearer.
+    const delay = Math.min(Math.max(wakeAt - Date.now(), 0) + 1000, QUIET_CLOCK_TICK_MS);
+    const timer = setTimeout(() => setNow(Date.now()), delay);
+    return () => clearTimeout(timer);
+  }, [wakeAt]);
   return now;
 }
 
 /**
- * The projects that fold into "More": no chat activity for 3 days, nothing waiting on you, and
- * not in `keep`. The selector returns a joined string so unrelated session updates re-render
- * nothing.
+ * The projects that fold into "More": snoozed ones, and those with no chat activity for 3 days,
+ * nothing waiting on you, and not in `keep`. The selector returns a joined string so unrelated
+ * session updates re-render nothing.
  */
 export function useQuietProjectKeys(input: {
   projects: readonly SidebarProjectEntry[];
   keep: ReadonlySet<string>;
 }): ReadonlySet<string> {
   const { projects, keep } = input;
-  const now = useHourlyNow();
+  const now = useSidebarNow(projects);
+  const snoozed = useMemo(() => resolveSnoozedProjectKeys(projects, now), [projects, now]);
   const pendingCreateAttempts = useStoreWithEqualityFn(
     useCreateFlowStore,
     (state) => state.pendingByDraftId,
@@ -160,6 +173,7 @@ export function useQuietProjectKeys(input: {
         projects,
         keep,
         now,
+        snoozed,
         activityOf: (project) =>
           deriveProjectActivity({
             workspaces: project.workspaces,
@@ -167,7 +181,7 @@ export function useQuietProjectKeys(input: {
             pendingCreateAttempts,
           }),
       }).join("\n"),
-    [keep, now, pendingCreateAttempts, projects],
+    [keep, now, pendingCreateAttempts, projects, snoozed],
   );
   const joined = useStoreWithEqualityFn(useSessionStore, selector, Object.is);
   return useMemo(() => new Set(joined ? joined.split("\n") : []), [joined]);

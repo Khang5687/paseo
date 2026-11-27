@@ -8,6 +8,8 @@ export interface WorkspaceStructureHostPlacement {
   worktreeSupport: "supported" | "unsupported" | "unknown";
   customIconRevision?: string | null;
   iconRevision?: string;
+  /** ISO time this host's project comes back from a snooze; absent or null when awake. */
+  snoozedUntil?: string | null;
 }
 
 export interface WorkspaceStructureProject {
@@ -172,6 +174,7 @@ function addProjectToView(input: {
     worktreeSupport: project.projectKind === "git" ? "supported" : "unsupported",
     customIconRevision: project.projectCustomIconRevision,
     iconRevision: project.projectIconRevision,
+    ...(project.projectSnoozedUntil ? { snoozedUntil: project.projectSnoozedUntil } : {}),
   };
   const draft = byProject.get(viewKey);
   if (!draft) {

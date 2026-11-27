@@ -1235,6 +1235,15 @@ export const ProjectRenameRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// COMPAT(projectSnooze): fork, gated on `features.projectSnooze`.
+export const ProjectSnoozeSetRequestSchema = z.object({
+  type: z.literal("project.snooze.set.request"),
+  projectId: z.string(),
+  // ISO time the project comes back. Null wakes it now.
+  snoozedUntil: z.string().nullable(),
+  requestId: z.string(),
+});
+
 export const ProjectIconSetRequestSchema = z.object({
   type: z.literal("project.icon.set.request"),
   projectId: z.string(),
@@ -2655,6 +2664,17 @@ export const ProjectRenameResponsePayloadSchema = z.object({
 export const ProjectRenameResponseSchema = z.object({
   type: z.literal("project.rename.response"),
   payload: ProjectRenameResponsePayloadSchema,
+});
+
+export const ProjectSnoozeSetResponseSchema = z.object({
+  type: z.literal("project.snooze.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    projectId: z.string(),
+    accepted: z.boolean(),
+    snoozedUntil: z.string().nullable(),
+    error: z.string().nullable(),
+  }),
 });
 
 export const SidebarProjectOrderGetResponseSchema = z.object({
@@ -4512,6 +4532,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   UpdateAgentRequestMessageSchema,
   ProjectRenameRequestSchema,
   ProjectIconSetRequestSchema,
+  ProjectSnoozeSetRequestSchema,
   SidebarProjectOrderGetRequestSchema,
   SidebarProjectOrderSetRequestSchema,
   ProjectRemoveRequestSchema,
@@ -5037,6 +5058,9 @@ export const ServerInfoStatusPayloadSchema = z
         pluginNotifications: z.boolean().optional(),
         // COMPAT(skillManagement): added in v0.4.0, remove gate after 2027-08-16.
         skillManagement: z.boolean().optional(),
+        // COMPAT(projectSnooze): fork. Projects carry `projectSnoozedUntil` and take
+        // project.snooze.set. Without it the app hides Snooze.
+        projectSnooze: z.boolean().optional(),
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
         idleRuntimeCleanupSetting: z.boolean().optional(),
         // COMPAT(restartRecovery): added in v0.14.0, remove gate after 2027-04-28.
@@ -5529,6 +5553,8 @@ export const WorkspaceDescriptorPayloadSchema = z
     // Identifies the project's stored custom icon; null means automatic.
     // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.
     projectCustomIconRevision: z.string().nullable().optional(),
+    // COMPAT(projectSnooze): fork. ISO time a snoozed project comes back; null or absent when awake.
+    projectSnoozedUntil: z.string().nullable().optional(),
     projectRootPath: z.string(),
     workspaceDirectory: z.string().optional(),
     // COMPAT(workspaceSetupObservation): added in v0.12.0, remove optional after 2027-04-19.
@@ -5733,6 +5759,8 @@ export const WorkspaceProjectDescriptorPayloadSchema = z.object({
   projectCustomName: z.string().nullable().optional(),
   // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.
   projectCustomIconRevision: z.string().nullable().optional(),
+  // COMPAT(projectSnooze): fork. ISO time a snoozed project comes back; null or absent when awake.
+  projectSnoozedUntil: z.string().nullable().optional(),
   // Fingerprints the effective icon, including automatic discovery and the
   // absence of an icon. Clients may persist icon results against this value.
   // COMPAT(projectIconCache): added in v0.2.7, remove optional after 2027-02-12.
@@ -9162,6 +9190,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
   ProjectIconSetResponseSchema,
+  ProjectSnoozeSetResponseSchema,
   SidebarProjectOrderGetResponseSchema,
   SidebarProjectOrderSetResponseSchema,
   ProjectRemoveResponseSchema,
@@ -9405,6 +9434,7 @@ export type AgentSearchResponseMessage = z.infer<typeof AgentSearchResponseMessa
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
+export type ProjectSnoozeSetResponse = z.infer<typeof ProjectSnoozeSetResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;
 export type SidebarProjectOrder = z.infer<typeof SidebarProjectOrderSchema>;
 export type SidebarProjectOrderGetResponse = z.infer<typeof SidebarProjectOrderGetResponseSchema>;
@@ -9599,6 +9629,7 @@ export type DeleteAgentRequestMessage = z.infer<typeof DeleteAgentRequestMessage
 export type UpdateAgentRequestMessage = z.infer<typeof UpdateAgentRequestMessageSchema>;
 export type ProjectIconSource = z.infer<typeof ProjectIconSourceSchema>;
 export type ProjectRenameRequest = z.infer<typeof ProjectRenameRequestSchema>;
+export type ProjectSnoozeSetRequest = z.infer<typeof ProjectSnoozeSetRequestSchema>;
 export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;

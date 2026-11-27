@@ -1472,6 +1472,16 @@ export const zhCN: TranslationResources = {
         remove: "移除 project",
         removing: "正在移除...",
       },
+      snooze: {
+        title: "暂停提醒",
+        tomorrow: "到明天",
+        monday: "到周一",
+        date: "到某天…",
+        datePage: "到某天",
+        wake: "立即恢复",
+        until: "到 {{time}}",
+        failed: "无法暂停 {{name}}",
+      },
       confirmations: {
         removeTitle: "移除 project？",
         removeMessage: "从侧边栏移除「{{projectName}}」？\n\n磁盘上的文件不会被更改。",

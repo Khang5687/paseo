@@ -1502,6 +1502,16 @@ export const ru: TranslationResources = {
         remove: "Удалить проект",
         removing: "Удаление...",
       },
+      snooze: {
+        title: "Отложить",
+        tomorrow: "До завтра",
+        monday: "До понедельника",
+        date: "До даты…",
+        datePage: "До даты",
+        wake: "Вернуть сейчас",
+        until: "До {{time}}",
+        failed: "Не удалось отложить {{name}}",
+      },
       confirmations: {
         removeTitle: "Удалить проект?",
         removeMessage:

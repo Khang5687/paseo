@@ -1520,6 +1520,16 @@ export const es: TranslationResources = {
         remove: "Eliminar proyecto",
         removing: "Eliminando...",
       },
+      snooze: {
+        title: "Posponer",
+        tomorrow: "Hasta mañana",
+        monday: "Hasta el lunes",
+        date: "Hasta una fecha…",
+        datePage: "Hasta una fecha",
+        wake: "Despertar ahora",
+        until: "Hasta {{time}}",
+        failed: "No se pudo posponer {{name}}",
+      },
       confirmations: {
         removeTitle: "¿Quitar proyecto?",
         removeMessage:
