@@ -11,6 +11,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import type { ProjectStatusCounts } from "@/hooks/sidebar-workspaces-view-model";
+import { getStatusDotColor } from "@/utils/status-dot-color";
 import { listProjectStatusDots, type ProjectStatusDot } from "./project-strip-model";
 
 const BLINK_HALF_MS = 700;
@@ -18,7 +19,8 @@ const DOT_SIZE = 6;
 
 /**
  * One dot per chat beside a project icon on the strip: purple asks you, red failed, green is done
- * and not opened yet, blue blinks while working. Past four, the last place is a "+".
+ * and not opened yet, blue blinks while working and stays still while it only waits on background
+ * jobs or subagents. Past four, the last place is a "+".
  */
 export function ProjectStatusDots({
   counts,
@@ -68,6 +70,7 @@ function PlainDot({ dot, testID }: { dot: ProjectStatusDot; testID?: string }) {
     case "attention":
       return <View style={[styles.dot, styles.attention]} testID={testID} />;
     case "running":
+    case "waiting":
       return <View style={[styles.dot, styles.running]} testID={testID} />;
   }
 }
@@ -101,6 +104,7 @@ const PROJECT_STATUS_ORDER: ReadonlyArray<[ProjectStatusDot, keyof ProjectStatus
   ["failed", "failed"],
   ["attention", "attention"],
   ["running", "running"],
+  ["waiting", "waiting"],
 ];
 
 /** The exact counts, for the open rail, in the dots' order: a dot and a number per status. */
@@ -124,6 +128,7 @@ const STATUS_LABEL_KEYS: Record<ProjectStatusDot, string> = {
   failed: "sidebar.projectStrip.statusFailed",
   attention: "sidebar.projectStrip.statusDone",
   running: "sidebar.projectStrip.statusWorking",
+  waiting: "sidebar.projectStrip.statusWaiting",
 };
 
 /** "Asking you: 1, Working: 2": the counts in words, for tooltips and screen readers. */
@@ -157,10 +162,9 @@ const styles = StyleSheet.create((theme) => ({
     height: DOT_SIZE,
     borderRadius: DOT_SIZE / 2,
   },
-  // The palette purple, as on the New main agent dot: a project asking you reads apart from the
-  // orange status dot of a single workspace row.
+  // The one asking purple every needs_input mark uses (getStatusDotColor).
   needsInput: {
-    backgroundColor: theme.colors.palette.purple[500],
+    backgroundColor: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
   },
   failed: {
     backgroundColor: theme.colors.statusDotDanger,

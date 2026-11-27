@@ -16,8 +16,14 @@ import { resolveSendNowBehavior } from "@/composer/input/state";
 import { useToast } from "@/contexts/toast-context";
 import { useAppSettings } from "@/hooks/use-settings";
 import { PluginNeedsYouItems, usePluginNeedsYouCount } from "@/plugins/needs-you-items";
-import { isQuestionAnswered, resolveAnswer } from "@/questions/answer-message";
+import {
+  buildAnswerMessage,
+  buildCopyAnswersText,
+  isQuestionAnswered,
+  resolveAnswer,
+} from "@/questions/answer-message";
 import { questionAnswerScopeKey, useQuestionAnswerStore } from "@/questions/answer-store";
+import { CopyAnswersButton } from "@/questions/copy-answers-button";
 import { QuestionCard } from "@/questions/question-card";
 import { sendQuestionAnswers } from "@/questions/send-answers";
 import { getHostRuntimeStore, useHostRuntimeClient } from "@/runtime/host-runtime";
@@ -123,7 +129,7 @@ function NeedsYouChatSection({
       <View style={styles.sectionHead}>
         <View style={styles.sectionTitles}>
           <Text style={styles.sectionTitle} numberOfLines={1}>
-            {`${chat.projectName} › ${chat.title}`}
+            {chatHeading(chat)}
           </Text>
           {waited ? <Text style={styles.sectionMeta}>{waited}</Text> : null}
         </View>
@@ -188,22 +194,50 @@ function NeedsYouFooter({
       .finally(() => setSending(false));
   }, [answerFor, chats, settings, t, toast]);
 
+  const getCopyText = useCallback(() => copyAnswersText(chats, answerFor), [answerFor, chats]);
+
   return (
     <View style={footerStyle}>
       <Text style={styles.footerText} testID="needs-you-summary">
         {t("needsYou.summary", { answered, total })}
       </Text>
-      <Button
-        variant="default"
-        size="sm"
-        disabled={answered === 0}
-        loading={sending}
-        onPress={handleSend}
-        testID="needs-you-send"
-      >
-        {t("needsYou.send", { count: answered })}
-      </Button>
+      <View style={styles.footerActions}>
+        <CopyAnswersButton
+          getText={getCopyText}
+          disabled={answered === 0}
+          testID="needs-you-copy"
+        />
+        <Button
+          variant="default"
+          size="sm"
+          disabled={answered === 0}
+          loading={sending}
+          onPress={handleSend}
+          testID="needs-you-send"
+        >
+          {t("needsYou.send", { count: answered })}
+        </Button>
+      </View>
     </View>
+  );
+}
+
+/** What a chat's section heading says; Copy answers uses it as the chat's header line. */
+function chatHeading(chat: NeedsYouChat): string {
+  return `${chat.projectName} › ${chat.title}`;
+}
+
+/** What Copy answers copies: the lines `sendEveryChat` would send, under each chat's heading. */
+function copyAnswersText(chats: readonly NeedsYouChat[], answerFor: AnswerFor): string | null {
+  return buildCopyAnswersText(
+    chats.map((chat) => ({
+      title: chatHeading(chat),
+      messages: chat.questionGroups.map((group) =>
+        buildAnswerMessage(group.questions, (question) =>
+          answerFor(chat.serverId, group.agentId, question),
+        ),
+      ),
+    })),
   );
 }
 
@@ -304,6 +338,11 @@ const styles = StyleSheet.create((theme) => ({
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     backgroundColor: theme.colors.surface0,
+  },
+  footerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
   },
   footerText: {
     flexShrink: 1,

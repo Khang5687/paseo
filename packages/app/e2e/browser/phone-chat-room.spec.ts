@@ -77,7 +77,7 @@ test("on a phone the composer leaves the chat its room", async ({ page }, testIn
     const line = page.getByTestId("composer-status-line");
 
     await test.step("the tracks and Restore draft share one line on the composer's edge", async () => {
-      await expect(line).toContainText("Your turn · 1 working", { timeout: 15_000 });
+      await expect(line).toContainText("Waiting on 1 subagent", { timeout: 15_000 });
       await expect(line.getByTestId("draft-history-trigger")).toBeVisible({ timeout: 15_000 });
       // Nothing floats over the transcript: the one track bar is the line's.
       await expect(page.getByTestId("composer-track-scroll")).toHaveCount(1);

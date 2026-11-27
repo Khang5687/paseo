@@ -28,6 +28,7 @@ import {
 } from "./transaction";
 import { workspaceLabels } from "@/workspace-labels";
 import { projectOrderSync } from "@/sidebar-sync/project-order";
+import { workspaceOrderSync } from "@/sidebar-sync/workspace-order";
 import type {
   CachedDirectory,
   CachedWorkspace,
@@ -197,6 +198,7 @@ export class DirectorySync {
     this.releaseScriptStatusEvents();
     workspaceLabels.disconnect(this.serverId);
     projectOrderSync.disconnect(this.serverId);
+    workspaceOrderSync.disconnect(this.serverId);
     this.connection = connection;
     this.abortPendingSessionWaits();
     if (!connection.client || connection.status !== "online") return true;
@@ -264,6 +266,7 @@ export class DirectorySync {
     this.routeDemandIds.clear();
     workspaceLabels.disconnect(this.serverId);
     projectOrderSync.disconnect(this.serverId);
+    workspaceOrderSync.disconnect(this.serverId);
   }
 
   private releaseSubscriptions(): void {
@@ -691,7 +694,10 @@ export class DirectorySync {
     if (this.getOnlineConnection()) await this.connectHostSidebarState();
   }
 
-  /** Host state the sidebar shares across devices: workspace labels and the project order. */
+  /**
+   * Host state the sidebar shares across devices: workspace labels, the project order, and each
+   * project's workspace order with the sort.
+   */
   async connectHostSidebarState(): Promise<void> {
     const { client } = this.requireOnline();
     const serverInfo = client.getLastServerInfoMessage();
@@ -699,6 +705,11 @@ export class DirectorySync {
       serverId: this.serverId,
       client,
       supported: serverInfo?.features?.sidebarProjectOrder === true,
+    });
+    workspaceOrderSync.connect({
+      serverId: this.serverId,
+      client,
+      supported: serverInfo?.features?.sidebarWorkspaceOrder === true,
     });
     await workspaceLabels.connect({
       serverId: this.serverId,

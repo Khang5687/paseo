@@ -180,7 +180,6 @@ export const zhCN: TranslationResources = {
       unmuteVoice: "取消静音",
       muteVoice: "静音",
       dictation: "听写",
-      interruptBeforeVoice: "启动语音模式前请先中断 Agent",
     },
     attachments: {
       addImage: "添加图片",
@@ -522,6 +521,11 @@ export const zhCN: TranslationResources = {
       nextRun: "下次 {{time}}",
       nextRunDue: "即将运行",
       waitingOn: "等待中：{{job}}",
+      waitingOnTasksOne: "正在等待 1 个后台任务",
+      waitingOnTasksMany: "正在等待 {{count}} 个后台任务",
+      waitingOnSubagentsOne: "正在等待 1 个 subagent",
+      waitingOnSubagentsMany: "正在等待 {{count}} 个 subagent",
+      waitingOnBoth: "正在等待{{tasks}}和{{subagents}}",
       unnamedJob: "后台任务",
       detailsWhy: "原因",
       detailsCommand: "命令",
@@ -1366,6 +1370,7 @@ export const zhCN: TranslationResources = {
       statusFailed: "失败：{{count}}",
       statusDone: "已完成未查看：{{count}}",
       statusWorking: "进行中：{{count}}",
+      statusWaiting: "等待中：{{count}}",
       moveTop: "移到最前",
       moveEarlier: "前移",
       moveLater: "后移",
@@ -1383,6 +1388,7 @@ export const zhCN: TranslationResources = {
     navButtons: {
       title: "显示的按钮",
       done: "完成",
+      more: "更多",
     },
     view: {
       failed: "无法加载侧边栏视图。",
@@ -1412,6 +1418,7 @@ export const zhCN: TranslationResources = {
         lastPrompt: "最近提示词",
         urgent: "紧急优先",
         updateHost: "请更新主机以排序工作区",
+        switchedToManual: "已改为手动排序",
       },
       grouping: {
         label: "分组",
@@ -1535,9 +1542,6 @@ export const zhCN: TranslationResources = {
       },
     },
     workspace: {
-      workingSubagents: "{{count}} 个子代理正在工作",
-      workingSubagents_one: "{{count}} 个子代理正在工作",
-      workingSubagents_other: "{{count}} 个子代理正在工作",
       newAgent: "新",
       status: {
         serviceRunning: "服务 {{name}} 运行中",
@@ -2264,6 +2268,11 @@ export const zhCN: TranslationResources = {
       mute: "静音 realtime voice",
       unmute: "取消静音 realtime voice",
       stop: "停止 realtime voice 并中断 turn",
+      black: "保持语音运行并将屏幕变黑",
+    },
+    blackScreen: {
+      button: "黑屏",
+      wake: "黑屏。双击唤醒",
     },
   },
   rewind: {
@@ -2420,6 +2429,8 @@ export const zhCN: TranslationResources = {
     tooManyFiles: "每个回答最多 {{max}} 个文件",
     uploadFailed: "无法上传文件",
     sendFailed: "无法发送回答",
+    copyAnswers: "复制答案",
+    copiedAnswers: "已复制",
   },
   needsYou: {
     title: "等你处理",
@@ -2455,7 +2466,6 @@ export const zhCN: TranslationResources = {
     pillLabelOne: "1 个 subagent",
     pillLabelMany: "{{count}} 个 subagent",
     pillLabelWorking: "{{count}} 个运行中",
-    pillLabelYourTurnWorking: "轮到你 · {{count}} 个运行中",
     pillLabelFailed: "{{count}} 个失败",
     pillLabelNeedsInputOne: "1 个需要输入",
     pillLabelNeedsInputMany: "{{count}} 个需要输入",

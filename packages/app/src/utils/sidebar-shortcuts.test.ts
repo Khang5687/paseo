@@ -46,7 +46,7 @@ function workspace(input: {
     hasRunningScripts: false,
     nextRunAt: null,
     waitingOn: null,
-    workingSubagentCount: 0,
+    waiting: null,
   };
 }
 

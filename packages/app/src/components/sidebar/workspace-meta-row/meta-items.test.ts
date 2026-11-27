@@ -90,17 +90,22 @@ describe("selectMetaRowItems", () => {
     ).toEqual([]);
   });
 
-  it("leads with working subagents whatever the row toggles say", () => {
+  it("leads with what a settled chat waits on whatever the row toggles say", () => {
     const visible = {
       ...DEFAULT_SIDEBAR_ROW_ITEMS,
       changeRequest: false,
       services: false,
       labels: false,
     };
-    expect(select({ workingSubagentCount: 2, visible, checksDisplay: "none" })).toEqual([
-      { kind: "subagents", count: 2 },
+    const wait = { backgroundTaskCount: 1, subagentCount: 2 };
+    expect(select({ waitingFor: wait, visible, checksDisplay: "none" })).toEqual([
+      { kind: "waitingFor", wait },
       { kind: "host" },
     ]);
+    // A turn blocked on a named job says that instead.
+    expect(
+      kinds(select({ waitingOn: "npm test", waitingFor: wait, visible, checksDisplay: "none" })),
+    ).toEqual(["waiting", "host"]);
   });
 
   it("only draws identity badges when enabled and available", () => {

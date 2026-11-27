@@ -181,7 +181,6 @@ export const ru: TranslationResources = {
       unmuteVoice: "Включить звук",
       muteVoice: "Отключить голос",
       dictation: "Диктовка",
-      interruptBeforeVoice: "Остановите агента перед запуском голосового режима",
     },
     attachments: {
       addImage: "Добавить изображение",
@@ -527,6 +526,11 @@ export const ru: TranslationResources = {
       nextRun: "следующий {{time}}",
       nextRunDue: "сейчас",
       waitingOn: "Ожидание: {{job}}",
+      waitingOnTasksOne: "Ожидает 1 фоновую задачу",
+      waitingOnTasksMany: "Ожидает фоновых задач: {{count}}",
+      waitingOnSubagentsOne: "Ожидает 1 субагента",
+      waitingOnSubagentsMany: "Ожидает субагентов: {{count}}",
+      waitingOnBoth: "Ожидает: {{tasks}}, {{subagents}}",
       unnamedJob: "фоновая задача",
       detailsWhy: "Зачем",
       detailsCommand: "Команда",
@@ -1394,6 +1398,7 @@ export const ru: TranslationResources = {
       statusFailed: "С ошибкой: {{count}}",
       statusDone: "Готово, не открыто: {{count}}",
       statusWorking: "В работе: {{count}}",
+      statusWaiting: "Ожидание: {{count}}",
       moveTop: "Переместить в начало",
       moveEarlier: "Переместить раньше",
       moveLater: "Переместить позже",
@@ -1411,6 +1416,7 @@ export const ru: TranslationResources = {
     navButtons: {
       title: "Показывать кнопки",
       done: "Готово",
+      more: "Ещё",
     },
     view: {
       failed: "Не удалось загрузить вид боковой панели.",
@@ -1440,6 +1446,7 @@ export const ru: TranslationResources = {
         lastPrompt: "Последний запрос",
         urgent: "Сначала срочные",
         updateHost: "Обновите хосты для сортировки рабочих пространств",
+        switchedToManual: "Теперь порядок ручной",
       },
       grouping: {
         label: "Группировка",
@@ -1566,11 +1573,6 @@ export const ru: TranslationResources = {
       },
     },
     workspace: {
-      workingSubagents: "{{count}} субагента работают",
-      workingSubagents_one: "{{count}} субагент работает",
-      workingSubagents_few: "{{count}} субагента работают",
-      workingSubagents_many: "{{count}} субагентов работают",
-      workingSubagents_other: "{{count}} субагента работают",
       newAgent: "Новый",
       status: {
         serviceRunning: "Сервис {{name}} запущен",
@@ -2330,6 +2332,11 @@ export const ru: TranslationResources = {
       mute: "Отключить микрофон в голосовом режиме реального времени",
       unmute: "Включить микрофон в голосовом режиме реального времени",
       stop: "Остановить голосовой режим реального времени и прервать текущий ответ",
+      black: "Сделать экран чёрным, не останавливая голос",
+    },
+    blackScreen: {
+      button: "Чёрный",
+      wake: "Чёрный экран. Коснитесь дважды, чтобы вернуться",
     },
   },
   rewind: {
@@ -2492,6 +2499,8 @@ export const ru: TranslationResources = {
     tooManyFiles: "До {{max}} файлов на ответ",
     uploadFailed: "Не удалось загрузить файлы",
     sendFailed: "Не удалось отправить ответы",
+    copyAnswers: "Копировать ответы",
+    copiedAnswers: "Скопировано",
   },
   needsYou: {
     title: "Ждут вас",
@@ -2527,7 +2536,6 @@ export const ru: TranslationResources = {
     pillLabelOne: "1 субагент",
     pillLabelMany: "Субагентов: {{count}}",
     pillLabelWorking: "{{count}} в работе",
-    pillLabelYourTurnWorking: "Ваш ход · {{count}} в работе",
     pillLabelFailed: "{{count}} с ошибкой",
     pillLabelNeedsInputOne: "1 ожидает ввода",
     pillLabelNeedsInputMany: "{{count}} ожидают ввода",

@@ -519,6 +519,97 @@ describe("WorkspaceDirectory", () => {
     });
   });
 
+  describe("waiting", () => {
+    test("a settled root whose background job runs waits on it", async () => {
+      const workspace = new WorkspaceStatus();
+
+      workspace.hasRootAgent({
+        id: "parent-agent",
+        status: "idle",
+        requiresAttention: true,
+        attentionReason: "finished",
+        backgroundWork: { count: 2, runningCount: 1 },
+      });
+
+      const descriptor = await workspace.workspaceDescriptor();
+      // Old clients keep reading running; the new field says it only waits.
+      expect(descriptor.status).toBe("running");
+      expect(descriptor.waiting).toEqual({ backgroundTaskCount: 1, subagentCount: 0 });
+    });
+
+    test("a settled root waits on its running subagents instead of reading done", async () => {
+      const workspace = new WorkspaceStatus();
+
+      workspace.hasRootAgent({
+        id: "parent-agent",
+        status: "idle",
+        requiresAttention: true,
+        attentionReason: "finished",
+      });
+      workspace.hasDelegatedAgent({ id: "child-agent", status: "running" });
+      workspace.hasProviderSubagent({
+        parentAgentId: "parent-agent",
+        status: "running",
+        updatedAt: "2026-03-01T12:01:00.000Z",
+      });
+
+      const descriptor = await workspace.workspaceDescriptor();
+      expect(descriptor.status).toBe("attention");
+      expect(descriptor.waiting).toEqual({ backgroundTaskCount: 0, subagentCount: 2 });
+    });
+
+    test("counts jobs and subagents together", async () => {
+      const workspace = new WorkspaceStatus();
+
+      workspace.hasRootAgent({ id: "parent-agent", status: "idle", backgroundWork: { count: 1 } });
+      workspace.hasDelegatedAgent({ id: "child-agent", status: "running" });
+
+      await expect(workspace.workspaceDescriptor()).resolves.toMatchObject({
+        status: "running",
+        waiting: { backgroundTaskCount: 1, subagentCount: 1 },
+      });
+    });
+
+    test("a working root, a working terminal or an open question is not waiting", async () => {
+      const working = new WorkspaceStatus();
+      working.hasRootAgent({ id: "parent-agent", status: "running", backgroundWork: { count: 1 } });
+      working.hasDelegatedAgent({ id: "child-agent", status: "running" });
+      expect((await working.workspaceDescriptor()).waiting).toBeUndefined();
+
+      const terminal = new WorkspaceStatus();
+      terminal.hasRootAgent({ id: "parent-agent", status: "idle", backgroundWork: { count: 1 } });
+      terminal.hasWorkingTerminal(Date.parse(NOW));
+      expect((await terminal.workspaceDescriptor()).waiting).toBeUndefined();
+
+      const asking = new WorkspaceStatus();
+      asking.hasRootAgent({
+        id: "parent-agent",
+        status: "idle",
+        requiresAttention: true,
+        attentionReason: "finished",
+        awaitingAnswer: true,
+        backgroundWork: { count: 1 },
+      });
+      asking.hasDelegatedAgent({ id: "child-agent", status: "running" });
+      await expect(asking.workspaceDescriptor()).resolves.toMatchObject({ status: "needs_input" });
+      expect((await asking.workspaceDescriptor()).waiting).toBeUndefined();
+    });
+
+    test("scheduled work alone is not waiting", async () => {
+      const workspace = new WorkspaceStatus();
+
+      workspace.hasRootAgent({
+        id: "parent-agent",
+        status: "idle",
+        backgroundWork: { count: 1, runningCount: 0, nextRunAt: NOW },
+      });
+
+      const descriptor = await workspace.workspaceDescriptor();
+      expect(descriptor.status).toBe("done");
+      expect(descriptor.waiting).toBeUndefined();
+    });
+  });
+
   test("a root reply that asks the user a question needs input while subagents work", async () => {
     const workspace = new WorkspaceStatus();
 

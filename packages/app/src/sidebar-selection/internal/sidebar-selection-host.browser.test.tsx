@@ -64,7 +64,7 @@ function makeEntry(id: string): SidebarWorkspaceEntry {
     waitingOn: null,
     archiveHasUncommittedChanges: null,
     archiveUnpushedCommitCount: null,
-    workingSubagentCount: 0,
+    waiting: null,
   };
 }
 

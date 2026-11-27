@@ -109,6 +109,7 @@ import { useToast } from "@/contexts/toast-context";
 import { SidebarToastClearance } from "@/components/sidebar/sidebar-toast-region";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
+import { saveWorkspaceReorder } from "@/components/sidebar/workspace-reorder";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { SidebarStatusWorkspaceList } from "@/components/sidebar/sidebar-status-list";
@@ -1694,7 +1695,6 @@ function ProjectBlock({
   onWorkspaceReorder,
   useNestable,
   dragGestureHostActive,
-  manualSort,
   onWorktreeCreated,
   drag,
   isDragging,
@@ -1724,7 +1724,6 @@ function ProjectBlock({
   onWorkspaceReorder: (projectViewKey: string, workspaces: SidebarWorkspacePlacement[]) => void;
   useNestable: boolean;
   dragGestureHostActive?: boolean;
-  manualSort: boolean;
   onWorktreeCreated?: (workspaceId: string) => void;
   drag: () => void;
   isDragging: boolean;
@@ -1918,33 +1917,25 @@ function ProjectBlock({
       const leadingWorkspaceRow = leadingWorkspace ? renderWorkspaceRow(leadingWorkspace) : null;
       projectChildren = (
         <>
-          {manualSort ? (
-            <>
-              {leadingWorkspaceRow}
-              <DraggableList
-                testID={`sidebar-workspace-list-${project.viewKey}`}
-                data={visibleWorkspaces}
-                keyExtractor={workspaceKeyExtractor}
-                renderItem={renderWorkspace}
-                onDragEnd={handleWorkspaceDragEnd}
-                extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
-                scrollEnabled={false}
-                useDragHandle
-                nestable={useNestable}
-                simultaneousGestureRef={parentGestureRef}
-                gestureHostPresented={dragGestureHostActive}
-                containerStyle={styles.workspaceListContainer}
-              />
-            </>
-          ) : (
-            <View
-              testID={`sidebar-workspace-list-${project.viewKey}`}
-              style={styles.workspaceListContainer}
-            >
-              {leadingWorkspaceRow}
-              {visibleWorkspaces.map((item) => renderWorkspaceRow(item))}
-            </View>
-          )}
+          {/* Every sort can drag: a drag under another sort switches it to Manual. */}
+          <View
+            testID={`sidebar-workspace-list-${project.viewKey}`}
+            style={styles.workspaceListContainer}
+          >
+            {leadingWorkspaceRow}
+            <DraggableList
+              data={visibleWorkspaces}
+              keyExtractor={workspaceKeyExtractor}
+              renderItem={renderWorkspace}
+              onDragEnd={handleWorkspaceDragEnd}
+              extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+              scrollEnabled={false}
+              useDragHandle
+              nestable={useNestable}
+              simultaneousGestureRef={parentGestureRef}
+              gestureHostPresented={dragGestureHostActive}
+            />
+          </View>
           {canToggleWorkspaces ? (
             <SidebarGroupToggleRow
               expanded={workspacesExpanded}
@@ -2029,7 +2020,6 @@ function areProjectBlockPropsEqual(previous: ProjectBlockProps, next: ProjectBlo
     previous.onWorkspaceReorder === next.onWorkspaceReorder &&
     previous.useNestable === next.useNestable &&
     previous.dragGestureHostActive === next.dragGestureHostActive &&
-    previous.manualSort === next.manualSort &&
     previous.onWorktreeCreated === next.onWorktreeCreated &&
     previous.drag === next.drag &&
     previous.isDragging === next.isDragging &&
@@ -2346,9 +2336,7 @@ function ProjectModeList({
     (state) => state.togglePinnedCollapsed,
   );
 
-  const manualSort = useSidebarViewStore((state) => state.workspaceSort === "manual");
-  const getWorkspaceOrder = useSidebarOrderStore((state) => state.getWorkspaceOrder);
-  const setWorkspaceOrder = useSidebarOrderStore((state) => state.setWorkspaceOrder);
+  const toast = useToast();
   const getProjectOrder = useSidebarOrderStore((state) => state.getProjectOrder);
   const setProjectOrder = useSidebarOrderStore((state) => state.setProjectOrder);
 
@@ -2522,28 +2510,22 @@ function ProjectModeList({
     [getProjectOrder, setProjectOrder],
   );
 
+  // Read at drop time, so a list update does not rebuild every project block's drag handler.
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
   const handleWorkspaceReorder = useCallback(
     (projectViewKey: string, reorderedWorkspaces: SidebarWorkspacePlacement[]) => {
-      const reorderedWorkspaceKeys = reorderedWorkspaces.map((workspace) => workspace.workspaceKey);
-      const currentWorkspaceOrder = getWorkspaceOrder(projectViewKey);
-      if (
-        !hasVisibleOrderChanged({
-          currentOrder: currentWorkspaceOrder,
-          reorderedVisibleKeys: reorderedWorkspaceKeys,
-        })
-      ) {
-        return;
-      }
-
-      setWorkspaceOrder(
+      const { switchedToManual } = saveWorkspaceReorder({
         projectViewKey,
-        mergeWithRemainder({
-          currentOrder: currentWorkspaceOrder,
-          reorderedVisibleKeys: reorderedWorkspaceKeys,
-        }),
-      );
+        reorderedKeys: reorderedWorkspaces.map((workspace) => workspace.workspaceKey),
+        shownOrders: projectsRef.current.map((project) => ({
+          projectViewKey: project.viewKey,
+          workspaceKeys: project.workspaces.map((workspace) => workspace.workspaceKey),
+        })),
+      });
+      if (switchedToManual) toast.show(t("sidebar.display.sort.switchedToManual"));
     },
-    [getWorkspaceOrder, setWorkspaceOrder],
+    [t, toast],
   );
 
   const handleWorktreeCreated = useCallback((workspaceId: string) => {
@@ -2597,7 +2579,6 @@ function ProjectModeList({
           workspacesExpanded={expandedProjectKeys.has(item.viewKey)}
           onToggleWorkspacesExpanded={toggleProjectWorkspacesExpanded}
           onWorkspacePress={onWorkspacePress}
-          manualSort={manualSort}
           parentGestureRef={parentGestureRef}
           onWorkspaceReorder={handleWorkspaceReorder}
           useNestable={platformIsNative}
@@ -2621,7 +2602,6 @@ function ProjectModeList({
       toggleProjectWorkspacesExpanded,
       activeWorkspaceSelection,
       handleWorktreeCreated,
-      manualSort,
       parentGestureRef,
       dragGestureHostActive,
       handleWorkspaceReorder,

@@ -26,6 +26,7 @@ import {
 import { CheckIndicator } from "./check-indicator";
 import type { CheckSummary, CheckSummaryState } from "./check-summary";
 import { selectMetaRowItems, type MetaRowItem } from "./meta-items";
+import { formatWaitingOnLabel, type WaitCounts } from "@/workspace-status/waiting-label";
 import { workspaceServiceLabelKey, type WorkspaceServiceSummary } from "./service-summary";
 
 export {
@@ -80,7 +81,7 @@ export function WorkspaceMetaRow({
   nextRunAt = null,
   waitingOn = null,
   labels = EMPTY_LABELS,
-  workingSubagentCount = 0,
+  waitingFor = null,
   workspace = null,
   backdrop,
 }: {
@@ -94,14 +95,15 @@ export function WorkspaceMetaRow({
   /** The job the working chat waits on ("" when unnamed). Previews have none. */
   waitingOn?: string | null;
   labels?: readonly WorkspaceLabelDefinition[];
-  workingSubagentCount?: number;
+  /** What a settled chat waits on, said in words on the line (phones; desktop uses a tooltip). */
+  waitingFor?: WaitCounts | null;
   /** The real workspace behind the row; previews leave it out and get no plugin items. */
   workspace?: { serverId: string; workspaceId: string } | null;
   backdrop: SidebarSurfaceBackdrop;
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
   const items = selectMetaRowItems({
-    workingSubagentCount,
+    waitingFor,
     currentBranch,
     projectName,
     hasHostBadge: hostBadge !== null,
@@ -152,8 +154,8 @@ function MetaItemNode({
   /** First on the line, so this item's ink sets the rail the title above it already uses. */
   leading: boolean;
 }): ReactNode {
-  if (item.kind === "subagents") {
-    return <SubagentsItem count={item.count} />;
+  if (item.kind === "waitingFor") {
+    return <WaitingForItem wait={item.wait} />;
   }
   if (item.kind === "branch") {
     return <IdentityItem kind="branch" name={item.name} />;
@@ -197,16 +199,18 @@ function IdentityItem({ kind, name }: { kind: "branch" | "project"; name: string
 }
 
 /**
- * How many subagents are still working while the row reports that the root agent waits on you.
- * Muted text with no spinner: the leading slot owns the row's status, and a second spinner would
- * read as the row itself working.
+ * What a settled chat waits on: "Waiting on 1 background task and 2 subagents". It leads the line
+ * on a phone, where there is no hover to explain the hourglass in the status slot. Muted text
+ * with no glyph: the hourglass beside it already carries the state.
  */
-function SubagentsItem({ count }: { count: number }) {
+function WaitingForItem({ wait }: { wait: WaitCounts }) {
   const { t } = useTranslation();
+  const label = formatWaitingOnLabel(t, wait);
+  if (!label) return null;
   return (
-    <View style={styles.item} testID="sidebar-workspace-working-subagents">
-      <Text style={styles.subagentsText} numberOfLines={1}>
-        {t("sidebar.workspace.workingSubagents", { count })}
+    <View style={styles.waitingItem} testID="sidebar-workspace-waiting-for">
+      <Text style={styles.waitingForText} numberOfLines={1}>
+        {label}
       </Text>
     </View>
   );
@@ -442,11 +446,11 @@ const styles = StyleSheet.create((theme) => ({
   itemPressed: {
     opacity: 0.82,
   },
-  subagentsText: {
+  waitingForText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     lineHeight: 16,
-    flexShrink: 0,
+    flexShrink: 1,
   },
   separator: {
     color: theme.colors.foregroundExtraMuted,

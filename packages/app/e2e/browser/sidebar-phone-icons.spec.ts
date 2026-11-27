@@ -7,10 +7,13 @@ import { createMockIdleAgent } from "../support/helpers/archive-tab";
 import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
 import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-client";
 import { getServerId } from "../support/helpers/server-id";
+import { BOTS_PLUGIN_ID, installSidebarPlugins } from "../support/helpers/plugin-sidebar-items";
 import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
 
 const SCRATCH_DIR = path.resolve(__dirname, "../../../../.scratch");
 const PHONE = { width: 390, height: 844 };
+/** The owner's phone is about 360 wide. */
+const NARROW_PHONE = { width: 360, height: 800 };
 const DESKTOP = { width: 1280, height: 900 };
 const BUILTIN_BUTTONS = [
   "sidebar-global-new-workspace",
@@ -154,6 +157,57 @@ test.describe("Phone sidebar icon row at phone width", () => {
     });
   });
 });
+
+// Seven buttons and a close button wrapped onto a second line on a 360-wide phone. Each width
+// gets the sidebar plugins' six extra header buttons, so some never fit.
+for (const viewport of [PHONE, NARROW_PHONE]) {
+  test.describe(`Phone sidebar icon row with more buttons than fit at ${viewport.width}`, () => {
+    test.use({ viewport, isMobile: true, hasTouch: true });
+    let plugins: { cleanup(): Promise<void> };
+
+    test.beforeEach(async () => {
+      plugins = await installSidebarPlugins();
+    });
+
+    test.afterEach(async () => {
+      await plugins.cleanup();
+    });
+
+    test("keeps one row and moves the rest into More, which presses them", async ({ page }) => {
+      await gotoAppShell(page);
+      await page.getByRole("button", { name: "Open menu", exact: true }).tap();
+      await waitForSidebarHydration(page);
+      const iconRow = page.getByTestId("sidebar-nav-icon-row");
+      const more = iconRow.getByTestId("sidebar-nav-more");
+      const statusTestId = `plugin-sidebar-${BOTS_PLUGIN_ID}-bots-status`;
+
+      await test.step("one row: New workspace and Search stay, More sits before the X", async () => {
+        await expect(more).toBeVisible();
+        await expect(iconRow.getByTestId("sidebar-global-new-workspace")).toBeVisible();
+        await expect(iconRow.getByTestId("sidebar-search")).toBeVisible();
+        await expect(iconRow.getByTestId(statusTestId)).toHaveCount(0);
+        const row = await iconRow.boundingBox();
+        const moreBox = await more.boundingBox();
+        const closeBox = await iconRow.getByTestId("sidebar-close").boundingBox();
+        expect(row?.height ?? 0).toBeLessThan(60);
+        expect(moreBox?.y).toBe(closeBox?.y);
+        expect((moreBox?.x ?? 0) + (moreBox?.width ?? 0)).toBeLessThanOrEqual(closeBox?.x ?? 0);
+        await saveScreenshot(page, `phone-icons-row-more-${viewport.width}`);
+      });
+
+      await test.step("More lists the buttons that did not fit by name", async () => {
+        await more.tap();
+        const status = page.getByTestId(`sidebar-nav-more-item-${statusTestId}`);
+        await expect(status).toBeInViewport();
+        await expect(status).toContainText("Bot status");
+        await page.waitForTimeout(400);
+        await saveScreenshot(page, `phone-icons-more-sheet-${viewport.width}`);
+        await status.tap();
+        await expect(page.getByText("Bot status details", { exact: true })).toBeVisible();
+      });
+    });
+  });
+}
 
 test.describe("Phone sidebar icon row at desktop width", () => {
   test.use({ viewport: DESKTOP });

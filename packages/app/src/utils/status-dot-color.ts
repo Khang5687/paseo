@@ -12,11 +12,12 @@ export function getStatusDotColor(input: {
   // badges on the same row — see the band's note in theme.ts — so going through the status
   // family here instead would quietly put the row's state below its metadata.
   //
-  // needs_input is amber because it wants something from you. Working is blue: an agent doing
-  // its job is the one busy state that asks for nothing, so it should not sit in the same
-  // color as the states that do.
+  // needs_input is the palette purple, the same purple as the rail's asking dot and the New
+  // main agent dot: everything that asks you reads as one color. Working is blue: an agent doing
+  // its job is the one busy state that asks for nothing, so it should not sit in the same color
+  // as the states that do.
   if (bucket === "needs_input") {
-    return theme.colors.statusDotWarning;
+    return theme.colors.palette.purple[500];
   }
   if (bucket === "failed") {
     return theme.colors.statusDotDanger;

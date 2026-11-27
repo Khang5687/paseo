@@ -261,6 +261,55 @@ test("OMP resumes a session on the requested model when it differs from the sess
   expect(session.describePersistence()?.metadata?.model).toBe("openrouter/requested");
 });
 
+// OMP writes a session file with the first prompt. An agent reloaded before that (voice mode,
+// a plugin change, a daemon restart) has a handle to a file that does not exist yet.
+test("OMP resumes a session that never received a prompt as a fresh session", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "paseo-omp-unwritten-"));
+  const unwritten = path.join(dir, "never-prompted.jsonl");
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+  const session = await client.resumeSession({
+    provider: "omp",
+    sessionId: "omp-session-unwritten",
+    nativeHandle: unwritten,
+    metadata: { cwd: dir },
+  });
+  onTestFinished(() => session.close());
+
+  expect(runtime.recordedLaunches[0]?.argv).not.toContain("--session");
+  const nativeHandle = session.describePersistence()?.nativeHandle;
+  expect(nativeHandle).toEqual(expect.any(String));
+  expect(nativeHandle).not.toBe(unwritten);
+});
+
+test("an approval-mode switch before the first prompt starts a fresh OMP session", async () => {
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+  const session = await client.createSession({
+    provider: "omp",
+    cwd: process.cwd(),
+    modeId: "full",
+  });
+  onTestFinished(() => session.close());
+
+  await session.setMode("ask");
+
+  expect(runtime.recordedLaunches).toHaveLength(2);
+  expect(runtime.recordedLaunches[1]?.argv).not.toContain("--session");
+});
+
+test("an approval-mode switch after the first prompt keeps the OMP conversation", async () => {
+  const omp = new OmpHarness();
+  await omp.start({ modeId: "full" });
+  await omp.runPrompt("remember this", "remembered");
+  const sessionFile = omp.runtime().state.sessionFile;
+
+  await omp.setMode("ask");
+
+  expect(omp.runtimeLaunches()[1]?.session).toBe(sessionFile);
+});
+
 // What the OMP rpc process prints, and Paseo carries in the startup error, when the model
 // recorded in a session file is gone: rpc mode exits instead of falling back.
 const MODEL_RESTORE_FAILURE = new Error(
@@ -271,7 +320,17 @@ const MODEL_RESTORE_FAILURE = new Error(
   ].join("\n"),
 );
 
+// OMP only resumes a session file it wrote, so these tests resume a file that exists.
+async function writeSessionFile(): Promise<{ dir: string; file: string }> {
+  const dir = await mkdtemp(path.join(tmpdir(), "paseo-omp-written-"));
+  onTestFinished(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "omp-session.jsonl");
+  await writeFile(file, `${JSON.stringify({ type: "session" })}\n`);
+  return { dir, file };
+}
+
 test("OMP resumes a session whose recorded model is gone by retrying on its default model", async () => {
+  const { dir, file } = await writeSessionFile();
   const runtime = new FakeOmp();
   runtime.failNextStart(MODEL_RESTORE_FAILURE);
   runtime.queueSessionSetup((session) => {
@@ -282,14 +341,14 @@ test("OMP resumes a session whose recorded model is gone by retrying on its defa
   const session = await client.resumeSession({
     provider: "omp",
     sessionId: "omp-session-1",
-    nativeHandle: "/tmp/omp-session.jsonl",
-    metadata: { cwd: "/workspace/project", model: "kiro/gpt-5.6-sol" },
+    nativeHandle: file,
+    metadata: { cwd: dir, model: "kiro/gpt-5.6-sol" },
   });
   onTestFinished(() => session.close());
 
   expect(runtime.recordedLaunches).toHaveLength(1);
   expect(runtime.recordedLaunches[0]).toMatchObject({
-    session: "/tmp/omp-session.jsonl",
+    session: file,
     model: "default",
   });
   await expect(session.getRuntimeInfo()).resolves.toMatchObject({
@@ -311,6 +370,7 @@ test("OMP resumes a session whose recorded model is gone by retrying on its defa
 });
 
 test("OMP does not retry a resume that failed for another reason", async () => {
+  const { dir, file } = await writeSessionFile();
   const runtime = new FakeOmp();
   runtime.failNextStart(new Error("OMP RPC process exited with code 1 and signal null\nboom"));
   const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
@@ -319,8 +379,8 @@ test("OMP does not retry a resume that failed for another reason", async () => {
     client.resumeSession({
       provider: "omp",
       sessionId: "omp-session-1",
-      nativeHandle: "/tmp/omp-session.jsonl",
-      metadata: { cwd: "/workspace/project", model: "kiro/gpt-5.6-sol" },
+      nativeHandle: file,
+      metadata: { cwd: dir, model: "kiro/gpt-5.6-sol" },
     }),
   ).rejects.toThrow("boom");
   expect(runtime.recordedLaunches).toHaveLength(0);
@@ -1963,6 +2023,7 @@ describe("OMP agent client and session", () => {
       ],
     });
     expect(omp.runtimeLaunches()[0]?.systemPrompt).toBe("Paseo prompt");
+    await omp.runPrompt("remember this", "remembered");
     const sessionFile = omp.runtime().state.sessionFile;
 
     await session.applyOptions?.({ output_style: "ELI5" });
@@ -2073,7 +2134,9 @@ describe("OMP agent client and session", () => {
   test("restarts the same conversation after an idle process exit", async () => {
     const omp = new OmpHarness();
     await omp.start({ modeId: "full" });
+    await omp.runPrompt("start the conversation", "started");
     const previousId = omp.runtime().state.sessionId;
+    const sessionFile = omp.runtime().state.sessionFile;
     omp.processExit("OMP RPC process exited with code null and signal SIGKILL\nBun crashed");
     expect(omp.turnFailures()).toEqual([
       "OMP RPC process exited with code null and signal SIGKILL\nBun crashed",
@@ -2081,7 +2144,7 @@ describe("OMP agent client and session", () => {
 
     await omp.startTurn("remember the conversation");
     expect(omp.runtimeLaunches()).toHaveLength(2);
-    expect(omp.runtimeLaunches()[1]?.session).toBe("/tmp/omp-session");
+    expect(omp.runtimeLaunches()[1]?.session).toBe(sessionFile);
     expect(omp.runtime().state.sessionId).toBe(previousId);
     expect(omp.threadStartedSessionIds()).toEqual([]);
     expect(omp.runtime().prompts).toEqual([

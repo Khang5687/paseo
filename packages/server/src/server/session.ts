@@ -1516,7 +1516,7 @@ export class Session {
             }),
           reloadAgentSession: (agentId, overrides) =>
             this.agentManager.reloadAgentSession(agentId, overrides),
-          sendSpokenInput: async (agentId, text) => {
+          sendSpokenInput: async (agentId, text, { speakToolReady }) => {
             await this.handleSendAgentMessage(
               agentId,
               text,
@@ -1524,11 +1524,12 @@ export class Session {
               undefined,
               undefined,
               undefined,
-              { spokenInput: true },
+              { spokenInput: true, speakToolReady },
             );
           },
           interruptAgentIfRunning: (agentId) => this.interruptAgentIfRunning(agentId),
           hasActiveAgentRun: (agentId) => this.hasActiveAgentRun(agentId),
+          waitForAgentIdle: (agentId, signal) => this.waitForAgentIdle(agentId, signal),
         },
         logger: this.sessionLogger,
         sessionId: this.sessionId,
@@ -2010,6 +2011,28 @@ export class Session {
       return false;
     }
     return this.agentManager.hasInFlightRun(agentId);
+  }
+
+  /** Resolves once the agent has no run in flight, or the signal aborts. */
+  private waitForAgentIdle(agentId: string, signal?: AbortSignal): Promise<void> {
+    return new Promise((settle) => {
+      if (signal?.aborted || !this.agentManager.hasInFlightRun(agentId)) {
+        settle();
+        return;
+      }
+      const done = () => {
+        unsubscribe();
+        signal?.removeEventListener("abort", done);
+        settle();
+      };
+      const unsubscribe = this.agentManager.subscribe(
+        () => {
+          if (!this.agentManager.hasInFlightRun(agentId)) done();
+        },
+        { agentId, replayState: false },
+      );
+      signal?.addEventListener("abort", done, { once: true });
+    });
   }
 
   private handleAgentRunError(agentId: string, error: unknown, context: string): void {
@@ -5080,7 +5103,7 @@ export class Session {
     images?: Array<{ data: string; mimeType: string }>,
     attachments?: AgentAttachment[],
     runOptions?: AgentRunOptions,
-    options?: { spokenInput?: boolean },
+    options?: { spokenInput?: boolean; speakToolReady?: boolean },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     this.sessionLogger.info(
       {
@@ -5098,7 +5121,9 @@ export class Session {
       }`,
     );
 
-    const promptText = options?.spokenInput ? wrapSpokenInput(text) : text;
+    const promptText = options?.spokenInput
+      ? wrapSpokenInput(text, options.speakToolReady ?? true)
+      : text;
     const prompt = buildAgentPrompt(
       promptText,
       images,
@@ -5116,6 +5141,9 @@ export class Session {
         prompt,
         messageId,
         runOptions,
+        // Speech never replaces a run in progress: a spoken turn joins it, like a typed
+        // message sent with the default "steer" send behavior.
+        activeTurnBehavior: options?.spokenInput ? "steer" : undefined,
         // A typed or spoken message from the human answers any permission the
         // agent is blocked on.
         clearPendingPermissions: true,
@@ -7791,6 +7819,10 @@ export class Session {
         return this.handleSidebarProjectOrderGet(msg);
       case "sidebar.project_order.set.request":
         return this.handleSidebarProjectOrderSet(msg);
+      case "sidebar.workspace_order.get.request":
+        return this.handleSidebarWorkspaceOrderGet(msg);
+      case "sidebar.workspace_order.set.request":
+        return this.handleSidebarWorkspaceOrderSet(msg);
       default:
         return undefined;
     }
@@ -7867,6 +7899,68 @@ export class Session {
           accepted: result.accepted,
           ...result.projectOrder,
         },
+      });
+    } catch (error) {
+      this.emitSidebarSyncError(request, error);
+    }
+  }
+
+  private async handleSidebarWorkspaceOrderGet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.workspace_order.get.request" }>,
+  ): Promise<void> {
+    if (!request.subscribe) {
+      try {
+        const workspaceOrder = await this.sidebarSync.getWorkspaceOrder();
+        this.emit({
+          type: "sidebar.workspace_order.get.response",
+          payload: { requestId: request.requestId, ...workspaceOrder },
+        });
+      } catch (error) {
+        this.emitSidebarSyncError(request, error);
+      }
+      return;
+    }
+    let unsubscribe: (() => void) | null = null;
+    const owner = this.delivery.begin(
+      "sidebarWorkspaceOrder",
+      request.subscribe.subscriptionId,
+      () => {
+        unsubscribe?.();
+      },
+    );
+    try {
+      // Subscribe before reading so an order set in between still reaches this device.
+      unsubscribe = this.sidebarSync.subscribeWorkspaceOrder((workspaceOrder) => {
+        if (owner.signal.aborted) return;
+        owner.emit({ type: "sidebar.workspace_order.update", payload: workspaceOrder });
+      });
+      const workspaceOrder = await this.sidebarSync.getWorkspaceOrder();
+      if (owner.signal.aborted) return;
+      this.emit({
+        type: "sidebar.workspace_order.get.response",
+        payload: {
+          requestId: request.requestId,
+          subscriptionId: owner.responseId,
+          ...workspaceOrder,
+        },
+      });
+    } catch (error) {
+      await owner.release();
+      this.emitSidebarSyncError(request, error);
+    }
+  }
+
+  private async handleSidebarWorkspaceOrderSet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.workspace_order.set.request" }>,
+  ): Promise<void> {
+    try {
+      const workspaceOrder = await this.sidebarSync.mergeWorkspaceOrder({
+        projects: request.projects,
+        ...(request.sort ? { sort: request.sort } : {}),
+      });
+      this.emit({
+        type: "sidebar.workspace_order.set.response",
+        payload: { requestId: request.requestId, ...workspaceOrder },
       });
     } catch (error) {
       this.emitSidebarSyncError(request, error);

@@ -463,6 +463,12 @@ function buildResumeConfig(
   };
 }
 
+// OMP writes a session file with the session's first prompt, and refuses `--session` for a file
+// that does not exist yet. A session reopened before its first prompt starts fresh instead.
+function writtenSessionFile(sessionFile: string | null | undefined): string | undefined {
+  return sessionFile && existsSync(sessionFile) ? sessionFile : undefined;
+}
+
 function buildResumeStartInput(input: {
   resumeConfig: OmpResumeConfig;
   sessionFile: string;
@@ -475,7 +481,7 @@ function buildResumeStartInput(input: {
     protocolMode: "rpc-ui",
     env: input.launchContext?.env,
     wrap: input.launchContext?.wrap,
-    session: input.sessionFile,
+    session: writtenSessionFile(input.sessionFile),
     thinkingOptionId: normalizeOmpThinkingOption(input.resumeConfig.thinkingOptionId) ?? undefined,
     ...(input.launchMode.modeId ? { modeId: input.launchMode.modeId } : {}),
     ...(input.launchMode.extraArgs ? { extraArgs: input.launchMode.extraArgs } : {}),
@@ -3105,7 +3111,7 @@ export class OmpAgentClient implements AgentClient {
         modeId: launchMode.modeId,
         extraArgs: launchMode.extraArgs,
         systemPrompt: composeOmpSystemPrompt(config, outputStyles),
-        ...(!startInput.noSession && sessionFile ? { session: sessionFile } : {}),
+        ...(!startInput.noSession ? { session: writtenSessionFile(sessionFile) } : {}),
       });
       let hostTools: OmpHostToolRouter | undefined;
       try {

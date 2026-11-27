@@ -946,6 +946,14 @@ export type SidebarProjectOrderSetPayload = Extract<
   SessionOutboundMessage,
   { type: "sidebar.project_order.set.response" }
 >["payload"];
+export type SidebarWorkspaceOrderPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.workspace_order.get.response" }
+>["payload"];
+export type SidebarWorkspaceOrderSetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.workspace_order.set.response" }
+>["payload"];
 export type WorkspaceLabelAssignmentPayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.label.assignment.set.response" }
@@ -3507,6 +3515,33 @@ export class DaemonClient {
         type: "sidebar.project_order.set.request",
         order: options.order,
         updatedAt: options.updatedAt,
+      },
+    });
+  }
+
+  /** Each project's shared workspace order and the sort, then a `sidebar.workspace_order.update` per change. */
+  observeSidebarWorkspaceOrder(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<SidebarWorkspaceOrderPayload> {
+    return this.observe(
+      "sidebar.workspace_order.get.response",
+      { type: "sidebar.workspace_order.get.request", subscribe: {} },
+      options,
+    );
+  }
+
+  /** Merges these entries into the host's, newest stamp wins each; the reply carries the result. */
+  setSidebarWorkspaceOrder(options: {
+    projects: Record<string, { order: string[]; updatedAt: number }>;
+    sort?: { value: string; updatedAt: number };
+    requestId?: string;
+  }): Promise<SidebarWorkspaceOrderSetPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "sidebar.workspace_order.set.request",
+        projects: options.projects,
+        ...(options.sort ? { sort: options.sort } : {}),
       },
     });
   }

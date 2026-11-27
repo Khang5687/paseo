@@ -1,0 +1,5 @@
+{
+  "pr": 202,
+  "title": "fix(server): reopen an unprompted OMP agent as a fresh session",
+  "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
+}

@@ -1,0 +1,6 @@
+{
+  "pr": 200,
+  "title": "docs(voice): voice mode needs Paseo tools for the speak tool",
+  "untested": "docs only; behavior checked live on an isolated dev daemon (see PR body)",
+  "tests": []
+}

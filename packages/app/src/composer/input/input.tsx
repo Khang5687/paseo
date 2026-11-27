@@ -1012,10 +1012,8 @@ interface ToggleRealtimeVoiceContext {
   voiceAgentId: string | undefined;
   isConnected: boolean;
   disabled: boolean;
-  isAgentRunning: boolean;
   handleStopRealtimeVoice: () => Promise<unknown> | void;
   toast: { error: (msg: string) => void };
-  interruptBeforeVoiceMessage: string;
   exitFullscreen: () => void;
 }
 
@@ -1026,10 +1024,6 @@ function toggleRealtimeVoiceImpl(ctx: ToggleRealtimeVoiceContext): void {
   if (ctx.voice.isVoiceSwitching) return;
   if (ctx.voice.isVoiceModeForAgent(ctx.voiceServerId, ctx.voiceAgentId)) {
     void ctx.handleStopRealtimeVoice();
-    return;
-  }
-  if (ctx.isAgentRunning) {
-    ctx.toast.error(ctx.interruptBeforeVoiceMessage);
     return;
   }
   ctx.exitFullscreen();
@@ -1894,19 +1888,15 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         voiceAgentId,
         isConnected,
         disabled,
-        isAgentRunning,
         handleStopRealtimeVoice,
         toast,
-        interruptBeforeVoiceMessage: t("composer.voice.interruptBeforeVoice"),
         exitFullscreen,
       });
     }, [
       disabled,
       handleStopRealtimeVoice,
       exitFullscreen,
-      isAgentRunning,
       isConnected,
-      t,
       toast,
       voice,
       voiceAgentId,
@@ -2446,6 +2436,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
                 voiceMuteToggleKeys={voiceMuteToggleKeys}
                 dictationToggleKeys={dictationToggleKeys}
               />
+              {/* A run takes the trailing disc for Stop; voice mode stays reachable beside it. */}
+              {primaryActionKind === "active" ? voiceModeContent : null}
               <View style={styles.trailingDisc}>{sendButton}</View>
             </View>
           </View>
@@ -2475,6 +2467,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         voiceMuteToggleKeys,
         dictationToggleKeys,
         sendButton,
+        primaryActionKind,
+        voiceModeContent,
       ],
     );
     const voiceOverlay = useMemo(

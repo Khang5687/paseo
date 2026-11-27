@@ -181,7 +181,6 @@ export const ja: TranslationResources = {
       unmuteVoice: "音声のミュートを解除",
       muteVoice: "音声をミュート",
       dictation: "音声入力",
-      interruptBeforeVoice: "音声モードを開始する前にエージェントを中断してください",
     },
     attachments: {
       addImage: "画像を追加",
@@ -529,6 +528,11 @@ export const ja: TranslationResources = {
       nextRun: "次回 {{time}}",
       nextRunDue: "まもなく実行",
       waitingOn: "待機中: {{job}}",
+      waitingOnTasksOne: "バックグラウンドタスク1件を待機中",
+      waitingOnTasksMany: "バックグラウンドタスク{{count}}件を待機中",
+      waitingOnSubagentsOne: "サブエージェント 1 件を待機中",
+      waitingOnSubagentsMany: "サブエージェント {{count}} 件を待機中",
+      waitingOnBoth: "{{tasks}}と{{subagents}}を待機中",
       unnamedJob: "バックグラウンドジョブ",
       detailsWhy: "理由",
       detailsCommand: "コマンド",
@@ -1390,6 +1394,7 @@ export const ja: TranslationResources = {
       statusFailed: "失敗: {{count}}",
       statusDone: "完了・未読: {{count}}",
       statusWorking: "作業中: {{count}}",
+      statusWaiting: "待機中: {{count}}",
       moveTop: "一番上へ移動",
       moveEarlier: "前に移動",
       moveLater: "後ろに移動",
@@ -1407,6 +1412,7 @@ export const ja: TranslationResources = {
     navButtons: {
       title: "表示するボタン",
       done: "完了",
+      more: "その他",
     },
     view: {
       failed: "サイドバーのビューを読み込めませんでした。",
@@ -1436,6 +1442,7 @@ export const ja: TranslationResources = {
         lastPrompt: "最後のプロンプト",
         urgent: "緊急を先頭に",
         updateHost: "ワークスペースを並べ替えるにはホストを更新してください",
+        switchedToManual: "手動の並べ替えに切り替えました",
       },
       grouping: {
         label: "グループ化",
@@ -1562,9 +1569,6 @@ export const ja: TranslationResources = {
       },
     },
     workspace: {
-      workingSubagents: "{{count}}個のサブエージェントが作業中",
-      workingSubagents_one: "{{count}}個のサブエージェントが作業中",
-      workingSubagents_other: "{{count}}個のサブエージェントが作業中",
       newAgent: "新規",
       status: {
         serviceRunning: "サービス {{name}} 実行中",
@@ -2312,6 +2316,11 @@ export const ja: TranslationResources = {
       mute: "リアルタイム音声をミュート",
       unmute: "リアルタイム音声のミュートを解除",
       stop: "リアルタイム音声を停止してターンを中断",
+      black: "音声を続けたまま画面を黒にする",
+    },
+    blackScreen: {
+      button: "黒画面",
+      wake: "黒画面。ダブルタップで戻ります",
     },
   },
   rewind: {
@@ -2474,6 +2483,8 @@ export const ja: TranslationResources = {
     tooManyFiles: "1 回答につき最大 {{max}} ファイル",
     uploadFailed: "ファイルをアップロードできませんでした",
     sendFailed: "回答を送信できませんでした",
+    copyAnswers: "回答をコピー",
+    copiedAnswers: "コピーしました",
   },
   needsYou: {
     title: "あなた待ち",
@@ -2509,7 +2520,6 @@ export const ja: TranslationResources = {
     pillLabelOne: "サブエージェント 1 件",
     pillLabelMany: "サブエージェント {{count}} 件",
     pillLabelWorking: "{{count}} 件実行中",
-    pillLabelYourTurnWorking: "あなたの番 · {{count}} 件実行中",
     pillLabelFailed: "{{count}} 件失敗",
     pillLabelNeedsInputOne: "1 件が入力待ち",
     pillLabelNeedsInputMany: "{{count}} 件が入力待ち",

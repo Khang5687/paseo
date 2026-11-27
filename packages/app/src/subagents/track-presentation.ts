@@ -92,22 +92,27 @@ export interface SubagentPillPresentation {
  * `buildSubagentRowPresentationData`, which reports no attention of its own — so the pill is two
  * segments at worst, and falls back to naming what it opens once nothing is happening.
  *
- * `yourTurn` is the chat's own turn having ended while children still work. The working count
- * then reads "Your turn · N working", so the chat says the next move is yours while they finish.
+ * `waits` is the chat's own turn having ended with nothing in it for you while children still
+ * work. The working count then reads "Waiting on N subagents" beside an hourglass, the same mark
+ * the sidebar row shows: the chat is not working, it waits on them.
  */
 export function buildSubagentPillPresentation(
   t: TFunction,
   rows: readonly SubagentRow[],
-  options: { yourTurn: boolean },
+  options: { waits: boolean },
 ): SubagentPillPresentation {
   const counts = summarizeSubagentStatus(rows);
   if (counts.length === 0) {
     const label = totalLabel(t, rows.length);
     return { segments: [{ bucket: null, text: label }], accessibilityLabel: label };
   }
-  const labels = counts.map(({ bucket, count }) => statusLabel(t, bucket, count, options.yourTurn));
+  const labels = counts.map(({ bucket, count }) => statusLabel(t, bucket, count, options.waits));
   return {
-    segments: counts.map(({ bucket }, index) => ({ bucket, text: labels[index] ?? "" })),
+    segments: counts.map(({ bucket }, index) => {
+      const segment: ComposerTrackPillSegment = { bucket, text: labels[index] ?? "" };
+      if (bucket === "running" && options.waits) segment.waiting = true;
+      return segment;
+    }),
     // Marks separate the segments on screen; a screen reader needs the pause spelled out.
     accessibilityLabel: labels.join(", "),
   };
@@ -118,13 +123,14 @@ function statusLabel(
   t: TFunction,
   bucket: ActiveStatusBucket,
   count: number,
-  yourTurn: boolean,
+  waits: boolean,
 ): string {
   switch (bucket) {
     case "running":
-      return yourTurn
-        ? t("subagents.pillLabelYourTurnWorking", { count })
-        : t("subagents.pillLabelWorking", { count });
+      if (!waits) return t("subagents.pillLabelWorking", { count });
+      return count === 1
+        ? t("message.backgroundWork.waitingOnSubagentsOne")
+        : t("message.backgroundWork.waitingOnSubagentsMany", { count });
     case "failed":
       return t("subagents.pillLabelFailed", { count });
     case "needs_input":

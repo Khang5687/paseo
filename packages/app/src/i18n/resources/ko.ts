@@ -180,7 +180,6 @@ export const ko: TranslationResources = {
       unmuteVoice: "음성 음소거 해제",
       muteVoice: "음성 음소거",
       dictation: "받아쓰기",
-      interruptBeforeVoice: "음성 모드를 시작하기 전에 에이전트를 중단하세요",
     },
     attachments: {
       addImage: "이미지 추가",
@@ -525,6 +524,11 @@ export const ko: TranslationResources = {
       nextRun: "다음 {{time}}",
       nextRunDue: "곧 실행",
       waitingOn: "대기 중: {{job}}",
+      waitingOnTasksOne: "백그라운드 작업 1개 대기 중",
+      waitingOnTasksMany: "백그라운드 작업 {{count}}개 대기 중",
+      waitingOnSubagentsOne: "하위 에이전트 1개 대기 중",
+      waitingOnSubagentsMany: "하위 에이전트 {{count}}개 대기 중",
+      waitingOnBoth: "{{tasks}}, {{subagents}} 대기 중",
       unnamedJob: "백그라운드 작업",
       detailsWhy: "이유",
       detailsCommand: "명령",
@@ -1383,6 +1387,7 @@ export const ko: TranslationResources = {
       statusFailed: "실패: {{count}}",
       statusDone: "완료, 안 열어봄: {{count}}",
       statusWorking: "작업 중: {{count}}",
+      statusWaiting: "대기 중: {{count}}",
       moveTop: "맨 위로 이동",
       moveEarlier: "앞으로 이동",
       moveLater: "뒤로 이동",
@@ -1400,6 +1405,7 @@ export const ko: TranslationResources = {
     navButtons: {
       title: "표시할 버튼",
       done: "완료",
+      more: "더보기",
     },
     view: {
       failed: "사이드바 보기를 불러오지 못했습니다.",
@@ -1429,6 +1435,7 @@ export const ko: TranslationResources = {
         lastPrompt: "마지막 프롬프트",
         urgent: "긴급 우선",
         updateHost: "작업 공간을 정렬하려면 호스트를 업데이트하세요",
+        switchedToManual: "이제 직접 정렬합니다",
       },
       grouping: {
         label: "그룹화",
@@ -1554,9 +1561,6 @@ export const ko: TranslationResources = {
       },
     },
     workspace: {
-      workingSubagents: "하위 에이전트 {{count}}개 작업 중",
-      workingSubagents_one: "하위 에이전트 {{count}}개 작업 중",
-      workingSubagents_other: "하위 에이전트 {{count}}개 작업 중",
       newAgent: "신규",
       status: {
         serviceRunning: "서비스 {{name}} 실행 중",
@@ -2301,6 +2305,11 @@ export const ko: TranslationResources = {
       mute: "실시간 음성 음소거",
       unmute: "실시간 음성 음소거 해제",
       stop: "실시간 음성 중지 및 턴 중단",
+      black: "음성을 유지한 채 화면을 검게 만들기",
+    },
+    blackScreen: {
+      button: "검은 화면",
+      wake: "검은 화면. 두 번 탭하면 돌아옵니다",
     },
   },
   rewind: {
@@ -2460,6 +2469,8 @@ export const ko: TranslationResources = {
     tooManyFiles: "답변당 최대 {{max}}개 파일",
     uploadFailed: "파일을 업로드하지 못했습니다",
     sendFailed: "답변을 보내지 못했습니다",
+    copyAnswers: "답변 복사",
+    copiedAnswers: "복사됨",
   },
   needsYou: {
     title: "응답 필요",
@@ -2495,7 +2506,6 @@ export const ko: TranslationResources = {
     pillLabelOne: "하위 에이전트 1개",
     pillLabelMany: "하위 에이전트 {{count}}개",
     pillLabelWorking: "{{count}}개 실행 중",
-    pillLabelYourTurnWorking: "내 차례 · {{count}}개 실행 중",
     pillLabelFailed: "{{count}}개 실패",
     pillLabelNeedsInputOne: "1개 입력 필요",
     pillLabelNeedsInputMany: "{{count}}개 입력 필요",

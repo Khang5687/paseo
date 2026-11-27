@@ -1,4 +1,4 @@
-import { deriveEffectiveWorkspaceStatus } from "@/workspace-status";
+import { deriveEffectiveWorkspaceStatus, type WorkspaceWait } from "@/workspace-status";
 import equal from "fast-deep-equal";
 import type { PrHint } from "@/git/pr-hint";
 import { selectPrHintFromStatus } from "@/git/pr-hint";
@@ -59,9 +59,9 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   nextRunAt: string | null;
   /** The job its working chat waits on ("" when unnamed); null when it is not waiting. */
   waitingOn: string | null;
-  // Subagents still working under a root agent that waits on the user. Zero while
-  // the row already shows running, since the spinner says the same thing.
-  workingSubagentCount: number;
+  // The background jobs and subagents a settled chat waits on: the row reads running with an
+  // hourglass. Null while the chat works, asks you, or has nothing running.
+  waiting: WorkspaceWait | null;
   // A new main agent here that the user has not opened yet: the row shows a "New" tag.
   isNew?: boolean;
 }
@@ -192,7 +192,7 @@ export function createSidebarWorkspaceEntry(input: {
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
     nextRunAt: activity?.nextRunAt ?? null,
     waitingOn: activity?.waitingOn ?? null,
-    workingSubagentCount: input.workspace.runningSubagentCount ?? 0,
+    waiting: effectiveStatus.waiting,
     isNew: activity?.hasUnseenAgent ?? false,
   };
 }
@@ -248,21 +248,24 @@ function forEachKnownProjectWorkspace(
 
 interface ProjectWorkspaceStatus {
   status: SidebarStateBucket;
-  /** The working chat is blocked on a background job. */
+  /** Running, but the chat waits: on the job its turn is blocked on, or on its jobs and subagents. */
   waiting: boolean;
 }
 
 function collectProjectWorkspaceStatuses(input: ProjectStatusInput): ProjectWorkspaceStatus[] {
   const statuses: ProjectWorkspaceStatus[] = [];
   forEachKnownProjectWorkspace(input, (serverId, session, workspace) => {
+    const effective = deriveEffectiveWorkspaceStatus({
+      serverId,
+      workspace,
+      pendingCreateAttempts: input.pendingCreateAttempts,
+      workspaceAgentActivity: session.workspaceAgentActivity,
+    });
+    const blockedOnJob =
+      (session.workspaceAgentActivity.get(workspace.id)?.waitingOn ?? null) !== null;
     statuses.push({
-      status: deriveEffectiveWorkspaceStatus({
-        serverId,
-        workspace,
-        pendingCreateAttempts: input.pendingCreateAttempts,
-        workspaceAgentActivity: session.workspaceAgentActivity,
-      }).status,
-      waiting: (session.workspaceAgentActivity.get(workspace.id)?.waitingOn ?? null) !== null,
+      status: effective.status,
+      waiting: effective.status === "running" && (blockedOnJob || effective.waiting !== null),
     });
   });
   return statuses;
@@ -336,15 +339,25 @@ export interface ProjectStatusCounts {
   failed: number;
   /** Finished and not opened yet. */
   attention: number;
+  /** Working on its own turn. */
   running: number;
+  /** Running, but only waiting on background jobs or subagents. */
+  waiting: number;
 }
 
 export function countProjectWorkspaceStatuses(input: ProjectStatusInput): ProjectStatusCounts {
-  const counts: ProjectStatusCounts = { needsInput: 0, failed: 0, attention: 0, running: 0 };
-  for (const { status } of collectProjectWorkspaceStatuses(input)) {
+  const counts: ProjectStatusCounts = {
+    needsInput: 0,
+    failed: 0,
+    attention: 0,
+    running: 0,
+    waiting: 0,
+  };
+  for (const { status, waiting } of collectProjectWorkspaceStatuses(input)) {
     if (status === "needs_input") counts.needsInput += 1;
     else if (status === "failed") counts.failed += 1;
     else if (status === "attention") counts.attention += 1;
+    else if (status === "running" && waiting) counts.waiting += 1;
     else if (status === "running") counts.running += 1;
   }
   return counts;
