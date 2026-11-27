@@ -39,6 +39,7 @@ import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
 import type pino from "pino";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
+import { isSnoozed } from "./project-snooze.js";
 import type { ProjectUpdate } from "./workspace-reconciliation-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager, CheckoutDiffMetrics } from "./checkout-diff-manager.js";
@@ -2368,6 +2369,8 @@ export class VoiceAssistantWebSocketServer {
         pluginNotifications: true,
         // COMPAT(skillManagement): added in v0.4.0, remove gate after 2027-08-16.
         skillManagement: true,
+        // COMPAT(projectSnooze): fork.
+        projectSnooze: true,
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
         idleRuntimeCleanupSetting: true,
         resumeOnStartupSetting: true,
@@ -3251,7 +3254,10 @@ export class VoiceAssistantWebSocketServer {
       }),
     );
 
-    if (plan.shouldPush) {
+    // A snoozed project's chats stay silent: no push, no in-app alert. The event still goes out
+    // so the chat's unread and status update.
+    const snoozed = await this.isWorkspaceProjectSnoozed(agent.workspaceId, nowMs);
+    if (plan.shouldPush && !snoozed) {
       void this.pushNotificationSender
         .send(notification, { kind: "agent", reason: params.reason })
         .catch((err) => {
@@ -3261,6 +3267,7 @@ export class VoiceAssistantWebSocketServer {
 
     for (const { ws } of clientEntries) {
       const shouldNotify =
+        !snoozed &&
         plan.inAppRecipientIndex !== null &&
         notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
       const timestamp = new Date().toISOString();
@@ -3300,6 +3307,13 @@ export class VoiceAssistantWebSocketServer {
         this.sessions.get(ws)!.session.publishToSource(ws, message.message);
       else this.sendToClient(ws, message);
     }
+  }
+
+  private async isWorkspaceProjectSnoozed(workspaceId: string, nowMs: number): Promise<boolean> {
+    const workspace = await this.workspaceRegistry.get(workspaceId);
+    if (!workspace) return false;
+    const project = await this.projectRegistry.get(workspace.projectId);
+    return isSnoozed(project?.snoozedUntil, nowMs);
   }
 
   private sendFilePush(tokens: string[], payload: PushPayload): Promise<void> {

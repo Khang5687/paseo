@@ -76,12 +76,22 @@ Two keys move between workspaces across projects, whatever the strip shows. Thei
 A project with no chat activity for 3 days folds into "More": on the rail, on the chip row, and at the end of the project list. Any new activity brings it back.
 
 - **Activity** is the newest of a workspace's creation, last prompt, status change, and its root agent's last status change, across the project (`deriveProjectActivity`). A project with nothing known stays out: unknown is not quiet.
-- **Never folds:** a project with a workspace waiting on you, the project of the open workspace, a project with a pinned workspace, and a project the filter picked. When every project would fold, none does.
-- **Time** is read hourly (`useQuietProjectKeys`), so a project folds within an hour of crossing 3 days.
+- **Never folds by age:** a project with a workspace waiting on you, the project of the open workspace, a project with a pinned workspace, and a project the filter picked. When every awake project would fold, none does.
+- **Time** is read hourly (`useQuietProjectKeys`), so a project folds within an hour of crossing 3 days. A snooze's end adds one exact tick, so a snoozed project comes back on the minute.
 - **One toggle.** "More" opens on the rail, the chips and the list together (`useSidebarQuietFoldStore`, not persisted, so quiet projects start folded each launch). Opened projects list after the ones that show and don't drag on the rail. Opening it on the chip row scrolls the row so "More" sits at its left edge with the opened chips after it; without that they land past the right edge.
 - **One count.** The strip and the list fold from the same projects (`displayProjects` in `sidebar-model.tsx`), so the chip and the list's "More" row show the same number.
 - **Digits** count the projects that show first, then the quiet ones, matching the rail.
 - The list folds only in project grouping with no project filter. Status grouping has no project rows to fold.
+
+## Snooze
+
+Every project menu (rail and chip right-click or long press, the project row's ⋯ and right-click) has Snooze: until tomorrow, until Monday, or a day in the next two weeks, each at 08:00 local time. A snoozed project folds into "More" whatever the never-fold rules say, since you put it away on purpose. Its chats send no push and no in-app alert, but they still count in Needs you and on the status dots. Wake now, in the same menu, brings it back; so does the time passing.
+
+- **The host owns it.** The snooze is `snoozedUntil` on the project record, set through `project.snooze.set` (gated on `features.projectSnooze`), and rides on the project and workspace descriptors as `projectSnoozedUntil`. Every device sees the same snooze. A project shown once for several hosts is snoozed on each of them and counts as snoozed while any still is.
+- **Nothing clears it.** The value stays after the time passes; every reader compares it with now (`isSnoozed` on the daemon, `projectSnoozedUntilMs` in the app). A project never snoozed sends no field; one snoozed before sends `null` once woken, so a client that merges descriptors still sees the wake.
+- **Silencing lives on the daemon** (`broadcastAgentAttention`): it skips the push and sends the attention event with `shouldNotify: false`, so unread and status still update.
+- "Until a date" lists days instead of a date picker: the app has none, and a list is one tap on a phone.
+- To check it again: `npx playwright test --project=browser e2e/browser/sidebar-project-snooze.spec.ts` from `packages/app` snoozes from the rail, checks a second page folds it too, wakes it, then at 390×844 snoozes a chip to a picked day.
 
 ## Adding to the strip
 

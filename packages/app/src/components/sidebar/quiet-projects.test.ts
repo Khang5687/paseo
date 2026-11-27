@@ -52,6 +52,37 @@ describe("quiet projects", () => {
     expect(resolve({ a: activity(4), b: activity(7) })).toEqual([]);
   });
 
+  it("folds a snoozed project even when it needs you or is kept, and still folds by age", () => {
+    const projects = ["a", "b", "c", "d"].map((viewKey) => ({ viewKey }));
+    const activities: Record<string, ProjectActivity> = {
+      a: activity(0, true),
+      b: activity(9),
+      c: activity(0),
+      d: activity(0),
+    };
+    expect(
+      resolveQuietProjectKeys({
+        projects,
+        activityOf: (project) => activities[project.viewKey],
+        keep: new Set(["a"]),
+        now: NOW,
+        snoozed: new Set(["a", "d"]),
+      }),
+    ).toEqual(["a", "b", "d"]);
+  });
+
+  it("applies the all-would-fold rule to awake projects only", () => {
+    expect(
+      resolveQuietProjectKeys({
+        projects: [{ viewKey: "a" }, { viewKey: "b" }],
+        activityOf: () => activity(9),
+        keep: new Set(),
+        now: NOW,
+        snoozed: new Set(["a"]),
+      }),
+    ).toEqual(["a"]);
+  });
+
   it("splits projects in order", () => {
     const projects = [{ viewKey: "a" }, { viewKey: "b" }, { viewKey: "c" }];
     expect(splitQuietProjects(projects, new Set(["b"]))).toEqual({

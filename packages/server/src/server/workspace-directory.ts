@@ -605,6 +605,8 @@ export class WorkspaceDirectory {
         projectDisplayName: resolveProjectDisplayName(project),
         projectCustomName: project.customName ?? null,
         projectCustomIconRevision: project.customIconRevision ?? null,
+        // Undefined for a project never snoozed, so the field stays off the wire.
+        projectSnoozedUntil: project.snoozedUntil,
         projectRootPath: project.rootPath,
         projectKind: project.kind,
       }));

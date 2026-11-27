@@ -1509,6 +1509,16 @@ export const fr: TranslationResources = {
         remove: "Retirer le projet",
         removing: "Retrait…",
       },
+      snooze: {
+        title: "Mettre en veille",
+        tomorrow: "Jusqu’à demain",
+        monday: "Jusqu’à lundi",
+        date: "Jusqu’à une date…",
+        datePage: "Jusqu’à une date",
+        wake: "Réveiller maintenant",
+        until: "Jusqu’à {{time}}",
+        failed: "Impossible de mettre {{name}} en veille",
+      },
       confirmations: {
         removeTitle: "Retirer le projet ?",
         removeMessage:

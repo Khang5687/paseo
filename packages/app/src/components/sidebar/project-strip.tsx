@@ -53,6 +53,7 @@ import { useProjectIcons } from "@/projects/icons";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
 import { saveProjectStripOrder, useOpenReorderProjects } from "./project-order";
+import { ProjectSnoozeSubTrigger, useProjectSnoozeMenuPages } from "./project-snooze-menu";
 import { ReorderProjectsSheet } from "./reorder-projects-sheet";
 import { useSidebarRailOpenStore } from "@/stores/sidebar-rail-open-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
@@ -469,6 +470,7 @@ const RailProjectButton = memo(function RailProjectButton({
   const shortcutNumber = projectStripShortcutNumber(index);
   const rememberedChat = useSidebarLastChatStore((state) => state.byProject[project.viewKey]);
   const moves = listProjectEndMoves({ projectKeys, viewKey: project.viewKey });
+  const menuPages = useProjectSnoozeMenuPages(project);
   // The rail sits beside the open chat, so a click goes back to where you were in that project.
   const handlePress = useCallback(() => {
     showOnlyProject(project.viewKey);
@@ -524,6 +526,7 @@ const RailProjectButton = memo(function RailProjectButton({
         <ContextMenuContent
           align="start"
           width={220}
+          pages={menuPages}
           testID={`sidebar-project-rail-menu-${project.viewKey}`}
         >
           {moves.map((move) => (
@@ -541,6 +544,7 @@ const RailProjectButton = memo(function RailProjectButton({
               {t("sidebar.projectStrip.reorderProjects")}
             </ContextMenuItem>
           )}
+          <ProjectSnoozeSubTrigger project={project} />
         </ContextMenuContent>
       </ContextMenu>
     </View>
@@ -786,6 +790,7 @@ const ProjectChip = memo(function ProjectChip({
   const statusLabel = useProjectStatusLabel(statusCounts);
   const shortcutNumber = projectStripShortcutNumber(index);
   const moves = listProjectStripMoves({ projectKeys, viewKey: project.viewKey });
+  const menuPages = useProjectSnoozeMenuPages(project);
   const handlePress = useCallback(
     () => showOnlyProject(project.viewKey),
     [project.viewKey, showOnlyProject],
@@ -800,7 +805,7 @@ const ProjectChip = memo(function ProjectChip({
         }
         aria-selected={selected}
         highlightStyle={styles.chipPressed}
-        enabled={moves.length > 0}
+        enabled={moves.length > 0 || menuPages.length > 0}
         onPress={handlePress}
         style={[styles.chip, selected ? styles.chipSelected : null]}
         testID={`sidebar-project-chip-item-${project.viewKey}`}
@@ -823,6 +828,7 @@ const ProjectChip = memo(function ProjectChip({
       <ContextMenuContent
         align="start"
         width={220}
+        pages={menuPages}
         testID={`sidebar-project-chip-menu-${project.viewKey}`}
       >
         {moves.map((move) => (
@@ -837,6 +843,7 @@ const ProjectChip = memo(function ProjectChip({
         <ContextMenuItem onSelect={openReorder} testID="sidebar-project-chip-reorder">
           {t("sidebar.projectStrip.reorderProjects")}
         </ContextMenuItem>
+        <ProjectSnoozeSubTrigger project={project} />
       </ContextMenuContent>
     </ContextMenu>
   );

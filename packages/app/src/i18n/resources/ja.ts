@@ -1494,6 +1494,16 @@ export const ja: TranslationResources = {
         remove: "プロジェクトを削除",
         removing: "削除中...",
       },
+      snooze: {
+        title: "スヌーズ",
+        tomorrow: "明日まで",
+        monday: "月曜日まで",
+        date: "日付を選ぶ…",
+        datePage: "日付を選ぶ",
+        wake: "今すぐ再開",
+        until: "{{time}} まで",
+        failed: "{{name}} をスヌーズできませんでした",
+      },
       confirmations: {
         removeTitle: "プロジェクトを削除しますか？",
         removeMessage:

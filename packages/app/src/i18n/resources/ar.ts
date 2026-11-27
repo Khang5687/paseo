@@ -1478,6 +1478,16 @@ export const ar: TranslationResources = {
         remove: "إزالة المشروع",
         removing: "جارٍ الإزالة...",
       },
+      snooze: {
+        title: "تأجيل",
+        tomorrow: "حتى الغد",
+        monday: "حتى الاثنين",
+        date: "حتى تاريخ…",
+        datePage: "حتى تاريخ",
+        wake: "إيقاظ الآن",
+        until: "حتى {{time}}",
+        failed: "تعذّر تأجيل {{name}}",
+      },
       confirmations: {
         removeTitle: "هل تريد إزالة المشروع؟",
         removeMessage:
