@@ -6993,6 +6993,15 @@ test("open questions from replies stay through reading and close when a message 
   expect(openIds()).toEqual(["Q1", "Q2"]);
   expect((await storage.get(snapshot.id))?.openQuestions?.map((q) => q.id)).toEqual(["Q1", "Q2"]);
 
+  // A half answer is kept for every device; an older write from another device loses.
+  const halfAnswer = { pick: false, text: "Postgres, we need replicas", updatedAt: 2_000 };
+  expect(await manager.setOpenQuestionAnswer(snapshot.id, "Q1", halfAnswer)).toBe(true);
+  expect(
+    await manager.setOpenQuestionAnswer(snapshot.id, "Q1", { pick: true, text: "", updatedAt: 1 }),
+  ).toBe(false);
+  expect((await storage.get(snapshot.id))?.openQuestions?.[0]?.answer).toEqual(halfAnswer);
+  expect(await manager.setOpenQuestionAnswer(snapshot.id, "Q9", halfAnswer)).toBe(false);
+
   replies.push("Noted.");
   await send("Q1 (Storage) yes: SQLite in one file");
   await manager.flush();

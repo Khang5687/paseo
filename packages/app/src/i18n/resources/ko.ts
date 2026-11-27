@@ -2350,6 +2350,23 @@ export const ko: TranslationResources = {
   menu: {
     backdrop: "메뉴 배경",
   },
+  questions: {
+    pill_one: "열린 질문 {{count}}개",
+    pill_other: "열린 질문 {{count}}개",
+    panelTitle: "열린 질문",
+    goWithPick: "추천대로 답하기",
+    ownPlaceholder: "또는 직접 입력…",
+    attach: "파일 첨부",
+    removeFile: "{{name}} 제거",
+    change: "변경",
+    yes: "예",
+    summary: "{{total}}개 중 {{answered}}개 답변 · {{open}}개는 열린 채로",
+    send_one: "답변 {{count}}개 보내기",
+    send_other: "답변 {{count}}개 보내기",
+    tooManyFiles: "답변당 최대 {{max}}개 파일",
+    uploadFailed: "파일을 업로드하지 못했습니다",
+    sendFailed: "답변을 보내지 못했습니다",
+  },
   subagents: {
     parent: {
       backToParent: "상위 에이전트로 돌아가기",

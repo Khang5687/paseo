@@ -101,8 +101,17 @@ import {
 } from "./option-controls.js";
 import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
 import { replyAwaitsAnswer } from "./awaiting-answer.js";
-import { answerTextQuestions, mergeAskedQuestions, parseTextQuestions } from "./text-questions.js";
-import type { AgentOpenQuestion, AgentQueuedMessagePayload } from "../messages.js";
+import {
+  answerTextQuestions,
+  mergeAskedQuestions,
+  parseTextQuestions,
+  setQuestionAnswer,
+} from "./text-questions.js";
+import type {
+  AgentOpenQuestion,
+  AgentQuestionAnswer,
+  AgentQueuedMessagePayload,
+} from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -3555,6 +3564,36 @@ export class AgentManager {
     };
     await registry.upsert(nextRecord);
     this.dispatchStoredAgentState(nextRecord);
+  }
+
+  /**
+   * Keeps a half-written answer to one open question so every device shows it. Returns false
+   * when the question is no longer open or a newer answer already won.
+   */
+  async setOpenQuestionAnswer(
+    agentId: string,
+    questionId: string,
+    answer: AgentQuestionAnswer,
+  ): Promise<boolean> {
+    const liveAgent = this.agents.get(agentId);
+    if (liveAgent) {
+      const next = setQuestionAnswer(liveAgent.openQuestions ?? [], questionId, answer);
+      if (!next) return false;
+      liveAgent.openQuestions = next;
+      await this.persistSnapshot(liveAgent);
+      this.emitState(liveAgent, { persist: false });
+      return true;
+    }
+
+    const registry = this.requireRegistry();
+    const record = await registry.get(agentId);
+    if (!record || record.archivedAt) return false;
+    const next = setQuestionAnswer(record.openQuestions ?? [], questionId, answer);
+    if (!next) return false;
+    const nextRecord: StoredAgentRecord = { ...record, openQuestions: next };
+    await registry.upsert(nextRecord);
+    this.dispatchStoredAgentState(nextRecord);
+    return true;
   }
 
   async markAgentUnread(agentId: string): Promise<void> {

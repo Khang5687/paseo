@@ -2379,6 +2379,23 @@ export const ptBR: TranslationResources = {
   menu: {
     backdrop: "Fundo do menu",
   },
+  questions: {
+    pill_one: "{{count}} pergunta aberta",
+    pill_other: "{{count}} perguntas abertas",
+    panelTitle: "Perguntas abertas",
+    goWithPick: "Usar a sugestão",
+    ownPlaceholder: "Ou escreva sua resposta…",
+    attach: "Anexar arquivos",
+    removeFile: "Remover {{name}}",
+    change: "Alterar",
+    yes: "sim",
+    summary: "{{answered}} de {{total}} respondidas · {{open}} continuam abertas",
+    send_one: "Enviar {{count}} resposta",
+    send_other: "Enviar {{count}} respostas",
+    tooManyFiles: "Até {{max}} arquivos por resposta",
+    uploadFailed: "Não foi possível enviar os arquivos",
+    sendFailed: "Não foi possível enviar as respostas",
+  },
   subagents: {
     parent: {
       backToParent: "Voltar ao pai",

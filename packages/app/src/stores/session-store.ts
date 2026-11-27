@@ -42,6 +42,7 @@ import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
   AgentQueuedMessageSummaryPayload,
+  AgentOpenQuestion,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
@@ -124,6 +125,8 @@ export interface Agent {
   queuePaused?: boolean;
   /** Why the host paused the queue itself (a send it could not complete); null otherwise. */
   queuePauseReason?: string | null;
+  /** ❓ questions from the agent's replies that no user message has answered yet. */
+  openQuestions?: AgentOpenQuestion[];
 }
 
 export interface WorkspaceDescriptor {

@@ -2339,6 +2339,23 @@ export const ar: TranslationResources = {
   menu: {
     backdrop: "خلفية القائمة",
   },
+  questions: {
+    pill_one: "{{count}} سؤال مفتوح",
+    pill_other: "{{count}} أسئلة مفتوحة",
+    panelTitle: "الأسئلة المفتوحة",
+    goWithPick: "اعتمد الاقتراح",
+    ownPlaceholder: "أو اكتب إجابتك…",
+    attach: "إرفاق ملفات",
+    removeFile: "إزالة {{name}}",
+    change: "تغيير",
+    yes: "نعم",
+    summary: "تمت الإجابة على {{answered}} من {{total}} · يبقى {{open}} مفتوحًا",
+    send_one: "إرسال {{count}} إجابة",
+    send_other: "إرسال {{count}} إجابات",
+    tooManyFiles: "حتى {{max}} ملف لكل إجابة",
+    uploadFailed: "تعذّر رفع الملفات",
+    sendFailed: "تعذّر إرسال الإجابات",
+  },
   subagents: {
     parent: {
       backToParent: "العودة إلى الوكيل الأصلي",

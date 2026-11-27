@@ -3515,6 +3515,8 @@ export class Session {
         return this.handleAgentQueueClearRequest(msg);
       case "agent.queue.set_paused.request":
         return this.handleAgentQueueSetPausedRequest(msg);
+      case "agent.question.answer.set.request":
+        return this.handleAgentQuestionAnswerSetRequest(msg);
       default:
         return undefined;
     }
@@ -9724,6 +9726,38 @@ export class Session {
   // ---------------------------------------------------------------------------
   // Daemon-owned message queue
   // ---------------------------------------------------------------------------
+
+  private async handleAgentQuestionAnswerSetRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.question.answer.set.request" }>,
+  ): Promise<void> {
+    const respond = (agentId: string, accepted: boolean, error: string | null) =>
+      this.emit({
+        type: "agent.question.answer.set.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          questionId: msg.questionId,
+          accepted,
+          error,
+        },
+      });
+    // A stored agent is answered in its record: saving a half answer must not start a runtime.
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      respond(msg.agentId, false, resolved.error);
+      return;
+    }
+    try {
+      const accepted = await this.agentManager.setOpenQuestionAnswer(
+        resolved.agentId,
+        msg.questionId,
+        msg.answer,
+      );
+      respond(resolved.agentId, accepted, null);
+    } catch (error) {
+      respond(resolved.agentId, false, error instanceof Error ? error.message : String(error));
+    }
+  }
 
   private async resolveQueueAgent(
     agentIdentifier: string,
