@@ -1,4 +1,5 @@
-import { renderPromptAttachmentAsText, stripInlineRefNotes } from "../prompt-attachments.js";
+import type { UserMessageAttachmentFile } from "@getpaseo/protocol/agent-types";
+import { renderPromptAttachmentAsText, splitInlineRefNotes } from "../prompt-attachments.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type {
@@ -179,19 +180,31 @@ export function envelopeMessage(
 
 /** The same projection owns provider echoes, acceptance, import, and replay. */
 export function projectAgentMessages(input: AgentTimelineItem): AgentTimelineItem[] {
-  const item =
-    input.type === "user_message" ? { ...input, text: stripInlineRefNotes(input.text) } : input;
-  if (item.type === "user_message") {
-    const messages = parseAgentMessages(item.text);
-    if (messages) {
-      return messages.flatMap((message) => {
-        const projected = projectAgentMessage({ ...item, text: formatAgentMessage(message) });
-        return projected ? [projected] : [];
+  if (input.type !== "user_message") return [input];
+  const notes = splitInlineRefNotes(input.text);
+  // An envelope carries the notes of its own message, so a batch is split per message. Notes
+  // outside the envelopes would hide them; the split text still parses then.
+  const messages = parseAgentMessages(input.text) ?? parseAgentMessages(notes.text);
+  if (messages) {
+    return messages.flatMap((message) => {
+      const own = splitInlineRefNotes(message.text);
+      const projected = projectAgentMessage({
+        ...input,
+        text: formatAgentMessage({ ...message, text: own.text }),
       });
-    }
+      return projected ? [withAttachmentFiles(projected, own.files)] : [];
+    });
   }
-  const projected = projectAgentMessage(item);
-  return projected ? [projected] : [];
+  const projected = projectAgentMessage({ ...input, text: notes.text });
+  return projected ? [withAttachmentFiles(projected, notes.files)] : [];
+}
+
+function withAttachmentFiles(
+  item: AgentTimelineItem,
+  files: readonly UserMessageAttachmentFile[],
+): AgentTimelineItem {
+  if (item.type !== "user_message" || files.length === 0) return item;
+  return { ...item, attachmentFiles: [...(item.attachmentFiles ?? []), ...files] };
 }
 
 function projectAgentMessage(item: AgentTimelineItem): AgentTimelineItem | null {

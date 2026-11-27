@@ -100,12 +100,17 @@ export function getAgentAttachmentPillContent(
         subtitle: getTextAttachmentSubtitle(attachment, t),
       };
     case "uploaded_file":
-      return {
-        icon: attachmentFileIcon,
-        title: attachment.fileName,
-        subtitle: getFileTypeLabel(attachment.fileName) ?? t("message.attachments.file"),
-      };
+      return getUploadedFilePillContent(attachment.fileName, t);
   }
+}
+
+/** A file uploaded to the host, known by name alone when a message is read back from history. */
+export function getUploadedFilePillContent(fileName: string, t: TFunction): AttachmentPillContent {
+  return {
+    icon: attachmentFileIcon,
+    title: fileName,
+    subtitle: getFileTypeLabel(fileName) ?? t("message.attachments.file"),
+  };
 }
 
 export function getWorkspaceAttachmentPillContent(
