@@ -253,15 +253,28 @@ follows pane focus, not the active composer. Keying it on the active composer
 made sidebar dismissal look like a hidden-tab blur and refocused on close.
 Native and touch-web navigation must not replay old editor focus, including
 when blur arrives after pane deactivation or the editor unmounts before blur.
-Fullscreen toggles keep the editor mounted and need no focus restoration.
+Fullscreen toggles keep the editor mounted and need no focus restoration. On
+native that holds only while the editor's native parent chain stays the same:
+a view that gains or drops a background, border or opacity between the two
+modes changes whether Fabric flattens it, which re-parents the native editor,
+blurs it and closes the Android keyboard. Every such view on the editor's path
+(the dock's composer surface, the presentation root, the input wrapper) sets
+`collapsable={false}`. To check it, on an Android emulator debug build type a
+few lines, tap the expand glyph, then ↙: `adb shell dumpsys input_method | grep
+mInputShown` stays `true` and the caret stays where it was. Web cannot show it.
 The band beside the inline editor where the fullscreen glyph sits is the input's
 own right padding, so a tap anywhere in it focuses the editor whether or not the
 glyph shows. On web the slot is a fixed box over the visible viewport, which is
 also what lets a zoomed mobile page pan under it. Inside the slot, `ComposerFullscreenBody` reserves the keyboard
 height as a bottom margin at move start and end (boundary-time, like the
 capacity reservation) while `ComposerFullscreenFooter` rides the keyboard per
-frame with `KeyboardTranslateView`, so Send lands on the keyboard without a gap
-and without animating the editor's height. The screen that owns the chrome
+frame with `KeyboardTranslateView`, so the composer's own bar (attach, agent
+controls, mic, Send) lands on the keyboard without a gap and without animating
+the editor's height. The bar moves between the inline wrapper and that footer
+on the toggle, so it remounts; the title row, attachment tray and editor keep
+their tree positions, which is what keeps focus and selection. Dictation stays
+in fullscreen: its overlay covers only the footer, so the draft stays readable
+above it. Realtime voice and Send still leave fullscreen. The screen that owns the chrome
 unmounts it: the workspace screen reads `useComposerTabFullscreen` for the
 active tab and New workspace reads the mounted composer's session. Hosts that
 render the dock pass the same `ComposerEditingSession` to the `Composer` so the

@@ -297,6 +297,12 @@ test("queued messages dispatch one at a time as each turn ends, and persist with
   await waitForLifecycle(manager, agentId, "running");
   expect(manager.getAgent(agentId)?.queuedMessages.map((item) => item.id)).toEqual([second.id]);
   expect(session.turns).toHaveLength(2);
+  // The recorded row names the saved picture, so every client can show it.
+  expect(
+    manager
+      .getTimeline(agentId)
+      .find((item) => item.type === "user_message" && item.clientMessageId === first.id),
+  ).toMatchObject({ attachmentFiles: [{ label: "Image #1", path: imagePath }] });
 
   const thirdTurn = session.waitForNextTurn();
   session.completeTurn(started.turnId);

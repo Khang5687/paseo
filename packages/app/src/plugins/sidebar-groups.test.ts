@@ -38,6 +38,7 @@ function installed(
     },
     legacySidebarItems,
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     filePanels: [],
     composerItems: [],
     newWorkspaceItems: [],

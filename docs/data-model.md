@@ -75,7 +75,8 @@ $PASEO_HOME/
 ├── file-copies/                         # Copies of files other hosts' agents mentioned (6b)
 │   ├── manifest.json
 │   └── blobs/{sha256(serverId, path)}-{uuid}
-└── push-tokens.json                     # Expo push notification tokens
+├── push-tokens.json                     # Expo push notification tokens
+└── sidebar-sync.json                    # Sidebar state shared by every device (project order)
 ```
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
@@ -542,6 +543,26 @@ publish only after the commit point; publication failure does not roll durable s
 history surfaces tolerate transient orphaned workspaces by omitting those rows so one bad FK cannot
 blank the whole History screen, but mutation paths should repair or remove the orphaned state rather
 than treating it as valid.
+
+### Shared sidebar state
+
+**Path:** `$PASEO_HOME/sidebar-sync.json`
+
+```json
+{ "projectOrder": { "order": ["<project view key>", "..."], "updatedAt": 1767225600000 } }
+```
+
+The sidebar's project order, so every device that connects to the host shows the same order.
+`updatedAt` is the clock of the device that reordered, in epoch ms. The daemon keeps the order with
+the newest stamp and answers an older one with what it holds; the app does the same on its side
+(`packages/app/src/sidebar-sync/project-order.ts`), so a device that reordered while a host was
+asleep sends its order when the host comes back, and every host converges on the last reorder.
+Projects the sidebar appends on its own are not stamped, so a new project on one device never
+overrides a reorder made on another. Device clocks decide ties between hosts; a device whose clock
+runs far ahead wins until someone reorders after it.
+
+Keys the daemon does not know survive a write, so later shared sidebar state can sit beside
+`projectOrder` and a downgraded daemon keeps it.
 
 ---
 

@@ -76,6 +76,7 @@ export function ProjectLeadingVisual({
   chevron = null,
   showChevron = false,
   isArchiving = false,
+  waiting = false,
 }: {
   displayName: string;
   iconDataUri: string | null;
@@ -87,6 +88,8 @@ export function ProjectLeadingVisual({
   chevron?: "expand" | "collapse" | null;
   showChevron?: boolean;
   isArchiving?: boolean;
+  /** The working chats all wait on a background job: an hourglass in place of the ring. */
+  waiting?: boolean;
 }) {
   if (showChevron && chevron !== null) {
     return (
@@ -111,6 +114,7 @@ export function ProjectLeadingVisual({
       projectViewKey={projectViewKey}
       statusBucket={statusBucket}
       backdrop={backdrop}
+      waiting={waiting}
     />
   );
 }

@@ -1047,7 +1047,6 @@ interface StartDictationContext {
   canStartDictation: () => boolean;
   toast: { error: (msg: string) => void };
   startDictation: () => Promise<void>;
-  exitFullscreen: () => void;
 }
 
 async function startDictationIfAvailableImpl(ctx: StartDictationContext): Promise<void> {
@@ -1058,7 +1057,6 @@ async function startDictationIfAvailableImpl(ctx: StartDictationContext): Promis
   if (!ctx.canStartDictation()) {
     return;
   }
-  ctx.exitFullscreen();
   await ctx.startDictation();
 }
 
@@ -1822,7 +1820,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         canStartDictation,
         toast,
         startDictation,
-        exitFullscreen,
       });
     }, [
       canStartDictation,
@@ -1830,7 +1827,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       dictationUnavailableMessage,
       startDictation,
       toast,
-      exitFullscreen,
     ]);
 
     const handleVoicePress = useCallback(
@@ -2240,9 +2236,13 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       ],
       [isPresentedSendDisabled],
     );
+    // Fullscreen keeps the text in view while dictating: the overlay covers only the bar.
     const overlayContainerStyle = useMemo(
-      () => [styles.overlayContainer, { opacity: surfacePresentation.overlay.opacity }],
-      [surfacePresentation.overlay.opacity],
+      () => [
+        isFullscreen ? styles.fullscreenOverlayContainer : styles.overlayContainer,
+        { opacity: surfacePresentation.overlay.opacity },
+      ],
+      [isFullscreen, surfacePresentation.overlay.opacity],
     );
 
     const renderAttachButtonIcon = useCallback(
@@ -2403,59 +2403,56 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           marginLeft: -composerToolbarOverhang(leadingEdge, controlSizing),
           marginRight: -composerToolbarOverhang(trailingEdge, controlSizing),
         },
+        // Inline, the whole input wrapper fades under the voice overlay; fullscreen, only the bar.
+        isFullscreen && { opacity: surfacePresentation.input.opacity },
       ],
-      [controlSizing, leadingEdge, trailingEdge],
+      [controlSizing, leadingEdge, trailingEdge, isFullscreen, surfacePresentation.input.opacity],
     );
     const toolbar = useMemo(
       () => (
         <>
-          {!isFullscreen && !showOverlay && dictationStartError ? (
+          {!showOverlay && dictationStartError ? (
             <Text accessibilityRole="alert" style={styles.dictationStartError}>
               {t(`message.dictation.${dictationStartError}`)}
             </Text>
           ) : null}
-          <View style={isFullscreen ? styles.hiddenToolbar : buttonRowStyle}>
+          <View style={buttonRowStyle}>
             {/* Toolbar left: attachment button + agent controls */}
             <View style={styles.leftButtonGroup}>
-              {!isFullscreen && (
-                <AttachmentDropdown
-                  visible={mode.showAttachments}
-                  isConnected={isConnected}
-                  disabled={disabled}
-                  attachButtonStyle={attachButtonStyle}
-                  renderAttachButtonIcon={renderAttachButtonIcon}
-                  attachmentMenuItems={attachmentMenuItems}
-                  addAttachmentLabel={t("composer.input.addAttachment")}
-                />
-              )}
+              <AttachmentDropdown
+                visible={mode.showAttachments}
+                isConnected={isConnected}
+                disabled={disabled}
+                attachButtonStyle={attachButtonStyle}
+                renderAttachButtonIcon={renderAttachButtonIcon}
+                attachmentMenuItems={attachmentMenuItems}
+                addAttachmentLabel={t("composer.input.addAttachment")}
+              />
               {leftContent}
             </View>
 
             {/* Right: dictation, then the trailing action (voice mode, send or stop) */}
-            {!isFullscreen && (
-              <View style={styles.rightButtonGroup}>
-                {beforeVoiceContent}
-                <VoiceButtonTooltip
-                  visible={mode.showVoice}
-                  onVoicePress={handleVoicePress}
-                  isDictationStartEnabled={isDictationStartEnabled}
-                  voiceButtonAccessibilityLabel={voiceButtonAccessibilityLabel}
-                  voiceButtonStyle={voiceButtonStyle}
-                  renderVoiceButtonIcon={renderVoiceButtonIcon}
-                  voiceTooltipText={voiceTooltipText}
-                  isRealtimeVoiceForCurrentAgent={isRealtimeVoiceForCurrentAgent}
-                  voiceMuteToggleKeys={voiceMuteToggleKeys}
-                  dictationToggleKeys={dictationToggleKeys}
-                />
-                <View style={styles.trailingDisc}>{sendButton}</View>
-              </View>
-            )}
+            <View style={styles.rightButtonGroup}>
+              {beforeVoiceContent}
+              <VoiceButtonTooltip
+                visible={mode.showVoice}
+                onVoicePress={handleVoicePress}
+                isDictationStartEnabled={isDictationStartEnabled}
+                voiceButtonAccessibilityLabel={voiceButtonAccessibilityLabel}
+                voiceButtonStyle={voiceButtonStyle}
+                renderVoiceButtonIcon={renderVoiceButtonIcon}
+                voiceTooltipText={voiceTooltipText}
+                isRealtimeVoiceForCurrentAgent={isRealtimeVoiceForCurrentAgent}
+                voiceMuteToggleKeys={voiceMuteToggleKeys}
+                dictationToggleKeys={dictationToggleKeys}
+              />
+              <View style={styles.trailingDisc}>{sendButton}</View>
+            </View>
           </View>
         </>
       ),
       [
         buttonRowStyle,
-        isFullscreen,
         mode.showAttachments,
         isConnected,
         disabled,
@@ -2556,10 +2553,10 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         />
         <ComposerInputPresentation
           fullscreen={isFullscreen}
+          title={t(mode.fullscreenTitleKey)}
           controlSizing={controlSizing}
           surface={textSurface}
           toolbar={toolbar}
-          send={sendButton}
           error={props.submissionError}
           onExit={exitFullscreen}
           inputWrapperRef={inputWrapperRef}
@@ -2677,7 +2674,15 @@ const styles = StyleSheet.create((theme: Theme) => ({
     minHeight: MIN_INPUT_HEIGHT,
     color: theme.colors.foregroundMuted,
   },
-  hiddenToolbar: { display: "none" },
+  // Anchored to the bar's bottom and taller than it, so it rises over the last lines of text.
+  fullscreenOverlayContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    backgroundColor: theme.colors.surface1,
+  },
   // The row keeps a full touch target's height; its disc-sized controls centre in it.
   buttonRow: {
     minHeight: TOOLBAR_CONTROL_HEIGHT,

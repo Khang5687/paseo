@@ -217,9 +217,9 @@ async function startDictationWithShortcut(page: Page): Promise<void> {
   await composerLocator(page).press("Control+d");
 }
 
-test("dictation shortcut leaves retained fullscreen and exposes recording controls", async ({
+test("dictation in fullscreen keeps the editor, its draft in view, and survives widening", async ({
   page,
-}) => {
+}, testInfo) => {
   const agent = await seedMockAgentWorkspace({
     repoPrefix: "fullscreen-dictation-",
     title: "Fullscreen dictation shortcut",
@@ -233,24 +233,30 @@ test("dictation shortcut leaves retained fullscreen and exposes recording contro
     await expectComposerVisible(page);
     await fillComposerDraft(page, draft);
     await enterComposerFullscreen(page);
-    await resizeComposerViewport(page, "landscape");
-    await expectComposerFullscreenControls(page);
     await startDictationWithShortcut(page);
     await harness.waitForAudio();
-    await expect(page.getByRole("button", { name: "Exit fullscreen", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Cancel dictation", exact: true })).toBeVisible();
+    // Dictation runs in the fullscreen editor's own bar; the draft stays in view above it.
+    await expect(page.getByRole("button", { name: "Exit fullscreen", exact: true })).toBeVisible();
+    await expect(composerLocator(page)).toHaveValue(draft);
+    const cancel = page.getByRole("button", { name: "Cancel dictation", exact: true });
+    await expect(cancel).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Insert transcription", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Insert transcription and send", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Cancel dictation", exact: true }).click();
+    // The recording controls replace the bar only: the draft keeps the screen above them.
+    const cancelBox = (await cancel.boundingBox())!;
+    const inputBox = (await composerLocator(page).boundingBox())!;
+    expect(cancelBox.y - inputBox.y).toBeGreaterThan(inputBox.height / 2);
+    await page.screenshot({ path: testInfo.outputPath("fullscreen-dictation.png") });
+    await cancel.click();
     await expect(composerLocator(page)).toBeEditable();
     await expect(composerLocator(page)).toHaveValue(draft);
-    await resizeComposerViewport(page, "portrait");
-    await enterComposerFullscreen(page);
     await resizeComposerViewport(page, "landscape");
+    await expectComposerFullscreenControls(page);
+    // Realtime voice still takes the inline composer.
     await composerLocator(page).press("Control+Shift+d");
     await expect(page.getByRole("button", { name: "Exit fullscreen", exact: true })).toHaveCount(0);
     await expect(

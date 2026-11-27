@@ -15,7 +15,23 @@ The strip owns no store.
 
 - The strip shows only with two or more projects. With one there is nothing to switch, and the digit keys publish no project targets.
 - The desktop rail sits inside the sidebar's width (52 px), below the window chrome row, so the titlebar drag region and the resize handle keep their places.
-- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to first, Move earlier, Move later. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to top, Move earlier, Move later, Move to bottom, and Reorder projects…. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+
+## Reordering
+
+Every way of moving a project writes the one order the strip and the list share (`saveProjectStripOrder` in `components/sidebar/project-order.ts`), so a move anywhere shows everywhere.
+
+- **The ⋯ menu.** A project row's ⋯ menu (and its right-click menu) carries Move to top, Move to bottom and Reorder projects… on every platform (`useProjectOrderMenuActions`). With one project it carries none of them.
+- **Reorder projects…** opens the rail wide on the desktop, where you drag (see below). A phone has no rail, so there it opens the Reorder projects sheet (`ReorderProjectsSheet`): every project in one list, held and dragged into place. The whole row is the handle; a quick swipe still scrolls the sheet ([drag-reorder.md](drag-reorder.md)). The sheet mounts with the chip row, which shows whenever there is anything to order.
+
+## The open rail
+
+The rail's first button (» at the top) opens it wide over the sidebar: each project gets its icon, name and a grip. « Collapse, now the first row, closes it. The open state is per device and survives a restart (`useSidebarRailOpenStore`); nothing else closes it, so it stays open while you drag and after you pick a project.
+
+- **It lies over the sidebar, it does not push it.** The rail becomes `position: absolute` inside `SidebarProjectRailLayout`, and a 52 px spacer takes its place, so the workspace list keeps its width and does not reflow on every toggle.
+- **Same list, same drag.** Open and closed render the one `DraggableList`; only the row shape changes. Tooltips show only while closed, since the open rail writes the names out.
+- **The rail's menu.** Right-click on a rail icon opens Move to top, Move to bottom (`listProjectEndMoves`) and, while closed, Reorder projects…, which opens the rail to drag there. The desktop has drag for fine moves, so the menu carries only the two long jumps. `ContextMenuTrigger contextOnly` keeps the left click for selecting and dnd-kit's mouse sensor ignores the right button, so the menu and the drag never fight.
+- A toggle that changes size under a still pointer gets no `pointerleave`, so `RailOpenToggle` remounts its button per state to drop the old hover.
 
 ## The phone's top buttons
 
@@ -24,7 +40,7 @@ On compact layouts the header sidebar items sit in one row of round icon buttons
 - A tap does what the row did. A long press opens the button's menu as a sheet titled with its name; its one row, Buttons to show, opens a page that ticks each button on or off. On web, where `ContextMenuTrigger` opens only on right-click, the button also opens the menu on long press so a phone browser gets it. That sheet mounts under the finger, and when the finger lifts the browser sends its compatibility mousedown and click to the sheet's backdrop, which closes it at once; `swallowTouchRelease` (`components/sidebar/swallow-touch-release.web.ts`) cancels that touch's `touchend` so the click never comes. Reuse it for any other web long press that opens an overlay.
 - The ticks write the same per-device `sidebarNavItems` preference as Settings > Sidebar, so Settings stays the way back. The last visible button cannot be unticked.
 - Defaults differ by layout: `COMPACT_HIDDEN_BY_DEFAULT` in `sidebar-nav/model.ts` lists the keys that start hidden on compact (Notes). A stored choice always wins, and any edit stores the whole list, so a phone edit keeps Notes hidden on that device until it is ticked on.
-- Trailing content (shortcut hints, a plugin row's `trailing`) is dropped in the icon row; there is no room for it.
+- Trailing content (shortcut hints, a plugin row's `trailing`) is dropped in the icon row; there is no room for it. A plugin row's `badge` is not: `SidebarNavIconButton` draws it on the button's corner (`SidebarBadge` in `components/sidebar/sidebar-badge.tsx`), so a count like "2 tasks late" survives on the phone.
 - The compact workspace list is lighter too: an empty project has no "+ New workspace" ghost row, since the project row's + and the New workspace button already create one, and chat rows have no copy-agent-ID icon; Copy agent ID stays in the row's ⋮ menu.
 - To check it again: `npx playwright test --project=browser e2e/browser/sidebar-phone-icons.spec.ts` from `packages/app` taps through all of the above at 390×844 with touch, plus the desktop sidebar at 1280, and writes `.scratch/phone-icons-*.png`.
 
@@ -37,11 +53,16 @@ Each project remembers the workspace you last had open in it (`useSidebarLastCha
 - A remembered workspace the project no longer lists (archived, moved) is ignored at jump time (`resolveProjectLastChat`), not deleted: a host that has not loaded yet lists nothing, and deleting then would forget every chat on it.
 - No remembered workspace: the jump only changes the list. It does not guess one.
 
-## The waiting badge
+## Status dots
 
-Each project shows how many of its workspaces have the `needs_input` status, through `countProjectWorkspacesNeedingInput`. It counts every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
+Each project shows one small dot per chat that has something going on: purple asks you, red failed, green finished and not opened yet, blue blinks while working (`ProjectStatusDots` in `components/sidebar/project-status-dots.tsx`). Done chats you already opened get none. The rail stacks the dots down the icon's right edge; a chip lines them up after its name. The counts come from `countProjectWorkspaceStatuses`, across every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
 
-The badge is the palette purple (`theme.colors.palette.purple[500]`), the same purple as the New main agent dot, not the orange `needs_input` status dot. The status dots on workspace rows keep the orange; only the strip badge is purple, so a project-level count reads apart from a single workspace's status.
+- **Four places, urgent first.** `listProjectStatusDots` orders asking, failed, done, working. Past four, the last place becomes a "+", so working chats lose their dot first and the ones that want you stay visible.
+- **No numbers on the icon.** Exact counts are in the closed rail's tooltip and accessibility label ("Asking you: 1, Working: 2", `useProjectStatusLabel`) and beside the name on the open rail (`ProjectStatusCountList`). A chip has no hover, so its counts are in its accessibility label only; the list under it shows every chat.
+- **Purple, not orange.** Asking is the palette purple (`theme.colors.palette.purple[500]`), the same purple as the New main agent dot. Workspace rows keep the orange `needs_input` dot, so a project-level mark reads apart from one chat's status. The other three reuse the row dot colors.
+- The blink is a Reanimated opacity loop on an `Animated.View` that carries no Unistyles style (see [unistyles.md](unistyles.md)); it holds still under reduced motion.
+
+A collapsed project row in the list has its own aggregate: the most urgent status as a corner badge (`deriveProjectStatus`). When it is working only on chats that wait on a background job, the badge is the hourglass, not the ring, the same as those chats' own rows.
 
 ## Jump keys
 
@@ -66,6 +87,8 @@ A project with no chat activity for 3 days folds into "More": on the rail, on th
 
 Later sidebar features plug in here rather than adding a second switcher:
 
-- Per-project actions on the chip menu go in `ProjectChip`'s `ContextMenuContent`. The desktop rail has no menu yet; give it one with the same items before adding desktop-only actions.
+- Per-project actions go in both menus: `ProjectChip`'s `ContextMenuContent` and `RailProjectButton`'s. Moves share `ProjectMoveItem`.
 - Anything that changes what selecting a project does belongs in the callers of `showOnlyProject`: the rail and chip press handlers and the `show-sidebar-project` keyboard route in `use-shortcuts.ts`.
-- Badges other than the waiting count go beside `NeedsInputBadge`, fed by a hook like `useSidebarProjectNeedsInputCount` that reads the session store with a primitive selector.
+- New per-project marks go beside `ProjectStatusDots`, fed by a hook like `useSidebarProjectStatusCounts` that reads the session store with a value-compared selector.
+- Needs you sits between the open toggle and All on the rail, and before All in the chip row ([needs-you.md](needs-you.md)). It opens a page rather than filtering the list, so All stays selected under it.
+- Plugin buttons come through `addProjectRailItem` and render under the projects, pinned at the rail's foot by `PluginProjectRailItems` (`plugins/project-rail-items/`). The plugin module owns hosts, routing, the badge hook and its error boundary; the rail passes in `RailIconButton`, so the look stays here. The rail hides with fewer than two projects, and its plugin buttons with it; plugins that need a way in on every layout add a sidebar item too.

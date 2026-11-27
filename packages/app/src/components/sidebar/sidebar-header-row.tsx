@@ -1,3 +1,4 @@
+import type { PluginBadge } from "@getpaseo/plugin/client";
 import { PressHighlight as Pressable } from "@/components/ui/press-highlight";
 import { useCallback, useState, type ComponentType, type ReactNode, type Ref } from "react";
 import { Text, View } from "react-native";
@@ -11,6 +12,7 @@ import {
   SidebarNavIconButton,
   useSidebarNavIconRow,
 } from "@/components/sidebar/sidebar-nav-icon-button";
+import { SidebarBadge, sidebarBadgeAccessibilityLabel } from "@/components/sidebar/sidebar-badge";
 
 type SidebarHeaderRowVariant = "header" | "compact" | "inline";
 
@@ -40,6 +42,8 @@ interface SidebarHeaderRowProps {
    * press on the slot presses the row; a button inside it presses on its own.
    */
   trailing?: ReactNode;
+  /** A plugin row's count or dot: after the label, or on the phone icon button's corner. */
+  badge?: PluginBadge | null;
   rowRef?: Ref<View>;
 }
 
@@ -58,6 +62,7 @@ export function SidebarHeaderRow(props: SidebarHeaderRowProps) {
         testID={props.testID}
         nativeID={props.nativeID}
         accessibilityLabel={props.accessibilityLabel}
+        badge={props.badge}
       />
     );
   }
@@ -75,6 +80,7 @@ function SidebarHeaderFullRow({
   variant = "header",
   shortcutKeys = null,
   trailing,
+  badge,
   rowRef,
 }: SidebarHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -107,7 +113,7 @@ function SidebarHeaderFullRow({
           nativeID={nativeID}
           accessible
           accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel ?? label}
+          accessibilityLabel={sidebarBadgeAccessibilityLabel(accessibilityLabel ?? label, badge)}
           accessibilityState={isActive ? SELECTED_STATE : undefined}
           aria-selected={isActive}
           style={styles.button}
@@ -122,6 +128,7 @@ function SidebarHeaderFullRow({
             <View style={variant === "header" ? styles.iconSpacer : styles.iconSpacerCompact} />
           )}
           <Text style={[styles.label, isHighlighted && styles.labelHighlighted]}>{label}</Text>
+          <SidebarBadge badge={badge} placement="inline" ownerTestID={testID} />
         </Pressable>
         {right === null ? null : (
           <Pressable

@@ -39,7 +39,16 @@ import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop
 import { type GestureType } from "react-native-gesture-handler";
 import { useSidebarWorkspaceRename } from "@/workspace-rename";
 import { useWorkspaceClipboardActions } from "@/hooks/use-workspace-clipboard-actions";
-import { ExternalLink, Settings, MoreVertical, Plus, Trash2 } from "lucide-react-native";
+import {
+  ArrowDownToLine,
+  ArrowUpDown,
+  ArrowUpToLine,
+  ExternalLink,
+  Settings,
+  MoreVertical,
+  Plus,
+  Trash2,
+} from "lucide-react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
@@ -64,7 +73,7 @@ import {
 } from "@/utils/host-routes";
 import {
   shouldShowSidebarHostLabels,
-  useSidebarProjectStatusBucket,
+  useSidebarProjectStatus,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
   type SidebarWorkspacePlacement,
@@ -87,6 +96,10 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { ProjectLeadingVisual } from "@/components/sidebar/project-leading-visual";
+import {
+  type ProjectOrderMenuAction,
+  useProjectOrderMenuActions,
+} from "@/components/sidebar/project-order-menu";
 import { useToast } from "@/contexts/toast-context";
 import { SidebarToastClearance } from "@/components/sidebar/sidebar-toast-region";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
@@ -181,6 +194,9 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
+const ThemedArrowUpToLine = withUnistyles(ArrowUpToLine);
+const ThemedArrowDownToLine = withUnistyles(ArrowDownToLine);
+const ThemedArrowUpDown = withUnistyles(ArrowUpDown);
 
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -263,6 +279,8 @@ interface ProjectHeaderRowProps {
   displayName: string;
   iconDataUri: string | null;
   statusBucket: SidebarStateBucket | null;
+  /** The project is working only on chats that wait on a background job: an hourglass. */
+  statusWaiting?: boolean;
   selected?: boolean;
   chevron: "expand" | "collapse" | null;
   onPress: () => void;
@@ -483,6 +501,11 @@ const settingsLeadingIcon = <ThemedSettings size={14} uniProps={foregroundMutedC
 const openInNewWindowLeadingIcon = (
   <ThemedExternalLink size={14} uniProps={foregroundMutedColorMapping} />
 );
+const projectOrderLeadingIcons: Record<ProjectOrderMenuAction["kind"], ReactElement> = {
+  top: <ThemedArrowUpToLine size={14} uniProps={foregroundMutedColorMapping} />,
+  bottom: <ThemedArrowDownToLine size={14} uniProps={foregroundMutedColorMapping} />,
+  reorder: <ThemedArrowUpDown size={14} uniProps={foregroundMutedColorMapping} />,
+};
 
 const kebabTriggerIconProps = densityIconProps("sm", foregroundMutedColorMapping);
 const kebabTriggerIconHoveredProps = densityIconProps("sm", foregroundColorMapping);
@@ -607,6 +630,7 @@ function ProjectMenuItems({
         path={projectPath}
         testID={`sidebar-project-menu-open-folder-${projectViewKey}`}
       />
+      <ProjectOrderMenuItems surface={surface} projectViewKey={projectViewKey} />
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -617,6 +641,31 @@ function ProjectMenuItems({
       >
         {t("sidebar.project.actions.remove")}
       </ProjectMenuItem>
+    </>
+  );
+}
+
+function ProjectOrderMenuItems({
+  surface,
+  projectViewKey,
+}: {
+  surface: ProjectMenuSurface;
+  projectViewKey: string;
+}) {
+  const actions = useProjectOrderMenuActions(projectViewKey);
+  return (
+    <>
+      {actions.map((action) => (
+        <ProjectMenuItem
+          key={action.kind}
+          surface={surface}
+          testID={action.testID}
+          leading={projectOrderLeadingIcons[action.kind]}
+          onSelect={action.onSelect}
+        >
+          {action.label}
+        </ProjectMenuItem>
+      ))}
     </>
   );
 }
@@ -890,6 +939,7 @@ function ProjectHeaderRow({
   displayName,
   iconDataUri,
   statusBucket,
+  statusWaiting = false,
   selected = false,
   chevron,
   onPress,
@@ -973,6 +1023,7 @@ function ProjectHeaderRow({
           displayName={displayName}
           iconDataUri={iconDataUri}
           statusBucket={statusBucket}
+          waiting={statusWaiting}
           projectViewKey={project.viewKey}
           backdrop={getSidebarRowBackdrop({ isDragging, isHighlighted, selected, isHovered })}
           chevron={chevron}
@@ -1694,7 +1745,7 @@ function ProjectBlock({
 
   // Collapsed rows hide their workspace rows, so the project row carries the most urgent
   // status among them; expanded rows leave the signal to the child rows themselves.
-  const aggregateStatusBucket = useSidebarProjectStatusBucket({
+  const aggregateStatus = useSidebarProjectStatus({
     workspaces: project.workspaces,
     enabled: collapsed,
   });
@@ -1905,7 +1956,8 @@ function ProjectBlock({
         project={project}
         displayName={displayName}
         iconDataUri={iconDataUri}
-        statusBucket={aggregateStatusBucket}
+        statusBucket={aggregateStatus?.bucket ?? null}
+        statusWaiting={aggregateStatus?.waiting ?? false}
         selected={false}
         chevron={rowModel.chevron}
         onPress={handleToggleCollapsed}

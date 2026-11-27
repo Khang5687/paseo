@@ -163,10 +163,12 @@ import type {
   AgentSkillsSaveResult,
   AgentQueuedMessagePayload,
   AgentQueuedMessageSummaryPayload,
+  AgentQuestionAnswer,
   AgentAttachment,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentOptionControl,
+  AgentPermissionDraft,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentPersistenceHandle,
@@ -932,6 +934,14 @@ export type FetchWorkspacesPageInfo = FetchWorkspacesPayload["pageInfo"];
 export type WorkspaceLabelListPayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.label.list.response" }
+>["payload"];
+export type SidebarProjectOrderPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.project_order.get.response" }
+>["payload"];
+export type SidebarProjectOrderSetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.project_order.set.response" }
 >["payload"];
 export type WorkspaceLabelAssignmentPayload = Extract<
   SessionOutboundMessage,
@@ -2800,6 +2810,48 @@ export class DaemonClient {
     return response.message;
   }
 
+  /** Saves a half-written answer to an open question. Needs `features.questionAnswers`. */
+  async setAgentQuestionAnswer(
+    input: { agentId: string; questionId: string; answer: AgentQuestionAnswer },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.question.answer.set.response">({
+        requestId,
+        message: {
+          type: "agent.question.answer.set.request",
+          agentId: input.agentId,
+          questionId: input.questionId,
+          answer: input.answer,
+        },
+      });
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    return response.accepted;
+  }
+
+  /** Saves the picks of a half-filled question box. Needs `features.questionBoxDrafts`. */
+  async setAgentPermissionDraft(
+    input: { agentId: string; permissionId: string; draft: AgentPermissionDraft },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.permission.draft.set.response">({
+        requestId,
+        message: {
+          type: "agent.permission.draft.set.request",
+          agentId: input.agentId,
+          permissionId: input.permissionId,
+          draft: input.draft,
+        },
+      });
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    return response.accepted;
+  }
+
   async sendQueuedAgentMessageNow(
     input: { agentId: string; messageId: string; activeTurnBehavior?: ActiveTurnBehavior },
     requestId?: string,
@@ -3421,6 +3473,33 @@ export class DaemonClient {
       { type: "workspace.label.list.request", subscribe: {} },
       options,
     );
+  }
+
+  /** The host's shared sidebar project order, then a `sidebar.project_order.update` per change. */
+  observeSidebarProjectOrder(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<SidebarProjectOrderPayload> {
+    return this.observe(
+      "sidebar.project_order.get.response",
+      { type: "sidebar.project_order.get.request", subscribe: {} },
+      options,
+    );
+  }
+
+  /** Stores `order` unless the host holds a newer one; the reply carries whichever is kept. */
+  setSidebarProjectOrder(options: {
+    order: string[];
+    updatedAt: number;
+    requestId?: string;
+  }): Promise<SidebarProjectOrderSetPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "sidebar.project_order.set.request",
+        order: options.order,
+        updatedAt: options.updatedAt,
+      },
+    });
   }
 
   setWorkspaceLabel(options: {

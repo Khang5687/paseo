@@ -6,7 +6,15 @@ import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-cli
 import { getServerId } from "../support/helpers/server-id";
 
 // theme.colors.palette.purple[500], the same purple as the New main agent dot.
-const STRIP_BADGE_PURPLE = "rgb(168, 85, 247)";
+const ASKING_DOT_PURPLE = "rgb(168, 85, 247)";
+
+// One dot per chat: the project asking you shows one purple dot and no number.
+async function expectOneAskingDot(item: Locator): Promise<void> {
+  const dot = item.getByTestId("sidebar-project-status-dot-needs_input");
+  await expect(dot).toHaveCount(1, { timeout: 60_000 });
+  await expect(dot).toHaveCSS("background-color", ASKING_DOT_PURPLE);
+  await expect(item).toHaveAttribute("aria-label", /Asking you: 1/);
+}
 
 // The strip only appears with two or more projects, so every test seeds two.
 async function seedTwoProjects(): Promise<[SeededWorkspace, SeededWorkspace]> {
@@ -92,6 +100,28 @@ async function expectStripIndex(
   await expect.poll(async () => (await stripOrder(page, prefix)).indexOf(key)).toBe(index);
 }
 
+/** Opens a project row's ⋯ menu; on desktop it shows on hover. */
+async function openProjectKebab(page: Page, project: SeededWorkspace): Promise<void> {
+  const key = projectEquivalenceViewKey(project.projectKey);
+  const row = page.getByTestId(`sidebar-project-row-${key}`);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.hover();
+  await page.getByTestId(`sidebar-project-kebab-${key}`).click();
+}
+
+/** Drags `from` onto `to` with the mouse: dnd-kit's pointer drag on web. */
+async function dragOnto(page: Page, from: Locator, to: Locator): Promise<void> {
+  const fromBox = await from.boundingBox();
+  const toBox = await to.boundingBox();
+  if (!fromBox || !toBox) throw new Error("drag rows have no layout");
+  const x = fromBox.x + fromBox.width / 2;
+  await page.mouse.move(x, fromBox.y + fromBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, toBox.y + 4, { steps: 12 });
+  await page.mouse.move(x, toBox.y + 2, { steps: 4 });
+  await page.mouse.up();
+}
+
 test.describe("Sidebar project strip", () => {
   test.describe.configure({ timeout: 180_000 });
 
@@ -106,12 +136,27 @@ test.describe("Sidebar project strip", () => {
         await expect(workspaceRow(page, alpha)).toBeVisible({ timeout: 30_000 });
         await expect(workspaceRow(page, beta)).toBeVisible({ timeout: 30_000 });
 
-        const railBadge = railItem(page, beta).getByTestId("sidebar-project-strip-needs-input");
-        await expect(railBadge).toHaveText("1", { timeout: 60_000 });
-        await expect(railBadge).toHaveCSS("background-color", STRIP_BADGE_PURPLE);
-        await expect(
-          railItem(page, alpha).getByTestId("sidebar-project-strip-needs-input"),
-        ).toHaveCount(0);
+        await expectOneAskingDot(railItem(page, beta));
+        await expect(railItem(page, beta)).not.toContainText("1");
+        await expect(railItem(page, alpha).getByTestId("sidebar-project-status-dots")).toHaveCount(
+          0,
+        );
+        await railItem(page, beta).hover();
+        await expect(page.getByText("Asking you: 1")).toBeVisible();
+        await screenshot(page, "desktop-rail-dots.png");
+
+        // The open rail writes the exact counts beside the name.
+        await page.getByTestId("sidebar-project-rail-toggle").click();
+        await expect(railItem(page, beta).getByTestId("sidebar-project-status-counts")).toHaveText(
+          "1",
+        );
+        await page.mouse.move(700, 400);
+        await screenshot(page, "desktop-rail-open-counts.png");
+        await page.getByTestId("sidebar-project-rail-toggle").click();
+        await expect(page.getByTestId("sidebar-project-rail-toggle")).toHaveAttribute(
+          "aria-expanded",
+          "false",
+        );
 
         await railItem(page, beta).click();
         await expectOnlyProjectShown(page, beta, alpha);
@@ -158,6 +203,126 @@ test.describe("Sidebar project strip", () => {
         await alpha.cleanup();
       }
     });
+
+    test("opens wide with names, drags there, remembers it, and opens from Reorder projects", async ({
+      page,
+    }) => {
+      const [alpha, beta] = await seedTwoProjects();
+      try {
+        await gotoAppShell(page);
+        await expect(workspaceRow(page, alpha)).toBeVisible({ timeout: 30_000 });
+        await expect(workspaceRow(page, beta)).toBeVisible({ timeout: 30_000 });
+        const rail = page.getByTestId("sidebar-project-rail");
+        const toggle = page.getByTestId("sidebar-project-rail-toggle");
+
+        // Closed, the rail is icons only.
+        await expect(railItem(page, alpha)).not.toContainText(alpha.projectDisplayName);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        await expect(toggle).toContainText("Collapse");
+        await expect(railItem(page, alpha)).toContainText(alpha.projectDisplayName);
+        await expect(railItem(page, beta)).toContainText(beta.projectDisplayName);
+        const openBox = await rail.boundingBox();
+        expect(openBox?.width ?? 0).toBeGreaterThan(150);
+        await page.mouse.move(900, 400);
+        await screenshot(page, "desktop-rail-open.png");
+
+        // Drag the later of the two above the earlier; the rail stays open.
+        const prefix = "sidebar-project-rail-item-";
+        const before = await stripOrder(page, prefix, [alpha, beta]);
+        const [first, second] =
+          before[0] === projectEquivalenceViewKey(alpha.projectKey) ? [alpha, beta] : [beta, alpha];
+        const fromBox = await railItem(page, second).boundingBox();
+        const toBox = await railItem(page, first).boundingBox();
+        if (!fromBox || !toBox) throw new Error("rail items have no layout");
+        const x = fromBox.x + fromBox.width / 2;
+        await page.mouse.move(x, fromBox.y + fromBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(x, toBox.y + 4, { steps: 12 });
+        await page.mouse.move(x, toBox.y + 2, { steps: 4 });
+        await page.mouse.up();
+        await expectStripOrder(page, prefix, [alpha, beta], before.toReversed());
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+        // The app remembers the rail open.
+        await page.reload();
+        await expect(railItem(page, alpha)).toContainText(alpha.projectDisplayName, {
+          timeout: 30_000,
+        });
+
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expect(railItem(page, alpha)).not.toContainText(alpha.projectDisplayName);
+        const closedBox = await rail.boundingBox();
+        expect(closedBox?.width ?? 0).toBeLessThan(60);
+        await page.mouse.move(900, 400);
+        await screenshot(page, "desktop-rail-closed.png");
+
+        // The closed rail's menu: Move to top, and Reorder projects… opens the rail.
+        const lastKey = projectEquivalenceViewKey(first.projectKey);
+        await railItem(page, first).click({ button: "right" });
+        await expect(page.getByTestId(`sidebar-project-rail-menu-${lastKey}`)).toBeVisible();
+        await expect(page.getByTestId("sidebar-project-rail-reorder")).toBeInViewport();
+        await page.waitForTimeout(300);
+        await screenshot(page, "desktop-rail-menu.png");
+        await page.getByTestId("sidebar-project-rail-move-top").click();
+        await expectStripIndex(page, prefix, lastKey, 0);
+        await railItem(page, second).click({ button: "right" });
+        await page.getByTestId("sidebar-project-rail-reorder").click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        await expect(railItem(page, second)).toContainText(second.projectDisplayName);
+      } finally {
+        await beta.cleanup();
+        await alpha.cleanup();
+      }
+    });
+
+    test("moves a project from its ⋯ menu and opens the rail from Reorder projects", async ({
+      page,
+    }) => {
+      const [alpha, beta] = await seedTwoProjects();
+      try {
+        await gotoAppShell(page);
+        await expect(workspaceRow(page, alpha)).toBeVisible({ timeout: 30_000 });
+        await expect(workspaceRow(page, beta)).toBeVisible({ timeout: 30_000 });
+        const prefix = "sidebar-project-rail-item-";
+        const mine = await stripOrder(page, prefix, [alpha, beta]);
+        const earlier = mine[0] === projectEquivalenceViewKey(alpha.projectKey) ? alpha : beta;
+        const earlierKey = projectEquivalenceViewKey(earlier.projectKey);
+
+        await openProjectKebab(page, earlier);
+        const moveBottom = page.getByTestId(`sidebar-project-menu-move-bottom-${earlierKey}`);
+        await expect(moveBottom).toBeVisible();
+        await page.waitForTimeout(300);
+        await screenshot(page, "desktop-project-menu.png");
+        await moveBottom.click();
+        await expectStripIndex(
+          page,
+          prefix,
+          earlierKey,
+          (await stripOrder(page, prefix)).length - 1,
+        );
+
+        await openProjectKebab(page, earlier);
+        await expect(
+          page.getByTestId(`sidebar-project-menu-move-bottom-${earlierKey}`),
+        ).toHaveCount(0);
+        await page.getByTestId(`sidebar-project-menu-move-top-${earlierKey}`).click();
+        await expectStripIndex(page, prefix, earlierKey, 0);
+
+        // On the desktop, Reorder projects… opens the rail to drag there.
+        await openProjectKebab(page, earlier);
+        await page.getByTestId(`sidebar-project-menu-reorder-${earlierKey}`).click();
+        await expect(page.getByTestId("sidebar-project-rail-toggle")).toHaveAttribute(
+          "aria-expanded",
+          "true",
+        );
+        await expect(page.getByTestId("reorder-projects-sheet")).toHaveCount(0);
+      } finally {
+        await beta.cleanup();
+        await alpha.cleanup();
+      }
+    });
   });
 
   test.describe("compact chip row", () => {
@@ -170,9 +335,7 @@ test.describe("Sidebar project strip", () => {
         await gotoAppShell(page);
         await page.getByRole("button", { name: "Open menu", exact: true }).tap();
         await expect(page.getByTestId("sidebar-project-chip-row")).toBeVisible({ timeout: 30_000 });
-        const chipBadge = chip(page, beta).getByTestId("sidebar-project-strip-needs-input");
-        await expect(chipBadge).toHaveText("1", { timeout: 60_000 });
-        await expect(chipBadge).toHaveCSS("background-color", STRIP_BADGE_PURPLE);
+        await expectOneAskingDot(chip(page, beta));
 
         await chip(page, beta).tap();
         await expectOnlyProjectShown(page, beta, alpha);
@@ -198,6 +361,52 @@ test.describe("Sidebar project strip", () => {
         await screenshot(page, "compact-chip-menu.png");
         await page.getByTestId("sidebar-project-chip-move-earlier").tap();
         await expectStripIndex(page, prefix, laterKey, laterIndex - 1);
+      } finally {
+        await beta.cleanup();
+        await alpha.cleanup();
+      }
+    });
+
+    test("reorders in the Reorder projects sheet and from the ⋯ menu", async ({ page }) => {
+      const [alpha, beta] = await seedTwoProjects();
+      try {
+        await gotoAppShell(page);
+        await page.getByRole("button", { name: "Open menu", exact: true }).tap();
+        await expect(page.getByTestId("sidebar-project-chip-row")).toBeVisible({ timeout: 30_000 });
+        await expect(chip(page, alpha)).toBeVisible({ timeout: 30_000 });
+        await expect(chip(page, beta)).toBeVisible({ timeout: 30_000 });
+        const prefix = "sidebar-project-chip-item-";
+
+        // The ⋯ menu's Move to top, on a phone too.
+        const mine = await stripOrder(page, prefix, [alpha, beta]);
+        const later = mine[1] === projectEquivalenceViewKey(alpha.projectKey) ? alpha : beta;
+        const laterKey = projectEquivalenceViewKey(later.projectKey);
+        await page.getByTestId(`sidebar-project-kebab-${laterKey}`).tap();
+        const moveTop = page.getByTestId(`sidebar-project-menu-move-top-${laterKey}`);
+        await expect(moveTop).toBeInViewport({ ratio: 1 });
+        await page.waitForTimeout(300);
+        await screenshot(page, "compact-project-menu.png");
+        await moveTop.tap();
+        await expectStripIndex(page, prefix, laterKey, 0);
+
+        // Reorder projects… from a chip's menu opens the sheet; hold a row and drag it.
+        await chip(page, alpha).click({ button: "right" });
+        const reorder = page.getByTestId("sidebar-project-chip-reorder");
+        await expect(reorder).toBeInViewport({ ratio: 1 });
+        await reorder.tap();
+        const sheetRow = (project: SeededWorkspace) =>
+          page.getByTestId(`reorder-projects-row-${projectEquivalenceViewKey(project.projectKey)}`);
+        await expect(sheetRow(alpha)).toBeInViewport({ timeout: 10_000 });
+        await expect(sheetRow(beta)).toBeInViewport();
+        await expect(sheetRow(alpha)).toContainText(alpha.projectDisplayName);
+        await page.waitForTimeout(300);
+        await screenshot(page, "compact-reorder-sheet.png");
+
+        const before = await stripOrder(page, prefix, [alpha, beta]);
+        const [first, second] =
+          before[0] === projectEquivalenceViewKey(alpha.projectKey) ? [alpha, beta] : [beta, alpha];
+        await dragOnto(page, sheetRow(second), sheetRow(first));
+        await expectStripOrder(page, prefix, [alpha, beta], before.toReversed());
       } finally {
         await beta.cleanup();
         await alpha.cleanup();

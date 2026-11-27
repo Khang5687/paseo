@@ -27,10 +27,12 @@ unknown event name. The daemon marks one recipient with `shouldNotify`.
 
 Files sent from another device ("Send to…", or the `send_file_to_device` agent
 tool) add `sentFilePath` to the payload. The tap keeps the file in Saved
-through `addSavedFile` (the notification carries a path, never bytes), then
-opens `/saved/file`. A host that is not connected after 10 seconds, or a file
-over the offline size limit, shows a toast and opens nothing. `sentFilePath`
-wins over every other field. The daemon keeps its own device list
+through `addSavedFile` (the notification carries a path, never bytes), with
+the download bar while it copies, then shows the "<file> saved" note with Open
+and, for an APK on Android, Install ([downloads.md](downloads.md#the-download-bar)).
+It does not leave the screen the owner is on. A host that is not connected after
+10 seconds, or a file over the offline size limit, shows a toast and saves
+nothing. `sentFilePath` wins over every other field. The daemon keeps its own device list
 (`file-devices.json`, built from `files.devices.register.request`) apart from
 the push token store: that store drops a token after 48 hours without
 activity, and a file sent to a phone that has not been opened for days must
@@ -105,7 +107,7 @@ workspace's saved layout, since a foreign pinned tab survives navigation.
 Use the daemon's payload shape on both iOS and Android; a browser event alone
 does not test native replay or acknowledgement.
 
-To check "Send to…" without a phone, run a dev daemon in a scratch `PASEO_HOME` and the web app at 390×844. Connect a second client (`DaemonClient`, `registerFileDevice({ name, kind: "desktop" })`, `observeEvents(["files.sent"], { notifications: true })`) as the target. Right-click a file in Files, pick Send to…, pick that device: the app toasts "Sent to …" and the client logs `files.sent`. Dispatch `paseo:web-notification-click` on `window` with `{ serverId, sentFilePath }` as `detail.data` to play the tap: the app opens `/saved/file` and the file appears in Saved. Never register a real push token on a dev daemon; sending to a phone calls Expo. `daemon-e2e/send-to-device.e2e.test.ts` covers the daemon side with a recording push sender.
+To check "Send to…" without a phone, run a dev daemon in a scratch `PASEO_HOME` and the web app at 390×844. Connect a second client (`DaemonClient`, `registerFileDevice({ name, kind: "desktop" })`, `observeEvents(["files.sent"], { notifications: true })`) as the target. Right-click a file in Files, pick Send to…, pick that device: the app toasts "Sent to …" and the client logs `files.sent`. Dispatch `paseo:web-notification-click` on `window` with `{ serverId, sentFilePath }` as `detail.data` to play the tap: the "<file> saved" note shows under the header, Open goes to `/saved/file`, and the file is in Saved. Never register a real push token on a dev daemon; sending to a phone calls Expo. `daemon-e2e/send-to-device.e2e.test.ts` covers the daemon side with a recording push sender.
 
 Existing foreign pins belong to the reconciliation fix in
 [#6900](https://github.com/getpaseo/paseo/issues/6900). Desktop main-process window
