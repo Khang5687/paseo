@@ -2357,6 +2357,9 @@ export const en = {
     tooLarge: "The file is over the {{size}} MB limit for offline files.",
     readOnly: "This is a saved copy. Connect to the host to edit it.",
     savedAgo: "Offline copy, saved {{time}}",
+    openSavedCopy: "Open saved copy (saved {{time}})",
+    downloadAgain: "Download again",
+    copyLink: "Copy link",
     share: "Share",
     wifiOnly: {
       label: "Save on Wi-Fi only",

@@ -2369,6 +2369,9 @@ export const ru: TranslationResources = {
     tooLarge: "Файл больше лимита {{size}} МБ для офлайн-файлов.",
     readOnly: "Это сохранённая копия. Подключитесь к хосту, чтобы изменить её.",
     savedAgo: "Офлайн-копия, сохранена {{time}}",
+    openSavedCopy: "Открыть сохранённую копию (сохранена {{time}})",
+    downloadAgain: "Скачать снова",
+    copyLink: "Копировать ссылку",
     share: "Поделиться",
     wifiOnly: {
       label: "Сохранять только по Wi-Fi",

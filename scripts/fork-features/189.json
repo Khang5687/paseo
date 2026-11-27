@@ -1,0 +1,6 @@
+{
+  "pr": 189,
+  "title": "feat(app): a chat link opens the saved copy saved after the message",
+  "tests": ["packages/app/src/offline-files/link-copy.test.ts"],
+  "e2e": ["packages/app/e2e/browser/saved-link-copy.spec.ts"]
+}

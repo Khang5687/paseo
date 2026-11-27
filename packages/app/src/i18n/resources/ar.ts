@@ -2329,6 +2329,9 @@ export const ar: TranslationResources = {
     tooLarge: "الملف أكبر من حد {{size}} ميغابايت للملفات دون اتصال.",
     readOnly: "هذه نسخة محفوظة. اتصل بالمضيف لتعديلها.",
     savedAgo: "نسخة دون اتصال، حُفظت {{time}}",
+    openSavedCopy: "فتح النسخة المحفوظة (حُفظت {{time}})",
+    downloadAgain: "تنزيل مرة أخرى",
+    copyLink: "نسخ الرابط",
     share: "مشاركة",
     wifiOnly: {
       label: "الحفظ عبر Wi-Fi فقط",

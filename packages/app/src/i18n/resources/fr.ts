@@ -2382,6 +2382,9 @@ export const fr: TranslationResources = {
     tooLarge: "Le fichier dépasse la limite de {{size}} Mo pour les fichiers hors ligne.",
     readOnly: "Ceci est une copie enregistrée. Connectez-vous à l'hôte pour la modifier.",
     savedAgo: "Copie hors ligne, enregistrée {{time}}",
+    openSavedCopy: "Ouvrir la copie enregistrée ({{time}})",
+    downloadAgain: "Télécharger à nouveau",
+    copyLink: "Copier le lien",
     share: "Partager",
     wifiOnly: {
       label: "Enregistrer en Wi-Fi uniquement",

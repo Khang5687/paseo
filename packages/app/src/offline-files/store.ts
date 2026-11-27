@@ -274,6 +274,12 @@ export async function listOfflineFileAttachmentIds(): Promise<string[]> {
   return (await load()).map((entry) => entry.attachment.id);
 }
 
+/** Every saved file once the index has loaded; before that, null, and the load starts. */
+export function peekOfflineFiles(): readonly OfflineFile[] | null {
+  if (!entries) void load();
+  return entries;
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   if (!entries) void load().then(listener);
