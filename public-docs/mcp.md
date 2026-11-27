@@ -66,8 +66,9 @@ Omitting `paseoTools` enables the complete catalog. Set `enabled` to `false` to 
 or list exact tool IDs in `disabledTools` to remove selected tools. Custom profiles do not inherit
 this policy from `extends`; configure each custom provider ID separately.
 
-Browser tools still require browser tools to be enabled and a connected browser host. The
-voice-only `speak` tool is separate from this policy.
+Browser tools still require browser tools to be enabled and a connected browser host.
+`disabledTools` never removes the voice-only `speak` tool, but `enabled: false` removes it with the
+rest of the catalog, so voice mode cannot speak for that provider.
 
 This setting limits the catalog presented to an agent. It is not a security boundary for an agent
 that can access the host through a shell.

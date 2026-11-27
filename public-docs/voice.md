@@ -20,8 +20,10 @@ This keeps credentials and execution in your environment and avoids introducing 
 
 - Speech I/O: STT and TTS providers per feature (`local` or `openai`)
 - Local speech runtime: ONNX models executed on CPU by default
-- Voice LLM orchestration: hidden agent session using your configured provider (`claude`, `codex`, or `opencode`)
-- Tooling path: MCP stdio bridge for voice tools and agent control
+- Voice mode conversation: the chat's own agent, reloaded with a voice prompt. It answers aloud by calling the `speak` tool.
+- Tooling path: `speak` is part of the [Paseo tools](/docs/mcp). Providers with a native tool interface (OMP) receive it directly; the others receive it through the Paseo MCP server.
+
+Voice mode needs **Enable Paseo tools** on (**Settings → Host → Tools & prompts**, or `daemon.mcp.injectIntoAgents: true`). Tool injection is off by default. With it off, voice mode still starts and your speech still reaches the agent, but the agent has no `speak` tool, so it replies in the chat and nothing is spoken. A provider with `paseoTools.enabled: false` has the same problem.
 
 ## Local Speech
 

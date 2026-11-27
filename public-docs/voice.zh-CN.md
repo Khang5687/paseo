@@ -18,8 +18,10 @@ Paseo 对语音提供一流的支持，可用于口述输入，以及与编程�
 
 - 语音输入输出：每个功能各自的 STT 和 TTS Provider（`local` 或 `openai`）
 - 本地语音运行时：默认在 CPU 上执行的 ONNX 模型
-- 语音 LLM 编排：使用你配置的 Provider（`claude`、`codex` 或 `opencode`）的隐藏 Agent 会话
-- 工具路径：用于语音工具和 Agent 控制的 MCP stdio 桥
+- 语音模式对话：聊天自己的 Agent，以语音提示词重新加载。它通过调用 `speak` 工具出声回答。
+- 工具路径：`speak` 属于 [Paseo 工具](/docs/mcp)。有原生工具接口的 Provider（OMP）直接获得它；其他 Provider 通过 Paseo MCP 服务器获得它。
+
+语音模式需要打开 **启用 Paseo tools**（**Settings → Host → Tools & prompts**，或 `daemon.mcp.injectIntoAgents: true`）。工具注入默认关闭。关闭时，语音模式仍能启动，你的语音也仍会送达 Agent，但 Agent 没有 `speak` 工具，所以它只在聊天里回复，不会出声。设置了 `paseoTools.enabled: false` 的 Provider 也有同样的问题。
 
 ## 本地语音 {#local-speech}
 
