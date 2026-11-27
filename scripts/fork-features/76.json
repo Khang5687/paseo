@@ -1,0 +1,14 @@
+{
+  "pr": 76,
+  "title": "feat(app): fold every subagent of a thread under its sidebar row",
+  "tests": [
+    "packages/app/src/subagents/thread-children.test.ts",
+    "packages/app/src/components/sidebar/workspace-nesting.test.ts",
+    "packages/app/src/components/sidebar/sidebar-projection.test.ts",
+    "packages/app/src/stores/sidebar-collapsed-sections-store/state.test.ts"
+  ],
+  "e2e": [
+    "packages/app/e2e/browser/sidebar-thread-children.spec.ts",
+    "packages/app/e2e/browser/subagent-workspace-nesting.spec.ts"
+  ]
+}

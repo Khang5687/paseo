@@ -1,0 +1,10 @@
+{
+  "pr": 20,
+  "title": "feat(app): nest subagent workspaces under their parent in the sidebar",
+  "tests": [
+    "packages/app/src/components/sidebar/sidebar-projection.test.ts",
+    "packages/app/src/components/sidebar/workspace-nesting.test.ts",
+    "packages/app/src/subagents/workspace-parents.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/subagent-workspace-nesting.spec.ts"]
+}

@@ -33,6 +33,10 @@ export interface SearchDirectoryEntriesOptions {
   maxEntriesScanned?: number;
   confidentResultScanThreshold?: number;
   respectGitIgnore?: boolean;
+  // Walk dist, build, out, target and coverage like any other folder. They hold what agents
+  // generate, and Git ignores them. Dependency and cache trees (node_modules, venv, vendor...)
+  // stay skipped either way.
+  walkBuildOutputDirectories?: boolean;
   // Absolute paths that discovery never walks into. A path the caller types explicitly still
   // resolves, and browsing inside one lists a single level at a time.
   excludedDiscoveryPaths?: readonly string[];
@@ -159,20 +163,18 @@ export const WORKSPACE_SEARCH_HIDDEN_DIRECTORIES = [
   ".paseo",
   ".vscode",
 ] as const;
-const IGNORED_DIRECTORY_NAMES = new Set([
+// Dependency and cache trees: huge, never what a chat link names.
+const DEPENDENCY_DIRECTORY_NAMES = new Set([
   "node_modules",
   "venv",
   "env",
   "virtualenv",
-  "dist",
-  "build",
-  "target",
-  "out",
-  "coverage",
   "vendor",
   "__pycache__",
   ".git",
 ]);
+// Build output: skipped by default, walked when the caller asks for it.
+const BUILD_OUTPUT_DIRECTORY_NAMES = new Set(["dist", "build", "target", "out", "coverage"]);
 const directoryListCache = new Map<string, DirectoryListCacheEntry>();
 const gitIgnoredPathsCache = new Map<string, GitIgnoredPathsCacheEntry>();
 
@@ -301,6 +303,7 @@ function buildSearchInput(
     confidentResultScanThreshold: options.confidentResultScanThreshold,
     gitIgnoredPaths,
     excludedDiscoveryPaths,
+    walkBuildOutputDirectories: options.walkBuildOutputDirectories ?? false,
   };
 }
 
@@ -338,6 +341,7 @@ interface SearchInput {
   confidentResultScanThreshold: number | undefined;
   gitIgnoredPaths: Set<string>;
   excludedDiscoveryPaths: Set<string>;
+  walkBuildOutputDirectories: boolean;
 }
 
 async function searchChildren(input: SearchInput): Promise<RankedEntry[]> {
@@ -450,7 +454,10 @@ function shouldDiscover(entry: ChildEntry, input: SearchInput): boolean {
   if (entry.kind === "file") {
     return input.includeFiles && !entry.name.startsWith(".");
   }
-  if (IGNORED_DIRECTORY_NAMES.has(entry.name)) return false;
+  if (DEPENDENCY_DIRECTORY_NAMES.has(entry.name)) return false;
+  if (!input.walkBuildOutputDirectories && BUILD_OUTPUT_DIRECTORY_NAMES.has(entry.name)) {
+    return false;
+  }
   if (!entry.name.startsWith(".")) return true;
   return input.hiddenDirectoryNames.has(entry.name);
 }

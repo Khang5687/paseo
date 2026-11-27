@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRevealedText } from "@/hooks/use-revealed-text";
 import { runPluginClientBundle, type PluginClientRuntime } from "./evaluate";
+import { applyPluginSkin } from "@/skins/plugin-cache";
+
+vi.mock("@/skins/plugin-cache", () => ({ applyPluginSkin: vi.fn(async () => {}) }));
 
 const runtime = {
   paseo: {},
+  serverId: "host-a",
   async rpc() {},
   openSettings() {},
   openScreen() {},
@@ -324,6 +328,81 @@ describe("evaluatePluginClientBundle", () => {
         row(`id: "status", title: "Status", icon: "Blocks", Component: "Item"`),
       ),
     ).toThrow("Workspace row badge item status is not a component");
+  });
+
+  it("collects needs you items and rejects one without a count hook", () => {
+    const plugin = evaluatePluginClientBundle(
+      "example",
+      bundle(`
+        function Item() { return null; }
+        function useLate() { return 2; }
+        plugin.addNeedsYouItem({ id: "tasks", title: " Tasks ", icon: "Blocks", useCount: useLate, Component: Item });
+      `),
+    );
+    expect(plugin.needsYouItems?.map(({ id, title }) => ({ id, title }))).toEqual([
+      { id: "tasks", title: "Tasks" },
+    ]);
+    expect(plugin.needsYouItems?.[0]?.useCount({} as never)).toBe(2);
+
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        bundle(`
+          function Item() { return null; }
+          plugin.addNeedsYouItem({ id: "tasks", title: "Tasks", icon: "Blocks", useCount: 2, Component: Item });
+        `),
+      ),
+    ).toThrow("Needs you item tasks has no useCount");
+  });
+
+  it("collects project rail items and rejects duplicate and malformed ones", () => {
+    const plugin = evaluatePluginClientBundle(
+      "example",
+      bundle(`
+        function useBadge() { return null; }
+        plugin.addProjectRailItem({ id: "accounts", title: " Accounts ", icon: "Gauge", screen: "accounts", useBadge });
+      `),
+    );
+    expect(
+      plugin.projectRailItems.map(({ id, title, icon, screen, useBadge }) => ({
+        id,
+        title,
+        icon,
+        screen,
+        hasBadge: typeof useBadge === "function",
+      })),
+    ).toEqual([
+      { id: "accounts", title: "Accounts", icon: "Gauge", screen: "accounts", hasBadge: true },
+    ]);
+
+    const item = (fields: string) => bundle(`plugin.addProjectRailItem({ ${fields} });`);
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        bundle(`
+          plugin.addProjectRailItem({ id: "accounts", title: "One", icon: "Gauge", screen: "a" });
+          plugin.addProjectRailItem({ id: "accounts", title: "Two", icon: "Gauge", screen: "a" });
+        `),
+      ),
+    ).toThrow("Duplicate project rail item: accounts");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        item(`id: "a", title: " ", icon: "Gauge", screen: "a"`),
+      ),
+    ).toThrow("Project rail item a has no title");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        item(`id: "a", title: "A", icon: "Gauge", screen: " "`),
+      ),
+    ).toThrow("Invalid project rail item a screen");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        item(`id: "a", title: "A", icon: "Gauge", screen: "a", useBadge: 3`),
+      ),
+    ).toThrow("Project rail item a useBadge is not a function");
   });
 
   it("expands the addSurface and addSidebarItem aliases to a screen and a legacy header item", () => {
@@ -945,6 +1024,94 @@ it("binds imported getters to each originating installation across delayed callb
   ]);
   await first.cleanup();
   await second.cleanup();
+});
+
+describe("skins", () => {
+  const SKIN = `{
+    id: "dusk",
+    name: " Dusk ",
+    version: "1",
+    appearance: "dark",
+    focal: { x: 0.25, y: 0.5 },
+    loadImage: async () => ({ base64: "AA==", mimeType: "image/png" }),
+  }`;
+
+  beforeEach(() => {
+    vi.mocked(applyPluginSkin).mockClear();
+  });
+
+  it("collects a contributed skin and releases it on removal", () => {
+    const plugin = evaluatePluginClientBundle(
+      "skins",
+      bundle(`globalThis.__skinRemove = plugin.addSkin(${SKIN})`),
+    );
+    expect(plugin.skins).toHaveLength(1);
+    expect(plugin.skins[0]).toMatchObject({ id: "dusk", name: "Dusk", appearance: "dark" });
+    (globalThis as unknown as { __skinRemove: () => void }).__skinRemove();
+    expect(plugin.skins).toEqual([]);
+  });
+
+  it("rejects a duplicate skin id", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`const skin = ${SKIN}; plugin.addSkin(skin); plugin.addSkin(skin);`),
+      ),
+    ).toThrow("Duplicate skin: dusk");
+  });
+
+  it("rejects a focal point outside 0-1", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`plugin.addSkin({ ...${SKIN}, focal: { x: 2, y: 0.5 } })`),
+      ),
+    ).toThrow();
+  });
+
+  it("rejects a skin without loadImage", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`const { loadImage, ...skin } = ${SKIN}; plugin.addSkin(skin)`),
+      ),
+    ).toThrow();
+  });
+
+  it("rejects a non-https attribution link", () => {
+    expect(() =>
+      evaluatePluginClientBundle(
+        "skins",
+        bundle(`plugin.addSkin({ ...${SKIN}, attribution: { sourceUrl: "http://example.com" } })`),
+      ),
+    ).toThrow();
+  });
+
+  it("rejects applySkin for an id this plugin never registered", async () => {
+    const plugin = evaluatePluginClientBundle("skins", bundle(`globalThis.__skinContext = plugin`));
+    const context = (
+      globalThis as unknown as { __skinContext: { applySkin(id: string): Promise<void> } }
+    ).__skinContext;
+    await expect(context.applySkin("missing")).rejects.toThrow("Unknown skin: missing");
+    expect(applyPluginSkin).not.toHaveBeenCalled();
+    await plugin.cleanup();
+  });
+
+  it("applies a registered skin under the plugin-scoped id on the installing host", async () => {
+    evaluatePluginClientBundle(
+      "skins",
+      bundle(`plugin.addSkin(${SKIN}); globalThis.__skinContext = plugin`),
+    );
+    const context = (
+      globalThis as unknown as { __skinContext: { applySkin(id: string): Promise<void> } }
+    ).__skinContext;
+    await context.applySkin("dusk");
+    expect(applyPluginSkin).toHaveBeenCalledWith({
+      id: "skins/skin/dusk",
+      serverId: "host-a",
+      contribution: expect.objectContaining({ id: "dusk" }),
+    });
+  });
 });
 
 describe("file panels", () => {

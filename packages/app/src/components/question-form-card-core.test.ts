@@ -1,7 +1,12 @@
 import { describe, expect, test } from "vitest";
 import {
+  NO_ANSWER_YET,
+  draftFromQuestionForm,
+  questionFormFromDraft,
   areQuestionsAnswered,
+  buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
+  isOneTapQuestion,
   parseQuestionFormQuestions,
   questionShowsTextInput,
   resolveDismissLabel,
@@ -80,6 +85,42 @@ describe("question form card core", () => {
     expect(buildQuestionFormAnswers(questions, {}, { 0: "durian" })).toEqual({ Fruits: "durian" });
   });
 
+  test("lists answers per question so commas in labels and custom text survive", () => {
+    const questions = parseQuestionFormQuestions({
+      questions: [
+        {
+          question: "Which colors?",
+          header: "Colors",
+          options: [{ label: "Red, warm" }, { label: "Blue" }, { label: "Green" }],
+          multiSelect: true,
+          allowOther: true,
+        },
+        {
+          question: "Which provider?",
+          header: "Provider",
+          options: [{ label: "Claude Code" }, { label: "Codex" }],
+          multiSelect: false,
+          allowOther: true,
+        },
+        { question: "Anything else?", header: "Notes", options: [], allowEmpty: true },
+      ],
+    });
+
+    if (!questions) throw new Error("questions did not parse");
+    const selections = { 0: new Set([1, 0]), 1: new Set([1]) };
+    const otherTexts = { 0: " teal, or anything cool ", 1: "OpenCode, v2 forms" };
+    expect(buildQuestionFormAnswerLists(questions, selections, otherTexts)).toEqual({
+      Colors: ["Red, warm", "Blue", "teal, or anything cool"],
+      Provider: ["OpenCode, v2 forms"],
+      Notes: [],
+    });
+    expect(buildQuestionFormAnswers(questions, selections, otherTexts)).toEqual({
+      Colors: "Red, warm, Blue, teal, or anything cool",
+      Provider: "OpenCode, v2 forms",
+      Notes: "",
+    });
+  });
+
   test("replaces the selected option with the other answer for single-select", () => {
     const questions = parseQuestionFormQuestions({
       questions: [
@@ -148,6 +189,29 @@ describe("question form card core", () => {
     });
   });
 
+  test("answers with one tap only a lone single-choice question with bare options", () => {
+    const base = {
+      question: "Dangerous command",
+      header: "Answer",
+      options: [{ label: "Allow once" }, { label: "Deny" }],
+      multiSelect: false,
+    };
+    const oneTap = (questions: Record<string, unknown>[]) => {
+      const parsed = parseQuestionFormQuestions({ questions });
+      if (!parsed) throw new Error("questions did not parse");
+      return isOneTapQuestion(parsed);
+    };
+
+    expect(oneTap([base])).toBe(true);
+    expect(oneTap([{ ...base, multiSelect: true }])).toBe(false);
+    expect(oneTap([{ ...base, allowOther: true }])).toBe(false);
+    expect(oneTap([{ ...base, options: [] }])).toBe(false);
+    expect(oneTap([{ ...base, options: [{ label: "A", description: "detail" }] }])).toBe(false);
+    expect(oneTap([{ ...base, options: [{ label: "A", description: " \n" }] }])).toBe(true);
+    expect(oneTap([{ ...base, options: [{ label: "A", preview: "<Tabs />" }] }])).toBe(false);
+    expect(oneTap([base, { ...base, header: "Second" }])).toBe(false);
+  });
+
   test("keeps option previews so options can be compared", () => {
     const questions = parseQuestionFormQuestions({
       questions: [
@@ -171,5 +235,66 @@ describe("question form card core", () => {
       { label: "Tabs", description: "One tab per section", preview: "<Tabs>\n  <Tab />\n</Tabs>" },
       { label: "Single page", description: undefined, preview: undefined },
     ]);
+  });
+
+  test("Send what I have answers the open questions with 'No answer yet' and files with paths", () => {
+    const questions = parseQuestionFormQuestions({
+      questions: [
+        {
+          question: "Storage?",
+          header: "Storage",
+          options: [{ label: "SQLite" }],
+          multiSelect: false,
+        },
+        { question: "Port?", header: "Port", options: [{ label: "6767" }], multiSelect: false },
+        { question: "Logo?", header: "Logo", options: [{ label: "Keep" }], multiSelect: false },
+      ],
+    });
+    if (!questions) throw new Error("questions did not parse");
+    const file = {
+      id: "f1",
+      fileName: "logo.png",
+      mimeType: "image/png",
+      size: 3,
+      path: "/up/logo.png",
+    };
+
+    expect(
+      buildQuestionFormAnswers(
+        questions,
+        { 0: new Set([0]) },
+        {},
+        {
+          files: { 2: [file] },
+          fillUnanswered: NO_ANSWER_YET,
+        },
+      ),
+    ).toEqual({
+      Storage: "SQLite",
+      Port: NO_ANSWER_YET,
+      Logo: "Files: /up/logo.png",
+    });
+  });
+
+  test("a box's state survives the trip through a draft", () => {
+    const file = {
+      id: "f1",
+      fileName: "a.txt",
+      mimeType: "text/plain",
+      size: 1,
+      path: "/up/a.txt",
+    };
+    const draft = draftFromQuestionForm({
+      selections: { 0: new Set([2, 0]) },
+      otherTexts: { 1: "Postgres" },
+      files: { 1: [file] },
+      updatedAt: 5,
+    });
+    expect(draft.answers["0"]?.selected).toEqual([0, 2]);
+    expect(questionFormFromDraft(draft)).toEqual({
+      selections: { 0: new Set([0, 2]) },
+      otherTexts: { 1: "Postgres" },
+      files: { 1: [file] },
+    });
   });
 });

@@ -28,6 +28,7 @@ function plugin(input: {
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     filePanels: [],
     composerItems: [],
     newWorkspaceItems: [],
@@ -36,6 +37,7 @@ function plugin(input: {
     clientSlashCommands: [],
     attachmentSources: [],
     themes: [],
+    skins: [],
     timelineTransformers: [
       {
         id: "report",

@@ -1,5 +1,12 @@
 import { memo, useMemo, useState } from "react";
-import { EnrichedMarkdownText, type LinkPressEvent } from "react-native-enriched-markdown";
+import { Alert, Platform } from "react-native";
+import { router } from "expo-router";
+import {
+  EnrichedMarkdownText,
+  type LinkLongPressEvent,
+  type LinkPressEvent,
+} from "react-native-enriched-markdown";
+import { useTranslation } from "react-i18next";
 import { withUnistyles } from "react-native-unistyles";
 import {
   useAssistantFileLinkActions,
@@ -12,7 +19,13 @@ import { pluginOverviewUrl } from "@getpaseo/protocol/plugin-overview";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
-import { isWeb } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
+import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
+import { useSavedLinkCopy } from "@/offline-files/use-saved-link-copy";
+import { getFileNameFromPath } from "@/attachments/utils";
+import { copyToClipboard } from "@/utils/copy-to-clipboard";
+import { buildSavedFileRoute } from "@/utils/host-routes";
+import { formatTimeAgo } from "@/utils/time";
 import { density, resolveDensity } from "@/styles/density";
 import { MarkdownBlockStack } from "./block-stack";
 import { WEB_RENDERERS } from "./renderers";
@@ -20,11 +33,18 @@ import { createMarkdownStyles } from "./styles";
 import { PENDING_MARKDOWN_IMAGE } from "./source";
 import { splitStreamingMarkdown } from "./streaming";
 import { useMarkdownSource, type MarkdownImageContext } from "./images";
+import { useChatNoteContextMenuItems } from "@/chat-notes/context";
 
-import { MermaidFence, MermaidStreamingContext, splitMermaidFences } from "./fence/mermaid";
+import { CodeFence, isRunnableShellFence, isRunnableTaggedShellFence } from "@/code-run/fence";
+import { useCodeRunScope } from "@/code-run/scope";
+import { MermaidFence } from "./fence/mermaid";
+import { splitNativeFences, type FenceSegment } from "./fence/segments";
+import { MarkdownStreamingContext } from "./streaming-context";
 
 const ThemedMarkdown = withUnistyles(EnrichedMarkdownText);
 const MD4C_FLAGS = { latexMath: false, hardSoftBreaks: true, admonitions: true };
+/** Cheap check before parsing: only a message naming a run host or folder splits on web. */
+const FENCE_RUN_OPTION = /\b(?:host|cwd)=/;
 // A README is written for its forge, where the lines of a paragraph join into one.
 const EXTERNAL_MD4C_FLAGS = { ...MD4C_FLAGS, hardSoftBreaks: false };
 
@@ -61,6 +81,11 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
    * a paragraph join as they do on its forge.
    */
   external?: boolean;
+  /**
+   * When the message was written, in ms. A file link then opens the copy saved on this device
+   * after that time instead of fetching the file again (`offline-files/link-copy.ts`).
+   */
+  messageAt?: number;
 }
 
 /** All Markdown surfaces share the same engine and source adaptation. */
@@ -96,6 +121,7 @@ const MarkdownPart = memo(function MarkdownPart({
   onLinkPress,
   agentCommands: _agentCommands,
   external = false,
+  messageAt,
   commandHints = null,
   ...imageContext
 }: MarkdownRendererProps & { commandHints?: CommandHints | null }) {
@@ -123,6 +149,7 @@ const MarkdownPart = memo(function MarkdownPart({
     },
   );
   const [image, setImage] = useState<ImageLightboxSource | null>(null);
+  const findSavedCopy = useSavedLinkCopy();
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
     if (external) {
       // The parser still autolinks bare http, www and email text; only https links open.
@@ -141,27 +168,93 @@ const MarkdownPart = memo(function MarkdownPart({
       return;
     }
     const source = linkSource(url, sourceType);
+    const copy = messageAt === undefined ? null : findSavedCopy(source, messageAt);
+    if (copy) {
+      router.push(buildSavedFileRoute(copy.file));
+      return;
+    }
     if (onLinkPress && !actions.canResolveFile(source)) onLinkPress(url);
     else actions.open(source, "preferred");
+  });
+  // Native links have no menu; a long press on a file offers to save it for offline use, and a
+  // link with a saved copy offers to fetch it again. Web links get their actions from the
+  // right-click menu (`renderers.web.tsx`).
+  const { t } = useTranslation();
+  const saveOffline = useSaveFileLinkOffline();
+  const longPressLink = useStableEvent(({ url }: LinkLongPressEvent) => {
+    const source = linkSource(url);
+    const copy = messageAt === undefined ? null : findSavedCopy(source, messageAt);
+    if (copy) {
+      const time = formatTimeAgo(new Date(copy.file.savedAt));
+      Alert.alert(
+        getFileNameFromPath(copy.file.path) ?? url,
+        undefined,
+        [
+          {
+            text: t("offlineFiles.openSavedCopy", { time }),
+            onPress: () => router.push(buildSavedFileRoute(copy.file)),
+          },
+          {
+            text: t("offlineFiles.downloadAgain"),
+            // A web link downloads through the browser as a tap did before; a host file is
+            // saved again from the host.
+            onPress: () => (copy.web ? actions.open(source, "preferred") : saveOffline(source)),
+          },
+          {
+            text: t("offlineFiles.copyLink"),
+            onPress: () => void copyToClipboard(url).then(() => environment.toast?.copied()),
+          },
+          // Android allows three buttons and closes on a tap outside; iOS needs a Cancel.
+          ...(Platform.OS === "ios"
+            ? [{ text: t("common.actions.cancel"), style: "cancel" as const }]
+            : []),
+        ],
+        { cancelable: true },
+      );
+      return;
+    }
+    if (!actions.canResolveFile(source)) return;
+    Alert.alert(url, undefined, [
+      { text: t("offlineFiles.saveOffline"), onPress: () => saveOffline(source) },
+      { text: t("common.actions.cancel"), style: "cancel" },
+    ]);
   });
   const pressImage = useStableEvent(({ url }: { url: string }) => {
     if (url !== PENDING_MARKDOWN_IMAGE) setImage({ type: "uri", uri: url });
   });
   const closeImage = useStableEvent(() => setImage(null));
-  const segments = useMemo(
-    () =>
-      isWeb ? [{ kind: "markdown", id: "0", source: markdown }] : splitMermaidFences(markdown),
-    [markdown],
-  );
+  // Web offers "Add note" over the browser selection; native has only the selection menu.
+  const noteMenuItems = useChatNoteContextMenuItems();
+  const contextMenuItems = isWeb ? undefined : noteMenuItems;
+  // Shell fences leave the library only where a Run control can work.
+  const canRun = useCodeRunScope() !== null;
+  const segments = useMemo<FenceSegment[]>(() => {
+    if (!isWeb) return splitNativeFences(markdown, canRun ? isRunnableShellFence : null);
+    // The web engine hands a code block only its first info word, so fences naming a run host
+    // or folder leave it to keep `host=`/`cwd=`.
+    const tagged = canRun && FENCE_RUN_OPTION.test(markdown);
+    return splitNativeFences(markdown, tagged ? isRunnableTaggedShellFence : null, {
+      diagrams: false,
+    });
+  }, [markdown, canRun]);
   return (
-    <MermaidStreamingContext.Provider value={streaming}>
+    <MarkdownStreamingContext.Provider value={streaming}>
       <MarkdownBlockStack imageSources={imageSources}>
-        {segments.map((segment) =>
-          segment.kind === "mermaid" ? (
-            <MermaidFence key={`${segment.kind}:${segment.id}`} code={segment.source} />
-          ) : (
+        {segments.map((segment) => {
+          const key = `${segment.kind}:${segment.id}`;
+          if (segment.kind === "mermaid") return <MermaidFence key={key} code={segment.source} />;
+          if (segment.kind === "shell")
+            return (
+              <CodeFence
+                key={key}
+                code={segment.source}
+                language={segment.language}
+                meta={segment.meta}
+              />
+            );
+          return (
             <ThemedMarkdown
-              key={`${segment.kind}:${segment.id}`}
+              key={key}
               markdown={segment.source}
               uniProps={pickMarkdownStyle(compact, muted)}
               flavor="github"
@@ -171,16 +264,18 @@ const MarkdownPart = memo(function MarkdownPart({
               enableTaskListItemToggle={false}
               enableLinkPreview={false}
               enableBlockContextMenu={false}
+              contextMenuItems={contextMenuItems}
               // JS reveal owns pacing; native fade animation is a separate experiment.
               streamingAnimation={false}
               onLinkPress={pressLink}
+              onLinkLongPress={isNative ? longPressLink : undefined}
               onImagePress={pressImage}
               renderers={isWeb ? WEB_RENDERERS : undefined}
             />
-          ),
-        )}
+          );
+        })}
       </MarkdownBlockStack>
       {image ? <AttachmentLightbox source={image} onClose={closeImage} /> : null}
-    </MermaidStreamingContext.Provider>
+    </MarkdownStreamingContext.Provider>
   );
 });

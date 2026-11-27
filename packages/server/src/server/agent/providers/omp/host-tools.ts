@@ -30,12 +30,35 @@ interface OmpHostToolRouterInput {
   logger: Logger;
 }
 
+/**
+ * Tools OMP keeps in every request. Every other Paseo tool is `discoverable`: OMP mounts it as a
+ * bash command with schema-derived `--help` and lists it in one catalog line, which keeps its
+ * schema out of each request. To move a tool between the two groups, edit this set.
+ * `speak` stays loaded because voice turns block on it. Plugin tools opt in with `alwaysLoaded`.
+ */
+export const OMP_ESSENTIAL_PASEO_TOOLS: ReadonlySet<string> = new Set([
+  "send_agent_prompt",
+  "create_agent",
+  "get_agent_status",
+  "get_agent_activity",
+  "archive_agent",
+  "search_agents",
+  "list_models",
+  "update_agent",
+  "list_agents",
+  "ask_agent",
+  "speak",
+]);
+
 export function serializeOmpHostTools(catalog: PaseoToolCatalog): OmpRpcHostToolDefinition[] {
   return [...catalog.tools.values()].map((tool) => {
     const definition: OmpRpcHostToolDefinition = {
       name: tool.name,
       description: tool.description,
-      loadMode: "essential",
+      loadMode:
+        tool.alwaysLoaded || OMP_ESSENTIAL_PASEO_TOOLS.has(tool.name)
+          ? "essential"
+          : "discoverable",
       parameters: serializePaseoToolInputParameters(tool),
     };
     if (tool.title) {

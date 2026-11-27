@@ -1071,22 +1071,23 @@ of its items, else the first host.
 
 `Component` receives `PluginSidebarItemProps`:
 
-| Field                     | Meaning                                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------------------- |
-| `theme`, `host`, `layout` | As in `PluginScreenProps`.                                                                    |
-| `currentScreen`           | `{ screenId, params }` of this plugin's screen open on the item's host, or `null`.            |
-| `openScreen(input)`       | Opens one of this plugin's screens: `{ screenId, params? }`. Unknown screen IDs throw.        |
-| `openPopover(Content)`    | Opens `Content` anchored to the pressed row on wide layouts and as a bottom sheet on compact. |
+| Field                     | Meaning                                                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `theme`, `host`, `layout` | As in `PluginScreenProps`.                                                                                                                         |
+| `currentScreen`           | `{ screenId, params }` of this plugin's screen open on the item's host, or `null`.                                                                 |
+| `active`                  | `{ workspace, agent }`: refs of the chat open in the app, on any host. `null` fields when none is open; `agent` is set while a chat tab has focus. |
+| `openScreen(input)`       | Opens one of this plugin's screens: `{ screenId, params? }`. Unknown screen IDs throw.                                                             |
+| `openPopover(Content)`    | Opens `Content` anchored to the pressed row on wide layouts and as a bottom sheet on compact.                                                      |
 
 `Content` receives `theme`, `host`, `layout`, `close()`, and `openScreen(input)`. Opening a screen
 closes the popover.
 
 Render the item with the sidebar kit from `@getpaseo/plugin/client/ui`:
 
-| Component          | Props and behavior                                                                                                                                                                                                                                                                                 |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SidebarRow`       | Required `onPress`; optional `icon` (any [icon](#icons) form), `label`, `active`, `trailing`, `id`. A full-width row. `trailing` renders beside the row's pressable, so a button in it presses on its own; a press elsewhere in it presses the row. `id` tells rows of one item apart in test IDs. |
-| `SidebarSeparator` | No props. The sidebar's separator line, between groups of rows.                                                                                                                                                                                                                                    |
+| Component          | Props and behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SidebarRow`       | Required `onPress`; optional `icon` (any [icon](#icons) form), `label`, `active`, `trailing`, `badge`, `id`. A full-width row. `trailing` renders beside the row's pressable, so a button in it presses on its own; a press elsewhere in it presses the row. `badge` is `{ count?, tone: "attention" \| "warning" }`: a red or amber count, or a dot without `count`. It shows after the label, and on the corner of the round button the phone draws for a header row, where `trailing` has no room. `id` tells rows of one item apart in test IDs. |
+| `SidebarSeparator` | No props. The sidebar's separator line, between groups of rows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 A popover anchors to the row that was pressed, whether the press landed on the row or on its
 `trailing` content, so a per-row "More" button opens its popover next to its own row.
@@ -1239,6 +1240,82 @@ client.addWorkspaceRowBadgeItem({
 Apps older than this API have no `addWorkspaceRowBadgeItem`; check for it before calling.
 
 See the [workspace row badges example](https://github.com/getpaseo/paseo/tree/main/plugin-examples/workspace-row-badges).
+
+### Needs you items
+
+`addNeedsYouItem({ id, title, icon, useCount, Component })` adds things that wait on the user to
+**Needs you**, the rail button above **All** that lists every chat waiting on the user. The number
+on that button counts the waiting chats plus every item's count.
+
+`useCount` is a React hook. The app calls it with `PluginHostProps` (`theme`, `host`, `layout`) for
+as long as it runs, so keep it to one shared query. Return how many things wait right now; `0` hides
+the item. A plugin installed on several hosts counts once, on the first host's copy.
+
+`Component` draws the item's row on the Needs you page while the count is above `0`. It receives
+`PluginNeedsYouItemProps`: the host props, `count`, and `openScreen` to open one of the plugin's
+screens.
+
+```tsx
+import type { PluginNeedsYouItemProps } from "@getpaseo/plugin/client";
+import { SidebarRow } from "@getpaseo/plugin/client/ui";
+
+function useLateCount() {
+  const { data } = useLateTasks(); // one shared React Query query
+  return data?.length ?? 0;
+}
+
+function LateTasks({ count, openScreen }: PluginNeedsYouItemProps) {
+  return (
+    <SidebarRow
+      icon="ListChecks"
+      label={`${count} late tasks`}
+      onPress={() => openScreen({ screenId: "tasks" })}
+    />
+  );
+}
+
+client.addNeedsYouItem({
+  id: "late-tasks",
+  title: "Late tasks",
+  icon: "ListChecks",
+  useCount: useLateCount,
+  Component: LateTasks,
+});
+```
+
+Apps older than this API have no `addNeedsYouItem`; check for it before calling.
+
+### Project rail items
+
+`addProjectRailItem({ id, title, icon, screen, useBadge? })` adds a button to the desktop project
+rail, under the projects. It opens the plugin's `screen` (an `addScreen` id) and shows as selected
+while that screen is open. The closed rail shows the icon with `title` as its tooltip; the open rail
+writes `title` beside it. The rail shows only on wide layouts with two or more projects, so phones
+never show these buttons: give the screen another way in, such as a sidebar item.
+
+`useBadge` is a React hook the button calls while it renders, inside the plugin's runtime, so it can
+use the plugin's queries. Return `{ count?, tone: "attention" | "warning" }` for a red or amber
+count on the button's corner (a dot without `count`), or `null` for none. A hook that throws leaves
+the button without a badge. With the plugin on several hosts the rail shows one button, opening the
+screen on the host its screens last used.
+
+```tsx
+function useAccountsBadge(): PluginBadge | null {
+  const low = useLowAccounts();
+  return low.length > 0 ? { count: low.length, tone: "warning" } : null;
+}
+
+client.addScreen({ id: "accounts", title: "Accounts", Component: AccountsScreen });
+client.addProjectRailItem?.({
+  id: "accounts",
+  title: "Accounts",
+  icon: "Gauge",
+  screen: "accounts",
+  useBadge: useAccountsBadge,
+});
+```
+
+Apps older than this API have no `addProjectRailItem`; check for it before calling.
 
 ## Host UI
 
@@ -1716,6 +1793,64 @@ unpainted.
 Themes need a host that supports them. A client released before `addTheme` cannot evaluate that client entry and reports
 `client.addTheme is not a function`. Update the client.
 
+## Contribute a skin
+
+`addSkin` adds a background image to Settings → Appearance → Background. Paseo draws it behind the
+whole app and caps how strongly it shows so text keeps its contrast. A skin is an image plus
+a little metadata:
+
+```ts
+import type { PluginClientContext } from "@getpaseo/plugin/client";
+
+export default function contribute(client: PluginClientContext) {
+  if (typeof client.addSkin !== "function") return () => {};
+  return client.addSkin({
+    id: "aurora",
+    name: "Aurora",
+    version: "1",
+    appearance: "dark",
+    focal: { x: 0.7, y: 0.3 },
+    loadThumbnail: () => client.rpc(thumbnailRpc, {}),
+    loadImage: () => client.rpc(imageRpc, {}),
+  });
+}
+```
+
+| Field           | Meaning                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `id`            | Lowercase letters, digits, and hyphens. Unique within the plugin. The app lists it as `<pluginId>/skin/<id>`.       |
+| `name`          | Display name, 1–60 characters.                                                                                      |
+| `version`       | Cache key, 1–64 characters. Change it whenever the image changes so devices fetch the new bytes.                    |
+| `appearance`    | `"light"` or `"dark"`: whether the art reads as light or dark. Used for filtering and the default per-theme choice. |
+| `focal`         | `{ x, y }`, each 0–1. The point kept in view when the image is cropped. Defaults to the center.                     |
+| `intensity`     | `{ home, workspace, utility }`, each 0–1. How strongly the art shows in each area. Paseo still enforces contrast.   |
+| `luminance`     | `{ low, high }`, each 0–1: WCAG relative luminance of the darkest and brightest 1% of pixels. Lets more art show.   |
+| `attribution`   | `{ author, license, sourceUrl }`, each at most 200 characters; `sourceUrl` must be `https`.                         |
+| `loadThumbnail` | Optional. Returns `{ base64, mimeType }` for the gallery, ideally about 512×288.                                    |
+| `loadImage`     | Returns `{ base64, mimeType }` for the full image.                                                                  |
+
+Images are PNG, JPEG, or WebP, at most 16 MiB, 16384 px per side, and 50 megapixels. Paseo
+downsizes them for the device (2560 px long side, plus a 640 px thumbnail) before caching, so
+supply the art at the quality you want and let the app shrink it.
+
+Paseo caches the image on the device the first time a user selects the skin. The cached copy keeps
+working offline and when the plugin is disabled; it is fetched again only when `version` changes.
+Contrast is enforced by Paseo: you cannot make text unreadable by choosing bright art, and
+omitting `luminance` simply makes Paseo assume the worst case.
+
+`client.applySkin(id)` makes one of this plugin's registered skins the active background on this
+device. It resolves once the image is cached and applied, and rejects with `Unknown skin: <id>`
+for an id the plugin did not register, or with the loader's error if the image fails to load.
+Call it from a user action, not from setup.
+
+A client released before skins reports `client.addSkin is not a function`. Feature-detect with
+`typeof client.addSkin === "function"` to ship one plugin that works on both. See
+`plugin-examples/skins`.
+
+A settings screen that browses and installs skins can pass `skinCatalog: true` to
+`addSettingsScreen`. Settings → Appearance → Background then links to it with a **Browse**
+button, so people find your catalog where they pick a background.
+
 ## Settings screens
 
 Register a component with `client.addSettingsScreen({ id, title, icon, Component })` in
@@ -2150,19 +2285,22 @@ example implements these steps.
 
 A plugin panel is a candidate for every file its selector matches, text or binary. The built-in
 panels require the host's file kind: Markdown, HTML, and **Source** open text files; Image opens
-images. The Markdown and HTML panels each have a Preview and a Source view of the file, switched
-in their toolbar. **Source**, Paseo's editor, is the built-in panel for text files that no other
-built-in panel claims; it is never offered beside another built-in panel. Candidates are ordered:
-the built-in panel that claims the file, then plugin panels in host catalog order, then Source
-when no other built-in claims the file.
+images; Video (`mp4`, `mov`, `webm`, `m4v`), Audio (`mp3`, `m4a`, `wav`, `ogg`, `aac`, `flac`)
+and PDF open binary files with those extensions. Video, Audio and PDF load the whole file before
+they show it, so they skip files over 100 MB, and PDF is not offered on Android, whose WebView
+has no PDF viewer. The Markdown and HTML panels each have a Preview and a Source view of the file,
+switched in their toolbar. **Source**, Paseo's editor, is the built-in panel for text files that
+no other built-in panel claims; it is never offered beside another built-in panel. Candidates are
+ordered: the built-in panel that claims the file, then plugin panels in host catalog order, then
+Source when no other built-in claims the file.
 
 A remembered association selects its panel when that panel is available on the current host.
 Otherwise Paseo opens the first candidate. When a plugin panel is among several candidates and no
 association applies, Paseo asks once per tab open, over the panel it already opened. A file with
 one candidate never asks. With a Markdown plugin installed, the picker offers **Markdown — Paseo**
-and **Rich Markdown — markdown-panel**. A plugin that claims a text extension no built-in panel
-claims competes with Source, so its first open asks; a plugin that alone claims a binary file
-opens without asking.
+and **Rich Markdown — markdown-panel**; a PDF plugin likewise competes with the built-in PDF
+panel. A plugin that claims a text extension no built-in panel claims competes with Source, so its
+first open asks; a plugin that alone claims a binary file opens without asking.
 
 **Don't ask me again** remembers the choice on this device for the extension. When a candidate
 matches an exact filename, the choice applies to that basename instead. An unavailable association
@@ -2172,8 +2310,9 @@ Users choose a panel three ways: the picker on first open, **Open with…** in t
 **Settings → Chat & panes → Files** (shown when a plugin registers a file panel). Open with switches the current tab and wins over the remembered association
 for this tab until it is retargeted; its **Always use** remembers the shown panel. Opening a file
 at a line, from a link or a search result, switches the tab to its built-in panel, which shows the
-line in its Source view. Files with no candidate show **Binary preview unavailable**; binary files
-have no Source panel.
+line in its Source view. Files with no candidate show **Binary preview unavailable** and
+**Download**; a file a built-in panel skips for its size shows **This file is too large to
+display** instead. Binary files have no Source panel.
 
 ### DocumentFrame
 

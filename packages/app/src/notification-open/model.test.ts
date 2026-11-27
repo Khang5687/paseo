@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Note } from "@/notes/model";
 import { createNotificationOpenRouter, parseNotificationOpenTarget } from "./model";
 import type { NotificationOpenSource, NotificationTap } from "./source";
 
@@ -52,6 +53,36 @@ describe("notification open", () => {
       { serverId: "h", workspaceId: "w", terminalId: "t", agentId: "a" },
       { kind: "terminal", serverId: "h", workspaceId: "w", terminalId: "t" },
     ],
+    [
+      { serverId: "h", sentFilePath: " /out/clip.mp4 " },
+      { kind: "file", serverId: "h", path: "/out/clip.mp4" },
+    ],
+    [
+      { serverId: "h", noteId: " n ", agentId: "a", workspaceId: "w" },
+      {
+        kind: "note",
+        serverId: "h",
+        noteId: "n",
+        fallback: { kind: "agent", serverId: "h", agentId: "a" },
+      },
+    ],
+    [
+      { serverId: "h", noteId: "n", terminalId: "t", workspaceId: "w", cwd: "/repo" },
+      {
+        kind: "note",
+        serverId: "h",
+        noteId: "n",
+        fallback: { kind: "terminal", serverId: "h", workspaceId: "w", terminalId: "t" },
+      },
+    ],
+    [
+      { serverId: "h", noteId: "n", terminalId: "t" },
+      { kind: "note", serverId: "h", noteId: "n", fallback: { kind: "host", serverId: "h" } },
+    ],
+    [
+      { serverId: "h", noteId: " ", agentId: "a" },
+      { kind: "agent", serverId: "h", agentId: "a" },
+    ],
     [{ kind: "plugin", serverId: "h", pluginId: "p" }, null],
     [{ kind: "plugin", serverId: "h", notificationId: "n" }, null],
     [
@@ -76,11 +107,17 @@ describe("notification open", () => {
     expect(parseNotificationOpenTarget(data)).toEqual(expected);
   });
 
-  function setup(whenReadyToNavigate = () => Promise.resolve()) {
+  function setup(
+    whenReadyToNavigate = () => Promise.resolve(),
+    notes: { serverId: string; note: Note }[] = [],
+    canOpenNote = true,
+  ) {
     const source = new FakeSource(launch);
     const agents: unknown[] = [];
     const routes: string[] = [];
     const terminals: unknown[] = [];
+    const openedNotes: { serverId: string; noteId: string }[] = [];
+    const sentFiles: { serverId: string; path: string }[] = [];
     const router = createNotificationOpenRouter({
       source,
       openAgent: (target) => {
@@ -92,9 +129,23 @@ describe("notification open", () => {
       openRoute: (route) => {
         routes.push(route);
       },
+      resolveNote: async ({ serverId, noteId }) => {
+        if (noteId === "throws") throw new Error("host unreachable");
+        return (
+          notes.find((entry) => entry.serverId === serverId && entry.note.id === noteId)?.note ??
+          null
+        );
+      },
+      openNote: (serverId, note) => {
+        if (canOpenNote) openedNotes.push({ serverId, noteId: note.id });
+        return canOpenNote;
+      },
+      openSentFile: async (target) => {
+        sentFiles.push(target);
+      },
       whenReadyToNavigate,
     });
-    return { source, agents, routes, terminals, router };
+    return { source, agents, routes, terminals, openedNotes, sentFiles, router };
   }
 
   it("takes the launch tap once across remounts", async () => {
@@ -166,5 +217,84 @@ describe("notification open", () => {
       { kind: "terminal", serverId: "host", workspaceId: "ws", terminalId: "term" },
     ]);
     stop();
+  });
+
+  const savedNote: Note = {
+    id: "note-1",
+    text: "check the build",
+    quote: "npm run build",
+    anchor: { kind: "agent", agentId: "agent", workspaceId: "ws" },
+    createdAt: "2026-11-01T00:00:00.000Z",
+    updatedAt: "2026-11-01T00:00:00.000Z",
+  };
+
+  it("opens a tapped note at its highlighted spot", async () => {
+    const { source, agents, openedNotes, router } = setup(undefined, [
+      { serverId: "host", note: savedNote },
+    ]);
+    const stop = router.start();
+    await flush();
+    source.tap({
+      id: "note",
+      data: { serverId: "host", noteId: "note-1", agentId: "agent", workspaceId: "ws" },
+    });
+    await flush();
+    expect(openedNotes).toEqual([{ serverId: "host", noteId: "note-1" }]);
+    expect(agents).toEqual([{ serverId: "host", agentId: "agent" }]);
+    expect(source.acknowledged).toEqual(["one", "note"]);
+    stop();
+  });
+
+  it("opens a file another device sent, once the app is ready to navigate", async () => {
+    let ready!: () => void;
+    const gate = new Promise<void>((resolve) => (ready = resolve));
+    const { source, sentFiles, routes, agents, router } = setup(() => gate);
+    const stop = router.start();
+    source.tap({
+      id: "file",
+      data: { serverId: "host", sentFilePath: "/home/k/out/clip.mp4", agentId: "ignored" },
+    });
+    await flush();
+    expect(sentFiles).toEqual([]);
+    ready();
+    await flush();
+    expect(sentFiles).toEqual([{ serverId: "host", path: "/home/k/out/clip.mp4" }]);
+    expect(routes).toEqual([]);
+    expect(agents).not.toContainEqual({ serverId: "host", agentId: "ignored" });
+    expect(source.acknowledged).toContain("file");
+    stop();
+  });
+
+  it("falls back to the note's chat or terminal when the note cannot be found or opened", async () => {
+    const missing = setup();
+    const stopMissing = missing.router.start();
+    await flush();
+    missing.source.tap({
+      id: "gone",
+      data: { serverId: "host", noteId: "deleted", workspaceId: "ws", terminalId: "term" },
+    });
+    missing.source.tap({
+      id: "offline",
+      data: { serverId: "host", noteId: "throws", agentId: "a2" },
+    });
+    await flush();
+    expect(missing.openedNotes).toEqual([]);
+    expect(missing.terminals).toEqual([
+      { kind: "terminal", serverId: "host", workspaceId: "ws", terminalId: "term" },
+    ]);
+    expect(missing.agents).toEqual([
+      { serverId: "host", agentId: "agent" },
+      { serverId: "host", agentId: "a2" },
+    ]);
+    expect(missing.source.acknowledged).toEqual(["one", "gone", "offline"]);
+    stopMissing();
+
+    const unopenable = setup(undefined, [{ serverId: "host", note: savedNote }], false);
+    const stopUnopenable = unopenable.router.start();
+    await flush();
+    unopenable.source.tap({ id: "note", data: { serverId: "host", noteId: "note-1" } });
+    await flush();
+    expect(unopenable.routes).toEqual(["/h/host"]);
+    stopUnopenable();
   });
 });

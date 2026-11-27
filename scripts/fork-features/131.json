@@ -1,0 +1,5 @@
+{
+  "pr": 131,
+  "title": "fix(app): the composer grip crashes the app on Android and iOS",
+  "tests": ["packages/app/src/native-gesture-worklets.test.ts"]
+}

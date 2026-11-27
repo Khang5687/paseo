@@ -117,7 +117,14 @@ export async function ensureAgentLoaded(
         handle,
         buildConfigOverrides(record),
         agentId,
-        { ...extractTimestamps(record), attention: extractAttention(record) },
+        {
+          ...extractTimestamps(record),
+          attention: extractAttention(record),
+          queuedMessages: record.queuedMessages ?? [],
+          queuePaused: record.queuePaused ?? false,
+          queuePauseReason: record.queuePauseReason,
+          openQuestions: record.openQuestions,
+        },
         deps.purpose ? { purpose: deps.purpose } : undefined,
       );
       deps.logger.info({ agentId, provider: record.provider }, "Agent resumed from persistence");

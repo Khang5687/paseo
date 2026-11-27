@@ -1,0 +1,6 @@
+{
+  "pr": 191,
+  "title": "fix(app): a model row click selects before the list knows its visible rows",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/new-workspace-composer-draft.spec.ts"]
+}

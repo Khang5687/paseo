@@ -1,0 +1,10 @@
+{
+  "pr": 179,
+  "title": "feat(app): full-screen editor with the composer's title, files and bar",
+  "tests": [],
+  "e2e": [
+    "packages/app/e2e/browser/composer-whitespace.spec.ts",
+    "packages/app/e2e/browser/new-workspace-dictation-submit.spec.ts",
+    "packages/app/e2e/browser/new-workspace-launch-terminal.spec.ts"
+  ]
+}

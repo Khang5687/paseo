@@ -1,0 +1,9 @@
+{
+  "pr": 175,
+  "title": "Track ❓ questions from agent replies as open questions",
+  "tests": [
+    "packages/server/src/server/agent/text-questions.test.ts",
+    "packages/server/src/server/agent/agent-manager.test.ts",
+    "packages/protocol/src/agent-state-bucket.test.ts"
+  ]
+}

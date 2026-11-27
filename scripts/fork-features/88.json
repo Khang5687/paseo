@@ -1,0 +1,6 @@
+{
+  "pr": 88,
+  "title": "fix(omp): don't block agent resume on the account-routing capability probe",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
+  "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
+}

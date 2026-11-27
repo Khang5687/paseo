@@ -1,0 +1,5 @@
+{
+  "pr": 101,
+  "title": "feat(server): fork_agent MCP tool",
+  "tests": ["packages/server/src/server/agent/fork-agent.test.ts"]
+}

@@ -1,0 +1,6 @@
+{
+  "pr": 125,
+  "title": "feat(app): select several sidebar workspaces and archive them at once",
+  "retired": "upstream #10798 and #10821 ship sidebar multi-select; the fork selection store, bar and header Select entry were removed in the upstream sync",
+  "tests": ["packages/app/src/stores/sidebar-selection-store/state.test.ts"]
+}

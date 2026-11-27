@@ -35,6 +35,39 @@ import type {
 import type { PluginIconProps, PluginSerializableIcon } from "../icons.js";
 import type { PluginNotificationOpenHandler } from "./notifications.js";
 
+/** One encoded raster image. PNG, JPEG, or WebP; at most 16 MiB decoded from base64. */
+export interface PluginSkinImage {
+  base64: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+}
+
+export interface PluginSkinContribution {
+  id: string;
+  /** Display name, 1–60 characters. */
+  name: string;
+  /** Cache key. Change it when the image changes so devices fetch the new bytes. */
+  version: string;
+  /** Whether the art reads as light or dark. Used for gallery filtering. */
+  appearance: "light" | "dark";
+  /** Point of the image to keep in view when it is cropped, each axis 0–1. Defaults to the center. */
+  focal?: { x: number; y: number };
+  /**
+   * How strongly the art shows per area, each 0–1: `home` (new workspace), `workspace` (agent
+   * chat), `utility` (settings, sessions, schedules). Paseo still enforces text contrast.
+   */
+  intensity?: { home?: number; workspace?: number; utility?: number };
+  /**
+   * Relative luminance (WCAG, 0–1) of the darkest and brightest 1% of pixels. When present Paseo
+   * lets more of the art show; when absent it assumes pure black and pure white.
+   */
+  luminance?: { low: number; high: number };
+  attribution?: { author?: string; license?: string; sourceUrl?: string };
+  /** A small preview for the gallery, ideally about 512×288. */
+  loadThumbnail?: () => Promise<PluginSkinImage>;
+  /** The full image. Paseo downsizes it for the device before caching. */
+  loadImage: () => Promise<PluginSkinImage>;
+}
+
 export interface PluginHostProps {
   theme: PluginTheme;
   host: {
@@ -101,7 +134,23 @@ export interface PluginPopoverProps extends PluginHostProps {
   openScreen(input: PluginOpenScreenInput): void;
 }
 
+/** The chat the user has open: its workspace and, when a chat tab has focus, its agent. */
+export interface PluginActiveRefs {
+  workspace: WorkspaceRef | null;
+  agent: AgentRef | null;
+}
+
+/** A count or a dot on a sidebar row or project rail button. */
+export interface PluginBadge {
+  /** The number to show. Omit it for a dot. */
+  count?: number;
+  /** "attention" is red, for something late or failing; "warning" is amber, for something soon. */
+  tone: "attention" | "warning";
+}
+
 export interface PluginSidebarItemProps extends PluginHostProps {
+  /** The chat open in the app, on any host. Null fields when none is open. */
+  active: PluginActiveRefs;
   /** This plugin's screen open on this item's host, with its params, else null. */
   currentScreen: PluginScreenLocation | null;
   openScreen(input: PluginOpenScreenInput): void;
@@ -116,8 +165,26 @@ export interface PluginSidebarItemContribution<Text extends PluginText = string>
   Component: ComponentType<PluginSidebarItemProps>;
 }
 
+/**
+ * One button on the desktop project rail, below the projects: an icon that opens one of the
+ * plugin's screens. The open rail shows its title beside the icon. Phones have no rail.
+ */
+export interface PluginProjectRailItemContribution<Text extends PluginText = string> {
+  id: string;
+  /** Tooltip, open-rail label, and accessibility label. */
+  title: Text;
+  icon: PluginIcon;
+  /** The `addScreen` id the button opens. The button shows as selected while it is open. */
+  screen: string;
+  /**
+   * A React hook, called while the button renders inside the plugin's runtime, so it may use the
+   * plugin's data hooks. Return null for no badge.
+   */
+  useBadge?: () => PluginBadge | null;
+}
+
 export interface PluginSidebarViewProps extends Pick<PluginHostProps, "theme" | "layout"> {
-  active: { workspace: WorkspaceRef | null; agent: AgentRef | null };
+  active: PluginActiveRefs;
   navigation: {
     openWorkspace(ref: WorkspaceRef): void;
     openAgent(ref: AgentRef): void;
@@ -148,6 +215,25 @@ export interface PluginWorkspaceRowBadgeItemContribution<Text extends PluginText
   title: Text;
   icon: PluginIcon;
   Component: ComponentType<PluginWorkspaceRowBadgeItemProps>;
+}
+
+export interface PluginNeedsYouItemProps extends PluginHostProps {
+  /** What `useCount` last returned; always above 0 while the row shows. */
+  count: number;
+  openScreen(input: PluginOpenScreenInput): void;
+}
+
+/**
+ * Things that wait on the owner, counted into Needs you: the rail's Needs you number and a row on
+ * its page. The app calls `useCount` as a React hook for as long as it runs, on one host's copy of
+ * the plugin; keep it cheap. The page draws `Component` only while the count is above 0.
+ */
+export interface PluginNeedsYouItemContribution<Text extends PluginText = string> {
+  id: string;
+  title: Text;
+  icon: PluginIcon;
+  useCount: (props: PluginHostProps) => number;
+  Component: ComponentType<PluginNeedsYouItemProps>;
 }
 
 /**
@@ -242,10 +328,12 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addSidebarView(contribution: PluginSidebarViewContribution<PluginText>): PluginCleanup;
   addSidebarHeaderItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
   addSidebarFooterItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
+  addProjectRailItem(contribution: PluginProjectRailItemContribution<PluginText>): PluginCleanup;
   addAgentPanel(contribution: PluginAgentPanelContribution<PluginText>): PluginCleanup;
   addWorkspaceRowBadgeItem(
     contribution: PluginWorkspaceRowBadgeItemContribution<PluginText>,
   ): PluginCleanup;
+  addNeedsYouItem(contribution: PluginNeedsYouItemContribution<PluginText>): PluginCleanup;
   addWorkspacePanel(contribution: PluginWorkspacePanelContribution<PluginText>): PluginCleanup;
   addCommandCenterItem(
     contribution: PluginCommandCenterItemContribution<PluginText>,
@@ -262,6 +350,18 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addNewWorkspaceItem(contribution: PluginNewWorkspaceItemContribution): PluginCleanup;
   addTheme(contribution: PluginThemeContribution<PluginText>): PluginCleanup;
   addFilePanel(contribution: PluginFilePanelContribution<PluginText>): PluginCleanup;
+  /**
+   * Add background art to Settings → Appearance → Background. Paseo copies the image into a
+   * device-local cache the first time a user picks the skin, so it keeps rendering while the host
+   * is offline. Feature-detect with `typeof client.addSkin === "function"` on older apps.
+   */
+  addSkin(contribution: PluginSkinContribution): PluginCleanup;
+  /**
+   * Make one of this plugin's registered skins the active background on this device. Resolves after
+   * the image is cached and applied; rejects when the id was never registered or the image fails
+   * to load.
+   */
+  applySkin(id: string): Promise<void>;
   addTimelineTransformer<ItemType extends AgentTimelineItem["type"]>(
     contribution: PluginTimelineTransformerContribution<ItemType>,
   ): PluginCleanup;
@@ -309,6 +409,11 @@ export interface PluginSettingsScreenContribution<Text extends PluginText = stri
   title: Text;
   icon: PluginIcon;
   Component: ComponentType<PluginSurfaceProps>;
+  /**
+   * Also link this screen from Settings → Appearance → Background, as a place to find more
+   * skins. Use it for a screen that browses and installs skins registered with `addSkin`.
+   */
+  skinCatalog?: boolean;
 }
 
 /** The screen header's title: fixed, or derived from the params the screen was opened with. */
