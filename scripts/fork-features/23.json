@@ -1,0 +1,9 @@
+{
+  "pr": 23,
+  "title": "fix(app): keep a separate New workspace draft per project",
+  "tests": [
+    "packages/app/src/stores/draft-keys.test.ts",
+    "packages/app/src/stores/draft-store/migration.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/new-workspace-composer-draft.spec.ts"]
+}

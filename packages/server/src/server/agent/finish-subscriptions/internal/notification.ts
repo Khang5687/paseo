@@ -5,7 +5,6 @@ export type FinishNotificationReason =
   | "ended its turn but is still working"
   /** The follow limit passed while the child was still working. The subscription ends. */
   | "is still working"
-  | "host unreachable"
   | "host removed"
   | "finished"
   | "errored"
@@ -15,7 +14,6 @@ export type FinishNotificationReason =
   | "was canceled";
 
 export const finishNotificationEvents = {
-  "host unreachable": "errored",
   "host removed": "errored",
   finished: "finished",
   errored: "errored",
@@ -54,12 +52,8 @@ interface FinishNotificationBodyInput {
 }
 
 export function formatFinishNotificationBody(params: FinishNotificationBodyInput): string {
-  if (params.reason === "host unreachable" || params.reason === "host removed") {
-    const host =
-      params.reason === "host removed"
-        ? `Host ${params.serverId} was removed or is unavailable.`
-        : `Could not observe child agent ${params.childAgentId} on host ${params.serverId} after three failed attempts.`;
-    return `${host}\n\nStatus of child agent ${params.childAgentId} (${params.title}) is unknown.\n\nServer: ${params.serverId}\n\nThis finish subscription has ended. Reassess the delegated work; reconnecting will not resume notifications.`;
+  if (params.reason === "host removed") {
+    return `Host ${params.serverId} was removed or is unavailable.\n\nStatus of child agent ${params.childAgentId} (${params.title}) is unknown.\n\nServer: ${params.serverId}\n\nThis finish subscription has ended. Reassess the delegated work; reconnecting will not resume notifications.`;
   }
   const work = params.pendingWork?.length
     ? `: ${params.pendingWork.map((item) => PENDING_WORK_DESCRIPTIONS[item]).join(", ")}`

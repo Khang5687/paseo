@@ -2,6 +2,7 @@ import type { ProviderEvent, ProviderPermissionResponse } from "@getpaseo/plugin
 import type { z } from "zod";
 import { MspConnection } from "./connection.js";
 import { MuseError } from "./errors.js";
+import type { UserInputAnswer } from "./msp.js";
 import { ackSchema, questionSchema, questionAnswersSchema, settledQuestionSchema } from "./wire.js";
 
 export class Questions {
@@ -62,19 +63,11 @@ export class Questions {
     }
     const supplied = questionAnswersSchema.parse(response.updatedInput);
     const answers = request.questions.map((question) => {
+      const answerList = supplied.answerLists?.[question.header];
+      if (answerList) return listedAnswer(question, answerList);
       const text = supplied.answers[question.header];
       if (text === undefined) throw new MuseError("missingAnswer", `Answer ${question.header}`);
-      if (question.selection.mode === "single")
-        return question.options.some((option) => option.label === text)
-          ? { questionId: question.id, selectedLabel: text }
-          : { questionId: question.id, freeText: text };
-      const labels = text
-        .split(",")
-        .map((label) => label.trim())
-        .filter(Boolean);
-      if (labels.every((label) => question.options.some((option) => option.label === label)))
-        return { questionId: question.id, selectedLabels: labels };
-      return { questionId: question.id, freeText: text };
+      return legacyAnswer(question, text);
     });
     await this.host.command(
       "userInput/answer",
@@ -83,4 +76,34 @@ export class Questions {
     );
     return true;
   }
+}
+
+type Question = z.infer<typeof questionSchema>["questions"][number];
+
+function listedAnswer(question: Question, answerList: string[]): UserInputAnswer {
+  const isLabel = (value: string) => question.options.some((option) => option.label === value);
+  if (question.selection.mode === "single")
+    return answerList.length === 1 && isLabel(answerList[0])
+      ? { questionId: question.id, selectedLabel: answerList[0] }
+      : { questionId: question.id, freeText: answerList.join(", ") };
+  // An answer carries one kind, so checked options plus Other text go to Muse as free text.
+  return answerList.every(isLabel)
+    ? { questionId: question.id, selectedLabels: answerList }
+    : { questionId: question.id, freeText: answerList.join(", ") };
+}
+
+// COMPAT(question-answer-lists): added in v0.11.0, remove after 2027-04-08. Apps before v0.11.0
+// send only a comma-joined answer, so a comma inside a label still splits it here.
+function legacyAnswer(question: Question, text: string): UserInputAnswer {
+  if (question.selection.mode === "single")
+    return question.options.some((option) => option.label === text)
+      ? { questionId: question.id, selectedLabel: text }
+      : { questionId: question.id, freeText: text };
+  const labels = text
+    .split(",")
+    .map((label) => label.trim())
+    .filter(Boolean);
+  if (labels.every((label) => question.options.some((option) => option.label === label)))
+    return { questionId: question.id, selectedLabels: labels };
+  return { questionId: question.id, freeText: text };
 }

@@ -239,7 +239,11 @@ Kebab menus (`<DropdownMenu>` with `<MoreVertical size={14} />` trigger) are for
 
 A row may carry both a chevron and a kebab when both navigation and row-level actions apply. Chevron sits at the end; kebab sits before it.
 
+Workspace rows put a one-press Archive (`Archive` icon, same trigger box) directly before the kebab, shown on desktop hover only; on touch, Archive is in the row's menu (`SidebarWorkspaceArchiveButton` in `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx`).
+
 Switches and segmented controls also sit in the trailing slot. A row that both navigates and toggles passes its `<Switch>` as the `control` of `<SettingsDetailRow>`, before the chevron; the switch stops the press from reaching the row (`packages/app/src/provider-settings/internal/provider-row.tsx`). A list the user adds to ends with a muted `<SettingsAddRow>`. Sidebar items that hold a status dot, a count, and a kebab follow the same rule (`packages/app/src/components/sidebar-workspace-list.tsx`).
+
+A continuous value is a `<Slider>` (`packages/app/src/components/ui/slider.tsx`), not a segmented control of presets. It does not fit the trailing slot: the row stacks the title with the current value right-aligned in `foregroundMuted`, the hint, then the full-width slider (`packages/app/src/screens/settings/appearance/background/background-controls.tsx`).
 
 Selected state on rows in a desktop list+detail uses `surfaceSidebarHover` as the background (`packages/app/src/screens/projects-screen.tsx`). Selected state on rows in the sidebar list uses `surface2` (`packages/app/src/components/agent-list.tsx:563-571`).
 

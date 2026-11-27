@@ -1,5 +1,4 @@
 import { expect, test } from "vitest";
-
 import { OmpHarness } from "./test-utils/omp-harness.js";
 
 test("falls back to progress when the event subscription is unavailable", async () => {

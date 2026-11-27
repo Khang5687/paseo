@@ -1,7 +1,7 @@
 # Plugins
 
 Local plugins contribute daemon RPCs, native app surfaces, workspace panels, Command Center items,
-client slash commands, timeline items, notifications, header buttons, composer pills, app themes, composer attachment sources, and settings screens.
+client slash commands, timeline items, notifications, header buttons, composer pills, app themes, background skins, composer attachment sources, and settings screens.
 Paseo executes `index.server.ts` in a subprocess and `index.client.tsx` in every connected app.
 
 > **Trust every plugin you add.** `paseo plugin add` and `paseo plugin install` mean “I trust this codebase.” Plugins are unsandboxed: server code and preparation commands run with the daemon user's access on the daemon host, and client contributions run inside Paseo. The repository's dependencies and future updates are part of that trust decision. With `--host`, preparation runs on that remote daemon host.
@@ -727,6 +727,13 @@ one section's order from built-ins, plugin groups, and the section's preference
 - A new-API item renders from the current route's host, else the host remembered under
   `pluginScreensHostKey(pluginId)`, which the screen's host switcher and the item's `openScreen`
   set. One key per plugin: switching host on any of its screens moves all its items.
+- `SidebarRow.badge` goes through `readPluginBadge` (`plugins/badge.ts`), so a malformed value
+  draws nothing instead of throwing. It is drawn by `SidebarHeaderRow`, not the kit, because the
+  phone's icon row swaps the row for `SidebarNavIconButton` there; see
+  [the phone's top buttons](sidebar-project-strip.md#the-phones-top-buttons).
+- `active` comes from `usePluginActiveRefs` (`plugins/active-refs.ts`), the same value sidebar views
+  get. It is the app's open chat on any host, not only the item's host, so a plugin that keys data
+  by host checks `active.workspace.hostId` itself.
 - `addSurface`, `openSurface`, and `addSidebarItem` are undocumented aliases, tagged
   `COMPAT(pluginSidebarAliases)`. `addSidebarItem` is recorded only in `legacySidebarItems` and
   groups as a `legacy` sidebar group, which the app draws as its own row: its registered icon, in
@@ -749,6 +756,38 @@ items after its own.
 - Previews (Settings > Host appearance) pass no `workspace` to `WorkspaceMetaRow`, so plugin items
   stay off them.
 
+## Contribute Needs you items
+
+The [public reference](../public-docs/plugins/reference.md#needs-you-items) owns the author API.
+The host lives in `packages/app/src/plugins/needs-you-items/`; [docs/needs-you.md](needs-you.md)
+owns the page.
+
+- `PluginNeedsYouCounters` mounts at the app root and runs every item's `useCount` inside its own
+  error boundary, so the rail number is right before the page ever opens. A throwing hook drops
+  that item's count to nothing; the rest still count.
+- Items coalesce by `<pluginId>/<itemId>` across hosts, first host wins. One board installed on two
+  hosts would otherwise count every task twice.
+- `needsYouItems` is optional on `EvaluatedPlugin`, so placeholder installations and test fixtures
+  need no new field.
+
+## Contribute project rail items
+
+The [public reference](../public-docs/plugins/reference.md#project-rail-items) owns the author API.
+The host lives in `packages/app/src/plugins/project-rail-items/`; the rail in
+`components/sidebar/project-strip.tsx` mounts `PluginProjectRailItems` under its project list and
+passes its own `RailIconButton` in, so the rail keeps its look and the plugin module never imports
+the rail.
+
+- Buttons coalesce across hosts by `<pluginId>/<itemId>` and pick their host like new-API sidebar
+  items: the current route's host, else `pluginScreensHostKey(pluginId)`, else the first.
+- A button whose `screen` the plugin never added is dropped at render, not at registration, since
+  `addScreen` may come after `addProjectRailItem` in the entry.
+- `useBadge` is a hook from the plugin bundle, so it runs inside `PluginEnvironmentProvider` and a
+  `SurfaceErrorBoundary` whose fallback is the same button with no badge. A throwing hook costs the
+  badge, never the button.
+- No Settings toggle: the rail has no hide preference of its own yet. Uninstalling or disabling the
+  plugin is the off switch.
+
 ## Contribute file panels
 
 Client `addFilePanel` registrations become the body of a file tab. The tab stats the file, picks a
@@ -756,11 +795,20 @@ panel, and mounts it with a `PluginFile` handle; the panel reads, shows its own 
 and resolves conflicts. The host has no bar and no notion of a panel's views: the Markdown and HTML
 panels own their Preview and Source views, toolbar and editor buffer, and the tab only shows the
 dot a panel sets through `tab.setModified`. Source is the floor for text files no other built-in
-claims, never a candidate beside one. Built-in panels (Markdown, HTML, Image, and Source, Paseo's
-editor) take exactly `PluginFilePanelProps`, including params and persisted tab state, so a fix to reading, watching, or writing lands in one place:
+claims, never a candidate beside one. Built-in panels (Markdown, HTML, Image, Video, Audio, PDF,
+and Source, Paseo's editor) take exactly `PluginFilePanelProps`, including params and persisted tab state, so a fix to reading, watching, or writing lands in one place:
 `packages/app/src/file-panels/file/`. Do not add a host-side read or loading gate for one panel;
 make that panel faster instead. Source highlights a large file on native in idle-time slices,
 the lines around the opening line first.
+
+Video, Audio and PDF read the whole file through `file.url()` (the WebSocket binary channel, so it
+works over the relay) before they show it. There is no HTTP range route to stream from: the
+download route takes single-use tokens and only works on a direct connection. So a candidate can
+set `maxBytes` (100 MB for these panels, `MEDIA_PREVIEW_MAX_BYTES` in
+`packages/app/src/file-panels/catalog.ts`); a bigger file gets no panel from it and the tab shows
+Download with "too large". Web and desktop play with `<video>`/`<audio>`, native with `expo-video`
+for both. Android has no PDF panel because its WebView cannot show PDFs, so a PDF opens with
+Download there.
 
 The handle checks every write against the version it last read or wrote, so two panels or a panel
 and an agent cannot silently overwrite each other. The daemon reports the file's kind (text,
@@ -1093,6 +1141,18 @@ not repaint the app. Without a preference the sorted registry snapshot decides, 
 stable rather than arrival-ordered. The app resolves that id
 against the installed catalog on every change; an id nothing contributes falls back to the default
 preference instead of painting the reserved slot's placeholder colors.
+
+## Contribute a skin
+
+`addSkin` and `applySkin` are client registrations evaluated in the app (`plugins/evaluate.ts`);
+the daemon has no capability flag for them. A plugin that calls `addSkin` on an older app fails with
+`addSkin is not a function`, so authors feature-detect (`typeof client.addSkin === "function"`).
+Contributions are validated in `plugins/skins.ts` and handed to `@/skins`, which owns caching,
+selection, and the contrast gate; plugin code never touches pixels or tokens.
+
+Skin ids are `<pluginId>/skin/<skinId>`, the same shape as themes. `applySkin(id)` only resolves
+skins the calling plugin registered, and attributes them to the host the plugin was installed from
+(`PluginClientRuntime.serverId`). See [skins.md](skins.md) for the rendering and storage design.
 
 Existing plugin authors should follow the standalone [v0.8 runtime-entry migration guide](../public-docs/plugins/migration.md).
 

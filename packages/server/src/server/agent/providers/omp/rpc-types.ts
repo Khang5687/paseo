@@ -146,6 +146,28 @@ const OmpContextUsageSchema = z
   })
   .passthrough();
 
+export const OmpGoalSchema = z
+  .object({
+    id: z.string().optional(),
+    objective: z.string().optional(),
+    status: z.string().optional(),
+    tokenBudget: z.number().optional(),
+    tokensUsed: z.number().optional(),
+    timeUsedSeconds: z.number().optional(),
+    // OMP serializes these as epoch milliseconds; older builds sent ISO strings.
+    createdAt: z.union([z.string(), z.number()]).optional(),
+    updatedAt: z.union([z.string(), z.number()]).optional(),
+  })
+  .passthrough();
+export const OmpGoalModeStateSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    mode: z.string().optional(),
+    reason: z.string().optional(),
+    goal: OmpGoalSchema.optional(),
+  })
+  .passthrough();
+
 export const OmpSessionStateSchema = z
   .object({
     model: OmpModelSchema.nullable().optional(),
@@ -153,6 +175,7 @@ export const OmpSessionStateSchema = z
     isStreaming: z.boolean(),
     isCompacting: z.boolean(),
     hasPendingAsyncWork: z.boolean().optional(),
+    // OMP 18.4.11+: `isSettled` is false while a goal continuation is scheduled or admitted.
     isSettled: z.boolean().optional(),
     autoCompactionEnabled: z.boolean().optional(),
     fastModeEnabled: z.boolean().optional(),
@@ -164,6 +187,7 @@ export const OmpSessionStateSchema = z
     queuedMessageCount: z.number().int().nonnegative(),
     contextUsage: OmpContextUsageSchema.optional(),
     todoPhases: z.unknown().optional(),
+    goal: OmpGoalModeStateSchema.nullable().optional(),
   })
   .passthrough();
 
@@ -187,13 +211,23 @@ export const OmpSessionStatsSchema = z
   })
   .passthrough();
 
+const OmpSlashSubcommandSchema = z
+  .object({
+    name: z.string(),
+    description: z.string().optional(),
+    usage: z.string().optional(),
+  })
+  .passthrough();
+
 export const OmpRpcSlashCommandSchema = z
   .object({
     name: z.string(),
     description: z.string().optional(),
     source: z.string().optional(),
     sourceInfo: z.record(z.string(), z.unknown()).optional(),
+    aliases: z.array(z.string()).optional(),
     input: z.object({ hint: z.string().optional() }).passthrough().nullable().optional(),
+    subcommands: z.array(OmpSlashSubcommandSchema).optional(),
   })
   .passthrough();
 
@@ -383,26 +417,6 @@ export const OmpNoticeEventSchema = z
     source: z.string().optional(),
   })
   .passthrough();
-export const OmpGoalSchema = z
-  .object({
-    id: z.string().optional(),
-    objective: z.string().optional(),
-    status: z.string().optional(),
-    tokenBudget: z.number().optional(),
-    tokensUsed: z.number().optional(),
-    timeUsedSeconds: z.number().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
-  })
-  .passthrough();
-export const OmpGoalModeStateSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    mode: z.string().optional(),
-    reason: z.string().optional(),
-    goal: OmpGoalSchema.optional(),
-  })
-  .passthrough();
 export const OmpGoalUpdatedEventSchema = z
   .object({
     type: z.literal("goal_updated"),
@@ -454,12 +468,26 @@ export const OmpAutoCompactionEndEventSchema = z
     skipped: z.boolean().optional(),
   })
   .passthrough();
+export const OmpManualCompactionStartEventSchema = z
+  .object({ type: z.literal("manual_compaction_start"), mode: z.string().optional() })
+  .passthrough();
+export const OmpManualCompactionEndEventSchema = z
+  .object({
+    type: z.literal("manual_compaction_end"),
+    aborted: z.boolean().optional(),
+    skipped: z.boolean().optional(),
+    errorMessage: z.string().optional(),
+    result: z.unknown().optional(),
+  })
+  .passthrough();
 export const OmpAvailableCommandSchema = z
   .object({
     name: z.string(),
     description: z.string().optional(),
     source: z.string().optional(),
+    aliases: z.array(z.string()).optional(),
     input: z.object({ hint: z.string().optional() }).passthrough().nullable().optional(),
+    subcommands: z.array(OmpSlashSubcommandSchema).optional(),
   })
   .passthrough();
 export const OmpAvailableCommandsUpdateEventSchema = z
@@ -479,6 +507,7 @@ const OmpExtensionUiRequestSchema = z
     options: z.array(z.string()).optional(),
     optionDetails: z.unknown().optional(),
     placeholder: z.string().optional(),
+    prefill: z.string().optional(),
     url: z.string().optional(),
     launchUrl: z.string().optional(),
     instructions: z.string().optional(),
@@ -542,6 +571,8 @@ export const OmpRuntimeEventSchema = z.discriminatedUnion("type", [
   OmpRetryFallbackSucceededEventSchema,
   OmpAutoCompactionStartEventSchema,
   OmpAutoCompactionEndEventSchema,
+  OmpManualCompactionStartEventSchema,
+  OmpManualCompactionEndEventSchema,
   OmpAvailableCommandsUpdateEventSchema,
   OmpRpcHostToolCallRequestSchema,
   OmpRpcHostToolCancelRequestSchema,
@@ -572,6 +603,13 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
     customInstructions: z.string().optional(),
   }),
   z.object({ ...OmpCommandBase, type: z.literal("set_auto_compaction"), enabled: z.boolean() }),
+  z.object({
+    ...OmpCommandBase,
+    type: z.literal("goal"),
+    op: z.enum(["get", "create", "resume", "pause", "drop"]),
+    objective: z.string().optional(),
+    token_budget: z.number().optional(),
+  }),
   z.object({ ...OmpCommandBase, type: z.literal("abort") }),
   z.object({ ...OmpCommandBase, type: z.literal("get_state") }),
   z.object({
@@ -596,6 +634,7 @@ export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
   }),
   z.object({ ...OmpCommandBase, type: z.literal("get_session_stats") }),
   z.object({ ...OmpCommandBase, type: z.literal("get_available_commands") }),
+  z.object({ ...OmpCommandBase, type: z.literal("refresh_commands") }),
   z.object({
     ...OmpCommandBase,
     type: z.literal("set_subagent_subscription"),
@@ -650,6 +689,17 @@ export type OmpAgentMessage = z.infer<typeof OmpAgentMessageSchema>;
 export type OmpModel = z.infer<typeof OmpModelSchema>;
 export type OmpModelThinking = z.infer<typeof OmpModelThinkingSchema>;
 export type OmpSessionState = z.infer<typeof OmpSessionStateSchema>;
+export const OmpGoalCommandResultSchema = z.object({
+  goal: OmpGoalSchema.nullable(),
+  state: OmpGoalModeStateSchema.nullable(),
+});
+export type OmpGoalModeState = z.infer<typeof OmpGoalModeStateSchema>;
+export type OmpGoalAction =
+  | { op: "create"; objective: string; token_budget?: number }
+  | { op: "pause" }
+  | { op: "resume" }
+  | { op: "drop" }
+  | { op: "get" };
 export type OmpSessionStats = z.infer<typeof OmpSessionStatsSchema>;
 export type OmpRpcSlashCommand = z.infer<typeof OmpRpcSlashCommandSchema>;
 export type OmpAgentToolResult = z.infer<typeof OmpAgentToolResultSchema>;

@@ -1,0 +1,13 @@
+{
+  "pr": 21,
+  "title": "feat: disable models per provider in Provider settings",
+  "tests": [
+    "packages/app/src/provider-settings/internal/discovered-models.test.ts",
+    "packages/protocol/src/provider-snapshot-codec.test.ts",
+    "packages/server/src/server/agent/agent-manager.test.ts",
+    "packages/server/src/server/agent/mcp-server.test.ts",
+    "packages/server/src/server/agent/provider-snapshot-manager.test.ts",
+    "packages/server/src/server/daemon-config-store.test.ts",
+    "packages/server/src/server/persisted-config.test.ts"
+  ]
+}

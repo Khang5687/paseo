@@ -32,6 +32,7 @@ import { DEFAULT_MONO_FONT_STACK, DEFAULT_UI_FONT_STACK } from "@/styles/theme";
 import { isNative } from "@/constants/platform";
 import { settingsStyles } from "@/styles/settings";
 import { AppearancePreview } from "./appearance-preview";
+import { BackgroundSection } from "./background/background-section";
 
 // Subscribe the input leaf to numeric theme changes without resetting its editing state.
 const TextInput = withUnistyles(EditingTextInput, (theme) => {
@@ -415,6 +416,7 @@ export function AppearanceSection() {
           <ThemePicker />
         </View>
       </SettingsSection>
+      <BackgroundSection />
       <SettingsSection title={t("settings.appearance.fonts.title")}>
         <View style={settingsStyles.card}>
           {showInterfaceFontFamilyRow ? (

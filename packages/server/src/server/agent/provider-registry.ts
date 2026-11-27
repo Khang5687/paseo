@@ -18,6 +18,7 @@ import type {
   ResolveAgentCreateConfigResult,
   ResolveAgentDefaultModeInput,
   AgentSessionConfig,
+  McpServerConfig,
 } from "./agent-sdk-types.js";
 import {
   isDefaultAgentCreateConfigUnattended,
@@ -77,6 +78,8 @@ export interface ProviderDefinition extends AgentProviderDefinition {
    * generic ACP providers (which only extend the literal "acp" sentinel).
    */
   derivedFromProviderId: string | null;
+  /** MCP servers every agent of this provider launches with; an alias inherits its base's. */
+  mcpServers?: Record<string, McpServerConfig>;
   supportsExactMcpPreapproval: boolean;
   supportsLaunchWrap: boolean;
   applyToolPolicy: (
@@ -144,6 +147,7 @@ interface ResolvedProvider {
   enabled: boolean;
   derivedFromProviderId: string | null;
   providerOptions?: ProviderOptions;
+  mcpServers?: Record<string, McpServerConfig>;
   createBaseClient: (logger: Logger) => AgentClient;
   contract: ProviderContract;
 }
@@ -265,7 +269,9 @@ function getProviderClientFactory(provider: string): ProviderClientFactory {
   return factory;
 }
 
-function toRuntimeSettings(override?: ProviderOverride): ProviderRuntimeSettings | undefined {
+export function toRuntimeSettings(
+  override?: ProviderOverride,
+): ProviderRuntimeSettings | undefined {
   if (!override?.command && !override?.env && !override?.disallowedTools) {
     return undefined;
   }
@@ -282,7 +288,7 @@ function toRuntimeSettings(override?: ProviderOverride): ProviderRuntimeSettings
   };
 }
 
-function mergeRuntimeSettings(
+export function mergeRuntimeSettings(
   base: ProviderRuntimeSettings | undefined,
   override: ProviderRuntimeSettings | undefined,
 ): ProviderRuntimeSettings | undefined {
@@ -507,6 +513,58 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
   } satisfies ForwardedAgentSession;
 }
 
+/** Native-session lifecycle methods exist only on providers that implement them. */
+function forwardNativeSessionOperations(
+  inner: AgentClient,
+  provider: AgentProvider,
+): Pick<
+  AgentClient,
+  "archiveNativeSession" | "unarchiveNativeSession" | "forkNativeSession" | "discardNativeFork"
+> {
+  const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
+  const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  const forkNativeSession = inner.forkNativeSession?.bind(inner);
+  const discardNativeFork = inner.discardNativeFork?.bind(inner);
+  return {
+    archiveNativeSession: archiveNativeSession
+      ? async (handle) => await archiveNativeSession({ ...handle, provider: inner.provider })
+      : undefined,
+    unarchiveNativeSession: unarchiveNativeSession
+      ? async (handle) => await unarchiveNativeSession({ ...handle, provider: inner.provider })
+      : undefined,
+    forkNativeSession: forkNativeSession
+      ? async (handle) => {
+          const fork = await forkNativeSession({ ...handle, provider: inner.provider });
+          return { ...fork, handle: { ...fork.handle, provider } };
+        }
+      : undefined,
+    discardNativeFork: discardNativeFork
+      ? async (handle) => await discardNativeFork({ ...handle, provider: inner.provider })
+      : undefined,
+  };
+}
+
+function wrapForkSession(
+  provider: AgentProvider,
+  inner: AgentClient,
+  configuredDefaults: () => ProviderOptions | undefined,
+): AgentClient["forkSession"] {
+  const forkSession = inner.forkSession?.bind(inner);
+  if (!forkSession) {
+    return undefined;
+  }
+  return async (handle, input) => {
+    const forked = await forkSession(
+      { ...handle, provider: inner.provider },
+      {
+        ...input,
+        providerOptions: mergeProviderOptions(configuredDefaults(), input.providerOptions),
+      },
+    );
+    return { ...forked, persistence: { ...forked.persistence, provider } };
+  };
+}
+
 function wrapClientProvider(
   provider: AgentProvider,
   inner: AgentClient,
@@ -519,8 +577,6 @@ function wrapClientProvider(
   const listImportableSessions = inner.listImportableSessions?.bind(inner);
   const importSession = inner.importSession?.bind(inner);
   const listControls = inner.listControls?.bind(inner);
-  const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
-  const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
   const configuredModelIds = [...profileModels, ...additionalModels].map((model) => model.id);
   // Converted where it is used, so a malformed configured default fails the call that reads it
   // rather than the registry that holds every provider.
@@ -637,12 +693,8 @@ function wrapClientProvider(
           };
         }
       : undefined,
-    archiveNativeSession: archiveNativeSession
-      ? async (handle) => await archiveNativeSession({ ...handle, provider: inner.provider })
-      : undefined,
-    unarchiveNativeSession: unarchiveNativeSession
-      ? async (handle) => await unarchiveNativeSession({ ...handle, provider: inner.provider })
-      : undefined,
+    ...forwardNativeSessionOperations(inner, provider),
+    forkSession: wrapForkSession(provider, inner, configuredDefaults),
     resolveUsageLaunch: inner.resolveUsageLaunch?.bind(inner),
     requireLaunchWrap: inner.requireLaunchWrap?.bind(inner),
     getCatalogCacheKey: inner.getCatalogCacheKey?.bind(inner),
@@ -688,6 +740,7 @@ function createRegistryEntry(
     configuration,
     enabled: resolved.enabled,
     derivedFromProviderId: resolved.derivedFromProviderId,
+    mcpServers: resolved.mcpServers,
     supportsExactMcpPreapproval: resolved.contract.supportsExactMcpPreapproval,
     supportsLaunchWrap: resolved.contract.supportsLaunchWrap === true,
     applyToolPolicy: (config, toolPolicy) => {
@@ -791,6 +844,7 @@ function resolveRegisteredProvider(input: RegisteredProvider): ResolvedProvider 
     enabled: override?.enabled ?? definition.enabledByDefault ?? true,
     derivedFromProviderId: null,
     providerOptions: configuredProviderOptions(override),
+    mcpServers: override?.mcpServers,
     createBaseClient: (logger) => input.createClient(logger, runtimeSettings),
     contract,
   };
@@ -876,6 +930,7 @@ function addDerivedProviders(
         enabled: override.enabled !== false,
         derivedFromProviderId: null,
         providerOptions: configuredProviderOptions(override),
+        mcpServers: override.mcpServers,
         createBaseClient: (logger) => {
           const acpOptions = {
             logger,
@@ -921,6 +976,10 @@ function addDerivedProviders(
     const baseDefinition = baseProvider.definition;
     const baseFactory = getProviderClientFactory(baseProviderId);
     const providerOptions = configuredProviderOptions(override) ?? baseProvider.providerOptions;
+    const mcpServers =
+      baseProvider.mcpServers || override.mcpServers
+        ? { ...baseProvider.mcpServers, ...override.mcpServers }
+        : undefined;
 
     resolvedProviders.set(providerId, {
       definition: createDerivedDefinition(providerId, baseDefinition, override),
@@ -931,6 +990,7 @@ function addDerivedProviders(
       enabled: override.enabled !== false,
       derivedFromProviderId: baseProviderId,
       providerOptions,
+      mcpServers,
       createBaseClient: (logger) =>
         baseFactory(logger, mergedRuntimeSettings, {
           managedProcesses: options.managedProcesses,

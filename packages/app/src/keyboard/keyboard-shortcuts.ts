@@ -164,9 +164,13 @@ export const SHORTCUT_HELP_ROW_ORDER: Record<ShortcutSectionId, readonly string[
   workspaces: [
     "new-agent",
     "new-workspace",
+    "sidebar-project-jump-index",
     "workspace-jump-index",
     "workspace-prev",
     "workspace-next",
+    "workspace-recent",
+    "workspace-recent-back",
+    "workspace-waiting-next",
     "pin-workspace",
     "archive-workspace",
     "undo-archive-workspace",
@@ -224,10 +228,14 @@ const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "workspace-tab-target-changes": "workspace.tabs.actions.changes",
   "workspace-tab-target-files": "workspace.tabs.actions.files",
   "workspace-tab-close-current": "settings.shortcuts.help.closeCurrentTab",
+  "sidebar-project-jump-index": "settings.shortcuts.help.showProject",
   "workspace-jump-index": "settings.shortcuts.help.jumpToWorkspace",
   "workspace-tab-jump-index": "settings.shortcuts.help.jumpToTab",
   "workspace-prev": "settings.shortcuts.help.previousWorkspace",
   "workspace-next": "settings.shortcuts.help.nextWorkspace",
+  "workspace-recent": "settings.shortcuts.help.recentWorkspaces",
+  "workspace-recent-back": "settings.shortcuts.help.recentWorkspacesBack",
+  "workspace-waiting-next": "settings.shortcuts.help.nextWaitingWorkspace",
   "workspace-tab-prev": "settings.shortcuts.help.previousTab",
   "workspace-tab-next": "settings.shortcuts.help.nextTab",
   "workspace-pane-split-right": "settings.shortcuts.help.splitPaneRight",
@@ -569,59 +577,105 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     },
   },
 
-  // --- Workspace index jump ---
+  // --- Project strip jump ---
+  // The plain digit group picks a project in the sidebar's project strip by its
+  // position there. The strip order is one the user sets by dragging, so these
+  // keys keep meaning one project while the rows inside it move around.
   {
-    id: "workspace-navigate-index-cmd-digit-mac",
-    action: "workspace.navigate.index",
+    id: "sidebar-project-navigate-index-cmd-digit-mac",
+    action: "sidebar.project.navigate.index",
     combo: "Cmd+Digit",
+    when: { mac: true, desktopBindings: true, commandCenter: false },
+    payload: { type: "index" },
+    help: {
+      id: "sidebar-project-jump-index",
+      section: "workspaces",
+      label: "Show project",
+      defaultDisplayKeys: ["mod", "1-9"],
+    },
+  },
+  {
+    id: "sidebar-project-navigate-index-ctrl-digit-non-mac",
+    action: "sidebar.project.navigate.index",
+    combo: "Ctrl+Digit",
+    when: { mac: false, desktopBindings: true, commandCenter: false, terminal: false },
+    payload: { type: "index" },
+    help: {
+      id: "sidebar-project-jump-index",
+      section: "workspaces",
+      label: "Show project",
+      defaultDisplayKeys: ["mod", "1-9"],
+    },
+  },
+  {
+    id: "sidebar-project-navigate-index-alt-digit-web",
+    action: "sidebar.project.navigate.index",
+    combo: "Alt+Digit",
+    when: { desktopBindings: false, commandCenter: false },
+    payload: { type: "index" },
+    help: {
+      id: "sidebar-project-jump-index",
+      section: "workspaces",
+      label: "Show project",
+      defaultDisplayKeys: ["alt", "1-9"],
+    },
+  },
+
+  // --- Workspace index jump ---
+  // The project strip took the plain digit group, so the Nth visible row adds Alt.
+  {
+    id: "workspace-navigate-index-cmd-alt-digit-mac",
+    action: "workspace.navigate.index",
+    combo: "Cmd+Alt+Digit",
     when: { mac: true, desktopBindings: true, commandCenter: false },
     payload: { type: "index" },
     help: {
       id: "workspace-jump-index",
       section: "workspaces",
       label: "Jump to workspace",
-      defaultDisplayKeys: ["mod", "1-9"],
+      defaultDisplayKeys: ["mod", "alt", "1-9"],
     },
   },
   {
-    id: "workspace-navigate-index-ctrl-digit-non-mac",
+    id: "workspace-navigate-index-ctrl-alt-digit-non-mac",
     action: "workspace.navigate.index",
-    combo: "Ctrl+Digit",
+    combo: "Ctrl+Alt+Digit",
     when: { mac: false, desktopBindings: true, commandCenter: false, terminal: false },
     payload: { type: "index" },
     help: {
       id: "workspace-jump-index",
       section: "workspaces",
       label: "Jump to workspace",
-      defaultDisplayKeys: ["mod", "1-9"],
+      defaultDisplayKeys: ["mod", "alt", "1-9"],
     },
   },
   {
-    id: "workspace-navigate-index-alt-digit-web",
+    id: "workspace-navigate-index-ctrl-alt-digit-web",
     action: "workspace.navigate.index",
-    combo: "Alt+Digit",
+    combo: "Ctrl+Alt+Digit",
     when: { desktopBindings: false, commandCenter: false },
     payload: { type: "index" },
     help: {
       id: "workspace-jump-index",
       section: "workspaces",
       label: "Jump to workspace",
-      defaultDisplayKeys: ["alt", "1-9"],
+      defaultDisplayKeys: ["ctrl", "alt", "1-9"],
     },
   },
 
   // --- Tab index jump ---
+  // Cmd+Alt+Digit went to the row jump on Mac desktop; tabs take the free Ctrl group.
   {
-    id: "workspace-tab-navigate-index-cmd-alt-digit-mac-desktop",
+    id: "workspace-tab-navigate-index-ctrl-digit-mac-desktop",
     action: "workspace.tab.navigate.index",
-    combo: "Cmd+Alt+Digit",
+    combo: "Ctrl+Digit",
     when: { mac: true, desktopBindings: true, commandCenter: false },
     payload: { type: "index" },
     help: {
       id: "workspace-tab-jump-index",
       section: "tabs-panes",
       label: "Jump to tab",
-      defaultDisplayKeys: ["mod", "alt", "1-9"],
+      defaultDisplayKeys: ["ctrl", "1-9"],
     },
   },
   {
@@ -723,6 +777,96 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       section: "workspaces",
       label: "Next workspace",
     },
+  },
+
+  // --- Recent workspaces walk ---
+  // Held like the app switcher: each press steps through workspaces, newest visit first, and
+  // letting go of the modifier opens the one highlighted. Windows and Linux reserve Alt+Tab for
+  // the window switcher, so their desktop app uses Ctrl+Tab.
+  {
+    id: "workspace-recent-walk-alt-tab-mac",
+    action: "workspace.recent.walk",
+    combo: "Alt+Tab",
+    when: { mac: true, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: 1 },
+    help: { id: "workspace-recent", section: "workspaces", label: "Recent workspaces" },
+  },
+  {
+    id: "workspace-recent-walk-alt-shift-tab-mac",
+    action: "workspace.recent.walk",
+    combo: "Alt+Shift+Tab",
+    when: { mac: true, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: -1 },
+    help: {
+      id: "workspace-recent-back",
+      section: "workspaces",
+      label: "Recent workspaces, backwards",
+    },
+  },
+  {
+    id: "workspace-recent-walk-ctrl-tab-non-mac",
+    action: "workspace.recent.walk",
+    combo: "Ctrl+Tab",
+    when: { mac: false, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: 1 },
+    help: { id: "workspace-recent", section: "workspaces", label: "Recent workspaces" },
+  },
+  {
+    id: "workspace-recent-walk-ctrl-shift-tab-non-mac",
+    action: "workspace.recent.walk",
+    combo: "Ctrl+Shift+Tab",
+    when: { mac: false, desktopBindings: true, commandCenter: false },
+    payload: { type: "delta", delta: -1 },
+    help: {
+      id: "workspace-recent-back",
+      section: "workspaces",
+      label: "Recent workspaces, backwards",
+    },
+  },
+  {
+    id: "workspace-recent-walk-alt-tab-web",
+    action: "workspace.recent.walk",
+    combo: "Alt+Tab",
+    when: { desktopBindings: false, commandCenter: false },
+    payload: { type: "delta", delta: 1 },
+    help: { id: "workspace-recent", section: "workspaces", label: "Recent workspaces" },
+  },
+  {
+    id: "workspace-recent-walk-alt-shift-tab-web",
+    action: "workspace.recent.walk",
+    combo: "Alt+Shift+Tab",
+    when: { desktopBindings: false, commandCenter: false },
+    payload: { type: "delta", delta: -1 },
+    help: {
+      id: "workspace-recent-back",
+      section: "workspaces",
+      label: "Recent workspaces, backwards",
+    },
+  },
+
+  // --- Next workspace waiting on you ---
+  // The browser keeps Cmd/Ctrl+J for downloads, so web uses Alt+J. A terminal reads Ctrl+J as a
+  // newline, so the Windows and Linux binding leaves terminals alone.
+  {
+    id: "workspace-waiting-next-cmd-j-mac",
+    action: "workspace.waiting.next",
+    combo: "Cmd+J",
+    when: { mac: true, desktopBindings: true, commandCenter: false },
+    help: { id: "workspace-waiting-next", section: "workspaces", label: "Next waiting workspace" },
+  },
+  {
+    id: "workspace-waiting-next-ctrl-j-non-mac",
+    action: "workspace.waiting.next",
+    combo: "Ctrl+J",
+    when: { mac: false, desktopBindings: true, commandCenter: false, terminal: false },
+    help: { id: "workspace-waiting-next", section: "workspaces", label: "Next waiting workspace" },
+  },
+  {
+    id: "workspace-waiting-next-alt-j-web",
+    action: "workspace.waiting.next",
+    combo: "Alt+J",
+    when: { desktopBindings: false, commandCenter: false },
+    help: { id: "workspace-waiting-next", section: "workspaces", label: "Next waiting workspace" },
   },
 
   // --- Tab relative navigation ---
@@ -1462,6 +1606,9 @@ function matchesCombo(combo: KeyCombo, event: KeyboardShortcutInput, isMac: bool
   if (combo.repeat === false && event.repeat) return false;
 
   if (combo.code === "Digit") {
+    // Windows reports AltGr as Ctrl+Alt. When that chord typed a character ("{" from AltGr+7 on
+    // a German layout), the user is writing text, so the Ctrl+Alt row jump must not take it.
+    if (!isMac && event.ctrlKey && event.altKey && /^[^0-9]$/u.test(event.key)) return false;
     return parseDigit(event) !== null;
   }
   return matchesKeyOrCode(combo, event);
@@ -1797,28 +1944,42 @@ export function resolveShortcutKeysForAction(
   return chordStringToShortcutKeys(override);
 }
 
+/** The modifier keys a number-badge group needs held, resolved for one runtime. */
+export interface ShortcutBadgeModifiers {
+  meta: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+}
+
+/** The digit actions whose 1-9 targets show number badges while their modifiers are held. */
+export type ShortcutBadgeTarget = "project" | "workspace";
+
+const BADGE_TARGET_ACTIONS: Record<ShortcutBadgeTarget, KeyboardActionId> = {
+  project: "sidebar.project.navigate.index",
+  workspace: "workspace.navigate.index",
+};
+
 /**
- * The `KeyboardEvent.key` whose hold reveals the sidebar workspace-jump number
- * badges, or `null` when no badges should appear.
+ * The modifiers whose hold reveals the number badges for one digit action, or
+ * `null` when no badges should appear.
  *
- * It must match the modifier of the active `workspace.navigate.index` binding
- * for this runtime, otherwise the badges appear for a modifier that does not
- * actually jump. That binding is parameterized — its key is the `Digit`
- * wildcard, which stands for any of 1-9 — so the badges are only honest when
- * the effective binding is still a single combo built on that wildcard.
- * Anything else (unassigned, rebound to one concrete digit, or a multi-step
- * chord) yields `null`, because the 1-9 badges would be advertising more than
- * the shortcut delivers.
+ * They must match the active binding of that action for this runtime, otherwise
+ * the badges appear for keys that do not jump. The binding is parameterized —
+ * its key is the `Digit` wildcard, which stands for any of 1-9 — so the badges
+ * are only honest when the effective binding is still a single combo built on
+ * that wildcard. Anything else (unassigned, rebound to one concrete digit, or a
+ * multi-step chord) yields `null`, because the 1-9 badges would be advertising
+ * more than the shortcut delivers.
  */
-export function getWorkspaceIndexJumpModifierKey(
+export function getIndexJumpBadgeModifiers(
+  target: ShortcutBadgeTarget,
   platform: { isMac: boolean; usesDesktopBindings: boolean },
   bindings: readonly ParsedShortcutBinding[] = DEFAULT_BINDINGS,
-): "Alt" | "Meta" | "Control" | null {
+): ShortcutBadgeModifiers | null {
+  const action = BADGE_TARGET_ACTIONS[target];
   const binding = bindings.find(function (candidate) {
-    return (
-      candidate.action === "workspace.navigate.index" &&
-      helpMatchesPlatform(candidate.when, platform)
-    );
+    return candidate.action === action && helpMatchesPlatform(candidate.when, platform);
   });
   if (!binding || binding.parsedChord.length !== 1) {
     return null;
@@ -1828,17 +1989,40 @@ export function getWorkspaceIndexJumpModifierKey(
   if (!combo || combo.code !== "Digit") {
     return null;
   }
-  // Exactly one modifier: holding it is what reveals the badges, so a combo
-  // needing a second one would show badges the user cannot act on.
-  const modifiers = [combo.mod, combo.meta, combo.ctrl, combo.alt, combo.shift];
-  if (modifiers.filter(Boolean).length !== 1) {
+  const modifiers = {
+    meta: Boolean(combo.meta || (combo.mod && platform.isMac)),
+    ctrl: Boolean(combo.ctrl || (combo.mod && !platform.isMac)),
+    alt: Boolean(combo.alt),
+    shift: Boolean(combo.shift),
+  };
+  // A bare digit has nothing to hold, so nothing could reveal its badges.
+  if (!modifiers.meta && !modifiers.ctrl && !modifiers.alt && !modifiers.shift) {
     return null;
   }
+  return modifiers;
+}
 
-  if (combo.mod) return platform.isMac ? "Meta" : "Control";
-  if (combo.meta) return "Meta";
-  if (combo.ctrl) return "Control";
-  if (combo.alt) return "Alt";
+/**
+ * Which number badges the held modifiers reveal. The held set must equal a
+ * group's modifiers exactly: Cmd alone shows the project strip's numbers, and
+ * adding Alt switches to the workspace rows' numbers.
+ */
+export function resolveShortcutBadgeTarget(
+  held: ShortcutBadgeModifiers,
+  groups: Record<ShortcutBadgeTarget, ShortcutBadgeModifiers | null>,
+): ShortcutBadgeTarget | null {
+  for (const target of ["project", "workspace"] as const) {
+    const modifiers = groups[target];
+    if (
+      modifiers &&
+      modifiers.meta === held.meta &&
+      modifiers.ctrl === held.ctrl &&
+      modifiers.alt === held.alt &&
+      modifiers.shift === held.shift
+    ) {
+      return target;
+    }
+  }
   return null;
 }
 

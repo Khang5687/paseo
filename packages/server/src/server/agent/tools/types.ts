@@ -34,6 +34,8 @@ export interface PaseoToolConfig {
 export interface PaseoToolDefinition extends PaseoToolConfig {
   name: string;
   description: string;
+  /** Providers that can mount tools on demand (OMP) keep this one in the model's tool list. */
+  alwaysLoaded?: boolean;
   handler: (input: unknown, context: PaseoToolExecutionContext) => Promise<PaseoToolResult>;
 }
 

@@ -1,0 +1,6 @@
+{
+  "pr": 91,
+  "title": "fix(app): anchor the context window hover card to its ring",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/context-window-meter.spec.ts"]
+}

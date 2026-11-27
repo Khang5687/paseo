@@ -1,0 +1,5 @@
+{
+  "pr": 38,
+  "title": "feat(plugin): emit Claude routing metadata on usage reports",
+  "tests": ["plugins/claude-usage-source/server/usage.test.ts"]
+}

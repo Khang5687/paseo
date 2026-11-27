@@ -88,6 +88,44 @@ describe("desktop attachment store", () => {
     });
   });
 
+  it("writes a big file to the desktop in 4 MB steps and abandons it cleanly", async () => {
+    const fake = createFakeDesktopAttachmentBridge();
+    const store = createDesktopAttachmentStore(fake.bridge);
+    const MB = 1024 * 1024;
+
+    const writer = await store.openWriter({
+      id: "att_big",
+      mimeType: "video/mp4",
+      fileName: "clip.mp4",
+    });
+    for (let index = 0; index < 5; index += 1) {
+      await writer.write(new Uint8Array(MB).fill(index + 1));
+    }
+    const attachment = await writer.finish();
+
+    expect(fake.savedEntries).toHaveLength(1);
+    const [entry] = fake.savedEntries;
+    expect(entry).toMatchObject({ path: "/managed/att_big.mp4", byteSize: 5 * MB });
+    expect(entry?.source.kind === "bytes" && entry.source.bytes[0]).toBe(1);
+    expect(entry?.source.kind === "bytes" && entry.source.bytes[5 * MB - 1]).toBe(5);
+    expect(attachment).toMatchObject({
+      id: "att_big",
+      mimeType: "video/mp4",
+      storageType: "desktop-file",
+      storageKey: "/managed/att_big.mp4",
+      byteSize: 5 * MB,
+    });
+
+    const abandoned = await store.openWriter({
+      id: "att_stop",
+      mimeType: "video/mp4",
+      fileName: "stop.mp4",
+    });
+    await abandoned.write(new Uint8Array(5 * MB));
+    await abandoned.abort();
+    expect(fake.deletedPaths).toEqual(["/managed/att_stop.mp4"]);
+  });
+
   it("delegates encode/preview/delete/gc to desktop command path", async () => {
     const fake = createFakeDesktopAttachmentBridge();
     const store = createDesktopAttachmentStore(fake.bridge);

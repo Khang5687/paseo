@@ -52,6 +52,7 @@ export function createWebSocketTransportFactory(factory: WebSocketFactory): Daem
         // no-op
       }
     }
+    const sendProgressHandlers = new Set<() => void>();
     return {
       supportsDrain: factory.supportsDrain !== false,
       send: (data) => {
@@ -59,14 +60,18 @@ export function createWebSocketTransportFactory(factory: WebSocketFactory): Daem
           throw new Error(`WebSocket not open (readyState=${ws.readyState})`);
         }
         ws.send(data);
-        if ((ws.bufferedAmount ?? 0) > 1024 * 1024) {
+        let buffered = ws.bufferedAmount ?? 0;
+        if (buffered > 1024 * 1024) {
           return new Promise<void>((resolve, reject) => {
             const drain = () => {
               if (ws.readyState !== 1) {
                 reject(new Error("WebSocket closed while draining"));
                 return;
               }
-              if ((ws.bufferedAmount ?? 0) <= 1024 * 1024) {
+              const remaining = ws.bufferedAmount ?? 0;
+              if (remaining < buffered) for (const handler of sendProgressHandlers) handler();
+              buffered = remaining;
+              if (remaining <= 1024 * 1024) {
                 resolve();
                 return;
               }
@@ -75,6 +80,10 @@ export function createWebSocketTransportFactory(factory: WebSocketFactory): Daem
             drain();
           });
         }
+      },
+      onSendProgress: (handler) => {
+        sendProgressHandlers.add(handler);
+        return () => sendProgressHandlers.delete(handler);
       },
       close: (code?: number, reason?: string) => {
         // Node's `ws` may emit an `error` when a connecting socket is closed before the

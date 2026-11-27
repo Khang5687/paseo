@@ -1,0 +1,6 @@
+{
+  "pr": 42,
+  "title": "test(server): synthetic end-to-end acceptance for OMP global account routing",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
+  "tests": ["packages/server/src/server/account-routing/routing.acceptance.test.ts"]
+}

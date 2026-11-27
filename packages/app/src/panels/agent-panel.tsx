@@ -2,6 +2,7 @@ import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { isUnseenAgentLabels } from "@getpaseo/protocol/agent-labels";
 import type { TFunction } from "i18next";
 import { SquarePen } from "lucide-react-native";
 import React, {
@@ -31,6 +32,7 @@ import { RetainedChatContent } from "./retained-chat-content";
 import { ChatTerminalDrawerHost } from "@/terminal-drawer/chat-terminal-drawer";
 import { Composer } from "@/composer";
 import { AgentCommandsProvider } from "@/agent-commands";
+import { CodeRunComposerProvider } from "@/code-run/scope";
 import {
   useComposerEditingSession,
   useComposerFullscreen,
@@ -57,7 +59,13 @@ import { useWorkspaceAttachmentScopeKey } from "@/attachments/workspace-attachme
 import { COMPACT_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
 import { useAgentAttentionClear } from "@/hooks/use-agent-attention-clear";
-import { useAgentInputDraft, type AgentInputDraft } from "@/composer/draft/input-draft";
+import {
+  useAgentInputDraft,
+  type AgentInputDraft,
+  type AgentInputDraftWithSync,
+} from "@/composer/draft/input-draft";
+import { useAgentDraftSync } from "@/composer/draft/use-agent-draft-sync";
+import { DraftHistoryControl } from "@/composer/draft/draft-history-control";
 import {
   type AgentScreenAgent,
   type AgentScreenContinuity,
@@ -66,7 +74,10 @@ import {
   useAgentScreenStateMachine,
   type AgentScreenReadySyncState,
 } from "@/hooks/use-agent-screen-state-machine";
+import { confirmArchive } from "@/utils/archive-confirm";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
+import { useForkAgent } from "@/hooks/use-fork-agent";
+import { useToast } from "@/contexts/toast-context";
 import { useWorkspaceArchiveUndoRestoringAgent } from "@/workspace/archive-undo";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useContainerWidthBelow } from "@/hooks/use-container-width";
@@ -93,6 +104,7 @@ import {
 import { WorkspaceDraftComposer } from "@/composer/draft/workspace-tab";
 import { type DraftConversation, useDraftTimeline } from "@/composer/draft/timeline";
 import { AgentTracks } from "@/panels/agent-tracks";
+import { ComposerStatusLine } from "@/composer/status-line";
 import { OverlayDismissalScope } from "@/components/ui/overlay-dismissal";
 import { ParentAgentCallout, useParentAgentId } from "@/subagents/parent";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
@@ -138,6 +150,7 @@ interface ChatAgentSelectedState extends ChatAgentStateShape {
   archivedAt: Date | null;
   requiresAttention: boolean;
   attentionReason: Agent["attentionReason"] | null;
+  isUnseen: boolean;
 }
 
 function resolveChatAgentFromSession(
@@ -168,6 +181,7 @@ const EMPTY_CHAT_AGENT_STATE: ChatAgentSelectedState = {
   archivedAt: null,
   requiresAttention: false,
   attentionReason: null,
+  isUnseen: false,
 };
 
 function selectChatAgentState(
@@ -195,6 +209,7 @@ function selectChatAgentState(
     archivedAt: agent.archivedAt ?? null,
     requiresAttention: agent.requiresAttention ?? false,
     attentionReason: agent.attentionReason ?? null,
+    isUnseen: isUnseenAgentLabels(agent.labels),
   };
 }
 
@@ -799,6 +814,7 @@ function ChatAgentContent({
     isAgentDataReady: agentHistorySyncGeneration === historySyncGeneration,
     requiresAttention: agentState.requiresAttention,
     attentionReason: agentState.attentionReason,
+    isUnseen: agentState.isUnseen,
     isScreenFocused: isPaneFocused,
     focusRequest,
     onError: reportAttentionError,
@@ -1057,6 +1073,38 @@ function ChatAgentContent({
   );
 }
 
+function useDraftHistoryControl({
+  serverId,
+  agentId,
+  draftKey,
+  composerActive,
+  isPaneFocused,
+  draft,
+}: {
+  serverId: string;
+  agentId: string;
+  draftKey: string;
+  composerActive: boolean;
+  isPaneFocused: boolean;
+  draft: Pick<AgentInputDraftWithSync, "isHydrated" | "showRemoteText">;
+}) {
+  const draftSync = useAgentDraftSync({
+    serverId,
+    agentId,
+    draftKey,
+    enabled: composerActive && isPaneFocused && draft.isHydrated,
+    showRemoteText: draft.showRemoteText,
+  });
+  return useMemo(
+    () =>
+      draftSync.history.length > 0 ? (
+        <DraftHistoryControl history={draftSync.history} onRestore={draftSync.restore} />
+      ) : null,
+    [draftSync.history, draftSync.restore],
+  );
+}
+
+// oxlint-disable-next-line complexity
 const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   serverId,
   workspaceId,
@@ -1120,6 +1168,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   // The dock lays out fullscreen for the same session the composer edits in.
   const composerEditingSession = useComposerEditingSession("chat");
   const isComposerFullscreen = useComposerFullscreen(composerEditingSession);
+
   const isWorkspaceRestoring = useWorkspaceArchiveUndoRestoringAgent({
     serverId,
     workspaceId,
@@ -1145,12 +1194,35 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   const parentAgentId = useParentAgentId(serverId, agentId);
   // With a composer the parent is a pill above it; without one, the box takes the composer's place.
   const parentPillAgentId = showsComposer ? parentAgentId : null;
-  const rawAgentInputDraft = useAgentInputDraft({
-    draftKey: buildDraftStoreKey({
-      serverId,
-      agentId,
-    }),
+  const agentDraftKey = buildDraftStoreKey({ serverId, agentId });
+  const rawAgentInputDraft = useAgentInputDraft({ draftKey: agentDraftKey });
+  const draftHistoryControl = useDraftHistoryControl({
+    serverId,
+    agentId,
+    draftKey: agentDraftKey,
+    composerActive: showsComposer && hasActiveComposer,
+    isPaneFocused,
+    draft: rawAgentInputDraft,
   });
+  // On the phone the tracks and the draft history share one line on the composer's top edge
+  // instead of floating over the transcript in two rows.
+  const tracksInStatusLine = useIsCompactFormFactor() && hasAgentComposer;
+  const composerTopAccessory = useMemo(
+    () =>
+      tracksInStatusLine ? (
+        <ComposerStatusLine trailing={draftHistoryControl}>
+          <AgentTracks
+            serverId={serverId}
+            workspaceId={workspaceId}
+            agentId={agentId}
+            parentAgentId={parentPillAgentId}
+          />
+        </ComposerStatusLine>
+      ) : (
+        draftHistoryControl
+      ),
+    [agentId, draftHistoryControl, parentPillAgentId, serverId, tracksInStatusLine, workspaceId],
+  );
   // Stabilize the agentInputDraft object identity so that memo(AgentComposerSection) can bail out
   // when only toast state changes (which does not affect any draft field).
   const {
@@ -1211,6 +1283,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
         onAttentionPromptSend={onAttentionPromptSend}
         onComposerHeightChange={handleComposerHeightChange}
         onMessageSent={handleMessageSent}
+        composerTopAccessory={composerTopAccessory}
       />
     </RenderProfile>
   ) : (
@@ -1251,12 +1324,12 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
             !showHistorySyncError
           }
           revealInitialHistory={hasCachedHistory || showHistorySyncError}
-          hasActiveComposer={hasActiveComposer}
+          hasFloatingTracks={hasActiveComposer && !tracksInStatusLine}
           toast={toastApi}
           onOpenWorkspaceFile={onOpenWorkspaceFile}
         />
       </RenderProfile>
-      {hasActiveComposer && !draft ? (
+      {hasActiveComposer && !draft && !tracksInStatusLine ? (
         <AgentTracks
           serverId={serverId}
           workspaceId={workspaceId}
@@ -1305,6 +1378,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     <RewindComposerRestoreProvider
       textSource={agentInputDraft.textSource}
       setText={agentInputDraft.replaceText}
+      setAttachments={agentInputDraft.setAttachments}
       onRewindComplete={handleRewindComplete}
     >
       {hasAgentComposer ? (
@@ -1358,7 +1432,9 @@ function wrapAgentCommandProvider({
       editingSession={editingSession}
       enabled={enabled}
     >
-      {children}
+      <CodeRunComposerProvider editingSession={enabled ? editingSession : null}>
+        {children}
+      </CodeRunComposerProvider>
     </AgentCommandsProvider>
   );
 }
@@ -1435,7 +1511,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
   hasAppliedAuthoritativeHistory,
   isInitialHistoryLoading,
   revealInitialHistory,
-  hasActiveComposer,
+  hasFloatingTracks,
   toast,
   onOpenWorkspaceFile,
 }: {
@@ -1448,17 +1524,18 @@ const AgentStreamSection = memo(function AgentStreamSection({
   hasAppliedAuthoritativeHistory: boolean;
   isInitialHistoryLoading: boolean;
   revealInitialHistory: boolean;
-  hasActiveComposer: boolean;
+  /** The track bar floats over the transcript's foot, so the transcript leaves it room. */
+  hasFloatingTracks: boolean;
   toast: ReturnType<typeof useToastHost>["api"];
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const isCompactFormFactor = useIsCompactFormFactor();
   // The track bar's space is reserved whenever the bar is mounted, pills or not: pills come and go
   // every turn, and the transcript must not jump with them.
-  const bottomOverlayTailClearance = hasActiveComposer
+  const bottomOverlayTailClearance = hasFloatingTracks
     ? resolveComposerTrackTailClearance(isCompactFormFactor)
     : 0;
-  const bottomOverlayControlClearance = hasActiveComposer
+  const bottomOverlayControlClearance = hasFloatingTracks
     ? resolveComposerTrackControlClearance(isCompactFormFactor)
     : 0;
   const streamItemsRaw = useAgentStreamTail(serverId, agentId);
@@ -1603,6 +1680,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
   onAttentionPromptSend,
   onComposerHeightChange,
   onMessageSent,
+  composerTopAccessory,
 }: {
   agentId?: string;
   serverId: string;
@@ -1618,6 +1696,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
   onAttentionPromptSend: () => void;
   onComposerHeightChange: (height: number) => void;
   onMessageSent: () => void;
+  composerTopAccessory: ReactNode;
 }) {
   if (!agentId) {
     return null;
@@ -1648,6 +1727,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
       onAttentionPromptSend={onAttentionPromptSend}
       onComposerHeightChange={onComposerHeightChange}
       onMessageSent={onMessageSent}
+      composerTopAccessory={composerTopAccessory}
     />
   );
 });
@@ -1664,6 +1744,7 @@ function ActiveAgentComposer({
   onAttentionPromptSend,
   onComposerHeightChange,
   onMessageSent,
+  composerTopAccessory,
 }: {
   agentId: string;
   serverId: string;
@@ -1676,6 +1757,7 @@ function ActiveAgentComposer({
   onAttentionPromptSend: () => void;
   onComposerHeightChange: (height: number) => void;
   onMessageSent: () => void;
+  composerTopAccessory: ReactNode;
 }) {
   const isCompactFormFactor = useIsCompactFormFactor();
   const { onLayout: onInputAreaLayout, isBelow: isCompactComposerLayout } = useContainerWidthBelow(
@@ -1686,6 +1768,8 @@ function ActiveAgentComposer({
   const openInSidePane = useSettings((settings) => settings.openInSidePane);
   const { workspaceId, tabId, retargetCurrentTab } = paneContext;
   const { archiveAgent } = useArchiveAgent();
+  const toast = useToast();
+  const forkAgent = useForkAgent({ serverId, toast });
   const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
   const hideWorkspaceAgent = useWorkspaceLayoutStore((state) => state.hideAgent);
   const unpinWorkspaceAgent = useWorkspaceLayoutStore((state) => state.unpinAgent);
@@ -1719,6 +1803,15 @@ function ActiveAgentComposer({
         throw new Error("Agent not found");
       }
 
+      if (command.kind === "fork-agent") {
+        await forkAgent({ agentId, agent, workspaceId, target: "tab" });
+        return;
+      }
+
+      if (!(await confirmArchive({ subject: "agent", name: agent.title }))) {
+        return;
+      }
+
       const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
       if (workspaceKey) {
         unpinWorkspaceAgent(workspaceKey, agentId);
@@ -1741,6 +1834,7 @@ function ActiveAgentComposer({
       agentId,
       archiveAgent,
       closeWorkspaceTab,
+      forkAgent,
       hideWorkspaceAgent,
       retargetCurrentTab,
       serverId,
@@ -1777,6 +1871,7 @@ function ActiveAgentComposer({
         onMessageSent={onMessageSent}
         onClientSlashCommand={handleClientSlashCommand}
         isCompactLayout={isCompactComposerLayout}
+        topAccessory={composerTopAccessory}
       />
     </View>
   );
@@ -1868,11 +1963,11 @@ const animatedStaticStyles = RNStyleSheet.create({
 const styles = StyleSheet.create((theme) => ({
   root: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   contentContainer: {
     flex: 1,

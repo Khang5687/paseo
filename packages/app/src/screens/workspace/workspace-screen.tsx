@@ -11,6 +11,7 @@ import {
   type InlinePathTarget,
 } from "@/assistant-file-links";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
+import { useCopyAgentId } from "@/hooks/use-copy-agent-id";
 import { useWindowLayout, resolveWorkspaceActionPlacement } from "@/window-layout";
 import { revealWorkspaceTab } from "@/workspace-tabs/navigation";
 import { ExplorerSidebarDock } from "@/screens/workspace/explorer-sidebar";
@@ -206,6 +207,7 @@ import {
   classifyBulkClosableTabs,
   closeBulkWorkspaceTabs,
 } from "@/screens/workspace/workspace-bulk-close";
+import { confirmArchiveAgentTab } from "@/utils/archive-confirm";
 import { resolveCloseAgentTabPolicy } from "@/subagents";
 import {
   getPanelInstanceAttributes,
@@ -222,6 +224,8 @@ import {
   WorkspaceHeaderMenuMobile,
 } from "@/screens/workspace/workspace-header-menu";
 import { PluginHeaderButtons } from "@/plugins";
+import { useAgentTaskUrl } from "@/screens/workspace/agent-task-link";
+import { AgentTaskLinkButton } from "@/screens/workspace/agent-task-link-button";
 import {
   createWorkspaceFileTabTarget,
   normalizeWorkspaceFileLocation,
@@ -2014,19 +2018,13 @@ function WorkspaceScreenContent({
         const agent =
           useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
         let closePolicy = resolveCloseAgentTabPolicy(agent);
-        const isRunning = agent?.status === "running";
 
-        if (isRunning && closePolicy.kind === "archive-on-close") {
-          const confirmed = await confirmDialog({
-            title: t("workspace.tabs.confirmations.archiveRunningAgentTitle"),
-            message: t("workspace.tabs.confirmations.archiveRunningAgentMessage"),
-            confirmLabel: t("workspace.tabs.confirmations.archive"),
-            cancelLabel: t("workspace.tabs.confirmations.cancel"),
-            destructive: true,
-          });
-          if (!confirmed) {
-            return;
-          }
+        if (
+          closePolicy.kind === "archive-on-close" &&
+          !agent?.archivedAt &&
+          !(await confirmArchiveAgentTab(agent))
+        ) {
+          return;
         }
 
         if (closePolicy.kind === "layout-only") {
@@ -2146,18 +2144,7 @@ function WorkspaceScreenContent({
     ],
   );
 
-  const handleCopyAgentId = useCallback(
-    async (agentId: string) => {
-      if (!agentId) return;
-      try {
-        await Clipboard.setStringAsync(agentId);
-        toast.copied(t("workspace.tabs.toasts.agentIdCopiedLabel"));
-      } catch {
-        toast.error(t("workspace.tabs.toasts.copyFailed"));
-      }
-    },
-    [toast, t],
-  );
+  const handleCopyAgentId = useCopyAgentId();
 
   const handleCopyTerminalId = useCallback(
     async (terminalId: string) => {
@@ -3245,6 +3232,7 @@ function WorkspaceScreenContent({
     workspaceKey: persistenceKey,
   });
 
+  const agentTaskUrl = useAgentTaskUrl(normalizedServerId, activeTabDescriptor);
   const explorerControls = useWorkspaceExplorerControls({
     hasWorkspace: !!workspaceDirectory,
     compact: isMobile,
@@ -3277,6 +3265,7 @@ function WorkspaceScreenContent({
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
+        {agentTaskUrl ? <AgentTaskLinkButton url={agentTaskUrl} /> : null}
         <PluginHeaderButtons serverId={normalizedServerId} workspaceId={normalizedWorkspaceId} />
         {workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
@@ -3307,6 +3296,7 @@ function WorkspaceScreenContent({
       </View>
     ),
     [
+      agentTaskUrl,
       chatTerminalToggle,
       workspaceDescriptor,
       normalizedServerId,
@@ -3485,6 +3475,7 @@ function WorkspaceScreenContent({
             normalizedServerId={normalizedServerId}
             normalizedWorkspaceId={normalizedWorkspaceId}
             scripts={compactHeaderScripts}
+            taskUrl={agentTaskUrl}
             currentBranchName={currentBranchName}
             showWorkspaceSetup={showWorkspaceSetup}
             showCreateBrowserTab={showCreateBrowserTab}
@@ -3502,6 +3493,7 @@ function WorkspaceScreenContent({
       );
     },
     [
+      agentTaskUrl,
       renderWorkspaceTabSwitcher,
       explorerControls.inDesktopTitlebar,
       compactHeaderActions,
@@ -3968,10 +3960,10 @@ function WorkspaceMarkdownLinks({
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   containerWorkspaceBackground: {
-    backgroundColor: theme.colors.surfaceWorkspace,
+    backgroundColor: theme.colors.canvasWorkspace,
   },
   threePaneRow: {
     // Keep the Explorer overlay below the workspace sheet host on web as well as native.
@@ -4078,7 +4070,7 @@ const styles = StyleSheet.create((theme) => ({
   tabsContainer: {
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -4162,7 +4154,7 @@ const styles = StyleSheet.create((theme) => ({
   content: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
     position: "relative",
   },
   mobileMountedTabSlot: {
@@ -4171,7 +4163,7 @@ const styles = StyleSheet.create((theme) => ({
   contentPlaceholder: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.canvas,
   },
   postRestoreOverlayHost: {
     flex: 1,

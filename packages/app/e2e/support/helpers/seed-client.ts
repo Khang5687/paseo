@@ -14,6 +14,7 @@ export interface SeedWorkspaceDescriptor {
   workspaceDirectory: string;
   diffStat: { additions: number; deletions: number } | null;
   labels?: string[];
+  background?: boolean;
 }
 
 interface SeedProjectDescriptor {
@@ -51,11 +52,18 @@ export interface SeedDaemonClient {
   }>;
   removeProject(projectId: string): Promise<{ removedWorkspaceIds: string[] }>;
   renameProject(projectId: string, customName: string | null): Promise<void>;
-  fetchWorkspaces(options?: { filter?: { projectId?: string } }): Promise<{
+  fetchWorkspaces(options?: {
+    filter?: { projectId?: string };
+    includeBackground?: boolean;
+  }): Promise<{
     entries: SeedWorkspaceDescriptor[];
   }>;
   setWorkspaceTitle(workspaceId: string, title: string | null): Promise<{ title: string | null }>;
   setWorkspacePinned(workspaceId: string, pinned: boolean): Promise<{ pinnedAt: string | null }>;
+  setSidebarProjectOrder(input: {
+    order: string[];
+    updatedAt: number;
+  }): Promise<{ accepted: boolean; order: string[]; updatedAt: number }>;
   clearWorkspaceAttention(workspaceId: string): Promise<void>;
   setWorkspaceLabel(input: {
     workspaceId: string;
@@ -205,6 +213,14 @@ export interface SeedDaemonClient {
     handler: (event: { terminalId: string; type: string; data?: Uint8Array }) => void,
   ): () => void;
   killTerminal(terminalId: string): Promise<{ error: string | null }>;
+  /** Writes the agent's synced draft, as a client's composer does. A cleared draft leaves a snapshot. */
+  setAgentDraft(input: {
+    agentId: string;
+    text: string;
+    attachments: [];
+    updatedAt: number;
+    baseRevision: number | null;
+  }): Promise<{ state: { draft: { revision: number } | null } | null }>;
 }
 
 export async function connectSeedClient(options?: {

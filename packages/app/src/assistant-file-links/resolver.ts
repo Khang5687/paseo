@@ -4,6 +4,7 @@ import {
   type AssistantFileLinkClassification,
   type InlinePathTarget,
 } from "./parse";
+import { bareWebAddressUrl } from "./web-address";
 import { i18n } from "@/i18n/i18next";
 import { isAbsolutePath } from "@/utils/path";
 
@@ -35,9 +36,11 @@ export type GetDirectorySuggestions = (input: {
   query: string;
   cwd: string;
   includeFiles: true;
-  includeDirectories: false;
+  includeDirectories: boolean;
   matchMode: "suffix";
   limit: number;
+  /** Also search Git-ignored files and build output. Needs the host's `directorySuggestionsIncludeIgnored`. */
+  includeIgnored?: boolean;
 }) => Promise<DirectorySuggestionResult>;
 
 export type ResolvedAssistantFileLink =
@@ -81,13 +84,17 @@ export async function fetchDaemonResolution({
     throw new UnresolvedFileLinkError(token);
   }
 
+  // An extensionless name may be a folder (`src/components/`, `packages/app/src`); a name
+  // with an extension is only ever looked up as a file.
+  const lastSegment = ambiguousQuery.replace(/\/+$/, "").split("/").at(-1) ?? "";
+  const mayBeDirectory = !/.\.[^.]+$/.test(lastSegment);
   let suggestions: DirectorySuggestionResult;
   try {
     suggestions = await getDirectorySuggestions({
-      query: ambiguousQuery,
+      query: ambiguousQuery.replace(/\/+$/, ""),
       cwd: trimmedRoot,
       includeFiles: true,
-      includeDirectories: false,
+      includeDirectories: mayBeDirectory,
       matchMode: "suffix",
       limit: 1,
     });
@@ -95,7 +102,7 @@ export async function fetchDaemonResolution({
     throw new UnresolvedFileLinkError(token);
   }
 
-  const match = suggestions.entries.find((entry) => entry.kind === "file");
+  const match = suggestions.entries[0];
   if (!match || suggestions.error) {
     throw new UnresolvedFileLinkError(token);
   }
@@ -170,6 +177,13 @@ export function classifyForResolution(
   const token = tokenInfo.token.trim();
   if (!token) {
     return { kind: "resolved", value: { kind: "ignored" } };
+  }
+
+  // The renderer links schemeless addresses like `github.com/owner/repo`; open them on the web.
+  // An authored Markdown href keeps its file meaning: `[guides](example.com/guides)`.
+  const webUrl = isLinkifiedSource(source) ? bareWebAddressUrl(token) : null;
+  if (webUrl) {
+    return { kind: "resolved", value: { kind: "external", url: webUrl } };
   }
 
   const classification = classifyAssistantFileLink(token, {

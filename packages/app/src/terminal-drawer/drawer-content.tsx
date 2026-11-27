@@ -66,6 +66,7 @@ export function DrawerContent({
           <TerminalPane
             key={activeTerminalId}
             serverId={serverId}
+            workspaceId={workspaceId}
             cwd={chat.workspaceDirectory}
             terminalId={activeTerminalId}
             isWorkspaceFocused={isWorkspaceFocused}

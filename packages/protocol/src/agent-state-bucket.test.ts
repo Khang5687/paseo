@@ -107,6 +107,37 @@ describe("deriveAgentStateBucket", () => {
     ).toBe("attention");
   });
 
+  it("puts an unread reply that asks a question in needs_input", () => {
+    expect(
+      deriveAgentStateBucket({
+        status: "idle",
+        requiresAttention: true,
+        attentionReason: "finished",
+        awaitingAnswer: true,
+      }),
+    ).toBe("needs_input");
+  });
+
+  it("lets a running turn and a read reply drop the question", () => {
+    expect(
+      deriveAgentStateBucket({
+        status: "running",
+        requiresAttention: true,
+        attentionReason: "finished",
+        awaitingAnswer: true,
+      }),
+    ).toBe("running");
+    expect(
+      deriveAgentStateBucket({ status: "idle", requiresAttention: false, awaitingAnswer: true }),
+    ).toBe("done");
+  });
+
+  it("keeps a settled agent with open questions in needs_input after it is read", () => {
+    expect(deriveAgentStateBucket({ status: "idle", openQuestionCount: 2 })).toBe("needs_input");
+    expect(deriveAgentStateBucket({ status: "running", openQuestionCount: 2 })).toBe("running");
+    expect(deriveAgentStateBucket({ status: "idle", openQuestionCount: 0 })).toBe("done");
+  });
+
   it("does not count initializing agents as running for workspace buckets", () => {
     expect(
       deriveAgentStateBucket({

@@ -1327,93 +1327,87 @@ describe("ClaudeAgentSession features", () => {
   });
 
   test("lists Claude controls by model capability", async () => {
-    const client = new ClaudeAgentClient({ logger, resolveVersion: async () => "2.1.284" });
+    const client = new ClaudeAgentClient({
+      logger,
+      resolveVersion: async () => "2.1.284",
+      discoverOutputStyles: async () => [],
+    });
+    const listControlKeys = async (model: string) =>
+      (await client.listControls({ provider: "claude", cwd: process.cwd(), model })).controls.map(
+        (control) => control.key,
+      );
 
-    await expect(
-      client.listControls({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-4-8",
-      }),
-    ).resolves.toEqual({
-      controls: [
-        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
-        expect.objectContaining({ key: "ultracode", type: "toggle" }),
+    for (const model of [
+      "claude-opus-4-8",
+      "claude-opus-4-8[1m]",
+      "claude-opus-4-8-20260101",
+      "claude-opus-5",
+    ]) {
+      await expect(listControlKeys(model)).resolves.toEqual([
+        "fast_mode",
+        "ultracode",
+        "output_style",
+      ]);
+    }
+    for (const model of ["openrouter/anthropic/claude-opus-4-8", "claude-sonnet-5"]) {
+      await expect(listControlKeys(model)).resolves.toEqual(["ultracode", "output_style"]);
+    }
+    await expect(listControlKeys("claude-sonnet-4-6")).resolves.toEqual(["output_style"]);
+  });
+
+  test("launches with the selected output style and switches it on the live query", async () => {
+    const { queryFactory, queryMock, launches } = createQueryMock();
+    const client = new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+      discoverOutputStyles: async () => [
+        { name: "ELI5", description: "keep it simple pls", body: "Small words." },
       ],
-      options: {},
+    });
+    const session = await client.createSession({
+      provider: "claude",
+      cwd: process.cwd(),
+      providerOptions: { output_style: "ELI5" },
     });
 
-    await expect(
-      client.listControls({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-4-8[1m]",
-      }),
-    ).resolves.toEqual({
-      controls: [
-        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
-        expect.objectContaining({ key: "ultracode", type: "toggle" }),
+    await session.startTurn("hello");
+    expect(launches[0]?.options.settings).toMatchObject({ outputStyle: "ELI5" });
+    expect(session.controls.find((control) => control.key === "output_style")).toMatchObject({
+      type: "select",
+      choices: [
+        { value: "default", label: "Default" },
+        { value: "Proactive" },
+        { value: "Concise" },
+        { value: "Explanatory" },
+        { value: "Learning" },
+        { value: "ELI5", description: "keep it simple pls" },
       ],
-      options: {},
     });
 
-    await expect(
-      client.listControls({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-4-8-20260101",
-      }),
-    ).resolves.toEqual({
-      controls: [
-        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
-        expect.objectContaining({ key: "ultracode", type: "toggle" }),
-      ],
-      options: {},
-    });
+    await session.applyOptions?.({ output_style: "Explanatory" });
+    expect(queryMock.applyFlagSettings).toHaveBeenLastCalledWith({ outputStyle: "Explanatory" });
+    expect(queryFactory).toHaveBeenCalledTimes(1);
+    await expect(session.applyOptions?.({ output_style: "Missing" })).rejects.toThrow(
+      "Claude output style 'Missing' is not available",
+    );
 
-    await expect(
-      client.listControls({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-opus-5",
-      }),
-    ).resolves.toEqual({
-      controls: [
-        expect.objectContaining({ key: "fast_mode", type: "toggle" }),
-        expect.objectContaining({ key: "ultracode", type: "toggle" }),
-      ],
-      options: {},
-    });
+    await session.close();
+  });
 
-    await expect(
-      client.listControls({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "openrouter/anthropic/claude-opus-4-8",
-      }),
-    ).resolves.toEqual({
-      controls: [expect.objectContaining({ key: "ultracode", type: "toggle" })],
-      options: {},
-    });
+  test("leaves Claude's own output style setting alone when none is selected", async () => {
+    const { queryFactory, launches } = createQueryMock();
+    const session = await new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+      discoverOutputStyles: async () => [],
+    }).createSession({ provider: "claude", cwd: process.cwd() });
 
-    await expect(
-      client.listControls({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-sonnet-5",
-      }),
-    ).resolves.toEqual({
-      controls: [expect.objectContaining({ key: "ultracode", type: "toggle" })],
-      options: {},
-    });
+    await session.startTurn("hello");
+    expect(launches[0]?.options.settings).toBeUndefined();
 
-    await expect(
-      client.listControls({
-        provider: "claude",
-        cwd: process.cwd(),
-        model: "claude-sonnet-4-6",
-      }),
-    ).resolves.toEqual({ controls: [], options: {} });
+    await session.close();
   });
 
   test("opens with Fast off on a model that has none, so unrelated options still apply", async () => {
@@ -1583,10 +1577,14 @@ describe("ClaudeAgentSession features", () => {
 
   test("keeps turn identities distinct across resumed session objects", async () => {
     const { queryFactory } = createQueryMock();
+    // Resume looks for the transcript in every folder under the config dir's `projects`;
+    // against a real ~/.claude with many projects that scan outlasts the test timeout.
+    const emptyConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-claude-resume-empty-"));
     const client = new ClaudeAgentClient({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: emptyConfigDir } },
     });
     const handle = {
       provider: "claude" as const,
@@ -1602,6 +1600,7 @@ describe("ClaudeAgentSession features", () => {
       expect(nextTurn.turnId).not.toBe(firstTurn.turnId);
     } finally {
       await resumed.close();
+      await fs.rm(emptyConfigDir, { recursive: true, force: true });
     }
   });
 
@@ -2277,7 +2276,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
     });
   });
 
-  test("maps frontend header-keyed answers to Claude question text keys", () => {
+  test("maps frontend header-keyed answers to Claude question text keys and drops answer lists", () => {
     expect(
       normalizeClaudeAskUserQuestionUpdatedInput(
         {
@@ -2290,6 +2289,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
             },
           ],
           answers: { Provider: "Claude" },
+          answerLists: { Provider: ["Claude"] },
         },
         undefined,
       ),
@@ -3830,6 +3830,39 @@ describe("ClaudeAgentSession context window usage", () => {
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
       });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("a queued task notification answered before the prompt does not end the prompt's turn", async () => {
+    // A resumed session with a finished background task: Claude runs the notification turn first.
+    const session = await createSessionForTurns([
+      [
+        createInitMessage(),
+        createSuccessResult({
+          num_turns: 0,
+          result: "",
+          usage: { input_tokens: 0, output_tokens: 0 },
+          origin: { kind: "task-notification" },
+          uuid: "result-notification",
+        }),
+        createInitMessage(),
+        {
+          type: "assistant",
+          message: { id: "msg-1", role: "assistant", content: [{ type: "text", text: "PONG" }] },
+          parent_tool_use_id: null,
+          uuid: "assistant-1",
+          session_id: "session-1",
+        },
+        createSuccessResult({ uuid: "result-prompt" }),
+      ],
+    ]);
+
+    try {
+      const result = await session.run("turn");
+
+      expect(result.finalText).toBe("PONG");
     } finally {
       await session.close();
     }

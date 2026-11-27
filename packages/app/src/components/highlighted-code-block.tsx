@@ -1,9 +1,14 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { Play } from "lucide-react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { HighlightToken } from "@getpaseo/highlight";
-import { BlockCopyButton } from "@/components/markdown/block-copy-button";
+import { BlockCopyButton, blockCopyGlyphInset } from "@/components/markdown/block-copy-button";
+import { mutedIconColorMapping } from "@/components/ui/icon-color";
+import { smallIconButtonChromeFrameSize } from "@/components/ui/icon-button-chrome";
+import { paneContentToolbarIconSize, ToolbarButton } from "@/components/ui/pane-content-toolbar";
 import { isNative, isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
@@ -15,11 +20,21 @@ import {
   TRAILING_CODE_LINE_BREAKS,
 } from "@/assistant-selection-copy/markup";
 
+const ThemedPlay = withUnistyles(Play, mutedIconColorMapping);
+
+export interface CodeBlockRunControl {
+  onPress: () => void;
+  /** False hides the control and keeps its space, e.g. while the fence streams in. */
+  available: boolean;
+}
+
 interface HighlightedCodeBlockProps {
   code: string;
   language: string | null | undefined;
   inheritedStyles: TextStyle;
   textStyle: TextStyle;
+  /** Shows a Run control beside Copy. */
+  run?: CodeBlockRunControl;
 }
 
 // Fence info strings ("```ts", "```typescript", "```ts {1,3}") map to the
@@ -58,6 +73,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   language,
   inheritedStyles,
   textStyle,
+  run,
 }: HighlightedCodeBlockProps) {
   // Box styles (bg / padding / border / radius / margin) go on the wrapper View
   // so the absolute copy button positions relative to the visible code area,
@@ -91,6 +107,12 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
     if (!content) return false;
     return Clipboard.setStringAsync(content);
   }, [code]);
+  // Two controls cover more of the first line than Copy alone; keep the code clear of them.
+  const runnable = run !== undefined;
+  const codeTextStyle = useMemo(
+    () => (runnable ? [innerTextStyle, runButtonStyles.runReserve] : innerTextStyle),
+    [innerTextStyle, runnable],
+  );
 
   return (
     <View
@@ -100,19 +122,20 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
       onPointerLeave={handlePointerLeave}
     >
       {keyedLines ? (
-        <Text style={innerTextStyle} dataSet={markdownCopyDataSet.code}>
+        <Text style={codeTextStyle} dataSet={markdownCopyDataSet.code}>
           {renderCodeSegments(keyedLines)}
         </Text>
       ) : (
-        <Text style={innerTextStyle} dataSet={markdownCopyDataSet.code}>
+        <Text style={codeTextStyle} dataSet={markdownCopyDataSet.code}>
           {renderedCode}
         </Text>
       )}
+      {run ? <RunButton onPress={run.onPress} visible={controlsVisible && run.available} /> : null}
       <BlockCopyButton
         onCopy={copyCode}
         visible={controlsVisible}
         label={t("message.actions.copyCode")}
-      />
+      />{" "}
     </View>
   );
 });
@@ -169,3 +192,53 @@ function splitFenceStyle(inheritedStyles: TextStyle, textStyle: TextStyle): Spli
     innerTextStyle: [inheritedStyles, textOnly],
   };
 }
+
+interface RunButtonProps {
+  onPress: () => void;
+  visible: boolean;
+}
+
+/** Sits beside the copy control, which owns the corner. */
+const RunButton = React.memo(function RunButton({ onPress, visible }: RunButtonProps) {
+  const { t } = useTranslation();
+  const compact = useIsCompactFormFactor();
+  const [focused, setFocused] = useState(false);
+  const focus = useCallback(() => setFocused(true), []);
+  const blur = useCallback(() => setFocused(false), []);
+  const shown = visible || focused;
+  return (
+    <View style={runButtonStyles.corner(compact)} dataSet={markdownCopyDataSet.ignore}>
+      <ToolbarButton
+        compact={compact}
+        label={t("codeRun.run")}
+        onPress={onPress}
+        onFocus={focus}
+        onBlur={blur}
+        style={shown ? runButtonStyles.shown : runButtonStyles.hidden}
+        testID="code-block-run"
+      >
+        <ThemedPlay size={paneContentToolbarIconSize(compact)} />
+      </ToolbarButton>
+    </View>
+  );
+});
+
+const runButtonStyles = StyleSheet.create((theme) => ({
+  runReserve: {
+    paddingRight: theme.spacing[12],
+  },
+  // One button frame in from the copy control's corner.
+  corner: (compact: boolean) => {
+    const frame = smallIconButtonChromeFrameSize(compact);
+    const frameOverhang = (frame - paneContentToolbarIconSize(compact)) / 2;
+    const inset = blockCopyGlyphInset(theme) - frameOverhang;
+    return {
+      position: "absolute" as const,
+      top: inset,
+      right: inset + frame,
+      pointerEvents: "box-none" as const,
+    };
+  },
+  shown: { opacity: 1, pointerEvents: "auto" },
+  hidden: { opacity: 0, pointerEvents: "none" },
+}));

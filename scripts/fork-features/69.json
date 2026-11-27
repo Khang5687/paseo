@@ -1,0 +1,9 @@
+{
+  "pr": 69,
+  "title": "fix(app): open every file an agent names in a reply",
+  "tests": [
+    "packages/app/src/components/markdown/file-mentions.test.ts",
+    "packages/app/src/assistant-file-links/resolver.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/assistant-file-mentions.spec.ts"]
+}

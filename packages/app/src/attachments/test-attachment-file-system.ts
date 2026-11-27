@@ -47,6 +47,19 @@ export function createTestAttachmentFileSystem(options?: {
     async writeBytes(uri, bytes) {
       files.set(uri, bytes);
     },
+    async openAppender(uri) {
+      files.set(uri, new Uint8Array());
+      return {
+        async write(bytes) {
+          const current = files.get(uri) ?? new Uint8Array();
+          const next = new Uint8Array(current.byteLength + bytes.byteLength);
+          next.set(current);
+          next.set(bytes, current.byteLength);
+          files.set(uri, next);
+        },
+        async close() {},
+      };
+    },
     async copy({ from, to }) {
       const bytes = files.get(from);
       if (!bytes) {

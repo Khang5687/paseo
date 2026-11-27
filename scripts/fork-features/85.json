@@ -1,0 +1,9 @@
+{
+  "pr": 85,
+  "title": "feat(app): sliders for background visibility and blur",
+  "tests": [
+    "packages/app/src/components/ui/slider-math.test.ts",
+    "packages/app/src/skins/image-limits.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
+}

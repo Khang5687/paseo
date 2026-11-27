@@ -87,6 +87,7 @@ function makeInstalledPlugin(input: {
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     filePanels: [],
     composerItems: [],
     newWorkspaceItems: [],
@@ -97,6 +98,7 @@ function makeInstalledPlugin(input: {
     themes: [],
     timelineTransformers: [],
     timelineRenderers: [],
+    skins: [],
     notificationOpenHandlers: input.handlers ?? [],
   };
 }

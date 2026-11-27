@@ -101,7 +101,9 @@ import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
+import { AskAgentThreads, type AskThreadSettings } from "./agent/ask-agent.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { AgentDraftService } from "./agent-draft/agent-draft-service.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
@@ -121,7 +123,14 @@ import {
 } from "./workspace-registry.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
-import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
+import { NotesService } from "./notes/notes-service.js";
+import { FileCopies } from "./file-copies/service.js";
+import { FileDeviceRegistry } from "./file-send/device-registry.js";
+import {
+  DaemonConfigStore,
+  resolveFeatureDefaults,
+  type MutableDaemonConfig,
+} from "./daemon-config-store.js";
 import { createOrchestrationSkills } from "./orchestration-skills/index.js";
 import {
   resolveReloadableConfig,
@@ -430,8 +439,10 @@ export interface PaseoDaemonConfig {
   downloadTokenTtlMs?: number;
   agentProviderSettings?: AgentProviderRuntimeSettingsMap;
   idleRuntimeCleanup?: boolean;
+  draftHistoryRetentionDays?: number;
   resumeOnStartup?: boolean;
   resumePrompt?: string;
+  askAgent?: Partial<AskThreadSettings>;
   providerCatalogRefreshTimeoutMs?: number;
   metadataGeneration?: {
     providers?: Array<{
@@ -440,6 +451,7 @@ export interface PaseoDaemonConfig {
       thinkingOptionId?: string;
     }>;
   };
+  featureDefaults?: Record<string, boolean | string>;
   providerOverrides?: Record<string, ProviderOverride>;
   log?: PersistedConfig["log"];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
@@ -567,9 +579,11 @@ function createInitialMutableDaemonConfig(config: ResolvedDaemonSettings): Mutab
     metadataGeneration: {
       providers: config.metadataGeneration?.providers ?? [],
     },
+    featureDefaults: config.featureDefaults,
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
     idleRuntimeCleanup: config.idleRuntimeCleanup !== false,
+    draftHistoryRetentionDays: config.draftHistoryRetentionDays,
     resumeOnStartup: config.resumeOnStartup === true,
     resumePrompt: config.resumePrompt ?? "Resume working.",
     appendSystemPrompt: config.appendSystemPrompt ?? "",
@@ -1029,6 +1043,7 @@ export async function createPaseoDaemon(
     mcpAuthToken: agentMcpAuthToken,
     resolvePaseoToolPolicy: (provider) =>
       resolvePaseoToolPolicy(provider, daemonConfigStore.get().providers),
+    resolveFeatureDefaults: (provider) => resolveFeatureDefaults(daemonConfigStore.get(), provider),
     logger,
   });
   const syncPluginProviders = () => {
@@ -1045,6 +1060,12 @@ export async function createPaseoDaemon(
     agentStorage,
   );
   await agentStorage.initialize();
+  const agentDrafts = new AgentDraftService({
+    storage: agentStorage,
+    paseoHome: config.paseoHome,
+    logger,
+    retentionDays: () => daemonConfigStore.get().draftHistoryRetentionDays,
+  });
   const restartRecovery = createRestartRecovery({
     storage: agentStorage,
     settings: () => ({
@@ -1484,7 +1505,40 @@ export async function createPaseoDaemon(
     archiveWorkspace: archiveScheduleWorkspaceExternal,
   });
   await scheduleService.start();
+  const notesService = new NotesService({ paseoHome: config.paseoHome, logger });
+  await notesService.start();
+  const unsubscribeNoteCommandFinished = terminalManager.subscribeTerminalCommandFinished((event) =>
+    notesService.handleCommandFinished(event),
+  );
+  const fileCopies = new FileCopies({
+    paseoHome: config.paseoHome,
+    logger,
+    config: daemonConfigStore,
+  });
+  await fileCopies.start();
 
+  const fileDevices = await FileDeviceRegistry.open(
+    logger.child({ module: "file-send" }),
+    path.join(config.paseoHome, "file-devices.json"),
+  );
+  const askThreads = new AskAgentThreads(agentManager, logger, {
+    paseoHome: config.paseoHome,
+    settings: config.askAgent,
+  });
+  // A previous process that died mid-thread left provider forks behind. Read the record file
+  // before anything can overwrite it; deleting the forks must not hold up startup.
+  await askThreads.loadLeftovers();
+  void askThreads.discardLeftovers();
+  askThreads.setRemoteCloser(async (ref) => {
+    if (!wsServer) return;
+    await wsServer.toolHosts().use(ref.serverId, (client) =>
+      client.askAgent(ref.agentId, "", {
+        askerAgentId: ref.askerId,
+        threadId: ref.threadId,
+        threadAction: "close",
+      }),
+    );
+  });
   const changeRequestWatches = createChangeRequestWatches({
     router: createChangeRequestRouter({ forgeResolver }),
     backgroundWork: agentManager,
@@ -1501,6 +1555,9 @@ export async function createPaseoDaemon(
   });
 
   agentManager.setAgentArchivedCallback(async (agentId) => {
+    await askThreads.handleAgentArchived(agentId).catch((error: unknown) => {
+      logger.warn({ err: error, agentId }, "Failed to close ask_agent threads for archived agent");
+    });
     await changeRequestWatches
       .archive(agentId)
       .catch((err) =>
@@ -1510,6 +1567,11 @@ export async function createPaseoDaemon(
       await scheduleService.completeForAgent(agentId);
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to complete schedules for archived agent");
+    }
+    try {
+      await agentDrafts.clearForArchive(agentId);
+    } catch (error) {
+      logger.warn({ err: error, agentId }, "Failed to clear the archived agent's draft");
     }
     await killTerminalsForAgent({ terminalManager, sessionLogger: logger }, agentId);
   });
@@ -1574,6 +1636,7 @@ export async function createPaseoDaemon(
   ): PaseoToolHostDependencies => ({
     changeRequestWatches,
     finishSubscriptions: () => finishSubscriptions,
+    askThreads: () => askThreads,
     agentMessages: () => {
       if (!wsServer) throw new Error("Daemon is not accepting agent messages");
       return wsServer.agentMessages;
@@ -1604,6 +1667,14 @@ export async function createPaseoDaemon(
     lifecycle: pluginRuntime,
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
+    restoreArchivedWorkspace: async (workspace) => {
+      const restored = await workspaceProvisioning.ensureWorkspaceRecordUnarchived(workspace);
+      await Promise.all(
+        (wsServer?.listSessions() ?? []).map((session) =>
+          session.refreshRecoveredWorkspaceForExternalMutation(restored),
+        ),
+      );
+    },
     projectRegistry,
     createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
@@ -1650,6 +1721,7 @@ export async function createPaseoDaemon(
     voiceOnly: runtime.voiceOnly,
     resolveSpeakHandler: (agentId) => wsServer?.resolveVoiceSpeakHandler(agentId) ?? null,
     resolveCallerContext: (agentId) => wsServer?.resolveVoiceCallerContext(agentId) ?? null,
+    fileSend: () => wsServer?.fileSend ?? null,
     logger,
   });
   const createAgentToolCatalog = (runtime: PaseoToolRuntimeContext) =>
@@ -1895,6 +1967,8 @@ export async function createPaseoDaemon(
                 daemonStatusRpc: dependencies.serverFeatureOverrides?.daemonStatusRpc,
                 relayConfig: dependencies.serverFeatureOverrides?.relayConfig,
                 startPaused: true,
+                askThreads,
+                fileDevices,
               },
               workspaceAutoName,
               workspaceRuntimeStore,
@@ -1955,6 +2029,9 @@ export async function createPaseoDaemon(
               pluginRuntime,
               orchestrationSkills,
               workspaceLabelService,
+              notesService,
+              agentDrafts,
+              fileCopies,
               workspaceArchiveOperations,
               config.pushNotifications,
             );
@@ -1966,6 +2043,11 @@ export async function createPaseoDaemon(
             await changeRequestWatches.start();
             await listeners.apply(config.listen);
             wsServer.beginAcceptingConnections();
+            // Queues stored with work in them drain without waiting for a client
+            // to open their agent. Runs in the background so startup does not wait.
+            void wsServer.drainStoredAgentQueues().catch((error: unknown) => {
+              logger.error({ err: error }, "Failed to drain stored agent queues");
+            });
             const relaySecurityLogger = logger.child({ module: "relay-security" });
             relayRuntime = createRelayRuntime({
               config: {
@@ -2056,6 +2138,7 @@ export async function createPaseoDaemon(
     wsServer?.prepareForShutdown();
     await changeRequestWatches.close();
     await finishSubscriptions.close();
+    await askThreads.closeAll();
     await wsServer?.agentMessages.close();
     agentManager.prepareForShutdown();
     await restartRecovery.captureRunningAgents();
@@ -2103,11 +2186,14 @@ export async function createPaseoDaemon(
     }
     await speechService.stop();
     await scheduleService.stop().catch(() => undefined);
+    unsubscribeNoteCommandFinished();
+    await notesService.stop().catch(() => undefined);
     await relayRuntime?.stop().catch(() => undefined);
     await listeners.stop();
     if (wsServer) {
       await wsServer.close();
     }
+    await fileCopies.stop().catch(() => undefined);
     forgeResolver.dispose();
     await serviceProxy.stopStandalone();
     // Force-drop remaining sockets so httpServer.close() resolves promptly.

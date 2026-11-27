@@ -32,11 +32,15 @@ Trusted server plugins retain the authority of their runtime; they are not sandb
 ## Delegating agents
 
 Agent MCP discovers destination IDs with `list_hosts`. `create_workspace`, `list_workspaces`,
-`create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, and `list_agents`
-accept `serverId`; omission selects the calling daemon. Remote creation requires a
+`create_agent`, `send_agent_prompt`, `fork_agent`, `get_agent_status`, `get_agent_activity`,
+`ask_agent`, `list_pending_permissions`, `respond_to_permission`, `list_agents`, `archive_agent`,
+`cancel_agent`, `kill_agent`, `set_agent_mode`, `update_agent`, and `search_agents` accept
+`serverId`; omission selects the calling daemon. Remote creation requires a
 destination workspace and explicit provider/model. Caller filesystem defaults apply only on the
 calling daemon. Prompting a remote child acknowledges acceptance and uses the existing idle wait for
 finish notifications. Remote agent lists have no caller-directory default; pass `cwd` to filter them.
+`fork_agent` forks on the destination from a source agent that lives there, so a remote call needs
+an explicit `agentId`; the fork is a main agent with no parent link and no finish notification.
 
 The parent’s Subagents track shows qualified children across connected hosts. Opening a child uses
 the ordinary conversation on the destination's session. The runtime selects among that host's
@@ -47,13 +51,15 @@ the destination workspace keeps its existing disconnected or reconnecting behavi
 Finish notifications name the destination server and child agent. The caller's daemon owns durable
 subscription intent and restores observation through the same routed wait and permission observation
 used during ordinary operation. Restarting the caller's daemon does not imply that a remote child
-stopped. Three failed remote observation attempts end the subscription with a notification that the
-child could not be observed and its status is unknown. This does not prove the host is offline: remote
-RPC failures also prevent observation. Attempts use capped backoff; a connection still
-in progress does not spend that budget. A confirmed removed registration reports host unavailability
-immediately through the same path. Neither notice claims the child finished. Intent remains stored
-until the parent accepts dispatch, then is consumed; reconnecting does not restore that watch. The
-parent decides whether to inspect the child or delegate again.
+stopped. An unreachable host never ends the subscription, and neither does a failing remote RPC
+(the origin cannot tell those apart from an offline host): the observation reopens with backoff
+capped at 60 s until the host answers, then reports the child's real outcome, including a finish
+that happened while the host was away. A connection still in progress is retried the same way. Only
+a confirmed removed registration ends the subscription, with a notice that host availability and
+the child's status are unknown; that notice never claims the child finished. Archiving the parent
+also ends it. Intent remains stored until the parent accepts dispatch, then is consumed;
+reconnecting does not restore a consumed watch. The parent decides whether to inspect the child or
+delegate again.
 
 A definitely unsent prompt returns a tool error and creates no notification. An ambiguous prompt
 response retains intent because the destination may have admitted it; observation then follows the
@@ -63,6 +69,28 @@ Remote creation and local subscription persistence are separate commits. A faile
 failure even if the destination already created the child; inspect it before retrying creation.
 See [finish notification lifetime](agent-lifecycle.md#relationships) for registration, acknowledgment,
 and duplicate-delivery semantics. Concurrent prompts gain no turn attribution.
+
+## File copies
+
+A host that sleeps can name an always-on host in `files.copies.targetServerId` (`files.copies.update_settings`
+sets it; nothing infers it from the connected hosts). When one of its agents finishes a turn with assistant text,
+`FileCopySender` (`packages/server/src/server/file-copies/sender.ts`) collects the files that text names, with the
+same grammar the app uses to linkify them (a mirror under `file-copies/mentions/`; keep it in step with
+`packages/app/src/assistant-file-links/`). Only existing regular files within `maxFileBytes` count. Fenced code and
+shell commands inside code spans are not mentions. Secrets never leave the host: names matching `.env*`, `*.pem`,
+`*.key` or `id_*`, and anything under `~/.ssh` or `~/.paseo`, are skipped, and so is a link that resolves to one.
+
+The sender goes through the ordinary routed API to the target, one turn at a time:
+`files.copies.record_mentions` sends paths and revisions and gets back the ones the target lacks at that revision,
+then each of those goes up with `file.upload` under the name `.paseo-file-copy` and is committed with
+`files.copies.put`, which takes only uploads with that name. The target takes the source `serverId` from the routed
+session's producer, never from the request, and refuses both calls from a direct client. A failure is logged and
+never reaches the agent; the next mention of the file tries again. A copy upload whose put never came is deleted
+when the target starts and the upload is a day old. A target without `server_info.features.fileCopies` is skipped
+with a log line.
+
+Any client of the target reads a copy with `files.copies.read` (bytes as file-transfer frames, then the entry) and
+lists them with `files.copies.list`. Storage and limits are in [data-model.md](data-model.md#6b-file-copies).
 
 ## Connections and recovery
 

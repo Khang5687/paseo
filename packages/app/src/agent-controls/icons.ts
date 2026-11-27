@@ -3,6 +3,7 @@ import {
   Bot,
   Brain,
   ListTodo,
+  MessageSquareText,
   Settings2,
   Shield,
   ShieldAlert,
@@ -40,6 +41,7 @@ const MODE_ICONS: Record<string, AgentControlIcon> = {
 
 const FEATURE_ICONS: Record<string, AgentControlIcon> = {
   "list-todo": ListTodo,
+  "message-square-text": MessageSquareText,
   "shield-check": ShieldCheck,
   zap: Zap,
 };
