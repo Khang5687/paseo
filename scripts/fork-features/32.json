@@ -1,6 +1,7 @@
 {
   "pr": 32,
   "title": "feat(client): OMP account-routing snapshot contract",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": [
     "packages/client/src/daemon-client.test.ts",
     "packages/client/src/index.test.ts",

@@ -152,8 +152,6 @@ import { FileDeviceRegistry } from "./file-send/device-registry.js";
 import { FileSendService, type FileSendLiveTarget } from "./file-send/service.js";
 import { FileCopySender } from "./file-copies/sender.js";
 import type { Note } from "@getpaseo/protocol/notes/schemas";
-import type { AccountRoutingAuthority } from "./account-routing/authority.js";
-import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -664,12 +662,6 @@ export class VoiceAssistantWebSocketServer {
   private readonly fileDevices: FileDeviceRegistry;
   readonly fileSend: FileSendService;
   private readonly detachFileCopySender: () => void;
-  private readonly accountRouting: AccountRoutingAuthority | undefined;
-  private readonly accountLogin: OmpAccountLogin | undefined;
-  // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
-  private accountRoutingSupported = false;
-  private releaseAccountRoutingObserver: (() => void) | null = null;
-  private releaseLoginLinkObserver: (() => void) | null = null;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -808,8 +800,6 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
-    accountRouting?: AccountRoutingAuthority,
-    accountLogin?: OmpAccountLogin,
     notesService?: NotesService,
     agentDrafts?: AgentDraftService,
     fileCopies?: FileCopies,
@@ -902,9 +892,6 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
     this.agentDrafts = agentDrafts;
-    this.accountRouting = accountRouting;
-    this.accountLogin = accountLogin;
-    this.observeAccountRoutingCapability();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -1258,30 +1245,6 @@ export class VoiceAssistantWebSocketServer {
     this.updateServerCapabilities(buildServerCapabilities({ readiness }));
   }
 
-  /** The advertised feature follows the authority's negotiated runtime coverage, never code presence. */
-  private observeAccountRoutingCapability(): void {
-    const authority = this.accountRouting;
-    if (!authority) return;
-    this.releaseLoginLinkObserver =
-      this.accountLogin?.onLinkSupportChange(() => this.broadcastCapabilitiesUpdate()) ?? null;
-    const apply = (supported: boolean): void => {
-      if (supported === this.accountRoutingSupported) return;
-      this.accountRoutingSupported = supported;
-      this.broadcastCapabilitiesUpdate();
-    };
-    void (async () => {
-      try {
-        const { state, release } = await authority.observe((next) =>
-          apply(next.capability.status === "supported"),
-        );
-        this.releaseAccountRoutingObserver = release;
-        apply(state.capability.status === "supported");
-      } catch (error) {
-        this.logger.warn({ err: error }, "Account routing observer failed");
-      }
-    })();
-  }
-
   public updateServerCapabilities(capabilities: ServerCapabilities | null | undefined): void {
     const next = capabilities ?? undefined;
     if (areServerCapabilitiesEqual(this.serverCapabilities, next)) {
@@ -1375,10 +1338,6 @@ export class VoiceAssistantWebSocketServer {
     await this.connectedHosts.close();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
-    this.releaseAccountRoutingObserver?.();
-    this.releaseAccountRoutingObserver = null;
-    this.releaseLoginLinkObserver?.();
-    this.releaseLoginLinkObserver = null;
     this.unsubscribeDaemonConfigChange?.();
     this.unsubscribeDaemonConfigChange = null;
     this.unsubscribeTerminalActivity?.();
@@ -1910,15 +1869,6 @@ export class VoiceAssistantWebSocketServer {
       notesService: this.notesService ?? undefined,
       fileCopies: this.fileCopies,
       fileSend: { service: this.fileSend, registry: this.fileDevices },
-      accountRouting: this.accountRouting,
-      accountLogin: this.accountLogin,
-      isHostLocalSource: (source) => {
-        const identity = source ? this.socketIdentities.get(source as WebSocketLike) : undefined;
-        return (
-          identity?.transport === "direct" &&
-          (identity.peer === "loopback" || identity.peer === "local_ipc")
-        );
-      },
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -2307,12 +2257,6 @@ export class VoiceAssistantWebSocketServer {
         ...(this.fileCopies ? { fileCopies: true } : {}),
         // COMPAT(sendToDevice): added in v0.16.2, remove gate after 2027-06-01.
         sendToDevice: true,
-        ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
-        // The host can open a browser and sign a Claude account in; only advertised with routing.
-        ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
-        ...(this.accountRoutingSupported && this.accountLogin?.linkSupported
-          ? { ompAccountLoginLink: true }
-          : {}),
         // COMPAT(sidebarProjectOrder): added after v0.17.6, remove gate after 2027-12-01.
         sidebarProjectOrder: true,
         terminalCollection: true,

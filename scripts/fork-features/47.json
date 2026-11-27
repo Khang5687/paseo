@@ -1,6 +1,7 @@
 {
   "pr": 47,
   "title": "fix: show OMP account routing section before any OMP agent runs",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": [
     "packages/app/src/omp-account-routing/presentation.test.ts",
     "packages/server/src/server/account-routing/authority.test.ts",

@@ -237,24 +237,6 @@ describe("wire schema compatibility", () => {
     });
   });
 
-  test("routing capability is additive and stays separate from server capabilities", () => {
-    const legacy = ServerInfoStatusPayloadSchema.parse({
-      status: "server_info",
-      serverId: "legacy-routing-server",
-      features: { ownedSubscriptions: true },
-    });
-    const capable = ServerInfoStatusPayloadSchema.parse({
-      status: "server_info",
-      serverId: "routing-server",
-      capabilities: { owned_subscriptions: true },
-      features: { ownedSubscriptions: true, ompAccountRouting: true },
-    });
-
-    expect(legacy.features?.ompAccountRouting).toBeUndefined();
-    expect(capable.features?.ompAccountRouting).toBe(true);
-    expect(capable.capabilities).toMatchObject({ owned_subscriptions: true });
-  });
-
   test("server info accepts optional machineKind and older clients drop it cleanly", () => {
     const legacyServerInfo = z.object({
       status: z.literal("server_info"),
@@ -680,7 +662,7 @@ test("usage login errors are additive and older reports still parse", () => {
   expect(legacy.parse(newMessage)).toEqual(oldMessage);
 });
 
-test("usage routing and subscription metadata are optional, nullable-unknown and strictly typed", () => {
+test("usage subscription metadata is optional, nullable-unknown and strictly typed", () => {
   const legacyEntry = {
     id: "claude:a",
     account: {},
@@ -706,22 +688,9 @@ test("usage routing and subscription metadata are optional, nullable-unknown and
         source: "claude-supported-login",
       },
     },
-    routing: {
-      accountRef: { storeNamespace: "11111111-1111-4111-8111-111111111111", nativeRowId: 3 },
-      state: "serving",
-      hostEpoch: "epoch",
-      stateSequence: 4,
-    },
   };
   expect(SessionOutboundMessageSchema.parse(message(legacyEntry))).toEqual(message(legacyEntry));
   expect(SessionOutboundMessageSchema.parse(message(extended))).toEqual(message(extended));
-  const unknownRouting = {
-    ...legacyEntry,
-    routing: { ...extended.routing, accountRef: null, state: "unknown" },
-  };
-  expect(SessionOutboundMessageSchema.parse(message(unknownRouting))).toEqual(
-    message(unknownRouting),
-  );
   const bad = [
     { ...legacyEntry, report: { ...extended.report, quotaIdentity: { accountUuid: "a" } } },
     {
@@ -731,94 +700,10 @@ test("usage routing and subscription metadata are optional, nullable-unknown and
         subscription: { ...extended.report.subscription, source: "x" },
       },
     },
-    { ...extended, routing: { ...extended.routing, state: "idle" } },
-    {
-      ...extended,
-      routing: { ...extended.routing, accountRef: { storeNamespace: "n", nativeRowId: "3" } },
-    },
   ];
   for (const report of bad) {
     expect(SessionOutboundMessageSchema.safeParse(message(report)).success).toBe(false);
   }
-});
-
-// Copied from the release before `ompAccountLoginLink`: what an older app parses.
-const LegacyOmpAccountLoginPayloadSchema = z.object({
-  requestId: z.string(),
-  status: z.object({
-    state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
-    failure: z
-      .enum([
-        "timeout",
-        "paste_code_unsupported",
-        "browser_open_failed",
-        "omp_failed",
-        "spawn_failed",
-      ])
-      .optional(),
-    startedAt: z.number().finite().optional(),
-  }),
-  error: z.enum(["already_running"]).nullable().optional(),
-});
-
-test("OMP login link fields are additive for older apps and older daemons", () => {
-  // New daemon to old app: every status the link daemon sends to an old app's requests parses.
-  const statuses = [
-    { state: "running", startedAt: 1, phase: "preparing" },
-    { state: "running", startedAt: 1, phase: "awaiting_browser", pasteAccepted: true },
-    {
-      state: "succeeded",
-      startedAt: 1,
-      endedAt: 2,
-      outcome: {
-        kind: "added",
-        label: "b@example.com",
-        ref: { storeNamespace: "n", nativeRowId: 9 },
-      },
-    },
-    {
-      state: "failed",
-      failure: "omp_failed",
-      startedAt: 1,
-      endedAt: 2,
-      outcome: { kind: "already_listed", label: "a@example.com" },
-    },
-  ];
-  for (const status of statuses) {
-    for (const op of ["start", "get_status", "cancel"]) {
-      const message = {
-        type: `account.routing.login.${op}.response`,
-        payload: { requestId: "r", status, error: null },
-      };
-      expect(SessionOutboundMessageSchema.parse(message)).toMatchObject({ payload: { status } });
-      expect(LegacyOmpAccountLoginPayloadSchema.parse(message.payload).status.state).toBe(
-        status.state,
-      );
-    }
-  }
-
-  // Old app to new daemon: a start without `mode` still parses (and means add-only).
-  expect(
-    SessionInboundMessageSchema.parse({
-      type: "account.routing.login.start.request",
-      requestId: "r",
-    }),
-  ).toEqual({ type: "account.routing.login.start.request", requestId: "r" });
-
-  // Old daemon to new app: the pre-link failures still parse.
-  expect(
-    SessionOutboundMessageSchema.parse({
-      type: "account.routing.login.get_status.response",
-      payload: { requestId: "r", status: { state: "failed", failure: "browser_open_failed" } },
-    }),
-  ).toMatchObject({ payload: { status: { failure: "browser_open_failed" } } });
-  expect(
-    ServerInfoStatusPayloadSchema.parse({
-      status: "server_info",
-      serverId: "old",
-      features: { ompAccountLogin: true },
-    }).features?.ompAccountLoginLink,
-  ).toBeUndefined();
 });
 
 test("usage entries accept older failures and additive successful snapshots", () => {

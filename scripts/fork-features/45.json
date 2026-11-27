@@ -1,6 +1,7 @@
 {
   "pr": 45,
   "title": "feat(app): make the OMP Claude account routing section readable",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": ["packages/app/src/omp-account-routing/presentation.test.ts"],
   "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
 }
