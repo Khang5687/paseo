@@ -22,12 +22,37 @@ export interface AgentStateBucketInput {
   openQuestionCount?: number;
 }
 
+/** Background jobs that run now; scheduled work (heartbeats) waits for a time and is not counted. */
+export function countRunningBackgroundWork(
+  backgroundWork: AgentBackgroundWorkSummary | null | undefined,
+): number {
+  return backgroundWork?.runningCount ?? backgroundWork?.count ?? 0;
+}
+
 export function isAgentRunning(input: {
   status: AgentLifecycleStatus | null | undefined;
   backgroundWork?: AgentBackgroundWorkSummary | null;
 }): boolean {
-  const { status, backgroundWork } = input;
-  return status === "running" || (backgroundWork?.runningCount ?? backgroundWork?.count ?? 0) > 0;
+  return input.status === "running" || countRunningBackgroundWork(input.backgroundWork) > 0;
+}
+
+/**
+ * The agent's own turn ended, it has nothing for the user, and its background jobs or subagents
+ * still run: it waits on them. A turn in progress is working, not waiting; a question, a
+ * permission or an unread error wins over the wait.
+ */
+export function isAgentWaiting(
+  input: AgentStateBucketInput & { runningSubagentCount?: number },
+): boolean {
+  if (input.status === "running" || input.status === "initializing") {
+    return false;
+  }
+  const bucket = deriveAgentStateBucket(input);
+  // A settled agent is running only while its background jobs run.
+  if (bucket === "running") {
+    return true;
+  }
+  return (bucket === "attention" || bucket === "done") && (input.runningSubagentCount ?? 0) > 0;
 }
 
 const WORKSPACE_STATE_BUCKET_PRIORITY = {
@@ -51,14 +76,19 @@ export function deriveAgentStateBucket(input: AgentStateBucketInput): WorkspaceS
   if (hasUnreadError(input)) {
     return "failed";
   }
-  if (isAgentRunning(input)) {
+  // A turn in progress is working, even with questions open: the agent may be reading the answers.
+  if (input.status === "running") {
     return "running";
   }
+  // A finished turn that asks the user waits on the user, even while its background jobs run.
   if (input.requiresAttention && input.awaitingAnswer) {
     return "needs_input";
   }
   if ((input.openQuestionCount ?? 0) > 0) {
     return "needs_input";
+  }
+  if (isAgentRunning(input)) {
+    return "running";
   }
   if (input.requiresAttention) {
     return "attention";

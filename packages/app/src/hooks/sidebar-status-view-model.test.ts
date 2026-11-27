@@ -36,7 +36,7 @@ function ws(
     hasRunningScripts: false,
     nextRunAt: null,
     waitingOn: null,
-    workingSubagentCount: 0,
+    waiting: null,
     workspaceKey: input.workspaceKey,
   };
 }

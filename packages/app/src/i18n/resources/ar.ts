@@ -180,7 +180,6 @@ export const ar: TranslationResources = {
       unmuteVoice: "إلغاء كتم الصوت",
       muteVoice: "كتم الصوت",
       dictation: "الإملاء",
-      interruptBeforeVoice: "قم بمقاطعة الوكيل قبل بدء الوضع الصوتي",
     },
     attachments: {
       addImage: "أضف صورة",
@@ -523,6 +522,11 @@ export const ar: TranslationResources = {
       nextRun: "التالية {{time}}",
       nextRunDue: "مستحقة الآن",
       waitingOn: "في الانتظار: {{job}}",
+      waitingOnTasksOne: "في انتظار مهمة واحدة في الخلفية",
+      waitingOnTasksMany: "في انتظار {{count}} مهمة في الخلفية",
+      waitingOnSubagentsOne: "في انتظار وكيل فرعي واحد",
+      waitingOnSubagentsMany: "في انتظار {{count}} وكلاء فرعيين",
+      waitingOnBoth: "في انتظار {{tasks}} و{{subagents}}",
       unnamedJob: "مهمة في الخلفية",
       detailsWhy: "السبب",
       detailsCommand: "الأمر",
@@ -1357,6 +1361,7 @@ export const ar: TranslationResources = {
       statusFailed: "فشل: {{count}}",
       statusDone: "انتهى ولم يُفتح: {{count}}",
       statusWorking: "يعمل: {{count}}",
+      statusWaiting: "ينتظر: {{count}}",
       moveTop: "نقل إلى الأعلى",
       moveEarlier: "نقل إلى موضع أسبق",
       moveLater: "نقل إلى موضع لاحق",
@@ -1374,6 +1379,7 @@ export const ar: TranslationResources = {
     navButtons: {
       title: "الأزرار المعروضة",
       done: "تم",
+      more: "المزيد",
     },
     view: {
       failed: "تعذر تحميل عرض الشريط الجانبي.",
@@ -1403,6 +1409,7 @@ export const ar: TranslationResources = {
         lastPrompt: "آخر طلب",
         urgent: "العاجل أولًا",
         updateHost: "حدّث المضيفين لترتيب مساحات العمل",
+        switchedToManual: "الترتيب يدوي الآن",
       },
       grouping: {
         label: "التجميع",
@@ -1528,13 +1535,6 @@ export const ar: TranslationResources = {
       },
     },
     workspace: {
-      workingSubagents: "{{count}} وكيل فرعي يعمل",
-      workingSubagents_zero: "{{count}} وكيل فرعي يعمل",
-      workingSubagents_one: "{{count}} وكيل فرعي يعمل",
-      workingSubagents_two: "وكيلان فرعيان يعملان",
-      workingSubagents_few: "{{count}} وكلاء فرعيين يعملون",
-      workingSubagents_many: "{{count}} وكيلًا فرعيًا يعملون",
-      workingSubagents_other: "{{count}} وكيل فرعي يعمل",
       newAgent: "جديد",
       status: {
         serviceRunning: "الخدمة {{name}} قيد التشغيل",
@@ -2274,6 +2274,11 @@ export const ar: TranslationResources = {
       mute: "كتم صوت الوقت الحقيقي",
       unmute: "إلغاء كتم صوت الوقت الحقيقي",
       stop: "إيقاف الصوت في الوقت الحقيقي ومقاطعة الدوران",
+      black: "جعل الشاشة سوداء مع استمرار الصوت",
+    },
+    blackScreen: {
+      button: "أسود",
+      wake: "شاشة سوداء. انقر مرتين للإيقاظ",
     },
   },
   rewind: {
@@ -2434,6 +2439,8 @@ export const ar: TranslationResources = {
     withdrawn: "سُحب {{label}}",
     jumpTo: "انتقل إلى {{label}}",
     notLoaded: "{{label}} ليس في المحادثة المحمّلة",
+    copyAnswers: "نسخ الإجابات",
+    copiedAnswers: "تم النسخ",
   },
   needsYou: {
     title: "بانتظارك",
@@ -2469,7 +2476,6 @@ export const ar: TranslationResources = {
     pillLabelOne: "وكيل فرعي واحد",
     pillLabelMany: "{{count}} وكلاء فرعيين",
     pillLabelWorking: "{{count}} قيد التشغيل",
-    pillLabelYourTurnWorking: "دورك · {{count}} قيد التشغيل",
     pillLabelFailed: "{{count}} فشلت",
     pillLabelNeedsInputOne: "واحد يحتاج إدخالاً",
     pillLabelNeedsInputMany: "{{count}} تحتاج إدخالاً",

@@ -9,7 +9,8 @@ import { resolveSendNowBehavior } from "@/composer/input/state";
 import { useToast } from "@/contexts/toast-context";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
-import { isQuestionAnswered } from "./answer-message";
+import { buildAnswerMessage, isQuestionAnswered } from "./answer-message";
+import { CopyAnswersButton } from "./copy-answers-button";
 import { QuestionCard, useOpenQuestionAnswers } from "./question-card";
 import { sendQuestionAnswers } from "./send-answers";
 
@@ -93,6 +94,11 @@ function OpenQuestionsPanel({
       .finally(() => setSending(false));
   }, [agentId, answers, client, questions, serverId, settings, t, toast]);
 
+  const getCopyText = useCallback(
+    () => buildAnswerMessage(questions, (question) => answers.get(question.id))?.text ?? null,
+    [answers, questions],
+  );
+
   return (
     <View style={styles.panel} testID="open-questions-panel">
       {questions.map((question) => (
@@ -112,16 +118,23 @@ function OpenQuestionsPanel({
             open: questions.length - answeredCount,
           })}
         </Text>
-        <Button
-          variant="default"
-          size="sm"
-          disabled={answeredCount === 0 || !client}
-          loading={sending}
-          onPress={handleSend}
-          testID="open-questions-send"
-        >
-          {t("questions.send", { count: answeredCount })}
-        </Button>
+        <View style={styles.footerActions}>
+          <CopyAnswersButton
+            getText={getCopyText}
+            disabled={answeredCount === 0}
+            testID="open-questions-copy"
+          />
+          <Button
+            variant="default"
+            size="sm"
+            disabled={answeredCount === 0 || !client}
+            loading={sending}
+            onPress={handleSend}
+            testID="open-questions-send"
+          >
+            {t("questions.send", { count: answeredCount })}
+          </Button>
+        </View>
       </View>
     </View>
   );
@@ -139,6 +152,11 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "space-between",
     gap: theme.spacing[2],
     paddingTop: theme.spacing[1],
+  },
+  footerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
   },
   footerText: {
     flexShrink: 1,

@@ -144,6 +144,41 @@ test("interruptAgentIfRunning rejects when graceful cancellation is refused", as
   );
 });
 
+test("a spoken message steers a running turn and never replaces it", async () => {
+  const agentId = "11111111-1111-4111-8111-111111111111";
+  const steerOrReplaceActiveTurn = vi.fn(async () => ({ status: "steered" as const }));
+  const replaceAgentRun = vi.fn();
+  const cancelAgentRun = vi.fn();
+  const session = createSessionForTest({
+    agentStorage: { get: vi.fn(async () => null) },
+    agentManager: {
+      getAgent: vi.fn(() => ({ id: agentId, provider: "codex", lifecycle: "running" })),
+      hasInFlightRun: vi.fn(() => true),
+      tryRunOutOfBand: vi.fn(async () => false),
+      reloadStalePluginSession: vi.fn(async () => {}),
+      waitForAgentClose: vi.fn(async () => {}),
+      steerOrReplaceActiveTurn,
+      replaceAgentRun,
+      cancelAgentRun,
+    },
+  });
+
+  const result = await asSessionInternals(session).handleSendAgentMessage(
+    agentId,
+    "also check the logs",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { spokenInput: true },
+  );
+
+  expect(result).toEqual({ ok: true });
+  expect(steerOrReplaceActiveTurn).toHaveBeenCalledTimes(1);
+  expect(replaceAgentRun).not.toHaveBeenCalled();
+  expect(cancelAgentRun).not.toHaveBeenCalled();
+});
+
 test("cancel_agent_request reports refusal only through its response", async () => {
   const agentId = "11111111-1111-4111-8111-111111111111";
   const messages: SessionOutboundMessage[] = [];

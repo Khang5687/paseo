@@ -1272,6 +1272,33 @@ export const SidebarProjectOrderSetRequestSchema = z.object({
   updatedAt: z.number().int().nonnegative(),
 });
 
+// The manual workspace order of each project and the sidebar's sort choice, shared by every device
+// that connects to this host. Each project's order and the sort carry their own `updatedAt` (device
+// clock in epoch ms when a person changed it), and the newest of each wins on its own, so a reorder
+// in one project never undoes a reorder in another. `sort.value` is a plain string so a sort a newer
+// app knows passes through an older host.
+export const SidebarWorkspaceOrderSchema = z.object({
+  projects: z.record(z.string(), SidebarProjectOrderSchema),
+  sort: z
+    .object({
+      value: z.string(),
+      updatedAt: z.number().int().nonnegative(),
+    })
+    .optional(),
+});
+
+export const SidebarWorkspaceOrderGetRequestSchema = z.object({
+  type: z.literal("sidebar.workspace_order.get.request"),
+  requestId: z.string(),
+  subscribe: z.object({ subscriptionId: z.string().optional() }).optional(),
+});
+
+// The host keeps each entry that is newer than what it holds and answers with the merged state.
+export const SidebarWorkspaceOrderSetRequestSchema = SidebarWorkspaceOrderSchema.extend({
+  type: z.literal("sidebar.workspace_order.set.request"),
+  requestId: z.string(),
+});
+
 export const ProjectRemoveRequestSchema = z.object({
   type: z.literal("project.remove.request"),
   projectId: z.string(),
@@ -2697,6 +2724,29 @@ export const SidebarProjectOrderSetResponseSchema = z.object({
 export const SidebarProjectOrderUpdateSchema = z.object({
   type: z.literal("sidebar.project_order.update"),
   payload: SidebarProjectOrderSchema.extend({
+    subscriptionId: z.string().optional(),
+  }),
+});
+
+export const SidebarWorkspaceOrderGetResponseSchema = z.object({
+  type: z.literal("sidebar.workspace_order.get.response"),
+  payload: SidebarWorkspaceOrderSchema.extend({
+    requestId: z.string(),
+    subscriptionId: z.string().optional(),
+  }),
+});
+
+// Carries the host's whole state after the merge.
+export const SidebarWorkspaceOrderSetResponseSchema = z.object({
+  type: z.literal("sidebar.workspace_order.set.response"),
+  payload: SidebarWorkspaceOrderSchema.extend({
+    requestId: z.string(),
+  }),
+});
+
+export const SidebarWorkspaceOrderUpdateSchema = z.object({
+  type: z.literal("sidebar.workspace_order.update"),
+  payload: SidebarWorkspaceOrderSchema.extend({
     subscriptionId: z.string().optional(),
   }),
 });
@@ -4180,6 +4230,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectSnoozeSetRequestSchema,
   SidebarProjectOrderGetRequestSchema,
   SidebarProjectOrderSetRequestSchema,
+  SidebarWorkspaceOrderGetRequestSchema,
+  SidebarWorkspaceOrderSetRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
   AgentMetadataUpdateRequestSchema,
@@ -4633,6 +4685,8 @@ export const ServerInfoStatusPayloadSchema = z
         sendToDevice: z.boolean().optional(),
         // COMPAT(sidebarProjectOrder): added after v0.17.6, remove gate after 2027-12-01.
         sidebarProjectOrder: z.boolean().optional(),
+        // COMPAT(sidebarWorkspaceOrder): added after v0.17.6, remove gate after 2027-12-01.
+        sidebarWorkspaceOrder: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(chatTerminals): added after v0.17.5, remove gate after 2027-11-27.
         // Hosts with it keep `ownerAgentId` on terminals and answer `terminal.owner.set`.
@@ -5241,6 +5295,16 @@ export const WorkspaceDescriptorPayloadSchema = z
     // and by daemons that predate it; those let subagents mask a waiting root as
     // running.
     runningSubagentCount: z.number().int().nonnegative().optional(),
+    // The workspace waits: no root agent's own turn runs and nothing is for the user, but
+    // background jobs or subagents still run for it. `status` keeps its older meaning for
+    // clients that predate this field (running while jobs run, done or attention while only
+    // subagents run). Omitted when the workspace does not wait, and by older daemons.
+    waiting: z
+      .object({
+        backgroundTaskCount: z.number().int().nonnegative(),
+        subagentCount: z.number().int().nonnegative(),
+      })
+      .optional(),
     activityAt: z.string().nullable(),
     createdAt: z.string().optional(),
     lastUserMessageAt: z.string().nullable().optional(),
@@ -8736,6 +8800,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceLabelListResponseSchema,
   WorkspaceLabelUpdateSchema,
   SidebarProjectOrderUpdateSchema,
+  SidebarWorkspaceOrderUpdateSchema,
   WorkspaceLabelAssignmentSetResponseSchema,
   WorkspaceLabelUpdateResponseSchema,
   WorkspaceLabelDeleteResponseSchema,
@@ -8836,6 +8901,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProjectSnoozeSetResponseSchema,
   SidebarProjectOrderGetResponseSchema,
   SidebarProjectOrderSetResponseSchema,
+  SidebarWorkspaceOrderGetResponseSchema,
+  SidebarWorkspaceOrderSetResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
   AgentMetadataUpdateResponseSchema,
@@ -9084,6 +9151,14 @@ export type SidebarProjectOrder = z.infer<typeof SidebarProjectOrderSchema>;
 export type SidebarProjectOrderGetResponse = z.infer<typeof SidebarProjectOrderGetResponseSchema>;
 export type SidebarProjectOrderSetResponse = z.infer<typeof SidebarProjectOrderSetResponseSchema>;
 export type SidebarProjectOrderUpdate = z.infer<typeof SidebarProjectOrderUpdateSchema>;
+export type SidebarWorkspaceOrder = z.infer<typeof SidebarWorkspaceOrderSchema>;
+export type SidebarWorkspaceOrderGetResponse = z.infer<
+  typeof SidebarWorkspaceOrderGetResponseSchema
+>;
+export type SidebarWorkspaceOrderSetResponse = z.infer<
+  typeof SidebarWorkspaceOrderSetResponseSchema
+>;
+export type SidebarWorkspaceOrderUpdate = z.infer<typeof SidebarWorkspaceOrderUpdateSchema>;
 export type ProjectRemoveResponse = z.infer<typeof ProjectRemoveResponseSchema>;
 export type WorkspaceTitleSetResponse = z.infer<typeof WorkspaceTitleSetResponseSchema>;
 export type WorkspaceTitleSetResponsePayload = z.infer<

@@ -76,7 +76,7 @@ $PASEO_HOME/
 │   ├── manifest.json
 │   └── blobs/{sha256(serverId, path)}-{uuid}
 ├── push-tokens.json                     # Expo push notification tokens
-└── sidebar-sync.json                    # Sidebar state shared by every device (project order)
+└── sidebar-sync.json                    # Sidebar state shared by every device (project and workspace order, sort)
 ```
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
@@ -324,7 +324,8 @@ Each entry may include a Paseo-tool policy:
 
 Absent `paseoTools`, or absent fields within it, means Paseo tools are enabled and all tools are
 allowed. `enabled: false` disables the provider's Paseo catalog; `disabledTools` lists exact tool
-IDs to omit. The policy covers the core and browser catalog, not the voice-only `speak` tool.
+IDs to omit. `disabledTools` never removes the voice-only `speak` tool; `enabled: false` and
+`daemon.mcp.injectIntoAgents: false` remove it with the rest of the catalog.
 Browser tools also require `daemon.browserTools.enabled` and a connected browser host.
 This policy controls the catalog presented to an agent. It is not an authorization boundary for
 agents that can access the host through a shell.
@@ -549,20 +550,39 @@ than treating it as valid.
 **Path:** `$PASEO_HOME/sidebar-sync.json`
 
 ```json
-{ "projectOrder": { "order": ["<project view key>", "..."], "updatedAt": 1767225600000 } }
+{
+  "projectOrder": { "order": ["<project view key>", "..."], "updatedAt": 1767225600000 },
+  "workspaceOrder": {
+    "projects": {
+      "<project view key>": {
+        "order": ["<serverId>:<workspaceId>", "..."],
+        "updatedAt": 1767225600000
+      }
+    },
+    "sort": { "value": "manual", "updatedAt": 1767225600000 }
+  }
+}
 ```
 
-The sidebar's project order, so every device that connects to the host shows the same order.
-`updatedAt` is the clock of the device that reordered, in epoch ms. The daemon keeps the order with
-the newest stamp and answers an older one with what it holds; the app does the same on its side
-(`packages/app/src/sidebar-sync/project-order.ts`), so a device that reordered while a host was
-asleep sends its order when the host comes back, and every host converges on the last reorder.
-Projects the sidebar appends on its own are not stamped, so a new project on one device never
-overrides a reorder made on another. Device clocks decide ties between hosts; a device whose clock
-runs far ahead wins until someone reorders after it.
+The sidebar's project order, each project's manual workspace order, and the workspace sort, so
+every device that connects to the host shows the same sidebar. `updatedAt` is the clock of the
+device that made the change, in epoch ms. The daemon keeps the newest stamp; the app does the same
+on its side (`packages/app/src/sidebar-sync/`), so a device that reordered while a host was asleep
+sends its change when the host comes back, and every host converges on the last change.
 
-Keys the daemon does not know survive a write, so later shared sidebar state can sit beside
-`projectOrder` and a downgraded daemon keeps it.
+- `projectOrder` is one entry: a set with an older stamp is answered with what the host holds.
+- `workspaceOrder` stamps each project's order and the sort on their own and merges entry by entry
+  (`mergeSidebarWorkspaceOrder` in `packages/protocol/src/sidebar-workspace-order.ts`), so a reorder
+  in one project never undoes a reorder made in another on a different device. `sort.value` is a
+  plain string, so a sort a newer app adds passes through an older daemon, and an app that does not
+  know it keeps its own.
+
+Projects and workspaces the sidebar appends on its own are not stamped, so a new one on one device
+never overrides a reorder made on another. Device clocks decide ties between hosts; a device whose
+clock runs far ahead wins until someone changes the order after it.
+
+Keys the daemon does not know survive a write, so later shared sidebar state can sit beside these
+and a downgraded daemon keeps it.
 
 ---
 

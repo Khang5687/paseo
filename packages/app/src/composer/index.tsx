@@ -1140,14 +1140,13 @@ interface ComposerVoiceModeButtonProps {
   t: TFunction;
 }
 
-/** Whether voice mode can take the trailing disc; MessageInput decides when it does. */
+/** Whether voice mode is offered. It takes the trailing disc when idle, and sits beside Stop during a run. */
 function offersVoiceMode(input: {
   isVoiceModeForAgent: boolean;
   hasAgent: boolean;
-  isAgentRunning: boolean;
   showVoice: boolean;
 }): boolean {
-  return input.showVoice && !input.isVoiceModeForAgent && input.hasAgent && !input.isAgentRunning;
+  return input.showVoice && !input.isVoiceModeForAgent && input.hasAgent;
 }
 
 function ComposerVoiceModeButton({
@@ -2541,7 +2540,6 @@ function ComposerContentImpl({
       offersVoiceMode({
         isVoiceModeForAgent,
         hasAgent,
-        isAgentRunning,
         showVoice: mode.showVoice,
       }) ? (
         <View style={styles.rightControls}>
@@ -2560,7 +2558,6 @@ function ComposerContentImpl({
       toolbarGlyph,
       handleToggleRealtimeVoice,
       hasAgent,
-      isAgentRunning,
       isConnected,
       isVoiceModeForAgent,
       isVoiceSwitching,

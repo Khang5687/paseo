@@ -51,6 +51,9 @@ import {
 import { SidebarWorkspaceCopyAgentIdButton } from "@/components/sidebar/sidebar-workspace-copy-agent-id-button";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatWaitingOnLabel, type WaitCounts } from "@/workspace-status/waiting-label";
+import type { TFunction } from "i18next";
 
 const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
@@ -178,6 +181,9 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
   const isNew = workspace.isNew === true;
+  const { t } = useTranslation();
+  const isCompact = useIsCompactFormFactor();
+  const { isWaiting, waitingLabel, waitingFor } = describeRowWaiting(t, workspace, isCompact);
   const workspaceBranchTextStyle = useMemo(
     () => [
       styles.workspaceBranchText,
@@ -203,7 +209,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         backdrop={backdrop}
         hasUnsentDraft={hasUnsentDraft}
         loading={isLoading}
-        waiting={workspace.waitingOn !== null}
+        waiting={isWaiting}
         testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
       />
     );
@@ -213,7 +219,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         bucket={workspace.statusBucket}
         workspaceKind={workspace.workspaceKind}
         loading={isLoading}
-        waiting={workspace.waitingOn !== null}
+        waiting={isWaiting}
+        waitingLabel={waitingLabel}
         hasUnsentDraft={hasUnsentDraft}
         reserveIdleSpace={reserveIdleStatusIndicatorSpace}
       />
@@ -259,7 +266,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             nextRunAt={workspace.nextRunAt}
             waitingOn={workspace.waitingOn}
             labels={labels}
-            workingSubagentCount={workspace.workingSubagentCount}
+            waitingFor={waitingFor}
             workspace={workspace}
           />
         </View>
@@ -304,19 +311,44 @@ function WorkspaceSelectionCheckbox({
   );
 }
 
+/**
+ * Whether the row shows the hourglass, and what it waits on in words: the hourglass's tooltip on
+ * desktop, the meta line on a phone, where there is no hover.
+ */
+function describeRowWaiting(
+  t: TFunction,
+  workspace: SidebarWorkspaceEntry,
+  isCompact: boolean,
+): { isWaiting: boolean; waitingLabel: string | null; waitingFor: WaitCounts | null } {
+  const isWaiting =
+    workspace.statusBucket === "running" &&
+    (workspace.waitingOn !== null || workspace.waiting !== null);
+  return {
+    isWaiting,
+    waitingLabel: workspace.waiting ? formatWaitingOnLabel(t, workspace.waiting) : null,
+    waitingFor: isCompact && isWaiting ? workspace.waiting : null,
+  };
+}
+
 function WorkspaceStatusIndicator({
   bucket,
   workspaceKind,
   loading = false,
   waiting = false,
+  waitingLabel = null,
   reserveIdleSpace = true,
   hasUnsentDraft,
 }: {
   bucket: SidebarWorkspaceEntry["statusBucket"];
   workspaceKind: SidebarWorkspaceEntry["workspaceKind"];
   loading?: boolean;
-  /** The working chat is blocked on a background job: an hourglass, not the moving ring. */
+  /**
+   * The chat waits rather than works: its turn is blocked on a job, or it ended and only its
+   * background jobs or subagents run. An hourglass, not the moving ring.
+   */
   waiting?: boolean;
+  /** What it waits on in words, for the hourglass's tooltip on desktop. */
+  waitingLabel?: string | null;
   reserveIdleSpace?: boolean;
   hasUnsentDraft: boolean;
 }) {
@@ -333,10 +365,26 @@ function WorkspaceStatusIndicator({
   }
 
   if (waiting && bucket === "running") {
-    return (
-      <View style={styles.workspaceStatusDot} testID="workspace-status-indicator-waiting">
+    const hourglass = (
+      <View
+        style={styles.workspaceStatusDot}
+        testID="workspace-status-indicator-waiting"
+        accessibilityLabel={waitingLabel ?? undefined}
+        aria-label={waitingLabel ?? undefined}
+      >
         <ThemedHourglass size={STATUS_INDICATOR_ALERT_SIZE} uniProps={waitingColorMapping} />
       </View>
+    );
+    if (!waitingLabel) return hourglass;
+    return (
+      <Tooltip delayDuration={300} enabledOnDesktop enabledOnMobile={false}>
+        <TooltipTrigger asChild>{hourglass}</TooltipTrigger>
+        <TooltipContent side="right" align="center" offset={8}>
+          <Text style={styles.waitingTooltipText} testID="workspace-status-waiting-tooltip">
+            {waitingLabel}
+          </Text>
+        </TooltipContent>
+      </Tooltip>
     );
   }
   if (shouldRenderSyncedStatusLoader({ bucket })) {
@@ -731,6 +779,10 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
+  },
+  waitingTooltipText: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base,
   },
   selectionCheckbox: {
     width: bySizing({ touch: 18, pointer: 15 }),

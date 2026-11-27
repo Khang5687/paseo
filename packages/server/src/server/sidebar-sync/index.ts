@@ -1,17 +1,27 @@
 import { promises as fs } from "node:fs";
 import { z } from "zod";
-import { SidebarProjectOrderSchema, type SidebarProjectOrder } from "@getpaseo/protocol/messages";
+import {
+  SidebarProjectOrderSchema,
+  SidebarWorkspaceOrderSchema,
+  type SidebarProjectOrder,
+  type SidebarWorkspaceOrder,
+} from "@getpaseo/protocol/messages";
+import { mergeSidebarWorkspaceOrder } from "@getpaseo/protocol/sidebar-workspace-order";
 import { writeJsonFileAtomic } from "../atomic-file.js";
 
-// Sidebar state that every device connected to this host shares. Only the project order lives
-// here today; later shared sidebar state adds a key beside it. Unknown keys survive a write, so a
+// Sidebar state that every device connected to this host shares: the project order and the
+// workspace order (each project's manual order plus the sort). Unknown keys survive a write, so a
 // downgraded daemon keeps what a newer one stored.
 const SidebarSyncFileSchema = z
-  .object({ projectOrder: SidebarProjectOrderSchema.optional() })
+  .object({
+    projectOrder: SidebarProjectOrderSchema.optional(),
+    workspaceOrder: SidebarWorkspaceOrderSchema.optional(),
+  })
   .passthrough();
 type SidebarSyncFile = z.infer<typeof SidebarSyncFileSchema>;
 
 const EMPTY_PROJECT_ORDER: SidebarProjectOrder = { order: [], updatedAt: 0 };
+const EMPTY_WORKSPACE_ORDER: SidebarWorkspaceOrder = { projects: {} };
 
 export interface SidebarProjectOrderSetResult {
   accepted: boolean;
@@ -23,6 +33,9 @@ export class SidebarSyncStore {
   private loading: Promise<SidebarSyncFile> | null = null;
   private writes: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<(projectOrder: SidebarProjectOrder) => void>();
+  private readonly workspaceOrderListeners = new Set<
+    (workspaceOrder: SidebarWorkspaceOrder) => void
+  >();
 
   constructor(
     private readonly filePath: string,
@@ -44,13 +57,41 @@ export class SidebarSyncStore {
     const current = state.projectOrder ?? EMPTY_PROJECT_ORDER;
     if (next.updatedAt <= current.updatedAt) return { accepted: false, projectOrder: current };
     const projectOrder = { order: [...new Set(next.order)], updatedAt: next.updatedAt };
-    const updated = { ...state, projectOrder };
+    await this.save({ ...state, projectOrder });
+    for (const listener of this.listeners) listener(projectOrder);
+    return { accepted: true, projectOrder };
+  }
+
+  async getWorkspaceOrder(): Promise<SidebarWorkspaceOrder> {
+    return (await this.load()).workspaceOrder ?? EMPTY_WORKSPACE_ORDER;
+  }
+
+  /** Merges `next` entry by entry, newest wins, and returns what the host holds afterwards. */
+  async mergeWorkspaceOrder(next: SidebarWorkspaceOrder): Promise<SidebarWorkspaceOrder> {
+    await this.load();
+    const state = this.state ?? {};
+    const { merged, changed } = mergeSidebarWorkspaceOrder(
+      state.workspaceOrder ?? EMPTY_WORKSPACE_ORDER,
+      next,
+    );
+    if (!changed) return merged;
+    await this.save({ ...state, workspaceOrder: merged });
+    for (const listener of this.workspaceOrderListeners) listener(merged);
+    return merged;
+  }
+
+  subscribeWorkspaceOrder(listener: (workspaceOrder: SidebarWorkspaceOrder) => void): () => void {
+    this.workspaceOrderListeners.add(listener);
+    return () => {
+      this.workspaceOrderListeners.delete(listener);
+    };
+  }
+
+  private async save(updated: SidebarSyncFile): Promise<void> {
     this.state = updated;
     const write = this.writes.then(() => this.writeFile(this.filePath, updated));
     this.writes = write.catch(() => undefined);
     await write;
-    for (const listener of this.listeners) listener(projectOrder);
-    return { accepted: true, projectOrder };
   }
 
   subscribe(listener: (projectOrder: SidebarProjectOrder) => void): () => void {

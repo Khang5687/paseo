@@ -64,6 +64,13 @@ export interface SeedDaemonClient {
     order: string[];
     updatedAt: number;
   }): Promise<{ accepted: boolean; order: string[]; updatedAt: number }>;
+  setSidebarWorkspaceOrder(input: {
+    projects: Record<string, { order: string[]; updatedAt: number }>;
+    sort?: { value: string; updatedAt: number };
+  }): Promise<{
+    projects: Record<string, { order: string[]; updatedAt: number }>;
+    sort?: { value: string; updatedAt: number };
+  }>;
   clearWorkspaceAttention(workspaceId: string): Promise<void>;
   setWorkspaceLabel(input: {
     workspaceId: string;

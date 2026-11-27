@@ -34,7 +34,7 @@ const metroTest = base.extend({
 });
 
 const daemonTest = metroTest.extend<
-  { projectOwnership: void },
+  { projectOwnership: void; sharedSidebarSort: void },
   {
     e2eDaemonConfig: Record<string, unknown> | undefined;
     e2eDaemonEnvironment: Record<string, string>;
@@ -101,6 +101,20 @@ const daemonTest = metroTest.extend<
         if (testInfo.status === testInfo.expectedStatus) throw new Error(message);
         await testInfo.attach("project-leaks", { body: message, contentType: "text/plain" });
       }
+    },
+    { auto: true },
+  ],
+  // The worker's daemon shares the sidebar sort with every page that connects, so a spec that
+  // picks a sort would change the next spec's sidebar. Put it back to the default after each test.
+  sharedSidebarSort: [
+    async ({ e2eWorkerClient }, provide) => {
+      await provide();
+      const { sort } = await e2eWorkerClient.setSidebarWorkspaceOrder({ projects: {} });
+      if (!sort || sort.value === "created") return;
+      await e2eWorkerClient.setSidebarWorkspaceOrder({
+        projects: {},
+        sort: { value: "created", updatedAt: Math.max(Date.now(), sort.updatedAt + 1) },
+      });
     },
     { auto: true },
   ],

@@ -56,6 +56,8 @@ Q104 (Sidebar order) yes: newest first [files: order.png]
 
 The line names the title and carries the pick's own words, because a bare "yes" means nothing once the reply that asked has left the agent's context. The words are English on every locale: agents read them and the daemon matches the label.
 
+Copy answers sits left of Send and puts that same text on the clipboard without sending anything, so every question stays open. It is disabled at 0 answered and reads "Copied" for 1.5 s after a tap. It calls `buildAnswerMessage`, the builder Send uses, never a second formatter; the Needs you page copies the same lines per chat ([docs/needs-you.md](needs-you.md#one-send-for-many-chats)).
+
 ### Half answers on every device
 
 A half-answered set of cards shows the same answers on every device. The app writes each answer to the host with `agent.question.answer.set` once typing pauses, and the host keeps it on the question (`AgentOpenQuestion.answer`) and sends it with the agent. The newer copy wins on `updatedAt`, this device's or the host's (`resolveAnswer`); a cleared answer keeps its time so an older write cannot bring it back. Files are uploaded to the host when you pick them, so the answer carries only their upload record. Hosts without `features.questionAnswers` never see half answers: they stay on the device until sent.

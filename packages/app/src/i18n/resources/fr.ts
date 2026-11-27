@@ -182,7 +182,6 @@ export const fr: TranslationResources = {
       unmuteVoice: "Réactiver le micro",
       muteVoice: "Couper le micro",
       dictation: "Dictée",
-      interruptBeforeVoice: "Interrompez l’agent avant de démarrer le mode vocal",
     },
     attachments: {
       addImage: "Ajouter une image",
@@ -529,6 +528,11 @@ export const fr: TranslationResources = {
       nextRun: "prochain {{time}}",
       nextRunDue: "imminent",
       waitingOn: "En attente : {{job}}",
+      waitingOnTasksOne: "En attente : 1 tâche en arrière-plan",
+      waitingOnTasksMany: "En attente : {{count}} tâches en arrière-plan",
+      waitingOnSubagentsOne: "En attente : 1 sous-agent",
+      waitingOnSubagentsMany: "En attente : {{count}} sous-agents",
+      waitingOnBoth: "En attente : {{tasks}} et {{subagents}}",
       unnamedJob: "tâche en arrière-plan",
       detailsWhy: "Pourquoi",
       detailsCommand: "Commande",
@@ -1387,6 +1391,7 @@ export const fr: TranslationResources = {
       statusFailed: "En échec : {{count}}",
       statusDone: "Terminé, non ouvert : {{count}}",
       statusWorking: "En cours : {{count}}",
+      statusWaiting: "En attente : {{count}}",
       moveTop: "Placer en haut",
       moveEarlier: "Déplacer avant",
       moveLater: "Déplacer après",
@@ -1404,6 +1409,7 @@ export const fr: TranslationResources = {
     navButtons: {
       title: "Boutons affichés",
       done: "Terminé",
+      more: "Plus",
     },
     view: {
       failed: "Impossible de charger la vue de la barre latérale.",
@@ -1433,6 +1439,7 @@ export const fr: TranslationResources = {
         lastPrompt: "Dernier prompt",
         urgent: "Urgent d'abord",
         updateHost: "Mettez les hôtes à jour pour trier les espaces de travail",
+        switchedToManual: "Tri manuel activé",
       },
       grouping: {
         label: "Regroupement",
@@ -1559,9 +1566,6 @@ export const fr: TranslationResources = {
       },
     },
     workspace: {
-      workingSubagents: "{{count}} sous-agents au travail",
-      workingSubagents_one: "{{count}} sous-agent au travail",
-      workingSubagents_other: "{{count}} sous-agents au travail",
       newAgent: "Nouveau",
       status: {
         serviceRunning: "Service {{name}} en cours d’exécution",
@@ -2324,6 +2328,11 @@ export const fr: TranslationResources = {
       mute: "Couper la voix en temps réel",
       unmute: "Réactiver la voix en temps réel",
       stop: "Arrêter la voix en temps réel et interrompre le tour",
+      black: "Passer l'écran au noir pendant que la voix continue",
+    },
+    blackScreen: {
+      button: "Noir",
+      wake: "Écran noir. Touchez deux fois pour le réveiller",
     },
   },
   rewind: {
@@ -2496,6 +2505,8 @@ export const fr: TranslationResources = {
     withdrawn: "{{label}} retirée",
     jumpTo: "Aller à {{label}}",
     notLoaded: "{{label}} n’est pas dans la conversation chargée",
+    copyAnswers: "Copier les réponses",
+    copiedAnswers: "Copié",
   },
   needsYou: {
     title: "Vous attend",
@@ -2531,7 +2542,6 @@ export const fr: TranslationResources = {
     pillLabelOne: "1 sous-agent",
     pillLabelMany: "{{count}} sous-agents",
     pillLabelWorking: "{{count}} en cours",
-    pillLabelYourTurnWorking: "À vous · {{count}} en cours",
     pillLabelFailed: "{{count}} en échec",
     pillLabelNeedsInputOne: "1 attend une réponse",
     pillLabelNeedsInputMany: "{{count}} attendent une réponse",

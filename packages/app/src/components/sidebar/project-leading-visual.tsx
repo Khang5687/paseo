@@ -121,7 +121,7 @@ export function ProjectLeadingVisual({
 
 // The project icon (the lettered box) is what marks a row as a *project* rather than a
 // workspace, so it always stays and status annotates it instead of replacing it. Every
-// surfaced bucket lands in the identical corner badge — an amber alert glyph for needs_input,
+// surfaced bucket lands in the identical corner badge — a purple alert glyph for needs_input,
 // a colored disc for the rest, nothing for done — so the badge reads as one fixed shell and
 // only its contents change.
 export function ProjectStatusIndicator({

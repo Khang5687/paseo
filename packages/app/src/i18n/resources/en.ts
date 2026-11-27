@@ -178,7 +178,6 @@ export const en = {
       unmuteVoice: "Unmute voice",
       muteVoice: "Mute voice",
       dictation: "Dictation",
-      interruptBeforeVoice: "Interrupt the agent before starting voice mode",
     },
     attachments: {
       addImage: "Add image",
@@ -522,6 +521,11 @@ export const en = {
       nextRun: "next {{time}}",
       nextRunDue: "due now",
       waitingOn: "Waiting: {{job}}",
+      waitingOnTasksOne: "Waiting on 1 background task",
+      waitingOnTasksMany: "Waiting on {{count}} background tasks",
+      waitingOnSubagentsOne: "Waiting on 1 subagent",
+      waitingOnSubagentsMany: "Waiting on {{count}} subagents",
+      waitingOnBoth: "Waiting on {{tasks}} and {{subagents}}",
       unnamedJob: "background job",
       detailsWhy: "Why",
       detailsCommand: "Command",
@@ -1368,6 +1372,7 @@ export const en = {
       statusFailed: "Failed: {{count}}",
       statusDone: "Done, not opened: {{count}}",
       statusWorking: "Working: {{count}}",
+      statusWaiting: "Waiting: {{count}}",
       moveTop: "Move to top",
       moveEarlier: "Move earlier",
       moveLater: "Move later",
@@ -1385,6 +1390,7 @@ export const en = {
     navButtons: {
       title: "Buttons to show",
       done: "Done",
+      more: "More",
     },
     view: {
       failed: "Sidebar view failed to load.",
@@ -1414,6 +1420,7 @@ export const en = {
         lastPrompt: "Last prompt",
         urgent: "Urgent first",
         updateHost: "Update hosts to sort workspaces",
+        switchedToManual: "Sorted by hand now",
       },
       grouping: {
         label: "Grouping",
@@ -1539,9 +1546,6 @@ export const en = {
       },
     },
     workspace: {
-      workingSubagents: "{{count}} sub-agents working",
-      workingSubagents_one: "{{count}} sub-agent working",
-      workingSubagents_other: "{{count}} sub-agents working",
       newAgent: "New",
       status: {
         serviceRunning: "Service {{name}} running",
@@ -2300,6 +2304,11 @@ export const en = {
       mute: "Mute realtime voice",
       unmute: "Unmute realtime voice",
       stop: "Stop realtime voice and interrupt turn",
+      black: "Turn the screen black while voice keeps running",
+    },
+    blackScreen: {
+      button: "Black",
+      wake: "Black screen. Double-tap to wake",
     },
   },
   rewind: {
@@ -2464,6 +2473,8 @@ export const en = {
     withdrawn: "{{label}} withdrawn",
     jumpTo: "Jump to {{label}}",
     notLoaded: "{{label}} is not in the loaded chat",
+    copyAnswers: "Copy answers",
+    copiedAnswers: "Copied",
   },
   needsYou: {
     title: "Needs you",
@@ -2499,7 +2510,6 @@ export const en = {
     pillLabelOne: "1 subagent",
     pillLabelMany: "{{count}} subagents",
     pillLabelWorking: "{{count}} working",
-    pillLabelYourTurnWorking: "Your turn · {{count}} working",
     pillLabelFailed: "{{count}} failed",
     pillLabelNeedsInputOne: "1 needs input",
     pillLabelNeedsInputMany: "{{count}} need input",
@@ -4239,7 +4249,6 @@ type TranslationResourcesBase = WidenStringLeaves<typeof en>;
 type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
 type DurationPluralKey = `${"days" | "hours" | "minutes"}_${PluralCategory}`;
 type AgoPluralKey = `${"daysAgo" | "hoursAgo" | "minutesAgo"}_${PluralCategory}`;
-type WorkingSubagentsPluralKey = `workingSubagents_${PluralCategory}`;
 type NoteMarkerPluralKey = `${"open" | "waiting" | "fired" | "resolved"}_${PluralCategory}`;
 
 // i18next plural categories differ by locale, so locale catalogs may add the
@@ -4250,10 +4259,6 @@ export type TranslationResources = TranslationResourcesBase & {
       Partial<Record<DurationPluralKey, string>>;
     timing: TranslationResourcesBase["providerUsage"]["timing"] &
       Partial<Record<AgoPluralKey, string>>;
-  };
-  sidebar: TranslationResourcesBase["sidebar"] & {
-    workspace: TranslationResourcesBase["sidebar"]["workspace"] &
-      Partial<Record<WorkingSubagentsPluralKey, string>>;
   };
   notes: TranslationResourcesBase["notes"] & {
     marker: TranslationResourcesBase["notes"]["marker"] &
