@@ -19,6 +19,7 @@ import type {
   PluginSidebarViewContribution,
   PluginSidebarItemContribution as SDKPluginSidebarItemContribution,
   PluginWorkspaceRowBadgeItemContribution as SDKPluginWorkspaceRowBadgeItemContribution,
+  PluginProjectRailItemContribution as SDKPluginProjectRailItemContribution,
   PluginScreenContribution as SDKPluginScreenContribution,
   PluginSettingsScreenContribution as SDKPluginSettingsScreenContribution,
   PluginTimelineRendererContribution,
@@ -38,6 +39,7 @@ type PluginSidebarContribution = SDKPluginSidebarContribution<PluginText>;
 type PluginSidebarItemContribution = SDKPluginSidebarItemContribution<PluginText>;
 type PluginWorkspaceRowBadgeItemContribution =
   SDKPluginWorkspaceRowBadgeItemContribution<PluginText>;
+export type PluginProjectRailItemContribution = SDKPluginProjectRailItemContribution<PluginText>;
 type PluginScreenContribution = SDKPluginScreenContribution<PluginText>;
 type PluginSettingsScreenContribution = SDKPluginSettingsScreenContribution<PluginText>;
 type WorkspacePanelInput = SDKPluginWorkspacePanelContribution<PluginText>;
@@ -62,6 +64,7 @@ export interface EvaluatedPlugin {
   /** `addSidebarItem` registrations, so `/plugin/<id>/sidebar/<item>` routes keep resolving. */
   legacySidebarItems: PluginSidebarContribution[];
   workspaceRowBadgeItems: PluginWorkspaceRowBadgeItemContribution[];
+  projectRailItems: PluginProjectRailItemContribution[];
   filePanels: PluginFilePanelContribution[];
   composerItems: PluginComposerItemContribution[];
   newWorkspaceItems: PluginNewWorkspaceItemContribution[];

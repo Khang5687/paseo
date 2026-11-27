@@ -34,6 +34,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { PressHighlight } from "@/components/ui/press-highlight";
+import { DensityIcon } from "@/components/ui/density-icon";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isNative as platformIsNative } from "@/constants/platform";
@@ -49,6 +50,12 @@ import {
   ProjectStatusDots,
   useProjectStatusLabel,
 } from "./project-status-dots";
+import { SidebarBadge, sidebarBadgeAccessibilityLabel } from "./sidebar-badge";
+import {
+  PluginProjectRailItems,
+  type ProjectRailButtonProps,
+  useHasPluginProjectRailItems,
+} from "@/plugins/project-rail-items";
 import { useProjectIcons } from "@/projects/icons";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
@@ -160,6 +167,7 @@ function SidebarProjectRail() {
   const showNumbers = useShowProjectShortcutBadges();
   const clearProjectFilters = useSidebarViewStore((state) => state.clearProjectFilters);
   const open = useSidebarRailOpenStore((state) => state.open);
+  const hasPluginItems = useHasPluginProjectRailItems();
 
   const handleDragEnd = useCallback((reordered: SidebarProjectEntry[]) => {
     saveProjectStripOrder(reordered.map((project) => project.viewKey));
@@ -215,18 +223,26 @@ function SidebarProjectRail() {
         <RailOpenToggle open={open} />
         <RailAllButton selected={model.allSelected} onPress={clearProjectFilters} open={open} />
         <View style={styles.railDivider} />
-        <DraggableList
-          testID="sidebar-project-rail-list"
-          data={model.projects}
-          keyExtractor={projectViewKeyExtractor}
-          renderItem={renderItem}
-          onDragEnd={handleDragEnd}
-          extraData={extraData}
-          ListFooterComponent={quietFooter}
-          useDragHandle
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.railListContent}
-        />
+        <View style={styles.railListArea}>
+          <DraggableList
+            testID="sidebar-project-rail-list"
+            data={model.projects}
+            keyExtractor={projectViewKeyExtractor}
+            renderItem={renderItem}
+            onDragEnd={handleDragEnd}
+            extraData={extraData}
+            ListFooterComponent={quietFooter}
+            useDragHandle
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.railListContent}
+          />
+        </View>
+        {hasPluginItems ? (
+          <View style={styles.railPluginItems} testID="sidebar-project-rail-plugins">
+            <View style={styles.railDivider} />
+            <PluginProjectRailItems open={open} Button={RailIconButton} />
+          </View>
+        ) : null}
       </View>
     </>
   );
@@ -435,6 +451,56 @@ function RailAllButton({
               {label}
             </Text>
           ) : null}
+        </PressHighlight>
+      </RailTooltip>
+    </View>
+  );
+}
+
+/** A plugin's rail button: its icon in the same square as All, and its badge on the corner. */
+function RailIconButton({
+  icon,
+  label,
+  open,
+  selected,
+  badge,
+  onPress,
+  testID,
+}: ProjectRailButtonProps) {
+  const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
+  return (
+    <View
+      style={[styles.railItem, open ? styles.railItemOpen : null]}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      <RailTooltip show={!open} label={label}>
+        <PressHighlight
+          accessibilityRole="button"
+          accessibilityLabel={sidebarBadgeAccessibilityLabel(label, badge)}
+          aria-selected={selected}
+          highlightStyle={styles.railButtonPressed}
+          onPress={onPress}
+          style={[
+            open ? styles.railRow : styles.railButton,
+            hovered && !selected ? styles.railButtonHovered : null,
+            selected ? styles.railButtonSelected : null,
+          ]}
+          testID={testID}
+        >
+          <View style={styles.railAllIcon}>
+            <DensityIcon
+              icon={icon}
+              size="sm"
+              color={selected ? "foreground" : "foregroundMuted"}
+            />
+          </View>
+          {open ? (
+            <Text style={styles.railRowText} numberOfLines={1}>
+              {label}
+            </Text>
+          ) : null}
+          <SidebarBadge badge={badge} placement={open ? "inline" : "corner"} ownerTestID={testID} />
         </PressHighlight>
       </RailTooltip>
     </View>
@@ -948,6 +1014,14 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.border,
   },
   railListContent: {
+    paddingBottom: theme.spacing[2],
+  },
+  // The projects scroll; plugin buttons stay pinned under them at the rail's foot.
+  railListArea: {
+    flex: 1,
+    minHeight: 0,
+  },
+  railPluginItems: {
     paddingBottom: theme.spacing[2],
   },
   railItem: {

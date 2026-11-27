@@ -40,6 +40,7 @@ import type {
   PluginSidebarItemContribution,
   PluginWorkspacePanelContribution,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginProjectRailItemContribution,
 } from "./types";
 import type { ComponentType } from "react";
 import { parsePluginIcon, parseSerializablePluginIcon } from "./icons";
@@ -143,6 +144,7 @@ export function runPluginClientBundle(
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     filePanels: [],
     composerItems: [],
     newWorkspaceItems: [],
@@ -166,6 +168,7 @@ export function runPluginClientBundle(
   const workspaceRowItemIds = new Set<string>();
   const filePanelIds = new Set<string>();
   const composerItemIds = new Set<string>();
+  const projectRailItemIds = new Set<string>();
   const newWorkspaceItemIds = new Set<string>();
   const workspacePanelIds = new Set<string>();
   const commandCenterItemIds = new Set<string>();
@@ -352,6 +355,26 @@ export function runPluginClientBundle(
         collector.workspaceRowBadgeItems,
         { id: itemId, title, icon, Component: contribution.Component },
         () => workspaceRowItemIds.delete(itemId),
+      );
+    },
+    addProjectRailItem(contribution: PluginProjectRailItemContribution) {
+      const itemId = requireId(contribution.id, "project rail item id");
+      if (projectRailItemIds.has(itemId)) {
+        throw new Error(`Duplicate project rail item: ${itemId}`);
+      }
+      const title = normalizePluginText(contribution.title);
+      if (!title) throw new Error(`Project rail item ${itemId} has no title`);
+      const icon = parsePluginIcon(`Project rail item ${itemId}`, contribution.icon);
+      // The screen may be added after the button, so the rail checks it exists when it draws.
+      const screen = requireId(contribution.screen, `project rail item ${itemId} screen`);
+      if (contribution.useBadge !== undefined && typeof contribution.useBadge !== "function") {
+        throw new Error(`Project rail item ${itemId} useBadge is not a function`);
+      }
+      projectRailItemIds.add(itemId);
+      return register(
+        collector.projectRailItems,
+        { id: itemId, title, icon, screen, useBadge: contribution.useBadge },
+        () => projectRailItemIds.delete(itemId),
       );
     },
     // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
@@ -689,6 +712,7 @@ export function runPluginClientBundle(
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     workspaceRowBadgeItems: collector.workspaceRowBadgeItems,
+    projectRailItems: collector.projectRailItems,
     filePanels: collector.filePanels,
     composerItems: collector.composerItems,
     newWorkspaceItems: collector.newWorkspaceItems,

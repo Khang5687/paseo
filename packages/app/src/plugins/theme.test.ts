@@ -71,6 +71,7 @@ function installed(serverId: string, themes: PluginThemeContribution[]): Install
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     filePanels: [],
     composerItems: [],
     newWorkspaceItems: [],
