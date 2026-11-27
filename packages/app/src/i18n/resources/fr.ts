@@ -2493,6 +2493,8 @@ export const fr: TranslationResources = {
     tooManyFiles: "Jusqu’à {{max}} fichiers par réponse",
     uploadFailed: "Impossible d’envoyer les fichiers",
     sendFailed: "Impossible d’envoyer les réponses",
+    copyAnswers: "Copier les réponses",
+    copiedAnswers: "Copié",
   },
   needsYou: {
     title: "Vous attend",

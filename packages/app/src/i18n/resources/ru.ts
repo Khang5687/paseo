@@ -2474,6 +2474,8 @@ export const ru: TranslationResources = {
     tooManyFiles: "До {{max}} файлов на ответ",
     uploadFailed: "Не удалось загрузить файлы",
     sendFailed: "Не удалось отправить ответы",
+    copyAnswers: "Копировать ответы",
+    copiedAnswers: "Скопировано",
   },
   needsYou: {
     title: "Ждут вас",

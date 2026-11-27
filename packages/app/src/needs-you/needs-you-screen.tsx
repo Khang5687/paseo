@@ -16,8 +16,14 @@ import { resolveSendNowBehavior } from "@/composer/input/state";
 import { useToast } from "@/contexts/toast-context";
 import { useAppSettings } from "@/hooks/use-settings";
 import { PluginNeedsYouItems, usePluginNeedsYouCount } from "@/plugins/needs-you-items";
-import { isQuestionAnswered, resolveAnswer } from "@/questions/answer-message";
+import {
+  buildAnswerMessage,
+  buildCopyAnswersText,
+  isQuestionAnswered,
+  resolveAnswer,
+} from "@/questions/answer-message";
 import { questionAnswerScopeKey, useQuestionAnswerStore } from "@/questions/answer-store";
+import { CopyAnswersButton } from "@/questions/copy-answers-button";
 import { QuestionCard } from "@/questions/question-card";
 import { sendQuestionAnswers } from "@/questions/send-answers";
 import { getHostRuntimeStore, useHostRuntimeClient } from "@/runtime/host-runtime";
@@ -188,21 +194,43 @@ function NeedsYouFooter({
       .finally(() => setSending(false));
   }, [answerFor, chats, settings, t, toast]);
 
+  const getCopyText = useCallback(
+    () =>
+      buildCopyAnswersText(
+        chats.map((chat) => ({
+          title: chat.title,
+          messages: chat.questionGroups.map((group) =>
+            buildAnswerMessage(group.questions, (question) =>
+              answerFor(chat.serverId, group.agentId, question),
+            ),
+          ),
+        })),
+      ),
+    [answerFor, chats],
+  );
+
   return (
     <View style={footerStyle}>
       <Text style={styles.footerText} testID="needs-you-summary">
         {t("needsYou.summary", { answered, total })}
       </Text>
-      <Button
-        variant="default"
-        size="sm"
-        disabled={answered === 0}
-        loading={sending}
-        onPress={handleSend}
-        testID="needs-you-send"
-      >
-        {t("needsYou.send", { count: answered })}
-      </Button>
+      <View style={styles.footerActions}>
+        <CopyAnswersButton
+          getText={getCopyText}
+          disabled={answered === 0}
+          testID="needs-you-copy"
+        />
+        <Button
+          variant="default"
+          size="sm"
+          disabled={answered === 0}
+          loading={sending}
+          onPress={handleSend}
+          testID="needs-you-send"
+        >
+          {t("needsYou.send", { count: answered })}
+        </Button>
+      </View>
     </View>
   );
 }
@@ -304,6 +332,11 @@ const styles = StyleSheet.create((theme) => ({
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     backgroundColor: theme.colors.surface0,
+  },
+  footerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
   },
   footerText: {
     flexShrink: 1,

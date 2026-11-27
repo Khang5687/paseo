@@ -56,6 +56,22 @@ export function buildAnswerMessage(
   return { text: lines.join("\n"), files, questionIds };
 }
 
+/**
+ * The text Copy answers puts on the clipboard for several chats: each chat's own lines under its
+ * title, in the order given, a blank line between chats. A chat with nothing answered is left
+ * out; null when no chat has an answer. Each chat's lines are the ones Send would send it.
+ */
+export function buildCopyAnswersText(
+  chats: readonly { title: string; messages: readonly (AnswerMessage | null)[] }[],
+): string | null {
+  const blocks: string[] = [];
+  for (const chat of chats) {
+    const lines = chat.messages.flatMap((message) => (message ? [message.text] : []));
+    if (lines.length > 0) blocks.push([chat.title, ...lines].join("\n"));
+  }
+  return blocks.length > 0 ? blocks.join("\n\n") : null;
+}
+
 /** The newer of this device's answer and the one the host keeps; last write wins. */
 export function resolveAnswer(
   local: AgentQuestionAnswer | undefined,

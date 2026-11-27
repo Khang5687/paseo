@@ -64,6 +64,19 @@ test.describe("phone width", () => {
         "2 of 3 answered · 1 stay open",
       );
       await page.screenshot({ path: test.info().outputPath("questions-bar-phone.png") });
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      const copy = page.getByTestId("open-questions-copy");
+      await copy.tap();
+      await expect(copy).toHaveText("Copied");
+      await page.screenshot({ path: test.info().outputPath("questions-copy-phone.png") });
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toBe(
+          [
+            "Q100 (Strip icons) yes: square icons with the project letter",
+            "Q104 (Sidebar order) round chips first",
+          ].join("\n"),
+        );
 
       await page.getByTestId("open-questions-send").tap();
       const sent = page.getByTestId("user-message").filter({ hasText: "Q100 (Strip icons)" });
@@ -82,6 +95,43 @@ test.describe("phone width", () => {
       await workspace.cleanup();
     }
   });
+});
+
+test("Copy answers copies what Send would send and leaves every question open", async ({
+  page,
+}) => {
+  const workspace = await seedQuestions("open-questions-copy-");
+  try {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await openAgentRoute(page, workspace);
+    await openQuestions(page);
+    const copy = page.getByTestId("open-questions-copy");
+    await expect(copy).toBeDisabled();
+
+    await page.getByTestId("open-question-Q100-pick").click();
+    await page.getByTestId("open-question-Q104-text").fill("round chips first");
+    await expect(copy).toBeEnabled();
+    await page.screenshot({ path: test.info().outputPath("questions-copy-desktop.png") });
+
+    await copy.click();
+    await expect(copy).toHaveText("Copied");
+    await page.screenshot({ path: test.info().outputPath("questions-copy-desktop-after.png") });
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(
+        [
+          "Q100 (Strip icons) yes: square icons with the project letter",
+          "Q104 (Sidebar order) round chips first",
+        ].join("\n"),
+      );
+    await expect(page.getByTestId("open-questions-summary")).toHaveText(
+      "2 of 3 answered · 1 stay open",
+    );
+    await expect(page.getByTestId("user-message").filter({ hasText: "Q100" })).toHaveCount(0);
+    await expect(copy).toHaveText("Copy answers", { timeout: 5_000 });
+  } finally {
+    await workspace.cleanup();
+  }
 });
 
 test("a half answer shows on a second device", async ({ page }) => {

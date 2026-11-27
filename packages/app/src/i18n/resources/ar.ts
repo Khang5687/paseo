@@ -2431,6 +2431,8 @@ export const ar: TranslationResources = {
     tooManyFiles: "حتى {{max}} ملف لكل إجابة",
     uploadFailed: "تعذّر رفع الملفات",
     sendFailed: "تعذّر إرسال الإجابات",
+    copyAnswers: "نسخ الإجابات",
+    copiedAnswers: "تم النسخ",
   },
   needsYou: {
     title: "بانتظارك",

@@ -71,6 +71,20 @@ async function answerAndSend(page: Page, { alpha, beta }: Seeded, tap: boolean) 
   await betaSection.getByTestId("open-question-Q300-text").fill("cards in a list");
   await page.screenshot({ path: test.info().outputPath("needs-you.png") });
 
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const copy = page.getByTestId("needs-you-copy");
+  await (tap ? copy.tap() : copy.click());
+  await expect(copy).toContainText("Copied");
+  await page.screenshot({ path: test.info().outputPath("needs-you-copied.png") });
+  // Each chat's own lines under its title; the skipped card is not in it, and nothing was sent.
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain("Alpha chat\nQ200 (Alpha colors) yes: blue");
+  const copiedText = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copiedText).toContain("Beta chat\nQ300 (Beta layout) cards in a list");
+  expect(copiedText).not.toContain("Q201");
+  await expect(alphaSection.getByTestId("open-question-Q200-answered")).toBeVisible();
+
   const send = page.getByTestId("needs-you-send");
   await expect(send).toContainText("Send 2 answers");
   await (tap ? send.tap() : send.click());

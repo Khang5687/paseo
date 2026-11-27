@@ -2490,6 +2490,8 @@ export const es: TranslationResources = {
     tooManyFiles: "Hasta {{max}} archivos por respuesta",
     uploadFailed: "No se pudieron subir los archivos",
     sendFailed: "No se pudieron enviar las respuestas",
+    copyAnswers: "Copiar respuestas",
+    copiedAnswers: "Copiado",
   },
   needsYou: {
     title: "Te necesita",

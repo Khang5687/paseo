@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentOpenQuestion, AgentQuestionAnswer } from "@getpaseo/protocol/messages";
-import { buildAnswerMessage, resolveAnswer } from "./answer-message";
+import { buildAnswerMessage, buildCopyAnswersText, resolveAnswer } from "./answer-message";
 
 function question(
   id: string,
@@ -53,6 +53,40 @@ describe("buildAnswerMessage", () => {
       updatedAt: 1,
     }));
     expect(message?.text).toBe("(Ship it) yes");
+  });
+});
+
+describe("buildCopyAnswersText", () => {
+  const answers: Record<string, AgentQuestionAnswer> = {
+    Q100: { pick: false, text: "round, like the avatars", updatedAt: 1 },
+    Q104: { pick: true, text: "", updatedAt: 1 },
+    Q200: { pick: true, text: "", updatedAt: 1 },
+  };
+  const answerFor = (entry: AgentOpenQuestion) => answers[entry.id];
+
+  it("puts each chat's own lines under its title, in order, and leaves out unanswered chats", () => {
+    const other = [question("Q200", "Beta layout", "grid")];
+    expect(
+      buildCopyAnswersText([
+        { title: "Alpha chat", messages: [buildAnswerMessage(questions, answerFor)] },
+        { title: "Quiet chat", messages: [buildAnswerMessage(other, () => undefined)] },
+        { title: "Beta chat", messages: [buildAnswerMessage(other, answerFor)] },
+      ]),
+    ).toBe(
+      [
+        "Alpha chat",
+        "Q100 (Strip icons) round, like the avatars",
+        "Q104 (Sidebar order) yes: newest first",
+        "",
+        "Beta chat",
+        "Q200 (Beta layout) yes: grid",
+      ].join("\n"),
+    );
+  });
+
+  it("is null while nothing is answered", () => {
+    expect(buildCopyAnswersText([{ title: "Alpha chat", messages: [null] }])).toBeNull();
+    expect(buildCopyAnswersText([])).toBeNull();
   });
 });
 
