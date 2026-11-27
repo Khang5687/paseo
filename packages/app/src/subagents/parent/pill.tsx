@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ChevronLeft } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { PressHighlight } from "@/components/ui/press-highlight";
-import { composerPillStyles } from "@/composer/pill-styles";
+import { composerPillStyles, useComposerPillBody } from "@/composer/pill-styles";
 import { ComposerTrackMark } from "@/composer/tracks";
 import type { Theme } from "@/styles/theme";
 import { useParentAgent } from "./use-parent-agent";
@@ -30,9 +30,10 @@ export function ParentAgentPill({
   const [isHovered, setIsHovered] = useState(false);
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
   const handleHoverOut = useCallback(() => setIsHovered(false), []);
+  const pillBody = useComposerPillBody();
   const bodyStyle = useMemo(
-    () => [composerPillStyles.body, styles.body, isHovered && composerPillStyles.bodyActive],
-    [isHovered],
+    () => [pillBody, styles.body, isHovered && composerPillStyles.bodyActive],
+    [isHovered, pillBody],
   );
   const labelStyle = useMemo(
     () => [composerPillStyles.label, styles.label, isHovered && composerPillStyles.labelActive],

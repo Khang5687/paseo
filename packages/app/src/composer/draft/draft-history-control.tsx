@@ -13,7 +13,7 @@ import {
 import type { MenuTriggerState } from "@/components/ui/menu";
 import type { Theme } from "@/styles/theme";
 import { formatTimeAgo } from "@/utils/time";
-import { composerPillStyles } from "../pill-styles";
+import { composerPillStyles, useComposerPillBody } from "../pill-styles";
 
 export interface DraftHistoryControlProps {
   history: AgentDraftSnapshotSummary[];
@@ -31,13 +31,14 @@ export function DraftHistoryControl({
 }: DraftHistoryControlProps): ReactElement | null {
   const { t } = useTranslation();
   const entries = useMemo(() => [...history].sort((a, b) => b.createdAt - a.createdAt), [history]);
+  const pillBody = useComposerPillBody();
   const triggerStyle = useCallback(
     ({ hovered, pressed, open }: MenuTriggerState) => [
-      composerPillStyles.body,
+      pillBody,
       styles.trigger,
       (hovered || pressed || open) && composerPillStyles.bodyActive,
     ],
-    [],
+    [pillBody],
   );
 
   if (entries.length === 0) return null;

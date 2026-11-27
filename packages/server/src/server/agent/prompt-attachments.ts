@@ -1,5 +1,6 @@
 import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
 import type { AgentAttachment, InlineAttachmentRef } from "@getpaseo/protocol/messages";
+import type { UserMessageAttachmentFile } from "@getpaseo/protocol/agent-types";
 import type { AgentPromptContentBlock, AgentPromptInput } from "./agent-sdk-types.js";
 
 const REVIEW_LINE_MARKERS = { add: "+", remove: "-", context: " " } as const;
@@ -76,21 +77,42 @@ function inlineRefNote(text: string): AgentAttachment {
 
 // The notes buildAgentPrompt adds: `[Image #1]: <absolute path>` (older history: `[Image #1]:`
 // alone), `[File #2]: <absolute path>`.
-const INLINE_REF_NOTE_LINE =
-  /^\[(?:Image #\d+\]:(?: (?:\/|[A-Za-z]:[\\/]).*)?|File #\d+\]: (?:\/|[A-Za-z]:[\\/]).*)$/;
+const INLINE_REF_NOTE_LINE = /^\[((?:Image|File) #\d+)\]:(?: ((?:\/|[A-Za-z]:[\\/]).*))?$/;
+
+function parseInlineRefNote(line: string): { file: UserMessageAttachmentFile | null } | null {
+  const match = INLINE_REF_NOTE_LINE.exec(line.trim());
+  if (!match) return null;
+  const label = match[1] ?? "";
+  const path = match[2];
+  if (path === undefined) return label.startsWith("File ") ? null : { file: null };
+  return { file: { label, path } };
+}
 
 /**
  * Provider history replays a user turn as all of its text, including the label notes the user
- * never typed. Drop those lines so the replayed message matches what was sent.
+ * never typed. Split those lines off, so the replayed message matches what was sent, and keep the
+ * paths they name: they are how a replayed message finds its images again.
  */
-export function stripInlineRefNotes(text: string): string {
+export function splitInlineRefNotes(text: string): {
+  text: string;
+  files: UserMessageAttachmentFile[];
+} {
   const lines = text.split("\n");
-  const kept = lines.filter((line) => !INLINE_REF_NOTE_LINE.test(line.trim()));
-  if (kept.length === lines.length) return text;
-  return kept
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const kept: string[] = [];
+  const files: UserMessageAttachmentFile[] = [];
+  for (const line of lines) {
+    const note = parseInlineRefNote(line);
+    if (!note) kept.push(line);
+    else if (note.file) files.push(note.file);
+  }
+  if (kept.length === lines.length) return { text, files };
+  return {
+    text: kept
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+    files,
+  };
 }
 
 export function renderPromptAttachmentAsText(attachment: AgentAttachment): string {
