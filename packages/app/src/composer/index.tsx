@@ -345,11 +345,10 @@ interface RenderLeftContentArgs {
   focusInput: () => void;
   isCompactLayout: boolean;
   showAgentControls: boolean;
-  showToolbar: boolean;
 }
 
 function renderLeftContent(args: RenderLeftContentArgs): ReactElement | null {
-  const { agentControls, agentId, serverId, focusInput, isCompactLayout, showToolbar } = args;
+  const { agentControls, agentId, serverId, focusInput, isCompactLayout } = args;
   if (!args.showAgentControls) return null;
   if (resolveAgentControlsMode(agentControls) === "draft" && agentControls) {
     return (
@@ -358,7 +357,6 @@ function renderLeftContent(args: RenderLeftContentArgs): ReactElement | null {
         draftId={agentId}
         serverId={serverId}
         isCompactLayout={isCompactLayout}
-        showToolbar={showToolbar}
       />
     );
   }
@@ -368,7 +366,6 @@ function renderLeftContent(args: RenderLeftContentArgs): ReactElement | null {
       serverId={serverId}
       onDropdownClose={focusInput}
       isCompactLayout={isCompactLayout}
-      showToolbar={showToolbar}
     />
   );
 }
@@ -2736,7 +2733,6 @@ function ComposerContentImpl({
       focusInput,
       isCompactLayout,
       showAgentControls: mode.showAgentControls,
-      showToolbar: !isFullscreen,
     });
     return controls ? (
       <ComposerInputProvider value={composerInput}>{controls}</ComposerInputProvider>
@@ -2747,7 +2743,6 @@ function ComposerContentImpl({
     composerInput,
     focusInput,
     isCompactLayout,
-    isFullscreen,
     mode.showAgentControls,
     serverId,
   ]);

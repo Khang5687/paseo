@@ -1,16 +1,14 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Text } from "react-native";
-import { router } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
 import { useToast } from "@/contexts/toast-context";
 import { addSavedFile } from "@/offline-files/saver";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
-import { withTransferProgress } from "@/stores/download-store";
-import { buildSavedFileRoute } from "@/utils/host-routes";
+import { useDownloadStore, withTransferProgress } from "@/stores/download-store";
 import { fileNameOf } from "./model";
-import { openSentFile, type OpenSentFileDeps } from "./open-sent-file";
+import { receiveSentFile, type ReceiveSentFileDeps } from "./receive-sent-file";
 import { SendToSheet } from "./send-to-sheet";
 import { useSendToStore, type SentFileNotice } from "./store";
 
@@ -28,14 +26,15 @@ async function waitForHost(serverId: string): Promise<boolean> {
   }
 }
 
-const deps: OpenSentFileDeps = {
+const deps: ReceiveSentFileDeps = {
   waitForHost,
   save: ({ serverId, path }) =>
     withTransferProgress(
       { serverId, scopeId: serverId, fileName: fileNameOf(path) },
       (onProgress) => addSavedFile({ serverId, path, onProgress }),
     ),
-  openSaved: (target) => router.navigate(buildSavedFileRoute(target)),
+  noteSaved: ({ serverId, path }) =>
+    useDownloadStore.getState().noteSaved({ serverId, path, fileName: fileNameOf(path) }),
 };
 
 /**
@@ -48,12 +47,15 @@ export function SendToHost() {
   const hosts = useHosts();
   const tapped = useSendToStore((state) => state.tapped);
   const notice = useSendToStore((state) => state.notice);
+  // The download bar and the saved note take the toast's place, so a tap closes the toast.
+  const dismissNoticeRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!tapped) return;
     useSendToStore.getState().clearTap();
+    dismissNoticeRef.current();
     const host = hosts.find((entry) => entry.serverId === tapped.serverId)?.label;
-    void openSentFile(tapped, deps).then((outcome) => {
+    void receiveSentFile(tapped, deps).then((outcome) => {
       if (outcome.status === "hostOffline") {
         toast.error(t("sendTo.hostOffline", { host: host ?? tapped.serverId }));
       } else if (outcome.status === "tooLarge") {
@@ -68,7 +70,10 @@ export function SendToHost() {
   useEffect(() => {
     if (!notice) return;
     useSendToStore.getState().clearNotice();
-    toast.show(<SentFileNoticeContent notice={notice} />, { variant: "info", durationMs: 8000 });
+    dismissNoticeRef.current = toast.show(<SentFileNoticeContent notice={notice} />, {
+      variant: "info",
+      durationMs: 8000,
+    });
   }, [notice, toast]);
 
   return <SendToSheet />;
@@ -76,9 +81,14 @@ export function SendToHost() {
 
 function SentFileNoticeContent({ notice }: { notice: SentFileNotice }) {
   const { t } = useTranslation();
-  const open = useCallback(() => useSendToStore.getState().tap(notice), [notice]);
+  const receive = useCallback(() => useSendToStore.getState().tap(notice), [notice]);
   return (
-    <Text style={styles.notice} onPress={open} accessibilityRole="button" testID="send-to-notice">
+    <Text
+      style={styles.notice}
+      onPress={receive}
+      accessibilityRole="button"
+      testID="send-to-notice"
+    >
       {t("sendTo.noticeTap", { title: notice.title || fileNameOf(notice.path) })}
     </Text>
   );

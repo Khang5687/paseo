@@ -152,6 +152,7 @@ export const fr: TranslationResources = {
       terminalAccessibilityLabel: "Prompt du terminal",
       fullscreen: "Plein écran",
       exitFullscreen: "Quitter le plein écran",
+      fullscreenTitle: "Message",
       resizeInput: "Redimensionner la zone de message",
       focusHint: "{{shortcut}} pour saisir",
       addAttachment: "Ajouter une pièce jointe",
@@ -2341,6 +2342,10 @@ export const fr: TranslationResources = {
     iosFolder: "Fichiers › Paseo › Downloads",
     showInFolder: "Afficher dans le dossier",
     showInFinder: "Afficher dans le Finder",
+    savedNote: "{{fileName}} enregistré",
+    open: "Ouvrir",
+    install: "Installer",
+    installFailed: "Impossible d'ouvrir le programme d'installation.",
   },
   offlineFiles: {
     title: "Fichiers hors ligne",
@@ -2413,7 +2418,7 @@ export const fr: TranslationResources = {
     sent: "Envoyé à {{device}}",
     failed: "Envoi impossible : {{error}}",
     hostOffline: "{{host}} est hors ligne. Réessayez à son retour.",
-    noticeTap: "{{title}}. Touchez pour ouvrir.",
+    noticeTap: "{{title}}. Touchez pour télécharger.",
   },
   menu: {
     backdrop: "Arrière-plan du menu",

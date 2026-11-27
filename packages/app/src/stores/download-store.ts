@@ -52,9 +52,8 @@ function toProgress(startedAt: number, received: number, total: number): Downloa
 }
 
 /**
- * Shows the download toast, with percent, speed and time left, while `run` copies a big file.
- * A file under a few MB never gets one. The toast goes when `run` ends; the caller reports the
- * result its own way.
+ * Shows the download bar, name and percent, while `run` copies a big file. A file under a few MB
+ * never gets one. The bar goes when `run` ends; the caller reports the result its own way.
  */
 export async function withTransferProgress<T>(
   input: { serverId: string; scopeId: string; fileName: string },
@@ -85,8 +84,10 @@ export interface Download {
   message?: string;
   /** Where a finished download went, when Paseo put it in a known folder. */
   savedTo?: string;
-  /** Desktop: the saved file, so the toast can show it in the file manager. */
+  /** Desktop: the saved file, so the bar can show it in the file manager. */
   revealPath?: string;
+  /** A file kept in Saved on this device, so the note can open it or, for an APK, install it. */
+  saved?: { serverId: string; path: string };
   progress?: DownloadProgress;
   startedAt: number;
 }
@@ -127,6 +128,8 @@ interface DownloadState {
   failDownload: (id: string, message: string) => void;
   dismissDownload: (id: string) => void;
   dismissAllCompleted: () => void;
+  /** Says a file landed in Saved on this device, with Open and, for an APK, Install. */
+  noteSaved: (input: { serverId: string; path: string; fileName: string }) => void;
 }
 
 function generateDownloadId(): string {
@@ -338,6 +341,23 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       else newActiveId = findMostRecentDownloadId(updated);
       return { downloads: updated, activeDownloadId: newActiveId };
     });
+  },
+
+  noteSaved: ({ serverId, path, fileName }) => {
+    const id = generateDownloadId();
+    const download: Download = {
+      id,
+      serverId,
+      scopeId: serverId,
+      fileName,
+      status: "complete",
+      saved: { serverId, path },
+      startedAt: Date.now(),
+    };
+    set((state) => ({
+      downloads: new Map(state.downloads).set(id, download),
+      activeDownloadId: id,
+    }));
   },
 }));
 

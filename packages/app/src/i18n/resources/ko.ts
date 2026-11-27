@@ -150,6 +150,7 @@ export const ko: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "전체 화면",
       exitFullscreen: "전체 화면 종료",
+      fullscreenTitle: "메시지",
       resizeInput: "메시지 입력란 크기 조정",
       focusHint: "{{shortcut}}로 포커스",
       addAttachment: "첨부 추가",
@@ -2300,6 +2301,10 @@ export const ko: TranslationResources = {
     iosFolder: "파일 › Paseo › Downloads",
     showInFolder: "폴더에서 보기",
     showInFinder: "Finder에서 보기",
+    savedNote: "{{fileName}} 저장됨",
+    open: "열기",
+    install: "설치",
+    installFailed: "설치 프로그램을 열 수 없습니다.",
   },
   offlineFiles: {
     title: "오프라인 파일",
@@ -2367,7 +2372,7 @@ export const ko: TranslationResources = {
     sent: "{{device}}(으)로 보냈습니다",
     failed: "보내지 못했습니다: {{error}}",
     hostOffline: "{{host}}이(가) 오프라인입니다. 다시 연결되면 시도하세요.",
-    noticeTap: "{{title}}. 눌러서 열기.",
+    noticeTap: "{{title}}. 눌러서 다운로드.",
   },
   menu: {
     backdrop: "메뉴 배경",

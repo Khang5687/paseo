@@ -148,6 +148,7 @@ export const en = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "Fullscreen",
       exitFullscreen: "Exit fullscreen",
+      fullscreenTitle: "Message",
       resizeInput: "Resize message box",
       focusHint: "{{shortcut}} to focus",
       addAttachment: "Add attachment",
@@ -2317,6 +2318,10 @@ export const en = {
     iosFolder: "Files › Paseo › Downloads",
     showInFolder: "Show in folder",
     showInFinder: "Show in Finder",
+    savedNote: "{{fileName}} saved",
+    open: "Open",
+    install: "Install",
+    installFailed: "Could not open the installer.",
   },
   offlineFiles: {
     title: "Offline files",
@@ -2386,7 +2391,7 @@ export const en = {
     sent: "Sent to {{device}}",
     failed: "Could not send: {{error}}",
     hostOffline: "{{host}} is offline. Try again when it is back.",
-    noticeTap: "{{title}}. Tap to open.",
+    noticeTap: "{{title}}. Tap to download.",
   },
   menu: {
     backdrop: "Menu backdrop",

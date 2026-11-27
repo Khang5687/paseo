@@ -151,6 +151,7 @@ export const ja: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "全画面表示",
       exitFullscreen: "全画面表示を終了",
+      fullscreenTitle: "メッセージ",
       resizeInput: "メッセージ欄のサイズを変更",
       focusHint: "{{shortcut}}でフォーカス",
       addAttachment: "添付ファイルを追加",
@@ -2311,6 +2312,10 @@ export const ja: TranslationResources = {
     iosFolder: "ファイル › Paseo › Downloads",
     showInFolder: "フォルダで表示",
     showInFinder: "Finder で表示",
+    savedNote: "{{fileName}} を保存しました",
+    open: "開く",
+    install: "インストール",
+    installFailed: "インストーラーを開けませんでした。",
   },
   offlineFiles: {
     title: "オフラインファイル",
@@ -2381,7 +2386,7 @@ export const ja: TranslationResources = {
     sent: "{{device}} に送信しました",
     failed: "送信できませんでした: {{error}}",
     hostOffline: "{{host}} はオフラインです。復帰したらもう一度お試しください。",
-    noticeTap: "{{title}}。タップして開く。",
+    noticeTap: "{{title}}。タップしてダウンロード。",
   },
   menu: {
     backdrop: "メニューの背景",

@@ -1,0 +1,9 @@
+{
+  "pr": 184,
+  "title": "feat: one sidebar project order on every device",
+  "tests": [
+    "packages/app/src/sidebar-sync/project-order.test.ts",
+    "packages/server/src/server/daemon-e2e/sidebar-project-order.e2e.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/sidebar-project-order-sync.spec.ts"]
+}

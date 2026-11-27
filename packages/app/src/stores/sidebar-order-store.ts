@@ -6,10 +6,23 @@ import { createValidatedPersistStorage } from "@/storage/validated-persist-stora
 
 interface SidebarOrderStoreState {
   projectOrder: string[];
+  /**
+   * Device clock in epoch ms when a person last reordered projects; 0 when nobody has. Hosts keep
+   * the order with the newest stamp, so every device ends on the last reorder (`sidebar-sync/`).
+   */
+  projectOrderUpdatedAt: number;
   pinnedWorkspaceOrder: string[];
   workspaceOrderByProject: Record<string, string[]>;
   getProjectOrder: () => string[];
+  /** A person's reorder: stamps the order so it wins on every host. */
   setProjectOrder: (keys: string[]) => void;
+  /** Adds projects the sidebar found without making the order newer than a reorder elsewhere. */
+  extendProjectOrder: (keys: string[]) => void;
+  /**
+   * Takes a host's order when it is newer than this device's. Keys only this device knows, such
+   * as projects on an offline host, keep their places after the host's keys.
+   */
+  applySyncedProjectOrder: (keys: string[], updatedAt: number) => boolean;
   getPinnedWorkspaceOrder: () => string[];
   setPinnedWorkspaceOrder: (keys: string[]) => void;
   getWorkspaceOrder: (projectViewKey: string) => string[];
@@ -18,6 +31,7 @@ interface SidebarOrderStoreState {
 
 interface SidebarOrderPersistedState {
   projectOrder?: string[];
+  projectOrderUpdatedAt?: number;
   pinnedWorkspaceOrder?: string[];
   workspaceOrderByProject?: Record<string, string[]>;
   projectOrderByServerId?: Record<string, string[]>;
@@ -27,6 +41,7 @@ interface SidebarOrderPersistedState {
 const StringArrayRecordSchema = z.record(z.string(), z.array(z.string()));
 const SidebarOrderPersistedStateSchema = z.strictObject({
   projectOrder: z.array(z.string()).optional(),
+  projectOrderUpdatedAt: z.number().optional(),
   pinnedWorkspaceOrder: z.array(z.string()).optional(),
   workspaceOrderByProject: StringArrayRecordSchema.optional(),
   projectOrderByServerId: StringArrayRecordSchema.optional(),
@@ -154,11 +169,30 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
   persist(
     (set, get) => ({
       projectOrder: [],
+      projectOrderUpdatedAt: 0,
       pinnedWorkspaceOrder: [],
       workspaceOrderByProject: {},
       getProjectOrder: () => get().projectOrder,
       setProjectOrder: (keys) => {
+        set((state) => ({
+          projectOrder: dedupeKeys(keys),
+          // Never older than the order it replaces, even if this device's clock went back.
+          projectOrderUpdatedAt: Math.max(Date.now(), state.projectOrderUpdatedAt + 1),
+        }));
+      },
+      extendProjectOrder: (keys) => {
         set({ projectOrder: dedupeKeys(keys) });
+      },
+      applySyncedProjectOrder: (keys, updatedAt) => {
+        const state = get();
+        if (updatedAt <= state.projectOrderUpdatedAt) return false;
+        const synced = dedupeKeys(keys);
+        const known = new Set(synced);
+        set({
+          projectOrder: [...synced, ...state.projectOrder.filter((key) => !known.has(key))],
+          projectOrderUpdatedAt: updatedAt,
+        });
+        return true;
       },
       getPinnedWorkspaceOrder: () => get().pinnedWorkspaceOrder,
       setPinnedWorkspaceOrder: (keys) => {
@@ -183,6 +217,7 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
       storage: createValidatedPersistStorage(AsyncStorage, SidebarOrderPersistedStateSchema),
       partialize: (state) => ({
         projectOrder: state.projectOrder,
+        projectOrderUpdatedAt: state.projectOrderUpdatedAt,
         pinnedWorkspaceOrder: state.pinnedWorkspaceOrder,
         workspaceOrderByProject: state.workspaceOrderByProject,
       }),

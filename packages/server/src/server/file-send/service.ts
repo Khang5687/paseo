@@ -45,7 +45,7 @@ export function sentFilePushPayload(input: {
   const fileName = path.basename(input.path);
   return {
     title: `${fileName} is ready`,
-    body: `From ${input.hostName} · tap to open`,
+    body: `From ${input.hostName} · tap to download`,
     // Read by the app's notification router (notification-open): serverId names the host,
     // sentFilePath the file on it. The bytes are fetched when the phone opens the note.
     data: { serverId: input.serverId, sentFilePath: input.path },

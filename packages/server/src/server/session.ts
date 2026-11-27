@@ -22,6 +22,7 @@ import type {
 } from "@getpaseo/protocol/messages";
 import { relative } from "node:path";
 import { isAbsolute } from "node:path";
+import { SidebarSyncStore } from "./sidebar-sync/index.js";
 import { CreationService, type CreatedAgent } from "./creation/index.js";
 import type {
   AgentActiveTurnBehavior,
@@ -560,6 +561,8 @@ export interface SessionOptions {
   accountLogin?: OmpAccountLogin;
   /** The source is a direct loopback or local IPC socket: the host's own app. */
   isHostLocalSource?: (source: object | undefined) => boolean;
+  /** Shared by every session so one device's reorder reaches the others. */
+  sidebarSync?: SidebarSyncStore;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -754,6 +757,13 @@ function resolveWorkspaceLabelService(
   service: WorkspaceLabelService | undefined,
 ): WorkspaceLabelService | null {
   return service ?? null;
+}
+
+function resolveSidebarSync(
+  store: SidebarSyncStore | undefined,
+  paseoHome: string,
+): SidebarSyncStore {
+  return store ?? new SidebarSyncStore(join(paseoHome, "sidebar-sync.json"));
 }
 
 function hasInitialCreationPrompt(
@@ -952,6 +962,7 @@ export class Session {
   private readonly fileCopiesSession: FileCopiesSession | null;
   private readonly fileSend: FileSendBundle | undefined;
   private readonly fileSendSession: FileSendSession | null;
+  private readonly sidebarSync: SidebarSyncStore;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -1028,6 +1039,7 @@ export class Session {
       accountRouting,
       accountLogin,
       isHostLocalSource,
+      sidebarSync,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -1121,6 +1133,7 @@ export class Session {
     this.workspaceLabelService = resolveWorkspaceLabelService(workspaceLabelService);
     this.agentDrafts = agentDrafts;
     this.notesService = notesService;
+    this.sidebarSync = resolveSidebarSync(sidebarSync, paseoHome);
     this.filesystem = filesystem ?? nodeSessionFileSystem;
     this.github = github ?? createGitHubService();
     this.renameCurrentBranch = renameCurrentBranch ?? renameCurrentBranchDefault;
@@ -2930,6 +2943,7 @@ export class Session {
     return (
       this.dispatchWorkspaceStateMessage(msg) ??
       this.dispatchWorkspaceLabelMessage(msg) ??
+      this.dispatchSidebarSyncMessage(msg) ??
       this.dispatchWorkspaceSetupMessage(msg) ??
       this.dispatchMetadataMessage(msg) ??
       this.dispatchWorkspaceAndProjectMessage(msg)
@@ -7754,6 +7768,94 @@ export class Session {
       throw new SessionRequestError("workspace_labels_unavailable", "Workspace labels unavailable");
     }
     return this.workspaceLabelService;
+  }
+
+  private dispatchSidebarSyncMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "sidebar.project_order.get.request":
+        return this.handleSidebarProjectOrderGet(msg);
+      case "sidebar.project_order.set.request":
+        return this.handleSidebarProjectOrderSet(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private emitSidebarSyncError(request: { requestId: string; type: string }, error: unknown): void {
+    this.emit({
+      type: "rpc_error",
+      payload: {
+        requestId: request.requestId,
+        requestType: request.type,
+        error: error instanceof Error ? error.message : "Sidebar sync failed",
+      },
+    });
+  }
+
+  private async handleSidebarProjectOrderGet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.project_order.get.request" }>,
+  ): Promise<void> {
+    if (!request.subscribe) {
+      try {
+        const projectOrder = await this.sidebarSync.getProjectOrder();
+        this.emit({
+          type: "sidebar.project_order.get.response",
+          payload: { requestId: request.requestId, ...projectOrder },
+        });
+      } catch (error) {
+        this.emitSidebarSyncError(request, error);
+      }
+      return;
+    }
+    let unsubscribe: (() => void) | null = null;
+    const owner = this.delivery.begin(
+      "sidebarProjectOrder",
+      request.subscribe.subscriptionId,
+      () => {
+        unsubscribe?.();
+      },
+    );
+    try {
+      // Subscribe before reading so an order set in between still reaches this device.
+      unsubscribe = this.sidebarSync.subscribe((projectOrder) => {
+        if (owner.signal.aborted) return;
+        owner.emit({ type: "sidebar.project_order.update", payload: projectOrder });
+      });
+      const projectOrder = await this.sidebarSync.getProjectOrder();
+      if (owner.signal.aborted) return;
+      this.emit({
+        type: "sidebar.project_order.get.response",
+        payload: {
+          requestId: request.requestId,
+          subscriptionId: owner.responseId,
+          ...projectOrder,
+        },
+      });
+    } catch (error) {
+      await owner.release();
+      this.emitSidebarSyncError(request, error);
+    }
+  }
+
+  private async handleSidebarProjectOrderSet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.project_order.set.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.sidebarSync.setProjectOrder({
+        order: request.order,
+        updatedAt: request.updatedAt,
+      });
+      this.emit({
+        type: "sidebar.project_order.set.response",
+        payload: {
+          requestId: request.requestId,
+          accepted: result.accepted,
+          ...result.projectOrder,
+        },
+      });
+    } catch (error) {
+      this.emitSidebarSyncError(request, error);
+    }
   }
 
   private emitWorkspaceLabelError(
