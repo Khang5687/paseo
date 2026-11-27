@@ -1,0 +1,10 @@
+{
+  "pr": 206,
+  "title": "feat(server): read voice questions and permission prompts aloud, strip code and paths before TTS",
+  "tests": [
+    "packages/server/src/server/session/voice/speech-text.test.ts",
+    "packages/server/src/server/session/voice/spoken-question.test.ts",
+    "packages/server/src/server/session/voice/voice-session.readback.test.ts",
+    "packages/app/src/voice/voice-start-error.test.ts"
+  ]
+}
