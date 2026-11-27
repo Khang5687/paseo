@@ -13,6 +13,7 @@ import {
   type DaemonInstance,
 } from "@getpaseo/server/daemon-control";
 import {
+  appendAttachmentBytes,
   copyAttachmentFileToManagedStorage,
   deleteManagedAttachmentFile,
   garbageCollectManagedAttachmentFiles,
@@ -38,6 +39,10 @@ import {
   closeLocalTransportSession,
 } from "./local-transport.js";
 import { createNodeEntrypointInvocation, resolveDaemonRunnerEntrypoint } from "./runtime-paths.js";
+import {
+  resolveExternalDaemonLauncher,
+  runExternalDaemonLauncher,
+} from "./external-daemon-launcher.js";
 import {
   ExternalCliCommandError,
   runExternalCliJsonCommand,
@@ -306,6 +311,18 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
   }
 
   const home = getPaseoHome();
+  const externalLauncher = resolveExternalDaemonLauncher(home);
+  if (externalLauncher) {
+    logDesktopDaemonLifecycle("starting daemon through external launcher", {
+      launcher: externalLauncher,
+    });
+    await runExternalDaemonLauncher({
+      launcher: externalLauncher,
+      env: process.env,
+      timeoutMs: 90_000,
+    });
+    return resolveDesktopDaemonStatus();
+  }
   const invocation = createNodeEntrypointInvocation({
     entrypoint: resolveDaemonRunnerEntrypoint(),
     argvMode: "node-script",
@@ -532,6 +549,7 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     cli_daemon_status: () => getCliDaemonStatus(),
     write_attachment_base64: (args) => writeAttachmentBase64(args ?? {}),
     write_attachment_bytes: (args) => writeAttachmentBytes(args ?? {}),
+    append_attachment_bytes: (args) => appendAttachmentBytes(args ?? {}),
     copy_attachment_file: (args) => copyAttachmentFileToManagedStorage(args ?? {}),
     read_file_base64: (args) => readManagedFileBase64(args ?? {}),
     delete_attachment_file: (args) => deleteManagedAttachmentFile(args ?? {}),

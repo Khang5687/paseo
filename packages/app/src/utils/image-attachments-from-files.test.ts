@@ -18,6 +18,9 @@ function createTestStore(): AttachmentStore {
   let sequence = 0;
   return {
     storageType: "web-indexeddb",
+    async openWriter() {
+      throw new Error("openWriter is not used here");
+    },
     async save(input) {
       sequence += 1;
       const id = input.id ?? `att-${sequence}`;

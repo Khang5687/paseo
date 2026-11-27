@@ -16,6 +16,7 @@ import {
   WorktreeTeardownError,
 } from "../utils/worktree.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
+import type { TerminalSession } from "../terminal/terminal.js";
 import type {
   PersistedWorkspaceRecord,
   WorkspaceArchiveContext,
@@ -827,9 +828,33 @@ async function isDirectoryUnreferenced(
   return true;
 }
 
-export async function killTerminalsForWorkspace(
+export function killTerminalsForWorkspace(
   dependencies: KillTerminalsForWorkspaceDependencies,
   workspaceId: string,
+): Promise<void> {
+  return killMatchingTerminals(
+    dependencies,
+    { workspaceId },
+    (terminal) => terminal.workspaceId === workspaceId,
+  );
+}
+
+/** An archived chat takes its terminal drawer with it. */
+export function killTerminalsForAgent(
+  dependencies: KillTerminalsForWorkspaceDependencies,
+  agentId: string,
+): Promise<void> {
+  return killMatchingTerminals(
+    dependencies,
+    undefined,
+    (terminal) => terminal.getOwnerAgentId() === agentId,
+  );
+}
+
+async function killMatchingTerminals(
+  dependencies: KillTerminalsForWorkspaceDependencies,
+  query: { workspaceId: string } | undefined,
+  matches: (terminal: TerminalSession) => boolean,
 ): Promise<void> {
   const terminalManager = dependencies.terminalManager;
   if (!terminalManager) {
@@ -840,11 +865,11 @@ export async function killTerminalsForWorkspace(
   const terminalLists = await Promise.all(
     terminalManager.listDirectories().map(async (terminalCwd) => {
       try {
-        return await terminalManager.getTerminals(terminalCwd, { workspaceId });
+        return await terminalManager.getTerminals(terminalCwd, query);
       } catch (error) {
         dependencies.sessionLogger.warn(
           { err: error, cwd: terminalCwd },
-          "Failed to enumerate workspace terminals during archive",
+          "Failed to enumerate terminals during archive",
         );
         return [];
       }
@@ -852,7 +877,7 @@ export async function killTerminalsForWorkspace(
   );
   for (const terminals of terminalLists) {
     for (const terminal of terminals) {
-      if (terminal.workspaceId === workspaceId) {
+      if (matches(terminal)) {
         terminalIds.push(terminal.id);
       }
     }

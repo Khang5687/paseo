@@ -1,8 +1,8 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import path from "node:path";
 import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
 import { PassThrough } from "node:stream";
 import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
@@ -408,6 +408,106 @@ describe("OMP CLI runtime", () => {
       },
     ]);
     expect(commandTypes).toEqual(["get_available_commands"]);
+  });
+
+  test("refreshes commands through refresh_commands", async () => {
+    const child = createOmpChild();
+    const commandTypes: string[] = [];
+    replyToCommands(child, (command) => {
+      commandTypes.push(String(command.type));
+      return { commands: [{ name: "deploy", description: "Deploy the app", source: "skill" }] };
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+
+    await expect(session.refreshCommands()).resolves.toEqual([
+      { name: "deploy", description: "Deploy the app", source: "skill" },
+    ]);
+    expect(commandTypes).toEqual(["refresh_commands"]);
+  });
+
+  test("lists known commands when OMP does not support refresh_commands", async () => {
+    const child = createOmpChild();
+    const commandTypes: string[] = [];
+    onOmpCommand(child, (command) => {
+      commandTypes.push(String(command.type));
+      const response =
+        command.type === "refresh_commands"
+          ? { success: false, error: "Unknown command: refresh_commands" }
+          : { success: true, data: { commands: [{ name: "review", source: "skill" }] } };
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: command.type, ...response })}\n`,
+      );
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+
+    await expect(session.refreshCommands()).resolves.toEqual([{ name: "review", source: "skill" }]);
+    await expect(session.refreshCommands()).resolves.toEqual([{ name: "review", source: "skill" }]);
+    expect(commandTypes).toEqual([
+      "refresh_commands",
+      "get_available_commands",
+      "get_available_commands",
+    ]);
+  });
+
+  test("rediscovers commands through /reload-plugins when OMP does not support refresh_commands", async () => {
+    const child = createOmpChild();
+    const requests: string[] = [];
+    let reloaded = false;
+    const reply = (id: unknown, command: unknown, response: Record<string, unknown>) =>
+      child.stdout.write(`${JSON.stringify({ id, type: "response", command, ...response })}\n`);
+    onOmpCommand(child, (command) => {
+      requests.push(command.type === "prompt" ? `prompt ${command.message}` : String(command.type));
+      if (command.type === "refresh_commands") {
+        reply(command.id, command.type, {
+          success: false,
+          error: "Unknown command: refresh_commands",
+        });
+        return;
+      }
+      if (command.type === "prompt") {
+        reloaded = true;
+        child.stdout.write(
+          `${JSON.stringify({ type: "command_output", text: "Plugins reloaded." })}\n`,
+        );
+        reply(command.id, command.type, { success: true, data: { agentInvoked: false } });
+        return;
+      }
+      const commands = [{ name: "reload-plugins", source: "builtin" }];
+      if (reloaded) commands.push({ name: "skill:deploy", source: "skill" });
+      reply(command.id, command.type, { success: true, data: { commands } });
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+    const events: unknown[] = [];
+    session.onEvent((event) => events.push(event));
+
+    await expect(session.refreshCommands()).resolves.toEqual([
+      { name: "reload-plugins", source: "builtin" },
+      { name: "skill:deploy", source: "skill" },
+    ]);
+    expect(requests).toEqual([
+      "refresh_commands",
+      "get_available_commands",
+      "prompt /reload-plugins",
+      "get_available_commands",
+    ]);
+    expect(events).toEqual([]);
+
+    child.stdout.write(
+      `${JSON.stringify({ type: "command_output", text: "Plugins reloaded." })}\n`,
+    );
+    expect(events).toEqual([{ type: "command_output", text: "Plugins reloaded." }]);
+  });
+
+  test("surfaces refresh_commands failures other than an unknown command", async () => {
+    const child = createOmpChild();
+    onOmpCommand(child, (command) => {
+      child.stdout.write(
+        `${JSON.stringify({ id: command.id, type: "response", command: command.type, success: false, error: "discovery failed" })}\n`,
+      );
+    });
+    const session = await createRuntime(child).startSession({ cwd: "/workspace/project" });
+
+    await expect(session.refreshCommands()).rejects.toThrow("discovery failed");
   });
 
   test("accepts model catalogs with null maxTokens from newer OMP binaries", async () => {

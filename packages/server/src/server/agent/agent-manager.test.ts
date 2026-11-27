@@ -34,7 +34,11 @@ import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { buildStoredAgentPayload, toAgentPayload } from "./agent-projections.js";
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { projectTimelineRows } from "./timeline-projection.js";
-import { getOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import {
+  getOpenAgentTabLabel,
+  PARENT_AGENT_ID_LABEL,
+  UNSEEN_AGENT_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 import { createAgentMessageDelivery } from "./agent-messages/index.js";
 import { AgentTurnBusyError, sendPreparedPromptToAgent, startAgentRun } from "./agent-prompt.js";
 import { StaleProviderSessionError } from "./stale-provider-session-error.js";
@@ -853,6 +857,42 @@ test("uses an injected timeline store without making it a production requirement
     await expect(manager.getTimelineRows(agent.id)).resolves.toContainEqual(
       expect.objectContaining({ item: { type: "assistant_message", text: "stored" } }),
     );
+  } finally {
+    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("a half-filled question box keeps the newer picks on its pending permission", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-permission-draft-"));
+  const manager = new AgentManager({ clients: { codex: new TestAgentClient() }, logger });
+  let agentId: string | null = null;
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = snapshot.id;
+    manager.getAgent(snapshot.id)!.pendingPermissions.set("box-1", {
+      id: "box-1",
+      provider: "codex",
+      name: "AskUserQuestion",
+      kind: "question",
+      input: { questions: [] },
+    });
+    const draft = {
+      answers: { "0": { selected: [1], text: "", files: [] } },
+      updatedAt: 2_000,
+    };
+    expect(manager.setPendingPermissionDraft(snapshot.id, "box-1", draft)).toBe(true);
+    // An older write from another device loses; a box that is gone refuses.
+    expect(
+      manager.setPendingPermissionDraft(snapshot.id, "box-1", { answers: {}, updatedAt: 1 }),
+    ).toBe(false);
+    expect(manager.setPendingPermissionDraft(snapshot.id, "box-9", draft)).toBe(false);
+    // Every device reads it from the agent's pending permissions.
+    expect(
+      toAgentPayload(manager.getAgent(snapshot.id)!).pendingPermissions[0]?.draftAnswers,
+    ).toEqual(draft);
   } finally {
     if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
     rmSync(workdir, { recursive: true, force: true });
@@ -2637,6 +2677,55 @@ test("listDraftCommands uses explicit model config without default model fetchin
   ]);
 });
 
+test("listDraftCommands shares one provider session across identical concurrent requests", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-commands-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const draftCommand: AgentSlashCommand = {
+    name: "review",
+    description: "Review changes",
+    argumentHint: "",
+    kind: "skill",
+  };
+  let failNextListing = true;
+  class DraftCommandSession extends TestAgentSession {
+    override async listCommands(): Promise<AgentSlashCommand[]> {
+      if (failNextListing) {
+        failNextListing = false;
+        throw new Error("provider exited");
+      }
+      return [draftCommand];
+    }
+  }
+  class DraftCommandClient extends TestAgentClient {
+    createSessionCalls = 0;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.createSessionCalls += 1;
+      return new DraftCommandSession(config);
+    }
+  }
+  const client = new DraftCommandClient();
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const config: AgentSessionConfig = { provider: "codex", cwd: workdir, model: "gpt-5.4" };
+
+  const failed = await Promise.allSettled([
+    manager.listDraftCommands(config),
+    manager.listDraftCommands({ ...config }),
+  ]);
+  expect(failed.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+  expect(client.createSessionCalls).toBe(1);
+
+  // A failed listing is not reused: the next request starts a new session and succeeds.
+  await expect(manager.listDraftCommands(config)).resolves.toEqual([draftCommand]);
+  expect(client.createSessionCalls).toBe(2);
+
+  // A different config is a different listing.
+  await expect(manager.listDraftCommands({ ...config, model: "gpt-5.5" })).resolves.toEqual([
+    draftCommand,
+  ]);
+  expect(client.createSessionCalls).toBe(3);
+});
+
 test("listDraftControls does not start a fallback session without a model", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-features-"));
   const storagePath = join(workdir, "agents");
@@ -2802,6 +2891,58 @@ test("listDraftControls uses explicit model config without default model fetchin
       model: "gpt-5.4",
     },
   ]);
+});
+
+test("provider feature defaults fill provider options a request leaves out", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-feature-defaults-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  class DraftControlsClient extends TestAgentClient {
+    readonly controlConfigs: AgentSessionConfig[] = [];
+
+    async listControls(config: AgentSessionConfig): Promise<AgentDraftControls> {
+      this.controlConfigs.push(config);
+      return { controls: [], options: config.providerOptions ?? {} };
+    }
+  }
+  const client = new DraftControlsClient();
+  let featureDefaults: Record<string, boolean | string> | undefined = {
+    output_style: "ELI5",
+    fast_mode: true,
+  };
+  let nextId = 0;
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    resolveFeatureDefaults: (provider) => (provider === "codex" ? featureDefaults : undefined),
+    idFactory: () => `00000000-0000-4000-8000-00000000020${nextId++}`,
+  });
+
+  await manager.listDraftControls({ provider: "codex", cwd: workdir });
+  expect(client.controlConfigs[0]?.providerOptions).toEqual({
+    output_style: "ELI5",
+    fast_mode: true,
+  });
+
+  const created = await manager.createAgent(
+    { provider: "codex", cwd: workdir, providerOptions: { output_style: "Learning" } },
+    undefined,
+    { workspaceId: undefined },
+  );
+  expect(client.createdConfigs[0]?.providerOptions).toEqual({
+    output_style: "Learning",
+    fast_mode: true,
+  });
+  expect((await storage.get(created.id))?.config?.providerOptions).toEqual({
+    output_style: "Learning",
+    fast_mode: true,
+  });
+
+  featureDefaults = undefined;
+  await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  expect(client.createdConfigs[1]?.providerOptions).toBeUndefined();
 });
 
 test("listDraftControls reports the Fast selection a fresh Cursor draft opens with", async () => {
@@ -4009,6 +4150,101 @@ test("createAgent injects paseo MCP server only into provider launch config", as
   });
 });
 
+test("createAgent launches with provider MCP servers but stores only the agent's own", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+
+  class CaptureClient extends TestAgentClient {
+    lastConfig: AgentSessionConfig | null = null;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.lastConfig = config;
+      return new McpCapableTestAgentSession(config);
+    }
+  }
+
+  const client = new CaptureClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    providerDefinitions: {
+      codex: {
+        enabled: true,
+        mcpServers: {
+          rea: { type: "stdio", command: "rea-mcp" },
+          custom: { type: "stdio", command: "provider-custom" },
+        },
+      },
+    },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000110",
+  });
+
+  try {
+    const snapshot = await manager.createAgent(
+      {
+        provider: "codex",
+        cwd: workdir,
+        mcpServers: { custom: { type: "stdio", command: "agent-custom" } },
+      },
+      undefined,
+      { workspaceId: undefined },
+    );
+
+    expect(client.lastConfig?.mcpServers).toEqual({
+      rea: { type: "stdio", command: "rea-mcp" },
+      custom: { type: "stdio", command: "agent-custom" },
+    });
+    const stored = await storage.get(snapshot.id);
+    expect(stored?.config?.mcpServers).toEqual({
+      custom: { type: "stdio", command: "agent-custom" },
+    });
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("createAgent rejects a session that cannot honor its provider's MCP servers", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  let sessionClosed = false;
+
+  class NoMcpSession extends TestAgentSession {
+    override async close(): Promise<void> {
+      sessionClosed = true;
+    }
+  }
+
+  class NoMcpClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new NoMcpSession(config);
+    }
+  }
+
+  const agentId = "00000000-0000-4000-8000-000000000111";
+  const manager = new AgentManager({
+    clients: { codex: new NoMcpClient() },
+    providerDefinitions: {
+      codex: { enabled: true, mcpServers: { rea: { type: "stdio", command: "rea-mcp" } } },
+    },
+    registry: storage,
+    logger,
+    idFactory: () => agentId,
+  });
+
+  try {
+    await expect(
+      manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      }),
+    ).rejects.toThrow("Provider 'codex' does not support MCP servers");
+    expect(sessionClosed).toBe(true);
+    expect(await storage.get(agentId)).toBeNull();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("createAgent closes and rejects a provider session that cannot honor MCP servers", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
@@ -4779,6 +5015,100 @@ test("updateProviderRegistry disables a previously enabled provider", async () =
       workspaceId: undefined,
     }),
   ).rejects.toThrow("Provider 'codex' is disabled");
+});
+
+describe("models disabled in Provider settings", () => {
+  function createManager(disabledModels: string[]) {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-disabled-models-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const client = new TestAgentClient();
+    const manager = new AgentManager({
+      clients: { codex: client },
+      providerDefinitions: { codex: { enabled: true, disabledModels } },
+      registry: storage,
+      logger,
+    });
+    async function cleanup() {
+      for (const agent of manager.listAgents()) await manager.closeAgent(agent.id);
+      await manager.flush();
+      rmSync(workdir, { recursive: true, force: true });
+    }
+    return { workdir, storage, client, manager, cleanup };
+  }
+
+  test("createAgent rejects an explicitly chosen disabled model without creating a session", async () => {
+    const { workdir, storage, client, manager, cleanup } = createManager(["gpt-5.4-mini"]);
+    try {
+      await expect(
+        manager.createAgent({ provider: "codex", cwd: workdir, model: "gpt-5.4-mini" }, undefined, {
+          workspaceId: undefined,
+        }),
+      ).rejects.toThrow(
+        "Model 'gpt-5.4-mini' is disabled for provider 'codex' in Provider settings",
+      );
+      expect(client.createdConfigs).toHaveLength(0);
+      expect(await storage.listAll()).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("createAgent without a model uses the first enabled model when the default is disabled", async () => {
+    const { workdir, client, manager, cleanup } = createManager(["gpt-5.4"]);
+    try {
+      const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      });
+      expect(agent.config.model).toBe("gpt-5.4-mini");
+      expect(client.createdConfigs.map((config) => config.model)).toEqual(["gpt-5.4-mini"]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("createAgent without a model fails when every model is disabled", async () => {
+    const { workdir, client, manager, cleanup } = createManager([
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.2-codex",
+    ]);
+    try {
+      await expect(
+        manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+          workspaceId: undefined,
+        }),
+      ).rejects.toThrow("Every model for provider 'codex' is disabled in Provider settings");
+      expect(client.createdConfigs).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("a running agent keeps its newly disabled model while new selections are refused", async () => {
+    const { workdir, client, manager, cleanup } = createManager([]);
+    try {
+      const agent = await manager.createAgent(
+        { provider: "codex", cwd: workdir, model: "gpt-5.4" },
+        undefined,
+        { workspaceId: undefined },
+      );
+      manager.updateProviderRegistry({
+        providerDefinitions: {
+          codex: { enabled: true, disabledModels: ["gpt-5.4", "gpt-5.2-codex"] },
+        },
+        clients: { codex: client },
+      });
+
+      await expect(manager.setAgentModel(agent.id, "gpt-5.2-codex")).rejects.toThrow(
+        "Model 'gpt-5.2-codex' is disabled for provider 'codex' in Provider settings",
+      );
+      await manager.setAgentModel(agent.id, "gpt-5.4");
+      expect(manager.getAgent(agent.id)?.config.model).toBe("gpt-5.4");
+      expect(manager.getAgent(agent.id)?.lifecycle).not.toBe("closed");
+    } finally {
+      await cleanup();
+    }
+  });
 });
 
 test("updateProviderRegistry registers a previously unknown provider", async () => {
@@ -6562,6 +6892,168 @@ test("runAgent persists finished attention and idle status without an external s
   expect(persisted?.requiresAttention).toBe(true);
   expect(persisted?.attentionReason).toBe("finished");
   expect(persisted?.attentionTimestamp).toEqual(expect.any(String));
+});
+
+test("finished attention flags a reply that asks the user a question until it is read", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-awaiting-answer-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const replies: string[] = [];
+  class ReplyingSession extends TestAgentSession {
+    private turns = 0;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turnId = `reply-turn-${++this.turns}`;
+      const text = replies.shift() ?? "";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: { type: "assistant_message", text },
+        });
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+  class ReplyingClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new ReplyingSession(config);
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new ReplyingClient() },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000135",
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const awaitingAnswer = () => toAgentPayload(manager.getAgent(snapshot.id)!).awaitingAnswer;
+
+  replies.push("Plan written.\n\n❓ Q1 storage: SQLite or Postgres?");
+  await manager.runAgent(snapshot.id, "plan it");
+  await manager.flush();
+  expect(awaitingAnswer()).toBe(true);
+  expect((await storage.get(snapshot.id))?.awaitingAnswer).toBe(true);
+
+  // A second turn ends before anyone read the first: the flag follows the newest reply.
+  replies.push("Used SQLite. Should I also add Postgres? ❓");
+  await manager.runAgent(snapshot.id, "pick for me");
+  await manager.flush();
+  expect(manager.getAgent(snapshot.id)?.attention.requiresAttention).toBe(true);
+  expect(awaitingAnswer()).toBeUndefined();
+
+  replies.push("❓ Ship it?");
+  await manager.runAgent(snapshot.id, "next");
+  await manager.flush();
+  expect(awaitingAnswer()).toBe(true);
+
+  await manager.clearAgentAttention(snapshot.id);
+  await manager.flush();
+  expect(awaitingAnswer()).toBeUndefined();
+  expect((await storage.get(snapshot.id))?.awaitingAnswer).toBeUndefined();
+});
+
+test("open questions from replies stay through reading and close when a message answers them", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-open-questions-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const replies: string[] = [];
+  class ReplyingSession extends TestAgentSession {
+    private turns = 0;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turnId = `question-turn-${++this.turns}`;
+      const text = replies.shift() ?? "";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (text) {
+          this.pushEvent({
+            type: "timeline",
+            provider: this.provider,
+            turnId,
+            item: { type: "assistant_message", text },
+          });
+        }
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+  class ReplyingClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new ReplyingSession(config);
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new ReplyingClient() },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000136",
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const openIds = () =>
+    (toAgentPayload(manager.getAgent(snapshot.id)!).openQuestions ?? []).map((q) => q.id);
+  let sent = 0;
+  // Clients send prompts with a message id; that is what records the user message.
+  const send = (text: string) =>
+    manager.runAgent(snapshot.id, text, { clientMessageId: `open-questions-${++sent}` });
+
+  replies.push(
+    [
+      "❓ **Q1** - **Storage**: SQLite or Postgres?",
+      "",
+      "➡️ SQLite in one file",
+      "",
+      "❓ **Q2** - **Port**: 6767 or 6768?",
+      "",
+      "➡️ 6768",
+    ].join("\n"),
+  );
+  await send("plan it");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q1", "Q2"]);
+  expect(toAgentPayload(manager.getAgent(snapshot.id)!).openQuestions?.[0]?.pick).toBe(
+    "SQLite in one file",
+  );
+
+  // Reading the chat clears the unread flag, not the questions.
+  await manager.clearAgentAttention(snapshot.id);
+  // A message about something else, and a turn that ends without text, leave them open.
+  await send("also check the build log");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q1", "Q2"]);
+  expect((await storage.get(snapshot.id))?.openQuestions?.map((q) => q.id)).toEqual(["Q1", "Q2"]);
+
+  // A half answer is kept for every device; an older write from another device loses.
+  const halfAnswer = { pick: false, text: "Postgres, we need replicas", updatedAt: 2_000 };
+  expect(await manager.setOpenQuestionAnswer(snapshot.id, "Q1", halfAnswer)).toBe(true);
+  expect(
+    await manager.setOpenQuestionAnswer(snapshot.id, "Q1", { pick: true, text: "", updatedAt: 1 }),
+  ).toBe(false);
+  expect((await storage.get(snapshot.id))?.openQuestions?.[0]?.answer).toEqual(halfAnswer);
+  expect(await manager.setOpenQuestionAnswer(snapshot.id, "Q9", halfAnswer)).toBe(false);
+
+  replies.push("Noted.");
+  await send("Q1 (Storage) yes: SQLite in one file");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q2"]);
+
+  // Another agent's message names Q2, but only the user's own words answer.
+  await send(
+    '<paseo-system version="1" kind="agent-message" source-agent-id="helper" message-id="m1">\nQ2 is done on my side\n</paseo-system>',
+  );
+  await manager.flush();
+  expect(openIds()).toEqual(["Q2"]);
+
+  await send("gwr");
+  await manager.flush();
+  expect(openIds()).toEqual([]);
+  expect((await storage.get(snapshot.id))?.openQuestions).toBeUndefined();
 });
 
 test("archiveSnapshot clears persisted attention and normalizes running status", async () => {
@@ -9429,6 +9921,68 @@ test("archiveAgent on a parent archives its live internal children", async () =>
     expect.any(String),
   );
   expect(await storage.get(childAgentId)).toBeNull();
+});
+
+test("a new main agent starts unseen and reading it clears that; helpers never start unseen", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+    idFactory: () => randomUUID(),
+  });
+  const create = (labels?: Record<string, string>) =>
+    manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels,
+    });
+
+  const main = await create({ role: "main", topic: "x" });
+  const helper = await create({ role: "helper" });
+  const unlabeled = await create();
+  await manager.flush();
+
+  expect(main.labels).toEqual({ role: "main", topic: "x", [UNSEEN_AGENT_LABEL]: "true" });
+  expect((await storage.get(main.id))?.labels[UNSEEN_AGENT_LABEL]).toBe("true");
+  expect(helper.labels).toEqual({ role: "helper" });
+  expect(unlabeled.labels).toEqual({});
+
+  // Opening the chat clears it even though nothing finished yet.
+  await manager.clearAgentAttention(main.id);
+  expect(manager.getAgent(main.id)?.labels).toEqual({ role: "main", topic: "x" });
+  expect((await storage.get(main.id))?.labels).toEqual({ role: "main", topic: "x" });
+});
+
+test("clearing attention and mark as seen drop the unseen label for live and stored agents", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+    idFactory: () => randomUUID(),
+  });
+  const create = () =>
+    manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+      labels: { role: "main" },
+    });
+
+  const storedRead = await create();
+  await manager.closeAgent(storedRead.id);
+  await manager.clearAgentAttention(storedRead.id);
+  expect((await storage.get(storedRead.id))?.labels).toEqual({ role: "main" });
+
+  const liveSeen = await create();
+  await manager.markAgentSeen(liveSeen.id);
+  expect(manager.getAgent(liveSeen.id)?.labels).toEqual({ role: "main" });
+
+  const stored = await create();
+  await manager.closeAgent(stored.id);
+  expect(manager.getAgent(stored.id)).toBeNull();
+  await manager.markAgentSeen(stored.id);
+  expect((await storage.get(stored.id))?.labels).toEqual({ role: "main" });
 });
 
 test("subscribe does not emit state events for internal agents to global subscribers", async () => {
@@ -13296,6 +13850,195 @@ test("canonical submitted prompt keeps wire identity while rewind resolves provi
   }
 });
 
+test("rewind drops a prompt whose turn ended before the provider acknowledged it, without calling the provider", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-rewind-unacknowledged-"));
+  const store = new RecordingTimelineStore();
+
+  class FailingBeforeAckSession extends TestAgentSession {
+    override readonly capabilities = {
+      ...TEST_CAPABILITIES,
+      supportsRewindConversation: true,
+    };
+    readonly rewindMessageIds: string[] = [];
+    turnCount = 0;
+
+    override async startTurn(
+      prompt: AgentPromptInput,
+      options?: AgentRunOptions,
+    ): Promise<{ turnId: string }> {
+      const turnId = `turn-${++this.turnCount}`;
+      const text = typeof prompt === "string" ? prompt : "";
+      const failsBeforeAck = text.startsWith("fail");
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (failsBeforeAck) {
+          this.pushEvent({
+            type: "turn_failed",
+            provider: this.provider,
+            turnId,
+            error: "No API key found for anthropic",
+          });
+          return;
+        }
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: {
+            type: "user_message",
+            text,
+            messageId: `provider-${turnId}`,
+            clientMessageId: options?.clientMessageId,
+          },
+        });
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: { type: "assistant_message", text: "ok" },
+        });
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+
+    override async revertConversation({ messageId }: { messageId: string }): Promise<void> {
+      this.rewindMessageIds.push(messageId);
+    }
+  }
+
+  class FailingBeforeAckClient extends TestAgentClient {
+    session: FailingBeforeAckSession | null = null;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.session = new FailingBeforeAckSession(config);
+      return this.session;
+    }
+  }
+
+  const client = new FailingBeforeAckClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    durableTimelineStore: store,
+    logger,
+  });
+  const events: AgentManagerEvent[] = [];
+  manager.subscribe((event) => events.push(event), { replayState: false });
+  let agentId = "";
+  const userTexts = () =>
+    manager
+      .getTimeline(agentId)
+      .flatMap((item) => (item.type === "user_message" ? [item.text] : []));
+
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = snapshot.id;
+
+    await manager.runAgent(agentId, "kept prompt", { clientMessageId: "msg-kept" });
+    await expect(
+      manager.runAgent(agentId, "fail before ack", { clientMessageId: "msg-failed" }),
+    ).rejects.toThrow("No API key found for anthropic");
+    expect(userTexts()).toEqual(["kept prompt", "fail before ack"]);
+    expect(manager.hasInFlightRun(agentId)).toBe(false);
+    const epochBefore = manager.fetchTimeline(agentId, { direction: "tail", limit: 20 }).epoch;
+
+    await manager.rewind(agentId, "msg-failed", "conversation");
+
+    expect(client.session?.rewindMessageIds).toEqual([]);
+    expect(userTexts()).toEqual(["kept prompt"]);
+    const after = manager.fetchTimeline(agentId, { direction: "tail", limit: 20 });
+    expect(after.epoch).not.toBe(epochBefore);
+    expect(JSON.stringify(after.rows)).not.toContain("fail before ack");
+    expect(events).toContainEqual({
+      type: "timeline_replacement",
+      agentId,
+      epoch: after.epoch,
+    });
+    await manager.flush();
+    const committed = await manager.getTimelineRows(agentId);
+    expect(JSON.stringify(committed)).not.toContain("fail before ack");
+    expect(committed.map((row) => row.item.type)).toEqual(["user_message", "assistant_message"]);
+
+    // The kept, acknowledged prompt still rewinds through the provider.
+    await manager.rewind(agentId, "msg-kept", "conversation");
+    expect(client.session?.rewindMessageIds).toEqual(["provider-turn-1"]);
+  } finally {
+    await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("rewind still refuses an unacknowledged prompt when a later prompt was acknowledged", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-rewind-unacknowledged-later-"));
+
+  class LaterAckSession extends TestAgentSession {
+    override readonly capabilities = {
+      ...TEST_CAPABILITIES,
+      supportsRewindConversation: true,
+    };
+    turnCount = 0;
+
+    override async startTurn(
+      prompt: AgentPromptInput,
+      options?: AgentRunOptions,
+    ): Promise<{ turnId: string }> {
+      const turnId = `turn-${++this.turnCount}`;
+      const text = typeof prompt === "string" ? prompt : "";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (text.startsWith("fail")) {
+          this.pushEvent({ type: "turn_failed", provider: this.provider, turnId, error: "boom" });
+          return;
+        }
+        this.pushEvent({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          item: {
+            type: "user_message",
+            text,
+            messageId: `provider-${turnId}`,
+            clientMessageId: options?.clientMessageId,
+          },
+        });
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  class LaterAckClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new LaterAckSession(config);
+    }
+  }
+
+  const manager = new AgentManager({ clients: { codex: new LaterAckClient() }, logger });
+  let agentId = "";
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = snapshot.id;
+    await expect(
+      manager.runAgent(agentId, "fail first", { clientMessageId: "msg-failed" }),
+    ).rejects.toThrow("boom");
+    await manager.runAgent(agentId, "then fine", { clientMessageId: "msg-later" });
+
+    await expect(manager.rewind(agentId, "msg-failed", "conversation")).rejects.toThrow(
+      "Cannot rewind before the provider acknowledges the submitted prompt",
+    );
+    expect(
+      manager.getTimeline(agentId).filter((item) => item.type === "user_message"),
+    ).toHaveLength(2);
+  } finally {
+    await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("authoritative timeline records a daemon-handled submitted prompt before its output", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-daemon-handled-prompt-"));
   const storagePath = join(workdir, "agents");
@@ -15050,6 +15793,30 @@ test("an out-of-band command racing idle cleanup waits for the resumed runtime",
   expect(await command).toEqual({ disposition: "out_of_band" });
   expect(h.commands).toEqual(["/maintenance"]);
   expect(h.prompts).toEqual([]);
+});
+
+test("idle cleanup keeps an agent whose queue will drain, and collects it once the queue is paused", async () => {
+  const h = idleCleanupHarness();
+  const agent = await h.create();
+  h.probes[0] = async () => true;
+  await h.manager.addQueuedMessage(agent.id, { text: "waiting to drain" });
+
+  expect((await h.sweep({ now: h.later(61) })).collected).toEqual([]);
+  expect(h.closes).toBe(0);
+  expect(h.manager.getAgent(agent.id)?.queuedMessages.map((item) => item.text)).toEqual([
+    "waiting to drain",
+  ]);
+
+  // A paused queue waits for a person, not the runtime, so it does not pin the
+  // agent. Its idle period starts at the first sweep that sees it unprotected.
+  await h.manager.setQueuePaused(agent.id, true);
+  expect((await h.sweep({ now: h.later(62) })).collected).toEqual([]);
+  expect((await h.sweep({ now: h.later(123) })).collected).toHaveLength(1);
+  expect(h.closes).toBe(1);
+  await h.storage.flush();
+  expect((await h.storage.get(agent.id))?.queuedMessages?.map((item) => item.text)).toEqual([
+    "waiting to drain",
+  ]);
 });
 
 describe("agent options", () => {

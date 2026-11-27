@@ -1,0 +1,11 @@
+{
+  "pr": 90,
+  "title": "fix(app): slash command arguments, subcommands and aliases",
+  "tests": [
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/commands.test.ts",
+    "packages/protocol/src/messages.list-commands.test.ts",
+    "packages/app/src/utils/agent-command-autocomplete.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/composer-autocomplete.spec.ts"]
+}

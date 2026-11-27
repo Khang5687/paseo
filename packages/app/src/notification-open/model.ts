@@ -1,3 +1,4 @@
+import type { Note } from "@/notes/model";
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import type { PluginNotificationOpenTarget } from "@getpaseo/protocol/messages";
 import { buildHostRootRoute } from "@/utils/host-routes";
@@ -5,7 +6,8 @@ import type { NotificationOpenSource, NotificationTap } from "./source";
 
 export const WEB_NOTIFICATION_CLICK_EVENT = "paseo:web-notification-click";
 
-export type NotificationOpenTarget =
+/** Where a tap opens when it names no note, or when its note cannot be opened. */
+export type NotificationPlaceTarget =
   | { kind: "agent"; serverId: string; agentId: string }
   | { kind: "terminal"; serverId: string; workspaceId: string; terminalId: string }
   | {
@@ -17,6 +19,12 @@ export type NotificationOpenTarget =
       data?: Record<string, JsonValue>;
     }
   | { kind: "host"; serverId: string };
+
+export type NotificationOpenTarget =
+  | NotificationPlaceTarget
+  | { kind: "note"; serverId: string; noteId: string; fallback: NotificationPlaceTarget }
+  /** A file another device sent to this one: opens from Saved once it is kept there. */
+  | { kind: "file"; serverId: string; path: string };
 
 function readId(data: object, key: string): string {
   const value: unknown = Reflect.get(data, key);
@@ -56,10 +64,7 @@ function parsePluginOpenTarget(raw: unknown): PluginNotificationOpenTarget | und
   return undefined;
 }
 
-export function parseNotificationOpenTarget(data: unknown): NotificationOpenTarget | null {
-  if (!isPlainRecord(data)) return null;
-  const serverId = readId(data, "serverId");
-  if (!serverId) return null;
+function parsePlaceTarget(data: object, serverId: string): NotificationPlaceTarget | null {
   if (readId(data, "kind") === "plugin") {
     const pluginId = readId(data, "pluginId");
     const notificationId = readId(data, "notificationId");
@@ -84,11 +89,30 @@ export function parseNotificationOpenTarget(data: unknown): NotificationOpenTarg
   return { kind: "host", serverId };
 }
 
+export function parseNotificationOpenTarget(data: unknown): NotificationOpenTarget | null {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
+  const serverId = readId(data, "serverId");
+  if (!serverId) return null;
+  const sentFilePath = readId(data, "sentFilePath");
+  if (sentFilePath) return { kind: "file", serverId, path: sentFilePath };
+  const fallback = parsePlaceTarget(data, serverId);
+  if (!fallback) return null;
+  const noteId = readId(data, "noteId");
+  if (noteId) return { kind: "note", serverId, noteId, fallback };
+  return fallback;
+}
+
 interface NotificationOpenRouterDeps {
   source: NotificationOpenSource;
   openAgent: (target: { serverId: string; agentId: string }) => void;
   openRoute: (route: string) => void;
   openTerminal: (target: Extract<NotificationOpenTarget, { kind: "terminal" }>) => void;
+  /** Find the note a tap names; null when it is gone or its host cannot be reached. */
+  resolveNote: (target: { serverId: string; noteId: string }) => Promise<Note | null>;
+  /** Open the note's highlighted spot; false when it cannot be opened. */
+  openNote: (serverId: string, note: Note) => boolean;
+  /** Keep a sent file in Saved and open it; the caller reports any failure to the user. */
+  openSentFile: (target: { serverId: string; path: string }) => Promise<void>;
   openPlugin?: (
     target: Extract<NotificationOpenTarget, { kind: "plugin" }>,
   ) => void | Promise<void>;
@@ -98,23 +122,36 @@ interface NotificationOpenRouterDeps {
 export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
   const handledIds = new Set<string>();
   let launchTaken = false;
+  function openPlace(target: NotificationPlaceTarget): void | Promise<void> {
+    if (target.kind === "agent") {
+      deps.openAgent({ serverId: target.serverId, agentId: target.agentId });
+    } else if (target.kind === "terminal") {
+      deps.openTerminal(target);
+    } else if (target.kind === "plugin" && deps.openPlugin) {
+      return deps.openPlugin(target);
+    } else {
+      deps.openRoute(buildHostRootRoute(target.serverId));
+    }
+  }
+  async function openNoteTarget(target: Extract<NotificationOpenTarget, { kind: "note" }>) {
+    const note = await deps
+      .resolveNote({ serverId: target.serverId, noteId: target.noteId })
+      .catch(() => null);
+    if (note && deps.openNote(target.serverId, note)) return;
+    await openPlace(target.fallback);
+  }
   async function receive(tap: NotificationTap) {
     if (handledIds.has(tap.id)) return;
     handledIds.add(tap.id);
     await deps.whenReadyToNavigate();
     const target = parseNotificationOpenTarget(tap.data);
-    if (target?.kind === "agent") {
-      deps.openAgent({ serverId: target.serverId, agentId: target.agentId });
-    } else if (target?.kind === "terminal") {
-      deps.openTerminal(target);
-    } else if (target?.kind === "plugin") {
-      if (deps.openPlugin) {
-        await deps.openPlugin(target);
-      } else {
-        deps.openRoute(buildHostRootRoute(target.serverId));
-      }
-    } else if (target?.kind === "host") {
-      deps.openRoute(buildHostRootRoute(target.serverId));
+    if (target?.kind === "note") {
+      await openNoteTarget(target);
+    } else if (target?.kind === "file") {
+      await deps.openSentFile({ serverId: target.serverId, path: target.path }).catch(() => {});
+    } else if (target) {
+      const opened = openPlace(target);
+      if (opened) await opened;
     }
     deps.source.acknowledge(tap);
   }

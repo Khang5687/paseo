@@ -69,6 +69,21 @@ describe("workspace terminal state", () => {
     ).toEqual(["terminal-2"]);
   });
 
+  it("keeps a chat's drawer terminals out of the workspace tabs until they pop out", () => {
+    const drawerTerminal = { ...listedTerminal("drawer-1"), ownerAgentId: "agent-1" };
+    const terminals = [listedTerminal("tab-1"), drawerTerminal];
+
+    expect(collectStandaloneTerminalIds({ terminals, scriptTerminalIds: new Set() })).toEqual([
+      "tab-1",
+    ]);
+    expect(
+      collectStandaloneTerminalIds({
+        terminals: [listedTerminal("tab-1"), { ...drawerTerminal, ownerAgentId: undefined }],
+        scriptTerminalIds: new Set(),
+      }),
+    ).toEqual(["tab-1", "drawer-1"]);
+  });
+
   it("updates terminal cache entries for created and closed terminals", () => {
     const current: ListTerminalsPayload = {
       cwd: "/repo",

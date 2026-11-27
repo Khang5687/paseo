@@ -1,6 +1,8 @@
 import type {
   OmpAgentMessage,
   OmpExtensionUiResponse,
+  OmpGoalAction,
+  OmpGoalModeState,
   OmpModel,
   OmpPromptAck,
   OmpRpcHostToolDefinition,
@@ -26,6 +28,8 @@ export interface OmpRuntimeLaunch {
   thinkingOptionId?: string;
   modeId?: string;
   session?: string;
+  // Start on a copy of this session file under a new session id.
+  fork?: string;
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
@@ -42,6 +46,8 @@ export interface OmpStartSessionInput {
   thinkingOptionId?: string;
   modeId?: string;
   session?: string;
+  // Start on a copy of this session file under a new session id.
+  fork?: string;
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
@@ -61,6 +67,7 @@ export interface OmpRuntimeSession {
   prompt(input: OmpPromptInput): Promise<OmpPromptAck>;
   compact(customInstructions?: string): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
+  goal(action: OmpGoalAction): Promise<OmpGoalModeState | null>;
   abort(): Promise<void>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;
@@ -70,6 +77,8 @@ export interface OmpRuntimeSession {
   setThinkingLevel(level: OmpThinkingLevel): Promise<void>;
   getSessionStats(): Promise<OmpSessionStats>;
   getCommands(): Promise<OmpRpcSlashCommand[]>;
+  /** Rediscovers OMP skills and file slash commands for the session cwd, then lists commands. */
+  refreshCommands(): Promise<OmpRpcSlashCommand[]>;
   setSubagentSubscription(level: OmpSubagentSubscriptionLevel): Promise<void>;
   setHostTools(tools: OmpRpcHostToolDefinition[]): Promise<string[]>;
   sendHostToolResult(result: OmpRpcHostToolResult): void;
@@ -122,6 +131,7 @@ export function buildOmpLaunch(input: {
     protocolMode,
     modeId: input.session.modeId,
     session: input.session.session,
+    fork: input.session.fork,
     noSession: input.session.noSession,
     systemPrompt,
     extraArgs: input.session.extraArgs,
@@ -146,7 +156,9 @@ function appendOmpLaunchArgs(
   if (session.thinkingOptionId) {
     argv.push("--thinking", session.thinkingOptionId);
   }
-  if (session.noSession) {
+  if (session.fork) {
+    argv.push("--fork", session.fork);
+  } else if (session.noSession) {
     argv.push("--no-session");
   } else if (session.session) {
     argv.push("--session", session.session);

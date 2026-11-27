@@ -170,6 +170,29 @@ test.describe("Cross-provider model search", () => {
           page.getByTestId("combined-model-selector").filter({ visible: true }).first(),
         ).toContainText("Bulk model 99");
       });
+
+      await test.step("inside a provider, scrolling the list to the active row keeps Enter on that row", async () => {
+        await openModelPicker(page);
+        await page
+          .getByTestId("combobox-desktop-container")
+          .getByTestId(`model-provider-${LARGE_CATALOG.id}`)
+          .click();
+        const search = page.getByTestId("model-search-input");
+        await search.fill("bulk model");
+        // Same ranking as the host-wide search above: ArrowUp wraps to "Bulk model 99".
+        await page.keyboard.press("ArrowUp");
+        const row = page
+          .getByTestId("combobox-desktop-container")
+          .getByTestId(`model-row-${LARGE_CATALOG.id}-bulk-99`);
+        await expect(row).toBeVisible();
+        await expect(row).toHaveAttribute("data-active", "true");
+        // The reveal scrolled the list. Focus must stay in the search box: on body, typing is
+        // lost, and the overlay's focus trap can move it to the header's Back button, which
+        // then takes Enter and goes back to the provider list instead of selecting the row.
+        await expect(search).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(page.getByTestId("combobox-desktop-container")).toHaveCount(0);
+      });
     } finally {
       await workspace.cleanup();
       await profile.restore();
@@ -272,7 +295,9 @@ test.describe("Cross-provider model search", () => {
         await expect(sheetProfileRow).toBeVisible();
         await expect(sheetProfileRow).toHaveAttribute("data-active", "true");
         await page.keyboard.press("Enter");
-        await expect(sheetProfileRow).toHaveCount(0);
+        // A dismissed sheet slides off screen; its content can stay mounted, so check the
+        // viewport rather than the DOM.
+        await expect(sheetProfileRow).not.toBeInViewport();
       });
     } finally {
       await workspace.cleanup();

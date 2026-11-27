@@ -1,6 +1,7 @@
 import type { AttachmentFileSystem } from "@/attachments/attachment-file-system";
 import {
   type AttachmentStore,
+  type AttachmentWriter,
   type AttachmentStorageType,
   type AttachmentMetadata,
   type SaveAttachmentInput,
@@ -139,6 +140,38 @@ export function createLocalFileAttachmentStore(params: {
 
   return {
     storageType: params.storageType,
+
+    async openWriter(input): Promise<AttachmentWriter> {
+      const target = await resolveTarget({
+        ...input,
+        source: { kind: "bytes", bytes: new Uint8Array() },
+      });
+      const appender = await fileSystem.openAppender(target.targetUri);
+      let size = 0;
+      return {
+        id: target.id,
+        async write(chunk) {
+          await appender.write(chunk);
+          size += chunk.byteLength;
+        },
+        async finish() {
+          await appender.close();
+          return {
+            id: target.id,
+            mimeType: target.mimeType,
+            storageType: params.storageType,
+            storageKey: target.storageKey,
+            fileName: target.fileName,
+            byteSize: size,
+            createdAt: target.createdAt,
+          };
+        },
+        async abort() {
+          await appender.close().catch(() => undefined);
+          await fileSystem.delete(target.targetUri, { idempotent: true });
+        },
+      };
+    },
 
     async save(input): Promise<AttachmentMetadata> {
       const target = await resolveTarget(input);

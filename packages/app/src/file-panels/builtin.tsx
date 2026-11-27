@@ -1,12 +1,20 @@
-import { useWorkspace, useFileUrl, type PluginFilePanelProps } from "@getpaseo/plugin/client";
+import {
+  useWorkspace,
+  useFileUrl,
+  type PluginFile,
+  type PluginFilePanelProps,
+} from "@getpaseo/plugin/client";
 import { useCallback, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
+import { useTranslation } from "react-i18next";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
 import { useSessionStore } from "@/stores/session-store";
+import { DocumentFrame } from "./document-frame";
 import { FileHtmlPreview } from "./html-preview";
 import { FilePanelLoading } from "./loading";
 import { FileMarkdownPreview } from "./markdown-preview";
+import { MediaPlayer } from "./media-player";
 import { TextFilePanel, type TextFilePreviewProps } from "./source/panel";
 import type { RenderingFilePanel, SourceFilePanel } from "./catalog";
 
@@ -65,6 +73,45 @@ function ImagePanel({ file }: PluginFilePanelProps) {
   return <ZoomableImage uri={url.url} testID="image-file-preview" />;
 }
 
+function VideoPanel({ file }: PluginFilePanelProps) {
+  return <MediaPanel file={file} kind="video" />;
+}
+
+function AudioPanel({ file }: PluginFilePanelProps) {
+  return <MediaPanel file={file} kind="audio" />;
+}
+
+/** Loads the whole file, then plays it with the device's player. */
+function MediaPanel({ file, kind }: { file: PluginFile; kind: "video" | "audio" }) {
+  const { t } = useTranslation();
+  const url = useFileUrl(file);
+  const [unplayableUrl, setUnplayableUrl] = useState<string | null>(null);
+  if (url.status === "loading") return <FilePanelLoading />;
+  if (url.status === "error") return <FilePanelError message={url.error.message} />;
+  if (unplayableUrl === url.url) {
+    return <FilePanelError message={t("panels.file.failedToLoadPreview")} />;
+  }
+  return (
+    <MediaPlayer
+      url={url.url}
+      kind={kind}
+      testID={`${kind}-file-preview`}
+      onError={setUnplayableUrl}
+    />
+  );
+}
+
+function PdfPanel({ file }: PluginFilePanelProps) {
+  const url = useFileUrl(file);
+  if (url.status === "loading") return <FilePanelLoading />;
+  if (url.status === "error") return <FilePanelError message={url.error.message} />;
+  return (
+    <View style={styles.container}>
+      <DocumentFrame url={url.url} testID="pdf-file-preview" />
+    </View>
+  );
+}
+
 function FilePanelError({ message }: { message: string }) {
   return (
     <View style={styles.centerState}>
@@ -77,6 +124,9 @@ const components = {
   "builtin:markdown": MarkdownPanel,
   "builtin:html": HtmlPanel,
   "builtin:image": ImagePanel,
+  "builtin:video": VideoPanel,
+  "builtin:audio": AudioPanel,
+  "builtin:pdf": PdfPanel,
   "builtin:source": SourcePanel,
 };
 

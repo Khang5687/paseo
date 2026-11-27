@@ -185,7 +185,12 @@ export function ComposerDock({
               style={fullscreen ? dockStyles.surface : dockStyles.centeredComposer}
               fullscreen={fullscreen}
             >
-              <View style={fullscreen ? fullscreenSurface : dockStyles.centeredComposerSurface}>
+              {/* Not collapsable: fullscreen gives it a background, and a flattening change
+                  re-parents the native editor, which blurs it (see the input presentation). */}
+              <View
+                collapsable={false}
+                style={fullscreen ? fullscreenSurface : dockStyles.centeredComposerSurface}
+              >
                 {composer}
               </View>
             </ComposerViewportContent>
@@ -220,6 +225,7 @@ export function ComposerDock({
           fullscreen={fullscreen}
         >
           <View
+            collapsable={false}
             style={
               fullscreen
                 ? fullscreenSurface

@@ -331,6 +331,78 @@ describe("user message identity", () => {
   });
 });
 
+describe("user message files from the host", () => {
+  const replayed = {
+    type: "timeline",
+    provider: "omp",
+    item: {
+      type: "user_message",
+      text: "",
+      messageId: "provider-1",
+      attachmentFiles: [
+        { label: "Image #1", path: "/home/k/.paseo/uploads/2026-11-27/image-1.png" },
+      ],
+    },
+  } satisfies AgentStreamEventPayload;
+
+  // A reload, another client, or a daemon restart rebuilds rows from the timeline alone.
+  it("keeps the files of a replayed message, even one with pictures and no text", () => {
+    const live = applyStreamEvent({
+      tail: [],
+      head: [],
+      event: replayed,
+      timestamp: new Date("2026-11-27T10:00:00Z"),
+    });
+    const hydrated = reduceStreamUpdate([], replayed, new Date("2026-11-27T10:00:00Z"));
+
+    for (const rows of [live.tail, hydrated]) {
+      expect(rows).toEqual([
+        expect.objectContaining({
+          kind: "user_message",
+          messageId: "provider-1",
+          attachmentFiles: replayed.item.attachmentFiles,
+        }),
+      ]);
+    }
+  });
+
+  it("gives the sender's own row the files the daemon echoes, keeping its local copies", () => {
+    const timestamp = new Date("2026-11-27T10:00:00Z");
+    const local = createUserMessage({
+      clientMessageId: "client-1",
+      text: "look [Image #1]",
+      timestamp,
+      images: [
+        {
+          id: "image-1",
+          mimeType: "image/png",
+          storageType: "web-indexeddb",
+          storageKey: "image-1.png",
+          createdAt: timestamp.getTime(),
+        },
+      ],
+    });
+
+    const result = applyStreamEvent({
+      tail: [local],
+      head: [],
+      event: {
+        ...replayed,
+        item: { ...replayed.item, text: "look [Image #1]", clientMessageId: "client-1" },
+      },
+      timestamp: new Date("2026-11-27T10:00:01Z"),
+    });
+
+    expect(result.tail).toEqual([
+      {
+        ...local,
+        messageId: "provider-1",
+        attachmentFiles: replayed.item.attachmentFiles,
+      },
+    ]);
+  });
+});
+
 function assistantTimeline(
   text: string,
   provider: AgentProvider = "claude",

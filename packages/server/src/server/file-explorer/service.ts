@@ -96,12 +96,21 @@ const TEXT_MIME_TYPES: Record<string, string> = {
   ".json": "application/json",
 };
 
+/** Files the explorer never reads as text. Media types here let panels preview and play them. */
 const BINARY_MIME_TYPES: Record<string, string> = {
   ".pdf": "application/pdf",
   ".zip": "application/zip",
   ".gz": "application/gzip",
   ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".aac": "audio/aac",
+  ".flac": "audio/flac",
   ".mp4": "video/mp4",
+  ".m4v": "video/x-m4v",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
   ".woff2": "font/woff2",
 };
 

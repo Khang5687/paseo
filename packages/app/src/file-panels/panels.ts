@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Platform } from "react-native";
 import { useInstalledPlugins } from "@/plugins/registry";
 import type { PluginFilePanelContribution, InstalledPlugin } from "@/plugins/types";
 import { filePanelCatalog, type RenderingFilePanel, type SourceFilePanel } from "./catalog";
@@ -37,5 +38,7 @@ function hostFilePanels(plugins: readonly InstalledPlugin[]): readonly FilePanel
         contribution,
       })),
     ),
+    // Android's WebView has no PDF viewer; DocumentFrame refuses PDFs there.
+    { inlinePdf: Platform.OS !== "android" },
   );
 }

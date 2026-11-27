@@ -8,6 +8,8 @@ export interface WorkspaceStructureHostPlacement {
   worktreeSupport: "supported" | "unsupported" | "unknown";
   customIconRevision?: string | null;
   iconRevision?: string;
+  /** ISO time this host's project comes back from a snooze; absent or null when awake. */
+  snoozedUntil?: string | null;
 }
 
 export interface WorkspaceStructureProject {
@@ -30,7 +32,8 @@ interface WorkspaceStructureSession {
   workspaces: Iterable<WorkspaceDescriptor>;
 }
 
-export type WorkspaceSort = "manual" | "created" | "lastPrompt";
+/** "urgent" orders by last prompt here; the sidebar then floats waiting workspaces up by status. */
+export type WorkspaceSort = "manual" | "created" | "lastPrompt" | "urgent";
 
 interface WorkspaceSortItem {
   workspaceName: string;
@@ -171,6 +174,7 @@ function addProjectToView(input: {
     worktreeSupport: project.projectKind === "git" ? "supported" : "unsupported",
     customIconRevision: project.projectCustomIconRevision,
     iconRevision: project.projectIconRevision,
+    ...(project.projectSnoozedUntil ? { snoozedUntil: project.projectSnoozedUntil } : {}),
   };
   const draft = byProject.get(viewKey);
   if (!draft) {
@@ -220,7 +224,7 @@ function workspaceSortTime(
 ): number {
   if (!sort) return 0;
   const time =
-    sort === "lastPrompt"
+    sort === "lastPrompt" || sort === "urgent"
       ? (workspace.lastUserMessageAt ?? workspace.createdAt)
       : workspace.createdAt;
   return time?.getTime() ?? 0;

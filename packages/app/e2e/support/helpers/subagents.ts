@@ -84,6 +84,31 @@ export async function seedSubagent(
   return { id: child.id, title: input.title };
 }
 
+/** Seeds a Paseo subagent of an existing agent that is still running when this resolves. */
+export async function seedRunningSubagent(
+  workspace: Pick<SeededWorkspace, "client" | "repoPath" | "workspaceId">,
+  input: { parentId: string; title: string },
+): Promise<{ id: string; title: string }> {
+  const child = await workspace.client.createAgent({
+    provider: "mock",
+    cwd: workspace.repoPath,
+    workspaceId: workspace.workspaceId,
+    title: input.title,
+    modeId: "load-test",
+    model: "five-minute-stream",
+    initialPrompt: "stay running",
+    labels: {
+      [PARENT_AGENT_ID_LABEL]: input.parentId,
+    },
+  });
+  await workspace.client.waitForAgentUpsert(
+    child.id,
+    (snapshot) => snapshot.status === "running",
+    15_000,
+  );
+  return { id: child.id, title: input.title };
+}
+
 export async function seedParentWithCrossWorkspaceSubagent(
   workspace: Pick<SeededWorkspace, "client" | "repoPath" | "workspaceId" | "projectId">,
   input: { parentTitle: string; childTitle: string },
@@ -199,6 +224,7 @@ export async function expectManagedSubagentArchived(
 }
 
 export async function archiveFinishedSubagents(page: Page): Promise<void> {
+  page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("menuitem", { name: "Archive finished subagents" }).click();
 }
 

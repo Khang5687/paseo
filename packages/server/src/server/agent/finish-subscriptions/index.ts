@@ -88,6 +88,9 @@ interface Watch {
   /** Decides a followed child's state again; see `createFollowing`. */
   recheck?(): void;
 }
+/** Storage and delivery retries stay short; an unreachable host is polled less often. */
+const DELIVERY_RETRY_CAP_MS = 5000;
+const OBSERVATION_RETRY_CAP_MS = 60_000;
 function key(record: FinishSubscription): string {
   return JSON.stringify([record.callerAgentId, record.childAgentId, record.serverId]);
 }
@@ -149,12 +152,18 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
     // Only IDs captured by this observer are eligible; newer registrations survive.
     for (const record of watch.records) await deps.store.remove(record.id);
   }
-  async function delay(signal: AbortSignal, attempt: number): Promise<void> {
+  async function delay(
+    signal: AbortSignal,
+    attempt: number,
+    capMs = DELIVERY_RETRY_CAP_MS,
+  ): Promise<void> {
     try {
       await pause(
-        Math.min((deps.retryDelayMs ?? 1000) * 2 ** Math.min(attempt, 3), 5000),
+        Math.min((deps.retryDelayMs ?? 1000) * 2 ** Math.min(attempt, 6), capMs),
         undefined,
-        { signal },
+        {
+          signal,
+        },
       );
     } catch (error) {
       if (!signal.aborted) throw error;
@@ -195,8 +204,7 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
     return parent?.agentId !== record.callerAgentId || parent.serverId !== deps.serverId;
   }
   function reasonFor(result: FinishObservationResult): FinishNotificationReason {
-    if (result.reason === "host unreachable" || result.reason === "host removed")
-      return result.reason;
+    if (result.reason === "host removed") return result.reason;
     if (!result.final) return "is unavailable";
     if (result.final.status === "closed") return "was closed";
     if (result.status === "error") return "errored";
@@ -308,14 +316,15 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
     let current:
       | { outcome: FollowOutcome; decided: boolean; notice?: Notice; sent: boolean }
       | undefined;
-    let remoteFailures = 0;
     let retries = 0;
     let warned = false;
+    let unreachableWarned = false;
     async function observeNext(): Promise<FollowOutcome | undefined> {
       try {
         observation ??= await deps.open(record, signal);
         const result = await following.next(abortable(observation.next(), signal), signal);
-        remoteFailures = 0;
+        retries = 0;
+        unreachableWarned = false;
         return result;
       } catch (error) {
         await observation?.close();
@@ -323,14 +332,24 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
         signal.throwIfAborted();
         if (!(error instanceof HostObservationError) || !record.serverId) throw error;
         if (error.reason === "connecting") return undefined;
-        if (error.reason === "unreachable" && ++remoteFailures < 3) return undefined;
-        // Host visibility ends this subscription; it says nothing about child completion.
+        // A host that cannot be reached is not an outcome: the durable intent stays and the
+        // observation reopens until the host answers. Only removal ends the subscription.
+        if (error.reason !== "removed") {
+          if (!unreachableWarned) {
+            deps.logger.warn(
+              { err: error, serverId: record.serverId, childAgentId: record.childAgentId },
+              "Finish subscription cannot observe host; retrying",
+            );
+            unreachableWarned = true;
+          }
+          return undefined;
+        }
         return {
           status: "error",
           final: null,
           lastMessage: null,
           error: null,
-          reason: error.reason === "removed" ? "host removed" : "host unreachable",
+          reason: "host removed",
         };
       }
     }
@@ -356,7 +375,7 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
       if (!current) {
         const outcome = await observeNext();
         if (!outcome) {
-          await delay(signal, retries++);
+          await delay(signal, retries++, OBSERVATION_RETRY_CAP_MS);
           return false;
         }
         current = { outcome, decided: false, sent: false };

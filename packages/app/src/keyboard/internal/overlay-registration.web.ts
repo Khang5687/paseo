@@ -202,6 +202,9 @@ export function useOverlayRegistration({
   const removeEntryRef = useRef<((options?: RemoveWebOverlayOptions) => void) | null>(null);
   const detachedRemoveEntryRef = useRef<((options?: RemoveWebOverlayOptions) => void) | null>(null);
   const registeredRef = useRef(false);
+  // The scope node React just detached while the overlay stays active. Its deregistration
+  // waits for the end of the commit so a same-node reattach can cancel it.
+  const pendingDetachRef = useRef<HTMLElement | null>(null);
   const activeRef = useRef(active);
   const wasActiveRef = useRef(false);
 
@@ -251,16 +254,40 @@ export function useOverlayRegistration({
 
   const setScope = useCallback(
     (node: unknown) => {
-      scopeRef.current =
+      const nextScope =
         typeof HTMLElement !== "undefined" && node instanceof HTMLElement ? node : null;
-      if (!scopeRef.current && activeRef.current) {
+      const pendingDetach = pendingDetachRef.current;
+      pendingDetachRef.current = null;
+      const detachScope = () => {
         const removeEntry = removeEntryRef.current;
         removeEntry?.({ restoreFocus: false });
         detachedRemoveEntryRef.current = removeEntry;
         removeEntryRef.current = null;
         registeredRef.current = false;
+      };
+
+      if (!nextScope && activeRef.current) {
+        const detached = scopeRef.current;
+        scopeRef.current = null;
+        if (!detached) {
+          detachScope();
+          return;
+        }
+        // A ref callback whose identity changes each render (Unistyles' web elements build a
+        // new one every render) makes React call it with null and then the same node in one
+        // commit. Deregistering here would re-add the overlay on reattach and re-run its
+        // initial focus, pulling focus to the first focusable element after any blur.
+        pendingDetachRef.current = detached;
+        queueMicrotask(() => {
+          if (pendingDetachRef.current !== detached) return;
+          pendingDetachRef.current = null;
+          detachScope();
+        });
         return;
       }
+      // A different node is a new surface: register it afresh, initial focus included.
+      if (pendingDetach && nextScope !== pendingDetach) detachScope();
+      scopeRef.current = nextScope;
       // Host refs attach before descendant layout effects and autofocus. Register
       // here so the previous overlay cannot redirect that pending focus.
       syncRegistration();
@@ -272,6 +299,7 @@ export function useOverlayRegistration({
     syncRegistration();
     return () => {
       const removeEntry = removeEntryRef.current ?? detachedRemoveEntryRef.current;
+      pendingDetachRef.current = null;
       removeEntry?.();
       removeEntryRef.current = null;
       detachedRemoveEntryRef.current = null;

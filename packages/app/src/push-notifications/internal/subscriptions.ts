@@ -27,6 +27,17 @@ async function loadInitialAppSettings(settingsDeps?: SettingsDeps): Promise<AppS
   return loadAppSettingsFromStorage();
 }
 
+const pendingTokens = new Map<string, Promise<string | null>>();
+
+/** One token lookup per host at a time: the push subscription and device registration share it. */
+export function resolveToken(serverId: string): Promise<string | null> {
+  const pending = pendingTokens.get(serverId);
+  if (pending) return pending;
+  const lookup = defaultResolveToken(serverId).finally(() => pendingTokens.delete(serverId));
+  pendingTokens.set(serverId, lookup);
+  return lookup;
+}
+
 function readCachedPreferences(queryClient: QueryClient): NotificationPreferences | null {
   const cached = queryClient.getQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY);
   if (!cached) {
@@ -40,7 +51,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
   let token: string | null = null;
   let lastRegisteredSignature: string | null = null;
   const queryClient = input.queryClient ?? appQueryClient;
-  const resolveToken = input.resolveToken ?? defaultResolveToken;
+  const lookupToken = input.resolveToken ?? resolveToken;
 
   const initialCached = readCachedPreferences(queryClient);
   let preferences: NotificationPreferences = initialCached ?? DEFAULT_NOTIFICATION_PREFERENCES;
@@ -85,7 +96,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
       });
   }
 
-  void resolveToken(input.serverId)
+  void lookupToken(input.serverId)
     .then((resolved) => {
       if (stopped) return undefined;
       token = resolved;
