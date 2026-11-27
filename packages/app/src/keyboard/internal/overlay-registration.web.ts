@@ -346,6 +346,13 @@ export function useOverlayRegistration({
         });
         return;
       }
+      if (!nextScope) {
+        // Inactive: detach now, before scopeRef clears, so removeEntry records the departing scope.
+        // Focus restoration runs in the layout effect once active is false.
+        detachScope();
+        scopeRef.current = null;
+        return;
+      }
       // A different node is a new surface: register it afresh, initial focus included.
       if (pendingDetach && nextScope !== pendingDetach) detachScope();
       scopeRef.current = nextScope;
