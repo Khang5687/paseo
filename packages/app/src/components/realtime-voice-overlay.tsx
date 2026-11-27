@@ -1,11 +1,13 @@
+import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { Mic, MicOff, Square } from "lucide-react-native";
+import { Mic, MicOff, Moon, Square } from "lucide-react-native";
 import { FOOTER_HEIGHT } from "@/constants/layout";
 import { useVoiceTelemetry } from "@/contexts/voice-context";
+import { VoiceBlackScreen } from "./voice-black-screen";
 import { VolumeMeter } from "./volume-meter";
 
 interface RealtimeVoiceOverlayProps {
@@ -40,8 +42,13 @@ export function RealtimeVoiceOverlay({
     () => [styles.actionButton, styles.stopButton, isSwitching ? styles.buttonDisabled : undefined],
     [isSwitching],
   );
+  // Lives in the panel, so ending live voice unmounts the panel and the black screen with it.
+  const [isBlack, setIsBlack] = useState(false);
+  const handleBlack = useCallback(() => setIsBlack(true), []);
+  const handleWake = useCallback(() => setIsBlack(false), []);
   return (
     <View style={styles.container}>
+      {isBlack ? <VoiceBlackScreen onWake={handleWake} /> : null}
       <View style={styles.meterContainer}>
         <VolumeMeter
           volume={volume}
@@ -52,6 +59,15 @@ export function RealtimeVoiceOverlay({
       </View>
 
       <View style={styles.actionsContainer}>
+        <Button
+          testID="realtime-voice-black"
+          leftIcon={Moon}
+          onPress={handleBlack}
+          accessibilityLabel={t("realtimeVoice.actions.black")}
+        >
+          {t("realtimeVoice.blackScreen.button")}
+        </Button>
+
         <Pressable
           onPress={onToggleMute}
           disabled={isSwitching}

@@ -2110,6 +2110,11 @@ export const en = {
       mute: "Mute realtime voice",
       unmute: "Unmute realtime voice",
       stop: "Stop realtime voice and interrupt turn",
+      black: "Turn the screen black while voice keeps running",
+    },
+    blackScreen: {
+      button: "Black",
+      wake: "Black screen. Double-tap to wake",
     },
   },
   rewind: {

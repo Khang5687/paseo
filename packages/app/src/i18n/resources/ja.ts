@@ -2103,6 +2103,11 @@ export const ja: TranslationResources = {
       mute: "リアルタイム音声をミュート",
       unmute: "リアルタイム音声のミュートを解除",
       stop: "リアルタイム音声を停止してターンを中断",
+      black: "音声を続けたまま画面を黒にする",
+    },
+    blackScreen: {
+      button: "黒画面",
+      wake: "黒画面。ダブルタップで戻ります",
     },
   },
   rewind: {

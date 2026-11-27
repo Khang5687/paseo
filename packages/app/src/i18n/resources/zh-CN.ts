@@ -2057,6 +2057,11 @@ export const zhCN: TranslationResources = {
       mute: "静音 realtime voice",
       unmute: "取消静音 realtime voice",
       stop: "停止 realtime voice 并中断 turn",
+      black: "保持语音运行并将屏幕变黑",
+    },
+    blackScreen: {
+      button: "黑屏",
+      wake: "黑屏。双击唤醒",
     },
   },
   rewind: {
