@@ -2409,6 +2409,13 @@ export const ko: TranslationResources = {
     sendFailed: "{{title}}에 보내지 못했습니다",
     railLabel_one: "응답 필요: {{count}}개 대기",
     railLabel_other: "응답 필요: {{count}}개 대기",
+    peek: {
+      sent: "✓ “{{answer}}” 보냄. 다시 작업 중입니다.",
+      more_one: "{{count}}개 더 기다리는 중",
+      more_other: "{{count}}개 더 기다리는 중",
+      openChat: "채팅 열기 ›",
+      send: "보내기",
+    },
   },
   subagents: {
     parent: {

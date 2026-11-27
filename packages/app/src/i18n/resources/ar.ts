@@ -2398,6 +2398,13 @@ export const ar: TranslationResources = {
     sendFailed: "تعذر الإرسال إلى {{title}}",
     railLabel_one: "بانتظارك: {{count}}",
     railLabel_other: "بانتظارك: {{count}}",
+    peek: {
+      sent: "✓ أُرسل “{{answer}}”. عاد إلى العمل.",
+      more_one: "{{count}} آخر بانتظارك",
+      more_other: "{{count}} أخرى بانتظارك",
+      openChat: "افتح المحادثة ›",
+      send: "إرسال",
+    },
   },
   subagents: {
     parent: {

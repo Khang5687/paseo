@@ -2428,6 +2428,13 @@ export const en = {
     sendFailed: "Could not send to {{title}}",
     railLabel_one: "Needs you: {{count}} waiting",
     railLabel_other: "Needs you: {{count}} waiting",
+    peek: {
+      sent: "✓ Sent “{{answer}}”. It is working again.",
+      more_one: "{{count}} more waiting",
+      more_other: "{{count}} more waiting",
+      openChat: "Open chat ›",
+      send: "Send",
+    },
   },
   subagents: {
     parent: {

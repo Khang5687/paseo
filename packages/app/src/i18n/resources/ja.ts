@@ -2423,6 +2423,13 @@ export const ja: TranslationResources = {
     sendFailed: "{{title}} に送信できませんでした",
     railLabel_one: "あなた待ち: {{count}} 件",
     railLabel_other: "あなた待ち: {{count}} 件",
+    peek: {
+      sent: "✓ 「{{answer}}」を送信しました。作業を再開しています。",
+      more_one: "ほかに {{count}} 件待機中",
+      more_other: "ほかに {{count}} 件待機中",
+      openChat: "チャットを開く ›",
+      send: "送信",
+    },
   },
   subagents: {
     parent: {

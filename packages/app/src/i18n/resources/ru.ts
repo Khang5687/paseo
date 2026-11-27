@@ -2441,6 +2441,13 @@ export const ru: TranslationResources = {
     sendFailed: "Не удалось отправить в {{title}}",
     railLabel_one: "Ждут вас: {{count}}",
     railLabel_other: "Ждут вас: {{count}}",
+    peek: {
+      sent: "✓ Отправлено «{{answer}}». Снова в работе.",
+      more_one: "Ещё {{count}} ждёт",
+      more_other: "Ещё {{count}} ждут",
+      openChat: "Открыть чат ›",
+      send: "Отправить",
+    },
   },
   subagents: {
     parent: {

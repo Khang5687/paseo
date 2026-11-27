@@ -2455,6 +2455,13 @@ export const fr: TranslationResources = {
     sendFailed: "Impossible d’envoyer à {{title}}",
     railLabel_one: "Vous attend : {{count}}",
     railLabel_other: "Vous attend : {{count}}",
+    peek: {
+      sent: "✓ « {{answer}} » envoyé. Il reprend le travail.",
+      more_one: "{{count}} autre en attente",
+      more_other: "{{count}} autres en attente",
+      openChat: "Ouvrir le chat ›",
+      send: "Envoyer",
+    },
   },
   subagents: {
     parent: {

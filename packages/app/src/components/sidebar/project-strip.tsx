@@ -39,6 +39,8 @@ import { PressHighlight } from "@/components/ui/press-highlight";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { ProjectPeek } from "@/needs-you/project-peek";
 import { isNative as platformIsNative } from "@/constants/platform";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useShowProjectShortcutBadges } from "@/hooks/use-show-shortcut-badges";
@@ -286,6 +288,50 @@ function RailTooltip({
         </View>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * A rail project's hover: its waiting question when one waits (peek, owner decision Q94), else
+ * the name tooltip. The peek is a hover card, so the pointer can cross onto it to answer.
+ */
+function RailPeek({
+  project,
+  waiting,
+  open,
+  label,
+  subtext,
+  chord,
+  children,
+}: {
+  project: SidebarProjectEntry;
+  waiting: boolean;
+  open: boolean;
+  label: string;
+  subtext?: string | null;
+  chord?: ShortcutKey[][] | null;
+  children: ReactElement;
+}) {
+  // A peek that is sending or showing "Sent" stays up after the project stops waiting.
+  const [held, setHeld] = useState(false);
+  if (!waiting && !held) {
+    return (
+      <RailTooltip show={!open} label={label} subtext={subtext} chord={chord}>
+        {children}
+      </RailTooltip>
+    );
+  }
+  return (
+    <HoverCard>
+      <HoverCardTrigger>{children}</HoverCardTrigger>
+      <HoverCardContent placement="right" alignment="start" offset={8}>
+        <ProjectPeek
+          hosts={project.hosts}
+          onHoldChange={setHeld}
+          testID={`sidebar-project-rail-peek-${project.viewKey}`}
+        />
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -661,8 +707,10 @@ const RailProjectButton = memo(function RailProjectButton({
             accessibilityLabel={project.projectName}
             testID={`sidebar-project-rail-handle-${project.viewKey}`}
           >
-            <RailTooltip
-              show={!open}
+            <RailPeek
+              project={project}
+              waiting={statusCounts.needsInput > 0}
+              open={open}
               label={project.projectName}
               subtext={statusLabel}
               chord={chord}
@@ -690,7 +738,7 @@ const RailProjectButton = memo(function RailProjectButton({
                   shortcutNumber={showNumber ? shortcutNumber : null}
                 />
               </PressHighlight>
-            </RailTooltip>
+            </RailPeek>
           </DraggableListHandle>
         </ContextMenuTrigger>
         <ContextMenuContent
@@ -959,6 +1007,9 @@ const ProjectChip = memo(function ProjectChip({
   const openReorder = useOpenReorderProjects();
   const statusCounts = useSidebarProjectStatusCounts(project.workspaces);
   const statusLabel = useProjectStatusLabel(statusCounts);
+  // A peek that is sending or showing "Sent" stays up after the project stops waiting.
+  const [peekHeld, setPeekHeld] = useState(false);
+  const waiting = statusCounts.needsInput > 0 || peekHeld;
   const shortcutNumber = projectStripShortcutNumber(index);
   const moves = listProjectStripMoves({ projectKeys, viewKey: project.viewKey });
   const menuPages = useProjectSnoozeMenuPages(project);
@@ -976,7 +1027,7 @@ const ProjectChip = memo(function ProjectChip({
         }
         aria-selected={selected}
         highlightStyle={styles.chipPressed}
-        enabled={moves.length > 0 || menuPages.length > 0}
+        enabled={moves.length > 0 || menuPages.length > 0 || waiting}
         onPress={handlePress}
         style={[styles.chip, selected ? styles.chipSelected : null]}
         testID={`sidebar-project-chip-item-${project.viewKey}`}
@@ -1002,6 +1053,14 @@ const ProjectChip = memo(function ProjectChip({
         pages={menuPages}
         testID={`sidebar-project-chip-menu-${project.viewKey}`}
       >
+        {/* Hold a waiting project's chip to answer its question without leaving the chat. */}
+        {waiting ? (
+          <ProjectPeek
+            hosts={project.hosts}
+            onHoldChange={setPeekHeld}
+            testID={`sidebar-project-chip-peek-${project.viewKey}`}
+          />
+        ) : null}
         {moves.map((move) => (
           <ProjectMoveItem
             key={move}
