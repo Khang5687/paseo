@@ -499,6 +499,7 @@ export const ja: TranslationResources = {
       next: "次へ",
       answerPlaceholder: "回答を入力...",
       otherPlaceholder: "その他...",
+      sendWhatIHave: "ここまでを送信",
     },
     backgroundWork: {
       heartbeat: "ハートビート",

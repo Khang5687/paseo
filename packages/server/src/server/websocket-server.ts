@@ -2298,6 +2298,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.agentDrafts ? { agentDraftSync: true } : {}),
         // COMPAT(questionAnswers): fork, added with the questions bar.
         questionAnswers: true,
+        // COMPAT(questionBoxDrafts): fork, half-filled question boxes on every device.
+        questionBoxDrafts: true,
         // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
         ...(this.notesService ? { notes: true } : {}),
         // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.

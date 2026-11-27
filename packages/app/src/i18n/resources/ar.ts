@@ -493,6 +493,7 @@ export const ar: TranslationResources = {
       next: "التالي",
       answerPlaceholder: "اكتب إجابتك...",
       otherPlaceholder: "آخر...",
+      sendWhatIHave: "إرسال ما لدي",
     },
     backgroundWork: {
       heartbeat: "نبضة دورية",

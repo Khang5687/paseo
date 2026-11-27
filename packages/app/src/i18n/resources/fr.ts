@@ -499,6 +499,7 @@ export const fr: TranslationResources = {
       next: "Suivant",
       answerPlaceholder: "Saisissez votre réponse…",
       otherPlaceholder: "Autre…",
+      sendWhatIHave: "Envoyer ce que j’ai",
     },
     backgroundWork: {
       heartbeat: "Battement périodique",

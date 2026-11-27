@@ -495,6 +495,7 @@ export const ko: TranslationResources = {
       next: "다음",
       answerPlaceholder: "답변을 입력하세요...",
       otherPlaceholder: "기타...",
+      sendWhatIHave: "지금까지 보내기",
     },
     backgroundWork: {
       heartbeat: "하트비트",

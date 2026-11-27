@@ -497,6 +497,7 @@ export const ru: TranslationResources = {
       next: "Далее",
       answerPlaceholder: "Введите ответ...",
       otherPlaceholder: "Другой ответ...",
+      sendWhatIHave: "Отправить что есть",
     },
     backgroundWork: {
       heartbeat: "Периодический сигнал",

@@ -1,5 +1,6 @@
 import type {
   AgentMetric,
+  AgentPermissionDraft,
   AgentOptionControl,
   AgentOptionSelectControl,
   AgentOptionToggleControl,
@@ -558,6 +559,8 @@ export interface AgentPermissionRequest {
   suggestions?: AgentPermissionUpdate[];
   actions?: AgentPermissionAction[];
   metadata?: AgentMetadata;
+  // COMPAT(questionBoxDrafts): fork. The picks of a half-filled question box, for every device.
+  draftAnswers?: AgentPermissionDraft;
 }
 
 export type AgentPermissionResponse =
