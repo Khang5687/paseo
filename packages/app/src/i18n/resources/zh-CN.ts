@@ -215,6 +215,7 @@ export const zhCN: TranslationResources = {
       openImage: "打开图片附件",
       removeImage: "移除图片附件",
       removeFile: "Remove file attachment",
+      trayChip: "{{count}} 个文件",
       openGithub: "打开 {{kind}} {{number}}",
       removeGithub: "移除 {{kind}} {{number}}",
       element: "元素",
@@ -284,6 +285,7 @@ export const zhCN: TranslationResources = {
   agentStream: {
     empty: "开始和这个 Agent 对话...",
     scrollToBottom: "滚动到底部",
+    scrollToBottomNew: "滚动到底部，{{count}} 条新消息",
     historyLoadFailed: "无法加载智能体历史记录",
     messageCapped: "此消息已被截断（{{bytes}} 字节）。",
     permission: {

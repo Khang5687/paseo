@@ -411,8 +411,23 @@ export interface AgentTaskItem {
   activeForm?: string;
 }
 
+/**
+ * A file the daemon saved for a user message and named in the prompt as `[Image #N]: <path>` or
+ * `[File #N]: <path>`. `label` is the token without brackets, as typed in the text.
+ */
+export interface UserMessageAttachmentFile {
+  label: string;
+  path: string;
+}
+
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      attachmentFiles?: UserMessageAttachmentFile[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

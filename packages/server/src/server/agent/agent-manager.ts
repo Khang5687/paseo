@@ -90,6 +90,7 @@ import type {
   AgentPermissionDraft,
   JsonValue,
   ProviderOptions,
+  UserMessageAttachmentFile,
 } from "@getpaseo/protocol/agent-types";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
@@ -140,6 +141,7 @@ import {
 } from "./agent-run-state.js";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
+import { splitInlineRefNotes } from "./prompt-attachments.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
   PASEO_MCP_SERVER_NAME,
@@ -197,6 +199,17 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .flatMap((block) => (block.type === "text" && !("mimeType" in block) ? [block.text] : []))
     .join("\n")
     .trim();
+}
+
+// The files buildAgentPrompt names in its `[Image #N]: <path>` notes. A note block holds nothing
+// else, which keeps a text attachment that quotes such a line from adding files.
+function submittedPromptFiles(prompt: AgentPromptInput): UserMessageAttachmentFile[] {
+  if (typeof prompt === "string") return [];
+  return prompt.flatMap((block) => {
+    if (block.type !== "text" || !("mimeType" in block)) return [];
+    const notes = splitInlineRefNotes(block.text);
+    return notes.text === "" ? notes.files : [];
+  });
 }
 
 export class AgentManagerShuttingDownError extends Error {
@@ -6725,11 +6738,13 @@ export class AgentManager {
     outcome: "accepted" | "rejected",
     options?: { messageId?: string; providerMessageId?: string; turnId?: string },
   ): void {
+    const attachmentFiles = submittedPromptFiles(prompt);
     const items = projectAgentMessages({
       type: "user_message",
       text: submittedPromptText(prompt),
       clientMessageId,
       ...(options?.messageId ? { messageId: options.messageId } : {}),
+      ...(attachmentFiles.length > 0 ? { attachmentFiles } : {}),
     });
     for (const item of items) {
       // Human attempts stay in history on rejection; delivery notifications require acceptance.

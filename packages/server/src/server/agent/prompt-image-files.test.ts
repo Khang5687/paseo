@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildAgentPrompt, stripInlineRefNotes } from "./prompt-attachments.js";
+import { buildAgentPrompt, splitInlineRefNotes } from "./prompt-attachments.js";
 import { saveInlineImages } from "./prompt-image-files.js";
 
 const tempDirs: string[] = [];
@@ -99,6 +99,6 @@ describe("image path notes", () => {
       "[Image #2]:",
     ].join("\n\n");
 
-    expect(stripInlineRefNotes(replayed)).toBe("Save [Image #1] into the project");
+    expect(splitInlineRefNotes(replayed).text).toBe("Save [Image #1] into the project");
   });
 });

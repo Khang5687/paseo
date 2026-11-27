@@ -191,6 +191,7 @@ import { insertAtSelection } from "@/composer/insert-text";
 import { composerWorkspaceAttachment } from "@/composer/attachments/workspace";
 import { useWorkspaceAttachmentsForScopes } from "@/attachments/workspace-attachments-store";
 import { droppedItemsToSelectedFiles } from "@/composer/attachments/drop";
+import { AttachmentTray, resolveAttachmentTrayLayout } from "@/composer/attachments/tray";
 import { getFileTypeLabel } from "@/attachments/file-types";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
 import {
@@ -385,6 +386,7 @@ interface RenderAttachmentTrayArgs {
   handleOpenAttachment: (attachment: ComposerAttachment) => void;
   handleRemoveAttachment: (index: number) => void;
   inlineRefsEnabled: boolean;
+  isCompact: boolean;
   labels: {
     openImage: string;
     removeImage: string;
@@ -403,12 +405,17 @@ function renderAttachmentTray(args: RenderAttachmentTrayArgs): ReactElement | nu
     handleOpenAttachment,
     handleRemoveAttachment,
     inlineRefsEnabled,
+    isCompact,
     labels,
   } = args;
-  if (selectedAttachments.length === 0 && pendingFiles.length === 0) return null;
+  const count = selectedAttachments.length + pendingFiles.length;
+  if (count === 0) return null;
   const refLabels = inlineRefsEnabled ? inlineRefLabels(selectedAttachments) : null;
   return (
-    <View style={styles.attachmentTray} testID="composer-attachment-tray">
+    <AttachmentTray
+      layout={resolveAttachmentTrayLayout({ compact: isCompact, count })}
+      count={count}
+    >
       {selectedAttachments.map((attachment, index) =>
         renderComposerAttachmentPill({
           serverId,
@@ -430,7 +437,7 @@ function renderAttachmentTray(args: RenderAttachmentTrayArgs): ReactElement | nu
           />
         </AttachmentFrame>
       ))}
-    </View>
+    </AttachmentTray>
   );
 }
 
@@ -2839,6 +2846,7 @@ function ComposerContentImpl({
         handleOpenAttachment,
         handleRemoveAttachment,
         inlineRefsEnabled,
+        isCompact: isCompactFormFactor,
         labels: {
           openImage: t("composer.attachments.openImage"),
           removeImage: t("composer.attachments.removeImage"),
@@ -2853,6 +2861,7 @@ function ComposerContentImpl({
       handleOpenAttachment,
       handleRemoveAttachment,
       inlineRefsEnabled,
+      isCompactFormFactor,
       isComposerLocked,
       serverId,
       selectedAttachments,
@@ -3155,11 +3164,6 @@ const styles = StyleSheet.create((theme: Theme) => ({
   },
   discPressed: {
     opacity: 0.7,
-  },
-  attachmentTray: {
-    flexDirection: "row",
-    gap: theme.spacing[2],
-    flexWrap: "wrap",
   },
   tooltipRow: {
     flexDirection: "row",

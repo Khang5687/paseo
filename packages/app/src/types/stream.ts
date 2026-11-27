@@ -5,6 +5,7 @@ import type {
   AgentTimelineItem,
   JsonValue,
   ToolCallDetail,
+  UserMessageAttachmentFile,
 } from "@getpaseo/protocol/agent-types";
 import { timelineItemIdentity } from "@getpaseo/protocol/timeline-identity";
 import type { AgentAttachment, AgentStreamEventPayload } from "@getpaseo/protocol/messages";
@@ -107,6 +108,8 @@ export interface UserMessageItem {
   timestamp: Date;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
+  /** Files the host saved for this message; how any client finds its images again. */
+  attachmentFiles?: UserMessageAttachmentFile[];
 }
 
 export interface UserMessageInput {
@@ -119,6 +122,7 @@ export interface UserMessageInput {
   timestamp: Date;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
+  attachmentFiles?: UserMessageAttachmentFile[];
 }
 
 export function createUserMessage(input: UserMessageInput): UserMessageItem {
@@ -138,6 +142,9 @@ export function createUserMessage(input: UserMessageInput): UserMessageItem {
     ...(input.images && input.images.length > 0 ? { images: input.images } : {}),
     ...(input.attachments && input.attachments.length > 0
       ? { attachments: input.attachments }
+      : {}),
+    ...(input.attachmentFiles && input.attachmentFiles.length > 0
+      ? { attachmentFiles: input.attachmentFiles }
       : {}),
   };
 }
@@ -267,6 +274,8 @@ function produceUserMessage(
     clientMessageId: incoming.clientMessageId ?? existing.clientMessageId,
     messageId: incoming.messageId ?? existing.messageId,
     timelineCursor: incoming.timelineCursor ?? existing.timelineCursor,
+    // Host facts, like the ids: an optimistic row learns them from the daemon's echo.
+    attachmentFiles: incoming.attachmentFiles ?? existing.attachmentFiles,
   });
   if (
     existing.id === merged.id &&
@@ -276,7 +285,8 @@ function produceUserMessage(
     existing.text === merged.text &&
     existing.timestamp === merged.timestamp &&
     existing.images === merged.images &&
-    existing.attachments === merged.attachments
+    existing.attachments === merged.attachments &&
+    existing.attachmentFiles === merged.attachmentFiles
   ) {
     return { items, index, message: existing, matched: true };
   }
@@ -940,8 +950,9 @@ function appendUserMessage(
   clientMessageId?: string,
   timelineCursor?: TimelinePosition,
   turnId?: string,
+  attachmentFiles?: UserMessageAttachmentFile[],
 ): StreamItem[] {
-  const { chunk, hasContent } = normalizeChunk(text);
+  const { chunk, hasContent } = normalizeUserMessageText(text, attachmentFiles);
   if (!hasContent) {
     return state;
   }
@@ -955,8 +966,19 @@ function appendUserMessage(
     turnId,
     text: chunk,
     timestamp,
+    attachmentFiles,
   });
   return upsertUserMessage(state, nextItem);
+}
+
+/** A message of pictures alone has no text but still is a row. */
+function normalizeUserMessageText(
+  text: string,
+  attachmentFiles: readonly UserMessageAttachmentFile[] | undefined,
+): { chunk: string; hasContent: boolean } {
+  const normalized = normalizeChunk(text);
+  if (normalized.hasContent || !attachmentFiles?.length) return normalized;
+  return { chunk: normalized.chunk, hasContent: true };
 }
 
 function appendAssistantMessage(
@@ -1563,6 +1585,7 @@ function reduceTimelineEvent(
         item.clientMessageId,
         timelineCursor,
         event.turnId,
+        item.attachmentFiles,
       );
     case "assistant_message":
       return appendAssistantMessage(
@@ -1915,7 +1938,8 @@ function applyCanonicalUserMessageEvent(params: {
 }): ApplyStreamEventResult | null {
   const { tail, head, event, timestamp, timelineCursor, unmatchedInsert = "tail" } = params;
   if (event.type !== "timeline" || event.item.type !== "user_message") return null;
-  const normalized = normalizeChunk(event.item.text);
+  const normalized = normalizeUserMessageText(event.item.text, event.item.attachmentFiles);
+  const { hasContent } = normalized;
 
   const flushedTail = head.length > 0 ? flushHeadToTail(tail, head) : tail;
   const flushedHead = head.length > 0 ? [] : head;
@@ -1929,13 +1953,14 @@ function applyCanonicalUserMessageEvent(params: {
     timelineCursor,
     text: normalized.chunk,
     timestamp,
+    attachmentFiles: event.item.attachmentFiles,
   });
   if (unmatchedInsert === "head") {
     const reconciled = upsertUserMessageAcrossStream({
       tail,
       head,
       message: canonical,
-      insert: normalized.hasContent ? "head" : "none",
+      insert: hasContent ? "head" : "none",
       presentation: "existing",
     });
     const reconciledTail = canonical.clientMessageId
@@ -1963,7 +1988,7 @@ function applyCanonicalUserMessageEvent(params: {
           : [],
     };
   }
-  const reconciled = placeCanonicalUserMessageAtTail(flushedTail, canonical, normalized.hasContent);
+  const reconciled = placeCanonicalUserMessageAtTail(flushedTail, canonical, hasContent);
   const reconciledTail = canonical.clientMessageId
     ? reconcileCanonicalUserTurnMembership(
         reconciled.items,
