@@ -1,0 +1,6 @@
+{
+  "pr": 195,
+  "title": "test(app): click a code block's Copy button by name in composer-focus",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/composer-focus.spec.ts"]
+}
