@@ -15,7 +15,14 @@ The strip owns no store.
 
 - The strip shows only with two or more projects. With one there is nothing to switch, and the digit keys publish no project targets.
 - The desktop rail sits inside the sidebar's width (52 px), below the window chrome row, so the titlebar drag region and the resize handle keep their places.
-- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to top, Move earlier, Move later, Move to bottom. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to top, Move earlier, Move later, Move to bottom, and Reorder projects…. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+
+## Reordering
+
+Every way of moving a project writes the one order the strip and the list share (`saveProjectStripOrder` in `components/sidebar/project-order.ts`), so a move anywhere shows everywhere.
+
+- **The ⋯ menu.** A project row's ⋯ menu (and its right-click menu) carries Move to top, Move to bottom and Reorder projects… on every platform (`useProjectOrderMenuActions`). With one project it carries none of them.
+- **Reorder projects…** opens the rail wide on the desktop, where you drag (see below). A phone has no rail, so there it opens the Reorder projects sheet (`ReorderProjectsSheet`): every project in one list, held and dragged into place. The whole row is the handle; a quick swipe still scrolls the sheet ([drag-reorder.md](drag-reorder.md)). The sheet mounts with the chip row, which shows whenever there is anything to order.
 
 ## The open rail
 

@@ -52,7 +52,8 @@ import {
 import { useProjectIcons } from "@/projects/icons";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
-import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
+import { saveProjectStripOrder, useOpenReorderProjects } from "./project-order";
+import { ReorderProjectsSheet } from "./reorder-projects-sheet";
 import { useSidebarRailOpenStore } from "@/stores/sidebar-rail-open-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { useSidebarQuietFoldStore } from "@/stores/sidebar-quiet-fold-store";
@@ -60,7 +61,6 @@ import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
 import { resolveSidebarProjectIconTargets } from "@/utils/sidebar-project-row-model";
-import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
 import {
   listProjectEndMoves,
   listProjectStripMoves,
@@ -96,22 +96,12 @@ function useHoverHandlers() {
   return { hovered, onPointerEnter, onPointerLeave };
 }
 
-/**
- * Saves a new strip order. The strip and the sidebar's project list share one order, so a
- * drag here moves the project's block in the list too, and projects another host filter
- * hides keep their place after the visible ones.
- */
-function saveProjectStripOrder(reorderedKeys: string[]): void {
-  const { getProjectOrder, setProjectOrder } = useSidebarOrderStore.getState();
-  const currentOrder = getProjectOrder();
-  if (!hasVisibleOrderChanged({ currentOrder, reorderedVisibleKeys: reorderedKeys })) return;
-  setProjectOrder(mergeWithRemainder({ currentOrder, reorderedVisibleKeys: reorderedKeys }));
-}
-
 interface ProjectStripModel {
   /** The projects that show; `quietProjects` sit behind "More". */
   projects: SidebarProjectEntry[];
   quietProjects: SidebarProjectEntry[];
+  /** Every project in the shared order, quiet ones too. */
+  allProjects: SidebarProjectEntry[];
   projectKeys: string[];
   iconByViewKey: ReadonlyMap<string, string | null>;
   allSelected: boolean;
@@ -128,6 +118,7 @@ function useProjectStripModel(): ProjectStripModel | null {
   return {
     projects: stripProjects.active,
     quietProjects: stripProjects.quiet,
+    allProjects,
     projectKeys,
     iconByViewKey,
     allSelected: resolvedProjectFilters.length === 0,
@@ -672,18 +663,21 @@ export function SidebarProjectChipRow({
   );
 
   return (
-    <View
-      style={styles.chipRowContainer}
-      accessibilityRole="tablist"
-      accessibilityLabel={t("sidebar.projectStrip.label")}
-      testID="sidebar-project-chip-row"
-    >
-      {platformIsNative ? (
-        <GestureDetector gesture={chipScrollGesture}>{chipScroll}</GestureDetector>
-      ) : (
-        chipScroll
-      )}
-    </View>
+    <>
+      <View
+        style={styles.chipRowContainer}
+        accessibilityRole="tablist"
+        accessibilityLabel={t("sidebar.projectStrip.label")}
+        testID="sidebar-project-chip-row"
+      >
+        {platformIsNative ? (
+          <GestureDetector gesture={chipScrollGesture}>{chipScroll}</GestureDetector>
+        ) : (
+          chipScroll
+        )}
+      </View>
+      <ReorderProjectsSheet projects={model.allProjects} iconByViewKey={model.iconByViewKey} />
+    </>
   );
 }
 
@@ -785,7 +779,9 @@ const ProjectChip = memo(function ProjectChip({
   selected: boolean;
   showNumber: boolean;
 }) {
+  const { t } = useTranslation();
   const showOnlyProject = useSidebarViewStore((state) => state.showOnlyProject);
+  const openReorder = useOpenReorderProjects();
   const statusCounts = useSidebarProjectStatusCounts(project.workspaces);
   const statusLabel = useProjectStatusLabel(statusCounts);
   const shortcutNumber = projectStripShortcutNumber(index);
@@ -838,6 +834,9 @@ const ProjectChip = memo(function ProjectChip({
             testIDPrefix="sidebar-project-chip-move"
           />
         ))}
+        <ContextMenuItem onSelect={openReorder} testID="sidebar-project-chip-reorder">
+          {t("sidebar.projectStrip.reorderProjects")}
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );

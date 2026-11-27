@@ -1363,6 +1363,8 @@ export const ru: TranslationResources = {
       openRail: "Показать названия проектов",
       collapseRail: "Свернуть",
       reorderProjects: "Изменить порядок проектов…",
+      reorderTitle: "Порядок проектов",
+      reorderHint: "Удерживайте проект, затем перетащите его на место.",
       lastOpen: "открыт последним",
       recentWorkspaces: "Недавние рабочие пространства",
       nextWaiting: "Следующее ожидающее · {{count}}",

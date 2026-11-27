@@ -1335,6 +1335,8 @@ export const zhCN: TranslationResources = {
       openRail: "显示项目名称",
       collapseRail: "收起",
       reorderProjects: "调整项目顺序…",
+      reorderTitle: "调整项目顺序",
+      reorderHint: "按住一个项目，然后拖到想要的位置。",
       lastOpen: "上次打开",
       recentWorkspaces: "最近的 workspace",
       nextWaiting: "下一个等待中 · {{count}}",
