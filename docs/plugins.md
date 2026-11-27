@@ -749,6 +749,20 @@ items after its own.
 - Previews (Settings > Host appearance) pass no `workspace` to `WorkspaceMetaRow`, so plugin items
   stay off them.
 
+## Contribute Needs you items
+
+The [public reference](../public-docs/plugins/reference.md#needs-you-items) owns the author API.
+The host lives in `packages/app/src/plugins/needs-you-items/`; [docs/needs-you.md](needs-you.md)
+owns the page.
+
+- `PluginNeedsYouCounters` mounts at the app root and runs every item's `useCount` inside its own
+  error boundary, so the rail number is right before the page ever opens. A throwing hook drops
+  that item's count to nothing; the rest still count.
+- Items coalesce by `<pluginId>/<itemId>` across hosts, first host wins. One board installed on two
+  hosts would otherwise count every task twice.
+- `needsYouItems` is optional on `EvaluatedPlugin`, so placeholder installations and test fixtures
+  need no new field.
+
 ## Contribute file panels
 
 Client `addFilePanel` registrations become the body of a file tab. The tab stats the file, picks a

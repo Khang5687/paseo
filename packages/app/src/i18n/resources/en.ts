@@ -2393,6 +2393,22 @@ export const en = {
     uploadFailed: "Could not upload the files",
     sendFailed: "Could not send the answers",
   },
+  needsYou: {
+    title: "Needs you",
+    subtitle: "Waiting on you · oldest first",
+    empty: "Nothing is waiting on you.",
+    waited: "waiting {{time}}",
+    openChat: "Open chat",
+    answerInChat: "It asks in its reply. Open the chat to answer.",
+    summary: "{{answered}} of {{total}} answered · skipped ones stay",
+    send_one: "Send {{count}} answer",
+    send_other: "Send {{count}} answers",
+    sent_one: "Sent to {{count}} chat",
+    sent_other: "Sent to {{count}} chats",
+    sendFailed: "Could not send to {{title}}",
+    railLabel_one: "Needs you: {{count}} waiting",
+    railLabel_other: "Needs you: {{count}} waiting",
+  },
   subagents: {
     parent: {
       backToParent: "Back to parent",

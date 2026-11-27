@@ -1639,7 +1639,8 @@ function PermissionActionButton({
   );
 }
 
-function PermissionRequestCard({
+/** A pending permission or question box, as the chat shows it. Needs you draws the same card. */
+export function PermissionRequestCard({
   permission,
   client,
 }: {

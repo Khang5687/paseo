@@ -432,6 +432,10 @@ export function buildNotesRoute() {
   return "/notes" as const;
 }
 
+export function buildNeedsYouRoute() {
+  return "/needs-you" as const;
+}
+
 export function buildSavedRoute() {
   return "/saved" as const;
 }

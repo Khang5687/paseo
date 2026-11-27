@@ -83,3 +83,4 @@ Later sidebar features plug in here rather than adding a second switcher:
 - Per-project actions go in both menus: `ProjectChip`'s `ContextMenuContent` and `RailProjectButton`'s. Moves share `ProjectMoveItem`.
 - Anything that changes what selecting a project does belongs in the callers of `showOnlyProject`: the rail and chip press handlers and the `show-sidebar-project` keyboard route in `use-shortcuts.ts`.
 - New per-project marks go beside `ProjectStatusDots`, fed by a hook like `useSidebarProjectStatusCounts` that reads the session store with a value-compared selector.
+- Needs you sits between the open toggle and All on the rail, and before All in the chip row ([needs-you.md](needs-you.md)). It opens a page rather than filtering the list, so All stays selected under it.

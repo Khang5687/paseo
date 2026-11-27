@@ -2406,6 +2406,22 @@ export const ru: TranslationResources = {
     uploadFailed: "Не удалось загрузить файлы",
     sendFailed: "Не удалось отправить ответы",
   },
+  needsYou: {
+    title: "Ждут вас",
+    subtitle: "Ждут вашего ответа · сначала старые",
+    empty: "Вас ничего не ждёт.",
+    waited: "ждёт {{time}}",
+    openChat: "Открыть чат",
+    answerInChat: "Вопрос в его ответе. Откройте чат, чтобы ответить.",
+    summary: "Отвечено {{answered}} из {{total}} · пропущенные остаются",
+    send_one: "Отправить {{count}} ответ",
+    send_other: "Отправить ответы: {{count}}",
+    sent_one: "Отправлено в {{count}} чат",
+    sent_other: "Отправлено в чаты: {{count}}",
+    sendFailed: "Не удалось отправить в {{title}}",
+    railLabel_one: "Ждут вас: {{count}}",
+    railLabel_other: "Ждут вас: {{count}}",
+  },
   subagents: {
     parent: {
       backToParent: "Назад к родителю",

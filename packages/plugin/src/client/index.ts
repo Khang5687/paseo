@@ -21,6 +21,8 @@ export type {
   PluginSidebarItemContribution,
   PluginWorkspaceRowBadgeItemProps,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemProps,
+  PluginNeedsYouItemContribution,
   PluginIcon,
   PluginPanelLocation,
   PluginOpenPanelOptions,

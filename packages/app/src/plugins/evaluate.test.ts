@@ -330,6 +330,31 @@ describe("evaluatePluginClientBundle", () => {
     ).toThrow("Workspace row badge item status is not a component");
   });
 
+  it("collects needs you items and rejects one without a count hook", () => {
+    const plugin = evaluatePluginClientBundle(
+      "example",
+      bundle(`
+        function Item() { return null; }
+        function useLate() { return 2; }
+        plugin.addNeedsYouItem({ id: "tasks", title: " Tasks ", icon: "Blocks", useCount: useLate, Component: Item });
+      `),
+    );
+    expect(plugin.needsYouItems?.map(({ id, title }) => ({ id, title }))).toEqual([
+      { id: "tasks", title: "Tasks" },
+    ]);
+    expect(plugin.needsYouItems?.[0]?.useCount({} as never)).toBe(2);
+
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        bundle(`
+          function Item() { return null; }
+          plugin.addNeedsYouItem({ id: "tasks", title: "Tasks", icon: "Blocks", useCount: 2, Component: Item });
+        `),
+      ),
+    ).toThrow("Needs you item tasks has no useCount");
+  });
+
   it("expands the addSurface and addSidebarItem aliases to a screen and a legacy header item", () => {
     const plugin = evaluatePluginClientBundle(
       "example",

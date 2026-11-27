@@ -2388,6 +2388,22 @@ export const ja: TranslationResources = {
     uploadFailed: "ファイルをアップロードできませんでした",
     sendFailed: "回答を送信できませんでした",
   },
+  needsYou: {
+    title: "あなた待ち",
+    subtitle: "あなたの返事待ち · 古い順",
+    empty: "あなた待ちのものはありません。",
+    waited: "{{time}} 待機中",
+    openChat: "チャットを開く",
+    answerInChat: "返信の中で質問しています。チャットを開いて回答してください。",
+    summary: "{{total}} 件中 {{answered}} 件回答済み · スキップしたものは残ります",
+    send_one: "{{count}} 件の回答を送信",
+    send_other: "{{count}} 件の回答を送信",
+    sent_one: "{{count}} 件のチャットに送信しました",
+    sent_other: "{{count}} 件のチャットに送信しました",
+    sendFailed: "{{title}} に送信できませんでした",
+    railLabel_one: "あなた待ち: {{count}} 件",
+    railLabel_other: "あなた待ち: {{count}} 件",
+  },
   subagents: {
     parent: {
       backToParent: "親に戻る",

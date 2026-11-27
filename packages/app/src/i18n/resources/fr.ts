@@ -2420,6 +2420,22 @@ export const fr: TranslationResources = {
     uploadFailed: "Impossible d’envoyer les fichiers",
     sendFailed: "Impossible d’envoyer les réponses",
   },
+  needsYou: {
+    title: "Vous attend",
+    subtitle: "En attente de vous · les plus anciens d’abord",
+    empty: "Rien ne vous attend.",
+    waited: "attend depuis {{time}}",
+    openChat: "Ouvrir le chat",
+    answerInChat: "La question est dans sa réponse. Ouvrez le chat pour répondre.",
+    summary: "{{answered}} sur {{total}} répondues · les autres restent ouvertes",
+    send_one: "Envoyer {{count}} réponse",
+    send_other: "Envoyer {{count}} réponses",
+    sent_one: "Envoyé à {{count}} chat",
+    sent_other: "Envoyé à {{count}} chats",
+    sendFailed: "Impossible d’envoyer à {{title}}",
+    railLabel_one: "Vous attend : {{count}}",
+    railLabel_other: "Vous attend : {{count}}",
+  },
   subagents: {
     parent: {
       backToParent: "Retour au parent",

@@ -2363,6 +2363,22 @@ export const ar: TranslationResources = {
     uploadFailed: "تعذّر رفع الملفات",
     sendFailed: "تعذّر إرسال الإجابات",
   },
+  needsYou: {
+    title: "بانتظارك",
+    subtitle: "بانتظارك · الأقدم أولاً",
+    empty: "لا شيء بانتظارك.",
+    waited: "ينتظر منذ {{time}}",
+    openChat: "فتح المحادثة",
+    answerInChat: "السؤال في رده. افتح المحادثة للإجابة.",
+    summary: "تمت الإجابة عن {{answered}} من {{total}} · تبقى الأسئلة المتخطاة",
+    send_one: "إرسال {{count}} إجابة",
+    send_other: "إرسال {{count}} إجابات",
+    sent_one: "أُرسلت إلى {{count}} محادثة",
+    sent_other: "أُرسلت إلى {{count}} محادثات",
+    sendFailed: "تعذر الإرسال إلى {{title}}",
+    railLabel_one: "بانتظارك: {{count}}",
+    railLabel_other: "بانتظارك: {{count}}",
+  },
   subagents: {
     parent: {
       backToParent: "العودة إلى الوكيل الأصلي",

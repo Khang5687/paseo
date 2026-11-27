@@ -5,6 +5,7 @@ import {
   ChevronsRight,
   Ellipsis,
   GripVertical,
+  Inbox,
   LayoutGrid,
 } from "lucide-react-native";
 import {
@@ -18,6 +19,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { router, usePathname } from "expo-router";
 import { type LayoutChangeEvent, ScrollView, Text, View } from "react-native";
 import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -49,8 +51,10 @@ import {
   ProjectStatusDots,
   useProjectStatusLabel,
 } from "./project-status-dots";
+import { useNeedsYouCount } from "@/needs-you/use-needs-you";
 import { useProjectIcons } from "@/projects/icons";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
+import { usePanelStore } from "@/stores/panel-store";
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarRailOpenStore } from "@/stores/sidebar-rail-open-store";
@@ -59,6 +63,7 @@ import { useSidebarQuietFoldStore } from "@/stores/sidebar-quiet-fold-store";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
+import { buildNeedsYouRoute } from "@/utils/host-routes";
 import { resolveSidebarProjectIconTargets } from "@/utils/sidebar-project-row-model";
 import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
 import {
@@ -86,6 +91,7 @@ const ThemedChevronRight = withUnistyles(ChevronRight);
 const ThemedChevronsLeft = withUnistyles(ChevronsLeft);
 const ThemedChevronsRight = withUnistyles(ChevronsRight);
 const ThemedGripVertical = withUnistyles(GripVertical);
+const ThemedInbox = withUnistyles(Inbox);
 const allIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 /** Hover state for the docs/hover.md pattern: the outer View listens, the inner press is separate. */
@@ -222,6 +228,7 @@ function SidebarProjectRail() {
         testID="sidebar-project-rail"
       >
         <RailOpenToggle open={open} />
+        <RailNeedsYouButton open={open} />
         <RailAllButton selected={model.allSelected} onPress={clearProjectFilters} open={open} />
         <View style={styles.railDivider} />
         <DraggableList
@@ -450,6 +457,101 @@ function RailAllButton({
   );
 }
 
+/** The count on Needs you: "9+" past nine. */
+function needsYouBadgeText(count: number): string {
+  return count > 9 ? "9+" : String(count);
+}
+
+function useOpenNeedsYou(beforeOpen?: () => void) {
+  const pathname = usePathname();
+  const selected = pathname === buildNeedsYouRoute();
+  const open = useCallback(() => {
+    beforeOpen?.();
+    router.push(buildNeedsYouRoute());
+  }, [beforeOpen]);
+  return { selected, open };
+}
+
+/**
+ * Needs you, above All (owner decisions Q91, Q98): every chat waiting on you, on one page. The
+ * purple number counts those chats plus what plugins add, such as late tasks.
+ */
+function RailNeedsYouButton({ open }: { open: boolean }) {
+  const { t } = useTranslation();
+  const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
+  const count = useNeedsYouCount();
+  const { selected, open: openNeedsYou } = useOpenNeedsYou();
+  const label = t("needsYou.title");
+  return (
+    <View
+      style={[styles.railItem, open ? styles.railItemOpen : null]}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      <RailTooltip show={!open} label={label}>
+        <PressHighlight
+          accessibilityRole="button"
+          accessibilityLabel={t("needsYou.railLabel", { count })}
+          aria-selected={selected}
+          highlightStyle={styles.railButtonPressed}
+          onPress={openNeedsYou}
+          style={[
+            open ? styles.railRow : styles.railButton,
+            hovered && !selected ? styles.railButtonHovered : null,
+            selected ? styles.railButtonSelected : null,
+          ]}
+          testID="sidebar-project-rail-needs-you"
+        >
+          <View style={styles.railAllIcon}>
+            <ThemedInbox size={16} uniProps={allIconMapping} />
+          </View>
+          {open ? (
+            <Text style={styles.railRowText} numberOfLines={1}>
+              {label}
+            </Text>
+          ) : null}
+          {count > 0 ? (
+            <View
+              style={open ? styles.needsYouCount : styles.needsYouCountFloating}
+              pointerEvents="none"
+              testID="sidebar-needs-you-count"
+            >
+              <Text style={styles.needsYouCountText}>{needsYouBadgeText(count)}</Text>
+            </View>
+          ) : null}
+        </PressHighlight>
+      </RailTooltip>
+    </View>
+  );
+}
+
+/** The phone's Needs you: the first chip in the row, before All. Opening it closes the sidebar. */
+function NeedsYouChip() {
+  const { t } = useTranslation();
+  const count = useNeedsYouCount();
+  const closeSidebar = usePanelStore((state) => state.showMobileAgent);
+  const { selected, open } = useOpenNeedsYou(closeSidebar);
+  return (
+    <PressHighlight
+      accessibilityRole="button"
+      accessibilityLabel={t("needsYou.railLabel", { count })}
+      aria-selected={selected}
+      highlightStyle={styles.chipPressed}
+      onPress={open}
+      style={[styles.chip, selected ? styles.chipSelected : null]}
+      testID="sidebar-project-chip-needs-you"
+    >
+      <ThemedInbox size={14} uniProps={allIconMapping} />
+      <Text style={styles.chipText}>{t("needsYou.title")}</Text>
+      {count > 0 ? (
+        <View style={styles.needsYouCount} testID="sidebar-needs-you-chip-count">
+          <Text style={styles.needsYouCountText}>{needsYouBadgeText(count)}</Text>
+        </View>
+      ) : null}
+    </PressHighlight>
+  );
+}
+
 const RailProjectButton = memo(function RailProjectButton({
   project,
   index,
@@ -633,6 +735,7 @@ export function SidebarProjectChipRow({
 
   const chips = (
     <>
+      <NeedsYouChip />
       <PressHighlight
         accessibilityRole="tab"
         aria-selected={model.allSelected}
@@ -1009,6 +1112,35 @@ const styles = StyleSheet.create((theme) => ({
   },
   quietCountText: {
     color: theme.colors.foregroundMuted,
+    fontSize: 10,
+    fontWeight: theme.fontWeight.semibold,
+    lineHeight: 12,
+  },
+  needsYouCount: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.palette.purple[500],
+  },
+  needsYouCountFloating: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 2,
+    borderColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.palette.purple[500],
+  },
+  needsYouCountText: {
+    color: theme.colors.palette.white,
     fontSize: 10,
     fontWeight: theme.fontWeight.semibold,
     lineHeight: 12,

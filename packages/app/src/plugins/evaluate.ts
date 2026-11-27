@@ -40,6 +40,7 @@ import type {
   PluginSidebarItemContribution,
   PluginWorkspacePanelContribution,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemContribution,
 } from "./types";
 import type { ComponentType } from "react";
 import { parsePluginIcon, parseSerializablePluginIcon } from "./icons";
@@ -164,6 +165,8 @@ export function runPluginClientBundle(
     footer: new Set(),
   };
   const workspaceRowItemIds = new Set<string>();
+  const needsYouItems: PluginNeedsYouItemContribution[] = [];
+  const needsYouItemIds = new Set<string>();
   const filePanelIds = new Set<string>();
   const composerItemIds = new Set<string>();
   const newWorkspaceItemIds = new Set<string>();
@@ -352,6 +355,31 @@ export function runPluginClientBundle(
         collector.workspaceRowBadgeItems,
         { id: itemId, title, icon, Component: contribution.Component },
         () => workspaceRowItemIds.delete(itemId),
+      );
+    },
+    addNeedsYouItem(contribution: PluginNeedsYouItemContribution) {
+      const itemId = requireId(contribution.id, "needs you item id");
+      if (needsYouItemIds.has(itemId)) throw new Error(`Duplicate needs you item: ${itemId}`);
+      const title = normalizePluginText(contribution.title);
+      if (!title) throw new Error(`Needs you item ${itemId} has no title`);
+      const icon = parsePluginIcon(`Needs you item ${itemId}`, contribution.icon);
+      if (typeof contribution.useCount !== "function") {
+        throw new Error(`Needs you item ${itemId} has no useCount`);
+      }
+      if (!isComponentType(contribution.Component)) {
+        throw new Error(`Needs you item ${itemId} is not a component`);
+      }
+      needsYouItemIds.add(itemId);
+      return register(
+        needsYouItems,
+        {
+          id: itemId,
+          title,
+          icon,
+          useCount: contribution.useCount,
+          Component: contribution.Component,
+        },
+        () => needsYouItemIds.delete(itemId),
       );
     },
     // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
@@ -689,6 +717,7 @@ export function runPluginClientBundle(
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     workspaceRowBadgeItems: collector.workspaceRowBadgeItems,
+    needsYouItems,
     filePanels: collector.filePanels,
     composerItems: collector.composerItems,
     newWorkspaceItems: collector.newWorkspaceItems,
