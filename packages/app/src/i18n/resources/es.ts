@@ -2335,6 +2335,10 @@ export const es: TranslationResources = {
     iosFolder: "Archivos › Paseo › Downloads",
     showInFolder: "Mostrar en la carpeta",
     showInFinder: "Mostrar en Finder",
+    savedNote: "{{fileName}} guardado",
+    open: "Abrir",
+    install: "Instalar",
+    installFailed: "No se pudo abrir el instalador.",
   },
   offlineFiles: {
     title: "Archivos sin conexión",
@@ -2406,7 +2410,7 @@ export const es: TranslationResources = {
     sent: "Enviado a {{device}}",
     failed: "No se pudo enviar: {{error}}",
     hostOffline: "{{host}} está sin conexión. Inténtalo de nuevo cuando vuelva.",
-    noticeTap: "{{title}}. Toca para abrir.",
+    noticeTap: "{{title}}. Toca para descargar.",
   },
   menu: {
     backdrop: "Fondo del menú",

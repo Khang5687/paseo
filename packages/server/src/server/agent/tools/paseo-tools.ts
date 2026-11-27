@@ -3904,7 +3904,7 @@ function createToolCatalog(
     {
       title: "Send a file to a device",
       description:
-        'Send a file on this host to one of the user\'s own devices (their phone, desktop app or browser). The device gets a note "<file> is ready"; tapping it opens the file and keeps a copy on the device. Use it when the user says "send that video to my phone". path is absolute or relative to your working directory. Leave device out to use the user\'s phone when only one is registered; otherwise pass the device name the user gave (a partial name works), or ask the user which one. Bytes are fetched when the device opens the note, so the file must stay on this host until then.',
+        'Send a file on this host to one of the user\'s own devices (their phone, desktop app or browser). The device gets a note "<file> is ready"; tapping it saves a copy on the device, which the user then opens (or, for an APK on an Android phone, installs) from the app. Use it when the user says "send that video to my phone". path is absolute or relative to your working directory. Leave device out to use the user\'s phone when only one is registered; otherwise pass the device name the user gave (a partial name works), or ask the user which one. Bytes are fetched when the device opens the note, so the file must stay on this host until then.',
       inputSchema: {
         path: z.string().min(1).describe("File to send: absolute, or relative to your cwd."),
         device: z

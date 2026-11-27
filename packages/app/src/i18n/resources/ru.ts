@@ -2320,6 +2320,10 @@ export const ru: TranslationResources = {
     iosFolder: "Файлы › Paseo › Downloads",
     showInFolder: "Показать в папке",
     showInFinder: "Показать в Finder",
+    savedNote: "{{fileName}} сохранён",
+    open: "Открыть",
+    install: "Установить",
+    installFailed: "Не удалось открыть установщик.",
   },
   offlineFiles: {
     title: "Офлайн-файлы",
@@ -2390,7 +2394,7 @@ export const ru: TranslationResources = {
     sent: "Отправлено на {{device}}",
     failed: "Не удалось отправить: {{error}}",
     hostOffline: "{{host}} не в сети. Повторите, когда он вернётся.",
-    noticeTap: "{{title}}. Нажмите, чтобы открыть.",
+    noticeTap: "{{title}}. Нажмите, чтобы скачать.",
   },
   menu: {
     backdrop: "Фон меню",

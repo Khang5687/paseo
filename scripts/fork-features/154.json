@@ -6,7 +6,7 @@
     "packages/server/src/server/daemon-e2e/send-to-device.e2e.test.ts",
     "packages/server/src/server/agent/mcp-server.test.ts",
     "packages/app/src/send-to/model.test.ts",
-    "packages/app/src/send-to/open-sent-file.test.ts",
+    "packages/app/src/send-to/receive-sent-file.test.ts",
     "packages/app/src/notification-open/model.test.ts"
   ]
 }
