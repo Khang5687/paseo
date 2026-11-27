@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { StyleSheet } from "react-native-unistyles";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -41,12 +42,40 @@ function detailsPageId(item: PaseoAgentBackgroundWorkItem): string {
   return `background-work:${item.id}`;
 }
 
+/** A chat that waits on its jobs says so beside an hourglass; one still working counts them. */
+function runningJobsSegment(
+  t: TFunction,
+  running: number,
+  waits: boolean,
+): ComposerTrackPillSegment {
+  if (waits) {
+    return {
+      bucket: "running",
+      waiting: true,
+      text:
+        running === 1
+          ? t("message.backgroundWork.waitingOnTasksOne")
+          : t("message.backgroundWork.waitingOnTasksMany", { count: running }),
+    };
+  }
+  return {
+    bucket: "running",
+    text:
+      running === 1
+        ? t("message.backgroundWork.pillOne")
+        : t("message.backgroundWork.pillMany", { count: running }),
+  };
+}
+
 export function BackgroundWorkTrack({
   model,
   summary,
+  waits = false,
 }: {
   model: BackgroundWorkModel;
   summary: AgentBackgroundWorkSummary;
+  /** The chat's turn ended and nothing in it is for you: its running jobs are what it waits on. */
+  waits?: boolean;
 }) {
   const { t } = useTranslation();
   const { items, status, stops } = useSyncExternalStore(
@@ -61,15 +90,7 @@ export function BackgroundWorkTrack({
   if (summary.count === 0 && rows.length === 0) return null;
   const tally = tallyBackgroundWork(items?.length ? items : null, summary);
   const segments: ComposerTrackPillSegment[] = [];
-  if (tally.running > 0) {
-    segments.push({
-      bucket: "running",
-      text:
-        tally.running === 1
-          ? t("message.backgroundWork.pillOne")
-          : t("message.backgroundWork.pillMany", { count: tally.running }),
-    });
-  }
+  if (tally.running > 0) segments.push(runningJobsSegment(t, tally.running, waits));
   if (tally.nextRunAt) {
     const next = formatNextRunLabel(tally.nextRunAt);
     segments.push({

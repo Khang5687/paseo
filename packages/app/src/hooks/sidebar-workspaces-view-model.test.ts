@@ -75,29 +75,35 @@ describe("createSidebarWorkspaceEntry forge threading", () => {
   });
 });
 
-describe("createSidebarWorkspaceEntry working subagents", () => {
-  function entryFor(status: WorkspaceDescriptor["status"], runningSubagentCount?: number) {
+describe("createSidebarWorkspaceEntry waiting", () => {
+  function entryFor(
+    status: WorkspaceDescriptor["status"],
+    waiting?: WorkspaceDescriptor["waiting"],
+  ) {
     const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");
     return createSidebarWorkspaceEntry({
       serverId: "srv",
-      workspace: { ...descriptor, status, runningSubagentCount },
+      workspace: { ...descriptor, status, waiting },
     });
   }
 
-  it("counts working subagents beside whatever the root agent's status is", () => {
-    expect(entryFor("done", 3)).toMatchObject({
-      statusBucket: "done",
-      workingSubagentCount: 3,
-    });
-    expect(entryFor("needs_input", 1).workingSubagentCount).toBe(1);
-    expect(entryFor("running", 2)).toMatchObject({
+  it("reads a settled chat that only waits on its jobs or subagents as running and waiting", () => {
+    const jobs = { backgroundTaskCount: 1, subagentCount: 0 };
+    expect(entryFor("running", jobs)).toMatchObject({ statusBucket: "running", waiting: jobs });
+    const subagents = { backgroundTaskCount: 0, subagentCount: 2 };
+    expect(entryFor("done", subagents)).toMatchObject({
       statusBucket: "running",
-      workingSubagentCount: 2,
+      waiting: subagents,
+    });
+    expect(entryFor("attention", subagents)).toMatchObject({
+      statusBucket: "running",
+      waiting: subagents,
     });
   });
 
-  it("shows no count when an old daemon omits it", () => {
-    expect(entryFor("attention").workingSubagentCount).toBe(0);
+  it("keeps the old look when the host does not say it waits", () => {
+    expect(entryFor("running")).toMatchObject({ statusBucket: "running", waiting: null });
+    expect(entryFor("attention")).toMatchObject({ statusBucket: "attention", waiting: null });
   });
 });
 
@@ -1111,6 +1117,7 @@ describe("countProjectWorkspaceStatuses", () => {
           workspacePlacement({ serverId: "srv", workspaceId: "ws-3" }),
           workspacePlacement({ serverId: "srv", workspaceId: "ws-4" }),
           workspacePlacement({ serverId: "srv", workspaceId: "ws-5" }),
+          workspacePlacement({ serverId: "srv", workspaceId: "ws-6" }),
           workspacePlacement({ serverId: "other", workspaceId: "ws-9" }),
         ],
         sessions: {
@@ -1121,12 +1128,17 @@ describe("countProjectWorkspaceStatuses", () => {
               projectWorkspace("ws-3", "attention"),
               projectWorkspace("ws-4", "failed"),
               projectWorkspace("ws-5", "done"),
+              // Its turn ended and only a subagent runs: waiting, not working.
+              {
+                ...projectWorkspace("ws-6", "done"),
+                waiting: { backgroundTaskCount: 0, subagentCount: 1 },
+              },
             ],
           }),
           other: sessionWith({ workspaces: [projectWorkspace("ws-9", "needs_input")] }),
         },
       }),
-    ).toEqual({ needsInput: 2, failed: 1, attention: 1, running: 1 });
+    ).toEqual({ needsInput: 2, failed: 1, attention: 1, running: 1, waiting: 1 });
   });
 });
 

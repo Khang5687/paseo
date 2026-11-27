@@ -84,7 +84,7 @@ export function moveProjectStripEntry(input: {
 }
 
 /** A project's chats that get a dot beside its icon. Done chats you already opened get none. */
-export type ProjectStatusDot = "needs_input" | "failed" | "attention" | "running";
+export type ProjectStatusDot = "needs_input" | "failed" | "attention" | "running" | "waiting";
 
 /** About this many dots fit beside a rail icon. */
 const PROJECT_STATUS_DOT_LIMIT = 4;
@@ -96,8 +96,8 @@ export interface ProjectStatusDots {
 }
 
 /**
- * One dot per chat, most urgent first: asking you, failed, done and not opened, working. Past the
- * limit the last place goes to a "+", so working chats are the first to lose their dot.
+ * One dot per chat, most urgent first: asking you, failed, done and not opened, working, waiting.
+ * Past the limit the last place goes to a "+", so waiting chats are the first to lose their dot.
  */
 export function listProjectStatusDots(counts: ProjectStatusCounts): ProjectStatusDots {
   const all: ProjectStatusDot[] = [
@@ -105,6 +105,7 @@ export function listProjectStatusDots(counts: ProjectStatusCounts): ProjectStatu
     ...Array<ProjectStatusDot>(counts.failed).fill("failed"),
     ...Array<ProjectStatusDot>(counts.attention).fill("attention"),
     ...Array<ProjectStatusDot>(counts.running).fill("running"),
+    ...Array<ProjectStatusDot>(counts.waiting).fill("waiting"),
   ];
   if (all.length <= PROJECT_STATUS_DOT_LIMIT) return { dots: all, more: false };
   return { dots: all.slice(0, PROJECT_STATUS_DOT_LIMIT - 1), more: true };

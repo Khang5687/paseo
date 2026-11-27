@@ -155,6 +155,8 @@ export interface WorkspaceDescriptor {
   statusEnteredAt: Date | null;
   // Absent when no subagent runs, or when the daemon predates the count.
   runningSubagentCount?: number;
+  // Absent unless the workspace only waits on background jobs or subagents.
+  waiting?: WorkspaceDescriptorPayload["waiting"];
   archivingAt: string | null;
   diffStat: { additions: number; deletions: number } | null;
   scripts: WorkspaceDescriptorPayload["scripts"];
@@ -205,6 +207,7 @@ export function normalizeWorkspaceDescriptor(
     status: payload.status,
     statusEnteredAt,
     runningSubagentCount: payload.runningSubagentCount,
+    waiting: payload.waiting,
     archivingAt: payload.archivingAt ?? null,
     diffStat: payload.diffStat ?? null,
     scripts: (payload.scripts ?? []).map((s) => Object.assign({}, s)),

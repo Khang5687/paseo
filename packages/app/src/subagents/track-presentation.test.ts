@@ -41,9 +41,9 @@ describe("buildSubagentPillPresentation", () => {
   });
 
   const pill = (rows: SubagentRow[]) =>
-    buildSubagentPillPresentation(i18n.t, rows, { yourTurn: false });
-  const yourTurnPill = (rows: SubagentRow[]) =>
-    buildSubagentPillPresentation(i18n.t, rows, { yourTurn: true });
+    buildSubagentPillPresentation(i18n.t, rows, { waits: false });
+  const waitingPill = (rows: SubagentRow[]) =>
+    buildSubagentPillPresentation(i18n.t, rows, { waits: true });
 
   it("counts the children that are working, not the fan-out", () => {
     expect(pill([row({ id: "a" }), row({ id: "b", status: "running" })])).toEqual({
@@ -52,21 +52,24 @@ describe("buildSubagentPillPresentation", () => {
     });
   });
 
-  it("says it is your turn when the chat's turn ended while children work", () => {
+  it("waits on its working children with an hourglass once the chat's turn ended", () => {
     expect(
-      yourTurnPill([
+      waitingPill([
         row({ id: "a", status: "running" }),
         row({ id: "b", status: "running" }),
         row({ id: "c" }),
       ]),
     ).toEqual({
-      segments: [{ bucket: "running", text: "Your turn · 2 working" }],
-      accessibilityLabel: "Your turn · 2 working",
+      segments: [{ bucket: "running", text: "Waiting on 2 subagents", waiting: true }],
+      accessibilityLabel: "Waiting on 2 subagents",
     });
+    expect(waitingPill([row({ id: "a", status: "running" })]).accessibilityLabel).toBe(
+      "Waiting on 1 subagent",
+    );
   });
 
-  it("keeps naming the fan-out on your turn once every child is done", () => {
-    expect(yourTurnPill([row({ id: "a" }), row({ id: "b" })])).toEqual({
+  it("keeps naming the fan-out while waiting once every child is done", () => {
+    expect(waitingPill([row({ id: "a" }), row({ id: "b" })])).toEqual({
       segments: [{ bucket: null, text: "2 subagents" }],
       accessibilityLabel: "2 subagents",
     });

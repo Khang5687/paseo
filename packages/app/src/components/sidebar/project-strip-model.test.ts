@@ -56,21 +56,26 @@ describe("project strip menu moves", () => {
 });
 
 describe("project status dots", () => {
-  const counts = (needsInput: number, failed: number, attention: number, running: number) => ({
-    needsInput,
-    failed,
-    attention,
-    running,
-  });
+  const counts = (
+    needsInput: number,
+    failed: number,
+    attention: number,
+    running: number,
+    waiting = 0,
+  ) => ({ needsInput, failed, attention, running, waiting });
 
-  it("gives each chat a dot, asking first, then failed, done, working", () => {
-    expect(listProjectStatusDots(counts(1, 0, 1, 2))).toEqual({
-      dots: ["needs_input", "attention", "running", "running"],
+  it("gives each chat a dot, asking first, then failed, done, working, waiting", () => {
+    expect(listProjectStatusDots(counts(1, 0, 1, 1, 1))).toEqual({
+      dots: ["needs_input", "attention", "running", "waiting"],
       more: false,
     });
   });
 
-  it("cuts working chats first and shows a plus past four", () => {
+  it("cuts waiting chats first, then working ones, and shows a plus past four", () => {
+    expect(listProjectStatusDots(counts(1, 0, 1, 2, 1))).toEqual({
+      dots: ["needs_input", "attention", "running"],
+      more: true,
+    });
     expect(listProjectStatusDots(counts(1, 1, 1, 3))).toEqual({
       dots: ["needs_input", "failed", "attention"],
       more: true,

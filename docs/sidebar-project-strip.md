@@ -55,14 +55,15 @@ Each project remembers the workspace you last had open in it (`useSidebarLastCha
 
 ## Status dots
 
-Each project shows one small dot per chat that has something going on: purple asks you, red failed, green finished and not opened yet, blue blinks while working (`ProjectStatusDots` in `components/sidebar/project-status-dots.tsx`). Done chats you already opened get none. The rail stacks the dots down the icon's right edge; a chip lines them up after its name. The counts come from `countProjectWorkspaceStatuses`, across every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
+Each project shows one small dot per chat that has something going on: purple asks you, red failed, green finished and not opened yet, blue blinks while working, steady blue while it only waits on background jobs or subagents (`ProjectStatusDots` in `components/sidebar/project-status-dots.tsx`). Done chats you already opened get none. The rail stacks the dots down the icon's right edge; a chip lines them up after its name. The counts come from `countProjectWorkspaceStatuses`, across every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
 
-- **Four places, urgent first.** `listProjectStatusDots` orders asking, failed, done, working. Past four, the last place becomes a "+", so working chats lose their dot first and the ones that want you stay visible.
-- **No numbers on the icon.** Exact counts are in the closed rail's tooltip and accessibility label ("Asking you: 1, Working: 2", `useProjectStatusLabel`) and beside the name on the open rail (`ProjectStatusCountList`). A chip has no hover, so its counts are in its accessibility label only; the list under it shows every chat.
-- **Purple, not orange.** Asking is the palette purple (`theme.colors.palette.purple[500]`), the same purple as the New main agent dot. Workspace rows keep the orange `needs_input` dot, so a project-level mark reads apart from one chat's status. The other three reuse the row dot colors.
-- The blink is a Reanimated opacity loop on an `Animated.View` that carries no Unistyles style (see [unistyles.md](unistyles.md)); it holds still under reduced motion.
+- **Four places, urgent first.** `listProjectStatusDots` orders asking, failed, done, working, waiting. Past four, the last place becomes a "+", so waiting chats lose their dot first, then working ones, and the ones that want you stay visible.
+- **Waiting is its own count.** A chat counts as waiting when its row shows the hourglass: its turn is blocked on a job, or its turn ended and only its jobs or subagents run (see [Workspace activity](agent-lifecycle.md#workspace-activity)). It never counts as working too.
+- **No numbers on the icon.** Exact counts are in the closed rail's tooltip and accessibility label ("Asking you: 1, Working: 2, Waiting: 1", `useProjectStatusLabel`) and beside the name on the open rail (`ProjectStatusCountList`). A chip has no hover, so its counts are in its accessibility label only; the list under it shows every chat.
+- **One purple for asking.** Everything that means "asks you" is the palette purple (`theme.colors.palette.purple[500]`), the same purple as the New main agent dot: these dots, the workspace row's `needs_input` dot and alert icon, the collapsed project badge, the chat footer's open questions pill and Needs you. `getStatusDotColor` is the one place that maps `needs_input` to it. The other dots reuse the row dot colors.
+- The blink is a Reanimated opacity loop on an `Animated.View` that carries no Unistyles style (see [unistyles.md](unistyles.md)); it holds still under reduced motion. The waiting dot never blinks.
 
-A collapsed project row in the list has its own aggregate: the most urgent status as a corner badge (`deriveProjectStatus`). When it is working only on chats that wait on a background job, the badge is the hourglass, not the ring, the same as those chats' own rows.
+A collapsed project row in the list has its own aggregate: the most urgent status as a corner badge (`deriveProjectStatus`). When it is working only on chats that wait, the badge is the hourglass, not the ring, the same as those chats' own rows.
 
 ## Jump keys
 
