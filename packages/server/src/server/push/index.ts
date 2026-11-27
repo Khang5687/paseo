@@ -57,9 +57,12 @@ export function createPushNotifications(options: {
 }): PushNotifications {
   const now = options.now ?? Date.now;
   const store = new PushTokenStore(options.logger, options.filePath, now, PUSH_TOKEN_LEASE_MS);
-  const service = new PushService(options.logger, (token) => {
-    store.revokeToken(token);
-    options.onTokenRevoked?.(token);
+  const service = new PushService({
+    logger: options.logger,
+    revokeToken: (token) => {
+      store.revokeToken(token);
+      options.onTokenRevoked?.(token);
+    },
   });
   const deliver =
     options.deliver ??

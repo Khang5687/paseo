@@ -114,6 +114,8 @@ import {
   TerminalSelectionNoteAction,
   useTerminalPaneNotes,
 } from "@/terminal/notes/terminal-pane-notes";
+import { shouldRouteWorkspaceUrlToProxiedBrowser } from "@/desktop/browser/proxy";
+import { openExternalUrl } from "@/utils/open-external-url";
 
 interface TerminalPaneProps {
   serverId: string;
@@ -126,6 +128,7 @@ interface TerminalPaneProps {
   onOpenWorkspaceFile: (request: WorkspaceFileOpenRequest) => void;
   /** Replaces the phone swipe that opens the sidebar or the explorer; -1 is a swipe right. */
   onSwipe?: (delta: 1 | -1) => void;
+  onOpenBrowserUrl?: (url: string) => void;
 }
 
 const TERMINAL_REFIT_DELAYS_MS = [0, 48, 144, 320];
@@ -282,6 +285,7 @@ export function TerminalPane({
   onOpenFileExplorer,
   onOpenWorkspaceFile,
   onSwipe,
+  onOpenBrowserUrl,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
   const retainedPanelActive = useRetainedPanelActive();
@@ -1204,6 +1208,17 @@ export function TerminalPane({
     terminalStreamKey,
   });
 
+  const handleOpenExternalUrl = useCallback(
+    async (url: string) => {
+      if (onOpenBrowserUrl && shouldRouteWorkspaceUrlToProxiedBrowser({ serverId, url })) {
+        onOpenBrowserUrl(url);
+        return;
+      }
+      await openExternalUrl(url);
+    },
+    [onOpenBrowserUrl, serverId],
+  );
+
   if (!client || !isConnected) {
     return (
       <View style={styles.centerState}>
@@ -1247,6 +1262,7 @@ export function TerminalPane({
             onResolveLocalFileLink={handleResolveLocalFileLink}
             onOpenLocalFileLink={handleOpenLocalFileLink}
             onLocalFileLinkContextMenu={isWeb ? handleLocalFileLinkContextMenu : undefined}
+            onOpenExternalUrl={handleOpenExternalUrl}
             onPendingModifiersConsumed={handlePendingModifiersConsumed}
             pendingModifiers={modifiers}
             focusRequestToken={focusRequestToken}

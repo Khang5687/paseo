@@ -34,6 +34,7 @@ export interface AssistantFileLinkResolverConfig {
   getKnownFilePaths?: () => readonly string[];
   relativePathBase?: string;
   onOpenWorkspaceFile?: (target: InlinePathTarget, disposition: OpenFileDisposition) => void;
+  onOpenBrowserUrl?: (url: string) => void;
   toast?: ToastApi | null;
 }
 
@@ -71,6 +72,7 @@ export function AssistantFileLinkResolverProvider({
   getKnownFilePaths,
   relativePathBase,
   onOpenWorkspaceFile,
+  onOpenBrowserUrl,
   toast,
   children,
 }: AssistantFileLinkResolverProviderProps) {
@@ -82,6 +84,7 @@ export function AssistantFileLinkResolverProvider({
     getKnownFilePaths,
     relativePathBase,
     onOpenWorkspaceFile,
+    onOpenBrowserUrl,
     toast,
   });
   configRef.current = {
@@ -92,6 +95,7 @@ export function AssistantFileLinkResolverProvider({
     getKnownFilePaths,
     relativePathBase,
     onOpenWorkspaceFile,
+    onOpenBrowserUrl,
     toast,
   };
 

@@ -164,6 +164,7 @@ interface TerminalEmulatorProps {
     target: TerminalLocalFileLinkTarget,
     point: { x: number; y: number },
   ) => Promise<void> | void;
+  onOpenExternalUrl?: (url: string) => Promise<void> | void;
   onRendererReadyChange?: (change: TerminalRendererReadyChange) => void;
   onFilePaste?: (file: Promise<TerminalFile | null>) => void;
   pendingModifiers?: PendingTerminalModifiers;
@@ -207,6 +208,7 @@ export default function TerminalEmulator({
   onResolveLocalFileLink,
   onOpenLocalFileLink,
   onLocalFileLinkContextMenu,
+  onOpenExternalUrl,
   onRendererReadyChange,
   onFilePaste,
   pendingModifiers = { ctrl: false, shift: false, alt: false },
@@ -241,6 +243,7 @@ export default function TerminalEmulator({
     onResolveLocalFileLink,
     onOpenLocalFileLink,
     onLocalFileLinkContextMenu,
+    onOpenExternalUrl: onOpenExternalUrl ?? openExternalUrl,
     onFilePaste,
   });
   mountCallbacksRef.current = {
@@ -254,6 +257,7 @@ export default function TerminalEmulator({
     onResolveLocalFileLink,
     onOpenLocalFileLink,
     onLocalFileLinkContextMenu,
+    onOpenExternalUrl: onOpenExternalUrl ?? openExternalUrl,
     onFilePaste,
   };
   const pendingModifiersRef = useRef(pendingModifiers);
@@ -502,7 +506,6 @@ export default function TerminalEmulator({
     runtime.setCallbacks({
       callbacks: {
         ...mountCallbacksRef.current,
-        onOpenExternalUrl: openExternalUrl,
         onSelectionChange: handleRuntimeSelection,
       },
     });
@@ -543,7 +546,7 @@ export default function TerminalEmulator({
         onOpenLocalFileLink,
         onLocalFileLinkContextMenu,
         onFilePaste,
-        onOpenExternalUrl: openExternalUrl,
+        onOpenExternalUrl: onOpenExternalUrl ?? openExternalUrl,
         onSelectionChange: handleRuntimeSelection,
       },
     });
@@ -554,6 +557,7 @@ export default function TerminalEmulator({
     onFindResult,
     onInput,
     onInputModeChange,
+    onOpenExternalUrl,
     onOpenLocalFileLink,
     onLocalFileLinkContextMenu,
     onPendingModifiersConsumed,

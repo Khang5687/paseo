@@ -18,12 +18,12 @@ import {
   Text,
   View,
   type AccessibilityActionEvent,
+  type FocusEvent,
   type GestureResponderEvent,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type PressableStateCallbackType,
-  type ScrollViewProps,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -76,7 +76,10 @@ import {
 import { useProviderSettingsStore } from "@/stores/provider-settings-store";
 import { useCurrentOverlayLayer } from "@/lib/overlay-root";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
-import { focusedModelBrowserControlOwnsEnter } from "@/components/model-browser-focus";
+import {
+  focusCameFromKeyboard,
+  focusedModelBrowserControlOwnsEnter,
+} from "@/components/model-browser-focus";
 import {
   MODEL_BROWSER_CREATE_PROFILE_KEY,
   MODEL_BROWSER_KEYBOARD_KEYS,
@@ -101,14 +104,6 @@ const DESKTOP_PROVIDER_VIEW_MIN_HEIGHT = 220;
 const DESKTOP_PROVIDER_VIEW_MAX_HEIGHT = 400;
 const DESKTOP_PROVIDER_VIEW_BASE_HEIGHT = 80;
 const DESKTOP_MODEL_ROW_HEIGHT = 40;
-
-// react-native-web applies "on-drag" to every scroll event, programmatic ones included, by blurring
-// the focused input. Arrow keys scroll the list to reveal the active row, so on web the search box
-// lost focus mid-navigation: typing stopped filtering, and the overlay focus trap could move focus
-// to the header's Back button, which then took Enter. Native only fires it on a real drag.
-const LIST_KEYBOARD_DISMISS_MODE: ScrollViewProps["keyboardDismissMode"] = isNative
-  ? "on-drag"
-  : "none";
 
 const ThemedAlertTriangle = withUnistyles(AlertTriangle);
 const ThemedCheck = withUnistyles(Check);
@@ -639,6 +634,12 @@ function ModelBrowserPressable({
     },
     [onPress],
   );
+  const handleFocus = useCallback(
+    (event: FocusEvent) => {
+      if (onFocus && focusCameFromKeyboard(event.target)) onFocus();
+    },
+    [onFocus],
+  );
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === "activate") onPress();
@@ -660,7 +661,7 @@ function ModelBrowserPressable({
         ref={rowRef}
         onLayout={onLayout}
         onPress={handlePress}
-        onFocus={onFocus}
+        onFocus={handleFocus}
         hitSlop={hitSlop}
         style={style}
         accessibilityRole="button"
@@ -1446,7 +1447,7 @@ function IndependentModelList({
         viewabilityConfig={reveal.viewabilityConfig}
         style={styles.virtualizedModelList}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={LIST_KEYBOARD_DISMISS_MODE}
+        keyboardDismissMode={MODEL_LIST_KEYBOARD_DISMISS_MODE}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.virtualizedModelListContent}
         nestedScrollEnabled
@@ -1484,7 +1485,7 @@ function IndependentProviderList({
         onScroll={onScroll}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={LIST_KEYBOARD_DISMISS_MODE}
+        keyboardDismissMode={MODEL_LIST_KEYBOARD_DISMISS_MODE}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
         testID="compact-provider-list"
@@ -1635,6 +1636,11 @@ function ModelSearchEmptyState() {
     </View>
   );
 }
+
+// React Native Web blurs the focused input on every scroll in "on-drag" mode, including wheel
+// scrolls and the scroll that reveals an arrowed-to row. That moves focus out of search, so
+// typing stops and Enter lands on the header's Back button. Only a native keyboard needs it.
+const MODEL_LIST_KEYBOARD_DISMISS_MODE = isNative ? "on-drag" : "none";
 
 interface ModelBrowserKeyboardBinding {
   view: ModelBrowserView;
@@ -1800,7 +1806,7 @@ function ModelBrowserBrowseView({
       onScroll={browseReveal.onScroll}
       scrollEventThrottle={16}
       keyboardShouldPersistTaps="handled"
-      keyboardDismissMode={LIST_KEYBOARD_DISMISS_MODE}
+      keyboardDismissMode={MODEL_LIST_KEYBOARD_DISMISS_MODE}
       showsVerticalScrollIndicator={false}
       testID="compact-provider-list"
     >

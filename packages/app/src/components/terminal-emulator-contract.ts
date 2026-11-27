@@ -92,6 +92,7 @@ export interface TerminalEmulatorProps {
     target: TerminalLocalFileLinkTarget,
     point: { x: number; y: number },
   ) => Promise<void> | void;
+  onOpenExternalUrl?: (url: string) => Promise<void> | void;
   onRendererReadyChange?: (change: TerminalRendererReadyChange) => void;
   pendingModifiers?: PendingTerminalModifiers;
   focusRequestToken?: number;

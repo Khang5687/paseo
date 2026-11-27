@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { useTranslation } from "react-i18next";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import type { OpenFileDisposition } from "@/workspace/file-open";
+import { shouldRouteWorkspaceUrlToProxiedBrowser } from "@/desktop/browser/proxy";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { formatFileLinkTooltipPath } from "./tooltip-path";
 import type { InlinePathTarget } from "./parse";
@@ -454,6 +455,14 @@ async function dispatchExternalUrl(input: {
     current.serverId !== input.capturedServerId ||
     current.workspaceRoot !== input.capturedWorkspaceRoot
   ) {
+    return;
+  }
+  if (
+    current.onOpenBrowserUrl &&
+    current.serverId &&
+    shouldRouteWorkspaceUrlToProxiedBrowser({ serverId: current.serverId, url: input.url })
+  ) {
+    current.onOpenBrowserUrl(input.url);
     return;
   }
   await openExternalUrl(input.url);
