@@ -1387,6 +1387,7 @@ export const ko: TranslationResources = {
     navButtons: {
       title: "표시할 버튼",
       done: "완료",
+      more: "더보기",
     },
     view: {
       failed: "사이드바 보기를 불러오지 못했습니다.",

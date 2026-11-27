@@ -1417,6 +1417,7 @@ export const es: TranslationResources = {
     navButtons: {
       title: "Botones visibles",
       done: "Listo",
+      more: "Más",
     },
     view: {
       failed: "No se pudo cargar la vista de la barra lateral.",

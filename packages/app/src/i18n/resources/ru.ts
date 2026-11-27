@@ -1398,6 +1398,7 @@ export const ru: TranslationResources = {
     navButtons: {
       title: "Показывать кнопки",
       done: "Готово",
+      more: "Ещё",
     },
     view: {
       failed: "Не удалось загрузить вид боковой панели.",

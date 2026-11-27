@@ -1,5 +1,14 @@
 import type { PluginBadge } from "@getpaseo/plugin/client";
-import { createContext, useCallback, useContext, useMemo, type ReactElement } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type ReactElement,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   ContextMenu,
@@ -20,6 +29,7 @@ import {
   sidebarNavItemLabel,
   type SidebarNavIconComponent,
 } from "@/sidebar-nav/item-presentation";
+import type { IconRowOverflowStore } from "@/sidebar-nav/icon-row-overflow";
 import type { SidebarNavItem } from "@/sidebar-nav/model";
 
 export interface SidebarNavIconRowValue {
@@ -36,6 +46,53 @@ export const SidebarNavIconRowContext = createContext<SidebarNavIconRowValue | n
 
 export function useSidebarNavIconRow(): SidebarNavIconRowValue | null {
   return useContext(SidebarNavIconRowContext);
+}
+
+/** Set by the icon row around each item: which item a button belongs to and where it ranks. */
+export interface SidebarNavIconSlot {
+  store: IconRowOverflowStore;
+  itemKey: string;
+  itemOrder: number;
+  keepRank: number;
+}
+
+export const SidebarNavIconSlotContext = createContext<SidebarNavIconSlot | null>(null);
+
+function subscribeToNothing(): () => void {
+  return () => {};
+}
+
+/**
+ * Registers the button with its row and answers whether it moved to the row's More menu. The
+ * button stays mounted either way, so More presses the same handler the button would.
+ */
+function useMovedToMore({
+  label,
+  icon,
+  badge,
+  testID,
+  onPress,
+}: Pick<SidebarNavIconButtonProps, "label" | "icon" | "badge" | "testID" | "onPress">): boolean {
+  const slot = useContext(SidebarNavIconSlotContext);
+  const key = slot ? `${slot.itemKey}/${testID ?? label}` : "";
+  const display = { label, icon, badge: badge ?? null, testID: testID ?? null };
+  const displayRef = useRef(display);
+  const pressRef = useRef(onPress);
+  useLayoutEffect(() => {
+    displayRef.current = display;
+    pressRef.current = onPress;
+    slot?.store.updateDisplay(key, display);
+  });
+  useLayoutEffect(() => {
+    if (!slot) return undefined;
+    const { store, itemOrder, keepRank } = slot;
+    store.register({ key, itemOrder, keepRank }, displayRef.current, () => pressRef.current());
+    return () => store.unregister(key);
+  }, [slot, key]);
+  return useSyncExternalStore(
+    slot?.store.subscribe ?? subscribeToNothing,
+    () => slot?.store.isOverflow(key) ?? false,
+  );
 }
 
 const BUTTONS_PAGE_ID = "buttons";
@@ -55,9 +112,15 @@ interface SidebarNavIconButtonProps {
 
 /**
  * One button of the phone's icon row. Tap does what the row did. Long press opens a sheet titled
- * with the button's name, whose one row leads to "Buttons to show".
+ * with the button's name, whose one row leads to "Buttons to show". When the row has no room for
+ * it, it draws nothing and the row's More menu lists it.
  */
-export function SidebarNavIconButton({ row, ...props }: SidebarNavIconButtonProps): ReactElement {
+export function SidebarNavIconButton({
+  row,
+  ...props
+}: SidebarNavIconButtonProps): ReactElement | null {
+  const movedToMore = useMovedToMore(props);
+  if (movedToMore) return null;
   return (
     <ContextMenu>
       <SidebarNavIconTrigger {...props} />

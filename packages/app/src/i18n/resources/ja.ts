@@ -1394,6 +1394,7 @@ export const ja: TranslationResources = {
     navButtons: {
       title: "表示するボタン",
       done: "完了",
+      more: "その他",
     },
     view: {
       failed: "サイドバーのビューを読み込めませんでした。",

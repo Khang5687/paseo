@@ -1409,6 +1409,7 @@ export const fr: TranslationResources = {
     navButtons: {
       title: "Boutons affichés",
       done: "Terminé",
+      more: "Plus",
     },
     view: {
       failed: "Impossible de charger la vue de la barre latérale.",
