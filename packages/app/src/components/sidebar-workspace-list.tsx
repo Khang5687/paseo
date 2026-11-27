@@ -94,12 +94,17 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  type MenuPageDefinition,
 } from "@/components/ui/dropdown-menu";
 import { ProjectLeadingVisual } from "@/components/sidebar/project-leading-visual";
 import {
   type ProjectOrderMenuAction,
   useProjectOrderMenuActions,
 } from "@/components/sidebar/project-order-menu";
+import {
+  ProjectSnoozeSubTrigger,
+  useProjectSnoozeMenuPages,
+} from "@/components/sidebar/project-snooze-menu";
 import { useToast } from "@/contexts/toast-context";
 import { SidebarToastClearance } from "@/components/sidebar/sidebar-toast-region";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
@@ -442,7 +447,7 @@ const prBadgeStyles = StyleSheet.create((theme) => ({
 }));
 
 function ProjectRowTrailingActions({
-  projectViewKey,
+  project,
   displayName,
   worktreeTarget,
   settingsTarget,
@@ -453,8 +458,9 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup,
   onRemoveProject,
   removeProjectStatus,
+  menuPages,
 }: {
-  projectViewKey: string;
+  project: SidebarProjectEntry;
   displayName: string;
   worktreeTarget: SidebarProjectHostTarget | null;
   settingsTarget: { serverId: string; projectId: string } | null;
@@ -465,7 +471,9 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup: () => void;
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  menuPages: readonly MenuPageDefinition[];
 }) {
+  const projectViewKey = project.viewKey;
   const actionsVisible = isHovered || platformIsNative || isMobileBreakpoint;
   return (
     <View style={styles.projectTrailingActions}>
@@ -484,11 +492,12 @@ function ProjectRowTrailingActions({
           pointerEvents={actionsVisible ? "auto" : "none"}
         >
           <ProjectKebabMenu
-            projectViewKey={projectViewKey}
+            project={project}
             settingsTarget={settingsTarget}
             projectPath={projectPath}
             onRemoveProject={onRemoveProject}
             removeProjectStatus={removeProjectStatus}
+            pages={menuPages}
           />
         </View>
       ) : null}
@@ -517,18 +526,21 @@ function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }) {
 }
 
 function ProjectKebabMenu({
-  projectViewKey,
+  project,
   settingsTarget,
   projectPath,
   onRemoveProject,
   removeProjectStatus,
+  pages,
 }: {
-  projectViewKey: string;
+  project: SidebarProjectEntry;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  pages: readonly MenuPageDefinition[];
 }) {
+  const projectViewKey = project.viewKey;
   const { t } = useTranslation();
   return (
     <DropdownMenu compactMode="sheet">
@@ -541,10 +553,15 @@ function ProjectKebabMenu({
       >
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" width={220} sheetTitle={t("sidebar.project.actions.menu")}>
+      <DropdownMenuContent
+        align="end"
+        width={220}
+        pages={pages}
+        sheetTitle={t("sidebar.project.actions.menu")}
+      >
         <ProjectMenuItems
           surface="dropdown"
-          projectViewKey={projectViewKey}
+          project={project}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}
@@ -572,19 +589,20 @@ function ProjectMenuItem({
 
 function ProjectMenuItems({
   surface,
-  projectViewKey,
+  project,
   settingsTarget,
   projectPath,
   onRemoveProject,
   removeProjectStatus,
 }: {
   surface: ProjectMenuSurface;
-  projectViewKey: string;
+  project: SidebarProjectEntry;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
 }) {
+  const projectViewKey = project.viewKey;
   const { t } = useTranslation();
   const toast = useToast();
   const handleOpenProjectSettings = useCallback(() => {
@@ -631,6 +649,7 @@ function ProjectMenuItems({
         testID={`sidebar-project-menu-open-folder-${projectViewKey}`}
       />
       <ProjectOrderMenuItems surface={surface} projectViewKey={projectViewKey} />
+      <ProjectSnoozeSubTrigger project={project} />
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -964,6 +983,7 @@ function ProjectHeaderRow({
   const localDaemonServerId = useLocalDaemonServerId();
   const projectPath = resolveSidebarProjectLocalPath(project, localDaemonServerId);
   const settingsTarget = project.hosts[0] ?? null;
+  const menuPages = useProjectSnoozeMenuPages(project);
   const handleBeginWorkspaceSetup = useCallback(() => {
     if (!worktreeTarget) {
       return;
@@ -1038,7 +1058,7 @@ function ProjectHeaderRow({
         </View>
       </View>
       <ProjectRowTrailingActions
-        projectViewKey={project.viewKey}
+        project={project}
         displayName={displayName}
         worktreeTarget={worktreeTarget}
         settingsTarget={settingsTarget}
@@ -1049,6 +1069,7 @@ function ProjectHeaderRow({
         onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
         onRemoveProject={onRemoveProject}
         removeProjectStatus={removeProjectStatus}
+        menuPages={menuPages}
       />
       {showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.projectShortcutBadgeOverlay} pointerEvents="none">
@@ -1111,11 +1132,12 @@ function ProjectHeaderRow({
       <ContextMenuContent
         align="start"
         width={220}
+        pages={menuPages}
         testID={`sidebar-project-context-menu-${project.viewKey}`}
       >
         <ProjectMenuItems
           surface="context"
-          projectViewKey={project.viewKey}
+          project={project}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}

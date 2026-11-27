@@ -212,6 +212,7 @@ import {
   type WorkspaceMutation,
   type WorkspaceRegistry,
 } from "./workspace-registry.js";
+import { normalizeSnoozedUntil, projectSnoozeField } from "./project-snooze.js";
 import { wrapSpokenInput } from "./voice-config.js";
 import { isVoicePermissionAllowed } from "./voice-permission-policy.js";
 import {
@@ -232,9 +233,6 @@ import {
 import { ScheduleSession } from "./session/schedule/schedule-session.js";
 import { ProviderCatalogSession } from "./session/provider/provider-catalog-session.js";
 import { UsageSession } from "./session/usage/usage-session.js";
-import { AccountRoutingSession } from "./session/account-routing-session.js";
-import type { AccountRoutingAuthority } from "./account-routing/authority.js";
-import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
   SpeechModelsSession,
   type SpeechModelsSessionOptions,
@@ -556,10 +554,6 @@ export interface SessionOptions {
   notesService?: NotesService;
   fileCopies?: FileCopies;
   fileSend?: FileSendBundle;
-  accountRouting?: AccountRoutingAuthority;
-  accountLogin?: OmpAccountLogin;
-  /** The source is a direct loopback or local IPC socket: the host's own app. */
-  isHostLocalSource?: (source: object | undefined) => boolean;
   /** Shared by every session so one device's reorder reaches the others. */
   sidebarSync?: SidebarSyncStore;
   filesystem?: SessionFileSystem;
@@ -990,7 +984,6 @@ export class Session {
   private readonly scheduleSession: ScheduleSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly usageSession: UsageSession;
-  private readonly accountRoutingSession: AccountRoutingSession;
   private readonly speechModelsSession: SpeechModelsSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
@@ -1035,9 +1028,6 @@ export class Session {
       notesService,
       fileCopies,
       fileSend,
-      accountRouting,
-      accountLogin,
-      isHostLocalSource,
       sidebarSync,
       filesystem,
       scheduleService,
@@ -1281,14 +1271,6 @@ export class Session {
       isEnabled: () => daemonConfigStore.get().usage?.enabled !== false,
       emit: (msg) => this.emit(msg),
       runtime: pluginRuntime,
-      logger: this.sessionLogger,
-    });
-    this.accountRoutingSession = new AccountRoutingSession({
-      authority: accountRouting,
-      login: accountLogin,
-      isHostLocal: isHostLocalSource,
-      delivery: this.delivery,
-      emit: (msg) => this.emit(msg),
       logger: this.sessionLogger,
     });
     this.speechModelsSession = new SpeechModelsSession({
@@ -3812,6 +3794,8 @@ export class Session {
         return this.handleWorkspaceClearAttentionRequest(msg);
       case "workspace.mark_unread.request":
         return this.handleWorkspaceMarkUnreadRequest(msg);
+      case "project.snooze.set.request":
+        return this.handleProjectSnoozeSetRequest(msg);
       default:
         return undefined;
     }
@@ -3845,18 +3829,6 @@ export class Session {
         return this.usageSession.handleLegacyList(msg);
       case "usage.list_reports.request":
         return this.usageSession.handleListReports(msg);
-      case "account.routing.get_state.request":
-        return this.accountRoutingSession.handleGetState(msg);
-      case "account.routing.mutate.request":
-        return this.accountRoutingSession.handleMutate(msg);
-      case "account.routing.login.start.request":
-        return this.accountRoutingSession.handleLoginStart(msg);
-      case "account.routing.login.get_status.request":
-        return this.accountRoutingSession.handleLoginStatus(msg);
-      case "account.routing.login.cancel.request":
-        return this.accountRoutingSession.handleLoginCancel(msg);
-      case "account.routing.login.submit_code.request":
-        return this.accountRoutingSession.handleLoginSubmitCode(msg);
       default:
         return undefined;
     }
@@ -4599,6 +4571,52 @@ export class Session {
           error: getErrorMessageOr(error, "Failed to rename project"),
         },
       });
+    }
+  }
+
+  private async handleProjectSnoozeSetRequest(
+    request: Extract<SessionInboundMessage, { type: "project.snooze.set.request" }>,
+  ): Promise<void> {
+    const { projectId, requestId } = request;
+    const reject = (error: string) =>
+      this.emit({
+        type: "project.snooze.set.response",
+        payload: { requestId, projectId, accepted: false, snoozedUntil: null, error },
+      });
+    try {
+      const snoozedUntil = normalizeSnoozedUntil(request.snoozedUntil, Date.now());
+      if (snoozedUntil === undefined) {
+        reject("Not a time");
+        return;
+      }
+      const existing = await this.projectRegistry.get(projectId);
+      if (!existing) {
+        reject("Project not found");
+        return;
+      }
+      const updated = { ...existing, snoozedUntil, updatedAt: new Date().toISOString() };
+      await this.projectRegistry.upsert(updated);
+      this.emit({
+        type: "project.snooze.set.response",
+        payload: { requestId, projectId, accepted: true, snoozedUntil, error: null },
+      });
+
+      // Same fan-out as a rename: empty projects get project.update, the rest get their
+      // workspace descriptors again, so every device sees the snooze.
+      await this.emitProjectUpdate({ kind: "upsert", project: updated });
+      const workspaces = await this.workspaceRegistry.listActive();
+      const affectedWorkspaceIds = workspaces
+        .filter((workspace) => workspace.projectId === projectId)
+        .map((workspace) => workspace.workspaceId);
+      if (affectedWorkspaceIds.length > 0) {
+        await this.emitWorkspaceUpdatesForWorkspaceIds(affectedWorkspaceIds);
+      }
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, projectId, requestId },
+        "session: project.snooze.set.request error",
+      );
+      reject(getErrorMessageOr(error, "Failed to snooze project"));
     }
   }
 
@@ -6735,6 +6753,7 @@ export class Session {
         : workspace.projectId,
       projectCustomName: resolvedProjectRecord?.customName ?? null,
       projectCustomIconRevision: resolvedProjectRecord?.customIconRevision ?? null,
+      ...projectSnoozeField(resolvedProjectRecord),
       projectRootPath: resolvedProjectRecord?.rootPath ?? workspace.cwd,
       workspaceDirectory: workspace.cwd,
       setupStatus: this.workspaceSetupObservation.status(workspace),
@@ -6830,6 +6849,7 @@ export class Session {
         : result.workspace.projectId,
       projectCustomName: projectRecord?.customName ?? null,
       projectCustomIconRevision: projectRecord?.customIconRevision ?? null,
+      ...projectSnoozeField(projectRecord),
       projectRootPath: projectRecord?.rootPath ?? result.repoRoot,
       workspaceDirectory: result.workspace.cwd,
       setupStatus: this.workspaceSetupObservation.status(result.workspace),
@@ -7021,6 +7041,7 @@ export class Session {
       projectDisplayName: resolveProjectDisplayName(project),
       projectCustomName: project.customName ?? null,
       projectCustomIconRevision: project.customIconRevision ?? null,
+      ...projectSnoozeField(project),
       projectIconRevision: icon.revision,
       projectRootPath: project.rootPath,
       projectKind: project.kind,

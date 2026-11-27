@@ -48,12 +48,14 @@ export interface OfflineSaveRequest {
   path: string;
   /** Saved on purpose: age never removes the copy. */
   pinned: boolean;
+  /** Sent here from another device, so Saved can list it under "Sent to me". */
+  sent?: boolean;
   onProgress?: OfflineSaveProgress;
 }
 
 export interface OfflineAutoSaveRequest extends Omit<
   OfflineSaveRequest,
-  "path" | "pinned" | "onProgress"
+  "path" | "pinned" | "sent" | "onProgress"
 > {
   /** The mention as the chat writes it; repeats within the recheck window are dropped. */
   mention: string;
@@ -112,6 +114,8 @@ export function addSavedFile(input: {
   /** Absolute, or relative to `workspaceRoot`. */
   path: string;
   workspaceRoot?: string;
+  /** Another device sent the file here. */
+  sent?: boolean;
   onProgress?: OfflineSaveProgress;
 }): Promise<OfflineSaveResult> {
   const session = useSessionStore.getState().sessions[input.serverId];
@@ -128,6 +132,7 @@ export function addSavedFile(input: {
     workspaceRoot: input.workspaceRoot ?? "",
     path: input.path,
     pinned: true,
+    sent: input.sent,
     onProgress: input.onProgress,
   };
   return run(fileKey(request), request);
@@ -181,7 +186,10 @@ async function download(request: OfflineSaveRequest): Promise<OfflineSaveResult>
       if (remote.status !== "ready")
         return { status: "failed", error: i18n.t("panels.file.notFound") };
       if (isSameOfflineVersion(existing, remote)) {
-        await touchOfflineFile(serverId, absolutePath, { pin: request.pinned });
+        await touchOfflineFile(serverId, absolutePath, {
+          pin: request.pinned,
+          sent: request.sent,
+        });
         const file = await getOfflineFile(serverId, absolutePath);
         if (file) return { status: "fresh", file };
       }
@@ -215,6 +223,7 @@ async function download(request: OfflineSaveRequest): Promise<OfflineSaveResult>
       attachment,
       limits: settings,
       pinned: request.pinned,
+      sent: request.sent,
     });
     committed = true;
     // The new copy is the first the cap evicts when it alone does not fit in the total.

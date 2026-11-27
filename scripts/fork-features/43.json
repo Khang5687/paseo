@@ -1,6 +1,7 @@
 {
   "pr": 43,
   "title": "feat(app): host-global OMP Claude account controls in Settings > Providers",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": [
     "packages/app/src/omp-account-routing/presentation.test.ts",
     "packages/app/src/omp-account-routing/queries.test.ts"

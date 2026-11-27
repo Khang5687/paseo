@@ -9,24 +9,33 @@ export function isProjectQuiet(activity: ProjectActivity, now: number): boolean 
 }
 
 /**
- * The projects that fold into "More", in input order. `keep` holds projects that stay out
+ * The projects that fold into "More", in input order. A snoozed project always folds, whatever
+ * `keep` says: the user put it away. The rest fold by age: `keep` holds projects that stay out
  * whatever their age (the open chat's project, a filtered-to project, one with a pinned chat).
- * A project with no known activity stays: unknown is not quiet. When every project would
- * fold, none does, so the sidebar never turns into a lone "More".
+ * A project with no known activity stays: unknown is not quiet. When every awake project would
+ * fold by age, none does, so the sidebar never turns into a lone "More".
  */
 export function resolveQuietProjectKeys<T extends { viewKey: string }>(input: {
   projects: readonly T[];
   activityOf: (project: T) => ProjectActivity;
   keep: ReadonlySet<string>;
   now: number;
+  snoozed?: ReadonlySet<string>;
 }): string[] {
-  const quiet = input.projects
-    .filter(
-      (project) =>
-        !input.keep.has(project.viewKey) && isProjectQuiet(input.activityOf(project), input.now),
-    )
+  const snoozed = input.snoozed ?? new Set<string>();
+  const awake = input.projects.filter((project) => !snoozed.has(project.viewKey));
+  const aged = new Set(
+    awake
+      .filter(
+        (project) =>
+          !input.keep.has(project.viewKey) && isProjectQuiet(input.activityOf(project), input.now),
+      )
+      .map((project) => project.viewKey),
+  );
+  const foldAged = aged.size < awake.length;
+  return input.projects
+    .filter((project) => snoozed.has(project.viewKey) || (foldAged && aged.has(project.viewKey)))
     .map((project) => project.viewKey);
-  return quiet.length === input.projects.length ? [] : quiet;
 }
 
 /**

@@ -1513,6 +1513,16 @@ export const fr: TranslationResources = {
         remove: "Retirer le projet",
         removing: "Retrait…",
       },
+      snooze: {
+        title: "Mettre en veille",
+        tomorrow: "Jusqu’à demain",
+        monday: "Jusqu’à lundi",
+        date: "Jusqu’à une date…",
+        datePage: "Jusqu’à une date",
+        wake: "Réveiller maintenant",
+        until: "Jusqu’à {{time}}",
+        failed: "Impossible de mettre {{name}} en veille",
+      },
       confirmations: {
         removeTitle: "Retirer le projet ?",
         removeMessage:
@@ -2372,6 +2382,9 @@ export const fr: TranslationResources = {
     tooLarge: "Le fichier dépasse la limite de {{size}} Mo pour les fichiers hors ligne.",
     readOnly: "Ceci est une copie enregistrée. Connectez-vous à l'hôte pour la modifier.",
     savedAgo: "Copie hors ligne, enregistrée {{time}}",
+    openSavedCopy: "Ouvrir la copie enregistrée ({{time}})",
+    downloadAgain: "Télécharger à nouveau",
+    copyLink: "Copier le lien",
     share: "Partager",
     wifiOnly: {
       label: "Enregistrer en Wi-Fi uniquement",
@@ -2390,6 +2403,39 @@ export const fr: TranslationResources = {
       emptyHint:
         "Les fichiers que vous ouvrez, enregistrez hors ligne ou téléchargez apparaissent ici et s'ouvrent sans réseau.",
       gone: "Cette copie enregistrée a été retirée de cet appareil.",
+      clearSearch: "Effacer la recherche",
+      filters: {
+        all: "Tout",
+        sent: "Reçus",
+        apps: "Apps",
+        docs: "Documents",
+        images: "Images",
+        code: "Code",
+        project: "Projet",
+        device: "Appareil",
+        allProjects: "Tous les projets",
+        allDevices: "Tous les appareils",
+      },
+      sort: { label: "Trier", newest: "Plus récents", biggest: "Plus gros", name: "Nom" },
+      groupBy: { label: "Grouper par", day: "Jour", project: "Projet" },
+      day: {
+        today: "Aujourd'hui",
+        yesterday: "Hier",
+        week: "Cette semaine",
+        earlier: "Plus ancien",
+      },
+      sectionCount_one: "{{count}} fichier · {{size}}",
+      sectionCount_other: "{{count}} fichiers · {{size}}",
+      select: {
+        count: "{{count}} sélectionné(s)",
+        done: "OK",
+        pin: "Épingler",
+        unpin: "Désépingler",
+        delete: "Supprimer",
+        deleted_one: "{{count}} fichier supprimé",
+        deleted_other: "{{count}} fichiers supprimés",
+        undo: "Annuler",
+      },
     },
     hostCopies: {
       title: "Copies sur {{host}}",
@@ -2445,6 +2491,13 @@ export const fr: TranslationResources = {
     sendFailed: "Impossible d’envoyer à {{title}}",
     railLabel_one: "Vous attend : {{count}}",
     railLabel_other: "Vous attend : {{count}}",
+    peek: {
+      sent: "✓ « {{answer}} » envoyé. Il reprend le travail.",
+      more_one: "{{count}} autre en attente",
+      more_other: "{{count}} autres en attente",
+      openChat: "Ouvrir le chat ›",
+      send: "Envoyer",
+    },
   },
   subagents: {
     parent: {
@@ -2634,186 +2687,6 @@ export const fr: TranslationResources = {
       cancelAccessibility: "Annuler le commentaire de revue",
       save: "Commenter",
       saveAccessibility: "Enregistrer le commentaire de revue",
-    },
-  },
-  ompAccountRouting: {
-    login: {
-      start: "Ajouter un compte Claude",
-      elsewhere: "Ouvrez Paseo sur l'ordinateur hôte pour ajouter un compte.",
-      update: "Mettez à jour Paseo et Oh My Pi sur l'hôte pour ajouter des comptes ici.",
-      inProgress: "Connexion en cours",
-      continue: "Continuer",
-      cancel: "Annuler",
-      cancelSignIn: "Annuler la connexion",
-      done: "Terminé",
-      details: "Détails",
-      tryAgain: "Réessayer",
-      close: "Fermer",
-      justAdded: "Vient d'être ajouté",
-      warning: {
-        body: "Paseo enregistre une connexion par compte Claude. Connectez-vous à claude.ai avec le compte que vous voulez ajouter.",
-        existing: "Déjà ajoutés : {{accounts}}",
-        alertTitle: "Vérifiez quel compte votre navigateur utilise",
-        alertDescription:
-          "Si claude.ai est encore connecté avec un compte déjà ajouté, déconnectez-vous ou changez de compte d'abord. Une fenêtre privée démarre toujours déconnectée.",
-        guard:
-          "Si vous vous connectez avec un compte déjà ajouté, Paseo s'arrête et ne change rien.",
-      },
-      preparing: "Préparation du lien de connexion...",
-      link: {
-        title: "Se connecter à Claude",
-        step: "Ouvrez le lien et connectez-vous avec le compte que vous voulez ajouter",
-        open: "Ouvrir la page de connexion",
-        copy: "Copier le lien",
-        copied: "Copié",
-        label: "Lien de connexion",
-        hint: "Pour utiliser une fenêtre privée ou un autre appareil, copiez le lien",
-        waiting: "En attente du navigateur...",
-        pasteInstead: "Coller l'adresse à la place",
-      },
-      paste: {
-        label: "Adresse ou code",
-        placeholder: "http://localhost:54545/callback?code=...",
-        hint: "Après votre accord, le navigateur peut afficher une page qui ne se charge pas. Copiez l'adresse complète de la barre d'adresse, ou le code affiché par Claude, et collez-la ici.",
-        submit: "Envoyer",
-        checking: "Vérification...",
-        error: {
-          invalid_input: "Ce n'est ni une adresse ni un code de connexion",
-          wrong_login:
-            "Cette adresse correspond à un ancien lien de connexion. Utilisez le lien affiché ici.",
-          not_waiting: "Cette connexion est déjà terminée",
-          not_allowed: "Seul Paseo sur l'ordinateur hôte peut envoyer ceci",
-          unreachable: "Impossible de joindre l'hôte. Réessayez.",
-        },
-      },
-      verifying: "Vérification de la connexion...",
-      result: {
-        added: {
-          title: "{{account}} ajouté",
-          titleUnnamed: "Compte ajouté",
-          description: "{{organization}}. Le routage automatique peut l'utiliser maintenant.",
-          descriptionUnnamed: "Le routage automatique peut l'utiliser maintenant.",
-          billingEnabled:
-            "L'usage supplémentaire payant est activé pour ce compte. Le routage automatique l'ignore tant que vous ne le désactivez pas dans les réglages de Claude.",
-          billingUnknown:
-            "Vérifiez que l'usage supplémentaire payant est désactivé pour ce compte dans les réglages de Claude. Le routage automatique ignore les comptes pour lesquels il est activé.",
-        },
-        alreadyListed: {
-          title: "{{account}} est déjà ajouté",
-          titleUnnamed: "Ce compte est déjà ajouté",
-          description:
-            "Rien n'a changé. Votre navigateur s'est connecté avec un compte que Paseo a déjà. Déconnectez-vous de claude.ai ou utilisez une fenêtre privée, puis réessayez.",
-        },
-        replaced: {
-          title: "Connexion remplacée pour {{account}}",
-          titleUnnamed: "Connexion enregistrée remplacée",
-          description: "Aucun compte n'a été ajouté. La nouvelle connexion est utilisée.",
-        },
-        failed: "Échec de la connexion",
-        cancelled: "Connexion annulée",
-      },
-      failure: {
-        timeout: "Le lien de connexion a expiré après 10 minutes. Rien n'a changé.",
-        omp_failed:
-          "Oh My Pi n'a pas pu terminer la connexion. Rien n'a changé. Réessayez, ou lancez omp dans un terminal et tapez /login.",
-        spawn_failed: "Paseo n'a pas pu démarrer Oh My Pi sur cet ordinateur.",
-        unreachable:
-          "Contact perdu avec l'hôte. À sa reconnexion, vérifiez la liste des comptes avant de réessayer.",
-      },
-    },
-    labels: {
-      title: "Claude accounts (Oh My Pi)",
-      scope:
-        "S'applique à tous les agents OMP gérés par Paseo sur cet hôte. Les autres hôtes et les terminaux autonomes ne changent pas.",
-      account: "Compte",
-      automatic: "Automatique",
-      useForAuto: "Utiliser pour le routage automatique",
-      auto: "Routage automatique",
-      priority: "Priorité de repli",
-      priorityHelp:
-        "Quand le compte actuel est épuisé, Paseo bascule vers le compte inclus qui a le plus d'utilisation restante. Cet ordre départage les égalités.",
-      addAccountHint:
-        "Pour ajouter un compte, exécutez omp dans un terminal, tapez /login, puis connectez-vous avec un autre compte Claude.",
-      current: "Sélectionné",
-      serving: "En service",
-      lastServed: "Dernière utilisation",
-      excluded: "Exclu du routage automatique",
-      missing: "Compte enregistré indisponible",
-      fiveHour: "5 heures",
-      weekly: "Hebdomadaire",
-      tier: "Niveau d'abonnement",
-      unknownTier: "Niveau d'abonnement inconnu",
-      unknownBudget: "Quota absolu inconnu",
-      consumed: "Consommé",
-      remaining: "Restant",
-      stale: "Observation périmée",
-      unknownOrganization: "Organisation inconnue",
-      detailsPending: "Les détails apparaissent lorsqu’un agent Oh My Pi est en cours d’exécution",
-      search: "Rechercher des comptes",
-    },
-    actions: {
-      moveUp: "Monter",
-      moveDown: "Descendre",
-    },
-    status: {
-      loading: "Chargement du routage des comptes",
-      empty: "Aucun compte Claude observé",
-      noRuntime: "Les comptes apparaissent quand un agent Oh My Pi est en cours d'exécution.",
-      unsupported: "Cet hôte n'a pas vérifié la prise en charge du routage de comptes OMP",
-      offline: "Hôte hors ligne ; derniers réglages confirmés affichés",
-      readOnly: "Vous pouvez consulter ces réglages, mais pas les modifier",
-      pending: "Enregistrement des réglages",
-      conflict: "Les réglages ont changé ailleurs ; dernier état confirmé affiché",
-      paused: "En attente d'un compte inclus disponible",
-      recovered: "Compte inclus disponible",
-      unknownUsage: "Utilisation inconnue",
-      summaryPaused: "En pause : aucun compte inclus n'a d'utilisation restante.",
-      summaryPausedResumes:
-        "En pause : aucun compte inclus n'a d'utilisation restante. Reprise {{time}}",
-      summaryUsing: "Compte utilisé : {{account}}",
-      summaryAuto: "Le mode automatique choisit le compte avec le plus d'utilisation restante",
-    },
-    reason: {
-      no_account: "Aucun compte n'est sélectionné",
-      source_changed: "La source d'identifiants native sélectionnée a changé",
-      source_inaccessible:
-        "Cet environnement d'exécution ne peut pas accéder au compte natif sélectionné",
-      billing_enabled:
-        "Les crédits d'utilisation payants sont activés ; le routage limité à l'usage inclus ne peut pas utiliser ce compte",
-      billing_unknown:
-        "Les réglages des crédits d'utilisation payants n'ont pas été vérifiés récemment",
-      quota_blocked: "L'usage inclus n'est pas disponible pour cette requête",
-      entitlement_unavailable: "L'accès au modèle est indisponible ou non vérifié pour ce compte",
-      auth_unavailable: "L'authentification du compte natif est indisponible",
-      unsupported_transport:
-        "Ce transport du fournisseur ne prend pas en charge le routage limité à l'usage inclus",
-      unsupported_runtime:
-        "Cet environnement d'exécution OMP ne prend pas en charge le routage géré",
-      persistence_failed: "Les réglages de routage n'ont pas pu être enregistrés",
-      host_unavailable: "Hôte de routage indisponible",
-      cancelled: "Requête annulée",
-      metadata_pending: "Vérification de la disponibilité du compte",
-      all_unavailable: "Aucun compte inclus n'est disponible actuellement",
-      auto_disabled:
-        "Le routage automatique est désactivé ; sélectionnez un compte ou activez-le pour continuer",
-      provider_failed: "La disponibilité du compte n'a pas pu être vérifiée",
-    },
-    mutationError: {
-      conflict: "Les réglages ont changé ailleurs ; consultez le dernier état avant de réessayer",
-      invalid_account: "Ce compte natif n'est plus dans le catalogue",
-      unsupported: "Les commandes de routage de comptes sont indisponibles sur cet hôte",
-      persistence_failed:
-        "Les réglages n'ont pas été enregistrés ; les derniers réglages confirmés restent en place",
-    },
-    values: {
-      used: "{{percent}} % utilisé",
-      reset: "réinitialisation {{time}}",
-      observed: "observé {{time}}",
-      limitReached: "Limite {{window}} atteinte",
-      limitReachedReset: "Limite {{window}} atteinte · réinitialisation {{time}}",
-      account: "Compte {{row}}",
-      serving: "{{account}} sert {{agent}}",
-      priority: "Priorité {{position}}",
     },
   },
   providerUsage: {

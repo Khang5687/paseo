@@ -1411,6 +1411,11 @@ function IndependentModelList({
       activeModelIndex,
     }),
     hasHeader: Boolean(header),
+    // Pressing a row focuses it on pointer down, which activates it. Until the list has
+    // reported which rows are fully visible, a reveal would guess and center the row, moving
+    // it out from under the pointer before release, so the browser sends the click to the
+    // list and the press never selects. Wait for the visible rows instead.
+    waitForViewable: true,
     listKey: rows,
   });
 

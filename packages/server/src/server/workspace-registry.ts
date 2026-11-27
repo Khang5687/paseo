@@ -44,6 +44,9 @@ const PersistedProjectRecordSchema = z.object({
     .nullable()
     .optional()
     .transform((value) => value ?? null),
+  // When the user snoozed the project, the ISO time it comes back. Past or absent means awake.
+  // Optional (no transform) so records written before snooze, and literal records, still fit.
+  snoozedUntil: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   archivedAt: z.string().nullable(),

@@ -47,7 +47,6 @@ import {
   useHostRuntimeSnapshot,
   useHosts,
 } from "@/runtime/host-runtime";
-import { AccountRoutingSection } from "@/omp-account-routing/account-section";
 import { ProviderList } from "@/provider-settings";
 import { openProviderSettings } from "@/navigation/settings-navigation";
 import { HostUsageSection } from "@/usage";
@@ -358,7 +357,6 @@ export function HostProvidersPage({ serverId }: { serverId: string }) {
   return (
     <View>
       <ProviderList serverId={serverId} onOpenProvider={openProvider} />
-      <AccountRoutingSection key={serverId} serverId={serverId} />
     </View>
   );
 }

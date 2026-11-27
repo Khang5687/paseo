@@ -169,6 +169,9 @@ export class WorkspaceDirectoryReplica {
         projectDisplayName: project.projectDisplayName,
         projectCustomName: project.projectCustomName,
         projectCustomIconRevision: project.projectCustomIconRevision,
+        ...(project.projectSnoozedUntil !== undefined
+          ? { projectSnoozedUntil: project.projectSnoozedUntil }
+          : {}),
         projectRootPath: project.projectRootPath,
         projectKind: project.projectKind,
       };

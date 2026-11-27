@@ -98,8 +98,6 @@
               "executable-resolution/executable-resolution.ts": ["existsSync"],
               // TODO: winget enumeration shares synchronous existence predicates with literal lookup; convert the executable-resolution boundary together.
               "executable-resolution/windows.ts": ["readdirSync"],
-              // TODO: fork OMP account-routing policy store opens synchronously at bootstrap; move open into async startup.
-              "server/account-routing/store.ts": ["readFileSync"],
               // TODO: live file-change classification is a synchronous event mapper; move the probe to async event ingestion.
               "server/agent/providers/claude/agent.ts": ["existsSync"],
               // TODO: new-session construction still resolves its project directory synchronously; move preparation before construction.

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactElement } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { router } from "expo-router";
 import { HardDriveDownload } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -15,16 +15,15 @@ import {
   PaneProvider,
   type PaneContextValue,
 } from "@/panels/pane-context";
-import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
-import { SavedFilesList } from "./saved-files-list";
+import { SavedFilesBrowser } from "./saved-browser";
 import { useOfflineFiles, type OfflineFile } from "./store";
 
 const ThemedEmptyIcon = withUnistyles(HardDriveDownload);
 const mutedColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const EMPTY_ICON_SIZE = 24;
 
-/** This device's Saved library: every saved file, by host. Reads only local storage. */
+/** This device's Saved library: every saved file to search, filter and act on. Reads only local storage. */
 export function SavedLibraryScreen(): ReactElement {
   const { t } = useTranslation();
   const files = useOfflineFiles();
@@ -44,24 +43,12 @@ export function SavedLibraryScreen(): ReactElement {
       </View>
     );
   } else {
-    content = (
-      <View style={styles.listContent}>
-        <View style={settingsStyles.card}>
-          <SavedFilesList files={files} />
-        </View>
-      </View>
-    );
+    content = <SavedFilesBrowser files={files} />;
   }
   return (
     <View style={styles.container} testID="saved-library">
       <MenuHeader title={t("sidebar.footer.saved")} />
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {content}
-      </ScrollView>
+      {content}
     </View>
   );
 }
@@ -74,7 +61,15 @@ export function SavedFileScreen({ serverId, path }: { serverId: string; path: st
   const name = path.split(/[\\/]/).pop() ?? path;
   let body: ReactElement;
   if (entry) {
-    body = <SavedFileContext entry={entry} />;
+    body = (
+      <>
+        {/* List rows leave the folder out; the file's own page names it. */}
+        <Text style={styles.path} selectable numberOfLines={2} testID="saved-file-path">
+          {entry.path}
+        </Text>
+        <SavedFileContext entry={entry} />
+      </>
+    );
   } else if (files) {
     body = (
       <View style={styles.centered}>
@@ -137,17 +132,14 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     backgroundColor: theme.colors.surface0,
   },
-  scroll: {
-    flex: 1,
-    minHeight: 0,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingTop: theme.spacing[4],
-    paddingBottom: theme.spacing[6],
-  },
-  listContent: {
-    paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
+  path: {
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[1.5],
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.code,
+    fontFamily: theme.fontFamily.mono,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
   centered: {
     flexGrow: 1,

@@ -20,6 +20,8 @@ export interface NeedsYouChat {
   key: string;
   serverId: string;
   workspaceId: string;
+  /** The host-local project, so the rail can peek at one project's waiting chats. */
+  projectId: string;
   projectName: string;
   title: string;
   /** When the chat started waiting, in ms; null when the host did not say. */
@@ -71,6 +73,7 @@ export function listNeedsYouChats(
         key: `${serverId}:${workspaceId}`,
         serverId,
         workspaceId,
+        projectId: workspace.projectId,
         projectName: workspace.projectCustomName ?? workspace.projectDisplayName,
         title: workspace.title ?? workspace.name,
         waitingSince: workspace.statusEnteredAt?.getTime() ?? null,
