@@ -206,12 +206,15 @@ function listSession(input: {
   name: string;
   cwd: string;
   workspaceId?: string;
+  ownerAgentId?: string;
+  createdAt?: string;
 }): TerminalSession {
   return {
     id: input.id,
     name: input.name,
     cwd: input.cwd,
     workspaceId: input.workspaceId ?? "ws-test",
+    ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     send: vi.fn(),
     subscribe: () => vi.fn(),
     onExit: () => vi.fn(),
@@ -222,7 +225,7 @@ function listSession(input: {
     hasOutput: () => true,
     getReplayPreamble: () => "",
     getTitle: () => undefined,
-    getOwnerAgentId: () => null,
+    getOwnerAgentId: () => input.ownerAgentId ?? null,
     setOwnerAgentId: vi.fn(),
     getActivity: () => null,
     setActivity: vi.fn(),
@@ -309,6 +312,70 @@ describe("terminal-session-controller legacy terminal creation", () => {
           requestId: "req-1",
         },
       },
+    ]);
+  });
+
+  test("returns the chat owner and start time of a new terminal, so a drawer tab lands in place", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    const createTerminal = vi.fn(
+      async (options: Parameters<TerminalManager["createTerminal"]>[0]) =>
+        listSession({
+          id: "term-1",
+          name: options.name ?? "Terminal 1",
+          cwd: options.cwd,
+          workspaceId: options.workspaceId,
+          ownerAgentId: options.ownerAgentId,
+          createdAt: "2026-01-02T03:04:05.000Z",
+        }),
+    );
+    const terminalManager: TerminalManager = {
+      getTerminals: vi.fn(),
+      createTerminal,
+      registerCwdEnv: vi.fn(),
+      validateTerminalActivityToken: vi.fn(() => "unknown"),
+      getTerminal: vi.fn(),
+      replayTerminal: async () => null,
+      setTerminalTitle: vi.fn(),
+      setTerminalActivity: vi.fn(),
+      clearTerminalAttention: vi.fn(),
+      killTerminal: vi.fn(),
+      killTerminalAndWait: vi.fn(),
+      captureTerminal: vi.fn(),
+      listDirectories: vi.fn(() => []),
+      killAll: vi.fn(),
+      subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeTerminalActivity: vi.fn(() => vi.fn()),
+      subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
+    };
+    const controller = createController({
+      terminalManager,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      listTerminalWorkspaceRefs: async () => [{ workspaceId: "ws-root", cwd: "/work/repo" }],
+    });
+
+    await controller.dispatch({
+      type: "create_terminal_request",
+      cwd: "/work/repo",
+      workspaceId: "ws-root",
+      ownerAgentId: "agent-a",
+      requestId: "req-owner",
+    });
+
+    expect(outboundMessages).toEqual([
+      expect.objectContaining({
+        type: "create_terminal_response",
+        payload: expect.objectContaining({
+          terminal: expect.objectContaining({
+            id: "term-1",
+            ownerAgentId: "agent-a",
+            createdAt: "2026-01-02T03:04:05.000Z",
+          }),
+        }),
+      }),
     ]);
   });
 

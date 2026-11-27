@@ -644,6 +644,8 @@ export class TerminalSessionController {
             ...(session.getTitle() ? { title: session.getTitle() } : {}),
             ...(ownerAgentId ? { ownerAgentId } : {}),
             activity: session.getActivity(),
+            // The chat drawer sorts its tabs by this, so a new tab lands last right away.
+            ...(session.createdAt ? { createdAt: session.createdAt } : {}),
           },
           error: null,
           requestId: msg.requestId,
