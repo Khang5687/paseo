@@ -16,6 +16,7 @@ import {
   selectComposerDraftRange,
   expectComposerDraftSelection,
   expectComposerFullscreenControls,
+  expectComposerFullscreenToolbar,
   sendComposerWithButton,
   queueComposerWithButton,
   fillComposerDraft,
@@ -210,7 +211,12 @@ test("compact long drafts stop growing before the header", async ({ page }) => {
 
 test("compact fullscreen editing preserves the live draft and selection and returns to chat after send", async ({
   page,
-}) => {
+}, testInfo) => {
+  const shot = async (name: string) => {
+    const path = testInfo.outputPath(`${name}.png`);
+    await page.screenshot({ path });
+    await testInfo.attach(name, { path, contentType: "image/png" });
+  };
   const agent = await seedMockAgentWorkspace({
     repoPrefix: "composer-fullscreen-",
     title: "Fullscreen composer",
@@ -234,25 +240,33 @@ test("compact fullscreen editing preserves the live draft and selection and retu
       );
       await expect(page.getByRole("button", { name: "Fullscreen", exact: true })).toBeVisible();
     });
-    await test.step("fullscreen covers the header and keeps the live draft and selection", async () => {
+    await test.step("fullscreen covers the header and keeps the live draft, selection and files", async () => {
       await selectComposerDraftRange(page, 4, 17);
       await enterComposerFullscreen(page);
       await expectComposerFullscreenControls(page);
+      await expectComposerFullscreenToolbar(page);
       await expectWorkspaceHeaderHidden(page);
       await expectComposerDraftSelection(page, 4, 17);
-      await expect(page.getByTestId("composer-image-attachment-pill")).toHaveCount(0);
+      await expect(page.getByTestId("composer-image-attachment-pill")).toHaveCount(1);
+      await shot("fullscreen-editor");
+    });
+    await test.step("the fullscreen + menu adds a file to the same row", async () => {
+      await attachComposerTestImage(page);
+      await expect(page.getByTestId("composer-image-attachment-pill")).toHaveCount(2);
       await writeCompactDraft(page, "Edited fullscreen draft\nSecond line\nThird line");
       await selectComposerDraftRange(page, 3, 12);
+      await shot("fullscreen-editor-second-file");
     });
-    await test.step("exit restores the inline composer with the fullscreen edits", async () => {
+    await test.step("exit restores the inline composer with the fullscreen edits and files", async () => {
       await exitComposerFullscreen(page);
       await expectWorkspaceHeaderVisible(page);
       await expect(composerLocator(page)).toHaveValue(
         "Edited fullscreen draft\nSecond line\nThird line",
       );
       await expectComposerDraftSelection(page, 3, 12);
-      await expectAttachmentPill(page, "composer-image-attachment-pill");
+      await expect(page.getByTestId("composer-image-attachment-pill")).toHaveCount(2);
       await expect(composerLocator(page)).toBeFocused();
+      await shot("fullscreen-editor-returned");
     });
     await test.step("sending inline after a fullscreen edit clears the visible editor", async () => {
       await sendComposerWithButton(page);

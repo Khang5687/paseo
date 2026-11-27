@@ -148,6 +148,7 @@ export const en = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "Fullscreen",
       exitFullscreen: "Exit fullscreen",
+      fullscreenTitle: "Message",
       resizeInput: "Resize message box",
       focusHint: "{{shortcut}} to focus",
       addAttachment: "Add attachment",

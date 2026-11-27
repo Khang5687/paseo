@@ -260,8 +260,13 @@ glyph shows. On web the slot is a fixed box over the visible viewport, which is
 also what lets a zoomed mobile page pan under it. Inside the slot, `ComposerFullscreenBody` reserves the keyboard
 height as a bottom margin at move start and end (boundary-time, like the
 capacity reservation) while `ComposerFullscreenFooter` rides the keyboard per
-frame with `KeyboardTranslateView`, so Send lands on the keyboard without a gap
-and without animating the editor's height. The screen that owns the chrome
+frame with `KeyboardTranslateView`, so the composer's own bar (attach, agent
+controls, mic, Send) lands on the keyboard without a gap and without animating
+the editor's height. The bar moves between the inline wrapper and that footer
+on the toggle, so it remounts; the title row, attachment tray and editor keep
+their tree positions, which is what keeps focus and selection. Dictation stays
+in fullscreen: its overlay covers only the footer, so the draft stays readable
+above it. Realtime voice and Send still leave fullscreen. The screen that owns the chrome
 unmounts it: the workspace screen reads `useComposerTabFullscreen` for the
 active tab and New workspace reads the mounted composer's session. Hosts that
 render the dock pass the same `ComposerEditingSession` to the `Composer` so the
