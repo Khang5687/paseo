@@ -55,6 +55,11 @@ The peek sends one answer line, the same line Send writes here, so the question 
 host as usual. It filters `useNeedsYouChats` by the project's hosts and mounts only while open,
 so the rail itself reads only the status counts it already had.
 
+The rail and the chip show the peek only while the project waits, and sending ends the wait. So
+from the first send until it closes, the peek keeps the chat it is answering and holds its own
+gate open through `onHoldChange`; without that the hover card turns back into the tooltip
+mid-send and "Sent" never shows.
+
 ## Check it again
 
 `packages/app/e2e/browser/needs-you.spec.ts` seeds two mock chats that each end with ❓ questions,
