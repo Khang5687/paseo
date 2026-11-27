@@ -1,0 +1,6 @@
+{
+  "pr": 208,
+  "title": "fix(app): hide the status bar while the voice black screen is up",
+  "untested": "native Android status bar on the modal's dialog window; no JS logic to unit test. Checked on the Android emulator (PR body)",
+  "tests": []
+}
