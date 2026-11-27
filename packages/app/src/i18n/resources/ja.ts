@@ -1418,6 +1418,7 @@ export const ja: TranslationResources = {
         lastPrompt: "最後のプロンプト",
         urgent: "緊急を先頭に",
         updateHost: "ワークスペースを並べ替えるにはホストを更新してください",
+        switchedToManual: "手動の並べ替えに切り替えました",
       },
       grouping: {
         label: "グループ化",

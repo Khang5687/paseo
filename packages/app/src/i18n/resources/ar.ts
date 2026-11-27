@@ -1403,6 +1403,7 @@ export const ar: TranslationResources = {
         lastPrompt: "آخر طلب",
         urgent: "العاجل أولًا",
         updateHost: "حدّث المضيفين لترتيب مساحات العمل",
+        switchedToManual: "الترتيب يدوي الآن",
       },
       grouping: {
         label: "التجميع",

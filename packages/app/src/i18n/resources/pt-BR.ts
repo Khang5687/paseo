@@ -1430,6 +1430,7 @@ export const ptBR: TranslationResources = {
         lastPrompt: "Último prompt",
         urgent: "Urgentes primeiro",
         updateHost: "Atualize os hosts para ordenar os espaços de trabalho",
+        switchedToManual: "Agora ordenado à mão",
       },
       grouping: {
         label: "Agrupamento",

@@ -1394,6 +1394,7 @@ export const zhCN: TranslationResources = {
         lastPrompt: "最近提示词",
         urgent: "紧急优先",
         updateHost: "请更新主机以排序工作区",
+        switchedToManual: "已改为手动排序",
       },
       grouping: {
         label: "分组",

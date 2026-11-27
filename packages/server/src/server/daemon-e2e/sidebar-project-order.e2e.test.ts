@@ -77,3 +77,68 @@ test("the newest project order wins and reaches every watching device, across re
     updatedAt: 200,
   });
 });
+
+test("each project's workspace order and the sort keep their own newest stamp", async () => {
+  const paseoHomeRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-workspace-order-"));
+  homes.add(paseoHomeRoot);
+  const first = await createTestPaseoDaemon({ paseoHomeRoot, cleanup: false });
+  daemons.add(first);
+  homes.add(first.staticDir);
+  const phone = await connect(first);
+  const mac = await connect(first);
+  expect(phone.getLastServerInfoMessage()?.features?.sidebarWorkspaceOrder).toBe(true);
+
+  const watching = mac.observeSidebarWorkspaceOrder();
+  const initial = await watching.ready;
+  expect(initial.projects).toEqual({});
+  expect(initial.sort).toBeUndefined();
+
+  const update = new Promise<unknown>((resolve) => {
+    const stop = watching.subscribe({
+      snapshot: () => undefined,
+      update: (message) => {
+        if (message.type !== "sidebar.workspace_order.update") return;
+        stop();
+        resolve({ projects: message.payload.projects, sort: message.payload.sort });
+      },
+    });
+  });
+  await phone.setSidebarWorkspaceOrder({
+    projects: { alpha: { order: ["h:2", "h:1"], updatedAt: 200 } },
+    sort: { value: "manual", updatedAt: 200 },
+  });
+  await expect(update).resolves.toEqual({
+    projects: { alpha: { order: ["h:2", "h:1"], updatedAt: 200 } },
+    sort: { value: "manual", updatedAt: 200 },
+  });
+
+  // The Mac slept through that: its older alpha order and sort lose, its beta reorder is kept.
+  const merged = await mac.setSidebarWorkspaceOrder({
+    projects: {
+      alpha: { order: ["h:1", "h:2"], updatedAt: 100 },
+      beta: { order: ["h:3", "h:4"], updatedAt: 150 },
+    },
+    sort: { value: "created", updatedAt: 100 },
+  });
+  expect({ projects: merged.projects, sort: merged.sort }).toEqual({
+    projects: {
+      alpha: { order: ["h:2", "h:1"], updatedAt: 200 },
+      beta: { order: ["h:3", "h:4"], updatedAt: 150 },
+    },
+    sort: { value: "manual", updatedAt: 200 },
+  });
+  await watching.release();
+
+  await first.close();
+  daemons.delete(first);
+  const second = await createTestPaseoDaemon({ paseoHomeRoot });
+  daemons.add(second);
+  const later = await connect(second);
+  const reloaded = await later.observeSidebarWorkspaceOrder().ready;
+  expect({ projects: reloaded.projects, sort: reloaded.sort }).toEqual({
+    projects: merged.projects,
+    sort: merged.sort,
+  });
+  // The project order beside it is untouched.
+  expect((await later.observeSidebarProjectOrder().ready).updatedAt).toBe(0);
+});

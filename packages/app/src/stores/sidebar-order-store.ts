@@ -13,6 +13,11 @@ interface SidebarOrderStoreState {
   projectOrderUpdatedAt: number;
   pinnedWorkspaceOrder: string[];
   workspaceOrderByProject: Record<string, string[]>;
+  /**
+   * Per project, device clock in epoch ms when a person last reordered its workspaces; absent when
+   * nobody has. Hosts keep the newest order of each project (`sidebar-sync/workspace-order.ts`).
+   */
+  workspaceOrderUpdatedAtByProject: Record<string, number>;
   getProjectOrder: () => string[];
   /** A person's reorder: stamps the order so it wins on every host. */
   setProjectOrder: (keys: string[]) => void;
@@ -26,7 +31,19 @@ interface SidebarOrderStoreState {
   getPinnedWorkspaceOrder: () => string[];
   setPinnedWorkspaceOrder: (keys: string[]) => void;
   getWorkspaceOrder: (projectViewKey: string) => string[];
+  /** A person's reorder: stamps the project's order so it wins on every host. */
   setWorkspaceOrder: (projectViewKey: string, keys: string[]) => void;
+  /** Several projects reordered at once, as when a drag switches the sort to Manual. */
+  setWorkspaceOrders: (orders: Record<string, string[]>) => void;
+  /** Adds workspaces the sidebar found without making the order newer than a reorder elsewhere. */
+  extendWorkspaceOrder: (projectViewKey: string, keys: string[]) => void;
+  /**
+   * Takes each project's order from a host when it is newer than this device's. Workspaces only
+   * this device knows keep their places after the host's keys.
+   */
+  applySyncedWorkspaceOrders: (
+    projects: Record<string, { order: string[]; updatedAt: number }>,
+  ) => boolean;
 }
 
 interface SidebarOrderPersistedState {
@@ -34,6 +51,7 @@ interface SidebarOrderPersistedState {
   projectOrderUpdatedAt?: number;
   pinnedWorkspaceOrder?: string[];
   workspaceOrderByProject?: Record<string, string[]>;
+  workspaceOrderUpdatedAtByProject?: Record<string, number>;
   projectOrderByServerId?: Record<string, string[]>;
   workspaceOrderByServerAndProject?: Record<string, string[]>;
 }
@@ -44,6 +62,7 @@ const SidebarOrderPersistedStateSchema = z.strictObject({
   projectOrderUpdatedAt: z.number().optional(),
   pinnedWorkspaceOrder: z.array(z.string()).optional(),
   workspaceOrderByProject: StringArrayRecordSchema.optional(),
+  workspaceOrderUpdatedAtByProject: z.record(z.string(), z.number()).optional(),
   projectOrderByServerId: StringArrayRecordSchema.optional(),
   workspaceOrderByServerAndProject: StringArrayRecordSchema.optional(),
 });
@@ -172,6 +191,7 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
       projectOrderUpdatedAt: 0,
       pinnedWorkspaceOrder: [],
       workspaceOrderByProject: {},
+      workspaceOrderUpdatedAtByProject: {},
       getProjectOrder: () => get().projectOrder,
       setProjectOrder: (keys) => {
         set((state) => ({
@@ -203,6 +223,25 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
         return get().workspaceOrderByProject[projectViewKey] ?? [];
       },
       setWorkspaceOrder: (projectViewKey, keys) => {
+        get().setWorkspaceOrders({ [projectViewKey]: keys });
+      },
+      setWorkspaceOrders: (orders) => {
+        set((state) => {
+          const workspaceOrderByProject = { ...state.workspaceOrderByProject };
+          const workspaceOrderUpdatedAtByProject = { ...state.workspaceOrderUpdatedAtByProject };
+          for (const [projectViewKey, keys] of Object.entries(orders)) {
+            if (!projectViewKey.trim()) continue;
+            workspaceOrderByProject[projectViewKey] = dedupeKeys(keys);
+            // Never older than the order it replaces, even if this device's clock went back.
+            workspaceOrderUpdatedAtByProject[projectViewKey] = Math.max(
+              Date.now(),
+              (state.workspaceOrderUpdatedAtByProject[projectViewKey] ?? 0) + 1,
+            );
+          }
+          return { workspaceOrderByProject, workspaceOrderUpdatedAtByProject };
+        });
+      },
+      extendWorkspaceOrder: (projectViewKey, keys) => {
         if (!projectViewKey.trim()) return;
         set((state) => ({
           workspaceOrderByProject: {
@@ -210,6 +249,29 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
             [projectViewKey]: dedupeKeys(keys),
           },
         }));
+      },
+      applySyncedWorkspaceOrders: (projects) => {
+        const state = get();
+        let workspaceOrderByProject: Record<string, string[]> | null = null;
+        let workspaceOrderUpdatedAtByProject: Record<string, number> | null = null;
+        for (const [projectViewKey, entry] of Object.entries(projects)) {
+          if (!projectViewKey.trim()) continue;
+          if (entry.updatedAt <= (state.workspaceOrderUpdatedAtByProject[projectViewKey] ?? 0)) {
+            continue;
+          }
+          workspaceOrderByProject ??= { ...state.workspaceOrderByProject };
+          workspaceOrderUpdatedAtByProject ??= { ...state.workspaceOrderUpdatedAtByProject };
+          const synced = dedupeKeys(entry.order);
+          const known = new Set(synced);
+          const localOnly = (state.workspaceOrderByProject[projectViewKey] ?? []).filter(
+            (key) => !known.has(key),
+          );
+          workspaceOrderByProject[projectViewKey] = [...synced, ...localOnly];
+          workspaceOrderUpdatedAtByProject[projectViewKey] = entry.updatedAt;
+        }
+        if (!workspaceOrderByProject || !workspaceOrderUpdatedAtByProject) return false;
+        set({ workspaceOrderByProject, workspaceOrderUpdatedAtByProject });
+        return true;
       },
     }),
     {
@@ -220,6 +282,7 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
         projectOrderUpdatedAt: state.projectOrderUpdatedAt,
         pinnedWorkspaceOrder: state.pinnedWorkspaceOrder,
         workspaceOrderByProject: state.workspaceOrderByProject,
+        workspaceOrderUpdatedAtByProject: state.workspaceOrderUpdatedAtByProject,
       }),
       version: 3,
       migrate: migrateSidebarOrderState,
