@@ -23,6 +23,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type PressableStateCallbackType,
+  type ScrollViewProps,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -100,6 +101,14 @@ const DESKTOP_PROVIDER_VIEW_MIN_HEIGHT = 220;
 const DESKTOP_PROVIDER_VIEW_MAX_HEIGHT = 400;
 const DESKTOP_PROVIDER_VIEW_BASE_HEIGHT = 80;
 const DESKTOP_MODEL_ROW_HEIGHT = 40;
+
+// react-native-web applies "on-drag" to every scroll event, programmatic ones included, by blurring
+// the focused input. Arrow keys scroll the list to reveal the active row, so on web the search box
+// lost focus mid-navigation: typing stopped filtering, and the overlay focus trap could move focus
+// to the header's Back button, which then took Enter. Native only fires it on a real drag.
+const LIST_KEYBOARD_DISMISS_MODE: ScrollViewProps["keyboardDismissMode"] = isNative
+  ? "on-drag"
+  : "none";
 
 const ThemedAlertTriangle = withUnistyles(AlertTriangle);
 const ThemedCheck = withUnistyles(Check);
@@ -1437,7 +1446,7 @@ function IndependentModelList({
         viewabilityConfig={reveal.viewabilityConfig}
         style={styles.virtualizedModelList}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        keyboardDismissMode={LIST_KEYBOARD_DISMISS_MODE}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.virtualizedModelListContent}
         nestedScrollEnabled
@@ -1475,7 +1484,7 @@ function IndependentProviderList({
         onScroll={onScroll}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        keyboardDismissMode={LIST_KEYBOARD_DISMISS_MODE}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
         testID="compact-provider-list"
@@ -1791,7 +1800,7 @@ function ModelBrowserBrowseView({
       onScroll={browseReveal.onScroll}
       scrollEventThrottle={16}
       keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
+      keyboardDismissMode={LIST_KEYBOARD_DISMISS_MODE}
       showsVerticalScrollIndicator={false}
       testID="compact-provider-list"
     >
