@@ -3517,6 +3517,8 @@ export class Session {
         return this.handleAgentQueueSetPausedRequest(msg);
       case "agent.question.answer.set.request":
         return this.handleAgentQuestionAnswerSetRequest(msg);
+      case "agent.permission.draft.set.request":
+        return this.handleAgentPermissionDraftSetRequest(msg);
       default:
         return undefined;
     }
@@ -9757,6 +9759,33 @@ export class Session {
     } catch (error) {
       respond(resolved.agentId, false, error instanceof Error ? error.message : String(error));
     }
+  }
+
+  private async handleAgentPermissionDraftSetRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.permission.draft.set.request" }>,
+  ): Promise<void> {
+    const respond = (agentId: string, accepted: boolean, error: string | null) =>
+      this.emit({
+        type: "agent.permission.draft.set.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          permissionId: msg.permissionId,
+          accepted,
+          error,
+        },
+      });
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      respond(msg.agentId, false, resolved.error);
+      return;
+    }
+    const accepted = this.agentManager.setPendingPermissionDraft(
+      resolved.agentId,
+      msg.permissionId,
+      msg.draft,
+    );
+    respond(resolved.agentId, accepted, null);
   }
 
   private async resolveQueueAgent(

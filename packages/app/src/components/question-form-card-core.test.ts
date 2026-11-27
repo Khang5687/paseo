@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
+  NO_ANSWER_YET,
+  draftFromQuestionForm,
+  questionFormFromDraft,
   areQuestionsAnswered,
   buildQuestionFormAnswerLists,
   buildQuestionFormAnswers,
@@ -232,5 +235,66 @@ describe("question form card core", () => {
       { label: "Tabs", description: "One tab per section", preview: "<Tabs>\n  <Tab />\n</Tabs>" },
       { label: "Single page", description: undefined, preview: undefined },
     ]);
+  });
+
+  test("Send what I have answers the open questions with 'No answer yet' and files with paths", () => {
+    const questions = parseQuestionFormQuestions({
+      questions: [
+        {
+          question: "Storage?",
+          header: "Storage",
+          options: [{ label: "SQLite" }],
+          multiSelect: false,
+        },
+        { question: "Port?", header: "Port", options: [{ label: "6767" }], multiSelect: false },
+        { question: "Logo?", header: "Logo", options: [{ label: "Keep" }], multiSelect: false },
+      ],
+    });
+    if (!questions) throw new Error("questions did not parse");
+    const file = {
+      id: "f1",
+      fileName: "logo.png",
+      mimeType: "image/png",
+      size: 3,
+      path: "/up/logo.png",
+    };
+
+    expect(
+      buildQuestionFormAnswers(
+        questions,
+        { 0: new Set([0]) },
+        {},
+        {
+          files: { 2: [file] },
+          fillUnanswered: NO_ANSWER_YET,
+        },
+      ),
+    ).toEqual({
+      Storage: "SQLite",
+      Port: NO_ANSWER_YET,
+      Logo: "Files: /up/logo.png",
+    });
+  });
+
+  test("a box's state survives the trip through a draft", () => {
+    const file = {
+      id: "f1",
+      fileName: "a.txt",
+      mimeType: "text/plain",
+      size: 1,
+      path: "/up/a.txt",
+    };
+    const draft = draftFromQuestionForm({
+      selections: { 0: new Set([2, 0]) },
+      otherTexts: { 1: "Postgres" },
+      files: { 1: [file] },
+      updatedAt: 5,
+    });
+    expect(draft.answers["0"]?.selected).toEqual([0, 2]);
+    expect(questionFormFromDraft(draft)).toEqual({
+      selections: { 0: new Set([0, 2]) },
+      otherTexts: { 1: "Postgres" },
+      files: { 1: [file] },
+    });
   });
 });

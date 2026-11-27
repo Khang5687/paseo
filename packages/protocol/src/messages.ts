@@ -353,6 +353,7 @@ import type {
   AgentMetric,
   AgentModelDefinition,
   AgentMode,
+  AgentPermissionDraft,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentPersistenceHandle,
@@ -610,6 +611,26 @@ export const AgentPermissionResponseSchema: z.ZodType<AgentPermissionResponse> =
     }),
   ]);
 
+const AgentPermissionDraftSchema: z.ZodType<AgentPermissionDraft> = z.object({
+  answers: z.record(
+    z.string(),
+    z.object({
+      selected: z.array(z.number()),
+      text: z.string(),
+      files: z.array(
+        z.object({
+          id: z.string(),
+          fileName: z.string(),
+          mimeType: z.string(),
+          size: z.number(),
+          path: z.string(),
+        }),
+      ),
+    }),
+  ),
+  updatedAt: z.number(),
+});
+
 export const AgentPermissionRequestPayloadSchema: z.ZodType<AgentPermissionRequest, unknown> =
   z.object({
     id: z.string(),
@@ -623,6 +644,8 @@ export const AgentPermissionRequestPayloadSchema: z.ZodType<AgentPermissionReque
     suggestions: z.array(AgentPermissionUpdateSchema).optional(),
     actions: z.array(AgentPermissionActionSchema).optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
+    // COMPAT(questionBoxDrafts): fork; the picks of a half-filled question box.
+    draftAnswers: AgentPermissionDraftSchema.optional(),
   });
 
 const UnknownValueSchema = z.union([
@@ -3458,6 +3481,15 @@ export const AgentQuestionAnswerSetRequestSchema = z.object({
   answer: AgentQuestionAnswerSchema,
 });
 
+// COMPAT(questionBoxDrafts): fork, gated on `features.questionBoxDrafts`.
+export const AgentPermissionDraftSetRequestSchema = z.object({
+  type: z.literal("agent.permission.draft.set.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  permissionId: z.string(),
+  draft: AgentPermissionDraftSchema,
+});
+
 export const AgentQueueUpdateRequestSchema = z.object({
   type: z.literal("agent.queue.update.request"),
   requestId: z.string(),
@@ -4597,6 +4629,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueRemoveRequestSchema,
   AgentQueueUpdateRequestSchema,
   AgentQuestionAnswerSetRequestSchema,
+  AgentPermissionDraftSetRequestSchema,
   AgentQueueSendNowRequestSchema,
   AgentQueueMoveRequestSchema,
   AgentQueueClearRequestSchema,
@@ -5101,6 +5134,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(questionAnswers): fork, added with the questions bar. Daemon keeps half-written
         // answers to open questions (agent.question.answer.set). Without it they stay on the device.
         questionAnswers: z.boolean().optional(),
+        // COMPAT(questionBoxDrafts): fork. Daemon keeps half-filled question boxes on the pending
+        // permission (agent.permission.draft.set). Without it the picks stay on the device.
+        questionBoxDrafts: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
@@ -6583,6 +6619,18 @@ export const AgentQuestionAnswerSetResponseSchema = z.object({
     agentId: z.string(),
     questionId: z.string(),
     // False when the question is no longer open or a newer answer already won.
+    accepted: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentPermissionDraftSetResponseSchema = z.object({
+  type: z.literal("agent.permission.draft.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    permissionId: z.string(),
+    // False when the box is no longer pending or a newer draft already won.
     accepted: z.boolean(),
     error: z.string().nullable(),
   }),
@@ -9030,6 +9078,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueRemoveResponseSchema,
   AgentQueueUpdateResponseSchema,
   AgentQuestionAnswerSetResponseSchema,
+  AgentPermissionDraftSetResponseSchema,
   AgentQueueSendNowResponseSchema,
   AgentQueueMoveResponseSchema,
   AgentQueueClearResponseSchema,
@@ -9639,6 +9688,7 @@ export type AgentQueueAddRequest = z.infer<typeof AgentQueueAddRequestSchema>;
 export type AgentQueueRemoveRequest = z.infer<typeof AgentQueueRemoveRequestSchema>;
 export type AgentQueueUpdateRequest = z.infer<typeof AgentQueueUpdateRequestSchema>;
 export type AgentQuestionAnswerSetRequest = z.infer<typeof AgentQuestionAnswerSetRequestSchema>;
+export type AgentPermissionDraftSetRequest = z.infer<typeof AgentPermissionDraftSetRequestSchema>;
 export type AgentQueueSendNowRequest = z.infer<typeof AgentQueueSendNowRequestSchema>;
 export type AgentQueueMoveRequest = z.infer<typeof AgentQueueMoveRequestSchema>;
 export type AgentQueueClearRequest = z.infer<typeof AgentQueueClearRequestSchema>;

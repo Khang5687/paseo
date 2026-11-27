@@ -495,6 +495,7 @@ export const ptBR: TranslationResources = {
       next: "Próximo",
       answerPlaceholder: "Digite sua resposta...",
       otherPlaceholder: "Outro...",
+      sendWhatIHave: "Enviar o que tenho",
     },
     backgroundWork: {
       heartbeat: "Batimento",

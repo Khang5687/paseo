@@ -1,11 +1,12 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { within } from "@testing-library/dom";
-import type { AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
+import type { AgentPermissionDraft, AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n as testI18n } from "@/i18n/i18next";
 import type { PendingPermission } from "@/types/shared";
 import { QuestionFormCard } from "./question-form-card";
+import { NO_ANSWER_YET } from "./question-form-card-core";
 
 // Load translations so controls expose their real accessible names.
 void testI18n;
@@ -23,6 +24,13 @@ beforeEach(() => vi.stubGlobal("React", React));
 // test stubs. These tests cover answering, so the question renders as its raw text.
 vi.mock("@/components/markdown/renderer", () => ({
   MarkdownRenderer: ({ text }: { text: string }) => text,
+}));
+
+// The paperclip pulls in the composer's upload stack, which does not load under the stubs
+// either. These cards get no client, so it never renders.
+vi.mock("@/questions/answer-files", () => ({
+  AttachFilesButton: () => null,
+  AnswerFileList: () => null,
 }));
 
 /**
@@ -48,6 +56,7 @@ afterEach(() => {
 function buildPermission(
   question: Record<string, unknown>,
   following: Record<string, unknown>[] = [],
+  draftAnswers?: AgentPermissionDraft,
 ): PendingPermission {
   return {
     key: "perm-1",
@@ -58,25 +67,40 @@ function buildPermission(
       name: "AskUserQuestion",
       kind: "question",
       input: { questions: [question, ...following] },
+      draftAnswers,
     },
   };
 }
 
-function mountCard(question: Record<string, unknown>, following: Record<string, unknown>[] = []) {
+interface CardOptions {
+  draftAnswers?: AgentPermissionDraft;
+  onDraftChange?: (draft: AgentPermissionDraft) => void;
+}
+
+function mountCard(
+  question: Record<string, unknown>,
+  following: Record<string, unknown>[] = [],
+  options: CardOptions = {},
+) {
   const onRespond = vi.fn<(response: AgentPermissionResponse) => void>();
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  act(() =>
-    root.render(
-      <QuestionFormCard
-        permission={buildPermission(question, following)}
-        onRespond={onRespond}
-        isResponding={false}
-        responseError={null}
-      />,
-    ),
-  );
+  const render = ({ draftAnswers, onDraftChange }: CardOptions) => {
+    const permission = buildPermission(question, following, draftAnswers);
+    act(() =>
+      root.render(
+        <QuestionFormCard
+          permission={permission}
+          onRespond={onRespond}
+          isResponding={false}
+          responseError={null}
+          onDraftChange={onDraftChange}
+        />,
+      ),
+    );
+  };
+  render(options);
   mounted.push({ root, container });
 
   const view = within(container);
@@ -107,7 +131,17 @@ function mountCard(question: Record<string, unknown>, following: Record<string, 
     };
   };
   const submittedAnswers = () => submittedInput().answers;
-  return { view, onRespond, check, type, otherInput, submit, submittedAnswers, submittedInput };
+  return {
+    view,
+    onRespond,
+    check,
+    type,
+    otherInput,
+    submit,
+    submittedAnswers,
+    submittedInput,
+    rerender: render,
+  };
 }
 
 const multiSelectQuestion = {
@@ -251,5 +285,49 @@ describe("QuestionFormCard explicit navigation", () => {
       "true",
     );
     expect(card.onRespond).not.toHaveBeenCalled();
+  });
+});
+
+describe("QuestionFormCard half-filled boxes", () => {
+  const codexDraft = (updatedAt: number, selected: number[]): AgentPermissionDraft => ({
+    answers: { "0": { selected, text: "", files: [] } },
+    updatedAt,
+  });
+
+  it("sends what it has, with 'No answer yet' for the open questions", () => {
+    const card = mountCard(singleSelectQuestion, [multiSelectQuestion]);
+    expect(card.view.queryByRole("button", { name: "Send what I have" })).toBeNull();
+    card.check("Codex");
+    act(() => card.view.getByRole("button", { name: "Send what I have" }).click());
+    expect(card.submittedAnswers()).toEqual({ Provider: "Codex", Fruits: NO_ANSWER_YET });
+  });
+
+  it("opens with the host's picks, saves new picks, and takes a newer copy from another device", () => {
+    vi.useFakeTimers();
+    try {
+      const onDraftChange = vi.fn<(draft: AgentPermissionDraft) => void>();
+      const card = mountCard(singleSelectQuestion, [multiSelectQuestion], {
+        draftAnswers: codexDraft(10, [1]),
+        onDraftChange,
+      });
+      const checked = (label: string) =>
+        card.view.getByRole("radio", { name: label }).getAttribute("aria-checked");
+      expect(checked("Codex")).toBe("true");
+      expect(onDraftChange).not.toHaveBeenCalled();
+
+      card.check("Claude Code");
+      act(() => vi.advanceTimersByTime(500));
+      expect(onDraftChange).toHaveBeenCalledTimes(1);
+      expect(onDraftChange.mock.calls[0]?.[0].answers["0"]?.selected).toEqual([0]);
+
+      const later = (onDraftChange.mock.calls[0]?.[0].updatedAt ?? 0) + 1;
+      card.rerender({ draftAnswers: codexDraft(later, [1]), onDraftChange });
+      expect(checked("Codex")).toBe("true");
+      // A copy received from the host is not sent back.
+      act(() => vi.advanceTimersByTime(500));
+      expect(onDraftChange).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

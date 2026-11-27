@@ -175,6 +175,7 @@ import type {
 } from "@getpaseo/protocol/messages";
 import type {
   AgentOptionControl,
+  AgentPermissionDraft,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentPersistenceHandle,
@@ -3015,6 +3016,27 @@ export class DaemonClient {
           agentId: input.agentId,
           questionId: input.questionId,
           answer: input.answer,
+        },
+      });
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    return response.accepted;
+  }
+
+  /** Saves the picks of a half-filled question box. Needs `features.questionBoxDrafts`. */
+  async setAgentPermissionDraft(
+    input: { agentId: string; permissionId: string; draft: AgentPermissionDraft },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.permission.draft.set.response">({
+        requestId,
+        message: {
+          type: "agent.permission.draft.set.request",
+          agentId: input.agentId,
+          permissionId: input.permissionId,
+          draft: input.draft,
         },
       });
     if (response.error) {
