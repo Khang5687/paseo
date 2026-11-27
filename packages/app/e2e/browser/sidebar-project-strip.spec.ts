@@ -158,6 +158,79 @@ test.describe("Sidebar project strip", () => {
         await alpha.cleanup();
       }
     });
+
+    test("opens wide with names, drags there, remembers it, and opens from Reorder projects", async ({
+      page,
+    }) => {
+      const [alpha, beta] = await seedTwoProjects();
+      try {
+        await gotoAppShell(page);
+        await expect(workspaceRow(page, alpha)).toBeVisible({ timeout: 30_000 });
+        await expect(workspaceRow(page, beta)).toBeVisible({ timeout: 30_000 });
+        const rail = page.getByTestId("sidebar-project-rail");
+        const toggle = page.getByTestId("sidebar-project-rail-toggle");
+
+        // Closed, the rail is icons only.
+        await expect(railItem(page, alpha)).not.toContainText(alpha.projectDisplayName);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        await expect(toggle).toContainText("Collapse");
+        await expect(railItem(page, alpha)).toContainText(alpha.projectDisplayName);
+        await expect(railItem(page, beta)).toContainText(beta.projectDisplayName);
+        const openBox = await rail.boundingBox();
+        expect(openBox?.width ?? 0).toBeGreaterThan(150);
+        await page.mouse.move(900, 400);
+        await screenshot(page, "desktop-rail-open.png");
+
+        // Drag the later of the two above the earlier; the rail stays open.
+        const prefix = "sidebar-project-rail-item-";
+        const before = await stripOrder(page, prefix, [alpha, beta]);
+        const [first, second] =
+          before[0] === projectEquivalenceViewKey(alpha.projectKey) ? [alpha, beta] : [beta, alpha];
+        const fromBox = await railItem(page, second).boundingBox();
+        const toBox = await railItem(page, first).boundingBox();
+        if (!fromBox || !toBox) throw new Error("rail items have no layout");
+        const x = fromBox.x + fromBox.width / 2;
+        await page.mouse.move(x, fromBox.y + fromBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(x, toBox.y + 4, { steps: 12 });
+        await page.mouse.move(x, toBox.y + 2, { steps: 4 });
+        await page.mouse.up();
+        await expectStripOrder(page, prefix, [alpha, beta], before.toReversed());
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+        // The app remembers the rail open.
+        await page.reload();
+        await expect(railItem(page, alpha)).toContainText(alpha.projectDisplayName, {
+          timeout: 30_000,
+        });
+
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expect(railItem(page, alpha)).not.toContainText(alpha.projectDisplayName);
+        const closedBox = await rail.boundingBox();
+        expect(closedBox?.width ?? 0).toBeLessThan(60);
+        await page.mouse.move(900, 400);
+        await screenshot(page, "desktop-rail-closed.png");
+
+        // The closed rail's menu: Move to top, and Reorder projects… opens the rail.
+        const lastKey = projectEquivalenceViewKey(first.projectKey);
+        await railItem(page, first).click({ button: "right" });
+        await expect(page.getByTestId(`sidebar-project-rail-menu-${lastKey}`)).toBeVisible();
+        await expect(page.getByTestId("sidebar-project-rail-reorder")).toBeInViewport();
+        await page.waitForTimeout(300);
+        await screenshot(page, "desktop-rail-menu.png");
+        await page.getByTestId("sidebar-project-rail-move-top").click();
+        await expectStripIndex(page, prefix, lastKey, 0);
+        await railItem(page, second).click({ button: "right" });
+        await page.getByTestId("sidebar-project-rail-reorder").click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        await expect(railItem(page, second)).toContainText(second.projectDisplayName);
+      } finally {
+        await beta.cleanup();
+        await alpha.cleanup();
+      }
+    });
   });
 
   test.describe("compact chip row", () => {
