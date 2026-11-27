@@ -44,6 +44,7 @@ import {
   CheckoutRenameBranchResponseSchema,
   parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
+  SetTerminalOwnerResponseSchema,
   RestartRequestedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
@@ -728,6 +729,7 @@ type AgentPermissionResolvedPayload = AgentPermissionResolvedMessage["payload"];
 type ListTerminalsPayload = ListTerminalsResponse["payload"];
 type CreateTerminalPayload = CreateTerminalResponse["payload"];
 export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>["payload"];
+export type SetTerminalOwnerResult = z.infer<typeof SetTerminalOwnerResponseSchema>["payload"];
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
@@ -1094,6 +1096,12 @@ export interface RenameBranchInput {
 export interface RenameTerminalInput {
   terminalId: string;
   title: string;
+  requestId?: string;
+}
+export interface SetTerminalOwnerInput {
+  terminalId: string;
+  /** The chat whose drawer holds the terminal; null makes it a workspace tab terminal. */
+  ownerAgentId: string | null;
   requestId?: string;
 }
 type OpenProjectPayload = OpenProjectResponseMessage["payload"];
@@ -8076,6 +8084,8 @@ export class DaemonClient {
       args?: string[];
       workspaceId?: string;
       size?: { rows: number; cols: number };
+      /** Needs `features.chatTerminals`; older hosts ignore it. */
+      ownerAgentId?: string;
     },
   ): Promise<CreateTerminalPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
@@ -8088,6 +8098,7 @@ export class DaemonClient {
       args: options?.args,
       ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       ...(options?.size !== undefined ? { size: options.size } : {}),
+      ...(options?.ownerAgentId !== undefined ? { ownerAgentId: options.ownerAgentId } : {}),
       requestId: resolvedRequestId,
     });
     return this.sendCorrelatedRequest({
@@ -8107,6 +8118,18 @@ export class DaemonClient {
         title: input.title,
       },
       responseType: "terminal.rename.response",
+    });
+  }
+
+  async setTerminalOwner(input: SetTerminalOwnerInput): Promise<SetTerminalOwnerResult> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "terminal.owner.set.request",
+        terminalId: input.terminalId,
+        ownerAgentId: input.ownerAgentId,
+      },
+      responseType: "terminal.owner.set.response",
     });
   }
 

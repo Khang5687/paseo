@@ -380,6 +380,27 @@ export function createWorkerTerminalManager(
           terminals: listTerminalItemsForCwd(record.info.cwd),
         });
       },
+      getOwnerAgentId(): string | null {
+        return record.state.ownerAgentId ?? null;
+      },
+      setOwnerAgentId(ownerAgentId: string | null): void {
+        const nextState = { ...record.state };
+        if (ownerAgentId) {
+          nextState.ownerAgentId = ownerAgentId;
+        } else {
+          delete nextState.ownerAgentId;
+        }
+        record.state = nextState;
+        sendBestEffortRequest({
+          type: "setTerminalOwner",
+          terminalId: record.info.id,
+          ownerAgentId,
+        });
+        emitTerminalsChanged({
+          cwd: record.info.cwd,
+          terminals: listTerminalItemsForCwd(record.info.cwd),
+        });
+      },
       getExitInfo(): TerminalExitInfo | null {
         return record.exitInfo;
       },
@@ -900,6 +921,15 @@ export function createWorkerTerminalManager(
         return false;
       }
       session.setTitle(title);
+      return true;
+    },
+
+    setTerminalOwner(id: string, ownerAgentId: string | null): boolean {
+      const session = recordsById.get(id)?.session;
+      if (!session) {
+        return false;
+      }
+      session.setOwnerAgentId(ownerAgentId);
       return true;
     },
 

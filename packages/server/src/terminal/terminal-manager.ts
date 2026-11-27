@@ -95,6 +95,8 @@ export interface TerminalManager {
     activityUrl?: string | null;
     baseEnv?: Record<string, string>;
     paseoCliPath?: string | null;
+    /** The chat whose terminal drawer holds the terminal. */
+    ownerAgentId?: string;
   }): Promise<TerminalSession>;
   registerCwdEnv(options: { cwd: string; env: Record<string, string> }): void;
   validateTerminalActivityToken(terminalId: string, token: string): "valid" | "unknown" | "invalid";
@@ -105,6 +107,8 @@ export interface TerminalManager {
     sink: TerminalReplaySink,
   ): Promise<TerminalReplayMetadata | null>;
   setTerminalTitle(id: string, title: string): boolean;
+  /** Moves a terminal into a chat's drawer, or out of it with null. False when it is gone. */
+  setTerminalOwner(id: string, ownerAgentId: string | null): boolean;
   setTerminalActivity(id: string, state: TerminalActivityState): Promise<boolean>;
   clearTerminalAttention(id: string): Promise<boolean>;
   killTerminal(id: string): void;
@@ -380,6 +384,7 @@ export function createTerminalManager(
       activityUrl?: string | null;
       baseEnv?: Record<string, string>;
       paseoCliPath?: string | null;
+      ownerAgentId?: string;
     }): Promise<LocalTerminalSession> {
       assertAbsolutePath(options.cwd);
 
@@ -416,6 +421,7 @@ export function createTerminalManager(
             ...(mergedEnv ? { env: mergedEnv } : {}),
             ...(options.baseEnv ? { baseEnv: options.baseEnv } : {}),
             ...(options.paseoCliPath === undefined ? {} : { paseoCliPath: options.paseoCliPath }),
+            ownerAgentId: options.ownerAgentId,
             activityEnv,
           }),
         );
@@ -471,6 +477,16 @@ export function createTerminalManager(
       }
 
       session.setTitle(title);
+      return true;
+    },
+
+    setTerminalOwner(id: string, ownerAgentId: string | null): boolean {
+      const session = terminalsById.get(id);
+      if (!session) {
+        return false;
+      }
+
+      session.setOwnerAgentId(ownerAgentId);
       return true;
     },
 

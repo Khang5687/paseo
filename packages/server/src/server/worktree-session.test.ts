@@ -227,6 +227,8 @@ function createTerminalManagerStub(options?: {
             killAndWait: async () => {},
             getSize: () => ({ rows: 1, cols: 1 }),
             getTitle: () => undefined,
+            getOwnerAgentId: () => null,
+            setOwnerAgentId: () => {},
             getActivity: () => null,
             setActivity: () => {},
             getExitInfo: () => null,

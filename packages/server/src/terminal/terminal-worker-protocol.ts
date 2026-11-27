@@ -7,6 +7,8 @@ export interface WorkerTerminalState {
   cols: number;
   hasOutput: boolean;
   title?: string;
+  /** v7; a v6 draining worker omits it, and the daemon keeps its owner in memory only. */
+  ownerAgentId?: string;
 }
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 import type { CaptureTerminalLinesResult } from "./terminal-capture.js";
@@ -38,6 +40,7 @@ export interface WorkerCreateTerminalOptions {
   // letting the worker reuse whatever it inherited at launch.
   baseEnv?: Record<string, string>;
   paseoCliPath?: string | null;
+  ownerAgentId?: string;
 }
 
 // Bumped when a request, response or event changes shape. The frozen envelope never changes
@@ -45,7 +48,7 @@ export interface WorkerCreateTerminalOptions {
 // `shutdown`. A daemon drives a worker of its own version, drains one a version older (no new
 // terminals; it exits after its last terminal), shuts down anything older, and leaves a newer
 // worker running untouched. See docs/terminal-worker.md.
-export const TERMINAL_WORKER_PROTOCOL_VERSION = 6;
+export const TERMINAL_WORKER_PROTOCOL_VERSION = 7;
 
 // Test-only: the protocol version a worker reports, so tests can stand up older and newer
 // workers from one build.
@@ -101,6 +104,13 @@ export type TerminalWorkerRequest =
       requestId: string;
       cwd: string;
       env: Record<string, string>;
+    }
+  | {
+      // v7. A v6 worker never answers it, so the daemon sends it best-effort.
+      type: "setTerminalOwner";
+      requestId: string;
+      terminalId: string;
+      ownerAgentId: string | null;
     }
   | {
       type: "setActivity";

@@ -73,6 +73,8 @@ function createStubTerminalManager(
         onTitleChange: () => () => {},
         getSize: () => ({ rows: 1, cols: 1 }),
         getTitle: () => undefined,
+        getOwnerAgentId: () => null,
+        setOwnerAgentId: () => {},
         getExitInfo: () => null,
         killAndWait: async () => {},
       };

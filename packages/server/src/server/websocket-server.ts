@@ -2260,6 +2260,8 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(sidebarProjectOrder): added after v0.17.6, remove gate after 2027-12-01.
         sidebarProjectOrder: true,
         terminalCollection: true,
+        // COMPAT(chatTerminals): added after v0.17.5, remove gate after 2027-11-27.
+        chatTerminals: true,
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
         workspaceSetupObservation: true,
