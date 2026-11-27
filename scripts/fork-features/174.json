@@ -1,0 +1,5 @@
+{
+  "pr": 174,
+  "title": "feat(app): run Run cards in the chat's terminal drawer",
+  "tests": ["packages/app/src/code-run/target.test.ts"]
+}
