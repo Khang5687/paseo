@@ -9,6 +9,7 @@ import type {
   KillTerminalRequest,
   ListTerminalsRequest,
   RenameTerminalRequest,
+  SetTerminalOwnerRequest,
   SessionInboundMessage,
   SessionOutboundMessage,
   SubscribeTerminalRequest,
@@ -119,7 +120,8 @@ type TerminalDispatchableMessage =
   | TerminalInput
   | KillTerminalRequest
   | CaptureTerminalRequest
-  | RenameTerminalRequest;
+  | RenameTerminalRequest
+  | SetTerminalOwnerRequest;
 
 const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> = new Set([
   "subscribe_terminals_request",
@@ -132,6 +134,7 @@ const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> =
   "kill_terminal_request",
   "capture_terminal_request",
   "terminal.rename.request",
+  "terminal.owner.set.request",
 ]);
 
 export class TerminalSessionController {
@@ -234,6 +237,8 @@ export class TerminalSessionController {
         return this.handleCaptureTerminalRequest(msg);
       case "terminal.rename.request":
         return this.handleRenameTerminalRequest(msg);
+      case "terminal.owner.set.request":
+        return this.handleSetTerminalOwnerRequest(msg);
       default:
         return undefined;
     }
@@ -315,11 +320,13 @@ export class TerminalSessionController {
   private toTerminalInfo(terminal: TerminalSession) {
     const title = terminal.getTitle();
     const activity = terminal.getActivity();
+    const ownerAgentId = terminal.getOwnerAgentId();
     return {
       id: terminal.id,
       name: terminal.name,
       workspaceId: terminal.workspaceId,
       ...(title ? { title } : {}),
+      ...(ownerAgentId ? { ownerAgentId } : {}),
       activity,
       createdAt: terminal.createdAt ?? null,
       isScript: this.options.isScriptTerminal?.(terminal) ?? false,
@@ -623,7 +630,9 @@ export class TerminalSessionController {
         args: msg.args,
         rows: msg.size?.rows,
         cols: msg.size?.cols,
+        ...(msg.ownerAgentId ? { ownerAgentId: msg.ownerAgentId } : {}),
       });
+      const ownerAgentId = session.getOwnerAgentId();
       this.emit({
         type: "create_terminal_response",
         payload: {
@@ -633,6 +642,7 @@ export class TerminalSessionController {
             cwd: session.cwd,
             workspaceId: session.workspaceId,
             ...(session.getTitle() ? { title: session.getTitle() } : {}),
+            ...(ownerAgentId ? { ownerAgentId } : {}),
             activity: session.getActivity(),
           },
           error: null,
@@ -705,6 +715,23 @@ export class TerminalSessionController {
 
     const renamed = this.terminalManager.setTerminalTitle(msg.terminalId, title);
     respond(renamed, renamed ? null : "Terminal not found");
+  }
+
+  private async handleSetTerminalOwnerRequest(msg: SetTerminalOwnerRequest): Promise<void> {
+    const respond = (success: boolean, error: string | null): void => {
+      this.emit({
+        type: "terminal.owner.set.response",
+        payload: { requestId: msg.requestId, success, error },
+      });
+    };
+
+    if (!this.terminalManager) {
+      respond(false, "Terminal manager not available");
+      return;
+    }
+    const ownerAgentId = msg.ownerAgentId?.trim() || null;
+    const updated = this.terminalManager.setTerminalOwner(msg.terminalId, ownerAgentId);
+    respond(updated, updated ? null : "Terminal not found");
   }
 
   private async handleSubscribeTerminalRequest(

@@ -137,6 +137,7 @@ import { resolveWorkspaceIdForPath } from "./resolve-workspace-id-for-path.js";
 import {
   archiveByScope,
   archivePersistedWorkspaceRecord,
+  killTerminalsForAgent,
   killTerminalsForWorkspace,
   type ActiveWorkspaceRef,
 } from "./workspace-archive-service.js";
@@ -1510,6 +1511,7 @@ export async function createPaseoDaemon(
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to complete schedules for archived agent");
     }
+    await killTerminalsForAgent({ terminalManager, sessionLogger: logger }, agentId);
   });
   logger.info({ elapsed: elapsed() }, "Schedule service initialized");
   logger.info({ elapsed: elapsed() }, "Loading persisted agent registry");

@@ -225,6 +225,10 @@ export function createTerminalWorkerPool(
       return ownerOf(id)?.setTerminalTitle(id, title) ?? false;
     },
 
+    setTerminalOwner(id, ownerAgentId) {
+      return ownerOf(id)?.setTerminalOwner(id, ownerAgentId) ?? false;
+    },
+
     async setTerminalActivity(id, state: TerminalActivityState) {
       return (await ownerOf(id)?.setTerminalActivity(id, state)) ?? false;
     },

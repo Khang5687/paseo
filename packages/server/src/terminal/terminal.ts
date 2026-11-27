@@ -114,6 +114,9 @@ export interface TerminalSession {
   setActivity(state: TerminalActivityState): void;
   clearActivityAttention(): boolean;
   setTitle(title: string): void;
+  /** The chat whose terminal drawer holds this terminal; null for a workspace tab terminal. */
+  getOwnerAgentId(): string | null;
+  setOwnerAgentId(ownerAgentId: string | null): void;
   getExitInfo(): TerminalExitInfo | null;
   kill(): void;
   killAndWait(options?: { gracefulTimeoutMs?: number; forceTimeoutMs?: number }): Promise<void>;
@@ -159,6 +162,7 @@ export interface CreateTerminalOptions {
   title?: string;
   command?: string;
   args?: string[];
+  ownerAgentId?: string;
   // Environment the terminal starts from instead of this process's own. A detached terminal
   // worker outlives the daemon that launched it, so each create carries the controlling
   // daemon's environment and its resolved Paseo CLI path.
@@ -1205,6 +1209,8 @@ export async function createTerminal(
     return title;
   }
 
+  let ownerAgentId = options.ownerAgentId ?? null;
+
   function getActivity(): TerminalActivity | null {
     return toTerminalActivity(activityTracker.getSnapshot());
   }
@@ -1334,6 +1340,10 @@ export async function createTerminal(
     setActivity,
     clearActivityAttention,
     setTitle,
+    getOwnerAgentId: () => ownerAgentId,
+    setOwnerAgentId: (nextOwnerAgentId) => {
+      ownerAgentId = nextOwnerAgentId;
+    },
     getExitInfo,
     kill,
     killAndWait,

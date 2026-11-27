@@ -3350,6 +3350,9 @@ export const CreateTerminalRequestSchema = z.object({
   workspaceId: z.string().optional(),
   name: z.string().optional(),
   agentId: z.string().optional(),
+  // The chat whose terminal drawer holds this terminal. Gated on `features.chatTerminals`;
+  // an older daemon ignores it and the terminal opens as a workspace tab.
+  ownerAgentId: z.string().optional(),
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
   // Initial PTY size. Added in v0.1.107; the app no longer sends it (the estimate cache that fed
@@ -3369,6 +3372,14 @@ export const RenameTerminalRequestSchema = z.object({
   type: z.literal("terminal.rename.request"),
   terminalId: z.string(),
   title: z.string(),
+  requestId: z.string(),
+});
+
+// Moves a terminal into a chat's drawer, or out of it into a workspace tab (`ownerAgentId: null`).
+export const SetTerminalOwnerRequestSchema = z.object({
+  type: z.literal("terminal.owner.set.request"),
+  terminalId: z.string(),
+  ownerAgentId: z.string().nullable(),
   requestId: z.string(),
 });
 
@@ -3799,6 +3810,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   UnsubscribeTerminalsRequestSchema,
   CreateTerminalRequestSchema,
   RenameTerminalRequestSchema,
+  SetTerminalOwnerRequestSchema,
   StartWorkspaceScriptRequestSchema,
   WorkspaceScriptListRequestSchema,
   WorkspaceScriptStartRequestSchema,
@@ -4036,6 +4048,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
+        // COMPAT(chatTerminals): added after v0.17.5, remove gate after 2027-11-27.
+        // Hosts with it keep `ownerAgentId` on terminals and answer `terminal.owner.set`.
+        chatTerminals: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
         workspaceBaseBranch: z.boolean().optional(),
         // COMPAT(checkoutWorktreeList): added after v0.16.2, remove gate after 2027-11-19.
@@ -7236,6 +7251,7 @@ const TerminalInfoSchema = z.object({
   cwd: z.string(),
   workspaceId: z.string().optional(),
   title: z.string().optional(),
+  ownerAgentId: z.string().optional(),
   activity: TerminalActivitySchema.nullable().optional(),
 });
 
@@ -7310,6 +7326,15 @@ export const CreateTerminalResponseSchema = z.object({
 
 export const RenameTerminalResponseSchema = z.object({
   type: z.literal("terminal.rename.response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const SetTerminalOwnerResponseSchema = z.object({
+  type: z.literal("terminal.owner.set.response"),
   payload: z.object({
     requestId: z.string(),
     success: z.boolean(),
@@ -8003,6 +8028,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   TerminalsChangedSchema,
   CreateTerminalResponseSchema,
   RenameTerminalResponseSchema,
+  SetTerminalOwnerResponseSchema,
   SubscribeTerminalResponseSchema,
   KillTerminalResponseSchema,
   CaptureTerminalResponseSchema,
@@ -8510,6 +8536,8 @@ export type CreateTerminalRequest = z.infer<typeof CreateTerminalRequestSchema>;
 export type CreateTerminalResponse = z.infer<typeof CreateTerminalResponseSchema>;
 export type RenameTerminalRequest = z.infer<typeof RenameTerminalRequestSchema>;
 export type RenameTerminalResponse = z.infer<typeof RenameTerminalResponseSchema>;
+export type SetTerminalOwnerRequest = z.infer<typeof SetTerminalOwnerRequestSchema>;
+export type SetTerminalOwnerResponse = z.infer<typeof SetTerminalOwnerResponseSchema>;
 export type StartWorkspaceScriptRequest = z.infer<typeof StartWorkspaceScriptRequestSchema>;
 export type StartWorkspaceScriptResponse = z.infer<
   typeof StartWorkspaceScriptResponseMessageSchema

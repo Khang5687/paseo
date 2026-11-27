@@ -263,11 +263,13 @@ function runWorker(argv: string[]): void {
   }
 
   function terminalMetadata(session: LocalTerminalSession) {
+    const ownerAgentId = session.getOwnerAgentId();
     return {
       ...session.getSize(),
       createdAt: session.createdAt,
       hasOutput: session.hasOutput(),
       title: session.getTitle(),
+      ...(ownerAgentId ? { ownerAgentId } : {}),
     };
   }
 
@@ -551,6 +553,12 @@ function runWorker(argv: string[]): void {
 
       case "clearAttention": {
         await manager.clearTerminalAttention(message.terminalId);
+        sendToController({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "setTerminalOwner": {
+        manager.setTerminalOwner(message.terminalId, message.ownerAgentId);
         sendToController({ type: "response", requestId: message.requestId, ok: true });
         return;
       }
