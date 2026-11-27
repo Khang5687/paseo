@@ -151,6 +151,7 @@ export const ptBR: TranslationResources = {
       terminalAccessibilityLabel: "Terminal prompt",
       fullscreen: "Tela cheia",
       exitFullscreen: "Sair da tela cheia",
+      fullscreenTitle: "Mensagem",
       resizeInput: "Redimensionar a caixa de mensagem",
       focusHint: "{{shortcut}} para focar",
       addAttachment: "Adicionar anexo",
