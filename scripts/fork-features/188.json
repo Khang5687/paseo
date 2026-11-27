@@ -1,0 +1,18 @@
+{
+  "pr": 188,
+  "title": "chore(omp): remove the Claude account routing feature",
+  "tests": [
+    "packages/protocol/src/messages.test.ts",
+    "packages/protocol/src/messages.wire-compat.test.ts",
+    "packages/client/src/daemon-client.test.ts",
+    "packages/client/src/index.test.ts",
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts",
+    "packages/server/src/server/agent/providers/omp/runtime.test.ts",
+    "packages/server/src/server/authorization/index.test.ts",
+    "packages/server/src/server/plugins/usage-sources/index.test.ts",
+    "packages/server/src/server/websocket-server.relay-reconnect.test.ts",
+    "packages/app/src/i18n/resources.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/settings-host-page.spec.ts"]
+}
