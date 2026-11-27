@@ -30,6 +30,8 @@ const OfflineFileSchema = z.object({
    * Missing on copies saved before pinning existed.
    */
   pinned: z.boolean().optional(),
+  /** Another device sent it here (Send to). Missing on copies saved before this was recorded. */
+  sent: z.boolean().optional(),
   attachment: z.looseObject({
     id: z.string(),
     mimeType: z.string(),
@@ -168,6 +170,8 @@ interface SaveOfflineFileInput {
   limits: OfflineFileLimits;
   /** Saved on purpose. A copy pinned once stays pinned when it is refreshed. */
   pinned?: boolean;
+  /** Sent from another device. A copy marked once stays marked when it is refreshed. */
+  sent?: boolean;
 }
 
 export function saveOfflineFile(
@@ -218,6 +222,7 @@ function commitOfflineFile(
       mimeType: input.version.mimeType,
       savedAt: Date.now(),
       pinned: input.pinned === true || replaced.some((entry) => entry.pinned === true),
+      sent: input.sent === true || replaced.some((entry) => entry.sent === true),
       attachment,
     };
     const { keep, evict } = selectOfflineEvictions([saved, ...others], input.limits, Date.now());
@@ -226,18 +231,47 @@ function commitOfflineFile(
   }).finally(() => release());
 }
 
-/** Records that the saved copy still matches the host, and pins it when `pin` is set. */
+/**
+ * Records that the saved copy still matches the host, pins it when `pin` is set and marks it sent
+ * when `sent` is set.
+ */
 export function touchOfflineFile(
   serverId: string,
   path: string,
-  options: { pin?: boolean } = {},
+  options: { pin?: boolean; sent?: boolean } = {},
 ): Promise<void> {
   return mutate(async (current) => ({
     next: current.map((entry) =>
       sameFile(entry, serverId, path)
-        ? { ...entry, savedAt: Date.now(), pinned: entry.pinned === true || options.pin === true }
+        ? {
+            ...entry,
+            savedAt: Date.now(),
+            pinned: entry.pinned === true || options.pin === true,
+            sent: entry.sent === true || options.sent === true,
+          }
         : entry,
     ),
+    result: undefined,
+  }));
+}
+
+/** A saved file's identity: its host and absolute path. */
+export interface OfflineFileKey {
+  serverId: string;
+  path: string;
+}
+
+function inKeys(entry: OfflineFile, keys: readonly OfflineFileKey[]): boolean {
+  return keys.some((key) => sameFile(entry, key.serverId, key.path));
+}
+
+/** Pins or unpins these saved files. An unpinned copy ages out like a file kept on open. */
+export function setOfflineFilesPinned(
+  keys: readonly OfflineFileKey[],
+  pinned: boolean,
+): Promise<void> {
+  return mutate(async (current) => ({
+    next: current.map((entry) => (inKeys(entry, keys) ? { ...entry, pinned } : entry)),
     result: undefined,
   }));
 }
@@ -257,11 +291,11 @@ export function clearOfflineFiles(): Promise<void> {
   });
 }
 
-export function removeOfflineFile(serverId: string, path: string): Promise<void> {
+export function removeOfflineFiles(keys: readonly OfflineFileKey[]): Promise<void> {
   return mutate(async (current) => {
-    const removed = current.filter((entry) => sameFile(entry, serverId, path));
+    const removed = current.filter((entry) => inKeys(entry, keys));
     if (removed.length > 0) await deleteAttachments(removed.map((entry) => entry.attachment));
-    return { next: current.filter((entry) => !sameFile(entry, serverId, path)), result: undefined };
+    return { next: current.filter((entry) => !inKeys(entry, keys)), result: undefined };
   });
 }
 
