@@ -26,6 +26,7 @@ import {
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import type { SidebarShortcutModel } from "@/utils/sidebar-shortcuts";
 import { buildSidebarProjection } from "./sidebar-projection";
+import { usePublishProjectOrderKeys } from "./project-order";
 import type { SidebarProjectIconTarget } from "@/utils/sidebar-project-row-model";
 import { filterWorkspacesByLabels, type SidebarWorkspaceGroup } from "./sidebar-labels";
 import { filterWorkspacesByProjects, resolveActiveProjectFilters } from "./sidebar-project-filter";
@@ -254,6 +255,7 @@ export function SidebarModelProvider({
   );
   const projection = useMemo(() => buildSidebarProjection(projectionInput), [projectionInput]);
   const childWorkspaceCounts = useStableCountMap(projection.childWorkspaceCountByWorkspaceKey);
+  usePublishProjectOrderKeys(list.projects);
   const value = useMemo(
     () => ({
       ...list,

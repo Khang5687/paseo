@@ -355,6 +355,56 @@ describe("evaluatePluginClientBundle", () => {
     ).toThrow("Needs you item tasks has no useCount");
   });
 
+  it("collects project rail items and rejects duplicate and malformed ones", () => {
+    const plugin = evaluatePluginClientBundle(
+      "example",
+      bundle(`
+        function useBadge() { return null; }
+        plugin.addProjectRailItem({ id: "accounts", title: " Accounts ", icon: "Gauge", screen: "accounts", useBadge });
+      `),
+    );
+    expect(
+      plugin.projectRailItems.map(({ id, title, icon, screen, useBadge }) => ({
+        id,
+        title,
+        icon,
+        screen,
+        hasBadge: typeof useBadge === "function",
+      })),
+    ).toEqual([
+      { id: "accounts", title: "Accounts", icon: "Gauge", screen: "accounts", hasBadge: true },
+    ]);
+
+    const item = (fields: string) => bundle(`plugin.addProjectRailItem({ ${fields} });`);
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        bundle(`
+          plugin.addProjectRailItem({ id: "accounts", title: "One", icon: "Gauge", screen: "a" });
+          plugin.addProjectRailItem({ id: "accounts", title: "Two", icon: "Gauge", screen: "a" });
+        `),
+      ),
+    ).toThrow("Duplicate project rail item: accounts");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        item(`id: "a", title: " ", icon: "Gauge", screen: "a"`),
+      ),
+    ).toThrow("Project rail item a has no title");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        item(`id: "a", title: "A", icon: "Gauge", screen: " "`),
+      ),
+    ).toThrow("Invalid project rail item a screen");
+    expect(() =>
+      evaluatePluginClientBundle(
+        "example",
+        item(`id: "a", title: "A", icon: "Gauge", screen: "a", useBadge: 3`),
+      ),
+    ).toThrow("Project rail item a useBadge is not a function");
+  });
+
   it("expands the addSurface and addSidebarItem aliases to a screen and a legacy header item", () => {
     const plugin = evaluatePluginClientBundle(
       "example",

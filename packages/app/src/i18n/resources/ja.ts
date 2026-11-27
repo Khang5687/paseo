@@ -1360,6 +1360,8 @@ export const ja: TranslationResources = {
       openRail: "プロジェクト名を表示",
       collapseRail: "折りたたむ",
       reorderProjects: "プロジェクトを並べ替え…",
+      reorderTitle: "プロジェクトを並べ替え",
+      reorderHint: "プロジェクトを長押しして、目的の位置へドラッグします。",
       lastOpen: "前回開いた",
       recentWorkspaces: "最近のワークスペース",
       nextWaiting: "次の待機中 · {{count}}",

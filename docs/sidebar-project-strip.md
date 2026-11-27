@@ -15,7 +15,14 @@ The strip owns no store.
 
 - The strip shows only with two or more projects. With one there is nothing to switch, and the digit keys publish no project targets.
 - The desktop rail sits inside the sidebar's width (52 px), below the window chrome row, so the titlebar drag region and the resize handle keep their places.
-- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to top, Move earlier, Move later, Move to bottom. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to top, Move earlier, Move later, Move to bottom, and Reorder projects…. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+
+## Reordering
+
+Every way of moving a project writes the one order the strip and the list share (`saveProjectStripOrder` in `components/sidebar/project-order.ts`), so a move anywhere shows everywhere.
+
+- **The ⋯ menu.** A project row's ⋯ menu (and its right-click menu) carries Move to top, Move to bottom and Reorder projects… on every platform (`useProjectOrderMenuActions`). With one project it carries none of them.
+- **Reorder projects…** opens the rail wide on the desktop, where you drag (see below). A phone has no rail, so there it opens the Reorder projects sheet (`ReorderProjectsSheet`): every project in one list, held and dragged into place. The whole row is the handle; a quick swipe still scrolls the sheet ([drag-reorder.md](drag-reorder.md)). The sheet mounts with the chip row, which shows whenever there is anything to order.
 
 ## The open rail
 
@@ -33,7 +40,7 @@ On compact layouts the header sidebar items sit in one row of round icon buttons
 - A tap does what the row did. A long press opens the button's menu as a sheet titled with its name; its one row, Buttons to show, opens a page that ticks each button on or off. On web, where `ContextMenuTrigger` opens only on right-click, the button also opens the menu on long press so a phone browser gets it. That sheet mounts under the finger, and when the finger lifts the browser sends its compatibility mousedown and click to the sheet's backdrop, which closes it at once; `swallowTouchRelease` (`components/sidebar/swallow-touch-release.web.ts`) cancels that touch's `touchend` so the click never comes. Reuse it for any other web long press that opens an overlay.
 - The ticks write the same per-device `sidebarNavItems` preference as Settings > Sidebar, so Settings stays the way back. The last visible button cannot be unticked.
 - Defaults differ by layout: `COMPACT_HIDDEN_BY_DEFAULT` in `sidebar-nav/model.ts` lists the keys that start hidden on compact (Notes). A stored choice always wins, and any edit stores the whole list, so a phone edit keeps Notes hidden on that device until it is ticked on.
-- Trailing content (shortcut hints, a plugin row's `trailing`) is dropped in the icon row; there is no room for it.
+- Trailing content (shortcut hints, a plugin row's `trailing`) is dropped in the icon row; there is no room for it. A plugin row's `badge` is not: `SidebarNavIconButton` draws it on the button's corner (`SidebarBadge` in `components/sidebar/sidebar-badge.tsx`), so a count like "2 tasks late" survives on the phone.
 - The compact workspace list is lighter too: an empty project has no "+ New workspace" ghost row, since the project row's + and the New workspace button already create one, and chat rows have no copy-agent-ID icon; Copy agent ID stays in the row's ⋮ menu.
 - To check it again: `npx playwright test --project=browser e2e/browser/sidebar-phone-icons.spec.ts` from `packages/app` taps through all of the above at 390×844 with touch, plus the desktop sidebar at 1280, and writes `.scratch/phone-icons-*.png`.
 
@@ -84,3 +91,4 @@ Later sidebar features plug in here rather than adding a second switcher:
 - Anything that changes what selecting a project does belongs in the callers of `showOnlyProject`: the rail and chip press handlers and the `show-sidebar-project` keyboard route in `use-shortcuts.ts`.
 - New per-project marks go beside `ProjectStatusDots`, fed by a hook like `useSidebarProjectStatusCounts` that reads the session store with a value-compared selector.
 - Needs you sits between the open toggle and All on the rail, and before All in the chip row ([needs-you.md](needs-you.md)). It opens a page rather than filtering the list, so All stays selected under it.
+- Plugin buttons come through `addProjectRailItem` and render under the projects, pinned at the rail's foot by `PluginProjectRailItems` (`plugins/project-rail-items/`). The plugin module owns hosts, routing, the badge hook and its error boundary; the rail passes in `RailIconButton`, so the look stays here. The rail hides with fewer than two projects, and its plugin buttons with it; plugins that need a way in on every layout add a sidebar item too.

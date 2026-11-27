@@ -1375,6 +1375,8 @@ export const fr: TranslationResources = {
       openRail: "Afficher les noms des projets",
       collapseRail: "Réduire",
       reorderProjects: "Réorganiser les projets…",
+      reorderTitle: "Réorganiser les projets",
+      reorderHint: "Maintenez un projet, puis faites-le glisser à sa place.",
       lastOpen: "dernier ouvert",
       recentWorkspaces: "Espaces de travail récents",
       nextWaiting: "Suivant en attente · {{count}}",

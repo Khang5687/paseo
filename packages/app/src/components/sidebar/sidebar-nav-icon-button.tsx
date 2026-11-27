@@ -1,3 +1,4 @@
+import type { PluginBadge } from "@getpaseo/plugin/client";
 import { createContext, useCallback, useContext, useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -12,6 +13,7 @@ import { useIconButtonChromeStyle } from "@/components/ui/icon-button-chrome";
 import { MenuCheckboxItem, MenuSubTrigger, type MenuPageDefinition } from "@/components/ui/menu";
 import { isWeb } from "@/constants/platform";
 import { swallowTouchRelease } from "@/components/sidebar/swallow-touch-release";
+import { SidebarBadge, sidebarBadgeAccessibilityLabel } from "@/components/sidebar/sidebar-badge";
 import {
   PLUGIN_SIDEBAR_NAV_ICON,
   sidebarNavItemIcon,
@@ -46,6 +48,8 @@ interface SidebarNavIconButtonProps {
   testID?: string;
   nativeID?: string;
   accessibilityLabel?: string;
+  /** A plugin row's count or dot, on the button's corner. */
+  badge?: PluginBadge | null;
   row: SidebarNavIconRowValue;
 }
 
@@ -70,6 +74,7 @@ function SidebarNavIconTrigger({
   testID,
   nativeID,
   accessibilityLabel,
+  badge,
 }: Omit<SidebarNavIconButtonProps, "row">): ReactElement {
   const { setOpen } = useContextMenu();
   const chromeStyle = useIconButtonChromeStyle({ size: "large", round: true, active: isActive });
@@ -88,7 +93,7 @@ function SidebarNavIconTrigger({
       testID={testID}
       nativeID={nativeID}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityLabel={sidebarBadgeAccessibilityLabel(accessibilityLabel ?? label, badge)}
       accessibilityState={accessibilityState}
       aria-selected={isActive}
     >
@@ -97,6 +102,7 @@ function SidebarNavIconTrigger({
         size="md"
         color={isActive ? "foreground" : "foregroundMuted"}
       />
+      <SidebarBadge badge={badge} placement="corner" ownerTestID={testID} />
     </ContextMenuTrigger>
   );
 }
