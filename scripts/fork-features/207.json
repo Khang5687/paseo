@@ -1,0 +1,13 @@
+{
+  "pr": 207,
+  "title": "feat: one sidebar workspace order and sort on every device",
+  "tests": [
+    "packages/app/src/sidebar-sync/workspace-order.test.ts",
+    "packages/app/src/components/sidebar/workspace-reorder.test.ts",
+    "packages/server/src/server/daemon-e2e/sidebar-project-order.e2e.test.ts"
+  ],
+  "e2e": [
+    "packages/app/e2e/browser/sidebar-workspace-order-sync.spec.ts",
+    "packages/app/e2e/browser/sidebar-reorder.spec.ts"
+  ]
+}

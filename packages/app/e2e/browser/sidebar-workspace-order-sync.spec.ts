@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
@@ -10,6 +12,7 @@ import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
 // makes the page a device that has never seen this project.
 const LOCAL_ORDER_KEY = "sidebar-project-workspace-order";
 const LOCAL_VIEW_KEY = "sidebar-view";
+const SCRATCH_DIR = path.resolve(__dirname, "../../../../.scratch");
 
 async function rowKeys(rows: Locator): Promise<string[]> {
   const ids = await rows.evaluateAll((elements) =>
@@ -49,20 +52,32 @@ function rowsOf(page: Page, keys: string[]): Locator {
   return page.locator(keys.map((key) => `[data-testid="sidebar-workspace-row-${key}"]`).join(", "));
 }
 
+// One project with two workspaces; `newest` was created last, so Created shows it first.
+async function seedTwoWorkspaces(repoPrefix: string) {
+  const seed = await seedWorkspace({ repoPrefix });
+  const newer = await seed.client.createWorkspace({
+    source: { kind: "directory", path: seed.repoPath, projectId: seed.projectId },
+    title: "Newer workspace",
+  });
+  if (!newer.workspace) {
+    await seed.cleanup();
+    throw new Error(newer.error ?? "Workspace creation failed");
+  }
+  const older = `${getServerId()}:${seed.workspaceId}`;
+  const newest = `${getServerId()}:${newer.workspace.id}`;
+  return { seed, older, newest, keys: [older, newest] };
+}
+
+async function saveScreenshot(page: Page, name: string): Promise<void> {
+  await mkdir(SCRATCH_DIR, { recursive: true });
+  await writeFile(path.join(SCRATCH_DIR, `${name}.png`), await page.screenshot());
+}
+
 test("a workspace drag on one device shows on another, with the sort, live and after a fresh start", async ({
   page,
 }) => {
-  const seed = await seedWorkspace({ repoPrefix: "workspace-order-sync-" });
+  const { seed, older, newest, keys } = await seedTwoWorkspaces("workspace-order-sync-");
   try {
-    const newer = await seed.client.createWorkspace({
-      source: { kind: "directory", path: seed.repoPath, projectId: seed.projectId },
-      title: "Newer workspace",
-    });
-    if (!newer.workspace) throw new Error(newer.error ?? "Workspace creation failed");
-    const older = `${getServerId()}:${seed.workspaceId}`;
-    const newest = `${getServerId()}:${newer.workspace.id}`;
-    const keys = [older, newest];
-
     await gotoAppShell(page);
     await waitForSidebarHydration(page);
     const rows = rowsOf(page, keys);
@@ -73,6 +88,7 @@ test("a workspace drag on one device shows on another, with the sort, live and a
     await dragFirstRowBelowSecond(rows);
     await expect.poll(() => rowKeys(rows)).toEqual([older, newest]);
     await expect(page.getByText("Sorted by hand now", { exact: true })).toBeVisible();
+    await saveScreenshot(page, "workspace-order-desktop-drag");
     await expect.poll(async () => (await hostState(seed)).sort?.value).toBe("manual");
     await expect.poll(() => hostOrderOf(seed, keys)).toEqual([older, newest]);
 
@@ -97,8 +113,40 @@ test("a workspace drag on one device shows on another, with the sort, live and a
       projects: { [projectKey]: { order: [newest, older], updatedAt: Date.now() } },
     });
     await expect.poll(() => rowKeys(rows)).toEqual([newest, older]);
-    await page.screenshot({ path: test.info().outputPath("compact-synced-workspace-order.png") });
+    await saveScreenshot(page, "workspace-order-phone-synced-390");
   } finally {
     await seed.cleanup();
   }
 });
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 360, height: 800 },
+]) {
+  test(`a drag on a ${viewport.width}-wide phone works under Created and switches to Manual`, async ({
+    page,
+  }) => {
+    const { seed, older, newest, keys } = await seedTwoWorkspaces("workspace-order-phone-");
+    try {
+      await page.setViewportSize(viewport);
+      await gotoAppShell(page);
+      await openMobileAgentSidebar(page);
+      const rows = rowsOf(page, keys);
+      await expect.poll(() => rowKeys(rows)).toEqual([newest, older]);
+
+      await dragFirstRowBelowSecond(rows);
+      await expect.poll(() => rowKeys(rows)).toEqual([older, newest]);
+      await expect(page.getByText("Sorted by hand now", { exact: true })).toBeVisible();
+      await saveScreenshot(page, `workspace-order-phone-drag-${viewport.width}`);
+      await expect.poll(async () => (await hostState(seed)).sort?.value).toBe("manual");
+
+      await page.getByLabel("Display preferences", { exact: true }).click();
+      await expect(page.getByRole("menuitem", { name: /^Sort.*Manual/ })).toBeVisible();
+      // Let the sheet finish sliding up before the picture.
+      await page.waitForTimeout(400);
+      await saveScreenshot(page, `workspace-order-phone-sort-${viewport.width}`);
+    } finally {
+      await seed.cleanup();
+    }
+  });
+}
