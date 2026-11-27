@@ -29,6 +29,7 @@ import { ComposerDock } from "@/composer/dock";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { RetainedChatContent } from "./retained-chat-content";
+import { ChatTerminalDrawerHost } from "@/terminal-drawer/chat-terminal-drawer";
 import { Composer } from "@/composer";
 import { AgentCommandsProvider } from "@/agent-commands";
 import { CodeRunComposerProvider } from "@/code-run/scope";
@@ -377,13 +378,15 @@ export function AgentConversationPanel() {
 
   return (
     <RetainedChatContent>
-      <AgentPanelContent
-        serverId={serverId}
-        workspaceId={workspaceId}
-        target={target}
-        isPaneFocused={isInteractive}
-        onOpenWorkspaceFile={openFileInWorkspace}
-      />
+      <ChatTerminalDrawerHost agentId={resolveConversationAgentId(target)}>
+        <AgentPanelContent
+          serverId={serverId}
+          workspaceId={workspaceId}
+          target={target}
+          isPaneFocused={isInteractive}
+          onOpenWorkspaceFile={openFileInWorkspace}
+        />
+      </ChatTerminalDrawerHost>
     </RetainedChatContent>
   );
 }

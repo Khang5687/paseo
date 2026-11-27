@@ -198,7 +198,13 @@ export const SHORTCUT_HELP_ROW_ORDER: Record<ShortcutSectionId, readonly string[
     "workspace-pane-move-tab-down",
     "workspace-pane-close",
   ],
-  layout: ["toggle-left-sidebar", "toggle-right-sidebar", "toggle-both-sidebars", "toggle-focus"],
+  layout: [
+    "toggle-left-sidebar",
+    "toggle-right-sidebar",
+    "toggle-both-sidebars",
+    "toggle-focus",
+    "workspace-terminal-drawer-toggle",
+  ],
   "agent-input": [
     "focus-message-input",
     "toggle-model-picker",
@@ -244,6 +250,7 @@ const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "workspace-pane-move-tab-down": "settings.shortcuts.help.moveTabDown",
   "workspace-pane-close": "settings.shortcuts.help.closePane",
   "workspace-terminal-new": "settings.shortcuts.help.newTerminal",
+  "workspace-terminal-drawer-toggle": "settings.shortcuts.help.toggleChatTerminal",
   "search-files": "settings.shortcuts.help.searchFiles",
   "toggle-command-center": "settings.shortcuts.help.toggleCommandCenter",
   "show-shortcuts": "settings.shortcuts.help.showKeyboardShortcuts",
@@ -1084,6 +1091,21 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     },
   },
 
+  // --- Chat terminal drawer ---
+  // Ctrl+` on every platform, as VS Code's Toggle Terminal. It also fires from a focused
+  // terminal, so the same key hides the drawer and hands focus back to the composer.
+  {
+    id: "workspace-terminal-drawer-toggle-ctrl-backquote",
+    action: "workspace.terminal.drawer.toggle",
+    combo: "Ctrl+`",
+    when: { commandCenter: false },
+    help: {
+      id: "workspace-terminal-drawer-toggle",
+      section: "layout",
+      label: "Toggle chat terminal",
+    },
+  },
+
   // --- Command center ---
   {
     id: "command-center-toggle-cmd-k-mac",
@@ -1168,12 +1190,6 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       section: "layout",
       label: "Toggle Explorer sidebar",
     },
-  },
-  {
-    id: "sidebar-toggle-right-ctrl-backquote",
-    action: "sidebar.toggle.right",
-    combo: "Ctrl+`",
-    when: { commandCenter: false },
   },
 
   // --- Toggle both sidebars ---
