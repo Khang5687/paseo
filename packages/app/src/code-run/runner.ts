@@ -43,6 +43,7 @@ export async function startCodeRun(input: {
   const payload = await client.createTerminal(place.cwd, terminalName(command), undefined, {
     workspaceId: place.workspaceId,
     size: RUN_TERMINAL_SIZE,
+    ...(place.drawerAgentId ? { ownerAgentId: place.drawerAgentId } : {}),
   });
   if (!payload.terminal) throw new CodeRunStartError(payload.error ?? "Terminal was not created");
   const terminalId = payload.terminal.id;
@@ -56,6 +57,7 @@ export async function startCodeRun(input: {
     exitCode: null,
     durationSeconds: null,
     stopped: false,
+    ...(place.drawerAgentId ? { inDrawer: true } : {}),
   });
   await waitForShellOutput(client, terminalId);
   client.sendTerminalInput(terminalId, { type: "input", data: buildRunInput(command, nonce) });

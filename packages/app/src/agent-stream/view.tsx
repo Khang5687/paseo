@@ -121,6 +121,7 @@ import {
   type WorkspaceFileOpenRequest,
 } from "@/workspace/file-open";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
+import { revealChatDrawerTerminal } from "@/terminal-drawer/reveal";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useForkAgent } from "@/hooks/use-fork-agent";
 import { isWeb } from "@/constants/platform";
@@ -584,6 +585,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
     const openCodeRunTerminal = useStableEvent(
       (input: { serverId: string; workspaceId: string; terminalId: string }) => {
+        // A run in this chat's own workspace lives in the chat's terminal drawer.
+        if (revealChatDrawerTerminal({ ...input, agentId })) return;
         navigateToWorkspace({
           serverId: input.serverId,
           workspaceId: input.workspaceId,

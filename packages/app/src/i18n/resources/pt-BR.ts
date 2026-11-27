@@ -407,6 +407,7 @@ export const ptBR: TranslationResources = {
     expand: "Mostrar saída",
     collapse: "Ocultar saída",
     openTerminal: "Abrir na aba Terminal",
+    showInDrawer: "Mostrar no terminal",
     answerPlaceholder: "Enviar entrada",
     send: "Enviar",
     showPassword: "Mostrar senha",

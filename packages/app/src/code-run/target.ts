@@ -111,6 +111,8 @@ export interface RunPlace {
   cwd: string;
   /** Null when no open workspace on the host holds `cwd`: the run opens a hidden one there first. */
   workspaceId: string | null;
+  /** The chat whose terminal drawer holds the run's terminal; absent when it opens as a tab. */
+  drawerAgentId?: string;
 }
 
 export type CodeRunTarget =
@@ -128,11 +130,14 @@ export interface TargetHostState {
   homeDirectory: string | null;
   /** Open workspaces on that host, hidden ones included, so a hidden run workspace is reused. */
   workspaces: Iterable<RunWorkspace>;
+  /** The host keeps terminals in a chat's drawer (`features.chatTerminals`). */
+  keepsChatDrawers: boolean;
 }
 
 /**
  * An untagged fence runs where the chat runs. A tagged one runs on the host it names, in
- * `cwd=` or that host's home, and never falls back to the chat's host.
+ * `cwd=` or that host's home, and never falls back to the chat's host. A run that lands in the
+ * chat's own workspace opens in the chat's terminal drawer, as the chat's other terminals do.
  */
 export function resolveCodeRunTarget(
   chatScope: CodeRunScope,
@@ -142,11 +147,11 @@ export function resolveCodeRunTarget(
   if (!hasRunRequest(request))
     return {
       kind: "ready",
-      place: {
+      place: withChatDrawer(chatScope, state, {
         serverId: chatScope.serverId,
         cwd: chatScope.cwd,
         workspaceId: chatScope.workspaceId,
-      },
+      }),
     };
   const { host } = state;
   if (!host) return { kind: "unknownHost", name: request.host ?? "" };
@@ -156,8 +161,24 @@ export function resolveCodeRunTarget(
   const workspace = ownerWorkspace(folder, state.workspaces);
   return {
     kind: "ready",
-    place: { serverId: host.serverId, cwd: folder, workspaceId: workspace?.id ?? null },
+    place: withChatDrawer(chatScope, state, {
+      serverId: host.serverId,
+      cwd: folder,
+      workspaceId: workspace?.id ?? null,
+    }),
   };
+}
+
+function withChatDrawer(
+  chatScope: CodeRunScope,
+  state: TargetHostState,
+  place: RunPlace,
+): RunPlace {
+  const inChatWorkspace =
+    place.serverId === chatScope.serverId && place.workspaceId === chatScope.workspaceId;
+  return inChatWorkspace && state.keepsChatDrawers
+    ? { ...place, drawerAgentId: chatScope.agentId }
+    : place;
 }
 
 /** The host a run lives on; an unknown host has none. */

@@ -407,6 +407,7 @@ export const ru: TranslationResources = {
     expand: "Показать вывод",
     collapse: "Скрыть вывод",
     openTerminal: "Открыть во вкладке терминала",
+    showInDrawer: "Показать в терминале",
     answerPlaceholder: "Отправить ввод",
     send: "Отправить",
     showPassword: "Показать пароль",

@@ -409,6 +409,7 @@ export const fr: TranslationResources = {
     expand: "Afficher la sortie",
     collapse: "Masquer la sortie",
     openTerminal: "Ouvrir dans l’onglet Terminal",
+    showInDrawer: "Afficher dans le terminal",
     answerPlaceholder: "Envoyer une saisie",
     send: "Envoyer",
     showPassword: "Afficher le mot de passe",

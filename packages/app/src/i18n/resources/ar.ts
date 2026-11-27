@@ -403,6 +403,7 @@ export const ar: TranslationResources = {
     expand: "إظهار المخرجات",
     collapse: "إخفاء المخرجات",
     openTerminal: "فتح في تبويب الطرفية",
+    showInDrawer: "عرض في الطرفية",
     answerPlaceholder: "إرسال إدخال",
     send: "إرسال",
     showPassword: "إظهار كلمة المرور",
