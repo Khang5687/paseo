@@ -2478,6 +2478,8 @@ export const ptBR: TranslationResources = {
     tooManyFiles: "Até {{max}} arquivos por resposta",
     uploadFailed: "Não foi possível enviar os arquivos",
     sendFailed: "Não foi possível enviar as respostas",
+    copyAnswers: "Copiar respostas",
+    copiedAnswers: "Copiado",
   },
   needsYou: {
     title: "Precisa de você",

@@ -2468,6 +2468,8 @@ export const en = {
     tooManyFiles: "Up to {{max}} files per answer",
     uploadFailed: "Could not upload the files",
     sendFailed: "Could not send the answers",
+    copyAnswers: "Copy answers",
+    copiedAnswers: "Copied",
   },
   needsYou: {
     title: "Needs you",

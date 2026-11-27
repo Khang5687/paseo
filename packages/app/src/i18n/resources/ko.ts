@@ -2449,6 +2449,8 @@ export const ko: TranslationResources = {
     tooManyFiles: "답변당 최대 {{max}}개 파일",
     uploadFailed: "파일을 업로드하지 못했습니다",
     sendFailed: "답변을 보내지 못했습니다",
+    copyAnswers: "답변 복사",
+    copiedAnswers: "복사됨",
   },
   needsYou: {
     title: "응답 필요",

@@ -58,6 +58,10 @@ interface Seeded {
   beta: MockAgentWorkspace;
 }
 
+function readClipboard(page: Page): Promise<string> {
+  return page.evaluate(() => navigator.clipboard.readText());
+}
+
 async function answerAndSend(page: Page, { alpha, beta }: Seeded, tap: boolean) {
   const alphaSection = page.getByTestId(`needs-you-chat-${alpha.workspaceId}`);
   const betaSection = page.getByTestId(`needs-you-chat-${beta.workspaceId}`);
@@ -70,6 +74,21 @@ async function answerAndSend(page: Page, { alpha, beta }: Seeded, tap: boolean) 
   await expect(alphaSection.getByTestId("open-question-Q200-answered")).toBeVisible();
   await betaSection.getByTestId("open-question-Q300-text").fill("cards in a list");
   await page.screenshot({ path: test.info().outputPath("needs-you.png") });
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const copy = page.getByTestId("needs-you-copy");
+  await (tap ? copy.tap() : copy.click());
+  await expect(copy).toContainText("Copied");
+  await page.screenshot({ path: test.info().outputPath("needs-you-copied.png") });
+  // Each chat's own lines under its heading ("project › chat"); the skipped card is not in it,
+  // and nothing was sent.
+  await expect
+    .poll(() => readClipboard(page))
+    .toMatch(/^[^\n]+ › [^\n]+\nQ200 \(Alpha colors\) yes: blue\n\n[^\n]+ › [^\n]+\nQ300 /);
+  const copiedText = await readClipboard(page);
+  expect(copiedText).toContain("Q300 (Beta layout) cards in a list");
+  expect(copiedText).not.toContain("Q201");
+  await expect(alphaSection.getByTestId("open-question-Q200-answered")).toBeVisible();
 
   const send = page.getByTestId("needs-you-send");
   await expect(send).toContainText("Send 2 answers");
