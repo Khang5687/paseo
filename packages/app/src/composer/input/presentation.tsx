@@ -86,8 +86,12 @@ export function ComposerInputPresentation({
   const enterStyle = useMemo(() => [styles.enterButton, { right: railOffset }], [railOffset]);
   const exitStyle = useMemo(() => [styles.iconButton, { marginRight: railOffset }], [railOffset]);
   return (
+    // collapsable={false} here and on the input wrapper: the toggle adds or drops their
+    // background, and a view Fabric flattens in one mode but not the other re-parents the
+    // native editor, which blurs it and closes the Android keyboard.
     <View
       ref={exitScopeRef}
+      collapsable={false}
       style={fullscreen ? styles.fullscreen : styles.inline}
       testID={fullscreen ? "composer-fullscreen" : undefined}
     >
@@ -113,6 +117,7 @@ export function ComposerInputPresentation({
       <ComposerFullscreenBody fullscreen={fullscreen}>
         <View
           ref={inputWrapperRef}
+          collapsable={false}
           style={fullscreen ? styles.fullscreenInputWrapper : inputWrapperStyle}
           pointerEvents={inputPointerEvents}
         >

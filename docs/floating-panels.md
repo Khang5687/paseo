@@ -253,7 +253,13 @@ follows pane focus, not the active composer. Keying it on the active composer
 made sidebar dismissal look like a hidden-tab blur and refocused on close.
 Native and touch-web navigation must not replay old editor focus, including
 when blur arrives after pane deactivation or the editor unmounts before blur.
-Fullscreen toggles keep the editor mounted and need no focus restoration.
+Fullscreen toggles keep the editor mounted and need no focus restoration. On
+native that holds only while the editor's native parent chain stays the same:
+a view that gains or drops a background, border or opacity between the two
+modes changes whether Fabric flattens it, which re-parents the native editor,
+blurs it and closes the Android keyboard. Every such view on the editor's path
+(the dock's composer surface, the presentation root, the input wrapper) sets
+`collapsable={false}`.
 The band beside the inline editor where the fullscreen glyph sits is the input's
 own right padding, so a tap anywhere in it focuses the editor whether or not the
 glyph shows. On web the slot is a fixed box over the visible viewport, which is
