@@ -51,14 +51,19 @@ export function deriveAgentStateBucket(input: AgentStateBucketInput): WorkspaceS
   if (hasUnreadError(input)) {
     return "failed";
   }
-  if (isAgentRunning(input)) {
+  // A turn in progress is working, even with questions open: the agent may be reading the answers.
+  if (input.status === "running") {
     return "running";
   }
+  // A finished turn that asks the user waits on the user, even while its background jobs run.
   if (input.requiresAttention && input.awaitingAnswer) {
     return "needs_input";
   }
   if ((input.openQuestionCount ?? 0) > 0) {
     return "needs_input";
+  }
+  if (isAgentRunning(input)) {
+    return "running";
   }
   if (input.requiresAttention) {
     return "attention";
