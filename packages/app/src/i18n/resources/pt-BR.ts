@@ -2418,6 +2418,13 @@ export const ptBR: TranslationResources = {
     sendFailed: "Não foi possível enviar para {{title}}",
     railLabel_one: "Precisa de você: {{count}} esperando",
     railLabel_other: "Precisa de você: {{count}} esperando",
+    peek: {
+      sent: "✓ “{{answer}}” enviado. Voltou a trabalhar.",
+      more_one: "Mais {{count}} esperando",
+      more_other: "Mais {{count}} esperando",
+      openChat: "Abrir chat ›",
+      send: "Enviar",
+    },
   },
   subagents: {
     parent: {

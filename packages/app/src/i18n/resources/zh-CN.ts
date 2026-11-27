@@ -2349,6 +2349,13 @@ export const zhCN: TranslationResources = {
     sendFailed: "无法发送到 {{title}}",
     railLabel_one: "等你处理：{{count}} 项",
     railLabel_other: "等你处理：{{count}} 项",
+    peek: {
+      sent: "✓ 已发送“{{answer}}”。它已重新开始工作。",
+      more_one: "还有 {{count}} 个在等待",
+      more_other: "还有 {{count}} 个在等待",
+      openChat: "打开聊天 ›",
+      send: "发送",
+    },
   },
   subagents: {
     parent: {

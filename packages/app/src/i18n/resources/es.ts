@@ -2437,6 +2437,13 @@ export const es: TranslationResources = {
     sendFailed: "No se pudo enviar a {{title}}",
     railLabel_one: "Te necesita: {{count}} esperando",
     railLabel_other: "Te necesita: {{count}} esperando",
+    peek: {
+      sent: "✓ Enviado “{{answer}}”. Vuelve a trabajar.",
+      more_one: "{{count}} más esperando",
+      more_other: "{{count}} más esperando",
+      openChat: "Abrir chat ›",
+      send: "Enviar",
+    },
   },
   subagents: {
     parent: {

@@ -41,9 +41,27 @@ waiting chats plus what plugins count (`addNeedsYouItem`, see
 due-today tasks. `useNeedsYouCount` selects a number from the session store, so streaming in
 other chats does not redraw the rail.
 
+## Peek from the rail
+
+A project with a waiting chat answers from the strip without leaving the open chat. On the
+desktop, rest the pointer on its rail icon: a hover card replaces the name tooltip. On the phone,
+hold its chip: the chip's sheet shows the peek above its menu rows. The peek shows the project's
+oldest waiting chat and its first question, with the pick as one button that sends at once, a
+field for your own words with Send, Open chat, and "N more waiting" to this page
+(`packages/app/src/needs-you/project-peek.tsx`). A chat waiting on a permission box shows the box;
+one that asks only in prose says to open the chat.
+
+The peek sends one answer line, the same line Send writes here, so the question closes on the
+host as usual. It filters `useNeedsYouChats` by the project's hosts and mounts only while open,
+so the rail itself reads only the status counts it already had.
+
 ## Check it again
 
 `packages/app/e2e/browser/needs-you.spec.ts` seeds two mock chats that each end with ❓ questions,
 opens Needs you by tapping, answers one card in each chat, sends once, and checks each chat got
 only its own line while the skipped card stays. It runs at desktop width and at 390×844, tapping
 the chip. Screenshots land in `test-results/`.
+
+`packages/app/e2e/browser/project-peek.spec.ts` hovers a waiting project's rail icon and clicks
+the pick, then at 390×844 holds the chip and sends typed words; both check the open chat stayed
+put and the waiting chat got the answer line.
