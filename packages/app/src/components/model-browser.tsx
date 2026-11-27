@@ -1424,6 +1424,10 @@ function IndependentModelList({
         ListHeaderComponent={header}
         keyExtractor={getModelRowKey}
         onScrollToIndexFailed={reveal.onScrollToIndexFailed}
+        // Without getItemLayout the list only scrolls as far as it has measured, so revealing an
+        // unmeasured row (ArrowUp wrapping to the end of a long catalog) advances one render
+        // batch at a time. Every content growth must retry or the reveal stalls.
+        onContentSizeChange={reveal.onContentSizeChange}
         onViewableItemsChanged={reveal.onViewableItemsChanged}
         viewabilityConfig={reveal.viewabilityConfig}
         style={styles.virtualizedModelList}

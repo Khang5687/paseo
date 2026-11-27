@@ -272,7 +272,9 @@ test.describe("Cross-provider model search", () => {
         await expect(sheetProfileRow).toBeVisible();
         await expect(sheetProfileRow).toHaveAttribute("data-active", "true");
         await page.keyboard.press("Enter");
-        await expect(sheetProfileRow).toHaveCount(0);
+        // A dismissed sheet slides off screen; its content can stay mounted, so check the
+        // viewport rather than the DOM.
+        await expect(sheetProfileRow).not.toBeInViewport();
       });
     } finally {
       await workspace.cleanup();
