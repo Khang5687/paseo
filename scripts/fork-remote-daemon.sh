@@ -37,8 +37,10 @@
 # (~/.config/systemd/user/paseo.service.d/fork.conf) points the host's existing paseo.service at
 # ~/paseo-fork/current, so the owner's unit file stays untouched. Building never touches the
 # running daemon: Node resolves the release's real path at start, so moving `current` only takes
-# effect on restart. ~/paseo-fork/bin holds this script's host side and its idle check, copied on
-# every call.
+# effect on restart. Each build also bundles the browser web app (build:daemon-web-ui), so a host
+# with features.webUi.enabled serves the matching UI at its own address (docs/development.md,
+# "Bundled daemon web UI"). ~/paseo-fork/bin holds this script's host side and its idle check,
+# copied on every call.
 set -euo pipefail
 
 usage() {
@@ -359,13 +361,14 @@ case "$action" in
       rm -rf "$release"
       git -C "$root/repo" worktree prune
       git -C "$root/repo" worktree add --quiet --detach "$release" "$sha"
-      say "building $sha (npm ci + build:server + build:plugin; several minutes)"
+      say "building $sha (npm ci + build:server + build:plugin + build:daemon-web-ui; several minutes)"
       (
         cd "$release"
         # The daemon never needs the Electron binary the desktop workspace downloads.
         ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --no-audit --no-fund
         npm run build:server
         npm run build:plugin
+        npm run build:daemon-web-ui
       ) >"$release.build.log" 2>&1 || { say "build failed; log: $release.build.log"; exit 1; }
       touch "$release/.fork-built"
     fi
