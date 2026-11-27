@@ -5,20 +5,27 @@ import {
   useCallback,
   useMemo,
   useRef,
+  useState,
   type ComponentType,
   type ReactElement,
   type ReactNode,
   type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { View, type StyleProp, type ViewStyle } from "react-native";
+import { View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
-import { SidebarNavIconRowContext } from "@/components/sidebar/sidebar-nav-icon-button";
+import {
+  SidebarNavIconRowContext,
+  SidebarNavIconSlotContext,
+} from "@/components/sidebar/sidebar-nav-icon-button";
+import { SidebarNavMoreButton } from "@/components/sidebar/sidebar-nav-more-button";
+import { controlSizingForLayout, ICON_BUTTON_SIZES } from "@/components/ui/control-geometry";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { PluginSidebarItem } from "@/plugins/sidebar-items";
 import { canCreateWorktreeForProjectKind } from "@/projects/host-projects";
 import { useHostFeature } from "@/runtime/host-features";
+import { IconRowOverflowStore, sidebarNavItemKeepRank } from "@/sidebar-nav/icon-row-overflow";
 import {
   builtinSidebarNavLabelKey,
   builtinSidebarNavShortcutAction,
@@ -92,7 +99,8 @@ export function SidebarNavRows({ style, onBeforeNavigate }: SidebarNavRowsProps)
 /**
  * The compact layout's top navigation: the same items as `SidebarNavRows`, drawn as one row of
  * round icon buttons with `trailing` (the close button) at the right. Long-pressing a button
- * names it and leads to the list where the user picks which buttons show.
+ * names it and leads to the list where the user picks which buttons show. Buttons that do not fit
+ * move into a More button at the row's end, so the row never takes a second line.
  */
 export function SidebarNavIconRow({
   onBeforeNavigate,
@@ -102,16 +110,57 @@ export function SidebarNavIconRow({
   const visibleItems = useMemo(() => items.filter((item) => item.visible), [items]);
   const groupRef = useRef<View | null>(null);
   const iconRow = useMemo(() => ({ items, setVisible }), [items, setVisible]);
+  const [overflow] = useState(() => new IconRowOverflowStore());
+  const handleButtonsLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      overflow.setSlots(Math.floor(event.nativeEvent.layout.width / ICON_ROW_BUTTON_SIZE));
+    },
+    [overflow],
+  );
 
   return (
     <SidebarNavIconRowContext.Provider value={iconRow}>
       <View style={styles.iconRow} testID="sidebar-nav-icon-row">
-        <View ref={groupRef} collapsable={false} style={styles.iconRowButtons}>
-          {visibleItems.map((item) => renderNavItem(item, groupRef, onBeforeNavigate))}
+        <View
+          ref={groupRef}
+          collapsable={false}
+          style={styles.iconRowButtons}
+          onLayout={handleButtonsLayout}
+        >
+          {visibleItems.map((item, index) => (
+            <SidebarNavIconItemSlot key={item.key} store={overflow} item={item} itemOrder={index}>
+              {renderNavItem(item, groupRef, onBeforeNavigate)}
+            </SidebarNavIconItemSlot>
+          ))}
+          <SidebarNavMoreButton store={overflow} />
         </View>
         {trailing}
       </View>
     </SidebarNavIconRowContext.Provider>
+  );
+}
+
+/** Every icon button of the row is this wide; the row fits as many as its width allows. */
+const ICON_ROW_BUTTON_SIZE = ICON_BUTTON_SIZES.large[controlSizingForLayout(true)];
+
+function SidebarNavIconItemSlot({
+  store,
+  item,
+  itemOrder,
+  children,
+}: {
+  store: IconRowOverflowStore;
+  item: SidebarNavItem<"header">;
+  itemOrder: number;
+  children: ReactNode;
+}) {
+  const keepRank = sidebarNavItemKeepRank(item);
+  const slot = useMemo(
+    () => ({ store, itemKey: item.key, itemOrder, keepRank }),
+    [store, item.key, itemOrder, keepRank],
+  );
+  return (
+    <SidebarNavIconSlotContext.Provider value={slot}>{children}</SidebarNavIconSlotContext.Provider>
   );
 }
 
@@ -253,15 +302,14 @@ const BUILTIN_ROWS: Record<BuiltinSidebarNavId, ComponentType<SidebarNavRowProps
 const styles = StyleSheet.create((theme) => ({
   iconRow: {
     flexDirection: "row",
-    // With more buttons than fit, they wrap; the close button stays on the first line.
-    alignItems: "flex-start",
+    alignItems: "center",
     paddingLeft: theme.spacing[2],
   },
+  // One line: buttons that do not fit go into More instead of wrapping.
   iconRowButtons: {
     flex: 1,
     minWidth: 0,
     flexDirection: "row",
-    flexWrap: "wrap",
     alignItems: "center",
   },
 }));

@@ -1385,6 +1385,7 @@ export const en = {
     navButtons: {
       title: "Buttons to show",
       done: "Done",
+      more: "More",
     },
     view: {
       failed: "Sidebar view failed to load.",

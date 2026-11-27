@@ -1365,6 +1365,7 @@ export const zhCN: TranslationResources = {
     navButtons: {
       title: "显示的按钮",
       done: "完成",
+      more: "更多",
     },
     view: {
       failed: "无法加载侧边栏视图。",

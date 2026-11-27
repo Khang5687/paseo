@@ -1374,6 +1374,7 @@ export const ar: TranslationResources = {
     navButtons: {
       title: "الأزرار المعروضة",
       done: "تم",
+      more: "المزيد",
     },
     view: {
       failed: "تعذر تحميل عرض الشريط الجانبي.",

@@ -1401,6 +1401,7 @@ export const ptBR: TranslationResources = {
     navButtons: {
       title: "Botões visíveis",
       done: "Concluído",
+      more: "Mais",
     },
     view: {
       failed: "Não foi possível carregar a visualização da barra lateral.",
