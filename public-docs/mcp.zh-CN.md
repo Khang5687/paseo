@@ -60,7 +60,7 @@ nav: MCP 参考
 
 省略 `paseoTools` 会启用完整的工具目录。把 `enabled` 设为 `false` 会移除整个目录，在 `disabledTools` 中列出确切的工具 ID 则只移除所选的工具。自定义配置不会从 `extends` 继承这一策略；请为每个自定义 Provider ID 分别配置。
 
-浏览器工具仍然需要启用浏览器工具并连接一个浏览器主机。仅用于语音的 `speak` 工具不受此策略控制。
+浏览器工具仍然需要启用浏览器工具并连接一个浏览器主机。`disabledTools` 永远不会移除仅用于语音的 `speak` 工具，但 `enabled: false` 会连同整个目录一起移除它，因此该 Provider 的语音模式无法出声。
 
 这项设置限制的是呈现给 Agent 的工具目录。对于可以通过 shell 访问主机的 Agent，它不是安全边界。
 
