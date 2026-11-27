@@ -1,0 +1,10 @@
+{
+  "pr": 185,
+  "title": "Needs you: every chat waiting on you on one page, one Send for many chats",
+  "tests": [
+    "packages/app/src/needs-you/model.test.ts",
+    "packages/app/src/plugins/evaluate.test.ts",
+    "packages/app/src/questions/answer-message.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/needs-you.spec.ts"]
+}
