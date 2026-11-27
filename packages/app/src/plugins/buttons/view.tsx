@@ -31,7 +31,7 @@ import {
   iconButtonChromeStyle,
   type IconButtonChromeState,
 } from "@/components/ui/icon-button-chrome";
-import { composerPillStyles } from "@/composer/pill-styles";
+import { useComposerPillBody } from "@/composer/pill-styles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
@@ -260,17 +260,18 @@ function ButtonControl({ view }: { view: ButtonView }) {
     (open: boolean) => pluginButtonStore.setOpen(entry.key, open),
     [entry.key],
   );
+  const pillBody = useComposerPillBody();
   const buttonStyle = useCallback(
     ({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) =>
       composer
         ? [
-            composerPillStyles.body,
+            pillBody,
             styles.button,
             (hovered || pressed || entry.open) && styles.active,
             disabled && styles.disabled,
           ]
         : headerButtonStyle(props.layout.compact, { hovered, pressed, open: entry.open }, disabled),
-    [composer, disabled, entry.open, props.layout.compact],
+    [composer, disabled, entry.open, pillBody, props.layout.compact],
   );
   const contents = (
     <>
