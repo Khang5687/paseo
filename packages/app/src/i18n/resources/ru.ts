@@ -1428,6 +1428,7 @@ export const ru: TranslationResources = {
         lastPrompt: "Последний запрос",
         urgent: "Сначала срочные",
         updateHost: "Обновите хосты для сортировки рабочих пространств",
+        switchedToManual: "Теперь порядок ручной",
       },
       grouping: {
         label: "Группировка",

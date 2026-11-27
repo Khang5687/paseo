@@ -24,6 +24,12 @@ Inside a sheet, the `ScrollView` also registers the drag gesture with the sheet,
 
 The grip hangs in the row's leading padding, absolutely positioned over the full row height. The row's content keeps the same left rail as rows that cannot be reordered, and the grip does not take a column. On a pointer device the grip shows on hover, focus, or while dragging. On touch and compact layouts it always shows, because there is no hover.
 
+## A drag under a sort
+
+A list with a sort choice keeps its drag under every sort. The sidebar's workspaces are the case: under Created, Last prompt or Urgent, a drop switches the sort to Manual, saves every project's order as it shows at that moment, applies the drop, and shows "Sorted by hand now" (`saveWorkspaceReorder` in `packages/app/src/components/sidebar/workspace-reorder.ts`). Only the dragged row moves. A drag that lands where it started changes nothing. Desktop and phone share the rule. The sort and the orders are shared by every device ([data-model.md](data-model.md#shared-sidebar-state)).
+
+Check it: in the web app at 390×844, with the sort on Created, drag a workspace below the next one. The toast shows, Display preferences reads Sort: Manual, and a second browser on the same host shows the new order. `packages/app/e2e/browser/sidebar-workspace-order-sync.spec.ts` covers it end to end.
+
 ## Test with a page that scrolls
 
 A list that fits on the screen does not show the bug, because the page has nothing to scroll. Test on a phone with enough rows that the page scrolls. Then check both directions:

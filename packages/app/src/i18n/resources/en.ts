@@ -1420,6 +1420,7 @@ export const en = {
         lastPrompt: "Last prompt",
         urgent: "Urgent first",
         updateHost: "Update hosts to sort workspaces",
+        switchedToManual: "Sorted by hand now",
       },
       grouping: {
         label: "Grouping",

@@ -7773,6 +7773,10 @@ export class Session {
         return this.handleSidebarProjectOrderGet(msg);
       case "sidebar.project_order.set.request":
         return this.handleSidebarProjectOrderSet(msg);
+      case "sidebar.workspace_order.get.request":
+        return this.handleSidebarWorkspaceOrderGet(msg);
+      case "sidebar.workspace_order.set.request":
+        return this.handleSidebarWorkspaceOrderSet(msg);
       default:
         return undefined;
     }
@@ -7849,6 +7853,68 @@ export class Session {
           accepted: result.accepted,
           ...result.projectOrder,
         },
+      });
+    } catch (error) {
+      this.emitSidebarSyncError(request, error);
+    }
+  }
+
+  private async handleSidebarWorkspaceOrderGet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.workspace_order.get.request" }>,
+  ): Promise<void> {
+    if (!request.subscribe) {
+      try {
+        const workspaceOrder = await this.sidebarSync.getWorkspaceOrder();
+        this.emit({
+          type: "sidebar.workspace_order.get.response",
+          payload: { requestId: request.requestId, ...workspaceOrder },
+        });
+      } catch (error) {
+        this.emitSidebarSyncError(request, error);
+      }
+      return;
+    }
+    let unsubscribe: (() => void) | null = null;
+    const owner = this.delivery.begin(
+      "sidebarWorkspaceOrder",
+      request.subscribe.subscriptionId,
+      () => {
+        unsubscribe?.();
+      },
+    );
+    try {
+      // Subscribe before reading so an order set in between still reaches this device.
+      unsubscribe = this.sidebarSync.subscribeWorkspaceOrder((workspaceOrder) => {
+        if (owner.signal.aborted) return;
+        owner.emit({ type: "sidebar.workspace_order.update", payload: workspaceOrder });
+      });
+      const workspaceOrder = await this.sidebarSync.getWorkspaceOrder();
+      if (owner.signal.aborted) return;
+      this.emit({
+        type: "sidebar.workspace_order.get.response",
+        payload: {
+          requestId: request.requestId,
+          subscriptionId: owner.responseId,
+          ...workspaceOrder,
+        },
+      });
+    } catch (error) {
+      await owner.release();
+      this.emitSidebarSyncError(request, error);
+    }
+  }
+
+  private async handleSidebarWorkspaceOrderSet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.workspace_order.set.request" }>,
+  ): Promise<void> {
+    try {
+      const workspaceOrder = await this.sidebarSync.mergeWorkspaceOrder({
+        projects: request.projects,
+        ...(request.sort ? { sort: request.sort } : {}),
+      });
+      this.emit({
+        type: "sidebar.workspace_order.set.response",
+        payload: { requestId: request.requestId, ...workspaceOrder },
       });
     } catch (error) {
       this.emitSidebarSyncError(request, error);

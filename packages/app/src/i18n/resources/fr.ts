@@ -1439,6 +1439,7 @@ export const fr: TranslationResources = {
         lastPrompt: "Dernier prompt",
         urgent: "Urgent d'abord",
         updateHost: "Mettez les hôtes à jour pour trier les espaces de travail",
+        switchedToManual: "Tri manuel activé",
       },
       grouping: {
         label: "Regroupement",

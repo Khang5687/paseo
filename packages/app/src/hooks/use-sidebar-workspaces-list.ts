@@ -284,7 +284,8 @@ export function useSidebarWorkspacesList(options?: {
       orderStore.extendProjectOrder(updates.projectOrder);
     }
     for (const update of updates.workspaceOrders) {
-      orderStore.setWorkspaceOrder(update.projectViewKey, update.order);
+      // New workspaces join the top of the order; that is not a reorder either.
+      orderStore.extendWorkspaceOrder(update.projectViewKey, update.order);
     }
   }, [persistedProjectOrder, projects, sort]);
 
