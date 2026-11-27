@@ -1,6 +1,7 @@
 {
   "pr": 41,
   "title": "feat(server): dispatch OMP account routing RPCs and advertise ompAccountRouting",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": [
     "packages/server/src/server/account-routing/routing.integration.test.ts",
     "packages/server/src/server/authorization/index.test.ts",

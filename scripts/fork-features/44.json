@@ -1,5 +1,6 @@
 {
   "pr": 44,
   "title": "fix(omp): accept OMP's native billing shape in routing catalogs",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": ["packages/server/src/server/agent/providers/omp/cli-runtime.test.ts"]
 }
