@@ -406,6 +406,7 @@ export const ja: TranslationResources = {
     expand: "出力を表示",
     collapse: "出力を隠す",
     openTerminal: "ターミナルタブで開く",
+    showInDrawer: "ターミナルで表示",
     answerPlaceholder: "入力を送信",
     send: "送信",
     showPassword: "パスワードを表示",

@@ -87,6 +87,9 @@ function useCodeRunTarget(chatScope: CodeRunScope, request: FenceRunRequest): Co
   const workspaces = useSessionStore(
     (state) => state.sessions[serverId]?.workspaces ?? NO_WORKSPACES,
   );
+  const keepsChatDrawers = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.chatTerminals === true,
+  );
   return useMemo(
     () =>
       resolveCodeRunTarget(chatScope, request, {
@@ -94,8 +97,9 @@ function useCodeRunTarget(chatScope: CodeRunScope, request: FenceRunRequest): Co
         connected,
         homeDirectory,
         workspaces: workspaces.values(),
+        keepsChatDrawers,
       }),
-    [chatScope, connected, homeDirectory, host, request, workspaces],
+    [chatScope, connected, homeDirectory, host, keepsChatDrawers, request, workspaces],
   );
 }
 

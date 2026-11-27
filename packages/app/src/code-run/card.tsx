@@ -395,7 +395,7 @@ function RunSession({
             onPress={openTerminal}
             testID="code-run-open-terminal"
           >
-            {t("codeRun.openTerminal")}
+            {record.inDrawer ? t("codeRun.showInDrawer") : t("codeRun.openTerminal")}
           </Button>
           <ToolbarButton
             label={t("codeRun.close")}

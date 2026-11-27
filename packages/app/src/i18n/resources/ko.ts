@@ -402,6 +402,7 @@ export const ko: TranslationResources = {
     expand: "출력 보기",
     collapse: "출력 숨기기",
     openTerminal: "터미널 탭에서 열기",
+    showInDrawer: "터미널에서 보기",
     answerPlaceholder: "입력 보내기",
     send: "보내기",
     showPassword: "비밀번호 표시",

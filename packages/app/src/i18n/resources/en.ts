@@ -399,6 +399,7 @@ export const en = {
     expand: "Show output",
     collapse: "Hide output",
     openTerminal: "Open in Terminal tab",
+    showInDrawer: "Show in terminal",
     answerPlaceholder: "Send input",
     send: "Send",
     showPassword: "Show password",

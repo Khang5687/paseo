@@ -19,6 +19,8 @@ const CodeRunRecordSchema = z.object({
   /** Measured on the host's clock, so phone/host clock skew cannot distort it. */
   durationSeconds: z.number().nullable(),
   stopped: z.boolean(),
+  /** The run's terminal opened in the chat's terminal drawer, not as a workspace tab. */
+  inDrawer: z.boolean().optional(),
 });
 
 /** What survives an app restart: which terminal a fence's run lives in and how it ended. */

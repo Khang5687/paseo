@@ -400,6 +400,7 @@ export const zhCN: TranslationResources = {
     expand: "显示输出",
     collapse: "隐藏输出",
     openTerminal: "在终端标签页中打开",
+    showInDrawer: "在终端中显示",
     answerPlaceholder: "发送输入",
     send: "发送",
     showPassword: "显示密码",

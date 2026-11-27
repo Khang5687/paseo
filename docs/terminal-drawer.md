@@ -29,9 +29,16 @@ Swipe sideways in the terminal to switch tabs. The swipe goes through `TerminalP
 
 Phone web (`hasTouch` with `deviceScaleFactor: 2` in Chrome device emulation) paints a blank terminal. Test phone width at scale factor 1. A swipe that starts in the chat area can trigger Chrome's history navigation in emulation; start drawer swipes inside the terminal.
 
+## Run cards
+
+A Run card whose command lands in the chat's own workspace starts its terminal in the chat's drawer (`ownerAgentId` on create), so runs never add workspace tabs. `resolveCodeRunTarget` (`code-run/target.ts`) decides it: same host and workspace as the chat, on a host with `chatTerminals`. A fence with `host=` another machine, or `cwd=` outside the chat's workspace, still opens a workspace tab, since a drawer belongs to one chat on one host.
+
+The card's "Show in terminal" opens the drawer on that terminal (`terminal-drawer/reveal.ts`). It checks the host's terminal list first: a run terminal popped out of the drawer opens as its tab instead.
+
 ## Check it again
 
 1. Start a dev daemon and Metro against it (see [development.md](development.md)). Create a chat with the `mock` provider.
 2. Desktop: press Ctrl+J in the composer. The drawer opens in the chat's folder with the terminal focused. Type `echo alive`, press Ctrl+J twice: the same shell shows `alive`. Add a tab with +, drag the top edge, maximize, pop out (a workspace tab opens with the same shell), kill the last tab (the drawer closes).
 3. Phone width 390×844: tap the terminal icon in the header. Drag the grabber up for full screen, tap Chat, tap Terminal, drag down to the bar and check its last line. With two tabs, swipe left and right in the terminal.
-4. `paseo daemon stop --keep-terminals`, start the daemon again: the drawer still holds its terminals, and a popped-out terminal is still a tab.
+4. Run card: give the mock chat a reply with a shell fence (`featureValues.mockAssistantResponse`, as `e2e/browser/code-run.spec.ts` does), tap Run, then "Show in terminal". The drawer opens on the run's terminal, and the workspace tab bar gains no tab.
+5. `paseo daemon stop --keep-terminals`, start the daemon again: the drawer still holds its terminals, and a popped-out terminal is still a tab.

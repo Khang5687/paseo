@@ -406,6 +406,7 @@ export const es: TranslationResources = {
     expand: "Mostrar salida",
     collapse: "Ocultar salida",
     openTerminal: "Abrir en la pestaña Terminal",
+    showInDrawer: "Mostrar en el terminal",
     answerPlaceholder: "Enviar entrada",
     send: "Enviar",
     showPassword: "Mostrar contraseña",

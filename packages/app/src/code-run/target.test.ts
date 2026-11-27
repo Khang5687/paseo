@@ -104,11 +104,57 @@ describe("resolveCodeRunTarget", () => {
     connected: true,
     homeDirectory: "/Users/k",
     workspaces: macWorkspaces,
+    keepsChatDrawers: false,
   };
 
   it("runs an untagged fence where the chat runs", () => {
     const target = resolveCodeRunTarget(chat, { host: null, cwd: null }, macState);
     expect(target).toEqual({
+      kind: "ready",
+      place: { serverId: "srv_omen", cwd: "/home/k/git/paseo", workspaceId: "ws-omen" },
+    });
+  });
+
+  it("opens a run in the chat's own workspace in the chat's terminal drawer", () => {
+    const omen = { serverId: "srv_omen", label: "Omen" };
+    const omenState = {
+      host: omen,
+      connected: true,
+      homeDirectory: "/home/k",
+      workspaces: [{ id: "ws-omen", workspaceDirectory: "/home/k/git/paseo", archivingAt: null }],
+      keepsChatDrawers: true,
+    };
+    expect(resolveCodeRunTarget(chat, { host: null, cwd: null }, omenState)).toEqual({
+      kind: "ready",
+      place: {
+        serverId: "srv_omen",
+        cwd: "/home/k/git/paseo",
+        workspaceId: "ws-omen",
+        drawerAgentId: "agent-1",
+      },
+    });
+    // `cwd=` inside the chat's workspace still lands there.
+    expect(resolveCodeRunTarget(chat, { host: null, cwd: "~/git/paseo/docs" }, omenState)).toEqual({
+      kind: "ready",
+      place: {
+        serverId: "srv_omen",
+        cwd: "/home/k/git/paseo/docs",
+        workspaceId: "ws-omen",
+        drawerAgentId: "agent-1",
+      },
+    });
+    // Another workspace, or a host without drawers, opens the run as a workspace tab.
+    expect(resolveCodeRunTarget(chat, { host: null, cwd: "/opt/tools" }, omenState)).toEqual({
+      kind: "ready",
+      place: { serverId: "srv_omen", cwd: "/opt/tools", workspaceId: null },
+    });
+    expect(
+      resolveCodeRunTarget(
+        chat,
+        { host: null, cwd: null },
+        { ...omenState, keepsChatDrawers: false },
+      ),
+    ).toEqual({
       kind: "ready",
       place: { serverId: "srv_omen", cwd: "/home/k/git/paseo", workspaceId: "ws-omen" },
     });
