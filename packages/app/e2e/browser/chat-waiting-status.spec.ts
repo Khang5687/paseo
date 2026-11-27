@@ -147,9 +147,12 @@ test.describe("Chat waiting status", () => {
           workspaceId: parent.workspace.workspaceId,
           agentId: parent.agentId,
         });
-        await expect(page.getByText("Waiting on 1 subagent").first()).toBeVisible({
-          timeout: 30_000,
-        });
+        const pill = page.getByTestId("subagents-track-header");
+        await expect(page.getByTestId("subagents-track-header-segment-0")).toHaveText(
+          "Waiting on 1 subagent",
+          { timeout: 30_000 },
+        );
+        await shot(page, "desktop-footer-waiting-subagent.png", pill);
         await shot(page, "desktop-waiting-subagent.png");
       } finally {
         await parent.workspace.cleanup();
