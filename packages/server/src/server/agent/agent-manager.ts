@@ -105,7 +105,8 @@ import {
 } from "./option-controls.js";
 import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
 import { replyAwaitsAnswer } from "./awaiting-answer.js";
-import type { AgentQueuedMessagePayload } from "../messages.js";
+import { answerTextQuestions, mergeAskedQuestions, parseTextQuestions } from "./text-questions.js";
+import type { AgentOpenQuestion, AgentQueuedMessagePayload } from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -635,6 +636,11 @@ interface ManagedAgentBase {
    * the user pauses or resumes.
    */
   queuePauseReason?: string;
+  /**
+   * ❓ questions from the agent's replies that no user message has answered yet, oldest first
+   * (see text-questions.ts). Persisted with the record; absent means none.
+   */
+  openQuestions?: AgentOpenQuestion[];
   /** Plugin-owned data. Paseo persists and forwards it and never reads a key. */
   metadata: AgentMetadata;
 }
@@ -1978,6 +1984,7 @@ export class AgentManager {
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
       queuePauseReason?: string;
+      openQuestions?: AgentOpenQuestion[];
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -2027,6 +2034,7 @@ export class AgentManager {
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
       queuePauseReason?: string;
+      openQuestions?: AgentOpenQuestion[];
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -2100,6 +2108,7 @@ export class AgentManager {
             attention: extractAttention(record),
             // Shown until the reopened session reports its own.
             sessionMetrics: record.sessionMetrics,
+            openQuestions: record.openQuestions,
           }
         : {}),
       workspaceId,
@@ -2418,6 +2427,7 @@ export class AgentManager {
         queuedMessages: existing.queuedMessages,
         queuePaused: existing.queuePaused,
         queuePauseReason: existing.queuePauseReason,
+        openQuestions: existing.openQuestions,
         restoring: true,
       });
     } catch (error) {
@@ -2911,6 +2921,7 @@ export class AgentManager {
         queuedMessages: record.queuedMessages ?? [],
         queuePaused: record.queuePaused ?? false,
         queuePauseReason: record.queuePauseReason,
+        openQuestions: record.openQuestions,
         background: record.background,
         labels: record.labels,
         metadata: record.metadata,
@@ -5284,6 +5295,7 @@ export class AgentManager {
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
       queuePauseReason?: string;
+      openQuestions?: AgentOpenQuestion[];
       /**
        * Bringing a known agent back, rather than starting a new one. Its timestamps and
        * attention come from what was already recorded, and installing the session is not
@@ -5503,6 +5515,7 @@ export class AgentManager {
           queuedMessages?: AgentQueuedMessagePayload[];
           queuePaused?: boolean;
           queuePauseReason?: string;
+          openQuestions?: AgentOpenQuestion[];
           launchEnv?: Record<string, string>;
         }
       | undefined;
@@ -5554,6 +5567,7 @@ export class AgentManager {
       queuedMessages: options.queuedMessages ?? [],
       queuePaused: options.queuePaused ?? false,
       queuePauseReason: options.queuePauseReason,
+      openQuestions: options.openQuestions,
     } as ActiveManagedAgent;
   }
 
@@ -6387,6 +6401,7 @@ export class AgentManager {
       this.recordAndDispatchTimelineItem(agent.id, item, event.provider, event.turnId);
       if (item.type === "user_message") {
         agent.lastUserMessageAt = new Date();
+        this.answerOpenQuestions(agent, item.text);
         this.emitState(agent);
       }
       flags.shouldNotifyWaiters = true;
@@ -6692,7 +6707,10 @@ export class AgentManager {
     )
       return;
     this.touchUpdatedAt(agent);
-    if (item.type === "user_message") agent.lastUserMessageAt = new Date();
+    if (item.type === "user_message") {
+      agent.lastUserMessageAt = new Date();
+      this.answerOpenQuestions(agent, item.text);
+    }
     this.recordAndDispatchTimelineItem(agent.id, item, agent.provider, options?.turnId, options);
   }
 
@@ -6848,6 +6866,9 @@ export class AgentManager {
     }
 
     const finished = previousStatus === "running" && currentStatus === "idle";
+    if (finished) {
+      this.recordAskedQuestions(agent);
+    }
 
     // Skip if already requires attention. An unread finish stays one unread signal, but its
     // question flag follows the newest reply: a turn started without the user reading (a queued
@@ -6865,6 +6886,26 @@ export class AgentManager {
       agent.attention = this.finishedAttention(agent.id);
       this.broadcastAgentAttention(agent, "finished");
     }
+  }
+
+  // Reads only a reply written after the last user message: a turn that ends without text must not
+  // reopen questions an earlier reply asked and the user has answered since.
+  private recordAskedQuestions(agent: ManagedAgent): void {
+    if (!this.timelineStore.has(agent.id)) return;
+    const reply = this.timelineStore.getLastAssistantMessageSinceUserMessage(agent.id);
+    const asked = parseTextQuestions(reply, new Date().toISOString());
+    if (asked.length === 0) return;
+    agent.openQuestions = mergeAskedQuestions(agent.openQuestions ?? [], asked);
+  }
+
+  // A user message answers the open questions it names (see text-questions.ts). Messages other
+  // agents send arrive as user messages too; only the user's own words answer.
+  private answerOpenQuestions(agent: ManagedAgent, text: string): void {
+    if (!agent.openQuestions?.length) return;
+    const message = text.startsWith("<paseo-system") ? parseAgentMessage(text) : null;
+    if (message?.source) return;
+    const open = answerTextQuestions(agent.openQuestions, message?.text ?? text);
+    agent.openQuestions = open.length > 0 ? open : undefined;
   }
 
   // The failed state is only shown while error attention is unread, so every new failure raises

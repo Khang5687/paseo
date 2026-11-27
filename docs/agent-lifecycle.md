@@ -519,6 +519,11 @@ new turn outranks it until it finishes and the flag is recomputed. The workspace
 result, so older apps show it too. Marking a stored agent unread restores plain `finished`
 attention, because the stored reply is a truncated preview.
 
+The questions themselves outlive the attention. At the same turn end the daemon parses each `❓`
+question in the reply into an open question on the agent (`openQuestions` on the snapshot), and an
+idle agent with open questions stays `needs_input` after it is read, until a user message answers
+them. Parsing, and what counts as an answer, are in [questions.md](questions.md).
+
 A new main agent (labels `role=main`) also counts as unread until the user opens it. The daemon
 stamps the label `paseo.unseen=true` when it creates such an agent; internal agents, helpers and
 later `update_agent` label changes never get it. Any root agent carrying the label gives its

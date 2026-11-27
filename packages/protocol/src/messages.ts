@@ -986,6 +986,26 @@ export const AgentBackgroundWorkSummarySchema = z.object({
 
 export type AgentBackgroundWorkSummary = z.infer<typeof AgentBackgroundWorkSummarySchema>;
 
+/**
+ * A question the agent wrote in its reply text, in the grilling format:
+ * `❓ **Q12** - **Title**: body` with an optional `➡️ pick` line under it. Parsed by the daemon
+ * so every client counts the same questions; it stays open until a later user message answers it
+ * (see `server/agent/text-questions.ts` for what counts as an answer).
+ */
+export const AgentOpenQuestionSchema = z.object({
+  /** Stable within the agent: the label when there is one ("Q12"), else derived from the title. */
+  id: z.string(),
+  /** The number the agent gave it, "Q12"; null when the question has none. */
+  label: z.string().nullable(),
+  title: z.string(),
+  body: z.string(),
+  /** The agent's recommended answer, the text after ➡️; null when it gave none. */
+  pick: z.string().nullable(),
+  askedAt: z.string(),
+});
+
+export type AgentOpenQuestion = z.infer<typeof AgentOpenQuestionSchema>;
+
 export const AgentSnapshotPayloadSchema = z.object({
   id: z.string(),
   provider: AgentProviderSchema,
@@ -1025,6 +1045,9 @@ export const AgentSnapshotPayloadSchema = z.object({
   // Set with `finished` attention when a line of the agent's last reply starts with "❓". Absent
   // on older daemons and whenever attention is clear; the daemon folds it into workspace status.
   awaitingAnswer: z.boolean().optional(),
+  // COMPAT(openQuestions): added in v0.17.x (fork), remove gate after 2027-11-27. Questions from
+  // the agent's replies that no user message has answered yet, oldest first. Absent when none.
+  openQuestions: z.array(AgentOpenQuestionSchema).optional(),
   archivedAt: z.string().nullable().optional(),
   providerUnavailable: z.boolean().optional(),
   // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02. Absent on older daemons.

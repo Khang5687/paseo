@@ -15,6 +15,11 @@ export interface AgentStateBucketInput {
    */
   awaitingAnswer?: boolean;
   backgroundWork?: AgentBackgroundWorkSummary | null;
+  /**
+   * Questions from the agent's replies that the user has not answered. Unlike `awaitingAnswer`
+   * they outlive reading the chat, so a settled agent stays waiting on the user until answered.
+   */
+  openQuestionCount?: number;
 }
 
 export function isAgentRunning(input: {
@@ -50,6 +55,9 @@ export function deriveAgentStateBucket(input: AgentStateBucketInput): WorkspaceS
     return "running";
   }
   if (input.requiresAttention && input.awaitingAnswer) {
+    return "needs_input";
+  }
+  if ((input.openQuestionCount ?? 0) > 0) {
     return "needs_input";
   }
   if (input.requiresAttention) {
