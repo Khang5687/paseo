@@ -86,7 +86,11 @@ import {
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import { assertModelEnabled, pickDefaultEnabledModel } from "./provider-disabled-models.js";
-import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentPermissionDraft,
+  JsonValue,
+  ProviderOptions,
+} from "@getpaseo/protocol/agent-types";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
 import {
@@ -3593,6 +3597,24 @@ export class AgentManager {
     const nextRecord: StoredAgentRecord = { ...record, openQuestions: next };
     await registry.upsert(nextRecord);
     this.dispatchStoredAgentState(nextRecord);
+    return true;
+  }
+
+  /**
+   * Keeps the picks of a half-filled question box on its pending permission, so every device
+   * shows them. The newer draft wins; a box that is no longer pending refuses it.
+   */
+  setPendingPermissionDraft(
+    agentId: string,
+    permissionId: string,
+    draft: AgentPermissionDraft,
+  ): boolean {
+    const agent = this.agents.get(agentId);
+    const request = agent?.pendingPermissions.get(permissionId);
+    if (!agent || !request) return false;
+    if ((request.draftAnswers?.updatedAt ?? -1) >= draft.updatedAt) return false;
+    agent.pendingPermissions.set(permissionId, { ...request, draftAnswers: draft });
+    this.emitState(agent, { persist: false });
     return true;
   }
 

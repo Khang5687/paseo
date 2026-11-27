@@ -863,6 +863,42 @@ test("uses an injected timeline store without making it a production requirement
   }
 });
 
+test("a half-filled question box keeps the newer picks on its pending permission", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-permission-draft-"));
+  const manager = new AgentManager({ clients: { codex: new TestAgentClient() }, logger });
+  let agentId: string | null = null;
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = snapshot.id;
+    manager.getAgent(snapshot.id)!.pendingPermissions.set("box-1", {
+      id: "box-1",
+      provider: "codex",
+      name: "AskUserQuestion",
+      kind: "question",
+      input: { questions: [] },
+    });
+    const draft = {
+      answers: { "0": { selected: [1], text: "", files: [] } },
+      updatedAt: 2_000,
+    };
+    expect(manager.setPendingPermissionDraft(snapshot.id, "box-1", draft)).toBe(true);
+    // An older write from another device loses; a box that is gone refuses.
+    expect(
+      manager.setPendingPermissionDraft(snapshot.id, "box-1", { answers: {}, updatedAt: 1 }),
+    ).toBe(false);
+    expect(manager.setPendingPermissionDraft(snapshot.id, "box-9", draft)).toBe(false);
+    // Every device reads it from the agent's pending permissions.
+    expect(
+      toAgentPayload(manager.getAgent(snapshot.id)!).pendingPermissions[0]?.draftAnswers,
+    ).toEqual(draft);
+  } finally {
+    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("refreshing an agent replaces the injected timeline store instead of appending a second copy", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-rehydrate-"));
   const store = new RecordingTimelineStore();
