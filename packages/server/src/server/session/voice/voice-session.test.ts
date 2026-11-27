@@ -61,6 +61,8 @@ class FakeVoiceSttSession extends EventEmitter implements StreamingTranscription
 interface FakeVoiceHost extends VoiceSessionHost {
   readonly emitted: SessionOutboundMessage[];
   readonly spokenInput: Array<{ agentId: string; text: string }>;
+  readonly reloadedAgentIds: string[];
+  speakUnavailable: string | null;
   readonly speakToolReady: boolean[];
   readonly reloads: Array<Partial<AgentSessionConfig>>;
   /** Starts or ends the agent's run; ending it releases every waitForAgentIdle. */
@@ -70,13 +72,16 @@ interface FakeVoiceHost extends VoiceSessionHost {
 function createFakeHost(): FakeVoiceHost {
   const emitted: SessionOutboundMessage[] = [];
   const spokenInput: Array<{ agentId: string; text: string }> = [];
+  const reloadedAgentIds: string[] = [];
   const speakToolReady: boolean[] = [];
   const reloads: Array<Partial<AgentSessionConfig>> = [];
   const idleWaiters: Array<() => void> = [];
   let runActive = false;
-  return {
+  const host: FakeVoiceHost = {
     emitted,
     spokenInput,
+    reloadedAgentIds,
+    speakUnavailable: null,
     speakToolReady,
     reloads,
     setRunActive: (active) => {
@@ -87,8 +92,14 @@ function createFakeHost(): FakeVoiceHost {
       emitted.push(msg);
     },
     loadAgent: async (agentId) =>
-      ({ id: agentId, config: { systemPrompt: undefined } }) as unknown as ManagedAgent,
+      ({
+        id: agentId,
+        provider: "omp",
+        config: { systemPrompt: undefined },
+      }) as unknown as ManagedAgent,
+    speakToolUnavailableReason: () => host.speakUnavailable,
     reloadAgentSession: async (agentId, overrides) => {
+      reloadedAgentIds.push(agentId);
       reloads.push(overrides);
       return { id: agentId } as unknown as ManagedAgent;
     },
@@ -105,6 +116,7 @@ function createFakeHost(): FakeVoiceHost {
         signal?.addEventListener("abort", () => resolve(), { once: true });
       }),
   };
+  return host;
 }
 
 function createVoiceSession(tts: TextToSpeechProvider | null = null) {
@@ -478,6 +490,30 @@ describe("VoiceSession streaming transcription", () => {
         }),
       }),
     );
+
+    await voiceSession.cleanup();
+  });
+});
+
+describe("VoiceSession start", () => {
+  test("refuses voice mode with the reason when the agent would have no speak tool", async () => {
+    const { voiceSession, host, speak } = createVoiceSession();
+    host.speakUnavailable = "Voice mode needs Paseo tools so the agent can speak.";
+
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID, "voice-request-1");
+
+    expect(host.emitted).toContainEqual({
+      type: "set_voice_mode_response",
+      payload: {
+        requestId: "voice-request-1",
+        enabled: false,
+        agentId: null,
+        accepted: false,
+        error: "Voice mode needs Paseo tools so the agent can speak.",
+      },
+    });
+    expect(host.reloadedAgentIds).toEqual([]);
+    expect(() => speak({ text: "hello" })).toThrow("Voice speak handler not registered");
 
     await voiceSession.cleanup();
   });

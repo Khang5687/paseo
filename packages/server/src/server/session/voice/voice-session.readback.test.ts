@@ -78,6 +78,7 @@ function setup(options: { registerThrows?: boolean } = {}) {
       interrupted.push(agentId);
     },
     waitForAgentIdle: async () => {},
+    speakToolUnavailableReason: () => null,
     hasActiveAgentRun: () => false,
   };
   const voice = new VoiceSession({

@@ -22,6 +22,7 @@ import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type {
   AgentPermissionRequest,
   AgentPermissionResponse,
+  AgentProvider,
   AgentSessionConfig,
 } from "../../agent/agent-sdk-types.js";
 import { prepareTextForSpeech } from "./speech-text.js";
@@ -147,6 +148,8 @@ function convertPCMToWavBuffer(
 export interface VoiceSessionHost {
   emit(msg: SessionOutboundMessage): void;
   loadAgent(agentId: string): Promise<ManagedAgent>;
+  /** Why an agent of this provider would have no `speak` tool, or null when it has one. */
+  speakToolUnavailableReason(provider: AgentProvider): string | null;
   reloadAgentSession(
     agentId: string,
     overrides: Partial<AgentSessionConfig>,
@@ -544,6 +547,10 @@ export class VoiceSession {
       { agentId, elapsedMs: Date.now() - startedAt },
       "enableVoiceModeForAgent.ensureAgentLoaded.done",
     );
+
+    // Voice mode answers only through `speak`; without it the agent would stay silent.
+    const speakUnavailable = this.host.speakToolUnavailableReason(existing.provider);
+    if (speakUnavailable) throw new Error(speakUnavailable);
 
     this.registerVoiceBridgeForAgent(agentId);
 
