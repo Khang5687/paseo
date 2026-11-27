@@ -2376,6 +2376,23 @@ export const en = {
   menu: {
     backdrop: "Menu backdrop",
   },
+  questions: {
+    pill_one: "{{count}} open question",
+    pill_other: "{{count}} open questions",
+    panelTitle: "Open questions",
+    goWithPick: "Go with pick",
+    ownPlaceholder: "Or type your own…",
+    attach: "Attach files",
+    removeFile: "Remove {{name}}",
+    change: "Change",
+    yes: "yes",
+    summary: "{{answered}} of {{total}} answered · {{open}} stay open",
+    send_one: "Send {{count}} answer",
+    send_other: "Send {{count}} answers",
+    tooManyFiles: "Up to {{max}} files per answer",
+    uploadFailed: "Could not upload the files",
+    sendFailed: "Could not send the answers",
+  },
   subagents: {
     parent: {
       backToParent: "Back to parent",

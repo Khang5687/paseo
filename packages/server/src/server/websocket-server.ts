@@ -2292,6 +2292,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
         // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
         ...(this.agentDrafts ? { agentDraftSync: true } : {}),
+        // COMPAT(questionAnswers): fork, added with the questions bar.
+        questionAnswers: true,
         // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
         ...(this.notesService ? { notes: true } : {}),
         // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.

@@ -2403,6 +2403,23 @@ export const fr: TranslationResources = {
   menu: {
     backdrop: "Arrière-plan du menu",
   },
+  questions: {
+    pill_one: "{{count}} question ouverte",
+    pill_other: "{{count}} questions ouvertes",
+    panelTitle: "Questions ouvertes",
+    goWithPick: "Prendre la suggestion",
+    ownPlaceholder: "Ou écrivez votre réponse…",
+    attach: "Joindre des fichiers",
+    removeFile: "Retirer {{name}}",
+    change: "Modifier",
+    yes: "oui",
+    summary: "{{answered}} sur {{total}} répondues · {{open}} restent ouvertes",
+    send_one: "Envoyer {{count}} réponse",
+    send_other: "Envoyer {{count}} réponses",
+    tooManyFiles: "Jusqu’à {{max}} fichiers par réponse",
+    uploadFailed: "Impossible d’envoyer les fichiers",
+    sendFailed: "Impossible d’envoyer les réponses",
+  },
   subagents: {
     parent: {
       backToParent: "Retour au parent",

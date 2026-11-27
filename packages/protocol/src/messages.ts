@@ -985,6 +985,55 @@ export const AgentBackgroundWorkSummarySchema = z.object({
 
 export type AgentBackgroundWorkSummary = z.infer<typeof AgentBackgroundWorkSummarySchema>;
 
+/** A file the user attached to an answer, already uploaded to the daemon. */
+export const AgentQuestionAnswerFileSchema = z.object({
+  id: z.string(),
+  fileName: z.string(),
+  mimeType: z.string(),
+  size: z.number(),
+  path: z.string(),
+});
+
+export type AgentQuestionAnswerFile = z.infer<typeof AgentQuestionAnswerFileSchema>;
+
+/**
+ * A half-written answer to one open question, kept on the daemon so every device shows it.
+ * `pick` true means "go with the agent's pick"; otherwise `text` is the user's own answer. Files
+ * go with either. An empty answer (no pick, text or files) is a cleared one; it keeps its
+ * `updatedAt` so an older write from another device cannot bring it back. Last write wins on
+ * `updatedAt` (epoch ms).
+ */
+export const AgentQuestionAnswerSchema = z.object({
+  pick: z.boolean(),
+  text: z.string(),
+  files: z.array(AgentQuestionAnswerFileSchema).optional(),
+  updatedAt: z.number(),
+});
+
+export type AgentQuestionAnswer = z.infer<typeof AgentQuestionAnswerSchema>;
+
+/**
+ * A question the agent wrote in its reply text, in the grilling format:
+ * `❓ **Q12** - **Title**: body` with an optional `➡️ pick` line under it. Parsed by the daemon
+ * so every client counts the same questions; it stays open until a later user message answers it
+ * (see `server/agent/text-questions.ts` for what counts as an answer).
+ */
+export const AgentOpenQuestionSchema = z.object({
+  /** Stable within the agent: the label when there is one ("Q12"), else derived from the title. */
+  id: z.string(),
+  /** The number the agent gave it, "Q12"; null when the question has none. */
+  label: z.string().nullable(),
+  title: z.string(),
+  body: z.string(),
+  /** The agent's recommended answer, the text after ➡️; null when it gave none. */
+  pick: z.string().nullable(),
+  askedAt: z.string(),
+  // COMPAT(questionAnswers): added with the questions bar; absent on older fork daemons.
+  answer: AgentQuestionAnswerSchema.optional(),
+});
+
+export type AgentOpenQuestion = z.infer<typeof AgentOpenQuestionSchema>;
+
 export const AgentSnapshotPayloadSchema = z.object({
   id: z.string(),
   provider: AgentProviderSchema,
@@ -1024,6 +1073,9 @@ export const AgentSnapshotPayloadSchema = z.object({
   // Set with `finished` attention when a line of the agent's last reply starts with "❓". Absent
   // on older daemons and whenever attention is clear; the daemon folds it into workspace status.
   awaitingAnswer: z.boolean().optional(),
+  // COMPAT(openQuestions): added in v0.17.x (fork), remove gate after 2027-11-27. Questions from
+  // the agent's replies that no user message has answered yet, oldest first. Absent when none.
+  openQuestions: z.array(AgentOpenQuestionSchema).optional(),
   archivedAt: z.string().nullable().optional(),
   providerUnavailable: z.boolean().optional(),
   // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02. Absent on older daemons.
@@ -3397,6 +3449,15 @@ export const AgentQueueRemoveRequestSchema = z.object({
   messageId: z.string(),
 });
 
+// COMPAT(questionAnswers): fork, gated on `features.questionAnswers`.
+export const AgentQuestionAnswerSetRequestSchema = z.object({
+  type: z.literal("agent.question.answer.set.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  questionId: z.string(),
+  answer: AgentQuestionAnswerSchema,
+});
+
 export const AgentQueueUpdateRequestSchema = z.object({
   type: z.literal("agent.queue.update.request"),
   requestId: z.string(),
@@ -4535,6 +4596,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueAddRequestSchema,
   AgentQueueRemoveRequestSchema,
   AgentQueueUpdateRequestSchema,
+  AgentQuestionAnswerSetRequestSchema,
   AgentQueueSendNowRequestSchema,
   AgentQueueMoveRequestSchema,
   AgentQueueClearRequestSchema,
@@ -5036,6 +5098,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
         // Daemon owns agent chat drafts (agent.draft.* RPCs). Without it drafts stay on the device.
         agentDraftSync: z.boolean().optional(),
+        // COMPAT(questionAnswers): fork, added with the questions bar. Daemon keeps half-written
+        // answers to open questions (agent.question.answer.set). Without it they stay on the device.
+        questionAnswers: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
@@ -6507,6 +6572,18 @@ export const AgentQueueRemoveResponseSchema = z.object({
     /** The removed entry in full, so the caller can restore it into a composer. */
     message: AgentQueuedMessagePayloadSchema.nullable(),
     success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentQuestionAnswerSetResponseSchema = z.object({
+  type: z.literal("agent.question.answer.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    questionId: z.string(),
+    // False when the question is no longer open or a newer answer already won.
+    accepted: z.boolean(),
     error: z.string().nullable(),
   }),
 });
@@ -8952,6 +9029,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueAddResponseSchema,
   AgentQueueRemoveResponseSchema,
   AgentQueueUpdateResponseSchema,
+  AgentQuestionAnswerSetResponseSchema,
   AgentQueueSendNowResponseSchema,
   AgentQueueMoveResponseSchema,
   AgentQueueClearResponseSchema,
@@ -9560,6 +9638,7 @@ export type WorkspaceMarkUnreadRequest = z.infer<typeof WorkspaceMarkUnreadReque
 export type AgentQueueAddRequest = z.infer<typeof AgentQueueAddRequestSchema>;
 export type AgentQueueRemoveRequest = z.infer<typeof AgentQueueRemoveRequestSchema>;
 export type AgentQueueUpdateRequest = z.infer<typeof AgentQueueUpdateRequestSchema>;
+export type AgentQuestionAnswerSetRequest = z.infer<typeof AgentQuestionAnswerSetRequestSchema>;
 export type AgentQueueSendNowRequest = z.infer<typeof AgentQueueSendNowRequestSchema>;
 export type AgentQueueMoveRequest = z.infer<typeof AgentQueueMoveRequestSchema>;
 export type AgentQueueClearRequest = z.infer<typeof AgentQueueClearRequestSchema>;

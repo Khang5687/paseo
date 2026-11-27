@@ -2317,6 +2317,23 @@ export const zhCN: TranslationResources = {
   menu: {
     backdrop: "菜单背景",
   },
+  questions: {
+    pill_one: "{{count}} 个待答问题",
+    pill_other: "{{count}} 个待答问题",
+    panelTitle: "待答问题",
+    goWithPick: "采用推荐",
+    ownPlaceholder: "或自己输入…",
+    attach: "附加文件",
+    removeFile: "移除 {{name}}",
+    change: "修改",
+    yes: "是",
+    summary: "已答 {{answered}}/{{total}} · {{open}} 个保持未答",
+    send_one: "发送 {{count}} 个回答",
+    send_other: "发送 {{count}} 个回答",
+    tooManyFiles: "每个回答最多 {{max}} 个文件",
+    uploadFailed: "无法上传文件",
+    sendFailed: "无法发送回答",
+  },
   subagents: {
     parent: {
       backToParent: "返回父代理",

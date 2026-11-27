@@ -2405,6 +2405,23 @@ export const es: TranslationResources = {
   menu: {
     backdrop: "Fondo del menú",
   },
+  questions: {
+    pill_one: "{{count}} pregunta abierta",
+    pill_other: "{{count}} preguntas abiertas",
+    panelTitle: "Preguntas abiertas",
+    goWithPick: "Usar la sugerencia",
+    ownPlaceholder: "O escribe tu respuesta…",
+    attach: "Adjuntar archivos",
+    removeFile: "Quitar {{name}}",
+    change: "Cambiar",
+    yes: "sí",
+    summary: "{{answered}} de {{total}} respondidas · {{open}} siguen abiertas",
+    send_one: "Enviar {{count}} respuesta",
+    send_other: "Enviar {{count}} respuestas",
+    tooManyFiles: "Hasta {{max}} archivos por respuesta",
+    uploadFailed: "No se pudieron subir los archivos",
+    sendFailed: "No se pudieron enviar las respuestas",
+  },
   subagents: {
     parent: {
       backToParent: "Volver al padre",
