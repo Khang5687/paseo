@@ -1,0 +1,6 @@
+{
+  "pr": 194,
+  "title": "fix(fork): bundle the browser web app into each remote daemon build",
+  "untested": "build script: checked by running build:daemon-web-ui in the Omen's current release and loading http://127.0.0.1:6767 after the daemon switch (PR comment)",
+  "tests": []
+}
