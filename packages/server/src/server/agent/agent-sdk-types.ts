@@ -6,6 +6,7 @@ import type {
   AgentOptionToggleControl,
   AgentProviderNotice,
   AgentTaskItem,
+  UserMessageAttachmentFile,
   JsonValue,
   ProviderOptions,
   ToolPolicy,
@@ -429,7 +430,13 @@ export interface PluginTimelineItem {
 }
 
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      attachmentFiles?: UserMessageAttachmentFile[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

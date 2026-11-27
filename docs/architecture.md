@@ -500,6 +500,8 @@ Every file a user attaches lands at `uploads/<YYYY-MM-DD>/<name>` (host local da
 
 Why short, readable paths: users ask agents to save an upload into a project weeks later, and a random folder name in the path pollutes the agent's context. Uploads are never pruned. Older `upload_<uuid>/<name>` folders keep working. File-copy uploads (`.paseo-file-copy`) stay in that older layout because the copy flow deletes the whole folder.
 
+Those notes are also how a past message shows its pictures. The provider transcript keeps them, so the daemon turns every `[Image #N]: <path>` and `[File #N]: <path>` note back into `user_message.attachmentFiles`, on the live row and on every row rebuilt from history, including after a daemon restart (`projectAgentMessages` in `agent-messages/envelope.ts`). A client with no local copy of the message's pictures, which is every client but the sender, reads those paths with the ordinary file read and shows the thumbnails (`packages/app/src/attachments/use-user-message-files.ts`). Messages sent before the daemon wrote paths into the notes have only the bare `[Image #N]:` note, so they have nothing to show.
+
 ## Outbound networking
 
 The daemon and its plugin processes honor `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`

@@ -82,6 +82,7 @@ import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
 import { renderStreamRow, type RenderStreamItem } from "./stream-row";
 import { type NearBottom, useIsNearBottom, useNearBottom } from "./near-bottom";
+import { useNewMessageCount } from "./new-messages";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
 import { CHAT_COLUMN_RAIL_DATASET, useChatOutlineRail } from "@/chat-rail";
@@ -325,35 +326,66 @@ const shouldDisableEntryExitAnimations = Platform.OS === "android";
 const scrollIndicatorFadeIn = shouldDisableEntryExitAnimations ? undefined : FadeIn.duration(200);
 const scrollIndicatorFadeOut = shouldDisableEntryExitAnimations ? undefined : FadeOut.duration(200);
 
+/**
+ * Jump to the latest. Wide layouts centre a large arrow over the transcript's foot. On the phone
+ * that centre is the line the reader is reading, so the arrow goes small to the bottom-right
+ * corner, just above the composer, and counts the replies that arrived while they read.
+ */
 function ScrollToBottomButton({
   nearBottom,
   isTimelineDetached,
   bottomOffset,
   onPress,
+  corner,
+  tail,
+  head,
 }: {
   nearBottom: NearBottom;
   isTimelineDetached: boolean;
   bottomOffset: number;
   onPress: () => void;
+  corner: boolean;
+  tail: readonly StreamItem[];
+  head: readonly StreamItem[];
 }) {
   const { t } = useTranslation();
   const isNearBottom = useIsNearBottom(nearBottom);
+  const isShown = !isNearBottom || isTimelineDetached;
+  const newCount = useNewMessageCount({ isAtEnd: !(corner && isShown), tail, head });
   const containerStyle = useMemo(
-    () => [stylesheet.scrollToBottomContainer, { bottom: bottomOffset }],
-    [bottomOffset],
+    () => [
+      corner ? stylesheet.scrollToBottomCorner : stylesheet.scrollToBottomContainer,
+      { bottom: bottomOffset },
+    ],
+    [bottomOffset, corner],
   );
-  if (isNearBottom && !isTimelineDetached) return null;
+  if (!isShown) return null;
   return (
-    <View style={containerStyle} dataSet={CHAT_COLUMN_RAIL_DATASET} pointerEvents="box-none">
+    <View
+      style={containerStyle}
+      dataSet={corner ? undefined : CHAT_COLUMN_RAIL_DATASET}
+      pointerEvents="box-none"
+    >
       <Animated.View entering={scrollIndicatorFadeIn} exiting={scrollIndicatorFadeOut}>
         <Pressable
-          style={stylesheet.scrollToBottomButton}
+          style={corner ? stylesheet.scrollToBottomCornerButton : stylesheet.scrollToBottomButton}
           onPress={onPress}
           accessibilityRole="button"
-          accessibilityLabel={t("agentStream.scrollToBottom")}
+          accessibilityLabel={
+            newCount > 0
+              ? t("agentStream.scrollToBottomNew", { count: newCount })
+              : t("agentStream.scrollToBottom")
+          }
           testID="scroll-to-bottom-button"
         >
-          <ChevronDown size={24} color={stylesheet.scrollToBottomIcon.color} />
+          <ChevronDown size={corner ? 20 : 24} color={stylesheet.scrollToBottomIcon.color} />
+          {newCount > 0 ? (
+            <View style={stylesheet.scrollToBottomCount} testID="scroll-to-bottom-count">
+              <Text style={stylesheet.scrollToBottomCountText}>
+                {newCount > 99 ? "99+" : newCount}
+              </Text>
+            </View>
+          ) : null}
         </Pressable>
       </Animated.View>
     </View>
@@ -816,6 +848,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               sender={item.sender}
               images={item.images}
               attachments={item.attachments}
+              attachmentFiles={item.attachmentFiles}
               timestamp={item.timestamp.getTime()}
               capabilities={context.capabilities}
               client={client}
@@ -1350,6 +1383,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               isTimelineDetached={isTimelineDetached}
               bottomOffset={scrollToBottomOffset}
               onPress={scrollToBottom}
+              corner={isMobile}
+              tail={effectiveStreamItems}
+              head={effectiveStreamHead ?? EMPTY_STREAM_HEAD}
             />
           </AssistantSelectionCopySurface>
         </ToolCallSheetProvider>
@@ -1955,6 +1991,39 @@ const stylesheet = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
     ...theme.shadow.sm,
+  },
+  scrollToBottomCorner: {
+    position: "absolute",
+    right: theme.spacing[4],
+  },
+  scrollToBottomCornerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.surface2,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.borderAccent,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadow.sm,
+  },
+  scrollToBottomCount: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scrollToBottomCountText: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.accentForeground,
   },
   scrollToBottomIcon: {
     color: theme.colors.foreground,

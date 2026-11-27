@@ -1,0 +1,9 @@
+{
+  "pr": 170,
+  "title": "feat(app): more room for the chat on the phone while typing",
+  "tests": [
+    "packages/app/src/composer/attachments/tray.test.ts",
+    "packages/app/src/agent-stream/new-messages.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/phone-chat-room.spec.ts"]
+}

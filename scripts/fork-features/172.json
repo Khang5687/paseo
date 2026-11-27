@@ -1,0 +1,10 @@
+{
+  "pr": 172,
+  "title": "Images on past user messages on every client",
+  "tests": [
+    "packages/server/src/server/agent/prompt-attachments.test.ts",
+    "packages/server/src/server/agent/agent-message-queue.test.ts",
+    "packages/app/src/types/stream.test.ts",
+    "packages/app/src/runtime/replica-cache/index.test.ts"
+  ]
+}
