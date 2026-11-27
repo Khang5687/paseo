@@ -43,7 +43,7 @@ import { CommandCenterWorkspaceActions } from "@/command-center/workspace-regist
 import { PluginCommandCenterActions } from "@/plugins/command-center/registration";
 import { AddProjectFlowHost } from "@/components/add-project-flow-host";
 import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
-import { DownloadToast } from "@/components/download-toast";
+import { DownloadBar } from "@/components/download-bar";
 import { QuittingOverlay } from "@/components/quitting-overlay";
 import { QuitConfirmToast } from "@/components/quit-confirm-toast";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
@@ -570,7 +570,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         </CompactSidebarHost>
       ) : null}
       <AppearanceStyleBoundary>
-        <DownloadToast />
+        <DownloadBar />
         <RosettaCalloutSource />
         <UpdateCalloutSource />
         <LegacyAgentSkillsMigration />

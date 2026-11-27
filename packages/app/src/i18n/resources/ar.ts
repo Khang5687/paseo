@@ -2269,6 +2269,10 @@ export const ar: TranslationResources = {
     iosFolder: "الملفات › Paseo › Downloads",
     showInFolder: "إظهار في المجلد",
     showInFinder: "إظهار في Finder",
+    savedNote: "تم حفظ {{fileName}}",
+    open: "فتح",
+    install: "تثبيت",
+    installFailed: "تعذّر فتح أداة التثبيت.",
   },
   offlineFiles: {
     title: "الملفات دون اتصال",
@@ -2334,7 +2338,7 @@ export const ar: TranslationResources = {
     sent: "تم الإرسال إلى {{device}}",
     failed: "تعذّر الإرسال: {{error}}",
     hostOffline: "{{host}} غير متصل. حاول مجدداً عند عودته.",
-    noticeTap: "{{title}}. انقر للفتح.",
+    noticeTap: "{{title}}. انقر للتنزيل.",
   },
   menu: {
     backdrop: "خلفية القائمة",

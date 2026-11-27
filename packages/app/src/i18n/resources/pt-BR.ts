@@ -2305,6 +2305,10 @@ export const ptBR: TranslationResources = {
     iosFolder: "Arquivos › Paseo › Downloads",
     showInFolder: "Mostrar na pasta",
     showInFinder: "Mostrar no Finder",
+    savedNote: "{{fileName}} salvo",
+    open: "Abrir",
+    install: "Instalar",
+    installFailed: "Não foi possível abrir o instalador.",
   },
   offlineFiles: {
     title: "Arquivos offline",
@@ -2374,7 +2378,7 @@ export const ptBR: TranslationResources = {
     sent: "Enviado para {{device}}",
     failed: "Não foi possível enviar: {{error}}",
     hostOffline: "{{host}} está offline. Tente de novo quando voltar.",
-    noticeTap: "{{title}}. Toque para abrir.",
+    noticeTap: "{{title}}. Toque para baixar.",
   },
   menu: {
     backdrop: "Fundo do menu",

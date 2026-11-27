@@ -2241,6 +2241,10 @@ export const zhCN: TranslationResources = {
     iosFolder: "文件 › Paseo › Downloads",
     showInFolder: "在文件夹中显示",
     showInFinder: "在 Finder 中显示",
+    savedNote: "已保存 {{fileName}}",
+    open: "打开",
+    install: "安装",
+    installFailed: "无法打开安装程序。",
   },
   offlineFiles: {
     title: "离线文件",
@@ -2305,7 +2309,7 @@ export const zhCN: TranslationResources = {
     sent: "已发送到 {{device}}",
     failed: "无法发送：{{error}}",
     hostOffline: "{{host}} 已离线。恢复后请重试。",
-    noticeTap: "{{title}}。点按打开。",
+    noticeTap: "{{title}}。点按下载。",
   },
   menu: {
     backdrop: "菜单背景",

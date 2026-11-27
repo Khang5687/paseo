@@ -101,10 +101,10 @@ test.describe("Download in the desktop app", () => {
     await gotoWorkspace(page, workspace.workspaceId);
     await openFileExplorer(page);
 
-    // Asking is on: the shell gets ask=true. The owner backs out of the dialog, so no toast.
+    // Asking is on: the shell gets ask=true. The owner backs out of the dialog, so no note.
     await downloadFromExplorer(page, fileName);
     await expect.poll(async () => (await readProbe(page)).saves.length).toBe(1);
-    await expect(page.getByTestId("download-toast-reveal")).toHaveCount(0);
+    await expect(page.getByTestId("download-bar-reveal")).toHaveCount(0);
 
     // Turn asking off in Settings > Files, then download again.
     await page.locator('[data-testid="sidebar-settings"]:visible').first().click();
@@ -127,9 +127,9 @@ test.describe("Download in the desktop app", () => {
     await openFileExplorer(page);
     await downloadFromExplorer(page, fileName);
 
-    await expect(page.getByText("Saved to Downloads › Paseo")).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath("download-saved-toast.png") });
-    await page.getByTestId("download-toast-reveal").click();
+    await expect(page.getByText(`${fileName} · Saved to Downloads › Paseo`)).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("download-saved-note.png") });
+    await page.getByTestId("download-bar-reveal").click();
     await expect.poll(async () => (await readProbe(page)).reveals).toEqual([savedPath]);
     const { saves } = await readProbe(page);
     expect(saves.map(({ fileName: name, ask }) => ({ name, ask }))).toEqual([
