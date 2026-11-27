@@ -2375,6 +2375,23 @@ export const ja: TranslationResources = {
   menu: {
     backdrop: "メニューの背景",
   },
+  questions: {
+    pill_one: "未回答の質問 {{count}} 件",
+    pill_other: "未回答の質問 {{count}} 件",
+    panelTitle: "未回答の質問",
+    goWithPick: "おすすめで回答",
+    ownPlaceholder: "または自分で入力…",
+    attach: "ファイルを添付",
+    removeFile: "{{name}} を削除",
+    change: "変更",
+    yes: "はい",
+    summary: "{{total}} 件中 {{answered}} 件回答済み · {{open}} 件は未回答のまま",
+    send_one: "{{count}} 件の回答を送信",
+    send_other: "{{count}} 件の回答を送信",
+    tooManyFiles: "1 回答につき最大 {{max}} ファイル",
+    uploadFailed: "ファイルをアップロードできませんでした",
+    sendFailed: "回答を送信できませんでした",
+  },
   subagents: {
     parent: {
       backToParent: "親に戻る",

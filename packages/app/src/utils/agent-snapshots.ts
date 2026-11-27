@@ -79,9 +79,7 @@ export function projectAgentSnapshot(agent: Agent): AgentSnapshotPayload {
     pendingPermissions: agent.pendingPermissions,
     persistence: agent.persistence,
     ...(agent.runtimeInfo ? { runtimeInfo: agent.runtimeInfo } : {}),
-    ...(agent.usageScopeKey ? { usageScopeKey: agent.usageScopeKey } : {}),
-    ...(agent.lastUsage ? { lastUsage: agent.lastUsage } : {}),
-    ...(agent.sessionMetrics ? { sessionMetrics: agent.sessionMetrics } : {}),
+    ...projectUsage(agent),
     ...(agent.lastError ? { lastError: agent.lastError } : {}),
     title: agent.title,
     labels: agent.labels,
@@ -91,6 +89,7 @@ export function projectAgentSnapshot(agent: Agent): AgentSnapshotPayload {
     attentionTimestamp: agent.attentionTimestamp?.toISOString() ?? null,
     archivedAt: agent.archivedAt?.toISOString() ?? null,
     ...projectQueue(agent),
+    ...(agent.openQuestions?.length ? { openQuestions: agent.openQuestions } : {}),
     ...(agent.background ? { background: true } : {}),
   };
 }
@@ -102,6 +101,16 @@ function projectQueue(
     ...(agent.queuedMessages ? { queuedMessages: agent.queuedMessages } : {}),
     ...(agent.queuePaused ? { queuePaused: agent.queuePaused } : {}),
     ...(agent.queuePauseReason ? { queuePauseReason: agent.queuePauseReason } : {}),
+  };
+}
+
+function projectUsage(
+  agent: Agent,
+): Pick<AgentSnapshotPayload, "usageScopeKey" | "lastUsage" | "sessionMetrics"> {
+  return {
+    ...(agent.usageScopeKey ? { usageScopeKey: agent.usageScopeKey } : {}),
+    ...(agent.lastUsage ? { lastUsage: agent.lastUsage } : {}),
+    ...(agent.sessionMetrics ? { sessionMetrics: agent.sessionMetrics } : {}),
   };
 }
 
@@ -163,5 +172,7 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     // COMPAT(queuePauseReason): added in v0.13.x, remove gate after 2027-10-27.
     queuePauseReason: snapshot.queuePauseReason ?? null,
     metadata: snapshot.metadata,
+    // COMPAT(openQuestions): absent on daemons before ❓ question tracking.
+    openQuestions: snapshot.openQuestions,
   };
 }

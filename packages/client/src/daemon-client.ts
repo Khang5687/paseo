@@ -170,6 +170,7 @@ import type {
   AgentSkillsSaveResult,
   AgentQueuedMessagePayload,
   AgentQueuedMessageSummaryPayload,
+  AgentQuestionAnswer,
   AgentAttachment,
 } from "@getpaseo/protocol/messages";
 import type {
@@ -3007,6 +3008,27 @@ export class DaemonClient {
       throw new Error(response.error ?? "Failed to update queued agent message");
     }
     return response.message;
+  }
+
+  /** Saves a half-written answer to an open question. Needs `features.questionAnswers`. */
+  async setAgentQuestionAnswer(
+    input: { agentId: string; questionId: string; answer: AgentQuestionAnswer },
+    requestId?: string,
+  ): Promise<boolean> {
+    const response =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.question.answer.set.response">({
+        requestId,
+        message: {
+          type: "agent.question.answer.set.request",
+          agentId: input.agentId,
+          questionId: input.questionId,
+          answer: input.answer,
+        },
+      });
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    return response.accepted;
   }
 
   async sendQueuedAgentMessageNow(

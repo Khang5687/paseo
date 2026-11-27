@@ -34,4 +34,21 @@ Anything else leaves labelled questions open. Messages from other agents arrive 
 
 An idle agent with open questions is `needs_input` (`deriveAgentStateBucket`, `openQuestionCount`) even after its chat is read, unlike the `awaitingAnswer` flag, which clears with the attention. A running agent shows as running. For a read chat the workspace's `statusEnteredAt` is when the newest open question was asked.
 
-To check it again: `npx vitest run src/server/agent/text-questions.test.ts` and `npx vitest run src/server/agent/agent-manager.test.ts -t "open questions"` from `packages/server`.
+## The questions bar
+
+A chat with open questions shows a pill in the composer track, "2 open questions · Q100 · Q104" (`packages/app/src/questions/questions-track.tsx`). Tapping it opens every card in one panel: a popover on wide screens, a sheet on the phone, like every track pill. A card has "Go with pick", a field for your own answer, and a paperclip for up to 100 files. An answered card folds to one green line with Change.
+
+Send writes one message with one line per answered card, in the order the agent asked them, and leaves the skipped cards open:
+
+```
+Q100 (Strip icons) round, like the avatars
+Q104 (Sidebar order) yes: newest first [files: order.png]
+```
+
+The line names the title and carries the pick's own words, because a bare "yes" means nothing once the reply that asked has left the agent's context. The words are English on every locale: agents read them and the daemon matches the label.
+
+### Half answers on every device
+
+A half-answered set of cards shows the same answers on every device. The app writes each answer to the host with `agent.question.answer.set` once typing pauses, and the host keeps it on the question (`AgentOpenQuestion.answer`) and sends it with the agent. The newer copy wins on `updatedAt`, this device's or the host's (`resolveAnswer`); a cleared answer keeps its time so an older write cannot bring it back. Files are uploaded to the host when you pick them, so the answer carries only their upload record. Hosts without `features.questionAnswers` never see half answers: they stay on the device until sent.
+
+To check it again: `npx vitest run src/server/agent/text-questions.test.ts` and `npx vitest run src/server/agent/agent-manager.test.ts -t "open questions"` from `packages/server`; `npx vitest run src/questions/answer-message.test.ts` and `npx playwright test --project=browser e2e/browser/open-questions-bar.spec.ts` from `packages/app` (it seeds a mock agent whose reply asks Q100, Q101 and Q104, and saves phone and desktop screenshots under `test-results/`).

@@ -2393,6 +2393,23 @@ export const ru: TranslationResources = {
   menu: {
     backdrop: "Фон меню",
   },
+  questions: {
+    pill_one: "{{count}} открытый вопрос",
+    pill_other: "Открытых вопросов: {{count}}",
+    panelTitle: "Открытые вопросы",
+    goWithPick: "Принять вариант",
+    ownPlaceholder: "Или напишите свой ответ…",
+    attach: "Прикрепить файлы",
+    removeFile: "Убрать {{name}}",
+    change: "Изменить",
+    yes: "да",
+    summary: "Отвечено {{answered}} из {{total}} · открытыми останутся {{open}}",
+    send_one: "Отправить ответ ({{count}})",
+    send_other: "Отправить ответы ({{count}})",
+    tooManyFiles: "До {{max}} файлов на ответ",
+    uploadFailed: "Не удалось загрузить файлы",
+    sendFailed: "Не удалось отправить ответы",
+  },
   subagents: {
     parent: {
       backToParent: "Назад к родителю",

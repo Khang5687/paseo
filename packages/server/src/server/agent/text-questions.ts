@@ -1,4 +1,4 @@
-import type { AgentOpenQuestion } from "@getpaseo/protocol/messages";
+import type { AgentOpenQuestion, AgentQuestionAnswer } from "@getpaseo/protocol/messages";
 
 /**
  * Questions agents write in plain reply text, in the grilling format:
@@ -159,4 +159,19 @@ export function answerTextQuestions(
     "",
   );
   return labelled.filter((question) => question.askedAt !== latest);
+}
+
+/**
+ * Saves a half-written answer on one open question. Returns null when the question is not open
+ * or a newer answer from another device already won (last write wins on `updatedAt`).
+ */
+export function setQuestionAnswer(
+  open: readonly AgentOpenQuestion[],
+  questionId: string,
+  answer: AgentQuestionAnswer,
+): AgentOpenQuestion[] | null {
+  const question = open.find((candidate) => candidate.id === questionId);
+  if (!question) return null;
+  if (question.answer && question.answer.updatedAt > answer.updatedAt) return null;
+  return open.map((candidate) => (candidate === question ? { ...candidate, answer } : candidate));
 }
