@@ -77,6 +77,7 @@ function createFakeHost(): FakeVoiceHost {
     sendSpokenInput: async (agentId, text) => {
       spokenInput.push({ agentId, text });
     },
+    respondToPermission: async () => {},
     interruptAgentIfRunning: async () => {},
     hasActiveAgentRun: () => false,
   };

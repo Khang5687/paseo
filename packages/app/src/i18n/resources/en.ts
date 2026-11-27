@@ -161,6 +161,7 @@ export const en = {
     },
     voice: {
       enableVoiceMode: "Enable Voice mode",
+      activeOnAnotherDevice: "Voice is on for this chat on another device",
       voiceMode: "Voice mode",
       unmuteVoiceMode: "Unmute Voice mode",
       muteVoiceMode: "Mute Voice mode",

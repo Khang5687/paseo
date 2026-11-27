@@ -163,6 +163,7 @@ export const ko: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "음성 모드 켜기",
+      activeOnAnotherDevice: "이 채팅의 음성이 다른 기기에서 켜져 있습니다",
       voiceMode: "음성 모드",
       unmuteVoiceMode: "음성 모드 음소거 해제",
       muteVoiceMode: "음성 모드 음소거",

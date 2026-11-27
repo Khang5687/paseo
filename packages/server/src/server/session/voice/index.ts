@@ -1,3 +1,4 @@
+import type { AgentPermissionRequest } from "../../agent/agent-sdk-types.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
 import type { OwnedOperation, SessionDelivery } from "../owned-subscriptions/index.js";
 import { VoiceSession, type VoiceSessionOptions } from "./voice-session.js";
@@ -42,6 +43,21 @@ export class VoiceSessions {
     return [...this.sources.values()].some(
       (source) => !source.closing && source.voice.isActiveForAgent(agentId),
     );
+  }
+
+  /** The agent asked the listener a question or for permission: read it aloud on the socket that has voice on. */
+  announcePermissionRequest(agentId: string, request: AgentPermissionRequest): void {
+    for (const source of this.sources.values()) {
+      if (!source.closing && source.voice.isActiveForAgent(agentId)) {
+        source.voice.announcePermissionRequest(agentId, request);
+      }
+    }
+  }
+
+  handlePermissionResolved(agentId: string, requestId: string): void {
+    for (const source of this.sources.values()) {
+      source.voice.handlePermissionResolved(agentId, requestId);
+    }
   }
 
   handleMessage(message: VoiceMessage): Promise<void> {

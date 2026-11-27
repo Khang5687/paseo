@@ -100,6 +100,7 @@ import type { ScriptHealthState } from "./script-health-monitor.js";
 import type { ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
+import { VoiceModeAlreadyActiveError } from "./voice-types.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
 import {
   computeNotificationPlan,
@@ -1795,8 +1796,7 @@ export class VoiceAssistantWebSocketServer {
       },
       voiceBridge: {
         registerVoiceSpeakHandler: (agentId, handler) => {
-          if (this.voiceSpeakHandlers.has(agentId))
-            throw new Error("Voice mode is already active for this agent");
+          if (this.voiceSpeakHandlers.has(agentId)) throw new VoiceModeAlreadyActiveError();
           this.voiceSpeakHandlers.set(agentId, handler);
         },
         unregisterVoiceSpeakHandler: (agentId) => {

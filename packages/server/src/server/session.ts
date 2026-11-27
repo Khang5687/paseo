@@ -1416,6 +1416,9 @@ export class Session {
             }),
           reloadAgentSession: (agentId, overrides) =>
             this.agentManager.reloadAgentSession(agentId, overrides),
+          respondToPermission: async (agentId, requestId, response) => {
+            await this.agentManager.respondToPermission(agentId, requestId, response);
+          },
           sendSpokenInput: async (agentId, text) => {
             await this.handleSendAgentMessage(
               agentId,
@@ -2302,6 +2305,14 @@ export class Session {
             });
         }
 
+        if (
+          event.event.type === "permission_requested" &&
+          !isVoicePermissionAllowed(event.event.request)
+        ) {
+          // Voice mode reads questions and prompts aloud; a no-op when voice is off for this agent.
+          this.voiceSessions.announcePermissionRequest(event.agentId, event.event.request);
+        }
+
         const serializedEvent = serializeAgentStreamEvent(event.event);
         if (!serializedEvent) {
           return;
@@ -2332,6 +2343,7 @@ export class Session {
             },
           });
         } else if (event.event.type === "permission_resolved") {
+          this.voiceSessions.handlePermissionResolved(event.agentId, event.event.requestId);
           // A provider event is not the outcome of whichever request is currently running.
           this.emitSubscribedEvent({
             type: "agent_permission_resolved",

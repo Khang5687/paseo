@@ -164,6 +164,7 @@ export const es: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "Habilitar el modo de voz",
+      activeOnAnotherDevice: "La voz está activa para este chat en otro dispositivo",
       voiceMode: "Modo de voz",
       unmuteVoiceMode: "Activar el modo de voz",
       muteVoiceMode: "Modo de voz silenciosa",

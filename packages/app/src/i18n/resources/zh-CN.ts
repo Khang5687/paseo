@@ -163,6 +163,7 @@ export const zhCN: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "启用语音模式",
+      activeOnAnotherDevice: "此聊天的语音已在另一台设备上开启",
       voiceMode: "语音模式",
       unmuteVoiceMode: "取消静音语音模式",
       muteVoiceMode: "静音语音模式",
