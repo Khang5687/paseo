@@ -117,7 +117,7 @@ its DOM-derived scope.
 
 Escape interrupts an agent only in the message input or an unclaimed surface.
 A focused terminal excludes that binding. The source leaves terminal Escape alone;
-terminal Escape/Ctrl forwarding is a separate feature. Ctrl+`, the terminal drawer
+terminal Escape/Ctrl forwarding is a separate feature. `` Ctrl+` ``, the terminal drawer
 toggle on every platform, is the exception: it fires from a focused terminal so the
 same key hides the drawer and returns focus to the composer
 ([terminal-drawer.md](terminal-drawer.md)). It is VS Code's Toggle Terminal key. It

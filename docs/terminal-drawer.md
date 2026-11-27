@@ -13,13 +13,13 @@ A drawer terminal is an ordinary workspace terminal with `ownerAgentId` set to t
 - Archiving a chat closes its drawer terminals.
 - Workspace terminal tabs skip owned terminals (`screens/workspace/terminals/state.ts`). A drawer terminal never gets a workspace tab until it is popped out.
 
-Gate on `server_info.features.chatTerminals`. Against an older host the header toggle is hidden and Ctrl+` does nothing, since an owner the host drops would turn every drawer terminal into a workspace tab.
+Gate on `server_info.features.chatTerminals`. Against an older host the header toggle is hidden and `` Ctrl+` `` does nothing, since an owner the host drops would turn every drawer terminal into a workspace tab.
 
 `toTerminalListEntry` (`utils/terminal-list.ts`) must copy `ownerAgentId` and `createdAt`. When it dropped them, a terminal created from the drawer showed up as a workspace tab until the next list refresh.
 
 ## Focus
 
-The drawer takes focus only when asked: opening it, adding a terminal, or tapping it. A drawer that takes focus whenever it renders steals typing from the composer on every chat switch. Ctrl+` also fires inside a focused terminal, so the same key hides the drawer and hands focus back to the composer. See [keyboard-shortcuts.md](keyboard-shortcuts.md#focus-scopes) for why the key is Ctrl+` on every platform.
+The drawer takes focus only when asked: opening it, adding a terminal, or tapping it. A drawer that takes focus whenever it renders steals typing from the composer on every chat switch. `` Ctrl+` `` also fires inside a focused terminal, so the same key hides the drawer and hands focus back to the composer. See [keyboard-shortcuts.md](keyboard-shortcuts.md#focus-scopes) for why the key is `` Ctrl+` `` on every platform.
 
 ## Phone sheet
 
@@ -32,6 +32,6 @@ Phone web (`hasTouch` with `deviceScaleFactor: 2` in Chrome device emulation) pa
 ## Check it again
 
 1. Start a dev daemon and Metro against it (see [development.md](development.md)). Create a chat with the `mock` provider.
-2. Desktop: press Ctrl+`in the composer. The drawer opens in the chat's folder with the terminal focused. Type`echo alive`, press Ctrl+` twice: the same shell shows `alive`. Add a tab with +, drag the top edge, maximize, pop out (a workspace tab opens with the same shell), kill the last tab (the drawer closes).
+2. Desktop: press `` Ctrl+` `` in the composer. The drawer opens in the chat's folder with the terminal focused. Type `echo alive`, press `` Ctrl+` `` twice: the same shell shows `alive`. Add a tab with +, drag the top edge, maximize, pop out (a workspace tab opens with the same shell), kill the last tab (the drawer closes).
 3. Phone width 390×844: tap the terminal icon in the header. Drag the grabber up for full screen, tap Chat, tap Terminal, drag down to the bar and check its last line. With two tabs, swipe left and right in the terminal.
 4. `paseo daemon stop --keep-terminals`, start the daemon again: the drawer still holds its terminals, and a popped-out terminal is still a tab.
