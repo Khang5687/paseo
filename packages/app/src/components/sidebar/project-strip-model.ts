@@ -25,7 +25,7 @@ export function projectStripShortcutNumber(index: number): number | null {
   return index < PROJECT_STRIP_SHORTCUT_LIMIT ? index + 1 : null;
 }
 
-export type ProjectStripMove = "first" | "earlier" | "later";
+export type ProjectStripMove = "top" | "earlier" | "later" | "bottom";
 
 /** The moves that would change anything for this entry, in menu order. */
 export function listProjectStripMoves(input: {
@@ -34,10 +34,29 @@ export function listProjectStripMoves(input: {
 }): ProjectStripMove[] {
   const index = input.projectKeys.indexOf(input.viewKey);
   if (index === -1) return [];
+  const last = input.projectKeys.length - 1;
   const moves: ProjectStripMove[] = [];
-  if (index > 1) moves.push("first");
+  // One step from an end, "earlier" or "later" already reaches it, so the end move would repeat it.
+  if (index > 1) moves.push("top");
   if (index > 0) moves.push("earlier");
-  if (index < input.projectKeys.length - 1) moves.push("later");
+  if (index < last) moves.push("later");
+  if (index < last - 1) moves.push("bottom");
+  return moves;
+}
+
+/**
+ * Move to top and Move to bottom alone, for menus that sit beside a drag (the desktop rail): with
+ * no one-step moves there, each end move shows whenever it changes anything.
+ */
+export function listProjectEndMoves(input: {
+  projectKeys: readonly string[];
+  viewKey: string;
+}): ProjectStripMove[] {
+  const index = input.projectKeys.indexOf(input.viewKey);
+  if (index === -1) return [];
+  const moves: ProjectStripMove[] = [];
+  if (index > 0) moves.push("top");
+  if (index < input.projectKeys.length - 1) moves.push("bottom");
   return moves;
 }
 
@@ -51,9 +70,10 @@ export function moveProjectStripEntry(input: {
   const index = keys.indexOf(input.viewKey);
   if (index === -1) return keys;
   const targetByMove: Record<ProjectStripMove, number> = {
-    first: 0,
+    top: 0,
     earlier: Math.max(0, index - 1),
     later: Math.min(keys.length - 1, index + 1),
+    bottom: keys.length - 1,
   };
   const target = targetByMove[input.move];
   keys.splice(index, 1);

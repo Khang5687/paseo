@@ -15,7 +15,16 @@ The strip owns no store.
 
 - The strip shows only with two or more projects. With one there is nothing to switch, and the digit keys publish no project targets.
 - The desktop rail sits inside the sidebar's width (52 px), below the window chrome row, so the titlebar drag region and the resize handle keep their places.
-- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to first, Move earlier, Move later. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+- Desktop reorders by dragging an icon (`DraggableList` with a drag handle). Compact reorders from each chip's menu (long-press on a phone, right-click on web): Move to top, Move earlier, Move later, Move to bottom. A sideways drag on the chip row scrolls it, and on native the row blocks the sidebar's swipe-to-close pan for the whole drag, also after the finger slides off the row or the row hits its end (see [mobile-panels.md](mobile-panels.md#integration-rules)).
+
+## The open rail
+
+The rail's first button (» at the top) opens it wide over the sidebar: each project gets its icon, name and a grip. « Collapse, now the first row, closes it. The open state is per device and survives a restart (`useSidebarRailOpenStore`); nothing else closes it, so it stays open while you drag and after you pick a project.
+
+- **It lies over the sidebar, it does not push it.** The rail becomes `position: absolute` inside `SidebarProjectRailLayout`, and a 52 px spacer takes its place, so the workspace list keeps its width and does not reflow on every toggle.
+- **Same list, same drag.** Open and closed render the one `DraggableList`; only the row shape changes. Tooltips show only while closed, since the open rail writes the names out.
+- **The rail's menu.** Right-click on a rail icon opens Move to top, Move to bottom (`listProjectEndMoves`) and, while closed, Reorder projects…, which opens the rail to drag there. The desktop has drag for fine moves, so the menu carries only the two long jumps. `ContextMenuTrigger contextOnly` keeps the left click for selecting and dnd-kit's mouse sensor ignores the right button, so the menu and the drag never fight.
+- A toggle that changes size under a still pointer gets no `pointerleave`, so `RailOpenToggle` remounts its button per state to drop the old hover.
 
 ## The phone's top buttons
 
@@ -66,6 +75,6 @@ A project with no chat activity for 3 days folds into "More": on the rail, on th
 
 Later sidebar features plug in here rather than adding a second switcher:
 
-- Per-project actions on the chip menu go in `ProjectChip`'s `ContextMenuContent`. The desktop rail has no menu yet; give it one with the same items before adding desktop-only actions.
+- Per-project actions go in both menus: `ProjectChip`'s `ContextMenuContent` and `RailProjectButton`'s. Moves share `ProjectMoveItem`.
 - Anything that changes what selecting a project does belongs in the callers of `showOnlyProject`: the rail and chip press handlers and the `show-sidebar-project` keyboard route in `use-shortcuts.ts`.
 - Badges other than the waiting count go beside `NeedsInputBadge`, fed by a hook like `useSidebarProjectNeedsInputCount` that reads the session store with a primitive selector.
