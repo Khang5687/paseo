@@ -356,10 +356,12 @@ test.describe("Plugin sidebar items", () => {
       const compactSync = footerItem(page, SHOWCASE_PLUGIN_ID, "sync");
       await expect(compactSync).toBeInViewport();
       await expectFooterRow(page, compactSync);
-      // The compact nav block is capped at half the sidebar and scrolls past it.
-      const compactDeploys = headerRow(page, SHOWCASE_PLUGIN_ID, "deploys");
-      await compactDeploys.scrollIntoViewIfNeeded();
-      await expect(compactDeploys).toBeInViewport();
+      // The phone row stays one line; Deploys is past what fits, so it waits in More.
+      await expect(headerRow(page, SHOWCASE_PLUGIN_ID, "deploys")).toHaveCount(0);
+      await visibleTestId(page, "sidebar-nav-more").click();
+      await expect(moreItem(page, `plugin-sidebar-${SHOWCASE_PLUGIN_ID}-deploys`)).toBeVisible();
+      await page.getByRole("button", { name: "Bottom sheet backdrop", exact: true }).click();
+      await expect(moreItem(page, `plugin-sidebar-${SHOWCASE_PLUGIN_ID}-deploys`)).toHaveCount(0);
       await qaScreenshot(page, "phase2-compact-sidebar");
       await qaScreenshot(page, "phase5-compact-footer", sidebarFooter(page));
       await compactSync.click();
