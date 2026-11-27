@@ -127,6 +127,55 @@ test("OMP resumes a session on the requested model when it differs from the sess
   expect(session.describePersistence()?.metadata?.model).toBe("openrouter/requested");
 });
 
+// OMP writes a session file with the first prompt. An agent reloaded before that (voice mode,
+// a plugin change, a daemon restart) has a handle to a file that does not exist yet.
+test("OMP resumes a session that never received a prompt as a fresh session", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "paseo-omp-unwritten-"));
+  const unwritten = path.join(dir, "never-prompted.jsonl");
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+  const session = await client.resumeSession({
+    provider: "omp",
+    sessionId: "omp-session-unwritten",
+    nativeHandle: unwritten,
+    metadata: { cwd: dir },
+  });
+  onTestFinished(() => session.close());
+
+  expect(runtime.recordedLaunches[0]?.argv).not.toContain("--session");
+  const nativeHandle = session.describePersistence()?.nativeHandle;
+  expect(nativeHandle).toEqual(expect.any(String));
+  expect(nativeHandle).not.toBe(unwritten);
+});
+
+test("an approval-mode switch before the first prompt starts a fresh OMP session", async () => {
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+  const session = await client.createSession({
+    provider: "omp",
+    cwd: process.cwd(),
+    modeId: "full",
+  });
+  onTestFinished(() => session.close());
+
+  await session.setMode("ask");
+
+  expect(runtime.recordedLaunches).toHaveLength(2);
+  expect(runtime.recordedLaunches[1]?.argv).not.toContain("--session");
+});
+
+test("an approval-mode switch after the first prompt keeps the OMP conversation", async () => {
+  const omp = new OmpHarness();
+  await omp.start({ modeId: "full" });
+  await omp.runPrompt("remember this", "remembered");
+  const sessionFile = omp.runtime().state.sessionFile;
+
+  await omp.setMode("ask");
+
+  expect(omp.runtimeLaunches()[1]?.session).toBe(sessionFile);
+});
+
 class ManualIdleScheduler implements OmpProviderIdleScheduler {
   private readonly retries: Array<() => void> = [];
   private readonly waiters: Array<{ count: number; resolve: () => void }> = [];
@@ -1437,7 +1486,9 @@ describe("OMP agent client and session", () => {
   test("restarts the same conversation after an idle process exit", async () => {
     const omp = new OmpHarness();
     await omp.start({ modeId: "full" });
+    await omp.runPrompt("start the conversation", "started");
     const previousId = omp.runtime().state.sessionId;
+    const sessionFile = omp.runtime().state.sessionFile;
     omp.processExit("OMP RPC process exited with code null and signal SIGKILL\nBun crashed");
     expect(omp.turnFailures()).toEqual([
       "OMP RPC process exited with code null and signal SIGKILL\nBun crashed",
@@ -1445,7 +1496,7 @@ describe("OMP agent client and session", () => {
 
     await omp.startTurn("remember the conversation");
     expect(omp.runtimeLaunches()).toHaveLength(2);
-    expect(omp.runtimeLaunches()[1]?.session).toBe("/tmp/omp-session");
+    expect(omp.runtimeLaunches()[1]?.session).toBe(sessionFile);
     expect(omp.runtime().state.sessionId).toBe(previousId);
     expect(omp.threadStartedSessionIds()).toEqual([]);
     expect(omp.runtime().prompts).toEqual([

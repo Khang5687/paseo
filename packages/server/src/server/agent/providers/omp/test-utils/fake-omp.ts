@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import type {
   OmpRuntime,
   OmpRuntimeLaunch,
@@ -20,6 +24,17 @@ import type {
   OmpThinkingLevel,
 } from "../rpc-types.js";
 import { buildOmpLaunch } from "../runtime.js";
+
+let sessionDir: string | undefined;
+let sessionFileCount = 0;
+
+// Each fake session gets its own file path, so one test's first prompt never makes
+// another test's session look persisted.
+function nextFakeSessionFile(sessionId: string): string {
+  sessionDir ??= mkdtempSync(path.join(tmpdir(), "paseo-fake-omp-"));
+  sessionFileCount += 1;
+  return path.join(sessionDir, `${sessionId}-${sessionFileCount}.jsonl`);
+}
 
 type FakeOmpSubagentSubscriptionLevel = "off" | "progress" | "events";
 type FakeOmpSubagentStatus = "pending" | "running" | "completed" | "failed" | "aborted";
@@ -79,6 +94,10 @@ export class FakeOmp implements OmpRuntime {
       session: input,
     });
     this.recordedLaunches.push(launch);
+    // OMP refuses `--session` for a file it never wrote.
+    if (launch.session && !existsSync(launch.session)) {
+      throw new Error(`Session "${launch.session}" not found.`);
+    }
     if (launch.model && this.removedModels.has(launch.model)) {
       throw new Error(`Model "${launch.model}" not found`);
     }
@@ -181,6 +200,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
   activeBranchEntryId?: string;
   closed = false;
   state: OmpSessionState;
+  private readonly persistsSession: boolean;
 
   private readonly subscribers = new Set<(event: OmpRuntimeEvent) => void>();
   private readonly stateReports: OmpSessionState[] = [];
@@ -199,6 +219,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
     private readonly removedModels: ReadonlySet<string> = new Set(),
   ) {
     this.environment = launch.env ?? {};
+    this.persistsSession = launch.noSession !== true;
     this.state = {
       model: null,
       thinkingLevel: "medium",
@@ -207,7 +228,7 @@ export class FakeOmpSession implements OmpRuntimeSession {
       autoCompactionEnabled: true,
       fastModeEnabled: false,
       fastModeActive: false,
-      sessionFile: launch.session ?? "/tmp/omp-session",
+      sessionFile: launch.session ?? nextFakeSessionFile(sessionId),
       sessionId,
       messageCount: 0,
       queuedMessageCount: 0,
@@ -231,6 +252,10 @@ export class FakeOmpSession implements OmpRuntimeSession {
       imageCount: images?.length ?? 0,
       ...(streamingBehavior ? { streamingBehavior: streamingBehavior } : {}),
     });
+    // Like OMP, the session file appears with the first prompt, not at launch.
+    if (this.persistsSession && !existsSync(this.state.sessionFile)) {
+      writeFileSync(this.state.sessionFile, `${JSON.stringify({ type: "session" })}\n`);
+    }
     if (busy) {
       return {};
     }
