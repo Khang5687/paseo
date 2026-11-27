@@ -111,6 +111,8 @@ interface TerminalPaneProps {
   isPaneFocused: boolean;
   onOpenFileExplorer: () => void;
   onOpenWorkspaceFile: (request: WorkspaceFileOpenRequest) => void;
+  /** Replaces the phone swipe that opens the sidebar or the explorer; -1 is a swipe right. */
+  onSwipe?: (delta: 1 | -1) => void;
 }
 
 const TERMINAL_REFIT_DELAYS_MS = [0, 48, 144, 320];
@@ -265,6 +267,7 @@ export function TerminalPane({
   isPaneFocused,
   onOpenFileExplorer,
   onOpenWorkspaceFile,
+  onSwipe,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
   const retainedPanelActive = useRetainedPanelActive();
@@ -1097,15 +1100,23 @@ export function TerminalPane({
 
   const handleSwipeRight = useCallback(() => {
     if (!swipeGesturesEnabled) return;
+    if (onSwipe) {
+      onSwipe(-1);
+      return;
+    }
     emulatorRef.current?.blur();
     showMobileAgentList();
-  }, [swipeGesturesEnabled, showMobileAgentList]);
+  }, [swipeGesturesEnabled, onSwipe, showMobileAgentList]);
 
   const handleSwipeLeft = useCallback(() => {
     if (!swipeGesturesEnabled) return;
+    if (onSwipe) {
+      onSwipe(1);
+      return;
+    }
     emulatorRef.current?.blur();
     onOpenFileExplorer();
-  }, [swipeGesturesEnabled, onOpenFileExplorer]);
+  }, [swipeGesturesEnabled, onSwipe, onOpenFileExplorer]);
   const showPasteAction = shouldShowTerminalPasteAction({ isNative });
   const showFloatingCopyAction = shouldShowTerminalFloatingCopyAction({
     hasSelection,

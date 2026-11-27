@@ -92,7 +92,9 @@ its DOM-derived scope.
 
 Escape interrupts an agent only in the message input or an unclaimed surface.
 A focused terminal excludes that binding. The source leaves terminal Escape alone;
-terminal Escape/Ctrl forwarding is a separate feature.
+terminal Escape/Ctrl forwarding is a separate feature. Ctrl+J, the terminal drawer
+toggle, is the exception: it fires from a focused terminal so the same key hides the
+drawer and returns focus to the composer ([terminal-drawer.md](terminal-drawer.md)).
 
 Terminal arrows never pass through the shortcut pipeline. The Android hardware
 module claims them while the terminal's hidden input (`nativeID`) owns the focus.

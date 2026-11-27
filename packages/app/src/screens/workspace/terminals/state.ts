@@ -69,12 +69,13 @@ export function collectScriptTerminalIds(input: {
   return terminalIds;
 }
 
+/** Terminals that get a workspace tab: not a script's, and not in a chat's terminal drawer. */
 export function collectStandaloneTerminalIds(input: {
   terminals: TerminalEntry[];
   scriptTerminalIds: Set<string>;
 }): string[] {
   return input.terminals
-    .filter((terminal) => !input.scriptTerminalIds.has(terminal.id))
+    .filter((terminal) => !input.scriptTerminalIds.has(terminal.id) && !terminal.ownerAgentId)
     .map((terminal) => terminal.id);
 }
 

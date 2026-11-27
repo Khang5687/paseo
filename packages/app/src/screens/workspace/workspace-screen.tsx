@@ -158,6 +158,7 @@ import {
 import { useDesktopBrowserNewTabRequests } from "@/desktop/browser/new-tab-requests";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
 import { useWorkspaceExplorerControls } from "@/screens/workspace/workspace-explorer-toggle";
+import { ChatTerminalDrawerToggle } from "@/terminal-drawer/header-toggle";
 import { WindowChromeRegion, WindowChromeSafeArea } from "@/utils/desktop-window";
 import {
   resolveWorkspaceHeaderRenderState,
@@ -863,6 +864,14 @@ function WorkspaceDocumentTitleEffectSlot({
       )}
     </WorkspaceTabPresentationResolver>
   );
+}
+
+/** The chat whose terminal drawer the header toggle drives, when the focused tab is a chat. */
+function resolveDrawerAgentId(
+  activeTab: { descriptor: WorkspaceTabDescriptor } | null | undefined,
+): string | null {
+  const target = activeTab?.descriptor.target;
+  return target?.kind === "agent" ? target.agentId : null;
 }
 
 /**
@@ -3243,6 +3252,28 @@ function WorkspaceScreenContent({
     expanded: isExplorerSidebarShowing,
     onToggle: handleToggleExplorerSidebar,
   });
+  const drawerAgentId = resolveDrawerAgentId(activeTab);
+  const chatTerminalToggle = useMemo(
+    () =>
+      drawerAgentId ? (
+        <ChatTerminalDrawerToggle
+          serverId={normalizedServerId}
+          workspaceId={normalizedWorkspaceId}
+          agentId={drawerAgentId}
+          mobile={isMobile}
+        />
+      ) : null,
+    [drawerAgentId, isMobile, normalizedServerId, normalizedWorkspaceId],
+  );
+  const compactHeaderActions = useMemo(
+    () => (
+      <>
+        {chatTerminalToggle}
+        {explorerControls.compactAction}
+      </>
+    ),
+    [chatTerminalToggle, explorerControls.compactAction],
+  );
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
@@ -3269,12 +3300,14 @@ function WorkspaceScreenContent({
         {workspaceDirectory ? (
           <>
             <WorkspaceActions serverId={normalizedServerId} cwd={workspaceDirectory} />
+            {chatTerminalToggle}
             {workspaceActionsInBar ? null : explorerControls.headerAction}
           </>
         ) : null}
       </View>
     ),
     [
+      chatTerminalToggle,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,
@@ -3439,7 +3472,7 @@ function WorkspaceScreenContent({
           isCompact={isMobile}
           tabSwitcher={tabSwitcher}
           inDesktopTitlebar={explorerControls.inDesktopTitlebar}
-          explorerAction={explorerControls.compactAction}
+          explorerAction={compactHeaderActions}
           isLoading={isWorkspaceHeaderLoading}
           title={workspaceHeaderTitle}
           subtitle={workspaceHeaderSubtitle}
@@ -3471,7 +3504,7 @@ function WorkspaceScreenContent({
     [
       renderWorkspaceTabSwitcher,
       explorerControls.inDesktopTitlebar,
-      explorerControls.compactAction,
+      compactHeaderActions,
       isFocusModeEnabled,
       toggleFocusMode,
       canOpenImportSheet,
