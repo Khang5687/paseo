@@ -1,0 +1,6 @@
+{
+  "pr": 182,
+  "title": "feat(app): plugin slots on the project rail and sidebar rows",
+  "tests": ["packages/app/src/plugins/evaluate.test.ts"],
+  "e2e": ["packages/app/e2e/browser/plugin-project-rail.spec.ts"]
+}

@@ -38,6 +38,7 @@ function installed(): InstalledPlugin {
     composerItems: [],
     newWorkspaceItems: [],
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     workspacePanels: [],
     commandCenterItems: [],
     clientSlashCommands: [],

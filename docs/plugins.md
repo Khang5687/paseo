@@ -727,6 +727,13 @@ one section's order from built-ins, plugin groups, and the section's preference
 - A new-API item renders from the current route's host, else the host remembered under
   `pluginScreensHostKey(pluginId)`, which the screen's host switcher and the item's `openScreen`
   set. One key per plugin: switching host on any of its screens moves all its items.
+- `SidebarRow.badge` goes through `readPluginBadge` (`plugins/badge.ts`), so a malformed value
+  draws nothing instead of throwing. It is drawn by `SidebarHeaderRow`, not the kit, because the
+  phone's icon row swaps the row for `SidebarNavIconButton` there; see
+  [the phone's top buttons](sidebar-project-strip.md#the-phones-top-buttons).
+- `active` comes from `usePluginActiveRefs` (`plugins/active-refs.ts`), the same value sidebar views
+  get. It is the app's open chat on any host, not only the item's host, so a plugin that keys data
+  by host checks `active.workspace.hostId` itself.
 - `addSurface`, `openSurface`, and `addSidebarItem` are undocumented aliases, tagged
   `COMPAT(pluginSidebarAliases)`. `addSidebarItem` is recorded only in `legacySidebarItems` and
   groups as a `legacy` sidebar group, which the app draws as its own row: its registered icon, in
@@ -748,6 +755,24 @@ items after its own.
   their own group below a separator. A missing key is visible.
 - Previews (Settings > Host appearance) pass no `workspace` to `WorkspaceMetaRow`, so plugin items
   stay off them.
+
+## Contribute project rail items
+
+The [public reference](../public-docs/plugins/reference.md#project-rail-items) owns the author API.
+The host lives in `packages/app/src/plugins/project-rail-items/`; the rail in
+`components/sidebar/project-strip.tsx` mounts `PluginProjectRailItems` under its project list and
+passes its own `RailIconButton` in, so the rail keeps its look and the plugin module never imports
+the rail.
+
+- Buttons coalesce across hosts by `<pluginId>/<itemId>` and pick their host like new-API sidebar
+  items: the current route's host, else `pluginScreensHostKey(pluginId)`, else the first.
+- A button whose `screen` the plugin never added is dropped at render, not at registration, since
+  `addScreen` may come after `addProjectRailItem` in the entry.
+- `useBadge` is a hook from the plugin bundle, so it runs inside `PluginEnvironmentProvider` and a
+  `SurfaceErrorBoundary` whose fallback is the same button with no badge. A throwing hook costs the
+  badge, never the button.
+- No Settings toggle: the rail has no hide preference of its own yet. Uninstalling or disabling the
+  plugin is the off switch.
 
 ## Contribute file panels
 

@@ -1071,22 +1071,23 @@ of its items, else the first host.
 
 `Component` receives `PluginSidebarItemProps`:
 
-| Field                     | Meaning                                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------------------- |
-| `theme`, `host`, `layout` | As in `PluginScreenProps`.                                                                    |
-| `currentScreen`           | `{ screenId, params }` of this plugin's screen open on the item's host, or `null`.            |
-| `openScreen(input)`       | Opens one of this plugin's screens: `{ screenId, params? }`. Unknown screen IDs throw.        |
-| `openPopover(Content)`    | Opens `Content` anchored to the pressed row on wide layouts and as a bottom sheet on compact. |
+| Field                     | Meaning                                                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `theme`, `host`, `layout` | As in `PluginScreenProps`.                                                                                                                         |
+| `currentScreen`           | `{ screenId, params }` of this plugin's screen open on the item's host, or `null`.                                                                 |
+| `active`                  | `{ workspace, agent }`: refs of the chat open in the app, on any host. `null` fields when none is open; `agent` is set while a chat tab has focus. |
+| `openScreen(input)`       | Opens one of this plugin's screens: `{ screenId, params? }`. Unknown screen IDs throw.                                                             |
+| `openPopover(Content)`    | Opens `Content` anchored to the pressed row on wide layouts and as a bottom sheet on compact.                                                      |
 
 `Content` receives `theme`, `host`, `layout`, `close()`, and `openScreen(input)`. Opening a screen
 closes the popover.
 
 Render the item with the sidebar kit from `@getpaseo/plugin/client/ui`:
 
-| Component          | Props and behavior                                                                                                                                                                                                                                                                                 |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SidebarRow`       | Required `onPress`; optional `icon` (any [icon](#icons) form), `label`, `active`, `trailing`, `id`. A full-width row. `trailing` renders beside the row's pressable, so a button in it presses on its own; a press elsewhere in it presses the row. `id` tells rows of one item apart in test IDs. |
-| `SidebarSeparator` | No props. The sidebar's separator line, between groups of rows.                                                                                                                                                                                                                                    |
+| Component          | Props and behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SidebarRow`       | Required `onPress`; optional `icon` (any [icon](#icons) form), `label`, `active`, `trailing`, `badge`, `id`. A full-width row. `trailing` renders beside the row's pressable, so a button in it presses on its own; a press elsewhere in it presses the row. `badge` is `{ count?, tone: "attention" \| "warning" }`: a red or amber count, or a dot without `count`. It shows after the label, and on the corner of the round button the phone draws for a header row, where `trailing` has no room. `id` tells rows of one item apart in test IDs. |
+| `SidebarSeparator` | No props. The sidebar's separator line, between groups of rows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 A popover anchors to the row that was pressed, whether the press landed on the row or on its
 `trailing` content, so a per-row "More" button opens its popover next to its own row.
@@ -1239,6 +1240,38 @@ client.addWorkspaceRowBadgeItem({
 Apps older than this API have no `addWorkspaceRowBadgeItem`; check for it before calling.
 
 See the [workspace row badges example](https://github.com/getpaseo/paseo/tree/main/plugin-examples/workspace-row-badges).
+
+### Project rail items
+
+`addProjectRailItem({ id, title, icon, screen, useBadge? })` adds a button to the desktop project
+rail, under the projects. It opens the plugin's `screen` (an `addScreen` id) and shows as selected
+while that screen is open. The closed rail shows the icon with `title` as its tooltip; the open rail
+writes `title` beside it. The rail shows only on wide layouts with two or more projects, so phones
+never show these buttons: give the screen another way in, such as a sidebar item.
+
+`useBadge` is a React hook the button calls while it renders, inside the plugin's runtime, so it can
+use the plugin's queries. Return `{ count?, tone: "attention" | "warning" }` for a red or amber
+count on the button's corner (a dot without `count`), or `null` for none. A hook that throws leaves
+the button without a badge. With the plugin on several hosts the rail shows one button, opening the
+screen on the host its screens last used.
+
+```tsx
+function useAccountsBadge(): PluginBadge | null {
+  const low = useLowAccounts();
+  return low.length > 0 ? { count: low.length, tone: "warning" } : null;
+}
+
+client.addScreen({ id: "accounts", title: "Accounts", Component: AccountsScreen });
+client.addProjectRailItem?.({
+  id: "accounts",
+  title: "Accounts",
+  icon: "Gauge",
+  screen: "accounts",
+  useBadge: useAccountsBadge,
+});
+```
+
+Apps older than this API have no `addProjectRailItem`; check for it before calling.
 
 ## Host UI
 

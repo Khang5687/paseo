@@ -7,13 +7,14 @@ import { SidebarSeparator as AppSidebarSeparator } from "@/components/sidebar/si
 import { useSidebarNavIconRow } from "@/components/sidebar/sidebar-nav-icon-button";
 import { parsePluginIcon, pluginIconComponent } from "../icons";
 import { useSidebarItemFrame } from "./frame";
+import { readPluginBadge } from "../badge";
 
 /**
  * An item may render several rows. Any press inside a row, on the row or on its trailing content,
  * makes that row the popover anchor: the capture-phase responder check runs before the pressed
  * child claims the touch (native and web), and returns false so the child still handles it.
  */
-export function SidebarRow({ id, icon, label, onPress, active, trailing }: SidebarRowProps) {
+export function SidebarRow({ id, icon, label, onPress, active, trailing, badge }: SidebarRowProps) {
   const frame = useSidebarItemFrame("SidebarRow");
   const { anchorTo, offerAnchor, releaseAnchor } = frame;
   const rowRef = useRef<View | null>(null);
@@ -44,6 +45,7 @@ export function SidebarRow({ id, icon, label, onPress, active, trailing }: Sideb
         onPress={handlePress}
         isActive={active}
         trailing={trailing}
+        badge={readPluginBadge(badge)}
         testID={id ? `${frame.testID}-${id}` : frame.testID}
         variant={frame.section === "footer" ? "inline" : "compact"}
       />
