@@ -2315,6 +2315,9 @@ export const ko: TranslationResources = {
     tooLarge: "파일이 오프라인 파일 한도 {{size}}MB를 넘습니다.",
     readOnly: "저장된 사본입니다. 수정하려면 호스트에 연결하세요.",
     savedAgo: "오프라인 사본, {{time}} 저장",
+    openSavedCopy: "저장된 사본 열기 ({{time}} 저장)",
+    downloadAgain: "다시 다운로드",
+    copyLink: "링크 복사",
     share: "공유",
     wifiOnly: {
       label: "Wi-Fi에서만 저장",

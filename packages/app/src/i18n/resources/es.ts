@@ -2362,6 +2362,9 @@ export const es: TranslationResources = {
     tooLarge: "El archivo supera el límite de {{size}} MB para archivos sin conexión.",
     readOnly: "Es una copia guardada. Conéctate al host para editarla.",
     savedAgo: "Copia sin conexión, guardada {{time}}",
+    openSavedCopy: "Abrir copia guardada (guardada {{time}})",
+    downloadAgain: "Descargar de nuevo",
+    copyLink: "Copiar enlace",
     share: "Compartir",
     wifiOnly: {
       label: "Guardar solo con Wi-Fi",

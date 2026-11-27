@@ -1111,7 +1111,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   renderFullContent = false,
   occurrenceKey,
   message,
-  timestamp: _timestamp,
+  timestamp,
   workspaceRoot,
   serverId,
   client,
@@ -1170,6 +1170,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         client={client}
         workspaceRoot={workspaceRoot}
         serverId={serverId}
+        messageAt={timestamp}
       />
       {fullMessageByteLength !== null ? (
         <Text

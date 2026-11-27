@@ -2327,6 +2327,9 @@ export const ja: TranslationResources = {
     tooLarge: "ファイルがオフラインファイルの上限 {{size}} MB を超えています。",
     readOnly: "これは保存コピーです。編集するにはホストに接続してください。",
     savedAgo: "オフラインコピー、{{time}}に保存",
+    openSavedCopy: "保存したコピーを開く（{{time}}に保存）",
+    downloadAgain: "もう一度ダウンロード",
+    copyLink: "リンクをコピー",
     share: "共有",
     wifiOnly: {
       label: "Wi-Fi 接続時のみ保存",

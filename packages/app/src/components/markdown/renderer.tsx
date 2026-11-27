@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
+import { router } from "expo-router";
 import {
   EnrichedMarkdownText,
   type LinkLongPressEvent,
@@ -20,6 +21,11 @@ import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attac
 import type { Theme } from "@/styles/theme";
 import { isNative, isWeb } from "@/constants/platform";
 import { useSaveFileLinkOffline } from "@/offline-files/use-save-offline";
+import { useSavedLinkCopy } from "@/offline-files/use-saved-link-copy";
+import { getFileNameFromPath } from "@/attachments/utils";
+import { copyToClipboard } from "@/utils/copy-to-clipboard";
+import { buildSavedFileRoute } from "@/utils/host-routes";
+import { formatTimeAgo } from "@/utils/time";
 import { density, resolveDensity } from "@/styles/density";
 import { MarkdownBlockStack } from "./block-stack";
 import { WEB_RENDERERS } from "./renderers";
@@ -75,6 +81,11 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
    * a paragraph join as they do on its forge.
    */
   external?: boolean;
+  /**
+   * When the message was written, in ms. A file link then opens the copy saved on this device
+   * after that time instead of fetching the file again (`offline-files/link-copy.ts`).
+   */
+  messageAt?: number;
 }
 
 /** All Markdown surfaces share the same engine and source adaptation. */
@@ -110,6 +121,7 @@ const MarkdownPart = memo(function MarkdownPart({
   onLinkPress,
   agentCommands: _agentCommands,
   external = false,
+  messageAt,
   commandHints = null,
   ...imageContext
 }: MarkdownRendererProps & { commandHints?: CommandHints | null }) {
@@ -137,6 +149,7 @@ const MarkdownPart = memo(function MarkdownPart({
     },
   );
   const [image, setImage] = useState<ImageLightboxSource | null>(null);
+  const findSavedCopy = useSavedLinkCopy();
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
     if (external) {
       // The parser still autolinks bare http, www and email text; only https links open.
@@ -155,15 +168,51 @@ const MarkdownPart = memo(function MarkdownPart({
       return;
     }
     const source = linkSource(url, sourceType);
+    const copy = messageAt === undefined ? null : findSavedCopy(source, messageAt);
+    if (copy) {
+      router.push(buildSavedFileRoute(copy.file));
+      return;
+    }
     if (onLinkPress && !actions.canResolveFile(source)) onLinkPress(url);
     else actions.open(source, "preferred");
   });
-  // Native links have no menu; a long press on a file offers to save it for offline use.
-  // Web links get the same action from their right-click menu (`renderers.web.tsx`).
+  // Native links have no menu; a long press on a file offers to save it for offline use, and a
+  // link with a saved copy offers to fetch it again. Web links get their actions from the
+  // right-click menu (`renderers.web.tsx`).
   const { t } = useTranslation();
   const saveOffline = useSaveFileLinkOffline();
   const longPressLink = useStableEvent(({ url }: LinkLongPressEvent) => {
     const source = linkSource(url);
+    const copy = messageAt === undefined ? null : findSavedCopy(source, messageAt);
+    if (copy) {
+      const time = formatTimeAgo(new Date(copy.file.savedAt));
+      Alert.alert(
+        getFileNameFromPath(copy.file.path) ?? url,
+        undefined,
+        [
+          {
+            text: t("offlineFiles.openSavedCopy", { time }),
+            onPress: () => router.push(buildSavedFileRoute(copy.file)),
+          },
+          {
+            text: t("offlineFiles.downloadAgain"),
+            // A web link downloads through the browser as a tap did before; a host file is
+            // saved again from the host.
+            onPress: () => (copy.web ? actions.open(source, "preferred") : saveOffline(source)),
+          },
+          {
+            text: t("offlineFiles.copyLink"),
+            onPress: () => void copyToClipboard(url).then(() => environment.toast?.copied()),
+          },
+          // Android allows three buttons and closes on a tap outside; iOS needs a Cancel.
+          ...(Platform.OS === "ios"
+            ? [{ text: t("common.actions.cancel"), style: "cancel" as const }]
+            : []),
+        ],
+        { cancelable: true },
+      );
+      return;
+    }
     if (!actions.canResolveFile(source)) return;
     Alert.alert(url, undefined, [
       { text: t("offlineFiles.saveOffline"), onPress: () => saveOffline(source) },

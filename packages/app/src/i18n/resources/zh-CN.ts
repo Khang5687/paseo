@@ -2277,6 +2277,9 @@ export const zhCN: TranslationResources = {
     tooLarge: "文件超过离线文件 {{size}} MB 的上限。",
     readOnly: "这是已保存的副本。连接主机后才能编辑。",
     savedAgo: "离线副本，保存于 {{time}}",
+    openSavedCopy: "打开已保存的副本（保存于 {{time}}）",
+    downloadAgain: "重新下载",
+    copyLink: "复制链接",
     share: "分享",
     wifiOnly: {
       label: "仅在 Wi-Fi 下保存",
