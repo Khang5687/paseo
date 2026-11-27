@@ -180,7 +180,6 @@ export const ar: TranslationResources = {
       unmuteVoice: "إلغاء كتم الصوت",
       muteVoice: "كتم الصوت",
       dictation: "الإملاء",
-      interruptBeforeVoice: "قم بمقاطعة الوكيل قبل بدء الوضع الصوتي",
     },
     attachments: {
       addImage: "أضف صورة",

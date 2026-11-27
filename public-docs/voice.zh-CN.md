@@ -21,6 +21,15 @@ Paseo 对语音提供一流的支持，可用于口述输入，以及与编程�
 - 语音 LLM 编排：使用你配置的 Provider（`claude`、`codex` 或 `opencode`）的隐藏 Agent 会话
 - 工具路径：用于语音工具和 Agent 控制的 MCP stdio 桥
 
+## Agent 工作时说话 {#talking-while-the-agent-works}
+
+Agent 运行期间也可以开启语音模式，并随时说话。
+
+- 你一开口，正在播放的语音回复会立刻停止，Agent 继续工作。
+- 你说完后，消息会加入 Agent 正在进行的轮次，与使用 **引导（Steer）** 发送方式输入的文字消息相同。如果 Agent 空闲，则开始新一轮。
+- 要停止 Agent，请按 **停止**。说话不会停止它。
+- 语音模式通过重新加载会话，为 Agent 配置语音提示和 `speak` 工具，而重新加载会结束正在运行的轮次。如果你在 Agent 运行期间开启语音模式，Paseo 会等这一轮结束后再应用它们。在此之前，你的消息会在没有 `speak` 工具的情况下送达 Agent，所以它用普通聊天消息回答，而不是朗读。运行期间关闭语音模式，同样会等这一轮结束。
+
 ## 本地语音 {#local-speech}
 
 本地语音默认使用模型 ID `parakeet-tdt-0.6b-v2-int8`（STT）和 `kokoro-en-v0_19`（TTS，speaker 0 / voice 00）。

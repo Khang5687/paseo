@@ -181,7 +181,6 @@ export const ptBR: TranslationResources = {
       unmuteVoice: "Ativar som da voz",
       muteVoice: "Silenciar voz",
       dictation: "Ditado",
-      interruptBeforeVoice: "Interrompa o agente antes de iniciar o modo de voz",
     },
     attachments: {
       addImage: "Adicionar imagem",
