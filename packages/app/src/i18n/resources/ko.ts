@@ -2286,6 +2286,11 @@ export const ko: TranslationResources = {
       mute: "실시간 음성 음소거",
       unmute: "실시간 음성 음소거 해제",
       stop: "실시간 음성 중지 및 턴 중단",
+      black: "음성을 유지한 채 화면을 검게 만들기",
+    },
+    blackScreen: {
+      button: "검은 화면",
+      wake: "검은 화면. 두 번 탭하면 돌아옵니다",
     },
   },
   rewind: {

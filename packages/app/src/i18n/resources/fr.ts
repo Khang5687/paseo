@@ -2327,6 +2327,11 @@ export const fr: TranslationResources = {
       mute: "Couper la voix en temps réel",
       unmute: "Réactiver la voix en temps réel",
       stop: "Arrêter la voix en temps réel et interrompre le tour",
+      black: "Passer l'écran au noir pendant que la voix continue",
+    },
+    blackScreen: {
+      button: "Noir",
+      wake: "Écran noir. Touchez deux fois pour le réveiller",
     },
   },
   rewind: {

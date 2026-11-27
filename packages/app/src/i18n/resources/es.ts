@@ -2330,6 +2330,11 @@ export const es: TranslationResources = {
       mute: "Silenciar voz en tiempo real",
       unmute: "Activar voz en tiempo real",
       stop: "Detener la voz en tiempo real e interrumpir el turno.",
+      black: "Poner la pantalla en negro mientras la voz sigue activa",
+    },
+    blackScreen: {
+      button: "Negro",
+      wake: "Pantalla negra. Toca dos veces para activarla",
     },
   },
   rewind: {

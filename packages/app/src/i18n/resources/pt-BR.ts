@@ -2313,6 +2313,11 @@ export const ptBR: TranslationResources = {
       mute: "Silenciar voz em tempo real",
       unmute: "Ativar voz em tempo real",
       stop: "Parar voz em tempo real e interromper a resposta",
+      black: "Deixar a tela preta enquanto a voz continua",
+    },
+    blackScreen: {
+      button: "Preto",
+      wake: "Tela preta. Toque duas vezes para voltar",
     },
   },
   rewind: {
