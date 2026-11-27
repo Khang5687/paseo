@@ -129,7 +129,7 @@ function NeedsYouChatSection({
       <View style={styles.sectionHead}>
         <View style={styles.sectionTitles}>
           <Text style={styles.sectionTitle} numberOfLines={1}>
-            {`${chat.projectName} › ${chat.title}`}
+            {chatHeading(chat)}
           </Text>
           {waited ? <Text style={styles.sectionMeta}>{waited}</Text> : null}
         </View>
@@ -194,20 +194,7 @@ function NeedsYouFooter({
       .finally(() => setSending(false));
   }, [answerFor, chats, settings, t, toast]);
 
-  const getCopyText = useCallback(
-    () =>
-      buildCopyAnswersText(
-        chats.map((chat) => ({
-          title: chat.title,
-          messages: chat.questionGroups.map((group) =>
-            buildAnswerMessage(group.questions, (question) =>
-              answerFor(chat.serverId, group.agentId, question),
-            ),
-          ),
-        })),
-      ),
-    [answerFor, chats],
-  );
+  const getCopyText = useCallback(() => copyAnswersText(chats, answerFor), [answerFor, chats]);
 
   return (
     <View style={footerStyle}>
@@ -232,6 +219,25 @@ function NeedsYouFooter({
         </Button>
       </View>
     </View>
+  );
+}
+
+/** What a chat's section heading says; Copy answers uses it as the chat's header line. */
+function chatHeading(chat: NeedsYouChat): string {
+  return `${chat.projectName} › ${chat.title}`;
+}
+
+/** What Copy answers copies: the lines `sendEveryChat` would send, under each chat's heading. */
+function copyAnswersText(chats: readonly NeedsYouChat[], answerFor: AnswerFor): string | null {
+  return buildCopyAnswersText(
+    chats.map((chat) => ({
+      title: chatHeading(chat),
+      messages: chat.questionGroups.map((group) =>
+        buildAnswerMessage(group.questions, (question) =>
+          answerFor(chat.serverId, group.agentId, question),
+        ),
+      ),
+    })),
   );
 }
 

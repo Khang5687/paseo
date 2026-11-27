@@ -26,6 +26,16 @@ const QUESTIONS_REPLY = [
   "➡️ the project strip first",
 ].join("\n");
 
+// What Send would send for Q100 (picked) and Q104 (typed), which Copy answers must match.
+const EXPECTED_COPY = [
+  "Q100 (Strip icons) yes: square icons with the project letter",
+  "Q104 (Sidebar order) round chips first",
+].join("\n");
+
+function readClipboard(page: Page): Promise<string> {
+  return page.evaluate(() => navigator.clipboard.readText());
+}
+
 async function seedQuestions(prefix: string) {
   const workspace = await seedMockAgentWorkspace({
     repoPrefix: prefix,
@@ -69,14 +79,7 @@ test.describe("phone width", () => {
       await copy.tap();
       await expect(copy).toHaveText("Copied");
       await page.screenshot({ path: test.info().outputPath("questions-copy-phone.png") });
-      await expect
-        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-        .toBe(
-          [
-            "Q100 (Strip icons) yes: square icons with the project letter",
-            "Q104 (Sidebar order) round chips first",
-          ].join("\n"),
-        );
+      await expect.poll(() => readClipboard(page)).toBe(EXPECTED_COPY);
 
       await page.getByTestId("open-questions-send").tap();
       const sent = page.getByTestId("user-message").filter({ hasText: "Q100 (Strip icons)" });
@@ -116,14 +119,7 @@ test("Copy answers copies what Send would send and leaves every question open", 
     await copy.click();
     await expect(copy).toHaveText("Copied");
     await page.screenshot({ path: test.info().outputPath("questions-copy-desktop-after.png") });
-    await expect
-      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-      .toBe(
-        [
-          "Q100 (Strip icons) yes: square icons with the project letter",
-          "Q104 (Sidebar order) round chips first",
-        ].join("\n"),
-      );
+    await expect.poll(() => readClipboard(page)).toBe(EXPECTED_COPY);
     await expect(page.getByTestId("open-questions-summary")).toHaveText(
       "2 of 3 answered · 1 stay open",
     );

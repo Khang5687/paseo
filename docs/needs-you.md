@@ -28,7 +28,7 @@ message with only its own answer lines, the same message the composer's question
 (`sendQuestionAnswers` in `packages/app/src/questions/send-answers.ts`). Skipped cards stay open
 on the page and in the chat. A chat that fails keeps its answers and the others still go.
 
-Copy answers, left of Send, copies those lines without sending: each chat's lines under a header line with the chat's title, in page order, a blank line between chats (`buildCopyAnswersText`). Questions stay open. Details in [docs/questions.md](questions.md#the-questions-bar).
+Copy answers, left of Send, copies those lines without sending: each chat's lines under a header line with the chat's heading on the page (`project › chat`), in page order, a blank line between chats (`buildCopyAnswersText`). Questions stay open. Details in [docs/questions.md](questions.md#the-questions-bar).
 
 Half answers are the questions bar's: they save as you type and reach every device, so a card half
 answered on the phone shows the same on the desktop page.

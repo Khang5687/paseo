@@ -1,0 +1,9 @@
+{
+  "pr": 201,
+  "title": "feat(app): Copy answers button beside Send for open questions",
+  "tests": ["packages/app/src/questions/answer-message.test.ts"],
+  "e2e": [
+    "packages/app/e2e/browser/open-questions-bar.spec.ts",
+    "packages/app/e2e/browser/needs-you.spec.ts"
+  ]
+}
