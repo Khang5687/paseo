@@ -75,13 +75,13 @@ test.describe("Saved on this device", () => {
 
       await row.tap();
       const library = page.getByTestId("saved-library");
-      const group = library.getByTestId(`offline-files-host-${mac.serverId}`);
-      await expect(group.getByText("Mac box")).toBeVisible({ timeout: 15_000 });
-      await expect(group.getByText("plan.md", { exact: true })).toBeVisible();
+      const savedRow = library.getByTestId("offline-files-row").filter({ hasText: "plan.md" });
+      // The row names the device the file came from; the folder stays on the file's own page.
+      await expect(savedRow).toContainText("Mac box", { timeout: 15_000 });
       await expect(row).not.toBeInViewport();
       await page.screenshot({ path: test.info().outputPath("saved-library-list.png") });
 
-      await group.getByTestId("offline-files-row").tap();
+      await savedRow.tap();
       const viewer = page.getByTestId("saved-file-screen");
       await expect(viewer.getByText(PLAN_TEXT)).toBeVisible({ timeout: 30_000 });
       await expect(viewer.getByTestId("offline-file-bar")).toBeVisible();

@@ -31,7 +31,7 @@ const deps: ReceiveSentFileDeps = {
   save: ({ serverId, path }) =>
     withTransferProgress(
       { serverId, scopeId: serverId, fileName: fileNameOf(path) },
-      (onProgress) => addSavedFile({ serverId, path, onProgress }),
+      (onProgress) => addSavedFile({ serverId, path, sent: true, onProgress }),
     ),
   noteSaved: ({ serverId, path }) =>
     useDownloadStore.getState().noteSaved({ serverId, path, fileName: fileNameOf(path) }),

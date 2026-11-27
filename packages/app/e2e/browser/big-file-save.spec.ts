@@ -234,14 +234,12 @@ test.describe("Big files", () => {
       await row.tap();
 
       const library = page.getByTestId("saved-library");
-      const group = library.getByTestId(`offline-files-host-${mac.serverId}`);
-      await expect(group.getByText("bigclip.bin", { exact: true })).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(group.getByText("300.0 MB").first()).toBeVisible();
+      const savedRow = library.getByTestId("offline-files-row").filter({ hasText: "bigclip.bin" });
+      await expect(savedRow).toBeVisible({ timeout: 15_000 });
+      await expect(savedRow.getByText("300.0 MB")).toBeVisible();
       await page.screenshot({ path: test.info().outputPath("big-file-saved-list.png") });
 
-      await group.getByTestId("offline-files-row").tap();
+      await savedRow.tap();
       const viewer = page.getByTestId("saved-file-screen");
       await expect(viewer.getByTestId("offline-file-bar")).toBeVisible({ timeout: 30_000 });
       await page.screenshot({ path: test.info().outputPath("big-file-saved-offline.png") });
