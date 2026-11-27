@@ -2345,6 +2345,9 @@ export const ptBR: TranslationResources = {
     tooLarge: "O arquivo passa do limite de {{size}} MB para arquivos offline.",
     readOnly: "Esta é uma cópia salva. Conecte-se ao host para editá-la.",
     savedAgo: "Cópia offline, salva {{time}}",
+    openSavedCopy: "Abrir cópia salva (salva {{time}})",
+    downloadAgain: "Baixar novamente",
+    copyLink: "Copiar link",
     share: "Compartilhar",
     wifiOnly: {
       label: "Salvar só no Wi-Fi",
