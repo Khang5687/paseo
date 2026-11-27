@@ -2408,6 +2408,22 @@ export const ptBR: TranslationResources = {
     uploadFailed: "Não foi possível enviar os arquivos",
     sendFailed: "Não foi possível enviar as respostas",
   },
+  needsYou: {
+    title: "Precisa de você",
+    subtitle: "Esperando por você · mais antigos primeiro",
+    empty: "Nada está esperando por você.",
+    waited: "esperando há {{time}}",
+    openChat: "Abrir chat",
+    answerInChat: "A pergunta está na resposta. Abra o chat para responder.",
+    summary: "{{answered}} de {{total}} respondidas · as puladas continuam abertas",
+    send_one: "Enviar {{count}} resposta",
+    send_other: "Enviar {{count}} respostas",
+    sent_one: "Enviado para {{count}} chat",
+    sent_other: "Enviado para {{count}} chats",
+    sendFailed: "Não foi possível enviar para {{title}}",
+    railLabel_one: "Precisa de você: {{count}} esperando",
+    railLabel_other: "Precisa de você: {{count}} esperando",
+  },
   subagents: {
     parent: {
       backToParent: "Voltar ao pai",

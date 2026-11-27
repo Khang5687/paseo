@@ -217,6 +217,25 @@ export interface PluginWorkspaceRowBadgeItemContribution<Text extends PluginText
   Component: ComponentType<PluginWorkspaceRowBadgeItemProps>;
 }
 
+export interface PluginNeedsYouItemProps extends PluginHostProps {
+  /** What `useCount` last returned; always above 0 while the row shows. */
+  count: number;
+  openScreen(input: PluginOpenScreenInput): void;
+}
+
+/**
+ * Things that wait on the owner, counted into Needs you: the rail's Needs you number and a row on
+ * its page. The app calls `useCount` as a React hook for as long as it runs, on one host's copy of
+ * the plugin; keep it cheap. The page draws `Component` only while the count is above 0.
+ */
+export interface PluginNeedsYouItemContribution<Text extends PluginText = string> {
+  id: string;
+  title: Text;
+  icon: PluginIcon;
+  useCount: (props: PluginHostProps) => number;
+  Component: ComponentType<PluginNeedsYouItemProps>;
+}
+
 /**
  * A Lucide icon name, inline SVG markup, or a component. Components receive the surface's size
  * and color; buttons widen the props with their host and target context.
@@ -314,6 +333,7 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addWorkspaceRowBadgeItem(
     contribution: PluginWorkspaceRowBadgeItemContribution<PluginText>,
   ): PluginCleanup;
+  addNeedsYouItem(contribution: PluginNeedsYouItemContribution<PluginText>): PluginCleanup;
   addWorkspacePanel(contribution: PluginWorkspacePanelContribution<PluginText>): PluginCleanup;
   addCommandCenterItem(
     contribution: PluginCommandCenterItemContribution<PluginText>,

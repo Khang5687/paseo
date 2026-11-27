@@ -42,6 +42,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/notifications.md](docs/notifications.md)                       | Notification tap ownership, native replay and acknowledgement, startup handoff, and payload QA                                 |
 | [docs/notes.md](docs/notes.md)                                       | Notes on chat/terminal selections: host ownership, waiting-on events, shell integration coverage, the one-alert rule           |
 | [docs/questions.md](docs/questions.md)                               | ❓ questions in agent replies: how the daemon finds them, what answers one, the needs_input rule                               |
+| [docs/needs-you.md](docs/needs-you.md)                               | Needs you: the page of every chat waiting on you, one Send for many chats, the purple count and its plugin items               |
 | [docs/file-icons.md](docs/file-icons.md)                             | Material icon theme integration for the file explorer                                                                          |
 | [docs/offline-files.md](docs/offline-files.md)                       | Saved on this device: where copies come from, pinning and limits, the workspace-less Saved file view                           |
 | [docs/downloads.md](docs/downloads.md)                               | Where Download saves: the ask-where setting per platform, iOS Documents exposure, Android folder picker limit                  |

@@ -40,6 +40,7 @@ import type {
   PluginSidebarItemContribution,
   PluginWorkspacePanelContribution,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemContribution,
   PluginProjectRailItemContribution,
 } from "./types";
 import type { ComponentType } from "react";
@@ -166,6 +167,8 @@ export function runPluginClientBundle(
     footer: new Set(),
   };
   const workspaceRowItemIds = new Set<string>();
+  const needsYouItems: PluginNeedsYouItemContribution[] = [];
+  const needsYouItemIds = new Set<string>();
   const filePanelIds = new Set<string>();
   const composerItemIds = new Set<string>();
   const projectRailItemIds = new Set<string>();
@@ -355,6 +358,31 @@ export function runPluginClientBundle(
         collector.workspaceRowBadgeItems,
         { id: itemId, title, icon, Component: contribution.Component },
         () => workspaceRowItemIds.delete(itemId),
+      );
+    },
+    addNeedsYouItem(contribution: PluginNeedsYouItemContribution) {
+      const itemId = requireId(contribution.id, "needs you item id");
+      if (needsYouItemIds.has(itemId)) throw new Error(`Duplicate needs you item: ${itemId}`);
+      const title = normalizePluginText(contribution.title);
+      if (!title) throw new Error(`Needs you item ${itemId} has no title`);
+      const icon = parsePluginIcon(`Needs you item ${itemId}`, contribution.icon);
+      if (typeof contribution.useCount !== "function") {
+        throw new Error(`Needs you item ${itemId} has no useCount`);
+      }
+      if (!isComponentType(contribution.Component)) {
+        throw new Error(`Needs you item ${itemId} is not a component`);
+      }
+      needsYouItemIds.add(itemId);
+      return register(
+        needsYouItems,
+        {
+          id: itemId,
+          title,
+          icon,
+          useCount: contribution.useCount,
+          Component: contribution.Component,
+        },
+        () => needsYouItemIds.delete(itemId),
       );
     },
     addProjectRailItem(contribution: PluginProjectRailItemContribution) {
@@ -712,6 +740,7 @@ export function runPluginClientBundle(
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     workspaceRowBadgeItems: collector.workspaceRowBadgeItems,
+    needsYouItems,
     projectRailItems: collector.projectRailItems,
     filePanels: collector.filePanels,
     composerItems: collector.composerItems,

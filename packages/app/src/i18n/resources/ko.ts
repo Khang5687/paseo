@@ -2379,6 +2379,22 @@ export const ko: TranslationResources = {
     uploadFailed: "파일을 업로드하지 못했습니다",
     sendFailed: "답변을 보내지 못했습니다",
   },
+  needsYou: {
+    title: "응답 필요",
+    subtitle: "응답을 기다리는 중 · 오래된 순",
+    empty: "기다리는 항목이 없습니다.",
+    waited: "{{time}} 대기 중",
+    openChat: "채팅 열기",
+    answerInChat: "답변 안에서 묻고 있습니다. 채팅을 열어 답하세요.",
+    summary: "{{total}}개 중 {{answered}}개 답변 · 건너뛴 질문은 남습니다",
+    send_one: "답변 {{count}}개 보내기",
+    send_other: "답변 {{count}}개 보내기",
+    sent_one: "채팅 {{count}}개에 보냈습니다",
+    sent_other: "채팅 {{count}}개에 보냈습니다",
+    sendFailed: "{{title}}에 보내지 못했습니다",
+    railLabel_one: "응답 필요: {{count}}개 대기",
+    railLabel_other: "응답 필요: {{count}}개 대기",
+  },
   subagents: {
     parent: {
       backToParent: "상위 에이전트로 돌아가기",

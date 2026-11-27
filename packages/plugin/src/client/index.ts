@@ -24,6 +24,8 @@ export type {
   PluginProjectRailItemContribution,
   PluginWorkspaceRowBadgeItemProps,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemProps,
+  PluginNeedsYouItemContribution,
   PluginIcon,
   PluginPanelLocation,
   PluginOpenPanelOptions,

@@ -1241,6 +1241,50 @@ Apps older than this API have no `addWorkspaceRowBadgeItem`; check for it before
 
 See the [workspace row badges example](https://github.com/getpaseo/paseo/tree/main/plugin-examples/workspace-row-badges).
 
+### Needs you items
+
+`addNeedsYouItem({ id, title, icon, useCount, Component })` adds things that wait on the user to
+**Needs you**, the rail button above **All** that lists every chat waiting on the user. The number
+on that button counts the waiting chats plus every item's count.
+
+`useCount` is a React hook. The app calls it with `PluginHostProps` (`theme`, `host`, `layout`) for
+as long as it runs, so keep it to one shared query. Return how many things wait right now; `0` hides
+the item. A plugin installed on several hosts counts once, on the first host's copy.
+
+`Component` draws the item's row on the Needs you page while the count is above `0`. It receives
+`PluginNeedsYouItemProps`: the host props, `count`, and `openScreen` to open one of the plugin's
+screens.
+
+```tsx
+import type { PluginNeedsYouItemProps } from "@getpaseo/plugin/client";
+import { SidebarRow } from "@getpaseo/plugin/client/ui";
+
+function useLateCount() {
+  const { data } = useLateTasks(); // one shared React Query query
+  return data?.length ?? 0;
+}
+
+function LateTasks({ count, openScreen }: PluginNeedsYouItemProps) {
+  return (
+    <SidebarRow
+      icon="ListChecks"
+      label={`${count} late tasks`}
+      onPress={() => openScreen({ screenId: "tasks" })}
+    />
+  );
+}
+
+client.addNeedsYouItem({
+  id: "late-tasks",
+  title: "Late tasks",
+  icon: "ListChecks",
+  useCount: useLateCount,
+  Component: LateTasks,
+});
+```
+
+Apps older than this API have no `addNeedsYouItem`; check for it before calling.
+
 ### Project rail items
 
 `addProjectRailItem({ id, title, icon, screen, useBadge? })` adds a button to the desktop project

@@ -19,6 +19,7 @@ import type {
   PluginSidebarViewContribution,
   PluginSidebarItemContribution as SDKPluginSidebarItemContribution,
   PluginWorkspaceRowBadgeItemContribution as SDKPluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemContribution as SDKPluginNeedsYouItemContribution,
   PluginProjectRailItemContribution as SDKPluginProjectRailItemContribution,
   PluginScreenContribution as SDKPluginScreenContribution,
   PluginSettingsScreenContribution as SDKPluginSettingsScreenContribution,
@@ -39,6 +40,7 @@ type PluginSidebarContribution = SDKPluginSidebarContribution<PluginText>;
 type PluginSidebarItemContribution = SDKPluginSidebarItemContribution<PluginText>;
 type PluginWorkspaceRowBadgeItemContribution =
   SDKPluginWorkspaceRowBadgeItemContribution<PluginText>;
+type PluginNeedsYouItemContribution = SDKPluginNeedsYouItemContribution<PluginText>;
 export type PluginProjectRailItemContribution = SDKPluginProjectRailItemContribution<PluginText>;
 type PluginScreenContribution = SDKPluginScreenContribution<PluginText>;
 type PluginSettingsScreenContribution = SDKPluginSettingsScreenContribution<PluginText>;
@@ -64,6 +66,8 @@ export interface EvaluatedPlugin {
   /** `addSidebarItem` registrations, so `/plugin/<id>/sidebar/<item>` routes keep resolving. */
   legacySidebarItems: PluginSidebarContribution[];
   workspaceRowBadgeItems: PluginWorkspaceRowBadgeItemContribution[];
+  /** Optional so placeholder installations and fixtures without the field stay valid. */
+  needsYouItems?: PluginNeedsYouItemContribution[];
   projectRailItems: PluginProjectRailItemContribution[];
   filePanels: PluginFilePanelContribution[];
   composerItems: PluginComposerItemContribution[];
@@ -107,6 +111,7 @@ export type {
   PluginSidebarContribution,
   PluginSidebarItemContribution,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemContribution,
   PluginScreenContribution,
   PluginSettingsScreenContribution,
   PluginThemeContribution,

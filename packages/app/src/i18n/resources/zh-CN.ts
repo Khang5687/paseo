@@ -2339,6 +2339,22 @@ export const zhCN: TranslationResources = {
     uploadFailed: "无法上传文件",
     sendFailed: "无法发送回答",
   },
+  needsYou: {
+    title: "等你处理",
+    subtitle: "等你回复 · 最早的在前",
+    empty: "没有等你处理的事项。",
+    waited: "已等待 {{time}}",
+    openChat: "打开对话",
+    answerInChat: "问题在它的回复里。打开对话来回答。",
+    summary: "已回答 {{answered}}/{{total}} · 跳过的问题保留",
+    send_one: "发送 {{count}} 个回答",
+    send_other: "发送 {{count}} 个回答",
+    sent_one: "已发送到 {{count}} 个对话",
+    sent_other: "已发送到 {{count}} 个对话",
+    sendFailed: "无法发送到 {{title}}",
+    railLabel_one: "等你处理：{{count}} 项",
+    railLabel_other: "等你处理：{{count}} 项",
+  },
   subagents: {
     parent: {
       backToParent: "返回父代理",
