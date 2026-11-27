@@ -172,6 +172,18 @@ describe("keyboard-shortcuts", () => {
       action: "shortcuts.dialog.toggle",
     },
     {
+      name: "matches Ctrl+J to toggle the chat terminal drawer from the composer",
+      event: { key: "j", code: "KeyJ", ctrlKey: true },
+      context: { focusScope: "message-input" },
+      action: "workspace.terminal.drawer.toggle",
+    },
+    {
+      name: "matches Ctrl+J in a focused terminal, so the same key hides the drawer",
+      event: { key: "j", code: "KeyJ", ctrlKey: true },
+      context: { focusScope: "terminal" },
+      action: "workspace.terminal.drawer.toggle",
+    },
+    {
       name: "matches workspace index jump on web via Alt+digit",
       event: { key: "2", code: "Digit2", altKey: true },
       context: { usesDesktopBindings: false },
