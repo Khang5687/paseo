@@ -322,6 +322,8 @@ const StoredWorkspaceSchema = z.strictObject({
   projectDisplayName: z.string(),
   projectCustomName: z.string().nullable(),
   projectCustomIconRevision: z.string().nullable(),
+  // Optional because entries written before snooze have none.
+  projectSnoozedUntil: z.string().nullable().optional(),
   projectRootPath: z.string(),
   workspaceDirectory: z.string(),
   worktreeSlug: z.string().optional(),
@@ -356,6 +358,8 @@ const StoredProjectSchema = z.strictObject({
   projectDisplayName: z.string(),
   projectCustomName: z.string().nullable(),
   projectCustomIconRevision: z.string().nullable(),
+  // Optional because entries written before snooze have none.
+  projectSnoozedUntil: z.string().nullable().optional(),
   projectIconRevision: z.string().optional(),
   projectRootPath: z.string(),
   projectKind: z.enum(["git", "non_git", "directory"]),
@@ -763,6 +767,9 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     projectDisplayName: workspace.projectDisplayName,
     projectCustomName: workspace.projectCustomName ?? null,
     projectCustomIconRevision: workspace.projectCustomIconRevision ?? null,
+    ...(workspace.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: workspace.projectSnoozedUntil }
+      : {}),
     projectRootPath: workspace.projectRootPath,
     workspaceDirectory: workspace.workspaceDirectory,
     worktreeSlug: workspace.worktreeSlug,
@@ -806,6 +813,9 @@ function serializeProject(project: ProjectDescriptor): StoredProject {
     projectDisplayName: project.projectDisplayName,
     projectCustomName: project.projectCustomName,
     projectCustomIconRevision: project.projectCustomIconRevision ?? null,
+    ...(project.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: project.projectSnoozedUntil }
+      : {}),
     projectIconRevision: project.projectIconRevision,
     projectRootPath: project.projectRootPath,
     projectKind: project.projectKind,

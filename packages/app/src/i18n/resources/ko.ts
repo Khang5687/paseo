@@ -1489,6 +1489,16 @@ export const ko: TranslationResources = {
         remove: "프로젝트 제거",
         removing: "제거하는 중...",
       },
+      snooze: {
+        title: "다시 알림",
+        tomorrow: "내일까지",
+        monday: "월요일까지",
+        date: "날짜 선택…",
+        datePage: "날짜 선택",
+        wake: "지금 깨우기",
+        until: "{{time}}까지",
+        failed: "{{name}}을(를) 미룰 수 없습니다",
+      },
       confirmations: {
         removeTitle: "프로젝트를 제거할까요?",
         removeMessage:

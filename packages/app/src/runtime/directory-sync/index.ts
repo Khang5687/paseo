@@ -1078,6 +1078,9 @@ function legacyProjectDescriptorFromWorkspace(workspace: WorkspaceDescriptor): P
     projectKey: null,
     projectDisplayName: workspace.projectDisplayName,
     projectCustomName: workspace.projectCustomName ?? null,
+    ...(workspace.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: workspace.projectSnoozedUntil }
+      : {}),
     projectRootPath: workspace.projectRootPath,
     projectKind: workspace.projectKind,
   };

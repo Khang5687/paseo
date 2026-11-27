@@ -1508,6 +1508,16 @@ export const ptBR: TranslationResources = {
         remove: "Remover projeto",
         removing: "Removendo...",
       },
+      snooze: {
+        title: "Adiar",
+        tomorrow: "Até amanhã",
+        monday: "Até segunda",
+        date: "Até uma data…",
+        datePage: "Até uma data",
+        wake: "Acordar agora",
+        until: "Até {{time}}",
+        failed: "Não foi possível adiar {{name}}",
+      },
       confirmations: {
         removeTitle: "Remover projeto?",
         removeMessage:

@@ -4830,6 +4830,21 @@ export class DaemonClient {
     if (!payload.accepted) throw new Error(payload.error ?? "setProjectIcon rejected");
   }
 
+  /** Snoozes a project until `snoozedUntil` (ISO), or wakes it with null. Needs `features.projectSnooze`. */
+  async setProjectSnooze(
+    projectId: string,
+    snoozedUntil: string | null,
+    requestId?: string,
+  ): Promise<{ snoozedUntil: string | null }> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"project.snooze.set.response">({
+        requestId,
+        message: { type: "project.snooze.set.request", projectId, snoozedUntil },
+      });
+    if (!payload.accepted) throw new Error(payload.error ?? "setProjectSnooze rejected");
+    return { snoozedUntil: payload.snoozedUntil };
+  }
+
   async removeProject(
     projectId: string,
     requestId?: string,

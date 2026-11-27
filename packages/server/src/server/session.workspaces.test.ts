@@ -8450,6 +8450,93 @@ test("project.rename.request stores customName and emits an updated workspace de
   });
 });
 
+test("project.snooze.set.request stores the snooze, sends it on the descriptor, and wakes with null", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const session = asTestSession(
+    createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) }),
+  );
+  const project = createPersistedProjectRecord({
+    projectId: "prj_snooze",
+    rootPath: REPO_CWD,
+    kind: "git",
+    displayName: "acme/repo",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-snooze",
+    projectId: project.projectId,
+    cwd: REPO_CWD,
+    kind: "local_checkout",
+    displayName: "main",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const projects = new Map([[project.projectId, project]]);
+  session.projectRegistry.get = async (id: string) => projects.get(id) ?? null;
+  session.projectRegistry.list = async () => Array.from(projects.values());
+  session.projectRegistry.upsert = async (record: unknown) => {
+    const parsed = record as typeof project;
+    projects.set(parsed.projectId, parsed);
+  };
+  session.workspaceRegistry.listAll = session.workspaceRegistry.listActive = async () => [
+    workspace,
+  ];
+  session.workspaceRegistry.get = async (id: string) =>
+    id === workspace.workspaceId ? workspace : null;
+  await session.handleMessage({
+    type: "fetch_workspaces_request",
+    requestId: "sub-workspaces",
+    subscribe: { subscriptionId: "sub-workspaces" },
+  });
+
+  const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  await session.handleMessage({
+    type: "project.snooze.set.request",
+    projectId: project.projectId,
+    snoozedUntil: until,
+    requestId: "req-snooze-1",
+  });
+  expect(findByType(emitted, "project.snooze.set.response")?.payload).toEqual({
+    requestId: "req-snooze-1",
+    projectId: project.projectId,
+    accepted: true,
+    snoozedUntil: until,
+    error: null,
+  });
+  expect(projects.get(project.projectId)?.snoozedUntil).toBe(until);
+  expect(findByType(emitted, "workspace_update")?.payload).toMatchObject({
+    kind: "upsert",
+    workspace: { id: "ws-snooze", projectSnoozedUntil: until },
+  });
+
+  emitted.length = 0;
+  await session.handleMessage({
+    type: "project.snooze.set.request",
+    projectId: project.projectId,
+    snoozedUntil: null,
+    requestId: "req-snooze-2",
+  });
+  expect(projects.get(project.projectId)?.snoozedUntil).toBeNull();
+  // A woken project still sends the field, as null, so a client that merges descriptors wakes it.
+  expect(findByType(emitted, "workspace_update")?.payload).toMatchObject({
+    kind: "upsert",
+    workspace: { id: "ws-snooze", projectSnoozedUntil: null },
+  });
+
+  emitted.length = 0;
+  await session.handleMessage({
+    type: "project.snooze.set.request",
+    projectId: project.projectId,
+    snoozedUntil: "next week",
+    requestId: "req-snooze-3",
+  });
+  expect(findByType(emitted, "project.snooze.set.response")?.payload).toMatchObject({
+    accepted: false,
+    error: "Not a time",
+  });
+});
+
 test("project.rename.request updates a project with no workspaces", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const session = asTestSession(
