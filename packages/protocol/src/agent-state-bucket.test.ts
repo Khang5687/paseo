@@ -138,6 +138,25 @@ describe("deriveAgentStateBucket", () => {
     expect(deriveAgentStateBucket({ status: "idle", openQuestionCount: 0 })).toBe("done");
   });
 
+  it("keeps a settled agent that asks the user in needs_input while its background jobs run", () => {
+    const backgroundWork = { count: 1, runningCount: 1 };
+    expect(
+      deriveAgentStateBucket({ status: "idle", backgroundWork, openQuestionCount: 2 }),
+    ).toBe("needs_input");
+    expect(
+      deriveAgentStateBucket({
+        status: "idle",
+        backgroundWork,
+        requiresAttention: true,
+        attentionReason: "finished",
+        awaitingAnswer: true,
+      }),
+    ).toBe("needs_input");
+    expect(
+      deriveAgentStateBucket({ status: "running", backgroundWork, openQuestionCount: 2 }),
+    ).toBe("running");
+  });
+
   it("does not count initializing agents as running for workspace buckets", () => {
     expect(
       deriveAgentStateBucket({

@@ -1,0 +1,5 @@
+{
+  "pr": 196,
+  "title": "fix(protocol): a settled agent that asks the user is needs_input while its background jobs run",
+  "tests": ["packages/protocol/src/agent-state-bucket.test.ts"]
+}
