@@ -1350,6 +1350,8 @@ export const ko: TranslationResources = {
       openRail: "프로젝트 이름 표시",
       collapseRail: "접기",
       reorderProjects: "프로젝트 순서 변경…",
+      reorderTitle: "프로젝트 순서 변경",
+      reorderHint: "프로젝트를 길게 누른 다음 원하는 위치로 끌어 놓으세요.",
       lastOpen: "마지막으로 열림",
       recentWorkspaces: "최근 워크스페이스",
       nextWaiting: "다음 대기 중 · {{count}}",
