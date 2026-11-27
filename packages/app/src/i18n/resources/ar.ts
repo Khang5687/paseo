@@ -1345,6 +1345,8 @@ export const ar: TranslationResources = {
       openRail: "إظهار أسماء المشاريع",
       collapseRail: "طي",
       reorderProjects: "إعادة ترتيب المشاريع…",
+      reorderTitle: "إعادة ترتيب المشاريع",
+      reorderHint: "المس مشروعًا مطولًا، ثم اسحبه إلى مكانه.",
       lastOpen: "آخر ما فُتح",
       recentWorkspaces: "مساحات العمل الأخيرة",
       nextWaiting: "التالي بانتظارك · {{count}}",

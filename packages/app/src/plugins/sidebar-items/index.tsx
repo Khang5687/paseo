@@ -39,6 +39,7 @@ import type { PluginSidebarSection } from "../types";
 import { SidebarItemFrameContext, type SidebarItemFrame } from "./frame";
 import { LegacyPluginSidebarRow } from "./legacy";
 import { resolvePluginPlatform } from "../platform";
+import { usePluginActiveRefs } from "../active-refs";
 
 export { SidebarRow, SidebarSeparator } from "./kit";
 
@@ -166,6 +167,7 @@ function SidebarItemContent({
     useSidebarPopoverAnchor("PluginSidebarItem");
   const hosts = useHosts();
   const compact = useIsCompactFormFactor();
+  const active = usePluginActiveRefs();
   const hostLabel =
     hosts.find((host) => host.serverId === plugin.serverId)?.label ?? plugin.serverId;
 
@@ -217,8 +219,8 @@ function SidebarItemContent({
     [anchorTo, item.id, item.title, offerAnchor, plugin, releaseAnchor, section],
   );
   const itemProps = useMemo<PluginSidebarItemProps>(
-    () => ({ ...hostProps, currentScreen, openScreen, openPopover }),
-    [currentScreen, hostProps, openPopover, openScreen],
+    () => ({ ...hostProps, active, currentScreen, openScreen, openPopover }),
+    [active, currentScreen, hostProps, openPopover, openScreen],
   );
   const Item = item.Component;
   const Popover = popover;

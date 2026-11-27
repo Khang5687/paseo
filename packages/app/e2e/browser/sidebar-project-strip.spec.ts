@@ -100,6 +100,28 @@ async function expectStripIndex(
   await expect.poll(async () => (await stripOrder(page, prefix)).indexOf(key)).toBe(index);
 }
 
+/** Opens a project row's ⋯ menu; on desktop it shows on hover. */
+async function openProjectKebab(page: Page, project: SeededWorkspace): Promise<void> {
+  const key = projectEquivalenceViewKey(project.projectKey);
+  const row = page.getByTestId(`sidebar-project-row-${key}`);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.hover();
+  await page.getByTestId(`sidebar-project-kebab-${key}`).click();
+}
+
+/** Drags `from` onto `to` with the mouse: dnd-kit's pointer drag on web. */
+async function dragOnto(page: Page, from: Locator, to: Locator): Promise<void> {
+  const fromBox = await from.boundingBox();
+  const toBox = await to.boundingBox();
+  if (!fromBox || !toBox) throw new Error("drag rows have no layout");
+  const x = fromBox.x + fromBox.width / 2;
+  await page.mouse.move(x, fromBox.y + fromBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, toBox.y + 4, { steps: 12 });
+  await page.mouse.move(x, toBox.y + 2, { steps: 4 });
+  await page.mouse.up();
+}
+
 test.describe("Sidebar project strip", () => {
   test.describe.configure({ timeout: 180_000 });
 
@@ -254,6 +276,53 @@ test.describe("Sidebar project strip", () => {
         await alpha.cleanup();
       }
     });
+
+    test("moves a project from its ⋯ menu and opens the rail from Reorder projects", async ({
+      page,
+    }) => {
+      const [alpha, beta] = await seedTwoProjects();
+      try {
+        await gotoAppShell(page);
+        await expect(workspaceRow(page, alpha)).toBeVisible({ timeout: 30_000 });
+        await expect(workspaceRow(page, beta)).toBeVisible({ timeout: 30_000 });
+        const prefix = "sidebar-project-rail-item-";
+        const mine = await stripOrder(page, prefix, [alpha, beta]);
+        const earlier = mine[0] === projectEquivalenceViewKey(alpha.projectKey) ? alpha : beta;
+        const earlierKey = projectEquivalenceViewKey(earlier.projectKey);
+
+        await openProjectKebab(page, earlier);
+        const moveBottom = page.getByTestId(`sidebar-project-menu-move-bottom-${earlierKey}`);
+        await expect(moveBottom).toBeVisible();
+        await page.waitForTimeout(300);
+        await screenshot(page, "desktop-project-menu.png");
+        await moveBottom.click();
+        await expectStripIndex(
+          page,
+          prefix,
+          earlierKey,
+          (await stripOrder(page, prefix)).length - 1,
+        );
+
+        await openProjectKebab(page, earlier);
+        await expect(
+          page.getByTestId(`sidebar-project-menu-move-bottom-${earlierKey}`),
+        ).toHaveCount(0);
+        await page.getByTestId(`sidebar-project-menu-move-top-${earlierKey}`).click();
+        await expectStripIndex(page, prefix, earlierKey, 0);
+
+        // On the desktop, Reorder projects… opens the rail to drag there.
+        await openProjectKebab(page, earlier);
+        await page.getByTestId(`sidebar-project-menu-reorder-${earlierKey}`).click();
+        await expect(page.getByTestId("sidebar-project-rail-toggle")).toHaveAttribute(
+          "aria-expanded",
+          "true",
+        );
+        await expect(page.getByTestId("reorder-projects-sheet")).toHaveCount(0);
+      } finally {
+        await beta.cleanup();
+        await alpha.cleanup();
+      }
+    });
   });
 
   test.describe("compact chip row", () => {
@@ -292,6 +361,52 @@ test.describe("Sidebar project strip", () => {
         await screenshot(page, "compact-chip-menu.png");
         await page.getByTestId("sidebar-project-chip-move-earlier").tap();
         await expectStripIndex(page, prefix, laterKey, laterIndex - 1);
+      } finally {
+        await beta.cleanup();
+        await alpha.cleanup();
+      }
+    });
+
+    test("reorders in the Reorder projects sheet and from the ⋯ menu", async ({ page }) => {
+      const [alpha, beta] = await seedTwoProjects();
+      try {
+        await gotoAppShell(page);
+        await page.getByRole("button", { name: "Open menu", exact: true }).tap();
+        await expect(page.getByTestId("sidebar-project-chip-row")).toBeVisible({ timeout: 30_000 });
+        await expect(chip(page, alpha)).toBeVisible({ timeout: 30_000 });
+        await expect(chip(page, beta)).toBeVisible({ timeout: 30_000 });
+        const prefix = "sidebar-project-chip-item-";
+
+        // The ⋯ menu's Move to top, on a phone too.
+        const mine = await stripOrder(page, prefix, [alpha, beta]);
+        const later = mine[1] === projectEquivalenceViewKey(alpha.projectKey) ? alpha : beta;
+        const laterKey = projectEquivalenceViewKey(later.projectKey);
+        await page.getByTestId(`sidebar-project-kebab-${laterKey}`).tap();
+        const moveTop = page.getByTestId(`sidebar-project-menu-move-top-${laterKey}`);
+        await expect(moveTop).toBeInViewport({ ratio: 1 });
+        await page.waitForTimeout(300);
+        await screenshot(page, "compact-project-menu.png");
+        await moveTop.tap();
+        await expectStripIndex(page, prefix, laterKey, 0);
+
+        // Reorder projects… from a chip's menu opens the sheet; hold a row and drag it.
+        await chip(page, alpha).click({ button: "right" });
+        const reorder = page.getByTestId("sidebar-project-chip-reorder");
+        await expect(reorder).toBeInViewport({ ratio: 1 });
+        await reorder.tap();
+        const sheetRow = (project: SeededWorkspace) =>
+          page.getByTestId(`reorder-projects-row-${projectEquivalenceViewKey(project.projectKey)}`);
+        await expect(sheetRow(alpha)).toBeInViewport({ timeout: 10_000 });
+        await expect(sheetRow(beta)).toBeInViewport();
+        await expect(sheetRow(alpha)).toContainText(alpha.projectDisplayName);
+        await page.waitForTimeout(300);
+        await screenshot(page, "compact-reorder-sheet.png");
+
+        const before = await stripOrder(page, prefix, [alpha, beta]);
+        const [first, second] =
+          before[0] === projectEquivalenceViewKey(alpha.projectKey) ? [alpha, beta] : [beta, alpha];
+        await dragOnto(page, sheetRow(second), sheetRow(first));
+        await expectStripOrder(page, prefix, [alpha, beta], before.toReversed());
       } finally {
         await beta.cleanup();
         await alpha.cleanup();

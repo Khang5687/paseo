@@ -1356,6 +1356,8 @@ export const en = {
       openRail: "Show project names",
       collapseRail: "Collapse",
       reorderProjects: "Reorder projects…",
+      reorderTitle: "Reorder projects",
+      reorderHint: "Hold a project, then drag it into place.",
       lastOpen: "last open",
       recentWorkspaces: "Recent workspaces",
       nextWaiting: "Next waiting · {{count}}",

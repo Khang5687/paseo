@@ -19,7 +19,7 @@ import type {
   TextProps,
 } from "react-native";
 import type { PluginIconProps } from "../icons.js";
-import type { PluginIcon } from "./contracts.js";
+import type { PluginBadge, PluginIcon } from "./contracts.js";
 
 export interface ModalProps {
   title: string;
@@ -167,6 +167,11 @@ export interface SidebarRowProps {
   active?: boolean;
   /** Right slot. Renders beside the row's pressable, so a button here presses on its own. */
   trailing?: ReactNode;
+  /**
+   * A count or dot after the label. Unlike `trailing`, it also shows on the phone's icon row,
+   * where a header row is one round button.
+   */
+  badge?: PluginBadge | null;
 }
 /** A sidebar navigation row. Render it from a sidebar item's `Component`. */
 export declare const SidebarRow: ComponentType<SidebarRowProps>;

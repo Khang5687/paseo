@@ -20,6 +20,7 @@ import type {
   PluginSidebarItemContribution as SDKPluginSidebarItemContribution,
   PluginWorkspaceRowBadgeItemContribution as SDKPluginWorkspaceRowBadgeItemContribution,
   PluginNeedsYouItemContribution as SDKPluginNeedsYouItemContribution,
+  PluginProjectRailItemContribution as SDKPluginProjectRailItemContribution,
   PluginScreenContribution as SDKPluginScreenContribution,
   PluginSettingsScreenContribution as SDKPluginSettingsScreenContribution,
   PluginTimelineRendererContribution,
@@ -40,6 +41,7 @@ type PluginSidebarItemContribution = SDKPluginSidebarItemContribution<PluginText
 type PluginWorkspaceRowBadgeItemContribution =
   SDKPluginWorkspaceRowBadgeItemContribution<PluginText>;
 type PluginNeedsYouItemContribution = SDKPluginNeedsYouItemContribution<PluginText>;
+export type PluginProjectRailItemContribution = SDKPluginProjectRailItemContribution<PluginText>;
 type PluginScreenContribution = SDKPluginScreenContribution<PluginText>;
 type PluginSettingsScreenContribution = SDKPluginSettingsScreenContribution<PluginText>;
 type WorkspacePanelInput = SDKPluginWorkspacePanelContribution<PluginText>;
@@ -66,6 +68,7 @@ export interface EvaluatedPlugin {
   workspaceRowBadgeItems: PluginWorkspaceRowBadgeItemContribution[];
   /** Optional so placeholder installations and fixtures without the field stay valid. */
   needsYouItems?: PluginNeedsYouItemContribution[];
+  projectRailItems: PluginProjectRailItemContribution[];
   filePanels: PluginFilePanelContribution[];
   composerItems: PluginComposerItemContribution[];
   newWorkspaceItems: PluginNewWorkspaceItemContribution[];

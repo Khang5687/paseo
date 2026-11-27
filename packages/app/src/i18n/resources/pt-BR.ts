@@ -1372,6 +1372,8 @@ export const ptBR: TranslationResources = {
       openRail: "Mostrar nomes dos projetos",
       collapseRail: "Recolher",
       reorderProjects: "Reordenar projetos…",
+      reorderTitle: "Reordenar projetos",
+      reorderHint: "Segure um projeto e arraste-o para o lugar.",
       lastOpen: "último aberto",
       recentWorkspaces: "Workspaces recentes",
       nextWaiting: "Próximo aguardando · {{count}}",
