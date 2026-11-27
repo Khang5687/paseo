@@ -35,7 +35,7 @@ const FOLD_REPLY = [
   '✖️ Q100 → Q105: folded into "Sidebar order and icons"',
   "✖️ Q101: dropped, the rail already has it",
   "",
-  ...Array.from({ length: 24 }, (_, index) => `Note ${index + 1}: the strip keeps its order.\n`),
+  ...Array.from({ length: 40 }, (_, index) => `Note ${index + 1}: the strip keeps its order.\n`),
   "❓ **Q105** - **Sidebar order and icons**: what do I build first, and with which icons?",
   "",
   "➡️ the project strip first, with square icons",
@@ -57,7 +57,14 @@ function halfAnswerOf(snapshot: unknown, id: string): string | undefined {
   return openQuestionsOf(snapshot).find((question) => question.id === id)?.answer?.text;
 }
 
+// A second project, because the project strip (rail, chips, Needs you entry) shows from two up.
 async function seedAndWithdraw(prefix: string, withdrawReply: string) {
+  const idle = await seedMockAgentWorkspace({
+    repoPrefix: `idle-${prefix}`,
+    title: "Idle chat",
+    initialPrompt: "Hello.",
+    featureValues: { mockAssistantResponses: ["Hi."] },
+  });
   const workspace = await seedMockAgentWorkspace({
     repoPrefix: prefix,
     title: "Withdrawn questions",
@@ -76,7 +83,11 @@ async function seedAndWithdraw(prefix: string, withdrawReply: string) {
     );
     await workspace.client.waitForFinish(workspace.agentId, 30_000);
   };
-  return { workspace, withdraw };
+  const cleanup = async () => {
+    await workspace.cleanup();
+    await idle.cleanup();
+  };
+  return { workspace, withdraw, cleanup };
 }
 
 test.describe("phone width", () => {
@@ -85,7 +96,10 @@ test.describe("phone width", () => {
   test("a fold leaves one question everywhere, drops the half answer, and the gray line jumps", async ({
     page,
   }) => {
-    const { workspace, withdraw } = await seedAndWithdraw("withdrawn-questions-phone-", FOLD_REPLY);
+    const { workspace, withdraw, cleanup } = await seedAndWithdraw(
+      "withdrawn-questions-phone-",
+      FOLD_REPLY,
+    );
     const other = await page.context().newPage();
     try {
       await primeAdditionalPage(other);
@@ -131,6 +145,7 @@ test.describe("phone width", () => {
       await expect(folded).toHaveText("Q100 withdrawn → Q105");
       await expect(page.getByTestId("withdrawn-question-Q101")).toHaveText("Q101 withdrawn");
       await folded.scrollIntoViewIfNeeded();
+      await expect(folded).toBeInViewport();
       await page.screenshot({ path: test.info().outputPath("withdrawn-lines-phone.png") });
       const replacement = page.getByText("what do I build first, and with which icons?");
       await expect(replacement).not.toBeInViewport();
@@ -139,7 +154,7 @@ test.describe("phone width", () => {
       await page.screenshot({ path: test.info().outputPath("withdrawn-jump-phone.png") });
     } finally {
       await other.close();
-      await workspace.cleanup();
+      await cleanup();
     }
   });
 });
@@ -147,7 +162,7 @@ test.describe("phone width", () => {
 test("withdrawing every question clears the pill, the peek and the Needs you count", async ({
   page,
 }) => {
-  const { workspace, withdraw } = await seedAndWithdraw(
+  const { workspace, withdraw, cleanup } = await seedAndWithdraw(
     "withdrawn-questions-desktop-",
     DROP_ALL_REPLY,
   );
@@ -164,7 +179,7 @@ test("withdrawing every question clears the pill, the peek and the Needs you cou
       '[data-testid^="sidebar-project-rail-item-"][aria-label^="withdrawn-questions-desktop-"]',
     );
     await icon.hover();
-    const peek = page.locator('[data-testid^="sidebar-project-rail-peek-"]');
+    const peek = page.locator('[data-testid^="sidebar-project-rail-peek-"]').first();
     await expect(peek).toContainText("Q100 · Strip icons", { timeout: 30_000 });
 
     await withdraw();
@@ -176,6 +191,6 @@ test("withdrawing every question clears the pill, the peek and the Needs you cou
     await expect(page.getByTestId("withdrawn-question-Q104")).toHaveText("Q104 withdrawn");
     await page.screenshot({ path: test.info().outputPath("withdrawn-lines-desktop.png") });
   } finally {
-    await workspace.cleanup();
+    await cleanup();
   }
 });
