@@ -1092,12 +1092,12 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
   },
 
   // --- Chat terminal drawer ---
-  // Ctrl+J everywhere, as in VS Code on Windows and Linux. It also fires from a focused
+  // Ctrl+` on every platform, as VS Code's Toggle Terminal. It also fires from a focused
   // terminal, so the same key hides the drawer and hands focus back to the composer.
   {
-    id: "workspace-terminal-drawer-toggle-ctrl-j",
+    id: "workspace-terminal-drawer-toggle-ctrl-backquote",
     action: "workspace.terminal.drawer.toggle",
-    combo: "Ctrl+J",
+    combo: "Ctrl+`",
     when: { commandCenter: false },
     help: {
       id: "workspace-terminal-drawer-toggle",
@@ -1190,12 +1190,6 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       section: "layout",
       label: "Toggle Explorer sidebar",
     },
-  },
-  {
-    id: "sidebar-toggle-right-ctrl-backquote",
-    action: "sidebar.toggle.right",
-    combo: "Ctrl+`",
-    when: { commandCenter: false },
   },
 
   // --- Toggle both sidebars ---

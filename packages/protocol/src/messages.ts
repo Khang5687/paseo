@@ -353,6 +353,7 @@ import type {
   AgentMetric,
   AgentModelDefinition,
   AgentMode,
+  AgentPermissionDraft,
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentPersistenceHandle,
@@ -610,6 +611,26 @@ export const AgentPermissionResponseSchema: z.ZodType<AgentPermissionResponse> =
     }),
   ]);
 
+const AgentPermissionDraftSchema: z.ZodType<AgentPermissionDraft> = z.object({
+  answers: z.record(
+    z.string(),
+    z.object({
+      selected: z.array(z.number()),
+      text: z.string(),
+      files: z.array(
+        z.object({
+          id: z.string(),
+          fileName: z.string(),
+          mimeType: z.string(),
+          size: z.number(),
+          path: z.string(),
+        }),
+      ),
+    }),
+  ),
+  updatedAt: z.number(),
+});
+
 export const AgentPermissionRequestPayloadSchema: z.ZodType<AgentPermissionRequest, unknown> =
   z.object({
     id: z.string(),
@@ -623,6 +644,8 @@ export const AgentPermissionRequestPayloadSchema: z.ZodType<AgentPermissionReque
     suggestions: z.array(AgentPermissionUpdateSchema).optional(),
     actions: z.array(AgentPermissionActionSchema).optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
+    // COMPAT(questionBoxDrafts): fork; the picks of a half-filled question box.
+    draftAnswers: AgentPermissionDraftSchema.optional(),
   });
 
 const UnknownValueSchema = z.union([
@@ -807,6 +830,7 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     text: z.string(),
     messageId: z.string().optional(),
     clientMessageId: z.string().optional(),
+    attachmentFiles: z.array(z.object({ label: z.string(), path: z.string() })).optional(),
   }),
   z.object({
     type: z.literal("assistant_message"),
@@ -985,6 +1009,55 @@ export const AgentBackgroundWorkSummarySchema = z.object({
 
 export type AgentBackgroundWorkSummary = z.infer<typeof AgentBackgroundWorkSummarySchema>;
 
+/** A file the user attached to an answer, already uploaded to the daemon. */
+export const AgentQuestionAnswerFileSchema = z.object({
+  id: z.string(),
+  fileName: z.string(),
+  mimeType: z.string(),
+  size: z.number(),
+  path: z.string(),
+});
+
+export type AgentQuestionAnswerFile = z.infer<typeof AgentQuestionAnswerFileSchema>;
+
+/**
+ * A half-written answer to one open question, kept on the daemon so every device shows it.
+ * `pick` true means "go with the agent's pick"; otherwise `text` is the user's own answer. Files
+ * go with either. An empty answer (no pick, text or files) is a cleared one; it keeps its
+ * `updatedAt` so an older write from another device cannot bring it back. Last write wins on
+ * `updatedAt` (epoch ms).
+ */
+export const AgentQuestionAnswerSchema = z.object({
+  pick: z.boolean(),
+  text: z.string(),
+  files: z.array(AgentQuestionAnswerFileSchema).optional(),
+  updatedAt: z.number(),
+});
+
+export type AgentQuestionAnswer = z.infer<typeof AgentQuestionAnswerSchema>;
+
+/**
+ * A question the agent wrote in its reply text, in the grilling format:
+ * `❓ **Q12** - **Title**: body` with an optional `➡️ pick` line under it. Parsed by the daemon
+ * so every client counts the same questions; it stays open until a later user message answers it
+ * (see `server/agent/text-questions.ts` for what counts as an answer).
+ */
+export const AgentOpenQuestionSchema = z.object({
+  /** Stable within the agent: the label when there is one ("Q12"), else derived from the title. */
+  id: z.string(),
+  /** The number the agent gave it, "Q12"; null when the question has none. */
+  label: z.string().nullable(),
+  title: z.string(),
+  body: z.string(),
+  /** The agent's recommended answer, the text after ➡️; null when it gave none. */
+  pick: z.string().nullable(),
+  askedAt: z.string(),
+  // COMPAT(questionAnswers): added with the questions bar; absent on older fork daemons.
+  answer: AgentQuestionAnswerSchema.optional(),
+});
+
+export type AgentOpenQuestion = z.infer<typeof AgentOpenQuestionSchema>;
+
 export const AgentSnapshotPayloadSchema = z.object({
   id: z.string(),
   provider: AgentProviderSchema,
@@ -1024,6 +1097,9 @@ export const AgentSnapshotPayloadSchema = z.object({
   // Set with `finished` attention when a line of the agent's last reply starts with "❓". Absent
   // on older daemons and whenever attention is clear; the daemon folds it into workspace status.
   awaitingAnswer: z.boolean().optional(),
+  // COMPAT(openQuestions): added in v0.17.x (fork), remove gate after 2027-11-27. Questions from
+  // the agent's replies that no user message has answered yet, oldest first. Absent when none.
+  openQuestions: z.array(AgentOpenQuestionSchema).optional(),
   archivedAt: z.string().nullable().optional(),
   providerUnavailable: z.boolean().optional(),
   // COMPAT(messageQueue): added in v0.10.0, remove gate after 2027-10-02. Absent on older daemons.
@@ -1159,11 +1235,41 @@ export const ProjectRenameRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// COMPAT(projectSnooze): fork, gated on `features.projectSnooze`.
+export const ProjectSnoozeSetRequestSchema = z.object({
+  type: z.literal("project.snooze.set.request"),
+  projectId: z.string(),
+  // ISO time the project comes back. Null wakes it now.
+  snoozedUntil: z.string().nullable(),
+  requestId: z.string(),
+});
+
 export const ProjectIconSetRequestSchema = z.object({
   type: z.literal("project.icon.set.request"),
   projectId: z.string(),
   source: ProjectIconSourceSchema,
   requestId: z.string(),
+});
+
+// The sidebar's project order, shared by every device that connects to this host. `updatedAt`
+// is the device clock in epoch ms when a person last reordered; 0 means nobody has yet. The newest
+// order wins, so a device that slept catches up when it reconnects.
+export const SidebarProjectOrderSchema = z.object({
+  order: z.array(z.string()),
+  updatedAt: z.number().int().nonnegative(),
+});
+
+export const SidebarProjectOrderGetRequestSchema = z.object({
+  type: z.literal("sidebar.project_order.get.request"),
+  requestId: z.string(),
+  subscribe: z.object({ subscriptionId: z.string().optional() }).optional(),
+});
+
+export const SidebarProjectOrderSetRequestSchema = z.object({
+  type: z.literal("sidebar.project_order.set.request"),
+  requestId: z.string(),
+  order: z.array(z.string()),
+  updatedAt: z.number().int().nonnegative(),
 });
 
 export const ProjectRemoveRequestSchema = z.object({
@@ -2560,6 +2666,41 @@ export const ProjectRenameResponseSchema = z.object({
   payload: ProjectRenameResponsePayloadSchema,
 });
 
+export const ProjectSnoozeSetResponseSchema = z.object({
+  type: z.literal("project.snooze.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    projectId: z.string(),
+    accepted: z.boolean(),
+    snoozedUntil: z.string().nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const SidebarProjectOrderGetResponseSchema = z.object({
+  type: z.literal("sidebar.project_order.get.response"),
+  payload: SidebarProjectOrderSchema.extend({
+    requestId: z.string(),
+    subscriptionId: z.string().optional(),
+  }),
+});
+
+// `accepted` is false when the host already holds a newer order; the payload then carries that one.
+export const SidebarProjectOrderSetResponseSchema = z.object({
+  type: z.literal("sidebar.project_order.set.response"),
+  payload: SidebarProjectOrderSchema.extend({
+    requestId: z.string(),
+    accepted: z.boolean(),
+  }),
+});
+
+export const SidebarProjectOrderUpdateSchema = z.object({
+  type: z.literal("sidebar.project_order.update"),
+  payload: SidebarProjectOrderSchema.extend({
+    subscriptionId: z.string().optional(),
+  }),
+});
+
 export const ProjectIconSetResponseSchema = z.object({
   type: z.literal("project.icon.set.response"),
   payload: z.object({
@@ -3397,6 +3538,24 @@ export const AgentQueueRemoveRequestSchema = z.object({
   messageId: z.string(),
 });
 
+// COMPAT(questionAnswers): fork, gated on `features.questionAnswers`.
+export const AgentQuestionAnswerSetRequestSchema = z.object({
+  type: z.literal("agent.question.answer.set.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  questionId: z.string(),
+  answer: AgentQuestionAnswerSchema,
+});
+
+// COMPAT(questionBoxDrafts): fork, gated on `features.questionBoxDrafts`.
+export const AgentPermissionDraftSetRequestSchema = z.object({
+  type: z.literal("agent.permission.draft.set.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  permissionId: z.string(),
+  draft: AgentPermissionDraftSchema,
+});
+
 export const AgentQueueUpdateRequestSchema = z.object({
   type: z.literal("agent.queue.update.request"),
   requestId: z.string(),
@@ -3923,366 +4082,6 @@ export const HubExecutionControlRequestSchema = z.object({
 
 export type HubExecutionControlRequest = z.infer<typeof HubExecutionControlRequestSchema>;
 
-export const RoutingRefusalCodeSchema = z.enum([
-  "no_account",
-  "source_changed",
-  "source_inaccessible",
-  "billing_enabled",
-  "billing_unknown",
-  "quota_blocked",
-  "entitlement_unavailable",
-  "auth_unavailable",
-  "unsupported_transport",
-  "unsupported_runtime",
-  "persistence_failed",
-  "host_unavailable",
-  "cancelled",
-]);
-export type RoutingRefusalCode = z.infer<typeof RoutingRefusalCodeSchema>;
-
-export const RoutingWaitReasonSchema = z.enum([
-  "metadata_pending",
-  "all_unavailable",
-  "auto_disabled",
-]);
-export type RoutingWaitReason = z.infer<typeof RoutingWaitReasonSchema>;
-
-export const RoutingWaitOrRefusalCodeSchema = z.union([
-  RoutingRefusalCodeSchema,
-  RoutingWaitReasonSchema,
-]);
-export type RoutingWaitOrRefusalCode = z.infer<typeof RoutingWaitOrRefusalCodeSchema>;
-
-export const OmpRoutingAccountRefSchema = z.object({
-  storeNamespace: z.string(),
-  nativeRowId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-});
-export type OmpRoutingAccountRef = z.infer<typeof OmpRoutingAccountRefSchema>;
-
-export const OmpRoutingScopeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("shared") }),
-  z.object({ kind: z.literal("model"), modelId: z.string() }),
-  z.object({ kind: z.literal("family"), family: z.string() }),
-]);
-export type OmpRoutingScope = z.infer<typeof OmpRoutingScopeSchema>;
-
-export const OmpRoutingBlockSchema = z.object({
-  limitId: z.string(),
-  scope: OmpRoutingScopeSchema,
-  resetAt: z.number().finite().nullable(),
-  observedAt: z.number().finite(),
-  source: z.enum(["provider-rejection", "native-usage"]),
-  confirmed: z.literal(true),
-});
-export type OmpRoutingBlock = z.infer<typeof OmpRoutingBlockSchema>;
-
-export const OmpRoutingWindowSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  scope: OmpRoutingScopeSchema,
-  usedFraction: z.number().finite().min(0).max(1).nullable(),
-  resetAt: z.number().finite().nullable(),
-  observedAt: z.number().finite().nullable(),
-  validUntil: z.number().finite().nullable(),
-  source: z.enum(["usage-full", "usage-header", "unknown"]),
-});
-export type OmpRoutingWindow = z.infer<typeof OmpRoutingWindowSchema>;
-
-export const OmpRoutingBillingStateSchema = z.object({
-  state: z.enum(["disabled", "enabled", "unknown"]),
-  observedAt: z.number().finite().nullable(),
-  validUntil: z.number().finite().nullable(),
-  source: z.enum(["claude-usage-spend", "claude-usage-legacy"]).nullable(),
-  sourceRevision: z.string().nullable(),
-  reason: z
-    .enum([
-      "malformed",
-      "conflicting",
-      "expired",
-      "identity_mismatch",
-      "not_full_response",
-      "untrusted_source",
-    ])
-    .nullable(),
-});
-export type OmpRoutingBillingState = z.infer<typeof OmpRoutingBillingStateSchema>;
-
-export const OmpRoutingRankSchema = z.object({
-  method: z.literal("claude-native-window-pressure-v1"),
-  version: z.literal(1),
-  modelId: z.string().nullable(),
-  modelFamily: z.string().nullable(),
-  planGateApplies: z.boolean(),
-  planEligibility: z.union([z.boolean(), z.literal("unknown")]),
-  billingEligibility: z.enum(["eligible", "enabled", "unknown"]),
-  applicableLimitIds: z.array(z.string()),
-  coverage: z.enum(["complete", "partial", "unknown"]),
-  unknownReasons: z.array(RoutingWaitOrRefusalCodeSchema),
-  usageMeasured: z.boolean(),
-  primaryHot: z.boolean().nullable(),
-  primaryUsed: z.number().finite().nullable(),
-  secondaryUsed: z.number().finite().nullable(),
-  primaryRequiredDrain: z.number().finite().nullable(),
-  secondaryRequiredDrain: z.number().finite().nullable(),
-});
-export type OmpRoutingRank = z.infer<typeof OmpRoutingRankSchema>;
-
-export const OmpRoutingAccountSchema = z.object({
-  ref: OmpRoutingAccountRefSchema,
-  label: z.string(),
-  organizationLabel: z.string().nullable(),
-  identityLabel: z.string(),
-  organizationIdentityLabel: z.string(),
-  available: z.boolean(),
-  missing: z.boolean(),
-  authoritativeObservedAt: z.number().finite().nullable(),
-  quotaIdentity: z.object({ accountUuid: z.string(), organizationUuid: z.string() }).nullable(),
-  subscriptionTier: z.object({
-    kind: z.enum(["pro", "max5", "max20", "other", "unknown"]),
-    observedAt: z.number().finite().nullable(),
-    source: z.string().nullable(),
-  }),
-  absoluteAllowance: z.null(),
-  windows: z.array(OmpRoutingWindowSchema),
-  billing: OmpRoutingBillingStateSchema,
-  rank: OmpRoutingRankSchema,
-  quotaBlocks: z.array(OmpRoutingBlockSchema),
-  rankingCoverage: z.enum(["complete", "partial", "unknown"]),
-});
-export type OmpRoutingAccount = z.infer<typeof OmpRoutingAccountSchema>;
-
-export const OmpAccountRoutingPolicySchema = z.object({
-  policyRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  selectionGeneration: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  current: OmpRoutingAccountRefSchema.nullable(),
-  autoEnabled: z.boolean(),
-  priorityOrder: z.array(OmpRoutingAccountRefSchema),
-  inclusion: z.array(z.object({ account: OmpRoutingAccountRefSchema, included: z.boolean() })),
-});
-export type OmpAccountRoutingPolicy = z.infer<typeof OmpAccountRoutingPolicySchema>;
-
-export const OmpAccountRoutingCapabilitySchema = z.object({
-  status: z.enum(["supported", "unknown", "unsupported"]),
-  reason: RoutingRefusalCodeSchema.nullable(),
-});
-export type OmpAccountRoutingCapability = z.infer<typeof OmpAccountRoutingCapabilitySchema>;
-
-export const OmpAccountRoutingCatalogSchema = z.object({
-  status: z.enum(["loading", "loaded", "empty", "incomplete", "stale", "unsupported"]),
-  authoritativeObservedAt: z.number().finite().nullable(),
-});
-export type OmpAccountRoutingCatalog = z.infer<typeof OmpAccountRoutingCatalogSchema>;
-
-export const OmpAccountRoutingStateSchema = z.object({
-  hostEpoch: z.string(),
-  stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  policy: OmpAccountRoutingPolicySchema,
-  capability: OmpAccountRoutingCapabilitySchema,
-  catalog: OmpAccountRoutingCatalogSchema,
-  accounts: z.array(OmpRoutingAccountSchema),
-  activeRequests: z.array(
-    z.object({
-      admissionId: z.string(),
-      agentId: z.string(),
-      nativeSessionId: z.string(),
-      model: z.string(),
-      accountRef: OmpRoutingAccountRefSchema,
-      selectionGeneration: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-      phase: z.enum(["admitted", "serving"]),
-      observedAt: z.number().finite(),
-    }),
-  ),
-  lastServed: z.array(
-    z.object({
-      agentId: z.string(),
-      accountRef: OmpRoutingAccountRefSchema,
-      model: z.string(),
-      servedAt: z.number().finite(),
-    }),
-  ),
-  pausedRequests: z.array(
-    z.object({
-      waitId: z.string(),
-      agentId: z.string(),
-      nativeSessionId: z.string(),
-      model: z.string(),
-      reason: RoutingWaitReasonSchema,
-      nextCheckAt: z.number().finite().nullable(),
-      requiresUserAction: z.boolean(),
-      accountRef: OmpRoutingAccountRefSchema.nullable(),
-      recoveredAt: z.number().finite().nullable(),
-    }),
-  ),
-});
-export type OmpAccountRoutingState = z.infer<typeof OmpAccountRoutingStateSchema>;
-
-export const OmpAccountRoutingMutationSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("select"), account: OmpRoutingAccountRefSchema }),
-  z.object({ kind: z.literal("set_auto"), enabled: z.boolean() }),
-  z.object({
-    kind: z.literal("set_inclusion"),
-    account: OmpRoutingAccountRefSchema,
-    included: z.boolean(),
-  }),
-  z.object({
-    kind: z.literal("move_priority"),
-    account: OmpRoutingAccountRefSchema,
-    direction: z.enum(["up", "down"]),
-  }),
-]);
-export type OmpAccountRoutingMutation = z.infer<typeof OmpAccountRoutingMutationSchema>;
-
-const OmpAccountRoutingMutationErrorSchema = z.object({
-  code: z.enum(["conflict", "invalid_account", "unsupported", "persistence_failed"]),
-  message: z.string(),
-});
-
-export const OmpAccountRoutingMutationResultSchema = z.object({
-  requestId: z.string(),
-  state: OmpAccountRoutingStateSchema,
-  error: OmpAccountRoutingMutationErrorSchema.nullable(),
-});
-export type OmpAccountRoutingMutationResult = z.infer<typeof OmpAccountRoutingMutationResultSchema>;
-
-export const AccountRoutingGetStateRequestSchema = z.object({
-  type: z.literal("account.routing.get_state.request"),
-  requestId: z.string(),
-  subscribe: z.object({}).optional(),
-});
-export type AccountRoutingGetStateRequest = z.infer<typeof AccountRoutingGetStateRequestSchema>;
-
-export const AccountRoutingGetStateResponseSchema = z.object({
-  type: z.literal("account.routing.get_state.response"),
-  payload: z.object({
-    requestId: z.string(),
-    state: OmpAccountRoutingStateSchema,
-    subscriptionId: z.string().optional(),
-  }),
-});
-export type AccountRoutingGetStateResponse = z.infer<typeof AccountRoutingGetStateResponseSchema>;
-
-export const AccountRoutingStateUpdateSchema = z.object({
-  type: z.literal("account.routing.state.update"),
-  payload: z.object({
-    subscriptionId: z.string(),
-    state: OmpAccountRoutingStateSchema,
-  }),
-});
-export type AccountRoutingStateUpdate = z.infer<typeof AccountRoutingStateUpdateSchema>;
-
-export const AccountRoutingMutateRequestSchema = z.object({
-  type: z.literal("account.routing.mutate.request"),
-  requestId: z.string(),
-  expectedPolicyRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  command: OmpAccountRoutingMutationSchema,
-});
-export type AccountRoutingMutateRequest = z.infer<typeof AccountRoutingMutateRequestSchema>;
-
-export const AccountRoutingMutateResponseSchema = z.object({
-  type: z.literal("account.routing.mutate.response"),
-  payload: OmpAccountRoutingMutationResultSchema,
-});
-export type AccountRoutingMutateResponse = z.infer<typeof AccountRoutingMutateResponseSchema>;
-
-// Host-side Claude sign-in. A short-lived OMP child signs in and writes the credential into OMP's own
-// store; tokens never cross these messages. The authorize URL and a pasted one-time authorization
-// code cross only the loopback connection to the host's own app (plan D12 amendment): the daemon
-// sends `authorizeUrl` and accepts `submit_code` only from direct loopback or local IPC
-// connections. The host holds one login at a time; clients start it, poll it, and may cancel it.
-export const OmpAccountLoginStatusSchema = z.object({
-  state: z.enum(["idle", "running", "succeeded", "failed", "cancelled"]),
-  failure: z
-    .enum([
-      "timeout",
-      // Sent only by daemons before `ompAccountLoginLink`; still parsed.
-      "paste_code_unsupported",
-      "browser_open_failed",
-      "omp_failed",
-      "spawn_failed",
-    ])
-    .optional(),
-  startedAt: z.number().finite().optional(),
-  /** Only while `state` is `running`. */
-  phase: z.enum(["preparing", "awaiting_browser", "verifying"]).optional(),
-  /** https sign-in link, only while awaiting the browser and only to host-local connections. */
-  authorizeUrl: z.string().optional(),
-  /** OMP is waiting for a pasted redirect address or code (`submit_code`). */
-  pasteAccepted: z.boolean().optional(),
-  endedAt: z.number().finite().optional(),
-  /**
-   * What the sign-in did to the store. A refused duplicate is `state: "failed"`,
-   * `failure: "omp_failed"`, `outcome.kind: "already_listed"`; nothing was written.
-   * Labels are display labels only; `ref` is present when the host knows the row's store.
-   */
-  outcome: z
-    .object({
-      kind: z.enum(["added", "replaced", "already_listed"]),
-      label: z.string().optional(),
-      organizationLabel: z.string().optional(),
-      ref: OmpRoutingAccountRefSchema.optional(),
-    })
-    .optional(),
-});
-export type OmpAccountLoginStatus = z.infer<typeof OmpAccountLoginStatusSchema>;
-
-const OmpAccountLoginPayloadSchema = z.object({
-  requestId: z.string(),
-  status: OmpAccountLoginStatusSchema,
-  /**
-   * `already_running`: a start refused because another login runs; `status` is that login's.
-   * `invalid_replace_target`: a `mode: "replace"` start without a listed account; sent only to
-   * requests that carried `mode`.
-   */
-  error: z.enum(["already_running", "invalid_replace_target"]).nullable().optional(),
-});
-export type OmpAccountLoginPayload = z.infer<typeof OmpAccountLoginPayloadSchema>;
-
-export const AccountRoutingLoginStartRequestSchema = z.object({
-  type: z.literal("account.routing.login.start.request"),
-  requestId: z.string(),
-  /** Absent means `add`: OMP refuses to overwrite an account that is already stored. */
-  mode: z.enum(["add", "replace"]).optional(),
-  /** Required with `mode: "replace"`: the only stored account the sign-in may overwrite. */
-  replaceAccount: OmpRoutingAccountRefSchema.optional(),
-});
-export const AccountRoutingLoginStartResponseSchema = z.object({
-  type: z.literal("account.routing.login.start.response"),
-  payload: OmpAccountLoginPayloadSchema,
-});
-export const AccountRoutingLoginGetStatusRequestSchema = z.object({
-  type: z.literal("account.routing.login.get_status.request"),
-  requestId: z.string(),
-});
-export const AccountRoutingLoginGetStatusResponseSchema = z.object({
-  type: z.literal("account.routing.login.get_status.response"),
-  payload: OmpAccountLoginPayloadSchema,
-});
-export const AccountRoutingLoginCancelRequestSchema = z.object({
-  type: z.literal("account.routing.login.cancel.request"),
-  requestId: z.string(),
-});
-export const AccountRoutingLoginCancelResponseSchema = z.object({
-  type: z.literal("account.routing.login.cancel.response"),
-  payload: OmpAccountLoginPayloadSchema,
-});
-/** Answers OMP's open paste prompt with the browser's redirect address or the shown code. */
-export const AccountRoutingLoginSubmitCodeRequestSchema = z.object({
-  type: z.literal("account.routing.login.submit_code.request"),
-  requestId: z.string(),
-  input: z.string().max(4096),
-});
-export const AccountRoutingLoginSubmitCodeResponseSchema = z.object({
-  type: z.literal("account.routing.login.submit_code.response"),
-  payload: z.object({
-    requestId: z.string(),
-    status: OmpAccountLoginStatusSchema,
-    error: z.enum(["not_waiting", "invalid_input", "wrong_login", "not_allowed"]).nullable(),
-  }),
-});
-export type AccountRoutingLoginSubmitCodeResponse = z.infer<
-  typeof AccountRoutingLoginSubmitCodeResponseSchema
->;
-
 // These connection event streams have no directory bootstrap or timeline membership.
 export const SessionEventSubscriptionSchema = z.enum([
   "project.update",
@@ -4358,12 +4157,6 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   BrowserHostRegisterRequestSchema,
   SubscriptionReleaseRequestSchema,
   SessionEventsSetSubscriptionRequestSchema,
-  AccountRoutingGetStateRequestSchema,
-  AccountRoutingMutateRequestSchema,
-  AccountRoutingLoginStartRequestSchema,
-  AccountRoutingLoginGetStatusRequestSchema,
-  AccountRoutingLoginCancelRequestSchema,
-  AccountRoutingLoginSubmitCodeRequestSchema,
   HubExecutionAgentCreateRequestSchema,
   HubExecutionAgentValidateRequestSchema,
   HubExecutionControlRequestSchema,
@@ -4384,6 +4177,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   UpdateAgentRequestMessageSchema,
   ProjectRenameRequestSchema,
   ProjectIconSetRequestSchema,
+  ProjectSnoozeSetRequestSchema,
+  SidebarProjectOrderGetRequestSchema,
+  SidebarProjectOrderSetRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
   AgentMetadataUpdateRequestSchema,
@@ -4546,6 +4342,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueAddRequestSchema,
   AgentQueueRemoveRequestSchema,
   AgentQueueUpdateRequestSchema,
+  AgentQuestionAnswerSetRequestSchema,
+  AgentPermissionDraftSetRequestSchema,
   AgentQueueSendNowRequestSchema,
   AgentQueueMoveRequestSchema,
   AgentQueueClearRequestSchema,
@@ -4833,6 +4631,8 @@ export const ServerInfoStatusPayloadSchema = z
         fileCopies: z.boolean().optional(),
         // COMPAT(sendToDevice): added in v0.16.2, remove gate after 2027-06-01.
         sendToDevice: z.boolean().optional(),
+        // COMPAT(sidebarProjectOrder): added after v0.17.6, remove gate after 2027-12-01.
+        sidebarProjectOrder: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(chatTerminals): added after v0.17.5, remove gate after 2027-11-27.
         // Hosts with it keep `ownerAgentId` on terminals and answer `terminal.owner.set`.
@@ -4907,6 +4707,9 @@ export const ServerInfoStatusPayloadSchema = z
         pluginNotifications: z.boolean().optional(),
         // COMPAT(skillManagement): added in v0.4.0, remove gate after 2027-08-16.
         skillManagement: z.boolean().optional(),
+        // COMPAT(projectSnooze): fork. Projects carry `projectSnoozedUntil` and take
+        // project.snooze.set. Without it the app hides Snooze.
+        projectSnooze: z.boolean().optional(),
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
         idleRuntimeCleanupSetting: z.boolean().optional(),
         // COMPAT(restartRecovery): added in v0.14.0, remove gate after 2027-04-28.
@@ -5038,11 +4841,6 @@ export const ServerInfoStatusPayloadSchema = z
         timelineFreshnessCheck: z.boolean().optional(),
         explicitEventSubscriptions: z.boolean().optional(),
         ownedSubscriptions: z.boolean().optional(),
-        ompAccountRouting: z.boolean().optional(),
-        ompAccountLogin: z.boolean().optional(),
-        // Sign-in link, paste and add-only guard: needs `ompAccountLogin` and an OMP whose
-        // capability document reports `login.existing`.
-        ompAccountLoginLink: z.boolean().optional(),
         providerOptionControls: z.boolean().optional(),
         entityMetadata: z.boolean().optional(),
         diffSubscription: z.boolean().optional(),
@@ -5051,6 +4849,12 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
         // Daemon owns agent chat drafts (agent.draft.* RPCs). Without it drafts stay on the device.
         agentDraftSync: z.boolean().optional(),
+        // COMPAT(questionAnswers): fork, added with the questions bar. Daemon keeps half-written
+        // answers to open questions (agent.question.answer.set). Without it they stay on the device.
+        questionAnswers: z.boolean().optional(),
+        // COMPAT(questionBoxDrafts): fork. Daemon keeps half-filled question boxes on the pending
+        // permission (agent.permission.draft.set). Without it the picks stay on the device.
+        questionBoxDrafts: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
@@ -5393,6 +5197,8 @@ export const WorkspaceDescriptorPayloadSchema = z
     // Identifies the project's stored custom icon; null means automatic.
     // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.
     projectCustomIconRevision: z.string().nullable().optional(),
+    // COMPAT(projectSnooze): fork. ISO time a snoozed project comes back; null or absent when awake.
+    projectSnoozedUntil: z.string().nullable().optional(),
     projectRootPath: z.string(),
     workspaceDirectory: z.string().optional(),
     // COMPAT(workspaceSetupObservation): added in v0.12.0, remove optional after 2027-04-19.
@@ -5597,6 +5403,8 @@ export const WorkspaceProjectDescriptorPayloadSchema = z.object({
   projectCustomName: z.string().nullable().optional(),
   // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.
   projectCustomIconRevision: z.string().nullable().optional(),
+  // COMPAT(projectSnooze): fork. ISO time a snoozed project comes back; null or absent when awake.
+  projectSnoozedUntil: z.string().nullable().optional(),
   // Fingerprints the effective icon, including automatic discovery and the
   // absence of an icon. Clients may persist icon results against this value.
   // COMPAT(projectIconCache): added in v0.2.7, remove optional after 2027-02-12.
@@ -6522,6 +6330,30 @@ export const AgentQueueRemoveResponseSchema = z.object({
     /** The removed entry in full, so the caller can restore it into a composer. */
     message: AgentQueuedMessagePayloadSchema.nullable(),
     success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentQuestionAnswerSetResponseSchema = z.object({
+  type: z.literal("agent.question.answer.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    questionId: z.string(),
+    // False when the question is no longer open or a newer answer already won.
+    accepted: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentPermissionDraftSetResponseSchema = z.object({
+  type: z.literal("agent.permission.draft.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    permissionId: z.string(),
+    // False when the box is no longer pending or a newer draft already won.
+    accepted: z.boolean(),
     error: z.string().nullable(),
   }),
 });
@@ -8199,12 +8031,6 @@ export const UsageSubscriptionSchema = z.object({
   observedAt: z.number().nullable(),
   source: z.enum(["claude-supported-login", "native-usage", "unknown"]),
 });
-export const UsageRoutingSchema = z.object({
-  accountRef: OmpRoutingAccountRefSchema.nullable(),
-  state: z.enum(["serving", "last_served", "unknown"]),
-  hostEpoch: z.string(),
-  stateSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-});
 const AvailableUsageReportSchema = z.object({
   status: z.literal("available"),
   planLabel: z.string().optional(),
@@ -8230,7 +8056,6 @@ export const UsageReportEntrySchema = z.object({
   /** Host hint for whether this report starts shown until the user overrides it. Absent means true. */
   defaultEnabled: z.boolean().optional(),
   report: UsageReportSchema,
-  routing: UsageRoutingSchema.optional(),
   // Successful completion time; fetchedAt remains the attempt timestamp for ordering.
   successfulAt: z.string().optional(),
   lastSuccessful: z
@@ -8856,13 +8681,6 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   BrowserHostRegisterResponseSchema,
   SubscriptionReleaseResponseSchema,
   SessionEventsSetSubscriptionResponseSchema,
-  AccountRoutingGetStateResponseSchema,
-  AccountRoutingMutateResponseSchema,
-  AccountRoutingStateUpdateSchema,
-  AccountRoutingLoginStartResponseSchema,
-  AccountRoutingLoginGetStatusResponseSchema,
-  AccountRoutingLoginCancelResponseSchema,
-  AccountRoutingLoginSubmitCodeResponseSchema,
   HubExecutionAgentCreateResponseSchema,
   HubExecutionAgentValidateResponseSchema,
   HubExecutionControlResponseSchema,
@@ -8914,6 +8732,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceUpdateMessageSchema,
   WorkspaceLabelListResponseSchema,
   WorkspaceLabelUpdateSchema,
+  SidebarProjectOrderUpdateSchema,
   WorkspaceLabelAssignmentSetResponseSchema,
   WorkspaceLabelUpdateResponseSchema,
   WorkspaceLabelDeleteResponseSchema,
@@ -8977,6 +8796,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentQueueAddResponseSchema,
   AgentQueueRemoveResponseSchema,
   AgentQueueUpdateResponseSchema,
+  AgentQuestionAnswerSetResponseSchema,
+  AgentPermissionDraftSetResponseSchema,
   AgentQueueSendNowResponseSchema,
   AgentQueueMoveResponseSchema,
   AgentQueueClearResponseSchema,
@@ -9009,6 +8830,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
   ProjectIconSetResponseSchema,
+  ProjectSnoozeSetResponseSchema,
+  SidebarProjectOrderGetResponseSchema,
+  SidebarProjectOrderSetResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
   AgentMetadataUpdateResponseSchema,
@@ -9251,7 +9075,12 @@ export type AgentSearchResponseMessage = z.infer<typeof AgentSearchResponseMessa
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
+export type ProjectSnoozeSetResponse = z.infer<typeof ProjectSnoozeSetResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;
+export type SidebarProjectOrder = z.infer<typeof SidebarProjectOrderSchema>;
+export type SidebarProjectOrderGetResponse = z.infer<typeof SidebarProjectOrderGetResponseSchema>;
+export type SidebarProjectOrderSetResponse = z.infer<typeof SidebarProjectOrderSetResponseSchema>;
+export type SidebarProjectOrderUpdate = z.infer<typeof SidebarProjectOrderUpdateSchema>;
 export type ProjectRemoveResponse = z.infer<typeof ProjectRemoveResponseSchema>;
 export type WorkspaceTitleSetResponse = z.infer<typeof WorkspaceTitleSetResponseSchema>;
 export type WorkspaceTitleSetResponsePayload = z.infer<
@@ -9441,6 +9270,7 @@ export type DeleteAgentRequestMessage = z.infer<typeof DeleteAgentRequestMessage
 export type UpdateAgentRequestMessage = z.infer<typeof UpdateAgentRequestMessageSchema>;
 export type ProjectIconSource = z.infer<typeof ProjectIconSourceSchema>;
 export type ProjectRenameRequest = z.infer<typeof ProjectRenameRequestSchema>;
+export type ProjectSnoozeSetRequest = z.infer<typeof ProjectSnoozeSetRequestSchema>;
 export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;
@@ -9586,6 +9416,8 @@ export type WorkspaceMarkUnreadRequest = z.infer<typeof WorkspaceMarkUnreadReque
 export type AgentQueueAddRequest = z.infer<typeof AgentQueueAddRequestSchema>;
 export type AgentQueueRemoveRequest = z.infer<typeof AgentQueueRemoveRequestSchema>;
 export type AgentQueueUpdateRequest = z.infer<typeof AgentQueueUpdateRequestSchema>;
+export type AgentQuestionAnswerSetRequest = z.infer<typeof AgentQuestionAnswerSetRequestSchema>;
+export type AgentPermissionDraftSetRequest = z.infer<typeof AgentPermissionDraftSetRequestSchema>;
 export type AgentQueueSendNowRequest = z.infer<typeof AgentQueueSendNowRequestSchema>;
 export type AgentQueueMoveRequest = z.infer<typeof AgentQueueMoveRequestSchema>;
 export type AgentQueueClearRequest = z.infer<typeof AgentQueueClearRequestSchema>;

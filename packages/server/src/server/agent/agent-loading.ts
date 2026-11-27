@@ -123,6 +123,7 @@ export async function ensureAgentLoaded(
           queuedMessages: record.queuedMessages ?? [],
           queuePaused: record.queuePaused ?? false,
           queuePauseReason: record.queuePauseReason,
+          openQuestions: record.openQuestions,
         },
         deps.purpose ? { purpose: deps.purpose } : undefined,
       );

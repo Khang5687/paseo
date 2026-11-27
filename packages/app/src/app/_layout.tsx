@@ -41,9 +41,10 @@ import { CommandCenterRootActions } from "@/command-center/root-registration";
 import { CommandCenterProvider } from "@/command-center/provider";
 import { CommandCenterWorkspaceActions } from "@/command-center/workspace-registration";
 import { PluginCommandCenterActions } from "@/plugins/command-center/registration";
+import { PluginNeedsYouCounters } from "@/plugins/needs-you-items";
 import { AddProjectFlowHost } from "@/components/add-project-flow-host";
 import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
-import { DownloadToast } from "@/components/download-toast";
+import { DownloadBar } from "@/components/download-bar";
 import { QuittingOverlay } from "@/components/quitting-overlay";
 import { QuitConfirmToast } from "@/components/quit-confirm-toast";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
@@ -570,7 +571,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         </CompactSidebarHost>
       ) : null}
       <AppearanceStyleBoundary>
-        <DownloadToast />
+        <DownloadBar />
         <RosettaCalloutSource />
         <UpdateCalloutSource />
         <LegacyAgentSkillsMigration />
@@ -578,6 +579,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <CommandCenterRootActions />
         <CommandCenterWorkspaceActions />
         <PluginCommandCenterActions />
+        <PluginNeedsYouCounters />
         <WorkspacePinShortcutHandler />
         <WorkspaceRenameHost />
         <WorkspaceArchiveUndoShortcutHost />
@@ -908,6 +910,7 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/sessions" ||
       pathname === "/schedules" ||
       pathname === "/notes" ||
+      pathname === "/needs-you" ||
       pathname === "/saved" ||
       pathname === "/saved/file" ||
       routeHasKnownHost);
@@ -947,6 +950,7 @@ function RootStack() {
         <Stack.Screen name="sessions" />
         <Stack.Screen name="schedules" />
         <Stack.Screen name="notes" />
+        <Stack.Screen name="needs-you" />
         <Stack.Screen name="saved/index" />
         <Stack.Screen name="saved/file" />
       </Stack.Protected>

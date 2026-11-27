@@ -1,6 +1,7 @@
 {
   "pr": 48,
   "title": "feat(server): OMP account sign-in link, paste fallback and add-only guard",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": [
     "packages/client/src/daemon-client.test.ts",
     "packages/protocol/src/messages.test.ts",

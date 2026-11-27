@@ -40,6 +40,8 @@ import type {
   PluginSidebarItemContribution,
   PluginWorkspacePanelContribution,
   PluginWorkspaceRowBadgeItemContribution,
+  PluginNeedsYouItemContribution,
+  PluginProjectRailItemContribution,
 } from "./types";
 import type { ComponentType } from "react";
 import { parsePluginIcon, parseSerializablePluginIcon } from "./icons";
@@ -143,6 +145,7 @@ export function runPluginClientBundle(
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     workspaceRowBadgeItems: [],
+    projectRailItems: [],
     filePanels: [],
     composerItems: [],
     newWorkspaceItems: [],
@@ -164,8 +167,11 @@ export function runPluginClientBundle(
     footer: new Set(),
   };
   const workspaceRowItemIds = new Set<string>();
+  const needsYouItems: PluginNeedsYouItemContribution[] = [];
+  const needsYouItemIds = new Set<string>();
   const filePanelIds = new Set<string>();
   const composerItemIds = new Set<string>();
+  const projectRailItemIds = new Set<string>();
   const newWorkspaceItemIds = new Set<string>();
   const workspacePanelIds = new Set<string>();
   const commandCenterItemIds = new Set<string>();
@@ -352,6 +358,51 @@ export function runPluginClientBundle(
         collector.workspaceRowBadgeItems,
         { id: itemId, title, icon, Component: contribution.Component },
         () => workspaceRowItemIds.delete(itemId),
+      );
+    },
+    addNeedsYouItem(contribution: PluginNeedsYouItemContribution) {
+      const itemId = requireId(contribution.id, "needs you item id");
+      if (needsYouItemIds.has(itemId)) throw new Error(`Duplicate needs you item: ${itemId}`);
+      const title = normalizePluginText(contribution.title);
+      if (!title) throw new Error(`Needs you item ${itemId} has no title`);
+      const icon = parsePluginIcon(`Needs you item ${itemId}`, contribution.icon);
+      if (typeof contribution.useCount !== "function") {
+        throw new Error(`Needs you item ${itemId} has no useCount`);
+      }
+      if (!isComponentType(contribution.Component)) {
+        throw new Error(`Needs you item ${itemId} is not a component`);
+      }
+      needsYouItemIds.add(itemId);
+      return register(
+        needsYouItems,
+        {
+          id: itemId,
+          title,
+          icon,
+          useCount: contribution.useCount,
+          Component: contribution.Component,
+        },
+        () => needsYouItemIds.delete(itemId),
+      );
+    },
+    addProjectRailItem(contribution: PluginProjectRailItemContribution) {
+      const itemId = requireId(contribution.id, "project rail item id");
+      if (projectRailItemIds.has(itemId)) {
+        throw new Error(`Duplicate project rail item: ${itemId}`);
+      }
+      const title = normalizePluginText(contribution.title);
+      if (!title) throw new Error(`Project rail item ${itemId} has no title`);
+      const icon = parsePluginIcon(`Project rail item ${itemId}`, contribution.icon);
+      // The screen may be added after the button, so the rail checks it exists when it draws.
+      const screen = requireId(contribution.screen, `project rail item ${itemId} screen`);
+      if (contribution.useBadge !== undefined && typeof contribution.useBadge !== "function") {
+        throw new Error(`Project rail item ${itemId} useBadge is not a function`);
+      }
+      projectRailItemIds.add(itemId);
+      return register(
+        collector.projectRailItems,
+        { id: itemId, title, icon, screen, useBadge: contribution.useBadge },
+        () => projectRailItemIds.delete(itemId),
       );
     },
     // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
@@ -689,6 +740,8 @@ export function runPluginClientBundle(
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     workspaceRowBadgeItems: collector.workspaceRowBadgeItems,
+    needsYouItems,
+    projectRailItems: collector.projectRailItems,
     filePanels: collector.filePanels,
     composerItems: collector.composerItems,
     newWorkspaceItems: collector.newWorkspaceItems,

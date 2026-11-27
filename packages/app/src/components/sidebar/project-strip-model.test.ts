@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  listProjectEndMoves,
+  listProjectStatusDots,
   listProjectStripMoves,
   moveProjectStripEntry,
   resolveProjectStripShortcutKeys,
@@ -19,24 +21,63 @@ describe("project strip shortcut keys", () => {
 });
 
 describe("project strip menu moves", () => {
-  it("offers only the moves that change the order", () => {
-    expect(listProjectStripMoves({ projectKeys: KEYS, viewKey: "a" })).toEqual(["later"]);
+  it("offers only the moves that change the order, without repeating a one-step move", () => {
+    expect(listProjectStripMoves({ projectKeys: KEYS, viewKey: "a" })).toEqual(["later", "bottom"]);
     // From second place, moving earlier already makes it first.
     expect(listProjectStripMoves({ projectKeys: KEYS, viewKey: "b" })).toEqual([
       "earlier",
       "later",
+      "bottom",
     ]);
-    expect(listProjectStripMoves({ projectKeys: KEYS, viewKey: "d" })).toEqual([
-      "first",
+    // From second-to-last place, moving later already makes it last.
+    expect(listProjectStripMoves({ projectKeys: KEYS, viewKey: "c" })).toEqual([
+      "top",
       "earlier",
+      "later",
     ]);
+    expect(listProjectStripMoves({ projectKeys: KEYS, viewKey: "d" })).toEqual(["top", "earlier"]);
+  });
+
+  it("offers both end moves beside a drag whenever they change the order", () => {
+    expect(listProjectEndMoves({ projectKeys: KEYS, viewKey: "a" })).toEqual(["bottom"]);
+    expect(listProjectEndMoves({ projectKeys: KEYS, viewKey: "b" })).toEqual(["top", "bottom"]);
+    expect(listProjectEndMoves({ projectKeys: KEYS, viewKey: "d" })).toEqual(["top"]);
+    expect(listProjectEndMoves({ projectKeys: ["only"], viewKey: "only" })).toEqual([]);
   });
 
   it.each([
-    { viewKey: "c", move: "first" as const, expected: ["c", "a", "b", "d"] },
+    { viewKey: "c", move: "top" as const, expected: ["c", "a", "b", "d"] },
     { viewKey: "c", move: "earlier" as const, expected: ["a", "c", "b", "d"] },
     { viewKey: "b", move: "later" as const, expected: ["a", "c", "b", "d"] },
+    { viewKey: "a", move: "bottom" as const, expected: ["b", "c", "d", "a"] },
   ])("moves $viewKey $move", ({ viewKey, move, expected }) => {
     expect(moveProjectStripEntry({ projectKeys: KEYS, viewKey, move })).toEqual(expected);
+  });
+});
+
+describe("project status dots", () => {
+  const counts = (needsInput: number, failed: number, attention: number, running: number) => ({
+    needsInput,
+    failed,
+    attention,
+    running,
+  });
+
+  it("gives each chat a dot, asking first, then failed, done, working", () => {
+    expect(listProjectStatusDots(counts(1, 0, 1, 2))).toEqual({
+      dots: ["needs_input", "attention", "running", "running"],
+      more: false,
+    });
+  });
+
+  it("cuts working chats first and shows a plus past four", () => {
+    expect(listProjectStatusDots(counts(1, 1, 1, 3))).toEqual({
+      dots: ["needs_input", "failed", "attention"],
+      more: true,
+    });
+  });
+
+  it("shows nothing for a project with no dotted chats", () => {
+    expect(listProjectStatusDots(counts(0, 0, 0, 0))).toEqual({ dots: [], more: false });
   });
 });

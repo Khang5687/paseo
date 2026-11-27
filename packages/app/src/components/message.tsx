@@ -2,7 +2,12 @@ import { findInlineRefTokens } from "@/composer/attachments/inline-refs";
 import { useDisclosureHold } from "@/agent-stream/disclosure";
 import { MessagePreview, MessageSender } from "@/components/user-message";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
+import {
+  getAgentAttachmentPillContent,
+  getUploadedFilePillContent,
+} from "@/attachments/attachment-pill-content";
+import { useUserMessageFiles } from "@/attachments/use-user-message-files";
+import { getFileNameFromPath } from "@/attachments/utils";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
 import { TurnMetricsButton } from "@/components/turn-metrics";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
@@ -48,6 +53,7 @@ import type {
   AgentCapabilityFlags,
   AgentMetric,
   ToolCallDetail,
+  UserMessageAttachmentFile,
 } from "@getpaseo/protocol/agent-types";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import {
@@ -108,6 +114,8 @@ interface UserMessageProps {
   message: string;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
+  /** Files the host saved for the message, named by its `[Image #N]`/`[File #N]` labels. */
+  attachmentFiles?: UserMessageAttachmentFile[];
   timestamp: number;
   capabilities?: AgentCapabilityFlags;
   client?: DaemonClient | null;
@@ -404,18 +412,55 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
 
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
 
-/** `[Image #1]`-style attachment tokens render as chips where the user typed them. */
-function renderInlineRefChips(text: string): ReactNode {
+function InlineImageRef({
+  image,
+  onOpen,
+  children,
+}: {
+  image: UserMessageImageAttachment;
+  onOpen: (image: UserMessageImageAttachment) => void;
+  children: string;
+}) {
+  const handlePress = useCallback(() => onOpen(image), [image, onOpen]);
+  return (
+    <Text
+      style={userMessageStylesheet.inlineRef}
+      onPress={handlePress}
+      accessibilityRole="button"
+      testID="user-message-inline-image-ref"
+    >
+      {children}
+    </Text>
+  );
+}
+
+/**
+ * `[Image #1]`-style attachment tokens render as chips where the user typed them. A chip whose
+ * image is shown opens it.
+ */
+function renderInlineRefChips(
+  text: string,
+  imagesByLabel: ReadonlyMap<string, UserMessageImageAttachment>,
+  onOpenImage: (image: UserMessageImageAttachment) => void,
+): ReactNode {
   const tokens = findInlineRefTokens(text);
   if (tokens.length === 0) return text;
   const parts: ReactNode[] = [];
   let at = 0;
   for (const token of tokens) {
     if (token.start > at) parts.push(text.slice(at, token.start));
+    const image = imagesByLabel.get(token.label);
+    const label = text.slice(token.start, token.end);
     parts.push(
-      <Text key={token.start} style={userMessageStylesheet.inlineRef}>
-        {text.slice(token.start, token.end)}
-      </Text>,
+      image ? (
+        <InlineImageRef key={token.start} image={image} onOpen={onOpenImage}>
+          {label}
+        </InlineImageRef>
+      ) : (
+        <Text key={token.start} style={userMessageStylesheet.inlineRef}>
+          {label}
+        </Text>
+      ),
     );
     at = token.end;
   }
@@ -433,6 +478,7 @@ export const UserMessage = memo(function UserMessage({
   clientMessageId,
   images: ownImages = [],
   attachments = [],
+  attachmentFiles,
   timestamp,
   capabilities,
   client,
@@ -455,9 +501,15 @@ export const UserMessage = memo(function UserMessage({
   const indexedImages = useSentMessageImagesStore((state) =>
     selectSentMessageImages(state, { serverId, agentId, messageIds: [clientMessageId, messageId] }),
   );
-  const images = ownImages.length > 0 ? ownImages : indexedImages;
+  const { images, imagesByLabel, hostFiles } = useUserMessageFiles({
+    serverId,
+    client,
+    localImages: ownImages.length > 0 ? ownImages : indexedImages,
+    hasLocalAttachments: attachments.length > 0,
+    attachmentFiles,
+  });
   const hasImages = images.length > 0;
-  const hasAttachments = attachments.length > 0;
+  const hasAttachments = attachments.length + hostFiles.length > 0;
   const getMessageContent = useCallback(() => message, [message]);
   // A waiting note's clock stays on screen, so the row does not hide behind hover then.
   const hasWaitingNote = useMessageHasWaitingNote();
@@ -570,11 +622,26 @@ export const UserMessage = memo(function UserMessage({
                     </AttachmentFrame>
                   );
                 })}
+                {hostFiles.map((file) => {
+                  const content = getUploadedFilePillContent(
+                    getFileNameFromPath(file.path) ?? file.path,
+                    t,
+                  );
+                  return (
+                    <AttachmentFrame key={file.path}>
+                      <AttachmentLabel
+                        icon={content.icon}
+                        title={content.title}
+                        subtitle={content.subtitle}
+                      />
+                    </AttachmentFrame>
+                  );
+                })}
               </View>
             ) : null}
             {hasText ? (
               <Text selectable style={userMessageStylesheet.text} dataSet={MESSAGE_TEXT_DATASET}>
-                {renderInlineRefChips(message)}
+                {renderInlineRefChips(message, imagesByLabel, setLightboxMetadata)}
               </Text>
             ) : null}
           </MessagePreview>
@@ -1111,7 +1178,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   renderFullContent = false,
   occurrenceKey,
   message,
-  timestamp: _timestamp,
+  timestamp,
   workspaceRoot,
   serverId,
   client,
@@ -1170,6 +1237,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         client={client}
         workspaceRoot={workspaceRoot}
         serverId={serverId}
+        messageAt={timestamp}
       />
       {fullMessageByteLength !== null ? (
         <Text

@@ -1,6 +1,7 @@
 {
   "pr": 39,
   "title": "feat(server): bridge OMP account.routing JSONL frames to the host authority",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": [
     "packages/server/src/server/agent/providers/omp/agent.test.ts",
     "packages/server/src/server/agent/providers/omp/cli-runtime.test.ts",

@@ -3,9 +3,6 @@ import type {
   OmpExtensionUiResponse,
   OmpGoalAction,
   OmpGoalModeState,
-  OmpLoginExisting,
-  OmpLoginResult,
-  OmpLogoutAccount,
   OmpModel,
   OmpPromptAck,
   OmpRpcHostToolDefinition,
@@ -19,7 +16,6 @@ import type {
   OmpThinkingLevel,
 } from "./rpc-types.js";
 import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
-import type { OmpHostRouting } from "./account-routing-bridge.js";
 
 export interface OmpRuntimeLaunch {
   cwd: string;
@@ -55,11 +51,6 @@ export interface OmpStartSessionInput {
   noSession?: boolean;
   systemPrompt?: string;
   extraArgs?: string[];
-  /**
-   * Present when the host owns Claude account routing for this launch. Absent means an independent
-   * OMP launch: no marker, no probe, no routing frames.
-   */
-  routing?: OmpHostRouting;
 }
 
 export interface OmpPromptInput {
@@ -78,14 +69,6 @@ export interface OmpRuntimeSession {
   setAutoCompaction(enabled: boolean): Promise<void>;
   goal(action: OmpGoalAction): Promise<OmpGoalModeState | null>;
   abort(): Promise<void>;
-  /**
-   * Signs `providerId` into OMP's native store. OMP drives the browser step through
-   * `open_url` / `input` extension UI events; the call settles when the login ends. A guard
-   * refusal (`credential_exists`) resolves as such; any other failure throws.
-   */
-  login(providerId: string, options?: { existing?: OmpLoginExisting }): Promise<OmpLoginResult>;
-  /** Stored accounts for `providerId`, as OMP's `/logout` lists them. Never refreshes a token. */
-  getLogoutAccounts(providerId: string): Promise<OmpLogoutAccount[]>;
   getState(): Promise<OmpSessionState>;
   setFastMode(enabled: boolean): Promise<{ enabled: boolean; active: boolean }>;
   getMessages(): Promise<OmpAgentMessage[]>;

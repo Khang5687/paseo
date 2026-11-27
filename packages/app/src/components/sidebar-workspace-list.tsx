@@ -39,7 +39,16 @@ import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop
 import { type GestureType } from "react-native-gesture-handler";
 import { useSidebarWorkspaceRename } from "@/workspace-rename";
 import { useWorkspaceClipboardActions } from "@/hooks/use-workspace-clipboard-actions";
-import { ExternalLink, Settings, MoreVertical, Plus, Trash2 } from "lucide-react-native";
+import {
+  ArrowDownToLine,
+  ArrowUpDown,
+  ArrowUpToLine,
+  ExternalLink,
+  Settings,
+  MoreVertical,
+  Plus,
+  Trash2,
+} from "lucide-react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
@@ -64,7 +73,7 @@ import {
 } from "@/utils/host-routes";
 import {
   shouldShowSidebarHostLabels,
-  useSidebarProjectStatusBucket,
+  useSidebarProjectStatus,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
   type SidebarWorkspacePlacement,
@@ -85,8 +94,17 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  type MenuPageDefinition,
 } from "@/components/ui/dropdown-menu";
 import { ProjectLeadingVisual } from "@/components/sidebar/project-leading-visual";
+import {
+  type ProjectOrderMenuAction,
+  useProjectOrderMenuActions,
+} from "@/components/sidebar/project-order-menu";
+import {
+  ProjectSnoozeSubTrigger,
+  useProjectSnoozeMenuPages,
+} from "@/components/sidebar/project-snooze-menu";
 import { useToast } from "@/contexts/toast-context";
 import { SidebarToastClearance } from "@/components/sidebar/sidebar-toast-region";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
@@ -181,6 +199,9 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
+const ThemedArrowUpToLine = withUnistyles(ArrowUpToLine);
+const ThemedArrowDownToLine = withUnistyles(ArrowDownToLine);
+const ThemedArrowUpDown = withUnistyles(ArrowUpDown);
 
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -263,6 +284,8 @@ interface ProjectHeaderRowProps {
   displayName: string;
   iconDataUri: string | null;
   statusBucket: SidebarStateBucket | null;
+  /** The project is working only on chats that wait on a background job: an hourglass. */
+  statusWaiting?: boolean;
   selected?: boolean;
   chevron: "expand" | "collapse" | null;
   onPress: () => void;
@@ -424,7 +447,7 @@ const prBadgeStyles = StyleSheet.create((theme) => ({
 }));
 
 function ProjectRowTrailingActions({
-  projectViewKey,
+  project,
   displayName,
   worktreeTarget,
   settingsTarget,
@@ -435,8 +458,9 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup,
   onRemoveProject,
   removeProjectStatus,
+  menuPages,
 }: {
-  projectViewKey: string;
+  project: SidebarProjectEntry;
   displayName: string;
   worktreeTarget: SidebarProjectHostTarget | null;
   settingsTarget: { serverId: string; projectId: string } | null;
@@ -447,7 +471,9 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup: () => void;
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  menuPages: readonly MenuPageDefinition[];
 }) {
+  const projectViewKey = project.viewKey;
   const actionsVisible = isHovered || platformIsNative || isMobileBreakpoint;
   return (
     <View style={styles.projectTrailingActions}>
@@ -466,11 +492,12 @@ function ProjectRowTrailingActions({
           pointerEvents={actionsVisible ? "auto" : "none"}
         >
           <ProjectKebabMenu
-            projectViewKey={projectViewKey}
+            project={project}
             settingsTarget={settingsTarget}
             projectPath={projectPath}
             onRemoveProject={onRemoveProject}
             removeProjectStatus={removeProjectStatus}
+            pages={menuPages}
           />
         </View>
       ) : null}
@@ -483,6 +510,11 @@ const settingsLeadingIcon = <ThemedSettings size={14} uniProps={foregroundMutedC
 const openInNewWindowLeadingIcon = (
   <ThemedExternalLink size={14} uniProps={foregroundMutedColorMapping} />
 );
+const projectOrderLeadingIcons: Record<ProjectOrderMenuAction["kind"], ReactElement> = {
+  top: <ThemedArrowUpToLine size={14} uniProps={foregroundMutedColorMapping} />,
+  bottom: <ThemedArrowDownToLine size={14} uniProps={foregroundMutedColorMapping} />,
+  reorder: <ThemedArrowUpDown size={14} uniProps={foregroundMutedColorMapping} />,
+};
 
 const kebabTriggerIconProps = densityIconProps("sm", foregroundMutedColorMapping);
 const kebabTriggerIconHoveredProps = densityIconProps("sm", foregroundColorMapping);
@@ -494,18 +526,21 @@ function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }) {
 }
 
 function ProjectKebabMenu({
-  projectViewKey,
+  project,
   settingsTarget,
   projectPath,
   onRemoveProject,
   removeProjectStatus,
+  pages,
 }: {
-  projectViewKey: string;
+  project: SidebarProjectEntry;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  pages: readonly MenuPageDefinition[];
 }) {
+  const projectViewKey = project.viewKey;
   const { t } = useTranslation();
   return (
     <DropdownMenu compactMode="sheet">
@@ -518,10 +553,15 @@ function ProjectKebabMenu({
       >
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" width={220} sheetTitle={t("sidebar.project.actions.menu")}>
+      <DropdownMenuContent
+        align="end"
+        width={220}
+        pages={pages}
+        sheetTitle={t("sidebar.project.actions.menu")}
+      >
         <ProjectMenuItems
           surface="dropdown"
-          projectViewKey={projectViewKey}
+          project={project}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}
@@ -549,19 +589,20 @@ function ProjectMenuItem({
 
 function ProjectMenuItems({
   surface,
-  projectViewKey,
+  project,
   settingsTarget,
   projectPath,
   onRemoveProject,
   removeProjectStatus,
 }: {
   surface: ProjectMenuSurface;
-  projectViewKey: string;
+  project: SidebarProjectEntry;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
 }) {
+  const projectViewKey = project.viewKey;
   const { t } = useTranslation();
   const toast = useToast();
   const handleOpenProjectSettings = useCallback(() => {
@@ -607,6 +648,8 @@ function ProjectMenuItems({
         path={projectPath}
         testID={`sidebar-project-menu-open-folder-${projectViewKey}`}
       />
+      <ProjectOrderMenuItems surface={surface} projectViewKey={projectViewKey} />
+      <ProjectSnoozeSubTrigger project={project} />
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -617,6 +660,31 @@ function ProjectMenuItems({
       >
         {t("sidebar.project.actions.remove")}
       </ProjectMenuItem>
+    </>
+  );
+}
+
+function ProjectOrderMenuItems({
+  surface,
+  projectViewKey,
+}: {
+  surface: ProjectMenuSurface;
+  projectViewKey: string;
+}) {
+  const actions = useProjectOrderMenuActions(projectViewKey);
+  return (
+    <>
+      {actions.map((action) => (
+        <ProjectMenuItem
+          key={action.kind}
+          surface={surface}
+          testID={action.testID}
+          leading={projectOrderLeadingIcons[action.kind]}
+          onSelect={action.onSelect}
+        >
+          {action.label}
+        </ProjectMenuItem>
+      ))}
     </>
   );
 }
@@ -890,6 +958,7 @@ function ProjectHeaderRow({
   displayName,
   iconDataUri,
   statusBucket,
+  statusWaiting = false,
   selected = false,
   chevron,
   onPress,
@@ -914,6 +983,7 @@ function ProjectHeaderRow({
   const localDaemonServerId = useLocalDaemonServerId();
   const projectPath = resolveSidebarProjectLocalPath(project, localDaemonServerId);
   const settingsTarget = project.hosts[0] ?? null;
+  const menuPages = useProjectSnoozeMenuPages(project);
   const handleBeginWorkspaceSetup = useCallback(() => {
     if (!worktreeTarget) {
       return;
@@ -973,6 +1043,7 @@ function ProjectHeaderRow({
           displayName={displayName}
           iconDataUri={iconDataUri}
           statusBucket={statusBucket}
+          waiting={statusWaiting}
           projectViewKey={project.viewKey}
           backdrop={getSidebarRowBackdrop({ isDragging, isHighlighted, selected, isHovered })}
           chevron={chevron}
@@ -987,7 +1058,7 @@ function ProjectHeaderRow({
         </View>
       </View>
       <ProjectRowTrailingActions
-        projectViewKey={project.viewKey}
+        project={project}
         displayName={displayName}
         worktreeTarget={worktreeTarget}
         settingsTarget={settingsTarget}
@@ -998,6 +1069,7 @@ function ProjectHeaderRow({
         onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
         onRemoveProject={onRemoveProject}
         removeProjectStatus={removeProjectStatus}
+        menuPages={menuPages}
       />
       {showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.projectShortcutBadgeOverlay} pointerEvents="none">
@@ -1060,11 +1132,12 @@ function ProjectHeaderRow({
       <ContextMenuContent
         align="start"
         width={220}
+        pages={menuPages}
         testID={`sidebar-project-context-menu-${project.viewKey}`}
       >
         <ProjectMenuItems
           surface="context"
-          projectViewKey={project.viewKey}
+          project={project}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}
@@ -1694,7 +1767,7 @@ function ProjectBlock({
 
   // Collapsed rows hide their workspace rows, so the project row carries the most urgent
   // status among them; expanded rows leave the signal to the child rows themselves.
-  const aggregateStatusBucket = useSidebarProjectStatusBucket({
+  const aggregateStatus = useSidebarProjectStatus({
     workspaces: project.workspaces,
     enabled: collapsed,
   });
@@ -1905,7 +1978,8 @@ function ProjectBlock({
         project={project}
         displayName={displayName}
         iconDataUri={iconDataUri}
-        statusBucket={aggregateStatusBucket}
+        statusBucket={aggregateStatus?.bucket ?? null}
+        statusWaiting={aggregateStatus?.waiting ?? false}
         selected={false}
         chevron={rowModel.chevron}
         onPress={handleToggleCollapsed}

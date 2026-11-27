@@ -1,0 +1,10 @@
+{
+  "pr": 187,
+  "title": "Snooze a project until tomorrow, Monday or a picked day, on every device",
+  "tests": [
+    "packages/app/src/components/sidebar/project-snooze.test.ts",
+    "packages/app/src/components/sidebar/quiet-projects.test.ts",
+    "packages/server/src/server/session.workspaces.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/sidebar-project-snooze.spec.ts"]
+}

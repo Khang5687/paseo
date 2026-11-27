@@ -22,6 +22,7 @@ import type {
 } from "@getpaseo/protocol/messages";
 import { relative } from "node:path";
 import { isAbsolute } from "node:path";
+import { SidebarSyncStore } from "./sidebar-sync/index.js";
 import { CreationService, type CreatedAgent } from "./creation/index.js";
 import type {
   AgentActiveTurnBehavior,
@@ -211,6 +212,7 @@ import {
   type WorkspaceMutation,
   type WorkspaceRegistry,
 } from "./workspace-registry.js";
+import { normalizeSnoozedUntil, projectSnoozeField } from "./project-snooze.js";
 import { wrapSpokenInput } from "./voice-config.js";
 import { isVoicePermissionAllowed } from "./voice-permission-policy.js";
 import {
@@ -231,9 +233,6 @@ import {
 import { ScheduleSession } from "./session/schedule/schedule-session.js";
 import { ProviderCatalogSession } from "./session/provider/provider-catalog-session.js";
 import { UsageSession } from "./session/usage/usage-session.js";
-import { AccountRoutingSession } from "./session/account-routing-session.js";
-import type { AccountRoutingAuthority } from "./account-routing/authority.js";
-import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
   SpeechModelsSession,
   type SpeechModelsSessionOptions,
@@ -555,10 +554,8 @@ export interface SessionOptions {
   notesService?: NotesService;
   fileCopies?: FileCopies;
   fileSend?: FileSendBundle;
-  accountRouting?: AccountRoutingAuthority;
-  accountLogin?: OmpAccountLogin;
-  /** The source is a direct loopback or local IPC socket: the host's own app. */
-  isHostLocalSource?: (source: object | undefined) => boolean;
+  /** Shared by every session so one device's reorder reaches the others. */
+  sidebarSync?: SidebarSyncStore;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -753,6 +750,13 @@ function resolveWorkspaceLabelService(
   service: WorkspaceLabelService | undefined,
 ): WorkspaceLabelService | null {
   return service ?? null;
+}
+
+function resolveSidebarSync(
+  store: SidebarSyncStore | undefined,
+  paseoHome: string,
+): SidebarSyncStore {
+  return store ?? new SidebarSyncStore(join(paseoHome, "sidebar-sync.json"));
 }
 
 function hasInitialCreationPrompt(
@@ -951,6 +955,7 @@ export class Session {
   private readonly fileCopiesSession: FileCopiesSession | null;
   private readonly fileSend: FileSendBundle | undefined;
   private readonly fileSendSession: FileSendSession | null;
+  private readonly sidebarSync: SidebarSyncStore;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -979,7 +984,6 @@ export class Session {
   private readonly scheduleSession: ScheduleSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly usageSession: UsageSession;
-  private readonly accountRoutingSession: AccountRoutingSession;
   private readonly speechModelsSession: SpeechModelsSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
@@ -1024,9 +1028,7 @@ export class Session {
       notesService,
       fileCopies,
       fileSend,
-      accountRouting,
-      accountLogin,
-      isHostLocalSource,
+      sidebarSync,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -1120,6 +1122,7 @@ export class Session {
     this.workspaceLabelService = resolveWorkspaceLabelService(workspaceLabelService);
     this.agentDrafts = agentDrafts;
     this.notesService = notesService;
+    this.sidebarSync = resolveSidebarSync(sidebarSync, paseoHome);
     this.filesystem = filesystem ?? nodeSessionFileSystem;
     this.github = github ?? createGitHubService();
     this.renameCurrentBranch = renameCurrentBranch ?? renameCurrentBranchDefault;
@@ -1268,14 +1271,6 @@ export class Session {
       isEnabled: () => daemonConfigStore.get().usage?.enabled !== false,
       emit: (msg) => this.emit(msg),
       runtime: pluginRuntime,
-      logger: this.sessionLogger,
-    });
-    this.accountRoutingSession = new AccountRoutingSession({
-      authority: accountRouting,
-      login: accountLogin,
-      isHostLocal: isHostLocalSource,
-      delivery: this.delivery,
-      emit: (msg) => this.emit(msg),
       logger: this.sessionLogger,
     });
     this.speechModelsSession = new SpeechModelsSession({
@@ -2929,6 +2924,7 @@ export class Session {
     return (
       this.dispatchWorkspaceStateMessage(msg) ??
       this.dispatchWorkspaceLabelMessage(msg) ??
+      this.dispatchSidebarSyncMessage(msg) ??
       this.dispatchWorkspaceSetupMessage(msg) ??
       this.dispatchMetadataMessage(msg) ??
       this.dispatchWorkspaceAndProjectMessage(msg)
@@ -3515,6 +3511,10 @@ export class Session {
         return this.handleAgentQueueClearRequest(msg);
       case "agent.queue.set_paused.request":
         return this.handleAgentQueueSetPausedRequest(msg);
+      case "agent.question.answer.set.request":
+        return this.handleAgentQuestionAnswerSetRequest(msg);
+      case "agent.permission.draft.set.request":
+        return this.handleAgentPermissionDraftSetRequest(msg);
       default:
         return undefined;
     }
@@ -3794,6 +3794,8 @@ export class Session {
         return this.handleWorkspaceClearAttentionRequest(msg);
       case "workspace.mark_unread.request":
         return this.handleWorkspaceMarkUnreadRequest(msg);
+      case "project.snooze.set.request":
+        return this.handleProjectSnoozeSetRequest(msg);
       default:
         return undefined;
     }
@@ -3827,18 +3829,6 @@ export class Session {
         return this.usageSession.handleLegacyList(msg);
       case "usage.list_reports.request":
         return this.usageSession.handleListReports(msg);
-      case "account.routing.get_state.request":
-        return this.accountRoutingSession.handleGetState(msg);
-      case "account.routing.mutate.request":
-        return this.accountRoutingSession.handleMutate(msg);
-      case "account.routing.login.start.request":
-        return this.accountRoutingSession.handleLoginStart(msg);
-      case "account.routing.login.get_status.request":
-        return this.accountRoutingSession.handleLoginStatus(msg);
-      case "account.routing.login.cancel.request":
-        return this.accountRoutingSession.handleLoginCancel(msg);
-      case "account.routing.login.submit_code.request":
-        return this.accountRoutingSession.handleLoginSubmitCode(msg);
       default:
         return undefined;
     }
@@ -4581,6 +4571,52 @@ export class Session {
           error: getErrorMessageOr(error, "Failed to rename project"),
         },
       });
+    }
+  }
+
+  private async handleProjectSnoozeSetRequest(
+    request: Extract<SessionInboundMessage, { type: "project.snooze.set.request" }>,
+  ): Promise<void> {
+    const { projectId, requestId } = request;
+    const reject = (error: string) =>
+      this.emit({
+        type: "project.snooze.set.response",
+        payload: { requestId, projectId, accepted: false, snoozedUntil: null, error },
+      });
+    try {
+      const snoozedUntil = normalizeSnoozedUntil(request.snoozedUntil, Date.now());
+      if (snoozedUntil === undefined) {
+        reject("Not a time");
+        return;
+      }
+      const existing = await this.projectRegistry.get(projectId);
+      if (!existing) {
+        reject("Project not found");
+        return;
+      }
+      const updated = { ...existing, snoozedUntil, updatedAt: new Date().toISOString() };
+      await this.projectRegistry.upsert(updated);
+      this.emit({
+        type: "project.snooze.set.response",
+        payload: { requestId, projectId, accepted: true, snoozedUntil, error: null },
+      });
+
+      // Same fan-out as a rename: empty projects get project.update, the rest get their
+      // workspace descriptors again, so every device sees the snooze.
+      await this.emitProjectUpdate({ kind: "upsert", project: updated });
+      const workspaces = await this.workspaceRegistry.listActive();
+      const affectedWorkspaceIds = workspaces
+        .filter((workspace) => workspace.projectId === projectId)
+        .map((workspace) => workspace.workspaceId);
+      if (affectedWorkspaceIds.length > 0) {
+        await this.emitWorkspaceUpdatesForWorkspaceIds(affectedWorkspaceIds);
+      }
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, projectId, requestId },
+        "session: project.snooze.set.request error",
+      );
+      reject(getErrorMessageOr(error, "Failed to snooze project"));
     }
   }
 
@@ -6717,6 +6753,7 @@ export class Session {
         : workspace.projectId,
       projectCustomName: resolvedProjectRecord?.customName ?? null,
       projectCustomIconRevision: resolvedProjectRecord?.customIconRevision ?? null,
+      ...projectSnoozeField(resolvedProjectRecord),
       projectRootPath: resolvedProjectRecord?.rootPath ?? workspace.cwd,
       workspaceDirectory: workspace.cwd,
       setupStatus: this.workspaceSetupObservation.status(workspace),
@@ -6812,6 +6849,7 @@ export class Session {
         : result.workspace.projectId,
       projectCustomName: projectRecord?.customName ?? null,
       projectCustomIconRevision: projectRecord?.customIconRevision ?? null,
+      ...projectSnoozeField(projectRecord),
       projectRootPath: projectRecord?.rootPath ?? result.repoRoot,
       workspaceDirectory: result.workspace.cwd,
       setupStatus: this.workspaceSetupObservation.status(result.workspace),
@@ -7003,6 +7041,7 @@ export class Session {
       projectDisplayName: resolveProjectDisplayName(project),
       projectCustomName: project.customName ?? null,
       projectCustomIconRevision: project.customIconRevision ?? null,
+      ...projectSnoozeField(project),
       projectIconRevision: icon.revision,
       projectRootPath: project.rootPath,
       projectKind: project.kind,
@@ -7698,6 +7737,94 @@ export class Session {
       throw new SessionRequestError("workspace_labels_unavailable", "Workspace labels unavailable");
     }
     return this.workspaceLabelService;
+  }
+
+  private dispatchSidebarSyncMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "sidebar.project_order.get.request":
+        return this.handleSidebarProjectOrderGet(msg);
+      case "sidebar.project_order.set.request":
+        return this.handleSidebarProjectOrderSet(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private emitSidebarSyncError(request: { requestId: string; type: string }, error: unknown): void {
+    this.emit({
+      type: "rpc_error",
+      payload: {
+        requestId: request.requestId,
+        requestType: request.type,
+        error: error instanceof Error ? error.message : "Sidebar sync failed",
+      },
+    });
+  }
+
+  private async handleSidebarProjectOrderGet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.project_order.get.request" }>,
+  ): Promise<void> {
+    if (!request.subscribe) {
+      try {
+        const projectOrder = await this.sidebarSync.getProjectOrder();
+        this.emit({
+          type: "sidebar.project_order.get.response",
+          payload: { requestId: request.requestId, ...projectOrder },
+        });
+      } catch (error) {
+        this.emitSidebarSyncError(request, error);
+      }
+      return;
+    }
+    let unsubscribe: (() => void) | null = null;
+    const owner = this.delivery.begin(
+      "sidebarProjectOrder",
+      request.subscribe.subscriptionId,
+      () => {
+        unsubscribe?.();
+      },
+    );
+    try {
+      // Subscribe before reading so an order set in between still reaches this device.
+      unsubscribe = this.sidebarSync.subscribe((projectOrder) => {
+        if (owner.signal.aborted) return;
+        owner.emit({ type: "sidebar.project_order.update", payload: projectOrder });
+      });
+      const projectOrder = await this.sidebarSync.getProjectOrder();
+      if (owner.signal.aborted) return;
+      this.emit({
+        type: "sidebar.project_order.get.response",
+        payload: {
+          requestId: request.requestId,
+          subscriptionId: owner.responseId,
+          ...projectOrder,
+        },
+      });
+    } catch (error) {
+      await owner.release();
+      this.emitSidebarSyncError(request, error);
+    }
+  }
+
+  private async handleSidebarProjectOrderSet(
+    request: Extract<SessionInboundMessage, { type: "sidebar.project_order.set.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.sidebarSync.setProjectOrder({
+        order: request.order,
+        updatedAt: request.updatedAt,
+      });
+      this.emit({
+        type: "sidebar.project_order.set.response",
+        payload: {
+          requestId: request.requestId,
+          accepted: result.accepted,
+          ...result.projectOrder,
+        },
+      });
+    } catch (error) {
+      this.emitSidebarSyncError(request, error);
+    }
   }
 
   private emitWorkspaceLabelError(
@@ -9724,6 +9851,65 @@ export class Session {
   // ---------------------------------------------------------------------------
   // Daemon-owned message queue
   // ---------------------------------------------------------------------------
+
+  private async handleAgentQuestionAnswerSetRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.question.answer.set.request" }>,
+  ): Promise<void> {
+    const respond = (agentId: string, accepted: boolean, error: string | null) =>
+      this.emit({
+        type: "agent.question.answer.set.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          questionId: msg.questionId,
+          accepted,
+          error,
+        },
+      });
+    // A stored agent is answered in its record: saving a half answer must not start a runtime.
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      respond(msg.agentId, false, resolved.error);
+      return;
+    }
+    try {
+      const accepted = await this.agentManager.setOpenQuestionAnswer(
+        resolved.agentId,
+        msg.questionId,
+        msg.answer,
+      );
+      respond(resolved.agentId, accepted, null);
+    } catch (error) {
+      respond(resolved.agentId, false, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async handleAgentPermissionDraftSetRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.permission.draft.set.request" }>,
+  ): Promise<void> {
+    const respond = (agentId: string, accepted: boolean, error: string | null) =>
+      this.emit({
+        type: "agent.permission.draft.set.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          permissionId: msg.permissionId,
+          accepted,
+          error,
+        },
+      });
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      respond(msg.agentId, false, resolved.error);
+      return;
+    }
+    const accepted = this.agentManager.setPendingPermissionDraft(
+      resolved.agentId,
+      msg.permissionId,
+      msg.draft,
+    );
+    respond(resolved.agentId, accepted, null);
+  }
 
   private async resolveQueueAgent(
     agentIdentifier: string,

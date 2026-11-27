@@ -9,15 +9,11 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
-import {
-  navigateToWorkspace,
-  useActiveWorkspaceSelection,
-} from "@/stores/navigation-active-workspace-store";
-import { useSessionStore } from "@/stores/session-store";
+import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { buildNewWorkspaceRoute } from "@/utils/host-routes";
 import type { Theme } from "@/styles/theme";
 import { createPluginClientStateSource } from "../client-state/source";
-import { entityRefs } from "../client-state/refs";
+import { usePluginActiveRefs } from "../active-refs";
 import { PluginEnvironmentProvider } from "../popover";
 import { resolvePluginPlatform } from "../platform";
 import { useInstalledPlugins } from "../registry";
@@ -80,15 +76,7 @@ function SidebarView({
   const { t } = useTranslation();
   const toast = useToast();
   const compact = useIsCompactFormFactor();
-  const selection = useActiveWorkspaceSelection();
-  const focusedAgentId = useSessionStore((state) =>
-    selection ? (state.sessions[selection.serverId]?.focusedAgentId ?? null) : null,
-  );
-  const activeWorkspace = selection
-    ? entityRefs.workspace(selection.serverId, selection.workspaceId)
-    : null;
-  const activeAgent =
-    selection && focusedAgentId ? entityRefs.agent(selection.serverId, focusedAgentId) : null;
+  const active = usePluginActiveRefs();
   const environment = useMemo(
     () => ({ installation: entry.plugin, state: source, toast }),
     [entry.plugin, toast],
@@ -145,10 +133,6 @@ function SidebarView({
     [dismiss, toast, t],
   );
   const layout = useMemo(() => ({ compact, platform: resolvePluginPlatform() }), [compact]);
-  const active = useMemo(
-    () => ({ workspace: activeWorkspace, agent: activeAgent }),
-    [activeWorkspace, activeAgent],
-  );
   const Component = entry.view.Component;
   return (
     <PluginEnvironmentProvider environment={environment}>

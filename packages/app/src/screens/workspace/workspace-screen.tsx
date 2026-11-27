@@ -3296,8 +3296,8 @@ function WorkspaceScreenContent({
       </View>
     ),
     [
-      chatTerminalToggle,
       agentTaskUrl,
+      chatTerminalToggle,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,

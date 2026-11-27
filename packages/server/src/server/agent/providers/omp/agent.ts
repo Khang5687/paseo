@@ -97,8 +97,6 @@ import { ompSkillPromptUserText, shouldDisplayOmpCustomMessage } from "./custom-
 import { getUserMessageText } from "./message-history.js";
 import { mapOmpSystemNoticeToNotification } from "./system-notice.js";
 import { materializeProviderImage } from "../provider-image-output.js";
-import type { AccountRoutingAuthority } from "../../../account-routing/authority.js";
-import type { OmpHostRouting, OmpRoutingAuthority } from "./account-routing-bridge.js";
 import { OmpCliRuntime } from "./cli-runtime.js";
 import { createOmpInstallation } from "./installation.js";
 import { listOmpImportableSessions, readOmpImportSessionConfig } from "./session-descriptor.js";
@@ -177,8 +175,6 @@ export interface OmpAgentClientOptions {
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
   discoverOutputStyles?: DiscoverOutputStyles;
-  /** Host routing authority. Absent means every launch is an independent OMP. */
-  accountRouting?: OmpRoutingAuthority & Partial<Pick<AccountRoutingAuthority, "snapshotForAgent">>;
 }
 
 export interface OmpProviderIdleScheduler {
@@ -266,8 +262,6 @@ interface OmpAgentSessionOptions {
   live?: boolean;
   /** Shown once after the replayed history: why the session runs on another model. */
   resumeNotice?: string;
-  /** Owned routing for this launch; `agentId` is the trusted host agent. */
-  usageRouting?: { agentId: string; snapshotForAgent: AccountRoutingAuthority["snapshotForAgent"] };
 }
 
 function createOmpProviderIdleScheduler(): OmpProviderIdleScheduler {
@@ -833,31 +827,19 @@ export class OmpAgentSession implements AgentSession {
   private userMessageEchoTail: Promise<void> = Promise.resolve();
 
   private readonly usageSessionKey = randomUUID();
-  private readonly usageRouting?: OmpAgentSessionOptions["usageRouting"];
-
   usageSession() {
     const env = this.runtimeSession.environment;
     if (this.closed) return null;
-    const routing = this.usageRouting;
     return {
       provider: "omp",
       model: modelToId(this.state.model) ?? undefined,
       env,
       sessionKey: this.usageSessionKey,
-      ...(routing
-        ? {
-            managedRouting: {
-              agentId: routing.agentId,
-              ...routing.snapshotForAgent(routing.agentId),
-            },
-          }
-        : {}),
     };
   }
 
   constructor(options: OmpAgentSessionOptions) {
     this.runtimeSession = options.runtimeSession;
-    this.usageRouting = options.usageRouting;
     this.hostTools = options.hostTools;
     this.restartRuntime = options.restartRuntime;
     this.config = options.config;
@@ -2716,8 +2698,6 @@ export class OmpAgentClient implements AgentClient {
   private readonly providerIdleDeadlineMs?: number;
   private readonly runtime?: OmpRuntime;
   private readonly discoverOutputStyles: DiscoverOutputStyles;
-  private readonly accountRouting?: OmpRoutingAuthority &
-    Partial<Pick<AccountRoutingAuthority, "snapshotForAgent">>;
 
   constructor(options: OmpAgentClientOptions) {
     const runtimeSettings = mergeOmpRuntimeSettings(
@@ -2738,7 +2718,6 @@ export class OmpAgentClient implements AgentClient {
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs;
     this.runtime = options.runtime;
     this.discoverOutputStyles = options.discoverOutputStyles ?? discoverOutputStyleFiles;
-    this.accountRouting = options.accountRouting;
   }
 
   private async listOutputStyles(
@@ -2760,19 +2739,6 @@ export class OmpAgentClient implements AgentClient {
       ],
       custom.filter((style) => style.name !== DEFAULT_OUTPUT_STYLE),
     );
-  }
-
-  /** Managed launch request. `agentId` comes only from the trusted launch context. */
-  private routingFor(launchContext: AgentLaunchContext | undefined): OmpHostRouting | undefined {
-    if (!this.accountRouting) return undefined;
-    return { authority: this.accountRouting, agentId: launchContext?.agentId };
-  }
-
-  private usageRoutingFor(launchContext: AgentLaunchContext | undefined) {
-    const agentId = launchContext?.agentId;
-    const snapshotForAgent = this.accountRouting?.snapshotForAgent?.bind(this.accountRouting);
-    if (!snapshotForAgent || !agentId) return undefined;
-    return { agentId, snapshotForAgent };
   }
 
   private async configureNativePaseoTools(
@@ -2830,7 +2796,6 @@ export class OmpAgentClient implements AgentClient {
       extraArgs: launchMode.extraArgs,
       systemPrompt: composeOmpSystemPrompt(config, outputStyles),
       env: launchContext?.env,
-      routing: this.routingFor(launchContext),
       wrap: launchContext?.wrap,
     };
     const runtimeSession = await this.resolveRuntime(config.providerOptions).startSession(
@@ -2862,7 +2827,6 @@ export class OmpAgentClient implements AgentClient {
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
         outputStyles,
-        usageRouting: this.usageRoutingFor(launchContext),
       });
     } catch (error) {
       await hostTools?.close();
@@ -2907,7 +2871,6 @@ export class OmpAgentClient implements AgentClient {
       launchMode,
       outputStyles,
     });
-    startInput.routing = this.routingFor(launchContext);
     const { runtimeSession, missingModel } = await this.startResumeRuntime(
       resumeConfig.config.providerOptions,
       startInput,
@@ -2944,7 +2907,6 @@ export class OmpAgentClient implements AgentClient {
         usagePollScheduler: this.usagePollScheduler,
         providerIdleDeadlineMs: this.providerIdleDeadlineMs,
         outputStyles,
-        usageRouting: this.usageRoutingFor(launchContext),
         live: false,
       });
     } catch (error) {
@@ -3185,8 +3147,6 @@ export class OmpAgentClient implements AgentClient {
           modeId: launchMode.modeId,
           extraArgs: launchMode.extraArgs,
           signal: context?.signal,
-          // Agentless: the helper lists models and cannot dispatch one.
-          routing: this.routingFor(undefined),
         });
         if (context?.signal.aborted) await closeSession();
       });

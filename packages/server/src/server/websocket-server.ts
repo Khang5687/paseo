@@ -26,6 +26,7 @@ import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import { CreationService } from "./creation/index.js";
 import { MessageReceipts } from "./message-receipts/index.js";
 import { AgentMessageQueueDispatcher } from "./agent/agent-message-queue.js";
+import { SidebarSyncStore } from "./sidebar-sync/index.js";
 import { WebSocket, WebSocketServer } from "ws";
 import type { IncomingMessage, Server as HTTPServer } from "http";
 import { join } from "path";
@@ -39,6 +40,7 @@ import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
 import type pino from "pino";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
+import { isSnoozed } from "./project-snooze.js";
 import type { ProjectUpdate } from "./workspace-reconciliation-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager, CheckoutDiffMetrics } from "./checkout-diff-manager.js";
@@ -150,8 +152,6 @@ import { FileDeviceRegistry } from "./file-send/device-registry.js";
 import { FileSendService, type FileSendLiveTarget } from "./file-send/service.js";
 import { FileCopySender } from "./file-copies/sender.js";
 import type { Note } from "@getpaseo/protocol/notes/schemas";
-import type { AccountRoutingAuthority } from "./account-routing/authority.js";
-import type { OmpAccountLogin } from "./account-routing/login.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -648,6 +648,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentStorage: AgentStorage;
   private readonly messageReceipts: MessageReceipts;
   private readonly agentMessageQueue: AgentMessageQueueDispatcher;
+  private readonly sidebarSync: SidebarSyncStore;
   readonly agentMessages: AgentMessageDelivery;
   private readonly askThreads: AskAgentThreads | undefined;
   private readonly creationService: CreationService;
@@ -661,12 +662,6 @@ export class VoiceAssistantWebSocketServer {
   private readonly fileDevices: FileDeviceRegistry;
   readonly fileSend: FileSendService;
   private readonly detachFileCopySender: () => void;
-  private readonly accountRouting: AccountRoutingAuthority | undefined;
-  private readonly accountLogin: OmpAccountLogin | undefined;
-  // Mirrors the host authority's negotiated capability; `features.ompAccountRouting` is true only while supported.
-  private accountRoutingSupported = false;
-  private releaseAccountRoutingObserver: (() => void) | null = null;
-  private releaseLoginLinkObserver: (() => void) | null = null;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -805,8 +800,6 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
-    accountRouting?: AccountRoutingAuthority,
-    accountLogin?: OmpAccountLogin,
     notesService?: NotesService,
     agentDrafts?: AgentDraftService,
     fileCopies?: FileCopies,
@@ -888,6 +881,7 @@ export class VoiceAssistantWebSocketServer {
       paseoHome,
     });
     this.agentMessageQueue.attach();
+    this.sidebarSync = new SidebarSyncStore(join(paseoHome, "sidebar-sync.json"));
     this.creationService = new CreationService(
       join(paseoHome, "creations"),
       this.logger.child({ module: "creation" }),
@@ -898,9 +892,6 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
     this.agentDrafts = agentDrafts;
-    this.accountRouting = accountRouting;
-    this.accountLogin = accountLogin;
-    this.observeAccountRoutingCapability();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -1254,30 +1245,6 @@ export class VoiceAssistantWebSocketServer {
     this.updateServerCapabilities(buildServerCapabilities({ readiness }));
   }
 
-  /** The advertised feature follows the authority's negotiated runtime coverage, never code presence. */
-  private observeAccountRoutingCapability(): void {
-    const authority = this.accountRouting;
-    if (!authority) return;
-    this.releaseLoginLinkObserver =
-      this.accountLogin?.onLinkSupportChange(() => this.broadcastCapabilitiesUpdate()) ?? null;
-    const apply = (supported: boolean): void => {
-      if (supported === this.accountRoutingSupported) return;
-      this.accountRoutingSupported = supported;
-      this.broadcastCapabilitiesUpdate();
-    };
-    void (async () => {
-      try {
-        const { state, release } = await authority.observe((next) =>
-          apply(next.capability.status === "supported"),
-        );
-        this.releaseAccountRoutingObserver = release;
-        apply(state.capability.status === "supported");
-      } catch (error) {
-        this.logger.warn({ err: error }, "Account routing observer failed");
-      }
-    })();
-  }
-
   public updateServerCapabilities(capabilities: ServerCapabilities | null | undefined): void {
     const next = capabilities ?? undefined;
     if (areServerCapabilitiesEqual(this.serverCapabilities, next)) {
@@ -1371,10 +1338,6 @@ export class VoiceAssistantWebSocketServer {
     await this.connectedHosts.close();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
-    this.releaseAccountRoutingObserver?.();
-    this.releaseAccountRoutingObserver = null;
-    this.releaseLoginLinkObserver?.();
-    this.releaseLoginLinkObserver = null;
     this.unsubscribeDaemonConfigChange?.();
     this.unsubscribeDaemonConfigChange = null;
     this.unsubscribeTerminalActivity?.();
@@ -1894,6 +1857,7 @@ export class VoiceAssistantWebSocketServer {
       agentStorage: this.agentStorage,
       messageReceipts: this.messageReceipts,
       agentMessageQueue: this.agentMessageQueue,
+      sidebarSync: this.sidebarSync,
       agentMessages: this.agentMessages,
       askThreads: this.askThreads,
       creationService: this.creationService,
@@ -1905,15 +1869,6 @@ export class VoiceAssistantWebSocketServer {
       notesService: this.notesService ?? undefined,
       fileCopies: this.fileCopies,
       fileSend: { service: this.fileSend, registry: this.fileDevices },
-      accountRouting: this.accountRouting,
-      accountLogin: this.accountLogin,
-      isHostLocalSource: (source) => {
-        const identity = source ? this.socketIdentities.get(source as WebSocketLike) : undefined;
-        return (
-          identity?.transport === "direct" &&
-          (identity.peer === "loopback" || identity.peer === "local_ipc")
-        );
-      },
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -2292,18 +2247,18 @@ export class VoiceAssistantWebSocketServer {
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
         // COMPAT(agentDraftSync): added in v0.14.0, remove gate after 2027-11-01.
         ...(this.agentDrafts ? { agentDraftSync: true } : {}),
+        // COMPAT(questionAnswers): fork, added with the questions bar.
+        questionAnswers: true,
+        // COMPAT(questionBoxDrafts): fork, half-filled question boxes on every device.
+        questionBoxDrafts: true,
         // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
         ...(this.notesService ? { notes: true } : {}),
         // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.
         ...(this.fileCopies ? { fileCopies: true } : {}),
         // COMPAT(sendToDevice): added in v0.16.2, remove gate after 2027-06-01.
         sendToDevice: true,
-        ...(this.accountRoutingSupported ? { ompAccountRouting: true } : {}),
-        // The host can open a browser and sign a Claude account in; only advertised with routing.
-        ...(this.accountRoutingSupported && this.accountLogin ? { ompAccountLogin: true } : {}),
-        ...(this.accountRoutingSupported && this.accountLogin?.linkSupported
-          ? { ompAccountLoginLink: true }
-          : {}),
+        // COMPAT(sidebarProjectOrder): added after v0.17.6, remove gate after 2027-12-01.
+        sidebarProjectOrder: true,
         terminalCollection: true,
         // COMPAT(chatTerminals): added after v0.17.5, remove gate after 2027-11-27.
         chatTerminals: true,
@@ -2370,6 +2325,8 @@ export class VoiceAssistantWebSocketServer {
         pluginNotifications: true,
         // COMPAT(skillManagement): added in v0.4.0, remove gate after 2027-08-16.
         skillManagement: true,
+        // COMPAT(projectSnooze): fork.
+        projectSnooze: true,
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
         idleRuntimeCleanupSetting: true,
         resumeOnStartupSetting: true,
@@ -3253,7 +3210,10 @@ export class VoiceAssistantWebSocketServer {
       }),
     );
 
-    if (plan.shouldPush) {
+    // A snoozed project's chats stay silent: no push, no in-app alert. The event still goes out
+    // so the chat's unread and status update.
+    const snoozed = await this.isWorkspaceProjectSnoozed(agent.workspaceId, nowMs);
+    if (plan.shouldPush && !snoozed) {
       void this.pushNotificationSender
         .send(notification, { kind: "agent", reason: params.reason })
         .catch((err) => {
@@ -3263,6 +3223,7 @@ export class VoiceAssistantWebSocketServer {
 
     for (const { ws } of clientEntries) {
       const shouldNotify =
+        !snoozed &&
         plan.inAppRecipientIndex !== null &&
         notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
       const timestamp = new Date().toISOString();
@@ -3302,6 +3263,13 @@ export class VoiceAssistantWebSocketServer {
         this.sessions.get(ws)!.session.publishToSource(ws, message.message);
       else this.sendToClient(ws, message);
     }
+  }
+
+  private async isWorkspaceProjectSnoozed(workspaceId: string, nowMs: number): Promise<boolean> {
+    const workspace = await this.workspaceRegistry.get(workspaceId);
+    if (!workspace) return false;
+    const project = await this.projectRegistry.get(workspace.projectId);
+    return isSnoozed(project?.snoozedUntil, nowMs);
   }
 
   private sendFilePush(tokens: string[], payload: PushPayload): Promise<void> {

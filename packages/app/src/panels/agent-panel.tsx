@@ -104,6 +104,7 @@ import {
 import { WorkspaceDraftComposer } from "@/composer/draft/workspace-tab";
 import { type DraftConversation, useDraftTimeline } from "@/composer/draft/timeline";
 import { AgentTracks } from "@/panels/agent-tracks";
+import { ComposerStatusLine } from "@/composer/status-line";
 import { OverlayDismissalScope } from "@/components/ui/overlay-dismissal";
 import { ParentAgentCallout, useParentAgentId } from "@/subagents/parent";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
@@ -1203,6 +1204,25 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     isPaneFocused,
     draft: rawAgentInputDraft,
   });
+  // On the phone the tracks and the draft history share one line on the composer's top edge
+  // instead of floating over the transcript in two rows.
+  const tracksInStatusLine = useIsCompactFormFactor() && hasAgentComposer;
+  const composerTopAccessory = useMemo(
+    () =>
+      tracksInStatusLine ? (
+        <ComposerStatusLine trailing={draftHistoryControl}>
+          <AgentTracks
+            serverId={serverId}
+            workspaceId={workspaceId}
+            agentId={agentId}
+            parentAgentId={parentPillAgentId}
+          />
+        </ComposerStatusLine>
+      ) : (
+        draftHistoryControl
+      ),
+    [agentId, draftHistoryControl, parentPillAgentId, serverId, tracksInStatusLine, workspaceId],
+  );
   // Stabilize the agentInputDraft object identity so that memo(AgentComposerSection) can bail out
   // when only toast state changes (which does not affect any draft field).
   const {
@@ -1263,7 +1283,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
         onAttentionPromptSend={onAttentionPromptSend}
         onComposerHeightChange={handleComposerHeightChange}
         onMessageSent={handleMessageSent}
-        composerTopAccessory={draftHistoryControl}
+        composerTopAccessory={composerTopAccessory}
       />
     </RenderProfile>
   ) : (
@@ -1304,12 +1324,12 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
             !showHistorySyncError
           }
           revealInitialHistory={hasCachedHistory || showHistorySyncError}
-          hasActiveComposer={hasActiveComposer}
+          hasFloatingTracks={hasActiveComposer && !tracksInStatusLine}
           toast={toastApi}
           onOpenWorkspaceFile={onOpenWorkspaceFile}
         />
       </RenderProfile>
-      {hasActiveComposer && !draft ? (
+      {hasActiveComposer && !draft && !tracksInStatusLine ? (
         <AgentTracks
           serverId={serverId}
           workspaceId={workspaceId}
@@ -1491,7 +1511,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
   hasAppliedAuthoritativeHistory,
   isInitialHistoryLoading,
   revealInitialHistory,
-  hasActiveComposer,
+  hasFloatingTracks,
   toast,
   onOpenWorkspaceFile,
 }: {
@@ -1504,17 +1524,18 @@ const AgentStreamSection = memo(function AgentStreamSection({
   hasAppliedAuthoritativeHistory: boolean;
   isInitialHistoryLoading: boolean;
   revealInitialHistory: boolean;
-  hasActiveComposer: boolean;
+  /** The track bar floats over the transcript's foot, so the transcript leaves it room. */
+  hasFloatingTracks: boolean;
   toast: ReturnType<typeof useToastHost>["api"];
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const isCompactFormFactor = useIsCompactFormFactor();
   // The track bar's space is reserved whenever the bar is mounted, pills or not: pills come and go
   // every turn, and the transcript must not jump with them.
-  const bottomOverlayTailClearance = hasActiveComposer
+  const bottomOverlayTailClearance = hasFloatingTracks
     ? resolveComposerTrackTailClearance(isCompactFormFactor)
     : 0;
-  const bottomOverlayControlClearance = hasActiveComposer
+  const bottomOverlayControlClearance = hasFloatingTracks
     ? resolveComposerTrackControlClearance(isCompactFormFactor)
     : 0;
   const streamItemsRaw = useAgentStreamTail(serverId, agentId);

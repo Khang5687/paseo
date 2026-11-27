@@ -1,6 +1,16 @@
-import { ChevronLeft, ChevronRight, Ellipsis, LayoutGrid } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Ellipsis,
+  GripVertical,
+  Inbox,
+  LayoutGrid,
+} from "lucide-react-native";
 import {
   memo,
+  type ReactElement,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -9,6 +19,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { router, usePathname, type Href } from "expo-router";
 import { type LayoutChangeEvent, ScrollView, Text, View } from "react-native";
 import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -25,27 +36,48 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { PressHighlight } from "@/components/ui/press-highlight";
+import { DensityIcon } from "@/components/ui/density-icon";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { ProjectPeek } from "@/needs-you/project-peek";
 import { isNative as platformIsNative } from "@/constants/platform";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useShowProjectShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import {
   type SidebarProjectEntry,
-  useSidebarProjectNeedsInputCount,
+  useSidebarProjectStatusCounts,
 } from "@/hooks/use-sidebar-workspaces-list";
+import type { ProjectStatusCounts } from "@/hooks/sidebar-workspaces-view-model";
+import {
+  ProjectStatusCountList,
+  ProjectStatusDots,
+  useProjectStatusLabel,
+} from "./project-status-dots";
+import { useNeedsYouCount } from "@/needs-you/use-needs-you";
+import { SidebarBadge, sidebarBadgeAccessibilityLabel } from "./sidebar-badge";
+import {
+  PluginProjectRailItems,
+  type ProjectRailButtonProps,
+  useHasPluginProjectRailItems,
+} from "@/plugins/project-rail-items";
 import { useProjectIcons } from "@/projects/icons";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
+import { usePanelStore } from "@/stores/panel-store";
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
-import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
+import { saveProjectStripOrder, useOpenReorderProjects } from "./project-order";
+import { ProjectSnoozeSubTrigger, useProjectSnoozeMenuPages } from "./project-snooze-menu";
+import { ReorderProjectsSheet } from "./reorder-projects-sheet";
+import { useSidebarRailOpenStore } from "@/stores/sidebar-rail-open-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { useSidebarQuietFoldStore } from "@/stores/sidebar-quiet-fold-store";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
+import { buildNeedsYouRoute } from "@/utils/host-routes";
 import { resolveSidebarProjectIconTargets } from "@/utils/sidebar-project-row-model";
-import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
 import {
+  listProjectEndMoves,
   listProjectStripMoves,
   moveProjectStripEntry,
   type ProjectStripMove,
@@ -53,6 +85,9 @@ import {
   shouldShowProjectStrip,
 } from "./project-strip-model";
 
+const RAIL_WIDTH = 52;
+/** The open rail: room for a project name beside its icon, over the sidebar's own column. */
+const RAIL_OPEN_WIDTH = 220;
 const RAIL_ICON_SIZE = 28;
 const CHIP_ICON_SIZE = 18;
 /** The chip row's left and right padding; theme spacing 3. */
@@ -63,6 +98,10 @@ const ThemedLayoutGrid = withUnistyles(LayoutGrid);
 const ThemedEllipsis = withUnistyles(Ellipsis);
 const ThemedChevronLeft = withUnistyles(ChevronLeft);
 const ThemedChevronRight = withUnistyles(ChevronRight);
+const ThemedChevronsLeft = withUnistyles(ChevronsLeft);
+const ThemedChevronsRight = withUnistyles(ChevronsRight);
+const ThemedGripVertical = withUnistyles(GripVertical);
+const ThemedInbox = withUnistyles(Inbox);
 const allIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 /** Hover state for the docs/hover.md pattern: the outer View listens, the inner press is separate. */
@@ -73,22 +112,12 @@ function useHoverHandlers() {
   return { hovered, onPointerEnter, onPointerLeave };
 }
 
-/**
- * Saves a new strip order. The strip and the sidebar's project list share one order, so a
- * drag here moves the project's block in the list too, and projects another host filter
- * hides keep their place after the visible ones.
- */
-function saveProjectStripOrder(reorderedKeys: string[]): void {
-  const { getProjectOrder, setProjectOrder } = useSidebarOrderStore.getState();
-  const currentOrder = getProjectOrder();
-  if (!hasVisibleOrderChanged({ currentOrder, reorderedVisibleKeys: reorderedKeys })) return;
-  setProjectOrder(mergeWithRemainder({ currentOrder, reorderedVisibleKeys: reorderedKeys }));
-}
-
 interface ProjectStripModel {
   /** The projects that show; `quietProjects` sit behind "More". */
   projects: SidebarProjectEntry[];
   quietProjects: SidebarProjectEntry[];
+  /** Every project in the shared order, quiet ones too. */
+  allProjects: SidebarProjectEntry[];
   projectKeys: string[];
   iconByViewKey: ReadonlyMap<string, string | null>;
   allSelected: boolean;
@@ -105,6 +134,7 @@ function useProjectStripModel(): ProjectStripModel | null {
   return {
     projects: stripProjects.active,
     quietProjects: stripProjects.quiet,
+    allProjects,
     projectKeys,
     iconByViewKey,
     allSelected: resolvedProjectFilters.length === 0,
@@ -145,6 +175,8 @@ function SidebarProjectRail() {
   const model = useProjectStripModel();
   const showNumbers = useShowProjectShortcutBadges();
   const clearProjectFilters = useSidebarViewStore((state) => state.clearProjectFilters);
+  const open = useSidebarRailOpenStore((state) => state.open);
+  const hasPluginItems = useHasPluginProjectRailItems();
 
   const handleDragEnd = useCallback((reordered: SidebarProjectEntry[]) => {
     saveProjectStripOrder(reordered.map((project) => project.viewKey));
@@ -155,12 +187,18 @@ function SidebarProjectRail() {
       <RailProjectButton
         project={item}
         index={index}
+        projectKeys={model?.projectKeys ?? EMPTY_KEYS}
         iconDataUri={model?.iconByViewKey.get(item.viewKey) ?? null}
         selected={model?.selectedKeys.has(item.viewKey) ?? false}
         showNumber={showNumbers}
+        open={open}
       />
     ),
-    [model?.iconByViewKey, model?.selectedKeys, showNumbers],
+    [model?.iconByViewKey, model?.projectKeys, model?.selectedKeys, open, showNumbers],
+  );
+  const extraData = useMemo(
+    () => ({ selectedKeys: model?.selectedKeys, open }),
+    [model?.selectedKeys, open],
   );
 
   const quietFooter = useMemo(
@@ -169,37 +207,176 @@ function SidebarProjectRail() {
         <RailQuietFold
           projects={model.quietProjects}
           startIndex={model.projects.length}
+          projectKeys={model.projectKeys}
           iconByViewKey={model.iconByViewKey}
           selectedKeys={model.selectedKeys}
           showNumber={showNumbers}
+          open={open}
         />
       ) : null,
-    [model, showNumbers],
+    [model, open, showNumbers],
   );
 
   if (!model) return null;
 
   return (
+    <>
+      {/* Open, the rail lies over the sidebar; the spacer keeps the sidebar's column in place. */}
+      {open ? <View style={styles.railSpacer} /> : null}
+      <View
+        style={[styles.rail, open ? styles.railOpen : null]}
+        accessibilityRole="tablist"
+        accessibilityLabel={t("sidebar.projectStrip.label")}
+        testID="sidebar-project-rail"
+      >
+        <RailOpenToggle open={open} />
+        <RailNeedsYouButton open={open} />
+        <RailAllButton selected={model.allSelected} onPress={clearProjectFilters} open={open} />
+        <View style={styles.railDivider} />
+        <View style={styles.railListArea}>
+          <DraggableList
+            testID="sidebar-project-rail-list"
+            data={model.projects}
+            keyExtractor={projectViewKeyExtractor}
+            renderItem={renderItem}
+            onDragEnd={handleDragEnd}
+            extraData={extraData}
+            ListFooterComponent={quietFooter}
+            useDragHandle
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.railListContent}
+          />
+        </View>
+        {hasPluginItems ? (
+          <View style={styles.railPluginItems} testID="sidebar-project-rail-plugins">
+            <View style={styles.railDivider} />
+            <PluginProjectRailItems open={open} Button={RailIconButton} />
+          </View>
+        ) : null}
+      </View>
+    </>
+  );
+}
+
+const EMPTY_KEYS: string[] = [];
+
+/** A tooltip on the closed rail, where icons carry no names. The open rail writes them out. */
+function RailTooltip({
+  show,
+  label,
+  subtext,
+  chord,
+  children,
+}: {
+  show: boolean;
+  label: string;
+  subtext?: string | null;
+  chord?: ShortcutKey[][] | null;
+  children: ReactElement;
+}) {
+  if (!show) return children;
+  return (
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right" align="center" offset={8}>
+        <View style={styles.tooltipRow}>
+          <View>
+            <Text style={styles.tooltipText}>{label}</Text>
+            {subtext ? <Text style={styles.tooltipSubtext}>{subtext}</Text> : null}
+          </View>
+          {chord ? <Shortcut chord={chord} /> : null}
+        </View>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * A rail project's hover: its waiting question when one waits (peek, owner decision Q94), else
+ * the name tooltip. The peek is a hover card, so the pointer can cross onto it to answer.
+ */
+function RailPeek({
+  project,
+  waiting,
+  open,
+  label,
+  subtext,
+  chord,
+  children,
+}: {
+  project: SidebarProjectEntry;
+  waiting: boolean;
+  open: boolean;
+  label: string;
+  subtext?: string | null;
+  chord?: ShortcutKey[][] | null;
+  children: ReactElement;
+}) {
+  // A peek that is sending or showing "Sent" stays up after the project stops waiting.
+  const [held, setHeld] = useState(false);
+  if (!waiting && !held) {
+    return (
+      <RailTooltip show={!open} label={label} subtext={subtext} chord={chord}>
+        {children}
+      </RailTooltip>
+    );
+  }
+  return (
+    <HoverCard>
+      <HoverCardTrigger>{children}</HoverCardTrigger>
+      <HoverCardContent placement="right" alignment="start" offset={8}>
+        <ProjectPeek
+          hosts={project.hosts}
+          onHoldChange={setHeld}
+          testID={`sidebar-project-rail-peek-${project.viewKey}`}
+        />
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+/** The rail's first button: » opens the rail over the sidebar, « Collapse closes it. */
+function RailOpenToggle({ open }: { open: boolean }) {
+  // Keyed by state: the toggle changes size under a still pointer, which fires no pointerleave,
+  // so a fresh hover state per open/closed keeps the old hover from sticking.
+  return <RailOpenToggleButton key={open ? "open" : "closed"} open={open} />;
+}
+
+function RailOpenToggleButton({ open }: { open: boolean }) {
+  const { t } = useTranslation();
+  const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
+  const setOpen = useSidebarRailOpenStore((state) => state.setOpen);
+  const handlePress = useCallback(() => setOpen(!open), [open, setOpen]);
+  const label = open ? t("sidebar.projectStrip.collapseRail") : t("sidebar.projectStrip.openRail");
+  return (
     <View
-      style={styles.rail}
-      accessibilityRole="tablist"
-      accessibilityLabel={t("sidebar.projectStrip.label")}
-      testID="sidebar-project-rail"
+      style={[styles.railItem, open ? styles.railItemOpen : null]}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
     >
-      <RailAllButton selected={model.allSelected} onPress={clearProjectFilters} />
-      <View style={styles.railDivider} />
-      <DraggableList
-        testID="sidebar-project-rail-list"
-        data={model.projects}
-        keyExtractor={projectViewKeyExtractor}
-        renderItem={renderItem}
-        onDragEnd={handleDragEnd}
-        extraData={model.selectedKeys}
-        ListFooterComponent={quietFooter}
-        useDragHandle
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.railListContent}
-      />
+      <RailTooltip show={!open} label={label}>
+        <PressHighlight
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          aria-expanded={open}
+          highlightStyle={styles.railButtonPressed}
+          onPress={handlePress}
+          style={[
+            open ? styles.railRow : styles.railToggleButton,
+            hovered ? styles.railButtonHovered : null,
+          ]}
+          testID="sidebar-project-rail-toggle"
+        >
+          <View style={styles.railToggleIcon}>
+            {open ? (
+              <ThemedChevronsLeft size={16} uniProps={allIconMapping} />
+            ) : (
+              <ThemedChevronsRight size={16} uniProps={allIconMapping} />
+            )}
+          </View>
+          {open ? <Text style={styles.railRowMutedText}>{label}</Text> : null}
+        </PressHighlight>
+      </RailTooltip>
     </View>
   );
 }
@@ -211,58 +388,72 @@ function SidebarProjectRail() {
 function RailQuietFold({
   projects,
   startIndex,
+  projectKeys,
   iconByViewKey,
   selectedKeys,
   showNumber,
+  open,
 }: {
   projects: SidebarProjectEntry[];
   startIndex: number;
+  projectKeys: string[];
   iconByViewKey: ReadonlyMap<string, string | null>;
   selectedKeys: ReadonlySet<string>;
   showNumber: boolean;
+  open: boolean;
 }) {
   const { t } = useTranslation();
   const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
-  const open = useSidebarQuietFoldStore((state) => state.open);
+  const foldOpen = useSidebarQuietFoldStore((state) => state.open);
   const toggle = useSidebarQuietFoldStore((state) => state.toggle);
   const label = t("sidebar.projectStrip.quietMore", { count: projects.length });
   return (
     <View testID="sidebar-project-rail-quiet">
       <View style={styles.railDivider} />
-      <View style={styles.railItem} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-        <Tooltip delayDuration={300}>
-          <TooltipTrigger asChild>
-            <PressHighlight
-              accessibilityRole="button"
-              accessibilityLabel={label}
-              aria-expanded={open}
-              highlightStyle={styles.railButtonPressed}
-              onPress={toggle}
-              style={[styles.railButton, hovered || open ? styles.railButtonHovered : null]}
-              testID="sidebar-project-rail-more"
-            >
-              <View style={styles.railAllIcon}>
-                <ThemedEllipsis size={16} uniProps={allIconMapping} />
-              </View>
+      <View
+        style={[styles.railItem, open ? styles.railItemOpen : null]}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+      >
+        <RailTooltip show={!open} label={label}>
+          <PressHighlight
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            aria-expanded={foldOpen}
+            highlightStyle={styles.railButtonPressed}
+            onPress={toggle}
+            style={[
+              open ? styles.railRow : styles.railButton,
+              hovered || foldOpen ? styles.railButtonHovered : null,
+            ]}
+            testID="sidebar-project-rail-more"
+          >
+            <View style={styles.railAllIcon}>
+              <ThemedEllipsis size={16} uniProps={allIconMapping} />
+            </View>
+            {open ? (
+              <Text style={styles.railRowMutedText} numberOfLines={1}>
+                {label}
+              </Text>
+            ) : (
               <View style={styles.quietCountFloating} pointerEvents="none">
                 <Text style={styles.quietCountText}>{projects.length}</Text>
               </View>
-            </PressHighlight>
-          </TooltipTrigger>
-          <TooltipContent side="right" align="center" offset={8}>
-            <Text style={styles.tooltipText}>{label}</Text>
-          </TooltipContent>
-        </Tooltip>
+            )}
+          </PressHighlight>
+        </RailTooltip>
       </View>
-      {open
+      {foldOpen
         ? projects.map((project, index) => (
             <RailProjectButton
               key={project.viewKey}
               project={project}
               index={startIndex + index}
+              projectKeys={projectKeys}
               iconDataUri={iconByViewKey.get(project.viewKey) ?? null}
               selected={selectedKeys.has(project.viewKey)}
               showNumber={showNumber}
+              open={open}
             />
           ))
         : null}
@@ -274,137 +465,353 @@ function projectViewKeyExtractor(project: SidebarProjectEntry): string {
   return project.viewKey;
 }
 
-function RailAllButton({ selected, onPress }: { selected: boolean; onPress: () => void }) {
+function RailAllButton({
+  selected,
+  onPress,
+  open,
+}: {
+  selected: boolean;
+  onPress: () => void;
+  open: boolean;
+}) {
   const { t } = useTranslation();
   const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
   const label = t("sidebar.projectStrip.allProjects");
   return (
-    <View style={styles.railItem} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-      <Tooltip delayDuration={300}>
-        <TooltipTrigger asChild>
-          <PressHighlight
-            accessibilityRole="tab"
-            accessibilityLabel={label}
-            aria-selected={selected}
-            highlightStyle={styles.railButtonPressed}
-            onPress={onPress}
-            style={[
-              styles.railButton,
-              hovered && !selected ? styles.railButtonHovered : null,
-              selected ? styles.railButtonSelected : null,
-            ]}
-            testID="sidebar-project-rail-all"
-          >
-            <View style={styles.railAllIcon}>
-              <ThemedLayoutGrid size={16} uniProps={allIconMapping} />
-            </View>
-          </PressHighlight>
-        </TooltipTrigger>
-        <TooltipContent side="right" align="center" offset={8}>
-          <Text style={styles.tooltipText}>{label}</Text>
-        </TooltipContent>
-      </Tooltip>
+    <View
+      style={[styles.railItem, open ? styles.railItemOpen : null]}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      <RailTooltip show={!open} label={label}>
+        <PressHighlight
+          accessibilityRole="tab"
+          accessibilityLabel={label}
+          aria-selected={selected}
+          highlightStyle={styles.railButtonPressed}
+          onPress={onPress}
+          style={[
+            open ? styles.railRow : styles.railButton,
+            hovered && !selected ? styles.railButtonHovered : null,
+            selected ? styles.railButtonSelected : null,
+          ]}
+          testID="sidebar-project-rail-all"
+        >
+          <View style={styles.railAllIcon}>
+            <ThemedLayoutGrid size={16} uniProps={allIconMapping} />
+          </View>
+          {open ? (
+            <Text style={styles.railRowText} numberOfLines={1}>
+              {label}
+            </Text>
+          ) : null}
+        </PressHighlight>
+      </RailTooltip>
     </View>
+  );
+}
+
+/** The count on Needs you: "9+" past nine. */
+function needsYouBadgeText(count: number): string {
+  return count > 9 ? "9+" : String(count);
+}
+
+function useOpenNeedsYou(beforeOpen?: () => void) {
+  const pathname = usePathname();
+  const selected = pathname === buildNeedsYouRoute();
+  const open = useCallback(() => {
+    beforeOpen?.();
+    // Typed routes come from Metro's generated router.d.ts; a copy older than this route would
+    // reject the literal, so cast like the other route builders' callers.
+    router.push(buildNeedsYouRoute() as Href);
+  }, [beforeOpen]);
+  return { selected, open };
+}
+
+/**
+ * Needs you, above All (owner decisions Q91, Q98): every chat waiting on you, on one page. The
+ * purple number counts those chats plus what plugins add, such as late tasks.
+ */
+function RailNeedsYouButton({ open }: { open: boolean }) {
+  const { t } = useTranslation();
+  const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
+  const count = useNeedsYouCount();
+  const { selected, open: openNeedsYou } = useOpenNeedsYou();
+  const label = t("needsYou.title");
+  return (
+    <View
+      style={[styles.railItem, open ? styles.railItemOpen : null]}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      <RailTooltip show={!open} label={label}>
+        <PressHighlight
+          accessibilityRole="button"
+          accessibilityLabel={t("needsYou.railLabel", { count })}
+          aria-selected={selected}
+          highlightStyle={styles.railButtonPressed}
+          onPress={openNeedsYou}
+          style={[
+            open ? styles.railRow : styles.railButton,
+            hovered && !selected ? styles.railButtonHovered : null,
+            selected ? styles.railButtonSelected : null,
+          ]}
+          testID="sidebar-project-rail-needs-you"
+        >
+          <View style={styles.railAllIcon}>
+            <ThemedInbox size={16} uniProps={allIconMapping} />
+          </View>
+          {open ? (
+            <Text style={styles.railRowText} numberOfLines={1}>
+              {label}
+            </Text>
+          ) : null}
+          {count > 0 ? (
+            <View
+              style={open ? styles.needsYouCount : styles.needsYouCountFloating}
+              pointerEvents="none"
+              testID="sidebar-needs-you-count"
+            >
+              <Text style={styles.needsYouCountText}>{needsYouBadgeText(count)}</Text>
+            </View>
+          ) : null}
+        </PressHighlight>
+      </RailTooltip>
+    </View>
+  );
+}
+
+/** A plugin's rail button: its icon in the same square as All, and its badge on the corner. */
+function RailIconButton({
+  icon,
+  label,
+  open,
+  selected,
+  badge,
+  onPress,
+  testID,
+}: ProjectRailButtonProps) {
+  const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
+  return (
+    <View
+      style={[styles.railItem, open ? styles.railItemOpen : null]}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      <RailTooltip show={!open} label={label}>
+        <PressHighlight
+          accessibilityRole="button"
+          accessibilityLabel={sidebarBadgeAccessibilityLabel(label, badge)}
+          aria-selected={selected}
+          highlightStyle={styles.railButtonPressed}
+          onPress={onPress}
+          style={[
+            open ? styles.railRow : styles.railButton,
+            hovered && !selected ? styles.railButtonHovered : null,
+            selected ? styles.railButtonSelected : null,
+          ]}
+          testID={testID}
+        >
+          <View style={styles.railAllIcon}>
+            <DensityIcon
+              icon={icon}
+              size="sm"
+              color={selected ? "foreground" : "foregroundMuted"}
+            />
+          </View>
+          {open ? (
+            <Text style={styles.railRowText} numberOfLines={1}>
+              {label}
+            </Text>
+          ) : null}
+          <SidebarBadge badge={badge} placement={open ? "inline" : "corner"} ownerTestID={testID} />
+        </PressHighlight>
+      </RailTooltip>
+    </View>
+  );
+}
+
+/** The phone's Needs you: the first chip in the row, before All. Opening it closes the sidebar. */
+function NeedsYouChip() {
+  const { t } = useTranslation();
+  const count = useNeedsYouCount();
+  const closeSidebar = usePanelStore((state) => state.showMobileAgent);
+  const { selected, open } = useOpenNeedsYou(closeSidebar);
+  return (
+    <PressHighlight
+      accessibilityRole="button"
+      accessibilityLabel={t("needsYou.railLabel", { count })}
+      aria-selected={selected}
+      highlightStyle={styles.chipPressed}
+      onPress={open}
+      style={[styles.chip, selected ? styles.chipSelected : null]}
+      testID="sidebar-project-chip-needs-you"
+    >
+      <ThemedInbox size={14} uniProps={allIconMapping} />
+      <Text style={styles.chipText}>{t("needsYou.title")}</Text>
+      {count > 0 ? (
+        <View style={styles.needsYouCount} testID="sidebar-needs-you-chip-count">
+          <Text style={styles.needsYouCountText}>{needsYouBadgeText(count)}</Text>
+        </View>
+      ) : null}
+    </PressHighlight>
   );
 }
 
 const RailProjectButton = memo(function RailProjectButton({
   project,
   index,
+  projectKeys,
   iconDataUri,
   selected,
   showNumber,
+  open,
 }: {
   project: SidebarProjectEntry;
   index: number;
+  projectKeys: string[];
   iconDataUri: string | null;
   selected: boolean;
   showNumber: boolean;
+  /** The open rail: a row with the name beside the icon, instead of the icon alone. */
+  open: boolean;
 }) {
   const { t } = useTranslation();
   const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
   const showOnlyProject = useSidebarViewStore((state) => state.showOnlyProject);
-  const needsInputCount = useSidebarProjectNeedsInputCount(project.workspaces);
+  const setRailOpen = useSidebarRailOpenStore((state) => state.setOpen);
+  const statusCounts = useSidebarProjectStatusCounts(project.workspaces);
+  const statusLabel = useProjectStatusLabel(statusCounts);
   const chord = useProjectJumpChord(index);
   const shortcutNumber = projectStripShortcutNumber(index);
   const rememberedChat = useSidebarLastChatStore((state) => state.byProject[project.viewKey]);
+  const moves = listProjectEndMoves({ projectKeys, viewKey: project.viewKey });
+  const menuPages = useProjectSnoozeMenuPages(project);
   // The rail sits beside the open chat, so a click goes back to where you were in that project.
   const handlePress = useCallback(() => {
     showOnlyProject(project.viewKey);
     const lastChat = resolveProjectLastChat(project, rememberedChat);
     if (lastChat) navigateToWorkspace(lastChat);
   }, [project, rememberedChat, showOnlyProject]);
-  const needsInputLabel =
-    needsInputCount > 0 ? t("sidebar.projectStrip.needsInput", { count: needsInputCount }) : null;
+  const handleReorder = useCallback(() => setRailOpen(true), [setRailOpen]);
 
   return (
-    <View style={styles.railItem} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-      <DraggableListHandle
-        accessibilityLabel={project.projectName}
-        testID={`sidebar-project-rail-handle-${project.viewKey}`}
-      >
-        <Tooltip delayDuration={300}>
-          <TooltipTrigger asChild>
-            <PressHighlight
-              accessibilityRole="tab"
-              accessibilityLabel={
-                needsInputLabel ? `${project.projectName}, ${needsInputLabel}` : project.projectName
-              }
-              aria-selected={selected}
-              highlightStyle={styles.railButtonPressed}
-              onPress={handlePress}
-              style={[
-                styles.railButton,
-                hovered && !selected ? styles.railButtonHovered : null,
-                selected ? styles.railButtonSelected : null,
-              ]}
-              testID={`sidebar-project-rail-item-${project.viewKey}`}
+    <View
+      style={[styles.railItem, open ? styles.railItemOpen : null]}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      <ContextMenu>
+        <ContextMenuTrigger contextOnly>
+          <DraggableListHandle
+            accessibilityLabel={project.projectName}
+            testID={`sidebar-project-rail-handle-${project.viewKey}`}
+          >
+            <RailPeek
+              project={project}
+              waiting={statusCounts.needsInput > 0}
+              open={open}
+              label={project.projectName}
+              subtext={statusLabel}
+              chord={chord}
             >
-              <ProjectIconView
-                iconDataUri={iconDataUri}
-                initial={projectInitial(project.projectName)}
-                projectViewKey={project.viewKey}
-                size={RAIL_ICON_SIZE}
-                textStyle={styles.railIconText}
-              />
-              {needsInputCount > 0 ? <NeedsInputBadge count={needsInputCount} floating /> : null}
-              {showNumber && shortcutNumber !== null ? (
-                <View
-                  style={styles.railNumber}
-                  pointerEvents="none"
-                  testID="sidebar-project-rail-number"
-                >
-                  <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
-                </View>
-              ) : null}
-            </PressHighlight>
-          </TooltipTrigger>
-          <TooltipContent side="right" align="center" offset={8}>
-            <View style={styles.tooltipRow}>
-              <View>
-                <Text style={styles.tooltipText}>{project.projectName}</Text>
-                {needsInputLabel ? (
-                  <Text style={styles.tooltipSubtext}>{needsInputLabel}</Text>
-                ) : null}
-              </View>
-              {chord ? <Shortcut chord={chord} /> : null}
-            </View>
-          </TooltipContent>
-        </Tooltip>
-      </DraggableListHandle>
+              <PressHighlight
+                accessibilityRole="tab"
+                accessibilityLabel={
+                  statusLabel ? `${project.projectName}, ${statusLabel}` : project.projectName
+                }
+                aria-selected={selected}
+                highlightStyle={styles.railButtonPressed}
+                onPress={handlePress}
+                style={[
+                  open ? styles.railRow : styles.railButton,
+                  hovered && !selected ? styles.railButtonHovered : null,
+                  selected ? styles.railButtonSelected : null,
+                ]}
+                testID={`sidebar-project-rail-item-${project.viewKey}`}
+              >
+                <RailProjectFace
+                  project={project}
+                  iconDataUri={iconDataUri}
+                  open={open}
+                  statusCounts={statusCounts}
+                  shortcutNumber={showNumber ? shortcutNumber : null}
+                />
+              </PressHighlight>
+            </RailPeek>
+          </DraggableListHandle>
+        </ContextMenuTrigger>
+        <ContextMenuContent
+          align="start"
+          width={220}
+          pages={menuPages}
+          testID={`sidebar-project-rail-menu-${project.viewKey}`}
+        >
+          {moves.map((move) => (
+            <ProjectMoveItem
+              key={move}
+              move={move}
+              projectKeys={projectKeys}
+              viewKey={project.viewKey}
+              testIDPrefix="sidebar-project-rail-move"
+            />
+          ))}
+          {/* On the desktop you reorder by dragging on the open rail. */}
+          {open ? null : (
+            <ContextMenuItem onSelect={handleReorder} testID="sidebar-project-rail-reorder">
+              {t("sidebar.projectStrip.reorderProjects")}
+            </ContextMenuItem>
+          )}
+          <ProjectSnoozeSubTrigger project={project} />
+        </ContextMenuContent>
+      </ContextMenu>
     </View>
   );
 });
 
-function NeedsInputBadge({ count, floating = false }: { count: number; floating?: boolean }) {
+/**
+ * What a rail project button shows: the icon with a dot per busy chat; open, the name, the exact
+ * counts and a grip.
+ */
+function RailProjectFace({
+  project,
+  iconDataUri,
+  open,
+  statusCounts,
+  shortcutNumber,
+}: {
+  project: SidebarProjectEntry;
+  iconDataUri: string | null;
+  open: boolean;
+  statusCounts: ProjectStatusCounts;
+  shortcutNumber: number | null;
+}) {
   return (
-    <View
-      style={[styles.needsInputBadge, floating ? styles.needsInputBadgeFloating : null]}
-      pointerEvents="none"
-      testID="sidebar-project-strip-needs-input"
-    >
-      <Text style={styles.needsInputBadgeText}>{count > 99 ? "99+" : count}</Text>
-    </View>
+    <>
+      <ProjectIconView
+        iconDataUri={iconDataUri}
+        initial={projectInitial(project.projectName)}
+        projectViewKey={project.viewKey}
+        size={RAIL_ICON_SIZE}
+        textStyle={styles.railIconText}
+      />
+      {open ? (
+        <>
+          <Text style={styles.railRowText} numberOfLines={1}>
+            {project.projectName}
+          </Text>
+          <ProjectStatusCountList counts={statusCounts} />
+          <ThemedGripVertical size={14} uniProps={allIconMapping} />
+        </>
+      ) : (
+        <ProjectStatusDots counts={statusCounts} direction="column" />
+      )}
+      {shortcutNumber !== null ? (
+        <View style={styles.railNumber} pointerEvents="none" testID="sidebar-project-rail-number">
+          <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
+        </View>
+      ) : null}
+    </>
   );
 }
 
@@ -439,6 +846,7 @@ export function SidebarProjectChipRow({
 
   const chips = (
     <>
+      <NeedsYouChip />
       <PressHighlight
         accessibilityRole="tab"
         aria-selected={model.allSelected}
@@ -478,18 +886,21 @@ export function SidebarProjectChipRow({
   );
 
   return (
-    <View
-      style={styles.chipRowContainer}
-      accessibilityRole="tablist"
-      accessibilityLabel={t("sidebar.projectStrip.label")}
-      testID="sidebar-project-chip-row"
-    >
-      {platformIsNative ? (
-        <GestureDetector gesture={chipScrollGesture}>{chipScroll}</GestureDetector>
-      ) : (
-        chipScroll
-      )}
-    </View>
+    <>
+      <View
+        style={styles.chipRowContainer}
+        accessibilityRole="tablist"
+        accessibilityLabel={t("sidebar.projectStrip.label")}
+        testID="sidebar-project-chip-row"
+      >
+        {platformIsNative ? (
+          <GestureDetector gesture={chipScrollGesture}>{chipScroll}</GestureDetector>
+        ) : (
+          chipScroll
+        )}
+      </View>
+      <ReorderProjectsSheet projects={model.allProjects} iconByViewKey={model.iconByViewKey} />
+    </>
   );
 }
 
@@ -570,9 +981,10 @@ function QuietChips({
 }
 
 const MOVE_LABEL_KEYS: Record<ProjectStripMove, string> = {
-  first: "sidebar.projectStrip.moveFirst",
+  top: "sidebar.projectStrip.moveTop",
   earlier: "sidebar.projectStrip.moveEarlier",
   later: "sidebar.projectStrip.moveLater",
+  bottom: "sidebar.projectStrip.moveBottom",
 };
 
 const ProjectChip = memo(function ProjectChip({
@@ -592,26 +1004,30 @@ const ProjectChip = memo(function ProjectChip({
 }) {
   const { t } = useTranslation();
   const showOnlyProject = useSidebarViewStore((state) => state.showOnlyProject);
-  const needsInputCount = useSidebarProjectNeedsInputCount(project.workspaces);
+  const openReorder = useOpenReorderProjects();
+  const statusCounts = useSidebarProjectStatusCounts(project.workspaces);
+  const statusLabel = useProjectStatusLabel(statusCounts);
+  // A peek that is sending or showing "Sent" stays up after the project stops waiting.
+  const [peekHeld, setPeekHeld] = useState(false);
+  const waiting = statusCounts.needsInput > 0 || peekHeld;
   const shortcutNumber = projectStripShortcutNumber(index);
   const moves = listProjectStripMoves({ projectKeys, viewKey: project.viewKey });
+  const menuPages = useProjectSnoozeMenuPages(project);
   const handlePress = useCallback(
     () => showOnlyProject(project.viewKey),
     [project.viewKey, showOnlyProject],
   );
-  const needsInputLabel =
-    needsInputCount > 0 ? t("sidebar.projectStrip.needsInput", { count: needsInputCount }) : null;
 
   return (
     <ContextMenu>
       <ContextMenuTrigger
         accessibilityRole="tab"
         accessibilityLabel={
-          needsInputLabel ? `${project.projectName}, ${needsInputLabel}` : project.projectName
+          statusLabel ? `${project.projectName}, ${statusLabel}` : project.projectName
         }
         aria-selected={selected}
         highlightStyle={styles.chipPressed}
-        enabled={moves.length > 0}
+        enabled={moves.length > 0 || menuPages.length > 0 || waiting}
         onPress={handlePress}
         style={[styles.chip, selected ? styles.chipSelected : null]}
         testID={`sidebar-project-chip-item-${project.viewKey}`}
@@ -629,34 +1045,50 @@ const ProjectChip = memo(function ProjectChip({
         <Text style={styles.chipText} numberOfLines={1}>
           {project.projectName}
         </Text>
-        {needsInputCount > 0 ? <NeedsInputBadge count={needsInputCount} /> : null}
+        <ProjectStatusDots counts={statusCounts} direction="row" />
       </ContextMenuTrigger>
       <ContextMenuContent
         align="start"
         width={220}
+        pages={menuPages}
         testID={`sidebar-project-chip-menu-${project.viewKey}`}
       >
+        {/* Hold a waiting project's chip to answer its question without leaving the chat. */}
+        {waiting ? (
+          <ProjectPeek
+            hosts={project.hosts}
+            onHoldChange={setPeekHeld}
+            testID={`sidebar-project-chip-peek-${project.viewKey}`}
+          />
+        ) : null}
         {moves.map((move) => (
-          <ProjectChipMoveItem
+          <ProjectMoveItem
             key={move}
             move={move}
             projectKeys={projectKeys}
             viewKey={project.viewKey}
+            testIDPrefix="sidebar-project-chip-move"
           />
         ))}
+        <ContextMenuItem onSelect={openReorder} testID="sidebar-project-chip-reorder">
+          {t("sidebar.projectStrip.reorderProjects")}
+        </ContextMenuItem>
+        <ProjectSnoozeSubTrigger project={project} />
       </ContextMenuContent>
     </ContextMenu>
   );
 });
 
-function ProjectChipMoveItem({
+function ProjectMoveItem({
   move,
   projectKeys,
   viewKey,
+  testIDPrefix,
 }: {
   move: ProjectStripMove;
   projectKeys: string[];
   viewKey: string;
+  testIDPrefix: string;
 }) {
   const { t } = useTranslation();
   const handleSelect = useCallback(
@@ -664,7 +1096,7 @@ function ProjectChipMoveItem({
     [move, projectKeys, viewKey],
   );
   return (
-    <ContextMenuItem onSelect={handleSelect} testID={`sidebar-project-chip-move-${move}`}>
+    <ContextMenuItem onSelect={handleSelect} testID={`${testIDPrefix}-${move}`}>
       {t(MOVE_LABEL_KEYS[move])}
     </ContextMenuItem>
   );
@@ -672,6 +1104,7 @@ function ProjectChipMoveItem({
 
 const styles = StyleSheet.create((theme) => ({
   railLayout: {
+    position: "relative",
     flex: 1,
     minHeight: 0,
     flexDirection: "row",
@@ -682,12 +1115,68 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
   },
   rail: {
-    width: 52,
+    width: RAIL_WIDTH,
     flexShrink: 0,
     alignItems: "stretch",
     paddingTop: theme.spacing[2],
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
+  },
+  railSpacer: {
+    width: RAIL_WIDTH,
+    flexShrink: 0,
+  },
+  railOpen: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: RAIL_OPEN_WIDTH,
+    maxWidth: "100%",
+    zIndex: 10,
+    backgroundColor: theme.colors.surfaceSidebar,
+    ...theme.shadow.md,
+  },
+  railItemOpen: {
+    alignItems: "stretch",
+    paddingHorizontal: theme.spacing[1.5],
+  },
+  railRow: {
+    position: "relative",
+    height: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  railRowText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foreground,
+  },
+  railRowMutedText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foregroundMuted,
+  },
+  railToggleButton: {
+    width: 38,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.lg,
+  },
+  railToggleIcon: {
+    width: RAIL_ICON_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
   },
   railDivider: {
     height: 1,
@@ -696,6 +1185,14 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.border,
   },
   railListContent: {
+    paddingBottom: theme.spacing[2],
+  },
+  // The projects scroll; plugin buttons stay pinned under them at the rail's foot.
+  railListArea: {
+    flex: 1,
+    minHeight: 0,
+  },
+  railPluginItems: {
     paddingBottom: theme.spacing[2],
   },
   railItem: {
@@ -740,31 +1237,6 @@ const styles = StyleSheet.create((theme) => ({
     left: -4,
     bottom: -4,
   },
-  needsInputBadge: {
-    minWidth: 16,
-    height: 16,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: theme.borderRadius.full,
-    // The palette purple, as on the New main agent dot: the strip badge is not the orange status dot.
-    backgroundColor: theme.colors.palette.purple[500],
-  },
-  needsInputBadgeFloating: {
-    position: "absolute",
-    top: -5,
-    right: -5,
-    borderWidth: 2,
-    borderColor: theme.colors.surfaceSidebar,
-    height: 20,
-    minWidth: 20,
-  },
-  needsInputBadgeText: {
-    color: theme.colors.surface0,
-    fontSize: 10,
-    fontWeight: theme.fontWeight.semibold,
-    lineHeight: 12,
-  },
   quietCountFloating: {
     position: "absolute",
     top: -5,
@@ -781,6 +1253,35 @@ const styles = StyleSheet.create((theme) => ({
   },
   quietCountText: {
     color: theme.colors.foregroundMuted,
+    fontSize: 10,
+    fontWeight: theme.fontWeight.semibold,
+    lineHeight: 12,
+  },
+  needsYouCount: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.palette.purple[500],
+  },
+  needsYouCountFloating: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 2,
+    borderColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.palette.purple[500],
+  },
+  needsYouCountText: {
+    color: theme.colors.palette.white,
     fontSize: 10,
     fontWeight: theme.fontWeight.semibold,
     lineHeight: 12,

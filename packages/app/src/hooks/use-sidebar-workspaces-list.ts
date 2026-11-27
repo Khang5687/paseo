@@ -12,17 +12,19 @@ import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import {
   createSidebarWorkspacePlacementSelector,
   computeSidebarOrderUpdates,
-  countProjectWorkspacesNeedingInput,
+  countProjectWorkspaceStatuses,
   deriveProjectActivity,
-  deriveProjectStatusBucket,
+  deriveProjectStatus,
   deriveSidebarLoadingState,
+  type ProjectStatusCounts,
   type ProjectStatusSession,
+  type ProjectStatusSummary,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
   type SidebarWorkspacePlacement,
 } from "./sidebar-workspaces-view-model";
-import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { resolveQuietProjectKeys } from "@/components/sidebar/quiet-projects";
+import { nextSnoozeWakeMs, resolveSnoozedProjectKeys } from "@/components/sidebar/project-snooze";
 
 export {
   appendMissingOrderKeys,
@@ -32,9 +34,11 @@ export {
   createSidebarWorkspaceEntry,
   buildSidebarWorkspacePlacementModel,
   computeSidebarOrderUpdates,
-  deriveProjectStatusBucket,
+  deriveProjectStatus,
   deriveSidebarLoadingState,
   shouldShowSidebarHostLabels,
+  type ProjectStatusCounts,
+  type ProjectStatusSummary,
   type SidebarLoadingState,
   type SidebarOrderUpdates,
   type SidebarStatusWorkspacePlacement,
@@ -50,16 +54,16 @@ export {
  *
  * `SidebarProjectEntry` is structural — it carries workspace identity but no status — and
  * `ProjectBlock` is memoized on that stable reference, so the row can't learn about a
- * child's status without its own subscription. Returns a primitive, so status churn in a
+ * child's status without its own subscription. Compared by value, so status churn in a
  * project only re-renders the row when the aggregate actually moves.
  *
  * Pass `enabled: false` while the project is expanded: the child rows show their own dots
  * and the selector is pure cost.
  */
-export function useSidebarProjectStatusBucket(input: {
+export function useSidebarProjectStatus(input: {
   workspaces: readonly SidebarWorkspacePlacement[];
   enabled: boolean;
-}): SidebarStateBucket | null {
+}): ProjectStatusSummary | null {
   const { workspaces, enabled } = input;
   const pendingCreateAttempts = useStoreWithEqualityFn(
     useCreateFlowStore,
@@ -70,7 +74,7 @@ export function useSidebarProjectStatusBucket(input: {
   const selector = useCallback(
     (state: { sessions: Record<string, ProjectStatusSession | undefined> }) => {
       if (!enabled) return null;
-      return deriveProjectStatusBucket({
+      return deriveProjectStatus({
         workspaces,
         sessions: state.sessions,
         pendingCreateAttempts,
@@ -79,17 +83,22 @@ export function useSidebarProjectStatusBucket(input: {
     [enabled, pendingCreateAttempts, workspaces],
   );
 
-  return useStoreWithEqualityFn(useSessionStore, selector, Object.is);
+  return useStoreWithEqualityFn(useSessionStore, selector, sameProjectStatus);
+}
+
+function sameProjectStatus(a: ProjectStatusSummary | null, b: ProjectStatusSummary | null) {
+  if (a === null || b === null) return a === b;
+  return a.bucket === b.bucket && a.waiting === b.waiting;
 }
 
 /**
- * How many of a project's workspaces wait on the user, for the project strip's badge.
- * Same subscription shape as `useSidebarProjectStatusBucket`: a primitive, so the strip
- * entry re-renders only when the count moves.
+ * How many of a project's workspaces sit in each dotted status, for the project strip's dots.
+ * Same subscription shape as `useSidebarProjectStatus`: compared by value, so the strip entry
+ * re-renders only when a count moves.
  */
-export function useSidebarProjectNeedsInputCount(
+export function useSidebarProjectStatusCounts(
   workspaces: readonly SidebarWorkspacePlacement[],
-): number {
+): ProjectStatusCounts {
   const pendingCreateAttempts = useStoreWithEqualityFn(
     useCreateFlowStore,
     (state) => state.pendingByDraftId,
@@ -98,7 +107,7 @@ export function useSidebarProjectNeedsInputCount(
 
   const selector = useCallback(
     (state: { sessions: Record<string, ProjectStatusSession | undefined> }) =>
-      countProjectWorkspacesNeedingInput({
+      countProjectWorkspaceStatuses({
         workspaces,
         sessions: state.sessions,
         pendingCreateAttempts,
@@ -106,32 +115,53 @@ export function useSidebarProjectNeedsInputCount(
     [pendingCreateAttempts, workspaces],
   );
 
-  return useStoreWithEqualityFn(useSessionStore, selector, Object.is);
+  return useStoreWithEqualityFn(useSessionStore, selector, sameStatusCounts);
+}
+
+function sameStatusCounts(a: ProjectStatusCounts, b: ProjectStatusCounts) {
+  return (
+    a.needsInput === b.needsInput &&
+    a.failed === b.failed &&
+    a.attention === b.attention &&
+    a.running === b.running
+  );
 }
 
 const QUIET_CLOCK_TICK_MS = 60 * 60 * 1000;
 
-/** Wall-clock time refreshed hourly: quietness is counted in days, so an hour is fine-grained. */
-function useHourlyNow(): number {
+/**
+ * Wall-clock time refreshed hourly: quietness is counted in days, so an hour is fine-grained.
+ * The soonest snoozed project's return adds one exact refresh, so it comes back on time.
+ */
+function useSidebarNow(projects: readonly SidebarProjectEntry[]): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), QUIET_CLOCK_TICK_MS);
     return () => clearInterval(timer);
   }, []);
+  const wakeAt = nextSnoozeWakeMs(projects, now);
+  useEffect(() => {
+    if (wakeAt === null) return;
+    // A snooze further out than the hourly tick waits for the tick to bring it nearer.
+    const delay = Math.min(Math.max(wakeAt - Date.now(), 0) + 1000, QUIET_CLOCK_TICK_MS);
+    const timer = setTimeout(() => setNow(Date.now()), delay);
+    return () => clearTimeout(timer);
+  }, [wakeAt]);
   return now;
 }
 
 /**
- * The projects that fold into "More": no chat activity for 3 days, nothing waiting on you, and
- * not in `keep`. The selector returns a joined string so unrelated session updates re-render
- * nothing.
+ * The projects that fold into "More": snoozed ones, and those with no chat activity for 3 days,
+ * nothing waiting on you, and not in `keep`. The selector returns a joined string so unrelated
+ * session updates re-render nothing.
  */
 export function useQuietProjectKeys(input: {
   projects: readonly SidebarProjectEntry[];
   keep: ReadonlySet<string>;
 }): ReadonlySet<string> {
   const { projects, keep } = input;
-  const now = useHourlyNow();
+  const now = useSidebarNow(projects);
+  const snoozed = useMemo(() => resolveSnoozedProjectKeys(projects, now), [projects, now]);
   const pendingCreateAttempts = useStoreWithEqualityFn(
     useCreateFlowStore,
     (state) => state.pendingByDraftId,
@@ -143,6 +173,7 @@ export function useQuietProjectKeys(input: {
         projects,
         keep,
         now,
+        snoozed,
         activityOf: (project) =>
           deriveProjectActivity({
             workspaces: project.workspaces,
@@ -150,7 +181,7 @@ export function useQuietProjectKeys(input: {
             pendingCreateAttempts,
           }),
       }).join("\n"),
-    [keep, now, pendingCreateAttempts, projects],
+    [keep, now, pendingCreateAttempts, projects, snoozed],
   );
   const joined = useStoreWithEqualityFn(useSessionStore, selector, Object.is);
   return useMemo(() => new Set(joined ? joined.split("\n") : []), [joined]);
@@ -249,7 +280,8 @@ export function useSidebarWorkspacesList(options?: {
     });
 
     if (updates.projectOrder) {
-      orderStore.setProjectOrder(updates.projectOrder);
+      // Appending projects found on this device is not a reorder; it must not beat one made elsewhere.
+      orderStore.extendProjectOrder(updates.projectOrder);
     }
     for (const update of updates.workspaceOrders) {
       orderStore.setWorkspaceOrder(update.projectViewKey, update.order);

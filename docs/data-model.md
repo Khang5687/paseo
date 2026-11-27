@@ -68,7 +68,6 @@ $PASEO_HOME/
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
-├── account-routing.json                 # OMP account-routing policy (account refs only; mode 0600)
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
@@ -76,7 +75,8 @@ $PASEO_HOME/
 ├── file-copies/                         # Copies of files other hosts' agents mentioned (6b)
 │   ├── manifest.json
 │   └── blobs/{sha256(serverId, path)}-{uuid}
-└── push-tokens.json                     # Expo push notification tokens
+├── push-tokens.json                     # Expo push notification tokens
+└── sidebar-sync.json                    # Sidebar state shared by every device (project order)
 ```
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
@@ -544,6 +544,26 @@ history surfaces tolerate transient orphaned workspaces by omitting those rows s
 blank the whole History screen, but mutation paths should repair or remove the orphaned state rather
 than treating it as valid.
 
+### Shared sidebar state
+
+**Path:** `$PASEO_HOME/sidebar-sync.json`
+
+```json
+{ "projectOrder": { "order": ["<project view key>", "..."], "updatedAt": 1767225600000 } }
+```
+
+The sidebar's project order, so every device that connects to the host shows the same order.
+`updatedAt` is the clock of the device that reordered, in epoch ms. The daemon keeps the order with
+the newest stamp and answers an older one with what it holds; the app does the same on its side
+(`packages/app/src/sidebar-sync/project-order.ts`), so a device that reordered while a host was
+asleep sends its order when the host comes back, and every host converges on the last reorder.
+Projects the sidebar appends on its own are not stamped, so a new project on one device never
+overrides a reorder made on another. Device clocks decide ties between hosts; a device whose clock
+runs far ahead wins until someone reorders after it.
+
+Keys the daemon does not know survive a write, so later shared sidebar state can sit beside
+`projectOrder` and a downgraded daemon keeps it.
+
 ---
 
 ## 6. Push Token Store
@@ -578,20 +598,7 @@ Pruning runs on start, hourly, after every put and on a limit change: expired en
 
 ---
 
-## 7. Account Routing Policy
-
-**Path:** `$PASEO_HOME/account-routing.json` (mode `0600`, written by `AccountRoutingStore` in `packages/server/src/server/account-routing/store.ts`)
-
-The one durable record for host-wide OMP Claude account routing: `OmpAccountRoutingPolicy` from `@getpaseo/protocol`. It holds `policyRevision`, `selectionGeneration`, `current`, `autoEnabled`, `priorityOrder` and `inclusion`, all keyed by `{ storeNamespace, nativeRowId }` account refs minted by the native credential store. It never holds a token, auth-store path, quota or billing cache, admission or served-request record; those are transient in `AccountRoutingAuthority`.
-
-- **Only the store writes it.** `commit(expectedRevision, draft)` is compare-and-set: a stale revision returns a conflict with the current policy and writes nothing, an unchanged draft is a no-op, and the live copy changes only after the atomic rename succeeds. The generic daemon config store must not gain a routing field, because it has no revision check.
-- **Fails closed.** An absent file means defaults (`current: null`, `autoEnabled: true`, empty lists). An unreadable or invalid file throws on open; policy is never silently reset.
-- **Revisions.** `policyRevision` bumps once per committed change, including automatic selection and reconciliation that adds default entries for newly seen accounts. Selecting an account (even the current one) also bumps `selectionGeneration`, as does an automatic switch. Usage and freshness changes bump neither.
-- **Tombstones.** Settings for an account the catalog no longer lists stay in the file. The same native identity returning restores its inclusion and order; a new row is a new account.
-
----
-
-## 8. Daemon meta files
+## 7. Daemon meta files
 
 These small files are not validated as full Zod schemas but are persisted under `$PASEO_HOME` for daemon identity and runtime coordination.
 

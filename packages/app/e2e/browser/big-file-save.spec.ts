@@ -11,7 +11,7 @@ import { startIsolatedHostDaemon } from "../support/helpers/isolated-host-daemon
 import { seedWorkspace } from "../support/helpers/seed-client";
 
 // A 300 MB file saved on purpose goes to the phone as it arrives. The browser's memory stays far
-// below the file size, the toast shows progress, and the file opens from Saved with the host gone.
+// below the file size, the download bar shows progress, and the file opens from Saved with the host gone.
 //
 // The browser runs with a profile on disk, like a real one. Playwright's default profile is in
 // memory, and a browser keeps IndexedDB and the private file system there in memory too, which
@@ -188,14 +188,19 @@ test.describe("Big files", () => {
       await expect(save).toBeVisible();
       await save.tap();
 
-      // The toast tracks the transfer while it runs. The menu sheet slides away first.
-      const toast = page.getByText("bigclip.bin", { exact: true });
-      await expect(toast).toBeVisible({ timeout: 60_000 });
+      // The download bar under the header tracks the transfer while it runs. The menu sheet
+      // slides away first.
+      const bar = page.getByTestId("download-bar");
+      await expect(bar).toBeVisible({ timeout: 60_000 });
+      await expect(bar.getByText("bigclip.bin", { exact: true })).toBeVisible();
       await expect(page.getByTestId("file-path-menu-content")).toBeHidden();
-      await expect(page.getByText(/^\d+% · /).first()).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("download-bar-percent")).toHaveText(/^\d+%$/, {
+        timeout: 60_000,
+      });
       await page.screenshot({ path: test.info().outputPath("big-file-progress.png") });
 
-      await expect(toast).toBeHidden({ timeout: 300_000 });
+      // The progress bar goes away when the transfer ends.
+      await expect(bar).toBeHidden({ timeout: 300_000 });
       // Give the browser time to let go of what it only needed during the transfer.
       await page.waitForTimeout(6_000);
       const settled = await probe.sample();
@@ -229,14 +234,12 @@ test.describe("Big files", () => {
       await row.tap();
 
       const library = page.getByTestId("saved-library");
-      const group = library.getByTestId(`offline-files-host-${mac.serverId}`);
-      await expect(group.getByText("bigclip.bin", { exact: true })).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(group.getByText("300.0 MB").first()).toBeVisible();
+      const savedRow = library.getByTestId("offline-files-row").filter({ hasText: "bigclip.bin" });
+      await expect(savedRow).toBeVisible({ timeout: 15_000 });
+      await expect(savedRow.getByText("300.0 MB")).toBeVisible();
       await page.screenshot({ path: test.info().outputPath("big-file-saved-list.png") });
 
-      await group.getByTestId("offline-files-row").tap();
+      await savedRow.tap();
       const viewer = page.getByTestId("saved-file-screen");
       await expect(viewer.getByTestId("offline-file-bar")).toBeVisible({ timeout: 30_000 });
       await page.screenshot({ path: test.info().outputPath("big-file-saved-offline.png") });

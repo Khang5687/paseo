@@ -42,6 +42,7 @@ import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
   AgentQueuedMessageSummaryPayload,
+  AgentOpenQuestion,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
@@ -124,6 +125,8 @@ export interface Agent {
   queuePaused?: boolean;
   /** Why the host paused the queue itself (a send it could not complete); null otherwise. */
   queuePauseReason?: string | null;
+  /** ❓ questions from the agent's replies that no user message has answered yet. */
+  openQuestions?: AgentOpenQuestion[];
 }
 
 export interface WorkspaceDescriptor {
@@ -135,6 +138,8 @@ export interface WorkspaceDescriptor {
   projectDisplayName: string;
   projectCustomName?: string | null;
   projectCustomIconRevision?: string | null;
+  // COMPAT(projectSnooze): ISO time a snoozed project comes back; absent or null when awake.
+  projectSnoozedUntil?: string | null;
   projectRootPath: string;
   workspaceDirectory: string;
   worktreeSlug?: WorkspaceDescriptorPayload["worktreeSlug"];
@@ -177,6 +182,9 @@ export function normalizeWorkspaceDescriptor(
     projectDisplayName: payload.projectDisplayName,
     projectCustomName: payload.projectCustomName ?? null,
     projectCustomIconRevision: payload.projectCustomIconRevision ?? null,
+    ...(payload.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: payload.projectSnoozedUntil }
+      : {}),
     projectRootPath: payload.projectRootPath,
     // Canonicalize the workspace directory once, at the store boundary, so every
     // consumer can read workspace.workspaceDirectory directly. Empty means "no
@@ -214,6 +222,8 @@ export interface ProjectDescriptor {
   projectDisplayName: string;
   projectCustomName: string | null;
   projectCustomIconRevision?: string | null;
+  // COMPAT(projectSnooze): ISO time a snoozed project comes back; absent or null when awake.
+  projectSnoozedUntil?: string | null;
   projectIconRevision?: string;
   projectRootPath: string;
   projectKind: WorkspaceDescriptorPayload["projectKind"];
@@ -228,6 +238,9 @@ export function normalizeProjectDescriptor(
     projectDisplayName: payload.projectDisplayName,
     projectCustomName: payload.projectCustomName ?? null,
     projectCustomIconRevision: payload.projectCustomIconRevision ?? null,
+    ...(payload.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: payload.projectSnoozedUntil }
+      : {}),
     projectIconRevision: payload.projectIconRevision,
     projectRootPath: payload.projectRootPath,
     projectKind: payload.projectKind,

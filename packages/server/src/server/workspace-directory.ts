@@ -401,6 +401,7 @@ export class WorkspaceDirectory {
         requiresAttention: agent.requiresAttention,
         attentionReason: agent.attentionReason ?? null,
         awaitingAnswer: agent.awaitingAnswer,
+        openQuestionCount: agent.openQuestions?.length,
         backgroundWork: agent.backgroundWork,
       });
 
@@ -551,6 +552,7 @@ export class WorkspaceDirectory {
           requiresAttention: agent.requiresAttention,
           attentionReason: agent.attentionReason ?? null,
           awaitingAnswer: agent.awaitingAnswer,
+          openQuestionCount: agent.openQuestions?.length,
           backgroundWork: agent.backgroundWork,
         });
         return derived === winningBucket;
@@ -560,6 +562,11 @@ export class WorkspaceDirectory {
         // the most accurate "entered current status" signal.
         if (agent.attentionTimestamp) {
           return agent.attentionTimestamp;
+        }
+        // A read chat still waits on its open questions since the newest was asked.
+        const lastAsked = agent.openQuestions?.at(-1)?.askedAt;
+        if (winningBucket === "needs_input" && lastAsked) {
+          return lastAsked;
         }
         // Fall back to updatedAt as a general proxy for recent activity.
         return agent.updatedAt;
@@ -605,6 +612,8 @@ export class WorkspaceDirectory {
         projectDisplayName: resolveProjectDisplayName(project),
         projectCustomName: project.customName ?? null,
         projectCustomIconRevision: project.customIconRevision ?? null,
+        // Undefined for a project never snoozed, so the field stays off the wire.
+        projectSnoozedUntil: project.snoozedUntil,
         projectRootPath: project.rootPath,
         projectKind: project.kind,
       }));

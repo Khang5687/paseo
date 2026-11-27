@@ -117,9 +117,12 @@ its DOM-derived scope.
 
 Escape interrupts an agent only in the message input or an unclaimed surface.
 A focused terminal excludes that binding. The source leaves terminal Escape alone;
-terminal Escape/Ctrl forwarding is a separate feature. Ctrl+J, the terminal drawer
-toggle, is the exception: it fires from a focused terminal so the same key hides the
-drawer and returns focus to the composer ([terminal-drawer.md](terminal-drawer.md)).
+terminal Escape/Ctrl forwarding is a separate feature. `` Ctrl+` ``, the terminal drawer
+toggle on every platform, is the exception: it fires from a focused terminal so the
+same key hides the drawer and returns focus to the composer
+([terminal-drawer.md](terminal-drawer.md)). It is VS Code's Toggle Terminal key. It
+used to be a second key for the Explorer sidebar, which keeps Cmd+E and Ctrl+E.
+Ctrl+J was not an option: it is "next waiting" and a terminal newline.
 
 Terminal arrows never pass through the shortcut pipeline. The Android hardware
 module claims them while the terminal's hidden input (`nativeID`) owns the focus.

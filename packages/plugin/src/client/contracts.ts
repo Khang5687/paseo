@@ -134,7 +134,23 @@ export interface PluginPopoverProps extends PluginHostProps {
   openScreen(input: PluginOpenScreenInput): void;
 }
 
+/** The chat the user has open: its workspace and, when a chat tab has focus, its agent. */
+export interface PluginActiveRefs {
+  workspace: WorkspaceRef | null;
+  agent: AgentRef | null;
+}
+
+/** A count or a dot on a sidebar row or project rail button. */
+export interface PluginBadge {
+  /** The number to show. Omit it for a dot. */
+  count?: number;
+  /** "attention" is red, for something late or failing; "warning" is amber, for something soon. */
+  tone: "attention" | "warning";
+}
+
 export interface PluginSidebarItemProps extends PluginHostProps {
+  /** The chat open in the app, on any host. Null fields when none is open. */
+  active: PluginActiveRefs;
   /** This plugin's screen open on this item's host, with its params, else null. */
   currentScreen: PluginScreenLocation | null;
   openScreen(input: PluginOpenScreenInput): void;
@@ -149,8 +165,26 @@ export interface PluginSidebarItemContribution<Text extends PluginText = string>
   Component: ComponentType<PluginSidebarItemProps>;
 }
 
+/**
+ * One button on the desktop project rail, below the projects: an icon that opens one of the
+ * plugin's screens. The open rail shows its title beside the icon. Phones have no rail.
+ */
+export interface PluginProjectRailItemContribution<Text extends PluginText = string> {
+  id: string;
+  /** Tooltip, open-rail label, and accessibility label. */
+  title: Text;
+  icon: PluginIcon;
+  /** The `addScreen` id the button opens. The button shows as selected while it is open. */
+  screen: string;
+  /**
+   * A React hook, called while the button renders inside the plugin's runtime, so it may use the
+   * plugin's data hooks. Return null for no badge.
+   */
+  useBadge?: () => PluginBadge | null;
+}
+
 export interface PluginSidebarViewProps extends Pick<PluginHostProps, "theme" | "layout"> {
-  active: { workspace: WorkspaceRef | null; agent: AgentRef | null };
+  active: PluginActiveRefs;
   navigation: {
     openWorkspace(ref: WorkspaceRef): void;
     openAgent(ref: AgentRef): void;
@@ -181,6 +215,25 @@ export interface PluginWorkspaceRowBadgeItemContribution<Text extends PluginText
   title: Text;
   icon: PluginIcon;
   Component: ComponentType<PluginWorkspaceRowBadgeItemProps>;
+}
+
+export interface PluginNeedsYouItemProps extends PluginHostProps {
+  /** What `useCount` last returned; always above 0 while the row shows. */
+  count: number;
+  openScreen(input: PluginOpenScreenInput): void;
+}
+
+/**
+ * Things that wait on the owner, counted into Needs you: the rail's Needs you number and a row on
+ * its page. The app calls `useCount` as a React hook for as long as it runs, on one host's copy of
+ * the plugin; keep it cheap. The page draws `Component` only while the count is above 0.
+ */
+export interface PluginNeedsYouItemContribution<Text extends PluginText = string> {
+  id: string;
+  title: Text;
+  icon: PluginIcon;
+  useCount: (props: PluginHostProps) => number;
+  Component: ComponentType<PluginNeedsYouItemProps>;
 }
 
 /**
@@ -275,10 +328,12 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addSidebarView(contribution: PluginSidebarViewContribution<PluginText>): PluginCleanup;
   addSidebarHeaderItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
   addSidebarFooterItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
+  addProjectRailItem(contribution: PluginProjectRailItemContribution<PluginText>): PluginCleanup;
   addAgentPanel(contribution: PluginAgentPanelContribution<PluginText>): PluginCleanup;
   addWorkspaceRowBadgeItem(
     contribution: PluginWorkspaceRowBadgeItemContribution<PluginText>,
   ): PluginCleanup;
+  addNeedsYouItem(contribution: PluginNeedsYouItemContribution<PluginText>): PluginCleanup;
   addWorkspacePanel(contribution: PluginWorkspacePanelContribution<PluginText>): PluginCleanup;
   addCommandCenterItem(
     contribution: PluginCommandCenterItemContribution<PluginText>,

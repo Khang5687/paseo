@@ -1,6 +1,7 @@
 {
   "pr": 46,
   "title": "feat: add Claude account from OMP account routing settings",
+  "retired": "removed by Q180, replaced by the Accounts plugin",
   "tests": [
     "packages/app/src/omp-account-routing/presentation.test.ts",
     "packages/app/src/omp-account-routing/queries.test.ts",
