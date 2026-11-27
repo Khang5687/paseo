@@ -1185,6 +1185,20 @@ export class AgentManager {
   }
 
   /**
+   * Why an agent of this provider would launch without the `speak` tool, or null when it gets one.
+   * `speak` ships in the Paseo tool catalog, so the host toggle and the provider policy remove it too.
+   */
+  getSpeakToolUnavailableReason(provider: AgentProvider): string | null {
+    if (!this.paseoToolsEnabled) {
+      return "Voice mode needs Paseo tools so the agent can speak. Turn on Enable Paseo tools in this host's settings.";
+    }
+    if (!isPaseoToolPolicyEnabled(this.resolvePaseoToolPolicy(provider))) {
+      return `Voice mode needs Paseo tools so the agent can speak, and this host turns them off for ${provider} agents (paseoTools.enabled: false).`;
+    }
+    return null;
+  }
+
+  /**
    * Capability token the daemon's own MCP clients must present to the Agent MCP
    * endpoint when a daemon password is configured. Read by the per-client
    * session to authenticate its own MCP connection. Stays in the daemon — never

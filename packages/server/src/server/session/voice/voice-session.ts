@@ -17,7 +17,7 @@ import { createVoiceTurnController, type VoiceTurnController } from "./voice-tur
 import { buildVoiceModeSystemPrompt, stripVoiceModeSystemPrompt } from "../../voice-config.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
-import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
+import type { AgentProvider, AgentSessionConfig } from "../../agent/agent-sdk-types.js";
 import type { LocalSpeechModelId } from "../../speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "../../speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "../../speech/speech-runtime.js";
@@ -122,6 +122,8 @@ function convertPCMToWavBuffer(
 export interface VoiceSessionHost {
   emit(msg: SessionOutboundMessage): void;
   loadAgent(agentId: string): Promise<ManagedAgent>;
+  /** Why an agent of this provider would have no `speak` tool, or null when it has one. */
+  speakToolUnavailableReason(provider: AgentProvider): string | null;
   reloadAgentSession(
     agentId: string,
     overrides: Partial<AgentSessionConfig>,
@@ -497,6 +499,10 @@ export class VoiceSession {
       { agentId, elapsedMs: Date.now() - startedAt },
       "enableVoiceModeForAgent.ensureAgentLoaded.done",
     );
+
+    // Voice mode answers only through `speak`; without it the agent would stay silent.
+    const speakUnavailable = this.host.speakToolUnavailableReason(existing.provider);
+    if (speakUnavailable) throw new Error(speakUnavailable);
 
     this.registerVoiceBridgeForAgent(agentId);
 

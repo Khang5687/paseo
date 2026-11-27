@@ -1414,6 +1414,8 @@ export class Session {
               agentStorage: this.agentStorage,
               logger: this.sessionLogger,
             }),
+          speakToolUnavailableReason: (provider) =>
+            this.agentManager.getSpeakToolUnavailableReason(provider),
           reloadAgentSession: (agentId, overrides) =>
             this.agentManager.reloadAgentSession(agentId, overrides),
           sendSpokenInput: async (agentId, text) => {

@@ -4462,6 +4462,25 @@ test("keeps the global Paseo-tools gate outside provider policy and MCP injectio
   rmSync(workdir, { recursive: true, force: true });
 });
 
+test("names why an agent would launch without the speak tool", () => {
+  const manager = new AgentManager({
+    logger,
+    resolvePaseoToolPolicy: (provider) =>
+      provider === "codex" ? { enabled: false } : { disabledTools: ["speak", "list_agents"] },
+  });
+
+  // disabledTools never removes speak; only a provider policy that turns all Paseo tools off does.
+  expect(manager.getSpeakToolUnavailableReason("omp")).toBeNull();
+  expect(manager.getSpeakToolUnavailableReason("codex")).toContain(
+    "this host turns them off for codex agents",
+  );
+
+  manager.setPaseoToolsEnabled(false);
+  expect(manager.getSpeakToolUnavailableReason("omp")).toContain(
+    "Turn on Enable Paseo tools in this host's settings",
+  );
+});
+
 test("resumeAgentFromPersistence replaces stored internal paseo MCP with current runtime URL", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");

@@ -60,26 +60,40 @@ class FakeVoiceSttSession extends EventEmitter implements StreamingTranscription
 interface FakeVoiceHost extends VoiceSessionHost {
   readonly emitted: SessionOutboundMessage[];
   readonly spokenInput: Array<{ agentId: string; text: string }>;
+  readonly reloadedAgentIds: string[];
+  speakUnavailable: string | null;
 }
 
 function createFakeHost(): FakeVoiceHost {
   const emitted: SessionOutboundMessage[] = [];
   const spokenInput: Array<{ agentId: string; text: string }> = [];
-  return {
+  const reloadedAgentIds: string[] = [];
+  const host: FakeVoiceHost = {
     emitted,
     spokenInput,
+    reloadedAgentIds,
+    speakUnavailable: null,
     emit: (msg) => {
       emitted.push(msg);
     },
     loadAgent: async (agentId) =>
-      ({ id: agentId, config: { systemPrompt: undefined } }) as unknown as ManagedAgent,
-    reloadAgentSession: async (agentId) => ({ id: agentId }) as unknown as ManagedAgent,
+      ({
+        id: agentId,
+        provider: "omp",
+        config: { systemPrompt: undefined },
+      }) as unknown as ManagedAgent,
+    speakToolUnavailableReason: () => host.speakUnavailable,
+    reloadAgentSession: async (agentId) => {
+      reloadedAgentIds.push(agentId);
+      return { id: agentId } as unknown as ManagedAgent;
+    },
     sendSpokenInput: async (agentId, text) => {
       spokenInput.push({ agentId, text });
     },
     interruptAgentIfRunning: async () => {},
     hasActiveAgentRun: () => false,
   };
+  return host;
 }
 
 function createVoiceSession(tts: TextToSpeechProvider | null = null) {
@@ -322,6 +336,30 @@ describe("VoiceSession streaming transcription", () => {
         }),
       }),
     );
+
+    await voiceSession.cleanup();
+  });
+});
+
+describe("VoiceSession start", () => {
+  test("refuses voice mode with the reason when the agent would have no speak tool", async () => {
+    const { voiceSession, host, speak } = createVoiceSession();
+    host.speakUnavailable = "Voice mode needs Paseo tools so the agent can speak.";
+
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID, "voice-request-1");
+
+    expect(host.emitted).toContainEqual({
+      type: "set_voice_mode_response",
+      payload: {
+        requestId: "voice-request-1",
+        enabled: false,
+        agentId: null,
+        accepted: false,
+        error: "Voice mode needs Paseo tools so the agent can speak.",
+      },
+    });
+    expect(host.reloadedAgentIds).toEqual([]);
+    expect(() => speak({ text: "hello" })).toThrow("Voice speak handler not registered");
 
     await voiceSession.cleanup();
   });
