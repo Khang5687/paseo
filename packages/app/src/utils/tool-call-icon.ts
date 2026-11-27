@@ -5,6 +5,7 @@ import {
   Eye,
   MicVocal,
   Pencil,
+  Plug,
   Search,
   Sparkles,
   SquareTerminal,
@@ -28,6 +29,7 @@ const ICON_COMPONENTS: Record<ToolCallIcon, ToolCallIconComponent> = {
   brain: Brain,
   mic_vocal: MicVocal,
   paseo: PaseoLogo,
+  plug: Plug,
 };
 
 export function componentForToolCallIcon(name: ToolCallIcon): ToolCallIconComponent {

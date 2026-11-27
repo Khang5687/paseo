@@ -28,6 +28,9 @@ function workspace(workspaceId: string, projectViewKey: string): SidebarWorkspac
     archiveUnpushedCommitCount: null,
     scripts: [],
     hasRunningScripts: false,
+    nextRunAt: null,
+    waitingOn: null,
+    waiting: null,
   };
 }
 

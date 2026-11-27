@@ -27,6 +27,8 @@ import {
   type DirectoryTransaction,
 } from "./transaction";
 import { workspaceLabels } from "@/workspace-labels";
+import { projectOrderSync } from "@/sidebar-sync/project-order";
+import { workspaceOrderSync } from "@/sidebar-sync/workspace-order";
 import type {
   CachedDirectory,
   CachedWorkspace,
@@ -195,12 +197,14 @@ export class DirectorySync {
     this.releaseSubscriptions();
     this.releaseScriptStatusEvents();
     workspaceLabels.disconnect(this.serverId);
+    projectOrderSync.disconnect(this.serverId);
+    workspaceOrderSync.disconnect(this.serverId);
     this.connection = connection;
     this.abortPendingSessionWaits();
     if (!connection.client || connection.status !== "online") return true;
     if (this.scriptStatusDemand.size > 0) this.observeScriptStatusEvents();
     // Reattach labels here because route-only demand can satisfy the epoch before full demand requests them.
-    void this.connectWorkspaceLabels().catch(() => undefined);
+    void this.connectHostSidebarState().catch(() => undefined);
     if (this.hasDemand()) void this.requestDemandRefresh().catch(() => undefined);
     return true;
   }
@@ -261,6 +265,8 @@ export class DirectorySync {
     this.fullDemandSources.clear();
     this.routeDemandIds.clear();
     workspaceLabels.disconnect(this.serverId);
+    projectOrderSync.disconnect(this.serverId);
+    workspaceOrderSync.disconnect(this.serverId);
   }
 
   private releaseSubscriptions(): void {
@@ -685,12 +691,26 @@ export class DirectorySync {
       ...this.workspaces.snapshot(),
       checkpoint: this.cursors,
     });
-    if (this.getOnlineConnection()) await this.connectWorkspaceLabels();
+    if (this.getOnlineConnection()) await this.connectHostSidebarState();
   }
 
-  async connectWorkspaceLabels(): Promise<void> {
+  /**
+   * Host state the sidebar shares across devices: workspace labels, the project order, and each
+   * project's workspace order with the sort.
+   */
+  async connectHostSidebarState(): Promise<void> {
     const { client } = this.requireOnline();
     const serverInfo = client.getLastServerInfoMessage();
+    projectOrderSync.connect({
+      serverId: this.serverId,
+      client,
+      supported: serverInfo?.features?.sidebarProjectOrder === true,
+    });
+    workspaceOrderSync.connect({
+      serverId: this.serverId,
+      client,
+      supported: serverInfo?.features?.sidebarWorkspaceOrder === true,
+    });
     await workspaceLabels.connect({
       serverId: this.serverId,
       client,
@@ -1078,6 +1098,9 @@ function legacyProjectDescriptorFromWorkspace(workspace: WorkspaceDescriptor): P
     projectKey: null,
     projectDisplayName: workspace.projectDisplayName,
     projectCustomName: workspace.projectCustomName ?? null,
+    ...(workspace.projectSnoozedUntil !== undefined
+      ? { projectSnoozedUntil: workspace.projectSnoozedUntil }
+      : {}),
     projectRootPath: workspace.projectRootPath,
     projectKind: workspace.projectKind,
   };

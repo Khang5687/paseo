@@ -156,9 +156,15 @@ export interface VoiceSessionHost {
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<void>;
-  sendSpokenInput(agentId: string, text: string): Promise<void>;
+  sendSpokenInput(
+    agentId: string,
+    text: string,
+    options: { speakToolReady: boolean },
+  ): Promise<void>;
   interruptAgentIfRunning(agentId: string): Promise<void>;
   hasActiveAgentRun(agentId: string | null): boolean;
+  /** Resolves once the agent has no run in flight, or the signal aborts. */
+  waitForAgentIdle(agentId: string, signal?: AbortSignal): Promise<void>;
 }
 
 export interface VoiceSessionOptions {
@@ -239,6 +245,8 @@ export class VoiceSession {
 
   private voiceModeAgentId: string | null = null;
   private voiceModeBaseConfig: VoiceModeBaseConfig | null = null;
+  /** Set while voice mode started during a run and the voice prompt waits for the run to end. */
+  private deferredVoicePrompt: AbortController | null = null;
 
   private pendingQuestion: PendingSpokenQuestion | null = null;
   private readonly announcedRequestIds = new Set<string>();
@@ -547,6 +555,23 @@ export class VoiceSession {
       systemPrompt: buildVoiceModeSystemPrompt(baseConfig.systemPrompt, true),
     };
 
+    if (this.host.hasActiveAgentRun(agentId)) {
+      // The reload that installs the voice prompt would cancel the run. Voice starts now and
+      // the prompt follows once the run ends, so spoken input meanwhile carries no speak tool.
+      this.sessionLogger.info({ agentId }, "enableVoiceModeForAgent.reload deferred: run active");
+      const deferred = new AbortController();
+      this.deferredVoicePrompt = deferred;
+      void this.reloadAgentWhenIdle(agentId, refreshOverrides, deferred.signal)
+        .then(() => {
+          if (this.deferredVoicePrompt === deferred) this.deferredVoicePrompt = null;
+          return undefined;
+        })
+        .catch((error) => {
+          this.sessionLogger.warn({ err: error, agentId }, "Deferred voice prompt reload failed");
+        });
+      return agentId;
+    }
+
     try {
       this.sessionLogger.info(
         { agentId, elapsedMs: Date.now() - startedAt },
@@ -566,6 +591,20 @@ export class VoiceSession {
     }
   }
 
+  /** A reload cancels the agent's run in flight, so it waits for the run to end. */
+  private async reloadAgentWhenIdle(
+    agentId: string,
+    overrides: Partial<AgentSessionConfig>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    while (this.host.hasActiveAgentRun(agentId)) {
+      await this.host.waitForAgentIdle(agentId, signal);
+      if (signal?.aborted) return;
+    }
+    this.sessionLogger.info({ agentId }, "Applying deferred voice prompt: run ended");
+    await this.host.reloadAgentSession(agentId, overrides);
+  }
+
   private async disableVoiceModeForActiveAgent(restoreAgentConfig: boolean): Promise<void> {
     this.pendingQuestion = null;
     this.pendingPermissionIds.clear();
@@ -577,19 +616,23 @@ export class VoiceSession {
       return;
     }
 
-    if (restoreAgentConfig && this.voiceModeBaseConfig) {
+    this.deferredVoicePrompt?.abort();
+    // Restoring the prompt reloads the session, and a reload cancels a run in flight.
+    // A prompt that never reached the agent needs no restoring.
+    if (restoreAgentConfig && this.voiceModeBaseConfig && !this.deferredVoicePrompt) {
       const baseConfig = this.voiceModeBaseConfig;
-      try {
-        await this.host.reloadAgentSession(agentId, {
-          systemPrompt: buildVoiceModeSystemPrompt(baseConfig.systemPrompt, false),
-        });
-      } catch (error) {
+      const restoring = this.reloadAgentWhenIdle(agentId, {
+        systemPrompt: buildVoiceModeSystemPrompt(baseConfig.systemPrompt, false),
+      }).catch((error) => {
         this.sessionLogger.warn(
           { err: error, agentId },
           "Failed to restore agent config while disabling voice mode",
         );
-      }
+      });
+      // Voice mode ends now; the restore may wait for a run to end.
+      if (!this.host.hasActiveAgentRun(agentId)) await restoring;
     }
+    this.deferredVoicePrompt = null;
 
     this.unregisterVoiceSpeakHandler?.(agentId);
     this.unregisterVoiceCallerContext?.(agentId);
@@ -637,7 +680,7 @@ export class VoiceSession {
               isSpeaking: true,
             },
           });
-          await this.handleVoiceSpeechStart();
+          this.handleVoiceSpeechStart();
         },
         onPartialTranscript: async ({ segmentId, transcript }) => {
           this.sessionLogger.debug(
@@ -988,6 +1031,7 @@ export class VoiceSession {
     } catch (error) {
       this.setPhase("idle");
       this.clearSpeechInProgress("transcription error");
+      this.createAbortController();
       await this.flushPendingAudioSegments("transcription error");
       this.emit({
         type: "activity_log",
@@ -1028,6 +1072,9 @@ export class VoiceSession {
       this.sessionLogger.debug("Empty transcription (false positive), not aborting");
       this.setPhase("idle");
       this.clearSpeechInProgress("empty transcription");
+      // Detected speech stopped playback. The agent's run goes on, so its next spoken
+      // reply must not start on the aborted signal.
+      this.createAbortController();
       await this.flushPendingAudioSegments("empty transcription");
       return;
     }
@@ -1093,15 +1140,17 @@ export class VoiceSession {
       return;
     }
 
-    // A permission prompt is answered on screen only. The words must not approve it, interrupt the
-    // run that waits on it, or reach the agent as chat.
+    // A permission prompt is answered on screen only. The words must not approve it or reach the
+    // agent as chat.
     if (this.pendingPermissionIds.size > 0) {
       this.queueAnnouncement(buildPermissionReminderSpeech());
       await this.flushPendingAudioSegments("permission prompt waiting");
       return;
     }
 
-    await this.host.sendSpokenInput(agentId, result.text);
+    await this.host.sendSpokenInput(agentId, result.text, {
+      speakToolReady: !this.deferredVoicePrompt,
+    });
     await this.flushPendingAudioSegments("transcription complete");
   }
 
@@ -1271,20 +1320,40 @@ export class VoiceSession {
   }
 
   /**
-   * Handle abort request from client
+   * Stop TTS playback: abort the session's speak signal and release the waiting playbacks.
    */
-  async handleAbort(options: { interruptAgent?: boolean } = {}): Promise<void> {
+  private stopPlayback(reason: string): void {
+    this.abortController.abort();
+    this.ttsManager.cancelPendingPlaybacks(reason);
+  }
+
+  private resetPhaseAfterAbort(): void {
+    if (this.processingPhase === "transcribing") {
+      // Still in STT phase - we'll buffer the next audio
+      this.sessionLogger.debug("Will buffer next audio (currently transcribing)");
+      // Phase stays as 'transcribing', handleAudioChunk will handle buffering
+      return;
+    }
+
+    // Reset phase to idle and clear pending non-voice buffers.
+    this.setPhase("idle");
+    this.pendingAudioSegments = [];
+    this.clearBufferTimeout();
+  }
+
+  /**
+   * Handle abort request from client: the explicit Stop. Stops playback and interrupts the
+   * agent's run. Detected speech does not come through here.
+   */
+  async handleAbort(): Promise<void> {
     this.sessionLogger.info(
       { phase: this.processingPhase },
       `Abort request, phase: ${this.processingPhase}`,
     );
 
-    this.abortController.abort();
-    this.ttsManager.cancelPendingPlaybacks("abort request");
+    this.stopPlayback("abort request");
 
-    // Voice abort interrupts active agent output, except while a question card waits for the
-    // spoken answer: interrupting then would cancel the very question being answered.
-    if (options.interruptAgent !== false && this.isVoiceMode && this.voiceModeAgentId) {
+    if (this.isVoiceMode && this.voiceModeAgentId) {
       try {
         await this.host.interruptAgentIfRunning(this.voiceModeAgentId);
       } catch (error) {
@@ -1303,17 +1372,7 @@ export class VoiceSession {
       }
     }
 
-    if (this.processingPhase === "transcribing") {
-      // Still in STT phase - we'll buffer the next audio
-      this.sessionLogger.debug("Will buffer next audio (currently transcribing)");
-      // Phase stays as 'transcribing', handleAudioChunk will handle buffering
-      return;
-    }
-
-    // Reset phase to idle and clear pending non-voice buffers.
-    this.setPhase("idle");
-    this.pendingAudioSegments = [];
-    this.clearBufferTimeout();
+    this.resetPhaseAfterAbort();
   }
 
   /**
@@ -1324,9 +1383,10 @@ export class VoiceSession {
   }
 
   /**
-   * Mark speech detection start and abort any active playback/agent run.
+   * Speech detection start: stop TTS playback at once. The agent's run is not touched; only
+   * an explicit abort request (handleAbort) interrupts it.
    */
-  private async handleVoiceSpeechStart(): Promise<void> {
+  private handleVoiceSpeechStart(): void {
     if (this.speechInProgress) {
       return;
     }
@@ -1336,7 +1396,7 @@ export class VoiceSession {
     const hadActiveStream = this.host.hasActiveAgentRun(this.voiceModeAgentId);
 
     this.speechInProgress = true;
-    this.sessionLogger.debug("Voice speech detected – aborting playback and active agent run");
+    this.sessionLogger.debug("Voice speech detected – stopping playback, agent run continues");
 
     if (this.pendingAudioSegments.length > 0) {
       this.sessionLogger.debug(
@@ -1358,15 +1418,13 @@ export class VoiceSession {
 
     this.clearBufferTimeout();
 
-    this.abortController.abort();
-    await this.handleAbort({
-      interruptAgent: this.pendingQuestion === null && this.pendingPermissionIds.size === 0,
-    });
+    this.stopPlayback("speech detected");
+    this.resetPhaseAfterAbort();
 
     const latencyMs = Date.now() - chunkReceivedAt;
     this.sessionLogger.debug(
       { latencyMs, phaseBeforeAbort, hadActiveStream },
-      "[Telemetry] barge_in.llm_abort_latency",
+      "[Telemetry] barge_in.playback_stop_latency",
     );
   }
 

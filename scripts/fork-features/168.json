@@ -1,0 +1,6 @@
+{
+  "pr": 168,
+  "title": "fix(app): chip row drags close the sidebar; More shows nothing",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/sidebar-quiet-fold.spec.ts"]
+}

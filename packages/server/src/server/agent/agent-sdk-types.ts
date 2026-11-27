@@ -1,10 +1,12 @@
 import type {
   AgentMetric,
+  AgentPermissionDraft,
   AgentOptionControl,
   AgentOptionSelectControl,
   AgentOptionToggleControl,
   AgentProviderNotice,
   AgentTaskItem,
+  UserMessageAttachmentFile,
   JsonValue,
   ProviderOptions,
   ToolPolicy,
@@ -139,6 +141,8 @@ export interface ProviderSnapshotEntry {
   source?: "builtin" | "custom";
   error?: string;
   models?: AgentModelDefinition[];
+  /** Reported models disabled in Provider settings; never also present in `models`. */
+  disabledModels?: AgentModelDefinition[];
   modes?: AgentMode[];
   fetchedAt?: string;
   label?: string;
@@ -190,6 +194,8 @@ export interface AgentCapabilityFlags {
   supportsRewindConversation?: boolean;
   supportsRewindFiles?: boolean;
   supportsRewindBoth?: boolean;
+  /** The client implements forkSession: a new provider session cut from an existing one. */
+  supportsNativeFork?: boolean;
 }
 
 export interface AgentPersistenceHandle {
@@ -200,8 +206,22 @@ export interface AgentPersistenceHandle {
   metadata?: AgentMetadata;
 }
 
+/** A provider-side copy of a durable session. The source session is never modified. */
+export interface ForkedNativeSession {
+  /** Resume this handle to continue the copy. */
+  handle: AgentPersistenceHandle;
+  /**
+   * Mode for a copy that answers questions: it may read the workspace but must not change
+   * it or run commands without approval. The source shares its working directory.
+   */
+  readOnlyModeId: string;
+  /** Delete the copy's durable provider state. Idempotent; never touches the source. */
+  discard(): Promise<void>;
+}
+
 export type AgentPromptContentBlock =
-  | { type: "text"; text: string }
+  // `placeholders` lists the `[Image #1]`-style tokens in `text` that name a labeled attachment.
+  | { type: "text"; text: string; placeholders?: string[] }
   | { type: "image"; data: string; mimeType: string }
   | AgentAttachment;
 
@@ -409,7 +429,13 @@ export interface PluginTimelineItem {
 }
 
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      attachmentFiles?: UserMessageAttachmentFile[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem
@@ -532,6 +558,8 @@ export interface AgentPermissionRequest {
   suggestions?: AgentPermissionUpdate[];
   actions?: AgentPermissionAction[];
   metadata?: AgentMetadata;
+  // COMPAT(questionBoxDrafts): fork. The picks of a half-filled question box, for every device.
+  draftAnswers?: AgentPermissionDraft;
 }
 
 export type AgentPermissionResponse =
@@ -575,6 +603,14 @@ export interface AgentRuntimeInfo {
 
 export type AgentSlashCommandKind = "command" | "skill";
 
+/** A fixed choice for a slash command's first argument. */
+export interface AgentSlashCommandSubcommand {
+  name: string;
+  description?: string;
+  /** Arguments the choice takes after its name, e.g. `[focus]`. */
+  usage?: string;
+}
+
 /**
  * Represents a slash command available in an agent session.
  * Commands are executed by sending them as prompts with / prefix.
@@ -584,6 +620,10 @@ export interface AgentSlashCommand {
   description: string;
   argumentHint: string;
   kind?: AgentSlashCommandKind;
+  aliases?: string[];
+  subcommands?: AgentSlashCommandSubcommand[];
+  /** Folder an OMP skill loads from, set only when it can be told apart without doubt. */
+  sourcePath?: string;
 }
 
 export interface ListImportableSessionsOptions {
@@ -848,6 +888,23 @@ export interface ResolveAgentDefaultModeInput {
   signal?: AbortSignal;
 }
 
+export interface AgentForkSessionInput {
+  /**
+   * Provider message id of the first message to leave out of the fork. The fork keeps everything
+   * before it. null keeps the whole session.
+   */
+  cutBeforeMessageId: string | null;
+  cwd: string;
+  providerOptions?: Record<string, unknown>;
+}
+
+export interface AgentForkSessionResult {
+  persistence: AgentPersistenceHandle;
+  /** Context the fork would start with, when the provider can measure it. */
+  contextWindowUsedTokens?: number;
+  contextWindowMaxTokens?: number;
+}
+
 export interface AgentDraftControls {
   controls: AgentOptionControl[];
   options: ProviderOptions;
@@ -913,6 +970,14 @@ export interface AgentClient {
     launchContext?: AgentLaunchContext,
     options?: AgentResumeSessionOptions,
   ): Promise<AgentSession>;
+  /**
+   * Create a new durable provider session from a copy of `handle`'s session, cut as asked. The
+   * source session stays untouched. Present only when capabilities.supportsNativeFork is true.
+   */
+  forkSession?(
+    handle: AgentPersistenceHandle,
+    input: AgentForkSessionInput,
+  ): Promise<AgentForkSessionResult>;
   /** Equal keys share availability and catalogue discovery within this configured client.
    * Include the execution environment and effective configuration; omit to use target identity.
    * force must not affect identity. Resolve before every cache lookup. */
@@ -972,6 +1037,17 @@ export interface AgentClient {
    * Called before Paseo clears its archived flag so provider resume can succeed.
    */
   unarchiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
+   * Copy a durable native session with its full history. The source may be mid-turn and
+   * keeps running unchanged; the copy is resumed through resumeSession(fork.handle).
+   */
+  forkNativeSession?(handle: AgentPersistenceHandle): Promise<ForkedNativeSession>;
+  /**
+   * Delete a fork's durable provider state from its handle alone. Used to clean up forks left
+   * behind by a crashed daemon, when no ForkedNativeSession.discard closure exists anymore.
+   * Idempotent; never touches the source.
+   */
+  discardNativeFork?(handle: AgentPersistenceHandle): Promise<void>;
   /**
    * Release any provider-owned resources held by this client (background
    * processes, sockets, cached subprocesses, etc.). Called when the daemon

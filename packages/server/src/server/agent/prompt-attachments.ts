@@ -1,5 +1,6 @@
 import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
-import type { AgentAttachment } from "@getpaseo/protocol/messages";
+import type { AgentAttachment, InlineAttachmentRef } from "@getpaseo/protocol/messages";
+import type { UserMessageAttachmentFile } from "@getpaseo/protocol/agent-types";
 import type { AgentPromptContentBlock, AgentPromptInput } from "./agent-sdk-types.js";
 
 const REVIEW_LINE_MARKERS = { add: "+", remove: "-", context: " " } as const;
@@ -8,6 +9,9 @@ export function buildAgentPrompt(
   text: string,
   images?: Array<{ data: string; mimeType: string }>,
   attachments?: AgentAttachment[],
+  attachmentRefs?: InlineAttachmentRef[],
+  // Where the daemon saved each image (see saveInlineImages), in image order.
+  imagePaths?: readonly string[],
 ): AgentPromptInput {
   const normalized = text.trim();
   const hasImages = (images?.length ?? 0) > 0;
@@ -16,25 +20,99 @@ export function buildAgentPrompt(
     return normalized;
   }
 
-  const chatHistoryAttachments: AgentAttachment[] = [];
-  const otherAttachments: AgentAttachment[] = [];
-  for (const attachment of attachments ?? []) {
-    if (attachment.type === "text" && attachment.contextKind === "chat_history") {
-      chatHistoryAttachments.push(attachment);
-    } else {
-      otherAttachments.push(attachment);
+  const imageLabels = new Map<number, string>();
+  const attachmentLabels = new Map<number, string>();
+  for (const ref of attachmentRefs ?? []) {
+    if (ref.imageIndex !== undefined && images?.[ref.imageIndex]) {
+      imageLabels.set(ref.imageIndex, ref.label);
+    } else if (ref.attachmentIndex !== undefined && attachments?.[ref.attachmentIndex]) {
+      attachmentLabels.set(ref.attachmentIndex, ref.label);
     }
   }
 
+  const chatHistoryAttachments: AgentAttachment[] = [];
+  const otherAttachments: AgentPromptContentBlock[] = [];
+  (attachments ?? []).forEach((attachment, index) => {
+    if (attachment.type === "text" && attachment.contextKind === "chat_history") {
+      chatHistoryAttachments.push(attachment);
+      return;
+    }
+    const label = attachmentLabels.get(index);
+    if (label === undefined) {
+      otherAttachments.push(attachment);
+    } else if (attachment.type === "uploaded_file") {
+      otherAttachments.push(inlineRefNote(`[${label}]: ${attachment.path}`));
+    } else {
+      otherAttachments.push(inlineRefNote(`[${label}]:`), attachment);
+    }
+  });
+
   const blocks: AgentPromptContentBlock[] = [...chatHistoryAttachments];
   if (normalized.length > 0) {
-    blocks.push({ type: "text", text: normalized });
+    const placeholders = [...imageLabels.values(), ...attachmentLabels.values()]
+      .map((label) => `[${label}]`)
+      .filter((placeholder) => normalized.includes(placeholder));
+    blocks.push(
+      placeholders.length > 0
+        ? { type: "text", text: normalized, placeholders }
+        : { type: "text", text: normalized },
+    );
   }
-  for (const image of images ?? []) {
+  (images ?? []).forEach((image, index) => {
+    const path = imagePaths?.[index];
+    const label =
+      imageLabels.get(index) ?? (path === undefined ? undefined : `Image #${index + 1}`);
+    if (label !== undefined) blocks.push(inlineRefNote(`[${label}]:${path ? ` ${path}` : ""}`));
     blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
-  }
+  });
   blocks.push(...otherAttachments);
   return blocks;
+}
+
+// Labels ride as text attachments: every adapter already renders them in prompt order, and the
+// mimeType keeps them out of the submitted user message text (see submittedPromptText).
+function inlineRefNote(text: string): AgentAttachment {
+  return { type: "text", mimeType: "text/plain", text };
+}
+
+// The notes buildAgentPrompt adds: `[Image #1]: <absolute path>` (older history: `[Image #1]:`
+// alone), `[File #2]: <absolute path>`.
+const INLINE_REF_NOTE_LINE = /^\[((?:Image|File) #\d+)\]:(?: ((?:\/|[A-Za-z]:[\\/]).*))?$/;
+
+function parseInlineRefNote(line: string): { file: UserMessageAttachmentFile | null } | null {
+  const match = INLINE_REF_NOTE_LINE.exec(line.trim());
+  if (!match) return null;
+  const label = match[1] ?? "";
+  const path = match[2];
+  if (path === undefined) return label.startsWith("File ") ? null : { file: null };
+  return { file: { label, path } };
+}
+
+/**
+ * Provider history replays a user turn as all of its text, including the label notes the user
+ * never typed. Split those lines off, so the replayed message matches what was sent, and keep the
+ * paths they name: they are how a replayed message finds its images again.
+ */
+export function splitInlineRefNotes(text: string): {
+  text: string;
+  files: UserMessageAttachmentFile[];
+} {
+  const lines = text.split("\n");
+  const kept: string[] = [];
+  const files: UserMessageAttachmentFile[] = [];
+  for (const line of lines) {
+    const note = parseInlineRefNote(line);
+    if (!note) kept.push(line);
+    else if (note.file) files.push(note.file);
+  }
+  if (kept.length === lines.length) return { text, files };
+  return {
+    text: kept
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+    files,
+  };
 }
 
 export function renderPromptAttachmentAsText(attachment: AgentAttachment): string {

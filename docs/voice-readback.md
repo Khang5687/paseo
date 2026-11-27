@@ -6,8 +6,8 @@ What Voice mode says on its own, besides what the agent passes to `speak`: quest
 
 - `VoiceSession` (`packages/server/src/server/session/voice/voice-session.ts`) reads a prompt the moment `session.ts` sees `permission_requested`. The agent does not have to call `speak`. Read-backs share one chain, so two prompts never talk over each other.
 - A pending question card makes the next transcript an answer, not chat. The answer goes out through `agentManager.respondToPermission`, the same call the app's card uses, keyed by the question `header`.
-- While a card is pending, barge-in does not interrupt the agent. The run is blocked on that card; interrupting it drops the card and the spoken answer arrives as chat with nothing left to answer.
-- Permission prompts that are not question cards are read only. A misheard "yes" must never allow a command. The prompt stays pending while it waits (`pendingPermissionIds`): speech does not interrupt the run, does not reach the agent as chat, and gets a spoken reminder ("A permission prompt is waiting. Answer it on screen."). Interrupting would drop the prompt, and chat would give the listener a second turn the agent never asked for. `permission_resolved` clears it.
+- Speech never interrupts the agent's run (only the Stop button does), so a pending card is not dropped by the listener talking. Only the explicit Stop interrupts, and that drops the card.
+- Permission prompts that are not question cards are read only. A misheard "yes" must never allow a command. The prompt stays pending while it waits (`pendingPermissionIds`): speech does not reach the agent as chat and gets a spoken reminder ("A permission prompt is waiting. Answer it on screen."). Chat would give the listener a second turn the agent never asked for. `permission_resolved` clears it.
 - Everything spoken goes through `prepareTextForSpeech` (`speech-text.ts`). Activity-log entries keep the original text.
 - A second device gets `reasonCode: "voice_active_elsewhere"` on `set_voice_mode_response`. The app maps it to a translated message. An old daemon sends only the raw text; the app shows that.
 

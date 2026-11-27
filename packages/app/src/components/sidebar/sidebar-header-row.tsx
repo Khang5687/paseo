@@ -1,3 +1,4 @@
+import type { PluginBadge } from "@getpaseo/plugin/client";
 import { PressHighlight as Pressable } from "@/components/ui/press-highlight";
 import { useCallback, useState, type ComponentType, type ReactNode, type Ref } from "react";
 import { Text, View } from "react-native";
@@ -7,6 +8,11 @@ import { DensityIcon } from "@/components/ui/density-icon";
 import { Shortcut } from "@/components/ui/shortcut";
 import { density, densityIconBox } from "@/styles/density";
 import type { ShortcutKey } from "@/utils/format-shortcut";
+import {
+  SidebarNavIconButton,
+  useSidebarNavIconRow,
+} from "@/components/sidebar/sidebar-nav-icon-button";
+import { SidebarBadge, sidebarBadgeAccessibilityLabel } from "@/components/sidebar/sidebar-badge";
 
 type SidebarHeaderRowVariant = "header" | "compact" | "inline";
 
@@ -36,10 +42,34 @@ interface SidebarHeaderRowProps {
    * press on the slot presses the row; a button inside it presses on its own.
    */
   trailing?: ReactNode;
+  /** A plugin row's count or dot: after the label, or on the phone icon button's corner. */
+  badge?: PluginBadge | null;
   rowRef?: Ref<View>;
 }
 
-export function SidebarHeaderRow({
+export function SidebarHeaderRow(props: SidebarHeaderRowProps) {
+  const iconRow = useSidebarNavIconRow();
+  // Inside the phone's icon row a header-group row is one round button; its trailing content
+  // (shortcut hints, plugin trailing slots) has no room there.
+  if (iconRow && props.variant === "compact") {
+    return (
+      <SidebarNavIconButton
+        row={iconRow}
+        icon={props.icon}
+        label={props.label}
+        onPress={props.onPress}
+        isActive={props.isActive ?? false}
+        testID={props.testID}
+        nativeID={props.nativeID}
+        accessibilityLabel={props.accessibilityLabel}
+        badge={props.badge}
+      />
+    );
+  }
+  return <SidebarHeaderFullRow {...props} />;
+}
+
+function SidebarHeaderFullRow({
   icon,
   label,
   onPress,
@@ -50,6 +80,7 @@ export function SidebarHeaderRow({
   variant = "header",
   shortcutKeys = null,
   trailing,
+  badge,
   rowRef,
 }: SidebarHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -82,7 +113,7 @@ export function SidebarHeaderRow({
           nativeID={nativeID}
           accessible
           accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel ?? label}
+          accessibilityLabel={sidebarBadgeAccessibilityLabel(accessibilityLabel ?? label, badge)}
           accessibilityState={isActive ? SELECTED_STATE : undefined}
           aria-selected={isActive}
           style={styles.button}
@@ -97,6 +128,7 @@ export function SidebarHeaderRow({
             <View style={variant === "header" ? styles.iconSpacer : styles.iconSpacerCompact} />
           )}
           <Text style={[styles.label, isHighlighted && styles.labelHighlighted]}>{label}</Text>
+          <SidebarBadge badge={badge} placement="inline" ownerTestID={testID} />
         </Pressable>
         {right === null ? null : (
           <Pressable

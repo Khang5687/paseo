@@ -3,11 +3,12 @@ import { Fragment, useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
+import { Clock, ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
 import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
 } from "@getpaseo/protocol/workspace-labels";
+import { formatNextRunLabel, formatWaitingLabel } from "@/background-work";
 import type { HostBadgeModel } from "@/hosts/appearance";
 import { HostBadge, HOST_BADGE_ICON_SIZE } from "@/hosts/host-badge";
 import { WorkspaceLabelChip, WORKSPACE_LABEL_CHIP_INSET } from "@/workspace-labels/chip";
@@ -25,6 +26,7 @@ import {
 import { CheckIndicator } from "./check-indicator";
 import type { CheckSummary, CheckSummaryState } from "./check-summary";
 import { selectMetaRowItems, type MetaRowItem } from "./meta-items";
+import { formatWaitingOnLabel, type WaitCounts } from "@/workspace-status/waiting-label";
 import { workspaceServiceLabelKey, type WorkspaceServiceSummary } from "./service-summary";
 
 export {
@@ -40,6 +42,7 @@ export {
  */
 const META_ICON_SIZE = HOST_BADGE_ICON_SIZE;
 
+const ThemedClock = withUnistyles(Clock);
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolder = withUnistyles(Folder);
 const ThemedGitBranch = withUnistyles(GitBranch);
@@ -75,7 +78,10 @@ export function WorkspaceMetaRow({
   hostBadge,
   prHint,
   serviceSummary,
+  nextRunAt = null,
+  waitingOn = null,
   labels = EMPTY_LABELS,
+  waitingFor = null,
   workspace = null,
   backdrop,
 }: {
@@ -84,18 +90,27 @@ export function WorkspaceMetaRow({
   hostBadge: HostBadgeModel | null;
   prHint: PrHint | null;
   serviceSummary: WorkspaceServiceSummary | null;
+  /** When a heartbeat next wakes the workspace. Previews have none. */
+  nextRunAt?: string | null;
+  /** The job the working chat waits on ("" when unnamed). Previews have none. */
+  waitingOn?: string | null;
   labels?: readonly WorkspaceLabelDefinition[];
+  /** What a settled chat waits on, said in words on the line (phones; desktop uses a tooltip). */
+  waitingFor?: WaitCounts | null;
   /** The real workspace behind the row; previews leave it out and get no plugin items. */
   workspace?: { serverId: string; workspaceId: string } | null;
   backdrop: SidebarSurfaceBackdrop;
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
   const items = selectMetaRowItems({
+    waitingFor,
     currentBranch,
     projectName,
     hasHostBadge: hostBadge !== null,
     prHint,
     serviceSummary,
+    nextRunAt,
+    waitingOn,
     labels,
     visible: rowItems,
     checksDisplay,
@@ -139,6 +154,9 @@ function MetaItemNode({
   /** First on the line, so this item's ink sets the rail the title above it already uses. */
   leading: boolean;
 }): ReactNode {
+  if (item.kind === "waitingFor") {
+    return <WaitingForItem wait={item.wait} />;
+  }
   if (item.kind === "branch") {
     return <IdentityItem kind="branch" name={item.name} />;
   }
@@ -157,6 +175,12 @@ function MetaItemNode({
   if (item.kind === "labels") {
     return <LabelsItem labels={item.labels} leading={leading} />;
   }
+  if (item.kind === "nextRun") {
+    return <NextRunItem at={item.at} />;
+  }
+  if (item.kind === "waiting") {
+    return <WaitingItem title={item.title} />;
+  }
   return <ServiceItem summary={item.summary} />;
 }
 
@@ -169,6 +193,24 @@ function IdentityItem({ kind, name }: { kind: "branch" | "project"; name: string
       </View>
       <Text style={styles.identityText} numberOfLines={1}>
         {name}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * What a settled chat waits on: "Waiting on 1 background task and 2 subagents". It leads the line
+ * on a phone, where there is no hover to explain the hourglass in the status slot. Muted text
+ * with no glyph: the hourglass beside it already carries the state.
+ */
+function WaitingForItem({ wait }: { wait: WaitCounts }) {
+  const { t } = useTranslation();
+  const label = formatWaitingOnLabel(t, wait);
+  if (!label) return null;
+  return (
+    <View style={styles.waitingItem} testID="sidebar-workspace-waiting-for">
+      <Text style={styles.waitingForText} numberOfLines={1}>
+        {label}
       </Text>
     </View>
   );
@@ -326,6 +368,33 @@ function ServiceItem({ summary }: { summary: WorkspaceServiceSummary }) {
   );
 }
 
+/**
+ * When a heartbeat next wakes one of the workspace's chats. A clock, not the running ring: the
+ * row is idle until then, and a ring would say it is working.
+ */
+function NextRunItem({ at }: { at: string }) {
+  const label = formatNextRunLabel(at);
+  return (
+    <View style={styles.item} testID="sidebar-workspace-next-run">
+      <ThemedClock size={META_ICON_SIZE} uniProps={mutedMapping} />
+      <Text style={styles.prText} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** Why the status slot shows an hourglass: the chat's turn is blocked on this job. */
+function WaitingItem({ title }: { title: string }) {
+  return (
+    <View style={styles.waitingItem} testID="sidebar-workspace-waiting">
+      <Text style={styles.prText} numberOfLines={1}>
+        {formatWaitingLabel(title)}
+      </Text>
+    </View>
+  );
+}
+
 const successMapping = (theme: Theme) => ({ color: theme.colors.statusSuccess });
 
 const PR_STATE_LABEL_KEYS = {
@@ -358,6 +427,13 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     flexShrink: 1,
   },
+  // A long command shrinks before the identity beside it does.
+  waitingItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+    flexShrink: 2,
+  },
   identityIcon: {
     flexShrink: 0,
   },
@@ -369,6 +445,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   itemPressed: {
     opacity: 0.82,
+  },
+  waitingForText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 16,
+    flexShrink: 1,
   },
   separator: {
     color: theme.colors.foregroundExtraMuted,

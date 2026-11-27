@@ -142,6 +142,7 @@ function harness() {
           installation.lifetime.signal,
         ),
         paseo: getPluginClientApi(installation).paseo,
+        serverId: installation.serverId,
         i18n: installation.i18n,
         rpc: async () => {
           throw new Error("Unexpected runtime RPC");

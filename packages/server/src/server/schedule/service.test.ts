@@ -737,6 +737,48 @@ describe("ScheduleService", () => {
     expect(manager.listAgentBackgroundWork(agent.id)).toEqual([]);
   });
 
+  test("publishes when a heartbeat next fires, and moves it after each run", async () => {
+    const logger = createTestLogger();
+    const manager = new AgentManager({ logger, clients: createTestAgentClients() });
+    const agent = await manager.createAgent({ provider: "claude", cwd: tempDir }, undefined, {
+      workspaceId: undefined,
+    });
+    const service = createScheduleService({
+      paseoHome: tempDir,
+      logger,
+      agentManager: manager,
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+      runner: async () => ({ agentId: agent.id, output: "done" }),
+    });
+    await service.create({
+      prompt: "Check",
+      runOnCreate: false,
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "agent", agentId: agent.id },
+    });
+
+    expect(manager.listAgentBackgroundWork(agent.id)).toEqual([
+      expect.objectContaining({ kind: "heartbeat", nextRunAt: "2026-01-01T00:01:00.000Z" }),
+    ]);
+    expect(manager.getAgentBackgroundWorkSummary(agent.id)).toEqual({
+      count: 1,
+      runningCount: 0,
+      nextRunAt: "2026-01-01T00:01:00.000Z",
+    });
+
+    now = new Date("2026-01-01T00:01:00.000Z");
+    await service.tick();
+
+    expect(manager.listAgentBackgroundWork(agent.id)).toEqual([
+      expect.objectContaining({ nextRunAt: "2026-01-01T00:02:00.000Z" }),
+    ]);
+    expect(manager.getAgentBackgroundWorkSummary(agent.id)?.nextRunAt).toBe(
+      "2026-01-01T00:02:00.000Z",
+    );
+  });
+
   test("removes heartbeats when they expire or finish their last run", async () => {
     const logger = createTestLogger();
     const manager = new AgentManager({ logger, clients: createTestAgentClients() });

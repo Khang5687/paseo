@@ -1,0 +1,5 @@
+{
+  "pr": 159,
+  "title": "test(app): expect attachmentRefs in the workspace file submit split",
+  "tests": ["packages/app/src/attachments/workspace-file.test.ts"]
+}

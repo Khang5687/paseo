@@ -1,0 +1,11 @@
+{
+  "pr": 169,
+  "title": "OMP background jobs in the Background list, with details and a waiting state",
+  "tests": [
+    "packages/server/src/server/agent/providers/omp/background-jobs.test.ts",
+    "packages/server/src/server/agent/background-work/index.test.ts",
+    "packages/app/src/utils/workspace-agent-activity.test.ts",
+    "packages/app/src/components/sidebar/workspace-meta-row/meta-items.test.ts",
+    "packages/app/src/background-work/presentation.test.ts"
+  ]
+}

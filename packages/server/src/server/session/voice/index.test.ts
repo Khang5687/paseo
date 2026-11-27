@@ -37,6 +37,7 @@ test("a failed speech close reports the failure without retaining observation de
         },
         async interruptAgentIfRunning() {},
         hasActiveAgentRun: () => false,
+        async waitForAgentIdle() {},
       },
       stt: null,
       tts: null,

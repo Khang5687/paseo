@@ -40,12 +40,38 @@ describe("buildSubagentPillPresentation", () => {
     await i18n.changeLanguage("en");
   });
 
-  const pill = (rows: SubagentRow[]) => buildSubagentPillPresentation(i18n.t, rows);
+  const pill = (rows: SubagentRow[]) =>
+    buildSubagentPillPresentation(i18n.t, rows, { waits: false });
+  const waitingPill = (rows: SubagentRow[]) =>
+    buildSubagentPillPresentation(i18n.t, rows, { waits: true });
 
   it("counts the children that are working, not the fan-out", () => {
     expect(pill([row({ id: "a" }), row({ id: "b", status: "running" })])).toEqual({
       segments: [{ bucket: "running", text: "1 working" }],
       accessibilityLabel: "1 working",
+    });
+  });
+
+  it("waits on its working children with an hourglass once the chat's turn ended", () => {
+    expect(
+      waitingPill([
+        row({ id: "a", status: "running" }),
+        row({ id: "b", status: "running" }),
+        row({ id: "c" }),
+      ]),
+    ).toEqual({
+      segments: [{ bucket: "running", text: "Waiting on 2 subagents", waiting: true }],
+      accessibilityLabel: "Waiting on 2 subagents",
+    });
+    expect(waitingPill([row({ id: "a", status: "running" })]).accessibilityLabel).toBe(
+      "Waiting on 1 subagent",
+    );
+  });
+
+  it("keeps naming the fan-out while waiting once every child is done", () => {
+    expect(waitingPill([row({ id: "a" }), row({ id: "b" })])).toEqual({
+      segments: [{ bucket: null, text: "2 subagents" }],
+      accessibilityLabel: "2 subagents",
     });
   });
 

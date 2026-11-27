@@ -1,0 +1,9 @@
+{
+  "pr": 36,
+  "title": "feat(protocol): optional OMP routing metadata on usage reports",
+  "tests": [
+    "packages/plugin/src/server/usage.test.ts",
+    "packages/protocol/src/messages.test.ts",
+    "packages/protocol/src/messages.wire-compat.test.ts"
+  ]
+}

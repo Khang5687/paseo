@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import { ActivityIndicator, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, CircleAlert } from "lucide-react-native";
+import { ChevronDown, ChevronRight, CircleAlert, Hourglass, PencilLine } from "lucide-react-native";
 import { ProjectIconView } from "@/components/project-icon-view";
 import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
 import { densityIconBox, densityIconProps } from "@/styles/density";
@@ -32,18 +33,24 @@ const STATUS_BADGE_SIZE = 12;
 // centered on the corner it reads as hanging off the icon rather than sitting on it, and the
 // sidebar row has no padding there to absorb the overhang.
 const STATUS_BADGE_OFFSET = -4;
-// Both glyphs must be EVEN. A centered glyph of size N sits at a (12 - N) / 2 offset — fractional
-// for odd N, which the browser snaps to a device-pixel boundary and renders visibly off-center (an
-// odd size measured 1.5 device px right and down at 3x, ~3px of asymmetry between opposite gaps).
-// Even sizes divide the shell into whole pixels and land dead center with no correction.
+// Every glyph in the shell must be EVEN. A centered glyph of size N sits at a (12 - N) / 2
+// offset — fractional for odd N, which the browser snaps to a device-pixel boundary and renders
+// visibly off-center (an odd size measured 1.5 device px right and down at 3x, ~3px of asymmetry
+// between opposite gaps). Even sizes divide the shell into whole pixels and land dead center with
+// no correction.
 //
 // The filled alert occupies the full badge shell so needs-input remains more prominent than
-// the passive status dots.
+// the passive status dots. The draft pencil and the waiting hourglass leave a margin so they read
+// as marks, not fills.
+const DRAFT_GLYPH_SIZE = 8;
+const WAITING_GLYPH_SIZE = 10;
 const DensityProjectIconView = withUnistyles(ProjectIconView);
 const projectIconProps = densityIconProps("md", () => ({}));
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
+const ThemedPencilLine = withUnistyles(PencilLine);
+const ThemedHourglass = withUnistyles(Hourglass);
 
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
@@ -51,6 +58,9 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
 const needsInputColorMapping = (theme: Theme) => ({
   color: theme.colors.surface0,
   fill: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,
+});
+const waitingColorMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? undefined,
 });
 
 /**
@@ -66,6 +76,7 @@ export function ProjectLeadingVisual({
   chevron = null,
   showChevron = false,
   isArchiving = false,
+  waiting = false,
 }: {
   displayName: string;
   iconDataUri: string | null;
@@ -77,6 +88,8 @@ export function ProjectLeadingVisual({
   chevron?: "expand" | "collapse" | null;
   showChevron?: boolean;
   isArchiving?: boolean;
+  /** The working chats all wait on a background job: an hourglass in place of the ring. */
+  waiting?: boolean;
 }) {
   if (showChevron && chevron !== null) {
     return (
@@ -101,13 +114,14 @@ export function ProjectLeadingVisual({
       projectViewKey={projectViewKey}
       statusBucket={statusBucket}
       backdrop={backdrop}
+      waiting={waiting}
     />
   );
 }
 
 // The project icon (the lettered box) is what marks a row as a *project* rather than a
 // workspace, so it always stays and status annotates it instead of replacing it. Every
-// surfaced bucket lands in the identical corner badge — an amber alert glyph for needs_input,
+// surfaced bucket lands in the identical corner badge — a purple alert glyph for needs_input,
 // a colored disc for the rest, nothing for done — so the badge reads as one fixed shell and
 // only its contents change.
 export function ProjectStatusIndicator({
@@ -117,6 +131,8 @@ export function ProjectStatusIndicator({
   statusBucket,
   backdrop,
   loading = false,
+  hasUnsentDraft = false,
+  waiting = false,
   testID,
 }: {
   iconDataUri: string | null;
@@ -126,6 +142,10 @@ export function ProjectStatusIndicator({
   /** The row's current background, so the status badge can knock out of it. */
   backdrop: SidebarSurfaceBackdrop;
   loading?: boolean;
+  /** Marks an idle row whose chat tabs hold a prompt the user has not sent. */
+  hasUnsentDraft?: boolean;
+  /** The working chat is blocked on a background job: an hourglass in place of the ring. */
+  waiting?: boolean;
   testID?: string;
 }) {
   const placeholderInitial = projectIconPlaceholderLabelFromDisplayName(displayName)
@@ -136,6 +156,19 @@ export function ProjectStatusIndicator({
   // and they share one badge.
   const badgeBucket = loading ? "running" : statusBucket;
   const badgeContent = getProjectStatusBadgeContent(badgeBucket);
+  let badge: ReactNode = null;
+  if (badgeContent !== null && badgeBucket !== null) {
+    badge = (
+      <ProjectStatusBadge
+        content={badgeContent}
+        statusBucket={badgeBucket}
+        backdrop={backdrop}
+        waiting={waiting && !loading}
+      />
+    );
+  } else if (hasUnsentDraft) {
+    badge = <ProjectDraftBadge backdrop={backdrop} />;
+  }
 
   return (
     <View
@@ -153,13 +186,7 @@ export function ProjectStatusIndicator({
           placeholderInitial={placeholderInitial}
           projectViewKey={projectViewKey}
         />
-        {badgeContent === null || badgeBucket === null ? null : (
-          <ProjectStatusBadge
-            content={badgeContent}
-            statusBucket={badgeBucket}
-            backdrop={backdrop}
-          />
-        )}
+        {badge}
       </View>
     </View>
   );
@@ -169,16 +196,32 @@ function ProjectStatusBadge({
   content,
   statusBucket,
   backdrop,
+  waiting,
 }: {
   content: ProjectStatusBadgeContent;
   statusBucket: SidebarStateBucket;
   backdrop: SidebarSurfaceBackdrop;
+  waiting: boolean;
 }) {
   const { t } = useTranslation();
+  const isRunning = content.kind === "dot" && content.bucket === "running";
+  // Waiting does not move, so it sits in the shell like the other glyphs.
+  if (isRunning && waiting) {
+    return (
+      <View
+        role="status"
+        accessibilityLabel={getStatusBucketLabel(statusBucket, t)}
+        style={[styles.statusBadge, getStatusBadgeBackdropStyle(backdrop)]}
+        testID="project-status-badge-waiting"
+      >
+        <ThemedHourglass size={WAITING_GLYPH_SIZE} uniProps={waitingColorMapping} />
+      </View>
+    );
+  }
   // Running skips the shell. The ring is wider than the 12pt shell and carries its own knockout,
   // so nesting it inside would clip it against the very thing that was meant to separate it from
   // the icon. It anchors to the same corner instead, growing around the centre the dot had.
-  if (content.kind === "dot" && content.bucket === "running") {
+  if (isRunning) {
     return (
       <View
         role="status"
@@ -202,6 +245,20 @@ function ProjectStatusBadge({
       ) : (
         <ProjectStatusDot bucket={content.bucket} />
       )}
+    </View>
+  );
+}
+
+function ProjectDraftBadge({ backdrop }: { backdrop: SidebarSurfaceBackdrop }) {
+  const { t } = useTranslation();
+  return (
+    <View
+      role="status"
+      accessibilityLabel={t("sidebar.unsentDraft")}
+      style={[styles.statusBadge, getStatusBadgeBackdropStyle(backdrop)]}
+      testID="project-draft-badge"
+    >
+      <ThemedPencilLine size={DRAFT_GLYPH_SIZE} uniProps={foregroundMutedColorMapping} />
     </View>
   );
 }

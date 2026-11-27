@@ -56,8 +56,11 @@ export function buildVoiceModeSystemPrompt(existing: string | undefined, enabled
     .join("\n\n");
 }
 
-export function wrapSpokenInput(text: string): string {
-  return `<spoken-input>\n${text}\n</spoken-input>\n<instruction>This message was spoken by the user. Respond using the speak tool only, not normal messages, because the user may not be looking at the chat.</instruction>`;
+export function wrapSpokenInput(text: string, speakToolReady = true): string {
+  const instruction = speakToolReady
+    ? "This message was spoken by the user. Respond using the speak tool only, not normal messages, because the user may not be looking at the chat."
+    : "This message was spoken by the user while you were working. You have no speak tool yet, so answer in normal messages.";
+  return `<spoken-input>\n${text}\n</spoken-input>\n<instruction>${instruction}</instruction>`;
 }
 
 export function buildVoiceAgentMcpServerConfig(params: {

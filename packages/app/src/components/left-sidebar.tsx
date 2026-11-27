@@ -56,7 +56,11 @@ import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-pref
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarToastRegion } from "@/components/sidebar/sidebar-toast-region";
 import { SidebarSelectionHost } from "@/sidebar-selection";
-import { SidebarNavRows, useVisibleSidebarNavItems } from "@/components/sidebar/sidebar-nav-rows";
+import {
+  SidebarNavIconRow,
+  SidebarNavRows,
+  useVisibleSidebarNavItems,
+} from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarFooterIconHighlight } from "@/components/sidebar/sidebar-footer-icon-highlight";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
 import { SidebarFooterOverflowMenu } from "@/components/sidebar/sidebar-footer-overflow-menu";
@@ -105,9 +109,14 @@ import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { openSettingsFromSidebar } from "@/navigation/settings-navigation";
 import { UsageSidebarItem, UsageSidebarRoot, useUsageSummary, useOpenSidebarUsage } from "@/usage";
+import { SavedSidebarItem } from "@/offline-files/sidebar-item";
+import { useOfflineFiles } from "@/offline-files/store";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
+import { SidebarProjectChipRow, SidebarProjectRailLayout } from "./sidebar/project-strip";
+import { NextWaitingButton } from "./sidebar/next-waiting-button";
+import { SidebarQuietFoldRow } from "./sidebar/quiet-fold-row";
 
 type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
 
@@ -131,6 +140,7 @@ interface SidebarSharedProps {
   groupMode: SidebarGroupMode;
   collapsedProjectKeys: ReadonlySet<string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
+  nestingDepthByWorkspaceKey: ReadonlyMap<string, number>;
   toggleProjectCollapsed: (projectViewKey: string) => void;
   handleRefresh: () => void;
   handleOpenProject: () => void;
@@ -192,6 +202,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     toggleProjectCollapsed,
     groupMode,
     shortcutModel,
+    nestingDepthByWorkspaceKey,
   } = useSidebarModel();
   const { shortcutIndexByWorkspaceKey } = shortcutModel;
 
@@ -260,6 +271,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     groupMode,
     collapsedProjectKeys,
     shortcutIndexByWorkspaceKey,
+    nestingDepthByWorkspaceKey,
     toggleProjectCollapsed,
     handleRefresh,
     labels,
@@ -532,33 +544,43 @@ function SidebarUsageIcon({ label }: { label: string }) {
 }
 
 /**
- * The footer rows in the user's `sidebarFooterItems` order: the Usage item and plugin rows. The
- * Usage item is left out while it has no summary to show.
+ * The footer rows in the user's `sidebarFooterItems` order: Saved on this device, the Usage item
+ * and plugin rows. Saved is left out while nothing is saved, Usage while it has no summary.
  */
 function SidebarFooterRows({ onBeforeNavigate }: { onBeforeNavigate?: () => void }) {
   const { items } = useSidebarNavItems("footer");
   const usageSummary = useUsageSummary();
+  const savedCount = useOfflineFiles()?.length ?? 0;
   const rowsRef = useRef<View | null>(null);
-  const visibleItems = items.filter(
-    (item) => item.visible && (item.kind === "plugin" || usageSummary.length > 0),
-  );
+  const visibleItems = items.filter((item) => {
+    if (!item.visible) return false;
+    if (item.kind === "plugin") return true;
+    return item.id === "saved" ? savedCount > 0 : usageSummary.length > 0;
+  });
   if (visibleItems.length === 0) return null;
+  const renderItem = (item: (typeof visibleItems)[number]) => {
+    if (item.kind === "plugin") {
+      return (
+        <PluginSidebarItem
+          key={item.key}
+          group={item.group}
+          section="footer"
+          fallbackAnchorRef={rowsRef}
+          onBeforeNavigate={onBeforeNavigate}
+        />
+      );
+    }
+    if (item.id === "saved") {
+      return (
+        <SavedSidebarItem key={item.key} count={savedCount} onBeforeNavigate={onBeforeNavigate} />
+      );
+    }
+    return <UsageSidebarItem key={item.key} sources={usageSummary} />;
+  };
   return (
     <>
       <View ref={rowsRef} collapsable={false} style={styles.footerRows}>
-        {visibleItems.map((item) =>
-          item.kind === "plugin" ? (
-            <PluginSidebarItem
-              key={item.key}
-              group={item.group}
-              section="footer"
-              fallbackAnchorRef={rowsRef}
-              onBeforeNavigate={onBeforeNavigate}
-            />
-          ) : (
-            <UsageSidebarItem key={item.key} sources={usageSummary} />
-          ),
-        )}
+        {visibleItems.map(renderItem)}
       </View>
       <SidebarSeparator testID="sidebar-footer-separator" />
     </>
@@ -581,6 +603,7 @@ function MobileSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -624,11 +647,9 @@ function MobileSidebar({
   );
 
   const navRows = (
-    <SidebarNavRows
-      style={styles.mobileNavRowsGroup}
-      onBeforeNavigate={closeSidebar}
-      firstRowTrailing={closeButton}
-    />
+    <View style={styles.mobileNavRowsGroup}>
+      <SidebarNavIconRow onBeforeNavigate={closeSidebar} trailing={closeButton} />
+    </View>
   );
 
   return (
@@ -640,6 +661,7 @@ function MobileSidebar({
       <View style={styles.sidebarContent} pointerEvents="auto">
         <WindowChromeSafeArea placement="below" />
         <SidebarNavScroll closeGestureRef={closeGestureRef}>{navRows}</SidebarNavScroll>
+        <SidebarProjectChipRow closeGestureRef={closeGestureRef} />
 
         <SidebarViewSlot dismiss={handleWorkspacePress}>
           <SidebarToastRegion active={active}>
@@ -650,6 +672,7 @@ function MobileSidebar({
                 collapsedProjectKeys={collapsedProjectKeys}
                 onToggleProjectCollapsed={toggleProjectCollapsed}
                 shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+                nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
                 groupMode={groupMode}
                 workspaceGroups={workspaceGroups}
                 projectIconTargets={projectIconTargets}
@@ -666,11 +689,14 @@ function MobileSidebar({
                 parentGestureRef={closeGestureRef}
                 dragGestureHostActive={active}
                 listHeaderComponent={workspacesSectionHeaderElement}
+                listFooterComponent={quietFoldRowElement}
               />
             )}
             <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
           </SidebarToastRegion>
         </SidebarViewSlot>
+
+        <NextWaitingButton onNavigate={closeSidebar} />
 
         <SidebarFooter
           handleOpenProject={handleOpenProject}
@@ -741,6 +767,7 @@ function DesktopSidebar({
   groupMode,
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
+  nestingDepthByWorkspaceKey,
   toggleProjectCollapsed,
   handleRefresh,
   handleOpenProject,
@@ -891,53 +918,60 @@ function DesktopSidebar({
           {/* The drag overlay stays above this viewport: Electron does not clip
               app-region rects to scroll viewports, so a scrolled-out row would
               still claim its no-drag rect. */}
-          {hasNavRows ? (
-            <SidebarNavScroll closeGestureRef={closeGestureRef} windowContent>
-              <SidebarNavRows style={styles.sidebarHeaderGroup} onBeforeNavigate={closeSidebar} />
-            </SidebarNavScroll>
-          ) : null}
+          <SidebarProjectRailLayout>
+            {hasNavRows ? (
+              <SidebarNavScroll closeGestureRef={closeGestureRef} windowContent>
+                <SidebarNavRows style={styles.sidebarHeaderGroup} onBeforeNavigate={closeSidebar} />
+              </SidebarNavScroll>
+            ) : null}
 
-          <SidebarViewSlot dismiss={closeSidebar}>
-            <SidebarToastRegion active={active}>
-              {isInitialLoad && !hasActiveHostFilter ? (
-                <SidebarAgentListSkeleton />
-              ) : (
-                <SidebarWorkspaceList
-                  collapsedProjectKeys={collapsedProjectKeys}
-                  onToggleProjectCollapsed={toggleProjectCollapsed}
-                  shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
-                  groupMode={groupMode}
-                  workspaceGroups={workspaceGroups}
-                  projectIconTargets={projectIconTargets}
-                  pinnedGroups={pinnedGroups}
-                  projects={projects}
-                  hasProjectsBeforeFilter={hasProjectsBeforeFilter}
-                  hasActiveProjectFilter={hasActiveProjectFilter}
+            <SidebarViewSlot dismiss={closeSidebar}>
+              <SidebarToastRegion active={active}>
+                {isInitialLoad && !hasActiveHostFilter ? (
+                  <SidebarAgentListSkeleton />
+                ) : (
+                  <SidebarWorkspaceList
+                    collapsedProjectKeys={collapsedProjectKeys}
+                    onToggleProjectCollapsed={toggleProjectCollapsed}
+                    shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+                    nestingDepthByWorkspaceKey={nestingDepthByWorkspaceKey}
+                    groupMode={groupMode}
+                    workspaceGroups={workspaceGroups}
+                    projectIconTargets={projectIconTargets}
+                    pinnedGroups={pinnedGroups}
+                    projects={projects}
+                    hasProjectsBeforeFilter={hasProjectsBeforeFilter}
+                    hasActiveProjectFilter={hasActiveProjectFilter}
+                    workspaceEntriesByKey={workspaceEntriesByKey}
+                    isRefreshing={isManualRefresh && isRevalidating}
+                    onRefresh={handleRefresh}
+                    onAddProject={handleOpenProject}
+                    onImportSession={handleImportSession}
+                    onWorkspacePress={closeSidebar}
+                    parentGestureRef={closeGestureRef}
+                    dragGestureHostActive={active}
+                    listHeaderComponent={workspacesSectionHeaderElement}
+                    listFooterComponent={quietFoldRowElement}
+                  />
+                )}
+                <SidebarSelectionHost
+                  active={active}
                   workspaceEntriesByKey={workspaceEntriesByKey}
-                  isRefreshing={isManualRefresh && isRevalidating}
-                  onRefresh={handleRefresh}
-                  onAddProject={handleOpenProject}
-                  onImportSession={handleImportSession}
-                  onWorkspacePress={closeSidebar}
-                  parentGestureRef={closeGestureRef}
-                  dragGestureHostActive={active}
-                  listHeaderComponent={workspacesSectionHeaderElement}
                 />
-              )}
-              <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
-            </SidebarToastRegion>
-          </SidebarViewSlot>
+              </SidebarToastRegion>
+            </SidebarViewSlot>
 
-          <SidebarCalloutSlot />
+            <SidebarCalloutSlot />
 
-          <SidebarFooter
-            handleOpenProject={handleOpenProject}
-            handleSettings={handleSettings}
-            labels={labels}
-            handleAddHost={handleAddHost}
-            handleOpenHostSettings={handleOpenHostSettings}
-            onBeforeNavigate={closeSidebar}
-          />
+            <SidebarFooter
+              handleOpenProject={handleOpenProject}
+              handleSettings={handleSettings}
+              labels={labels}
+              handleAddHost={handleAddHost}
+              handleOpenHostSettings={handleOpenHostSettings}
+              onBeforeNavigate={closeSidebar}
+            />
+          </SidebarProjectRailLayout>
 
           {!overlay && divisionLayout === null ? (
             <SidebarResizeHandle
@@ -973,6 +1007,8 @@ function WorkspacesSectionHeader() {
 // Stable element so the sidebar list's listHeaderComponent prop keeps identity across
 // renders (WorkspacesSectionHeader takes no props).
 const workspacesSectionHeaderElement = <WorkspacesSectionHeader />;
+// Same for the footer: the "More" row reads what it needs from the sidebar model.
+const quietFoldRowElement = <SidebarQuietFoldRow />;
 
 // Static styles for Animated.Views — must NOT use Unistyles dynamic theme to
 // avoid the "Unable to find node on an unmounted component" crash when Unistyles
@@ -1016,7 +1052,7 @@ const styles = StyleSheet.create((theme) => ({
   desktopSidebarBorder: (hasDivision: boolean) => ({
     borderRightWidth: hasDivision ? 0 : 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.canvasSidebar,
   }),
   sidebarDragArea: {
     position: "relative",

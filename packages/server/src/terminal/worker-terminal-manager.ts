@@ -38,6 +38,7 @@ import {
 import { pruneTerminalWorkerRuntimes } from "./terminal-worker-runtime.js";
 import type {
   TerminalActivityListener,
+  TerminalCommandFinishedListener,
   TerminalActivityTransitionEvent,
   TerminalListItem,
   TerminalManager,
@@ -179,6 +180,7 @@ export function createWorkerTerminalManager(
   const pendingCreationsById = new Map<string, { session: TerminalSession | null }>();
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
   const terminalActivityListeners = new Set<TerminalActivityListener>();
+  const globalCommandFinishedListeners = new Set<TerminalCommandFinishedListener>();
   const terminalWorkspaceContributionChangedListeners =
     new Set<TerminalWorkspaceContributionChangedListener>();
   let workerDisconnected = false;
@@ -378,6 +380,27 @@ export function createWorkerTerminalManager(
           terminals: listTerminalItemsForCwd(record.info.cwd),
         });
       },
+      getOwnerAgentId(): string | null {
+        return record.state.ownerAgentId ?? null;
+      },
+      setOwnerAgentId(ownerAgentId: string | null): void {
+        const nextState = { ...record.state };
+        if (ownerAgentId) {
+          nextState.ownerAgentId = ownerAgentId;
+        } else {
+          delete nextState.ownerAgentId;
+        }
+        record.state = nextState;
+        sendBestEffortRequest({
+          type: "setTerminalOwner",
+          terminalId: record.info.id,
+          ownerAgentId,
+        });
+        emitTerminalsChanged({
+          cwd: record.info.cwd,
+          terminals: listTerminalItemsForCwd(record.info.cwd),
+        });
+      },
       getExitInfo(): TerminalExitInfo | null {
         return record.exitInfo;
       },
@@ -498,6 +521,13 @@ export function createWorkerTerminalManager(
     }
     for (const listener of Array.from(record.commandFinishedListeners)) {
       listener(message.info);
+    }
+    for (const listener of Array.from(globalCommandFinishedListeners)) {
+      try {
+        listener({ terminalId: record.info.id, exitCode: message.info.exitCode });
+      } catch {
+        // no-op
+      }
     }
   }
 
@@ -894,6 +924,15 @@ export function createWorkerTerminalManager(
       return true;
     },
 
+    setTerminalOwner(id: string, ownerAgentId: string | null): boolean {
+      const session = recordsById.get(id)?.session;
+      if (!session) {
+        return false;
+      }
+      session.setOwnerAgentId(ownerAgentId);
+      return true;
+    },
+
     async setTerminalActivity(id: string, state: TerminalActivityState): Promise<boolean> {
       const record = recordsById.get(id);
       if (!record) {
@@ -977,6 +1016,13 @@ export function createWorkerTerminalManager(
       terminalActivityListeners.add(listener);
       return () => {
         terminalActivityListeners.delete(listener);
+      };
+    },
+
+    subscribeTerminalCommandFinished(listener: TerminalCommandFinishedListener): () => void {
+      globalCommandFinishedListeners.add(listener);
+      return () => {
+        globalCommandFinishedListeners.delete(listener);
       };
     },
 

@@ -1,0 +1,5 @@
+{
+  "pr": 16,
+  "title": "fix(omp): keep /goal running across turns like OMP's own /goal",
+  "tests": ["packages/server/src/server/agent/providers/omp/agent.test.ts"]
+}

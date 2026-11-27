@@ -266,6 +266,15 @@ function shouldEmitTurnFailure(prompt: AgentPromptInput): boolean {
   return /emit\s+(?:a\s+)?synthetic\s+turn\s+failure/i.test(promptToText(prompt));
 }
 
+/** The turn ends at once and leaves one shell job running, the way a provider's background job does. */
+function shouldStartBackgroundJob(prompt: AgentPromptInput): boolean {
+  return /start\s+(?:a\s+)?synthetic\s+background\s+job/i.test(promptToText(prompt));
+}
+
+function shouldFailBeforeUserMessage(prompt: AgentPromptInput): boolean {
+  return /fail synthetic turn before user message/i.test(promptToText(prompt));
+}
+
 function parseSteeringReplayShape(prompt: AgentPromptInput): SteeringReplayShape | null {
   const match = /replay a (claude|codex)-shaped foreground shell tool call/i.exec(
     promptToText(prompt),
@@ -942,6 +951,8 @@ export class MockLoadTestAgentSession implements AgentSession {
         this.scheduleSettledAssistantTurn(turn, settledAssistantImageMarkdown);
       } else if (shouldEmitPlanApprovalPrompt(prompt)) {
         this.schedulePlanApprovalTurn(turn);
+      } else if (shouldStartBackgroundJob(prompt)) {
+        this.scheduleBackgroundJobTurn(turn);
       } else if (questionPrompt) {
         this.scheduleQuestionPromptTurn(turn, questionPrompt);
       } else if (largePayload) {
@@ -972,6 +983,11 @@ export class MockLoadTestAgentSession implements AgentSession {
     if (shouldEmitUserMessageBeforeTurnAcceptance(prompt)) {
       emitUserMessage();
       scheduleTurn();
+      return { turnId };
+    }
+    if (shouldFailBeforeUserMessage(prompt)) {
+      // The provider never took the prompt: no user-message echo, only the failure.
+      this.scheduleFailedTurn(turn);
       return { turnId };
     }
     if (shouldWithholdUserMessageUntilInterrupt(prompt)) {
@@ -1313,6 +1329,25 @@ export class MockLoadTestAgentSession implements AgentSession {
   private scheduleSettledAssistantTurn(turn: ActiveTurn, finalText: string): void {
     turn.timer = setTimeout(() => {
       this.emitSettledAssistantTurn(turn, finalText);
+    }, 0);
+    turn.timer.unref?.();
+  }
+
+  private scheduleBackgroundJobTurn(turn: ActiveTurn): void {
+    turn.timer = setTimeout(() => {
+      this.emitSettledAssistantTurn(turn, "Started a synthetic background job.");
+      this.emit({
+        type: "background_work",
+        provider: this.provider,
+        items: [
+          {
+            id: `synthetic-job-${turn.turnId}`,
+            kind: "shell",
+            description: "Synthetic background job",
+            command: "sleep 600",
+          },
+        ],
+      });
     }, 0);
     turn.timer.unref?.();
   }

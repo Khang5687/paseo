@@ -1,0 +1,10 @@
+{
+  "pr": 193,
+  "title": "fix(app): keep an overlay registered when its scope ref reattaches to the same node",
+  "tests": ["packages/app/src/lib/overlay-root.browser.test.tsx"],
+  "e2e": [
+    "packages/app/e2e/browser/model-search-across-providers.spec.ts",
+    "packages/app/e2e/browser/provider-settings-refresh.spec.ts",
+    "packages/app/e2e/browser/add-project-flow.spec.ts"
+  ]
+}

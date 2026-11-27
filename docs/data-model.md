@@ -71,7 +71,12 @@ $PASEO_HOME/
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
-└── push-tokens.json                     # Expo push notification tokens
+├── notes.json                           # Notes on chat/terminal selections (see docs/notes.md)
+├── file-copies/                         # Copies of files other hosts' agents mentioned (6b)
+│   ├── manifest.json
+│   └── blobs/{sha256(serverId, path)}-{uuid}
+├── push-tokens.json                     # Expo push notification tokens
+└── sidebar-sync.json                    # Sidebar state shared by every device (project and workspace order, sort)
 ```
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
@@ -84,32 +89,34 @@ The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` b
 
 Each agent is stored as a separate JSON file, grouped by project directory.
 
-| Field                | Type                                     | Description                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | `string`                                 | UUID, primary key                                                                                                                                                                                                                                                                                                                                                                   |
-| `provider`           | `string`                                 | Agent provider (`"claude"`, `"codex"`, `"opencode"`, etc.)                                                                                                                                                                                                                                                                                                                          |
-| `cwd`                | `string`                                 | Working directory the agent operates in                                                                                                                                                                                                                                                                                                                                             |
-| `workspaceId`        | `string?`                                | Owning workspace id — the single source of ownership. Every agent is stamped with one at create time; legacy cwd-only records are backfilled once by `migrations/backfill-workspace-id.migration.ts` (the only place a cwd→id mapping exists). Runtime code never infers ownership or status from cwd: status is computed per `workspaceId`, and same-cwd siblings are independent. |
-| `createdAt`          | `string` (ISO 8601)                      | Creation timestamp                                                                                                                                                                                                                                                                                                                                                                  |
-| `updatedAt`          | `string` (ISO 8601)                      | Last update timestamp                                                                                                                                                                                                                                                                                                                                                               |
-| `lastActivityAt`     | `string?` (ISO 8601)                     | Last activity timestamp                                                                                                                                                                                                                                                                                                                                                             |
-| `lastUserMessageAt`  | `string?` (ISO 8601)                     | Last user message timestamp                                                                                                                                                                                                                                                                                                                                                         |
-| `title`              | `string?`                                | User-visible title                                                                                                                                                                                                                                                                                                                                                                  |
-| `labels`             | `Record<string, string>`                 | Key-value labels (default `{}`). Paseo uses `paseo.parent-agent-id` for parentage and client-scoped `paseo.open-agent-tab.*` labels while managed subagent tabs are open — see [agent-lifecycle.md](./agent-lifecycle.md)                                                                                                                                                           |
-| `metadata`           | `Record<string, JsonValue>`              | Plugin-owned data (default `{}`). Paseo stores and forwards it and never reads a key. Set at creation or through `agent.metadata.update.request`; `null` in a patch removes a key                                                                                                                                                                                                   |
-| `lastStatus`         | `AgentStatus`                            | One of: `"initializing"`, `"idle"`, `"running"`, `"error"`, `"closed"`. `closed` means the record is resumable but has no live provider runtime; archive remains represented separately by `archivedAt`.                                                                                                                                                                            |
-| `lastModeId`         | `string?`                                | Last active mode ID                                                                                                                                                                                                                                                                                                                                                                 |
-| `config`             | `SerializableConfig?`                    | Agent session configuration (see below)                                                                                                                                                                                                                                                                                                                                             |
-| `runtimeInfo`        | `RuntimeInfo?`                           | Live runtime state (see below)                                                                                                                                                                                                                                                                                                                                                      |
-| `features`           | `AgentFeature[]?`                        | Provider-reported features (toggles/selects)                                                                                                                                                                                                                                                                                                                                        |
-| `sessionMetrics`     | `AgentMetric[]?`                         | Provider-reported session metrics, already formatted for display; the latest report replaces the list                                                                                                                                                                                                                                                                               |
-| `persistence`        | `PersistenceHandle?`                     | Handle for resuming sessions                                                                                                                                                                                                                                                                                                                                                        |
-| `lastError`          | `string?` (nullable)                     | Last error message, if any                                                                                                                                                                                                                                                                                                                                                          |
-| `requiresAttention`  | `boolean?`                               | Whether the agent needs user attention                                                                                                                                                                                                                                                                                                                                              |
-| `attentionReason`    | `"finished" \| "error" \| "permission"?` | Why attention is needed                                                                                                                                                                                                                                                                                                                                                             |
-| `attentionTimestamp` | `string?` (ISO 8601)                     | When attention was flagged                                                                                                                                                                                                                                                                                                                                                          |
-| `internal`           | `boolean?`                               | Whether this is a system-internal agent                                                                                                                                                                                                                                                                                                                                             |
-| `archivedAt`         | `string?` (ISO 8601)                     | Soft-delete timestamp                                                                                                                                                                                                                                                                                                                                                               |
+| Field                | Type                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                 | `string`                                 | UUID, primary key                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `provider`           | `string`                                 | Agent provider (`"claude"`, `"codex"`, `"opencode"`, etc.)                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `cwd`                | `string`                                 | Working directory the agent operates in                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `workspaceId`        | `string?`                                | Owning workspace id — the single source of ownership. Every agent is stamped with one at create time; legacy cwd-only records are backfilled once by `migrations/backfill-workspace-id.migration.ts` (the only place a cwd→id mapping exists). Runtime code never infers ownership or status from cwd: status is computed per `workspaceId`, and same-cwd siblings are independent.                                                                                                  |
+| `createdAt`          | `string` (ISO 8601)                      | Creation timestamp                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `updatedAt`          | `string` (ISO 8601)                      | Last update timestamp                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `lastActivityAt`     | `string?` (ISO 8601)                     | Last activity timestamp                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `lastUserMessageAt`  | `string?` (ISO 8601)                     | Last user message timestamp                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `title`              | `string?`                                | User-visible title                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `labels`             | `Record<string, string>`                 | Key-value labels (default `{}`). Paseo uses `paseo.parent-agent-id` for parentage and client-scoped `paseo.open-agent-tab.*` labels while managed subagent tabs are open — see [agent-lifecycle.md](./agent-lifecycle.md)                                                                                                                                                                                                                                                            |
+| `metadata`           | `Record<string, JsonValue>`              | Plugin-owned data (default `{}`). Paseo stores and forwards it and never reads a key. Set at creation or through `agent.metadata.update.request`; `null` in a patch removes a key                                                                                                                                                                                                                                                                                                    |
+| `lastStatus`         | `AgentStatus`                            | One of: `"initializing"`, `"idle"`, `"running"`, `"error"`, `"closed"`. `closed` means the record is resumable but has no live provider runtime; archive remains represented separately by `archivedAt`.                                                                                                                                                                                                                                                                             |
+| `lastModeId`         | `string?`                                | Last active mode ID                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `config`             | `SerializableConfig?`                    | Agent session configuration (see below)                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `runtimeInfo`        | `RuntimeInfo?`                           | Live runtime state (see below)                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `features`           | `AgentFeature[]?`                        | Provider-reported features (toggles/selects)                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `sessionMetrics`     | `AgentMetric[]?`                         | Provider-reported session metrics, already formatted for display; the latest report replaces the list                                                                                                                                                                                                                                                                                                                                                                                |
+| `persistence`        | `PersistenceHandle?`                     | Handle for resuming sessions                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `lastError`          | `string?` (nullable)                     | Last error message, if any                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `requiresAttention`  | `boolean?`                               | Whether the agent needs user attention                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `attentionReason`    | `"finished" \| "error" \| "permission"?` | Why attention is needed                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `attentionTimestamp` | `string?` (ISO 8601)                     | When attention was flagged                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `internal`           | `boolean?`                               | Whether this is a system-internal agent                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `archivedAt`         | `string?` (ISO 8601)                     | Soft-delete timestamp                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `draft`              | `AgentDraft?`                            | The unsent agent chat composer draft every client shows: `{ text, attachments, revision, updatedAt, updatedBy }`. Only `AgentDraftService` writes it (`AgentStorage.mutateDraft`); every other record write keeps the stored value, because those writers build records from older reads. Last write wins on the writing client's `updatedAt`.                                                                                                                                       |
+| `draftHistory`       | `AgentDraftSnapshot[]?`                  | Up to 10 earlier drafts for "Restore draft", newest first, recorded when the box is emptied, loses more than half its text, or a stale write overwrites another client's text. Pruned past `agents.draftHistoryRetentionDays` (default 7). Cleared with `draft` on archive. An image upload neither field references any more is deleted. File uploads never are: a sent message names their path, and the composer drops them from the draft before that message reaches the agent. |
 
 ### Nested: SerializableConfig
 
@@ -228,6 +235,14 @@ snapshot so a mixed edit can apply its live subset and still name the paths that
       portScript?: string    // executable that receives service/workspace context and prints one TCP port
     }
   },
+  files?: {
+    copies?: {               // see 6b; read on every use, so edits apply without a restart
+      targetServerId?: string // host that keeps copies of files this host's agents mention
+      keepDays?: number      // 30; dropped this long after the last mention
+      maxTotalBytes?: number // 5 GiB; least recently mentioned go first
+      maxFileBytes?: number  // 64 MiB; bigger files are never sent
+    }
+  },
   providers: {
     local: { modelsDir: string }
   },
@@ -309,7 +324,8 @@ Each entry may include a Paseo-tool policy:
 
 Absent `paseoTools`, or absent fields within it, means Paseo tools are enabled and all tools are
 allowed. `enabled: false` disables the provider's Paseo catalog; `disabledTools` lists exact tool
-IDs to omit. The policy covers the core and browser catalog, not the voice-only `speak` tool.
+IDs to omit. `disabledTools` never removes the voice-only `speak` tool; `enabled: false` and
+`daemon.mcp.injectIntoAgents: false` remove it with the rest of the catalog.
 Browser tools also require `daemon.browserTools.enabled` and a connected browser host.
 This policy controls the catalog presented to an agent. It is not an authorization boundary for
 agents that can access the host through a shell.
@@ -529,6 +545,45 @@ history surfaces tolerate transient orphaned workspaces by omitting those rows s
 blank the whole History screen, but mutation paths should repair or remove the orphaned state rather
 than treating it as valid.
 
+### Shared sidebar state
+
+**Path:** `$PASEO_HOME/sidebar-sync.json`
+
+```json
+{
+  "projectOrder": { "order": ["<project view key>", "..."], "updatedAt": 1767225600000 },
+  "workspaceOrder": {
+    "projects": {
+      "<project view key>": {
+        "order": ["<serverId>:<workspaceId>", "..."],
+        "updatedAt": 1767225600000
+      }
+    },
+    "sort": { "value": "manual", "updatedAt": 1767225600000 }
+  }
+}
+```
+
+The sidebar's project order, each project's manual workspace order, and the workspace sort, so
+every device that connects to the host shows the same sidebar. `updatedAt` is the clock of the
+device that made the change, in epoch ms. The daemon keeps the newest stamp; the app does the same
+on its side (`packages/app/src/sidebar-sync/`), so a device that reordered while a host was asleep
+sends its change when the host comes back, and every host converges on the last change.
+
+- `projectOrder` is one entry: a set with an older stamp is answered with what the host holds.
+- `workspaceOrder` stamps each project's order and the sort on their own and merges entry by entry
+  (`mergeSidebarWorkspaceOrder` in `packages/protocol/src/sidebar-workspace-order.ts`), so a reorder
+  in one project never undoes a reorder made in another on a different device. `sort.value` is a
+  plain string, so a sort a newer app adds passes through an older daemon, and an app that does not
+  know it keeps its own.
+
+Projects and workspaces the sidebar appends on its own are not stamped, so a new one on one device
+never overrides a reorder made on another. Device clocks decide ties between hosts; a device whose
+clock runs far ahead wins until someone changes the order after it.
+
+Keys the daemon does not know survive a write, so later shared sidebar state can sit beside these
+and a downgraded daemon keeps it.
+
 ---
 
 ## 6. Push Token Store
@@ -542,6 +597,24 @@ than treating it as valid.
 ```
 
 Simple set of Expo push notification tokens. Loaded with permissive parsing (filters non-string entries). Persisted with atomic temp-file rename.
+
+---
+
+## 6a. Notes
+
+**Path:** `$PASEO_HOME/notes.json`
+
+`{ "notes": Note[] }`, where `Note` is `NoteSchema` in `packages/protocol/src/notes/schemas.ts`. Each entry is parsed on its own at load, so one invalid note is skipped and logged instead of dropping the file. Written atomically on every change. What the fields mean and how waiting-on notes fire is in [notes.md](notes.md).
+
+---
+
+## 6b. File copies
+
+**Path:** `$PASEO_HOME/file-copies/` (written by `FileCopyStore` in `packages/server/src/server/file-copies/store.ts`)
+
+A host keeps copies of files that agents on other hosts named in their final replies, so a phone can open a Mac's file while the Mac sleeps. `manifest.json` maps `(sourceServerId, absolute path)` to a `FileCopyEntry` (`packages/protocol/src/file-copies/schemas.ts`) plus its blob name, and records each source's home directory so a `~/…` path resolves. Blobs are immutable: a new revision is written under a new name and the old blob is deleted after the manifest commits. On start, blobs the manifest does not list and entries whose blob is missing are dropped.
+
+Pruning runs on start, hourly, after every put and on a limit change: expired entries and entries over `maxFileBytes` go first, then the least recently mentioned until the total fits `maxTotalBytes`. A mention of an unchanged revision only refreshes `lastMentionedAt`. How copies arrive is in [connected-hosts.md](connected-hosts.md#file-copies).
 
 ---
 
@@ -596,12 +669,24 @@ tab can commit directory deltas only while the persisted checkpoint revision mat
 read or wrote. If a different tab evicts or rewrites that baseline, the next full directory refresh
 can replace it. Timeline writes do not depend on the directory checkpoint.
 
-The cache is capped at 32 MiB and evicts whole hosts in least-recently-written order. After an
-eviction, only a baseline replacement stores that host's directory again. Mutations queued around
-the eviction are dropped when they are written, so a checkpoint never outlives its rows. Budget
-bookkeeping may scan opaque row sizes during a deferred write, never during host registry startup or
-before a requested cache row can paint. The row store is not encrypted. A cached timeline can contain
-source code, prompts, and tool output; encrypted-at-rest storage is a separate security decision.
+The cache is capped at 64 MiB across every host. Over the cap it drops timeline rows, least recently
+saved first, and keeps every directory row, so the sidebar and every other cached chat still open
+offline. Chats stay in the cache until something newer pushes them out; there is no age limit. A
+real chat tail is 40 KB to 1 MB (about 240 KB on average), so the cap holds roughly 270 chats. Do not
+go back to evicting whole hosts for timeline growth: when one host holds most of the cache, a single
+new chat wipes that host's sidebar and every chat with it, and offline the app shows "Connecting"
+with an empty sidebar.
+
+Save order lives in the timeline payload as `savedAt`, the payload's first key, so startup reads it
+from the row's prefix instead of parsing every payload. Rows without it count as the oldest. Only
+when the directories alone, or the chats in the current write, pass the cap does the cache evict
+whole hosts, oldest written first. After a host eviction, only a baseline replacement stores that
+host's directory again. Mutations queued around the eviction are dropped when they are written, so
+a checkpoint never outlives its rows. The in-memory index keeps each row's key and size, not its
+payload. Budget bookkeeping may scan opaque row sizes during a deferred write, never during host
+registry startup or before a requested cache row can paint. The row store is not encrypted. A cached
+timeline can contain source code, prompts, and tool output; encrypted-at-rest storage is a separate
+security decision.
 
 ### Saved hosts
 
@@ -635,14 +720,19 @@ can't read, and write them back on every save. A value that isn't a JSON array i
 
 Stores binary attachment blobs keyed by attachment ID.
 
+Every store keeps the picture as attached. Resizing happens only when a message is sent (`encodeAttachmentsForSend` in `packages/app/src/attachments/service.ts`): each picture goes to 2000 px on its long side as JPEG, so a message with many phone photos fits the 100 MiB WebSocket message limit, and previews still read the full picture. A send whose pictures still exceed the limit is refused in the composer before anything goes on the wire.
+
+The "Send original size" row in the composer's attach menu skips the resize for the next message that carries pictures, then turns itself off. The composer marks the outgoing copies with `sendOriginal`, not the stored metadata, so the choice survives the queue and parent-managed sends without any of them taking a flag.
+
 ### AttachmentMetadata
 
-| Field         | Type      | Description                    |
-| ------------- | --------- | ------------------------------ |
-| `id`          | `string`  | Unique attachment ID           |
-| `mimeType`    | `string`  | MIME type                      |
-| `storageType` | `string`  | Storage backend identifier     |
-| `storageKey`  | `string`  | Key within the storage backend |
-| `createdAt`   | `number`  | Epoch ms                       |
-| `fileName`    | `string?` | Original filename              |
-| `byteSize`    | `number?` | Size in bytes                  |
+| Field          | Type       | Description                                 |
+| -------------- | ---------- | ------------------------------------------- |
+| `id`           | `string`   | Unique attachment ID                        |
+| `mimeType`     | `string`   | MIME type                                   |
+| `storageType`  | `string`   | Storage backend identifier                  |
+| `storageKey`   | `string`   | Key within the storage backend              |
+| `createdAt`    | `number`   | Epoch ms                                    |
+| `fileName`     | `string?`  | Original filename                           |
+| `byteSize`     | `number?`  | Size in bytes                               |
+| `sendOriginal` | `boolean?` | Outgoing copies only: send at original size |

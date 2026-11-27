@@ -63,7 +63,7 @@ test("previous and next traverse every visible workspace while digit shortcuts s
     });
 
     await test.step("the ninth digit shortcut still selects the ninth workspace", async () => {
-      await page.keyboard.press("Alt+9");
+      await page.keyboard.press("Control+Alt+9");
       await expectSidebarWorkspaceSelected({
         page,
         serverId: getServerId(),
@@ -85,7 +85,7 @@ async function expectCollapsedWorkspaceShortcuts(page: Page, order: string[]) {
   await expectSidebarWorkspaceSelected({ page, serverId: getServerId(), workspaceId: order[8] });
   await switchWorkspaceViaSidebar({ page, serverId: getServerId(), workspaceId: order[0] });
   await expect(rows).toHaveCount(7);
-  await page.keyboard.press("Alt+9");
+  await page.keyboard.press("Control+Alt+9");
   await expect(page).toHaveURL(new RegExp(`/workspace/${order[8]}$`));
   await expectSidebarWorkspaceSelected({ page, serverId: getServerId(), workspaceId: order[8] });
   await expect(rows).toHaveCount(8);

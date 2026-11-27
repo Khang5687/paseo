@@ -66,6 +66,7 @@ function ProviderSubagentChildTrack({
       <SubagentsTrack
         serverId={serverId}
         rows={rows}
+        waits={false}
         onOpenSubagent={NOOP_SUBAGENT}
         onOpenProviderSubagent={onOpenProviderSubagent}
         sheetTabFor={sheetTabFor}

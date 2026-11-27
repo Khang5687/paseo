@@ -1,0 +1,8 @@
+{
+  "pr": 199,
+  "title": "feat(server): keep live voice working while the agent runs",
+  "tests": [
+    "packages/server/src/server/session/voice/voice-session.test.ts",
+    "packages/server/src/server/session.test.ts"
+  ]
+}

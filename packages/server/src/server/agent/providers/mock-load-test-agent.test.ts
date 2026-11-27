@@ -143,6 +143,25 @@ describe("MockLoadTestAgentClient", () => {
     expect(events.map((event) => event.type)).toEqual(["turn_canceled"]);
   });
 
+  test("can fail the turn without ever echoing the user message", async () => {
+    vi.useFakeTimers();
+    const client = new MockLoadTestAgentClient();
+    const session = await client.createSession({
+      provider: "mock",
+      cwd: process.cwd(),
+      model: "ten-second-stream",
+    });
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await session.startTurn("Fail synthetic turn before user message.", {
+      clientMessageId: "client-message-1",
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(events.map((event) => event.type)).toEqual(["turn_started", "turn_failed"]);
+  });
+
   test("can emit the provider user-message echo before accepting the turn", async () => {
     const client = new MockLoadTestAgentClient();
     const session = await client.createSession({
@@ -568,6 +587,31 @@ describe("MockLoadTestAgentClient", () => {
         .filter((item) => item.type === "tool_call" && item.status === "completed")
         .map((item) => (item.type === "tool_call" ? item.name : ""));
       expect(runningTools).toEqual(expect.arrayContaining(["read", "grep", "edit", "bash"]));
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
+
+  test("a synthetic background job keeps running after the turn ends", async () => {
+    const workdir = mkdtempSync(join(tmpdir(), "paseo-mock-load-test-"));
+    try {
+      const manager = new AgentManager({
+        clients: { mock: new MockLoadTestAgentClient() },
+        logger: createTestLogger(),
+      });
+      const agent = await manager.createAgent(
+        { provider: "mock", cwd: workdir, model: "e2e-fast-stream" },
+        undefined,
+        { workspaceId: undefined },
+      );
+
+      await manager.runAgent(agent.id, "Start a synthetic background job.");
+
+      // One provider job, and it runs: the summary leaves runningCount out when it equals count.
+      await vi.waitFor(() =>
+        expect(manager.getAgentBackgroundWorkSummary(agent.id)).toEqual({ count: 1 }),
+      );
+      expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }

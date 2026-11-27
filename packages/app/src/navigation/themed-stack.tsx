@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { DefaultTheme, Stack, ThemeProvider, type Theme } from "expo-router";
 import {
   isValidElement,
   type ComponentProps,
@@ -9,6 +9,16 @@ import {
 } from "react";
 import { withUnistyles } from "react-native-unistyles";
 import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary";
+
+// React Navigation paints its own container with `colors.background` (#f2f2f2 by default) under
+// every screen. Screens paint their own background through `contentStyle`, and skins need the
+// container clear so the shell backdrop shows through. Import the theme API from `expo-router`:
+// it vendors its own React Navigation, so a provider from `@react-navigation/native` is a
+// different context the stack never reads, and the opaque #f2f2f2 comes back over the skin.
+const NAVIGATION_THEME: Theme = {
+  ...DefaultTheme,
+  colors: { ...DefaultTheme.colors, background: "transparent" },
+};
 
 type NativeStackNavigationOptions = Exclude<
   NonNullable<ComponentProps<typeof Stack>["screenOptions"]>,
@@ -61,12 +71,14 @@ function ThemedStackBase({
   );
 
   return (
-    <Stack screenOptions={themedScreenOptions} screenLayout={screenLayout}>
-      {children}
-    </Stack>
+    <ThemeProvider value={NAVIGATION_THEME}>
+      <Stack screenOptions={themedScreenOptions} screenLayout={screenLayout}>
+        {children}
+      </Stack>
+    </ThemeProvider>
   );
 }
 
 export const ThemedStack = withUnistyles(ThemedStackBase, (theme) => ({
-  backgroundColor: theme.colors.surface0,
+  backgroundColor: theme.colors.canvas,
 }));

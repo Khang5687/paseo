@@ -1,0 +1,8 @@
+{
+  "pr": 11,
+  "title": "feat(desktop): confirm Cmd+Q with a hold-or-press-twice toast",
+  "tests": [
+    "packages/desktop/src/features/menu.test.ts",
+    "packages/desktop/src/features/quit-confirm/policy.test.ts"
+  ]
+}

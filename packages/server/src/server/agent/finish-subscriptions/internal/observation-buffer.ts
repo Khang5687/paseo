@@ -1,7 +1,7 @@
 import type { WaitForFinishResult } from "@getpaseo/client/internal/daemon-client";
 
 export type FinishObservationResult = WaitForFinishResult & {
-  reason?: "was canceled" | "host unreachable" | "host removed";
+  reason?: "was canceled" | "host removed";
   /** The idle child's background work changed without a turn ending. */
   workChanged?: true;
 };

@@ -1,0 +1,5 @@
+{
+  "pr": 166,
+  "title": "chore(scripts): run the fork-check e2e step beside static and unit, pick workers from free memory",
+  "tests": ["scripts/fork-lib.test.mjs"]
+}

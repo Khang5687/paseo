@@ -1,0 +1,10 @@
+{
+  "pr": 74,
+  "title": "feat(app): run shell code blocks from chat in a host terminal",
+  "tests": [
+    "packages/app/src/code-run/detect.test.ts",
+    "packages/app/src/code-run/command.test.ts",
+    "packages/app/src/components/markdown/renderer.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/code-run.spec.ts"]
+}

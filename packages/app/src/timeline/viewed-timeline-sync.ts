@@ -493,6 +493,7 @@ export function createViewedTimelineOwner(input: {
   replica: TimelineReplica;
   replaceDemandedAgentIds: (agentIds: string[]) => void;
   drainQueuedAgentMessage: (agentId: string) => void;
+  liveScope: TimelineLiveScope;
   applyTurnLiveness: (agentId: string, transitions: readonly TurnLivenessTransition[]) => void;
   ports: ViewedTimelineOwnerPorts;
 }): ViewedTimelineOwner {
@@ -502,41 +503,44 @@ export function createViewedTimelineOwner(input: {
   // Active chats stay resident while hidden so switching back needs no fetch. An archived
   // chat is resident only while it is shown, as when it is open from History.
   const isResident = (agentId: string) => sync.isVisible(agentId) || !isArchived(agentId);
-  const sync = createViewedTimelineSync({
-    ...input.ports,
-    isArchived,
-    fetchLatestTail: async (agentId) => {
-      forcedTailReplacements.add(agentId);
-      try {
-        return await input.ports.fetchLatestTail(agentId);
-      } finally {
-        forcedTailReplacements.delete(agentId);
-      }
+  const sync = createViewedTimelineSync(
+    {
+      ...input.ports,
+      isArchived,
+      fetchLatestTail: async (agentId) => {
+        forcedTailReplacements.add(agentId);
+        try {
+          return await input.ports.fetchLatestTail(agentId);
+        } finally {
+          forcedTailReplacements.delete(agentId);
+        }
+      },
+      prepare: async (agentId) => {
+        await input.replica.prepare(agentId);
+        // A cache read that lands after its archived chat was left paints a chat nobody shows.
+        releaseHiddenArchivedTimelines();
+      },
+      readCursor: (agentId) => input.replica.readCursor(agentId) ?? input.ports.readCursor(agentId),
+      replaceDemandedAgentIds: input.replaceDemandedAgentIds,
+      applyCurrentTimeline: (agentId) => {
+        const cursor = input.replica.readCursor(agentId) ?? input.ports.readCursor(agentId);
+        if (!cursor) return;
+        const accepted = applyAuthoritativeTimelineResponse({
+          serverId: input.serverId,
+          payload: buildCurrentTimelinePage(agentId, cursor),
+          cachedCursor: input.replica.readRange(agentId),
+          recoverGap: (id, gapCursor) => sync.recoverGap(id, gapCursor),
+          drainQueuedAgentMessage: input.drainQueuedAgentMessage,
+        });
+        if (accepted) input.replica.timelineUpdated(agentId);
+      },
+      onCatchUpEnded: (agentId) =>
+        useCreateFlowStore.getState().clearByAgent({ serverId: input.serverId, agentId }),
+      onCatchUpOwed: (agentId) => input.replica.catchUpOwed(agentId),
+      onCatchUpSettled: (agentId) => input.replica.catchUpSettled(agentId),
     },
-    prepare: async (agentId) => {
-      await input.replica.prepare(agentId);
-      // A cache read that lands after its archived chat was left paints a chat nobody shows.
-      releaseHiddenArchivedTimelines();
-    },
-    readCursor: (agentId) => input.replica.readCursor(agentId) ?? input.ports.readCursor(agentId),
-    replaceDemandedAgentIds: input.replaceDemandedAgentIds,
-    applyCurrentTimeline: (agentId) => {
-      const cursor = input.replica.readCursor(agentId) ?? input.ports.readCursor(agentId);
-      if (!cursor) return;
-      const accepted = applyAuthoritativeTimelineResponse({
-        serverId: input.serverId,
-        payload: buildCurrentTimelinePage(agentId, cursor),
-        cachedCursor: input.replica.readRange(agentId),
-        recoverGap: (id, gapCursor) => sync.recoverGap(id, gapCursor),
-        drainQueuedAgentMessage: input.drainQueuedAgentMessage,
-      });
-      if (accepted) input.replica.timelineUpdated(agentId);
-    },
-    onCatchUpEnded: (agentId) =>
-      useCreateFlowStore.getState().clearByAgent({ serverId: input.serverId, agentId }),
-    onCatchUpOwed: (agentId) => input.replica.catchUpOwed(agentId),
-    onCatchUpSettled: (agentId) => input.replica.catchUpSettled(agentId),
-  });
+    { liveScope: input.liveScope },
+  );
   const streamQueue = createSessionAgentStreamReducerQueue({
     serverId: input.serverId,
     setAgentStreamState: (...args) => useSessionStore.getState().setAgentStreamState(...args),
@@ -696,7 +700,34 @@ function sameAgentIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((agentId, index) => agentId === right[index]);
 }
 
-export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): ViewedTimelineMembership {
+/**
+ * Which chats hold a live timeline subscription.
+ *
+ * - `opened` (desktop and browser): every chat this session opened that still has a tab, so
+ *   switching tabs never waits on a catch-up.
+ * - `visible` (phones and tablets): only the chats on screen, and none while the app is not
+ *   active. Each live update costs decryption, parsing and a store commit, which a phone pays in
+ *   battery for chats nobody is looking at. A chat that leaves the set catches up from its cached
+ *   cursor when it is shown again.
+ */
+export type TimelineLiveScope = "opened" | "visible";
+
+export function resolveLiveTimelineAgentIds(input: {
+  scope: TimelineLiveScope;
+  active: boolean;
+  openedAgentIds: string[];
+  visibleAgentIds: string[];
+}): string[] {
+  if (input.scope === "opened") {
+    return normalizeAgentIds([...input.openedAgentIds, ...input.visibleAgentIds]);
+  }
+  return input.active ? normalizeAgentIds(input.visibleAgentIds) : [];
+}
+
+export function createViewedTimelineSync(
+  ports: ViewedTimelineSyncPorts,
+  policy: { liveScope: TimelineLiveScope } = { liveScope: "opened" },
+): ViewedTimelineMembership {
   const sources = new Map<string, string[]>();
   const catchUps = new Map<string, CatchUpState>();
   const catchUpGenerations = new Map<string, number>();
@@ -736,8 +767,8 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   let freshnessCheckOwed = false;
   // Chats this session has opened. Visibility is the only way in, so an agent is never
   // subscribed — and never resumed on the daemon — until the user actually opens it.
-  // Membership then survives hiding, workspace switches, backgrounding and reconnect;
-  // only closing the tab or ending the session takes it out.
+  // Under the `opened` scope, membership then survives hiding, workspace switches,
+  // backgrounding and reconnect; only closing the tab or ending the session takes it out.
   let openedAgentIds: string[] = [];
 
   const visibleAgentIds = () => normalizeAgentIds([...sources.values()].flat());
@@ -1108,7 +1139,8 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
 
   const commitDesiredMembership = (
     nextDesired: string[],
-    options: { resetCatchUpStatus?: boolean } = {},
+    // A chat released because the app went inactive still owes its catch-up on return.
+    options: { resetCatchUpStatus?: boolean; inactive?: boolean } = {},
   ) => {
     let statusChanged = false;
     if (options.resetCatchUpStatus) {
@@ -1150,7 +1182,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     desired = nextDesired;
     ports.replaceDemandedAgentIds(desired);
     membershipGeneration += 1;
-    for (const agentId of released) ports.onCatchUpEnded(agentId);
+    if (!options.inactive) for (const agentId of released) ports.onCatchUpEnded(agentId);
     notifyListeners();
     void reconcileMembership();
   };
@@ -1168,7 +1200,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     return isDesired(agentId) ? "pending" : "checking";
   };
 
-  const publishVisibleMembership = () => {
+  const publishVisibleMembership = (commit: { inactive?: boolean } = {}) => {
     const visible = visibleAgentIds();
     const kept = openedAgentIds.filter(
       (agentId) => visible.includes(agentId) || !ports.isArchived(agentId),
@@ -1181,7 +1213,15 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       }
       openedAgentIds = kept;
     }
-    commitDesiredMembership(normalizeAgentIds([...openedAgentIds, ...visible]));
+    commitDesiredMembership(
+      resolveLiveTimelineAgentIds({
+        scope: policy.liveScope,
+        active,
+        openedAgentIds,
+        visibleAgentIds: visible,
+      }),
+      commit,
+    );
   };
 
   return {
@@ -1229,7 +1269,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     setActive(nextActive) {
       if (active === nextActive) return;
       active = nextActive;
-      publishVisibleMembership();
+      publishVisibleMembership({ inactive: !active });
       if (!active) {
         startAcknowledgedCatchUps();
         return;

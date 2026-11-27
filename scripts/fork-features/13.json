@@ -1,0 +1,21 @@
+{
+  "pr": 13,
+  "title": "feat(app): background skins",
+  "tests": [
+    "packages/app/src/plugins/buttons/model.test.ts",
+    "packages/app/src/plugins/command-center/contributions.test.ts",
+    "packages/app/src/plugins/evaluate.test.ts",
+    "packages/app/src/plugins/installation-provider.test.tsx",
+    "packages/app/src/plugins/registry-lifecycle.test.ts",
+    "packages/app/src/plugins/registry-requirements.test.ts",
+    "packages/app/src/plugins/sidebar-groups.test.ts",
+    "packages/app/src/plugins/surface-contribution.test.ts",
+    "packages/app/src/plugins/theme.test.ts",
+    "packages/app/src/plugins/timeline/model.test.ts",
+    "packages/app/src/plugins/workspace-panels/resolution.test.ts",
+    "packages/app/src/screens/settings/appearance/background/selection.test.ts",
+    "packages/app/src/skins/contrast.test.ts",
+    "packages/app/src/skins/image-limits.test.ts"
+  ],
+  "e2e": ["packages/app/e2e/browser/skins.spec.ts"]
+}

@@ -71,13 +71,14 @@ function setup(options: { registerThrows?: boolean } = {}) {
     respondToPermission: async (_agentId, requestId, response) => {
       permissionResponses.push({ requestId, response });
     },
-    sendSpokenInput: async (_agentId, text) => {
+    sendSpokenInput: async (_agentId, text, _options) => {
       spokenInput.push(text);
     },
     interruptAgentIfRunning: async (agentId) => {
       interrupted.push(agentId);
     },
-    hasActiveAgentRun: () => true,
+    waitForAgentIdle: async () => {},
+    hasActiveAgentRun: () => false,
   };
   const voice = new VoiceSession({
     host,
@@ -208,13 +209,13 @@ describe("VoiceSession question read-back", () => {
     await t.voice.cleanup();
   });
 
-  test("without a pending question, speaking still interrupts the running agent", async () => {
+  test("without a pending question, the spoken reply goes to the agent as chat", async () => {
     const t = setup();
     await t.voice.handleSetVoiceMode(true, AGENT_ID);
 
     await t.say("stop that");
 
-    expect(t.interrupted).toEqual([AGENT_ID]);
+    expect(t.interrupted).toEqual([]);
     expect(t.spokenInput).toEqual(["stop that"]);
     await t.voice.cleanup();
   });
@@ -379,7 +380,7 @@ describe("VoiceSession permission read-back", () => {
 
     await t.say("stop that");
 
-    expect(t.interrupted).toEqual([AGENT_ID]);
+    expect(t.interrupted).toEqual([]);
     expect(t.spokenInput).toEqual(["stop that"]);
     await t.voice.cleanup();
   });

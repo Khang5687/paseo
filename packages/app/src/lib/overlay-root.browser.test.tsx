@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hasOpenDomPopover, keyBelongsToDomPopover } from "@/keyboard/internal/dom-popover";
+import { overlays } from "@/keyboard/internal/overlays";
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -74,7 +75,63 @@ describe("useOverlayRegistration in the browser", () => {
 
     expect(openerFocusCalls).toBe(1);
   });
+
+  it("keeps the registration and focus when a new ref callback reattaches the same scope", async () => {
+    // Unistyles' web elements build a new ref callback on every render, so React detaches the
+    // scope (ref(null)) and reattaches the same node (ref(node)) within one commit.
+    function render(revision: number): void {
+      flushSync(() => {
+        root.render(<InlineRefHarness revision={revision} />);
+      });
+    }
+
+    render(0);
+    await nextFrame();
+    const second = document.querySelector<HTMLInputElement>('[data-testid="overlay-second"]');
+    second?.focus();
+    expect(document.activeElement).toBe(second);
+
+    let registryChanges = 0;
+    const unsubscribe = overlays.subscribe(() => {
+      registryChanges += 1;
+    });
+    try {
+      // A momentary blur leaves focus on the body; a re-render must not pull it to the first field.
+      second?.blur();
+      render(1);
+      render(2);
+      await Promise.resolve();
+      await nextFrame();
+
+      expect(document.activeElement).toBe(document.body);
+      expect(registryChanges).toBe(0);
+    } finally {
+      unsubscribe();
+    }
+  });
 });
+
+// Mirrors Unistyles' web elements, which wrap the caller's ref in a new callback every render.
+function wrapRef(setScope: (node: unknown) => void): RefCallback<HTMLDivElement> {
+  return (node) => {
+    setScope(node);
+  };
+}
+
+function InlineRefHarness({ revision }: { revision: number }) {
+  const setScope = useOverlayRegistration({
+    keys: ["Escape"],
+    active: true,
+    layer: 20,
+    onKeyDown: () => false,
+  });
+  return (
+    <div data-revision={revision} ref={wrapRef(setScope)} tabIndex={-1}>
+      <input data-testid="overlay-first" />
+      <input data-testid="overlay-second" />
+    </div>
+  );
+}
 
 describe("hasOpenDomPopover", () => {
   afterEach(() => {

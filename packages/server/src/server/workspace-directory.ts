@@ -7,6 +7,7 @@ import type {
   WorkspaceDescriptorPayload,
 } from "./messages.js";
 import {
+  countRunningBackgroundWork,
   deriveAgentStateBucket,
   isAgentRunning,
   getWorkspaceStateBucketPriority,
@@ -275,7 +276,7 @@ export class WorkspaceDirectory {
         !agent.background &&
         this.deps.isProviderVisibleToClient(agent.provider),
     );
-    this.applyAgentBucketContributions({
+    const waitSources = this.applyAgentBucketContributions({
       activeAgents,
       descriptorsByWorkspaceId,
     });
@@ -284,13 +285,14 @@ export class WorkspaceDirectory {
     const activityEntriesByWorkspaceId = this.applyTerminalContributions(
       terminalContributions,
       descriptorsByWorkspaceId,
+      waitSources,
     );
-    this.applyProviderSubagentContributions({
+    this.applySubagentContributions({
       activeAgents,
       providerSubagentActivity,
       descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
     });
+    applyWorkspaceWaiting(descriptorsByWorkspaceId, waitSources);
 
     const contributingAgentsByWorkspaceId = groupAgentsByWorkspaceId(
       activeAgents,
@@ -323,19 +325,38 @@ export class WorkspaceDirectory {
     return descriptorsByWorkspaceId;
   }
 
-  private applyProviderSubagentContributions(params: {
+  // Count running subagents per workspace: same-workspace Paseo descendants and
+  // provider-native subagents, both owned by the nearest workspace root. The
+  // count never changes the workspace status: the status follows the root
+  // agents, so a root whose turn ended reads `done` (or waits on the user)
+  // while its subagents keep working, and the client shows the count beside it.
+  private applySubagentContributions(params: {
     activeAgents: AgentSnapshotPayload[];
     providerSubagentActivity: ProviderSubagentWorkspaceActivity[];
     descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>;
-    activityEntriesByWorkspaceId: Map<string, WorkspaceBucketTimestampEntry[]>;
   }): void {
-    const {
-      activeAgents,
-      providerSubagentActivity,
-      descriptorsByWorkspaceId,
-      activityEntriesByWorkspaceId,
-    } = params;
+    const { activeAgents, providerSubagentActivity, descriptorsByWorkspaceId } = params;
     const activeAgentsById = new Map(activeAgents.map((agent) => [agent.id, agent] as const));
+    const runningCountByWorkspaceId = new Map<string, number>();
+    const countRunning = (workspaceId: string | undefined) => {
+      if (!workspaceId || !descriptorsByWorkspaceId.has(workspaceId)) {
+        return;
+      }
+      runningCountByWorkspaceId.set(
+        workspaceId,
+        (runningCountByWorkspaceId.get(workspaceId) ?? 0) + 1,
+      );
+    };
+
+    for (const agent of activeAgents) {
+      if (!isAgentRunning(agent)) {
+        continue;
+      }
+      const workspaceAgent = resolveWorkspaceRootAgent(agent, activeAgentsById);
+      if (workspaceAgent && workspaceAgent.id !== agent.id) {
+        countRunning(workspaceAgent.workspaceId);
+      }
+    }
 
     for (const subagent of providerSubagentActivity) {
       if (subagent.status !== "running") {
@@ -345,57 +366,48 @@ export class WorkspaceDirectory {
       if (!parent) {
         continue;
       }
-      const workspaceAgent = resolveWorkspaceRootAgent(parent, activeAgentsById);
-      const workspaceId = workspaceAgent?.workspaceId;
-      if (!workspaceId) {
-        continue;
-      }
+      countRunning(resolveWorkspaceRootAgent(parent, activeAgentsById)?.workspaceId);
+    }
+
+    for (const [workspaceId, count] of runningCountByWorkspaceId) {
       const descriptor = descriptorsByWorkspaceId.get(workspaceId);
       if (!descriptor) {
         continue;
       }
-      if (
-        getWorkspaceStateBucketPriority("running") <
-        getWorkspaceStateBucketPriority(descriptor.status)
-      ) {
-        descriptor.status = "running";
-      }
-      const entries = activityEntriesByWorkspaceId.get(workspaceId) ?? [];
-      entries.push({ bucket: "running", changedAtIso: subagent.updatedAt });
-      activityEntriesByWorkspaceId.set(workspaceId, entries);
+      descriptor.runningSubagentCount = count;
     }
   }
 
-  // Aggregate each agent's state bucket into its owning workspace descriptor,
-  // keeping the highest-priority bucket. A record's owner IS its `workspaceId`;
-  // status never fans out to same-cwd siblings. A subagent in another workspace
-  // is a root for that workspace. Same-workspace descendants contribute only
-  // running activity to the nearest ancestor in that workspace.
+  // Aggregate each workspace root agent's state bucket into its owning workspace
+  // descriptor, keeping the highest-priority bucket. A record's owner IS its
+  // `workspaceId`; status never fans out to same-cwd siblings. A subagent in
+  // another workspace is a root for that workspace. Same-workspace descendants
+  // are handled by `applySubagentContributions`.
   private applyAgentBucketContributions(params: {
     activeAgents: AgentSnapshotPayload[];
     descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>;
-  }): void {
+  }): Map<string, WorkspaceWaitSources> {
     const { activeAgents, descriptorsByWorkspaceId } = params;
     const activeAgentsById = new Map(activeAgents.map((agent) => [agent.id, agent] as const));
+    const waitSources = new Map<string, WorkspaceWaitSources>();
 
     for (const agent of activeAgents) {
       const workspaceAgent = resolveWorkspaceRootAgent(agent, activeAgentsById);
       if (!workspaceAgent) {
         continue;
       }
-      const isWorkspaceRoot = workspaceAgent.id === agent.id;
-      if (!isWorkspaceRoot && !isAgentRunning(agent)) {
+      if (workspaceAgent.id !== agent.id) {
         continue;
       }
-      const bucket = isWorkspaceRoot
-        ? deriveAgentStateBucket({
-            status: agent.status,
-            pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
-            requiresAttention: agent.requiresAttention,
-            attentionReason: agent.attentionReason ?? null,
-            backgroundWork: agent.backgroundWork,
-          })
-        : "running";
+      const bucket = deriveAgentStateBucket({
+        status: agent.status,
+        pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
+        requiresAttention: agent.requiresAttention,
+        attentionReason: agent.attentionReason ?? null,
+        awaitingAnswer: agent.awaitingAnswer,
+        openQuestionCount: agent.openQuestions?.length,
+        backgroundWork: agent.backgroundWork,
+      });
 
       const workspaceId = workspaceAgent.workspaceId;
       if (!workspaceId) {
@@ -410,7 +422,14 @@ export class WorkspaceDirectory {
       ) {
         existing.status = bucket;
       }
+      if (bucket === "running") {
+        const sources = waitSourcesFor(waitSources, workspaceId);
+        // A settled agent is running only while its background jobs run: it waits on them.
+        if (agent.status === "running") sources.working = true;
+        else sources.backgroundTaskCount += countRunningBackgroundWork(agent.backgroundWork);
+      }
     }
+    return waitSources;
   }
 
   // Apply working terminal contributions to descriptor statuses and seed the
@@ -424,6 +443,7 @@ export class WorkspaceDirectory {
       activity: TerminalActivity | null;
     }>,
     descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>,
+    waitSources: Map<string, WorkspaceWaitSources>,
   ): Map<string, WorkspaceBucketTimestampEntry[]> {
     const activityEntriesByWorkspaceId = new Map<string, WorkspaceBucketTimestampEntry[]>();
     for (const { workspaceId, activity } of terminalContributions) {
@@ -440,6 +460,9 @@ export class WorkspaceDirectory {
         getWorkspaceStateBucketPriority(bucket) < getWorkspaceStateBucketPriority(existing.status)
       ) {
         existing.status = bucket;
+      }
+      if (bucket === "running") {
+        waitSourcesFor(waitSources, workspaceId).working = true;
       }
       const entries = activityEntriesByWorkspaceId.get(workspaceId) ?? [];
       entries.push({ bucket, changedAtIso: new Date(activity.changedAt).toISOString() });
@@ -543,6 +566,8 @@ export class WorkspaceDirectory {
           pendingPermissionCount: agent.pendingPermissions?.length ?? 0,
           requiresAttention: agent.requiresAttention,
           attentionReason: agent.attentionReason ?? null,
+          awaitingAnswer: agent.awaitingAnswer,
+          openQuestionCount: agent.openQuestions?.length,
           backgroundWork: agent.backgroundWork,
         });
         return derived === winningBucket;
@@ -552,6 +577,11 @@ export class WorkspaceDirectory {
         // the most accurate "entered current status" signal.
         if (agent.attentionTimestamp) {
           return agent.attentionTimestamp;
+        }
+        // A read chat still waits on its open questions since the newest was asked.
+        const lastAsked = agent.openQuestions?.at(-1)?.askedAt;
+        if (winningBucket === "needs_input" && lastAsked) {
+          return lastAsked;
         }
         // Fall back to updatedAt as a general proxy for recent activity.
         return agent.updatedAt;
@@ -597,6 +627,8 @@ export class WorkspaceDirectory {
         projectDisplayName: resolveProjectDisplayName(project),
         projectCustomName: project.customName ?? null,
         projectCustomIconRevision: project.customIconRevision ?? null,
+        // Undefined for a project never snoozed, so the field stays off the wire.
+        projectSnoozedUntil: project.snoozedUntil,
         projectRootPath: project.rootPath,
         projectKind: project.kind,
       }));
@@ -745,6 +777,50 @@ function groupAgentsByWorkspaceId(
     byWorkspaceId.set(workspaceId, entries);
   }
   return byWorkspaceId;
+}
+
+/** What a workspace's running status comes from: its own work, or jobs it waits on. */
+interface WorkspaceWaitSources {
+  /** A root agent's turn or a terminal agent is working. */
+  working: boolean;
+  /** Running background jobs of root agents whose turn ended. */
+  backgroundTaskCount: number;
+}
+
+function waitSourcesFor(
+  waitSources: Map<string, WorkspaceWaitSources>,
+  workspaceId: string,
+): WorkspaceWaitSources {
+  let sources = waitSources.get(workspaceId);
+  if (!sources) {
+    sources = { working: false, backgroundTaskCount: 0 };
+    waitSources.set(workspaceId, sources);
+  }
+  return sources;
+}
+
+// A workspace waits when nothing in it works and nothing is for the user, yet background jobs or
+// subagents still run for it. Running from jobs alone, or done/attention with subagents running,
+// is waiting; a working turn or terminal, a question, a permission or a failure wins over it.
+// `status` stays as it was, so clients that predate `waiting` keep their old look.
+function applyWorkspaceWaiting(
+  descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>,
+  waitSources: ReadonlyMap<string, WorkspaceWaitSources>,
+): void {
+  for (const [workspaceId, descriptor] of descriptorsByWorkspaceId) {
+    const sources = waitSources.get(workspaceId);
+    const subagentCount = descriptor.runningSubagentCount ?? 0;
+    const waits =
+      descriptor.status === "running"
+        ? sources !== undefined && !sources.working && sources.backgroundTaskCount > 0
+        : (descriptor.status === "attention" || descriptor.status === "done") && subagentCount > 0;
+    if (waits) {
+      descriptor.waiting = {
+        backgroundTaskCount: sources?.backgroundTaskCount ?? 0,
+        subagentCount,
+      };
+    }
+  }
 }
 
 export function resolveWorkspaceRootAgent(

@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from "react";
+import { useAppSettings } from "@/hooks/use-settings";
+import { addSavedFile } from "@/offline-files/saver";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { useDownloadStore } from "@/stores/download-store";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
@@ -31,12 +33,14 @@ export function useFileDownload({
     () => workspaceId?.trim() || normalizedWorkspaceRoot,
     [normalizedWorkspaceRoot, workspaceId],
   );
-  const { requestFileDownloadToken, requestFileBytes } = useFileExplorerActions({
+  const { requestFileDownloadToken } = useFileExplorerActions({
     serverId,
     workspaceId,
     workspaceRoot: normalizedWorkspaceRoot,
   });
   const startDownload = useDownloadStore((state) => state.startDownload);
+  const { settings, updateSettings } = useAppSettings();
+  const { downloadAskWhere, downloadFolderUri } = settings;
 
   return useCallback(
     ({ fileName, path }) => {
@@ -51,15 +55,24 @@ export function useFileDownload({
         daemonProfile,
         activeConnectionId: getHostRuntimeStore().getSnapshot(serverId)?.activeConnectionId ?? null,
         requestFileDownloadToken: (targetPath) => requestFileDownloadToken(targetPath),
-        readFile: requestFileBytes,
+        saveCopy: (onProgress) =>
+          addSavedFile({ serverId, workspaceRoot: normalizedWorkspaceRoot, path, onProgress }),
+        destination: {
+          askWhere: downloadAskWhere,
+          folderUri: downloadFolderUri,
+          onFolderPicked: (folderUri) => void updateSettings({ downloadFolderUri: folderUri }),
+        },
       });
     },
     [
       daemonProfile,
-      requestFileBytes,
+      downloadAskWhere,
+      downloadFolderUri,
+      normalizedWorkspaceRoot,
       requestFileDownloadToken,
       serverId,
       startDownload,
+      updateSettings,
       workspaceScopeId,
     ],
   );

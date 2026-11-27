@@ -18,8 +18,19 @@ Paseo 对语音提供一流的支持，可用于口述输入，以及与编程�
 
 - 语音输入输出：每个功能各自的 STT 和 TTS Provider（`local` 或 `openai`）
 - 本地语音运行时：默认在 CPU 上执行的 ONNX 模型
-- 语音 LLM 编排：使用你配置的 Provider（`claude`、`codex` 或 `opencode`）的隐藏 Agent 会话
-- 工具路径：用于语音工具和 Agent 控制的 MCP stdio 桥
+- 语音模式对话：聊天自己的 Agent，以语音提示词重新加载。它通过调用 `speak` 工具出声回答。
+- 工具路径：`speak` 属于 [Paseo 工具](/docs/mcp)。有原生工具接口的 Provider（OMP）直接获得它；其他 Provider 通过 Paseo MCP 服务器获得它。
+
+语音模式需要打开 **启用 Paseo tools**（**Settings → Host → Tools & prompts**，或 `daemon.mcp.injectIntoAgents: true`）。工具注入默认关闭。关闭时，语音模式仍能启动，你的语音也仍会送达 Agent，但 Agent 没有 `speak` 工具，所以它只在聊天里回复，不会出声。设置了 `paseoTools.enabled: false` 的 Provider 也有同样的问题。
+
+## Agent 工作时说话 {#talking-while-the-agent-works}
+
+Agent 运行期间也可以开启语音模式，并随时说话。
+
+- 你一开口，正在播放的语音回复会立刻停止，Agent 继续工作。
+- 你说完后，消息会加入 Agent 正在进行的轮次，与使用 **引导（Steer）** 发送方式输入的文字消息相同。如果 Agent 空闲，则开始新一轮。
+- 要停止 Agent，请按 **停止**。说话不会停止它。
+- 语音模式通过重新加载会话，为 Agent 配置语音提示和 `speak` 工具，而重新加载会结束正在运行的轮次。如果你在 Agent 运行期间开启语音模式，Paseo 会等这一轮结束后再应用它们。在此之前，你的消息会在没有 `speak` 工具的情况下送达 Agent，所以它用普通聊天消息回答，而不是朗读。运行期间关闭语音模式，同样会等这一轮结束。
 
 ## 本地语音 {#local-speech}
 

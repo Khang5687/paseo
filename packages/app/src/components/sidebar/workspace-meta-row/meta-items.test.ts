@@ -25,6 +25,8 @@ function select(overrides: Partial<Parameters<typeof selectMetaRowItems>[0]> = {
     hasHostBadge: true,
     prHint: PR_HINT,
     serviceSummary: SERVICE,
+    nextRunAt: null,
+    waitingOn: null,
     labels: LABELS,
     visible: DEFAULT_SIDEBAR_ROW_ITEMS,
     checksDisplay: DEFAULT_SIDEBAR_CHECKS_DISPLAY,
@@ -52,6 +54,27 @@ describe("selectMetaRowItems", () => {
     expect(kinds(select())).toEqual(["host", "changeRequest", "checks", "services", "labels"]);
   });
 
+  it("says when a heartbeat next runs after what is running and before labels", () => {
+    const items = select({ nextRunAt: "2026-06-06T09:00:00.000Z" });
+    expect(kinds(items)).toEqual([
+      "host",
+      "changeRequest",
+      "checks",
+      "services",
+      "nextRun",
+      "labels",
+    ]);
+    expect(items).toContainEqual({ kind: "nextRun", at: "2026-06-06T09:00:00.000Z" });
+  });
+
+  it("leads with the job a working chat waits on, even one without a name", () => {
+    expect(select({ waitingOn: "fork build" })[0]).toEqual({
+      kind: "waiting",
+      title: "fork build",
+    });
+    expect(select({ waitingOn: "" })[0]).toEqual({ kind: "waiting", title: "" });
+  });
+
   it("omits what the workspace does not have", () => {
     expect(
       kinds(
@@ -65,6 +88,24 @@ describe("selectMetaRowItems", () => {
         }),
       ),
     ).toEqual([]);
+  });
+
+  it("leads with what a settled chat waits on whatever the row toggles say", () => {
+    const visible = {
+      ...DEFAULT_SIDEBAR_ROW_ITEMS,
+      changeRequest: false,
+      services: false,
+      labels: false,
+    };
+    const wait = { backgroundTaskCount: 1, subagentCount: 2 };
+    expect(select({ waitingFor: wait, visible, checksDisplay: "none" })).toEqual([
+      { kind: "waitingFor", wait },
+      { kind: "host" },
+    ]);
+    // A turn blocked on a named job says that instead.
+    expect(
+      kinds(select({ waitingOn: "npm test", waitingFor: wait, visible, checksDisplay: "none" })),
+    ).toEqual(["waiting", "host"]);
   });
 
   it("only draws identity badges when enabled and available", () => {

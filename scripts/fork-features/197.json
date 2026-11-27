@@ -1,0 +1,16 @@
+{
+  "pr": 197,
+  "title": "feat(app): a chat that only waits on jobs or subagents shows a blue hourglass",
+  "tests": [
+    "packages/protocol/src/agent-state-bucket.test.ts",
+    "packages/server/src/server/workspace-directory.test.ts",
+    "packages/app/src/components/sidebar/workspace-meta-row/meta-items.test.ts",
+    "packages/app/src/components/sidebar/project-strip-model.test.ts",
+    "packages/app/src/hooks/sidebar-workspaces-view-model.test.ts",
+    "packages/app/src/subagents/track-presentation.test.ts"
+  ],
+  "e2e": [
+    "packages/app/e2e/browser/chat-waiting-status.spec.ts",
+    "packages/app/e2e/browser/phone-chat-room.spec.ts"
+  ]
+}

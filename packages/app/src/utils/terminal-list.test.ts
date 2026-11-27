@@ -64,4 +64,26 @@ describe("terminal-list", () => {
 
     expect(result).toEqual([{ id: "term-3", name: "Terminal 3", title: "Build Output" }]);
   });
+
+  it("keeps a new terminal's chat owner, so it lands in the drawer instead of a workspace tab", () => {
+    const result = upsertTerminalListEntry({
+      terminals: [],
+      terminal: {
+        id: "term-4",
+        name: "Terminal 4",
+        cwd: "/tmp/project",
+        ownerAgentId: "agent-a",
+        createdAt: "2026-11-27T00:00:00.000Z",
+      },
+    });
+
+    expect(result).toEqual([
+      {
+        id: "term-4",
+        name: "Terminal 4",
+        ownerAgentId: "agent-a",
+        createdAt: "2026-11-27T00:00:00.000Z",
+      },
+    ]);
+  });
 });
