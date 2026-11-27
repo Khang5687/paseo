@@ -70,7 +70,7 @@ function useSetSnooze(
       void Promise.all(
         hosts.map(async (host) => {
           const client = getHostRuntimeStore().getClient(host.serverId);
-          if (!client) throw new Error("Host is not connected");
+          if (!client) throw new Error(t("sidebar.project.toasts.hostDisconnected"));
           await client.setProjectSnooze(host.projectId, iso);
         }),
       ).catch(() => toast.error(t("sidebar.project.snooze.failed", { name: project.projectName })));
