@@ -259,7 +259,9 @@ a view that gains or drops a background, border or opacity between the two
 modes changes whether Fabric flattens it, which re-parents the native editor,
 blurs it and closes the Android keyboard. Every such view on the editor's path
 (the dock's composer surface, the presentation root, the input wrapper) sets
-`collapsable={false}`.
+`collapsable={false}`. To check it, on an Android emulator debug build type a
+few lines, tap the expand glyph, then ↙: `adb shell dumpsys input_method | grep
+mInputShown` stays `true` and the caret stays where it was. Web cannot show it.
 The band beside the inline editor where the fullscreen glyph sits is the input's
 own right padding, so a tap anywhere in it focuses the editor whether or not the
 glyph shows. On web the slot is a fixed box over the visible viewport, which is
