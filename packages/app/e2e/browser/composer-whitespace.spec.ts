@@ -483,7 +483,9 @@ test("editing a queued draft restores its original height with the focus hint vi
     await expect(composerLocator(page)).toHaveValue("");
     await composerLocator(page).blur();
     await expect(page.getByText(/ to focus$/)).toBeVisible();
-    await page.getByRole("button", { name: "Edit queued message", exact: true }).click();
+    // The daemon-owned queue puts Edit in each row's menu.
+    await page.locator('[data-testid^="composer-queue-menu-"]').first().click();
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     await expect(composerLocator(page)).toHaveValue(draft);
     await expectComposerHeight(page, originalHeight);
   } finally {
