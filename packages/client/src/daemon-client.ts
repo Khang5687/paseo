@@ -1132,6 +1132,14 @@ export type WorkspaceLabelListPayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.label.list.response" }
 >["payload"];
+export type SidebarProjectOrderPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.project_order.get.response" }
+>["payload"];
+export type SidebarProjectOrderSetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "sidebar.project_order.set.response" }
+>["payload"];
 export type WorkspaceLabelAssignmentPayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.label.assignment.set.response" }
@@ -3823,6 +3831,33 @@ export class DaemonClient {
       { type: "workspace.label.list.request", subscribe: {} },
       options,
     );
+  }
+
+  /** The host's shared sidebar project order, then a `sidebar.project_order.update` per change. */
+  observeSidebarProjectOrder(options?: {
+    signal?: AbortSignal;
+  }): OwnedSubscription<SidebarProjectOrderPayload> {
+    return this.observe(
+      "sidebar.project_order.get.response",
+      { type: "sidebar.project_order.get.request", subscribe: {} },
+      options,
+    );
+  }
+
+  /** Stores `order` unless the host holds a newer one; the reply carries whichever is kept. */
+  setSidebarProjectOrder(options: {
+    order: string[];
+    updatedAt: number;
+    requestId?: string;
+  }): Promise<SidebarProjectOrderSetPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "sidebar.project_order.set.request",
+        order: options.order,
+        updatedAt: options.updatedAt,
+      },
+    });
   }
 
   setWorkspaceLabel(options: {

@@ -266,7 +266,8 @@ export function useSidebarWorkspacesList(options?: {
     });
 
     if (updates.projectOrder) {
-      orderStore.setProjectOrder(updates.projectOrder);
+      // Appending projects found on this device is not a reorder; it must not beat one made elsewhere.
+      orderStore.extendProjectOrder(updates.projectOrder);
     }
     for (const update of updates.workspaceOrders) {
       orderStore.setWorkspaceOrder(update.projectViewKey, update.order);

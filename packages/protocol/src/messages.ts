@@ -1166,6 +1166,27 @@ export const ProjectIconSetRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// The sidebar's project order, shared by every device that connects to this host. `updatedAt`
+// is the device clock in epoch ms when a person last reordered; 0 means nobody has yet. The newest
+// order wins, so a device that slept catches up when it reconnects.
+export const SidebarProjectOrderSchema = z.object({
+  order: z.array(z.string()),
+  updatedAt: z.number().int().nonnegative(),
+});
+
+export const SidebarProjectOrderGetRequestSchema = z.object({
+  type: z.literal("sidebar.project_order.get.request"),
+  requestId: z.string(),
+  subscribe: z.object({ subscriptionId: z.string().optional() }).optional(),
+});
+
+export const SidebarProjectOrderSetRequestSchema = z.object({
+  type: z.literal("sidebar.project_order.set.request"),
+  requestId: z.string(),
+  order: z.array(z.string()),
+  updatedAt: z.number().int().nonnegative(),
+});
+
 export const ProjectRemoveRequestSchema = z.object({
   type: z.literal("project.remove.request"),
   projectId: z.string(),
@@ -2558,6 +2579,30 @@ export const ProjectRenameResponsePayloadSchema = z.object({
 export const ProjectRenameResponseSchema = z.object({
   type: z.literal("project.rename.response"),
   payload: ProjectRenameResponsePayloadSchema,
+});
+
+export const SidebarProjectOrderGetResponseSchema = z.object({
+  type: z.literal("sidebar.project_order.get.response"),
+  payload: SidebarProjectOrderSchema.extend({
+    requestId: z.string(),
+    subscriptionId: z.string().optional(),
+  }),
+});
+
+// `accepted` is false when the host already holds a newer order; the payload then carries that one.
+export const SidebarProjectOrderSetResponseSchema = z.object({
+  type: z.literal("sidebar.project_order.set.response"),
+  payload: SidebarProjectOrderSchema.extend({
+    requestId: z.string(),
+    accepted: z.boolean(),
+  }),
+});
+
+export const SidebarProjectOrderUpdateSchema = z.object({
+  type: z.literal("sidebar.project_order.update"),
+  payload: SidebarProjectOrderSchema.extend({
+    subscriptionId: z.string().optional(),
+  }),
 });
 
 export const ProjectIconSetResponseSchema = z.object({
@@ -4373,6 +4418,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   UpdateAgentRequestMessageSchema,
   ProjectRenameRequestSchema,
   ProjectIconSetRequestSchema,
+  SidebarProjectOrderGetRequestSchema,
+  SidebarProjectOrderSetRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
   AgentMetadataUpdateRequestSchema,
@@ -4821,6 +4868,8 @@ export const ServerInfoStatusPayloadSchema = z
         fileCopies: z.boolean().optional(),
         // COMPAT(sendToDevice): added in v0.16.2, remove gate after 2027-06-01.
         sendToDevice: z.boolean().optional(),
+        // COMPAT(sidebarProjectOrder): added after v0.17.6, remove gate after 2027-12-01.
+        sidebarProjectOrder: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
         workspaceBaseBranch: z.boolean().optional(),
@@ -8889,6 +8938,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceUpdateMessageSchema,
   WorkspaceLabelListResponseSchema,
   WorkspaceLabelUpdateSchema,
+  SidebarProjectOrderUpdateSchema,
   WorkspaceLabelAssignmentSetResponseSchema,
   WorkspaceLabelUpdateResponseSchema,
   WorkspaceLabelDeleteResponseSchema,
@@ -8984,6 +9034,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
   ProjectIconSetResponseSchema,
+  SidebarProjectOrderGetResponseSchema,
+  SidebarProjectOrderSetResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
   AgentMetadataUpdateResponseSchema,
@@ -9226,6 +9278,10 @@ export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessa
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;
+export type SidebarProjectOrder = z.infer<typeof SidebarProjectOrderSchema>;
+export type SidebarProjectOrderGetResponse = z.infer<typeof SidebarProjectOrderGetResponseSchema>;
+export type SidebarProjectOrderSetResponse = z.infer<typeof SidebarProjectOrderSetResponseSchema>;
+export type SidebarProjectOrderUpdate = z.infer<typeof SidebarProjectOrderUpdateSchema>;
 export type ProjectRemoveResponse = z.infer<typeof ProjectRemoveResponseSchema>;
 export type WorkspaceTitleSetResponse = z.infer<typeof WorkspaceTitleSetResponseSchema>;
 export type WorkspaceTitleSetResponsePayload = z.infer<
