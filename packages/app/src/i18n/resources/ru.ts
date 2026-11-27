@@ -2474,6 +2474,9 @@ export const ru: TranslationResources = {
     tooManyFiles: "До {{max}} файлов на ответ",
     uploadFailed: "Не удалось загрузить файлы",
     sendFailed: "Не удалось отправить ответы",
+    withdrawn: "{{label}} снят",
+    jumpTo: "Перейти к {{label}}",
+    notLoaded: "{{label}} нет в загруженном чате",
   },
   needsYou: {
     title: "Ждут вас",

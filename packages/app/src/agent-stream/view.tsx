@@ -130,6 +130,9 @@ import { recordRenderProfileReasons } from "@/utils/render-profiler";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useStreamHistoryWindow } from "./use-stream-history-window";
 import { PluginTimelineItemView, useInstalledTimelineTransform } from "@/plugins/timeline";
+import { QuestionJumpContext } from "@/questions/withdrawn-line";
+import { findQuestionMessageId } from "@/questions/withdrawn-lines";
+import { jumpToQuestionMessage } from "@/questions/jump";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -1328,6 +1331,21 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       () => [...effectiveStreamItems, ...(effectiveStreamHead ?? [])],
       [effectiveStreamItems, effectiveStreamHead],
     );
+    // A withdrawn question's gray line jumps to the question that replaced it.
+    const jumpToQuestion = useStableEvent((label: string) => {
+      const messageId = findQuestionMessageId(findItems, label);
+      if (!messageId) {
+        toast?.show(t("questions.notLoaded", { label }));
+        return;
+      }
+      jumpToQuestionMessage({
+        messageId,
+        label,
+        viewportRef,
+        revealLoadedMessage,
+        isMounted: mountedMessageIds.has,
+      });
+    });
     return (
       <ChatNotesFindScope
         agentId={agentId}
@@ -1339,59 +1357,61 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         revealLoadedMessage={revealLoadedMessage}
         visibleMessageIds={mountedMessageIds}
       >
-        <ToolCallSheetProvider>
-          <AssistantSelectionCopySurface style={stylesheet.container}>
-            <MessageOuterSpacingProvider disableOuterSpacing>
-              <ToolCallExpansionContext.Provider value={toolCallExpansion}>
-                <UserMessageExpansionContext.Provider value={userMessageExpansion}>
-                  {streamRenderStrategy.render({
-                    readingRowReplacements: presentation.readingRowReplacements,
-                    agentId,
-                    segments: renderModel.segments,
-                    historyRowRevision,
-                    liveHeadRowRevision: expandedToolCallGroups,
-                    boundary,
-                    renderers,
-                    listEmptyComponent,
-                    viewportRef,
-                    routeBottomAnchorRequest,
-                    isAuthoritativeHistoryReady,
-                    isInitialHistoryLoading,
-                    revealInitialHistory,
-                    onNearBottomChange: nearBottom.set,
-                    onReadingPositionChange: handleReadingPositionChange,
-                    onNearHistoryStart: loadOlder,
-                    isLoadingOlderHistory: isLoadingOlder,
-                    hasOlderHistory: hasOlder,
-                    olderHistoryProgressKey: progressKey,
-                    scrollEnabled: streamScrollEnabled,
-                    listStyle: stylesheet.list,
-                    baseListContentContainerStyle: stylesheet.listContentContainer,
-                    forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
-                    contentMaxWidth,
-                    outlineInset,
-                  })}
-                </UserMessageExpansionContext.Provider>
-              </ToolCallExpansionContext.Provider>
-            </MessageOuterSpacingProvider>
-            {outlineInset > 0 && chatOutline.prompts.length >= 2 ? (
-              <ChatOutlineRail
-                prompts={chatOutline.prompts}
-                activePrompt={chatOutline.activePrompt}
-                onJumpToPrompt={chatOutline.jumpToPrompt}
+        <QuestionJumpContext.Provider value={jumpToQuestion}>
+          <ToolCallSheetProvider>
+            <AssistantSelectionCopySurface style={stylesheet.container}>
+              <MessageOuterSpacingProvider disableOuterSpacing>
+                <ToolCallExpansionContext.Provider value={toolCallExpansion}>
+                  <UserMessageExpansionContext.Provider value={userMessageExpansion}>
+                    {streamRenderStrategy.render({
+                      readingRowReplacements: presentation.readingRowReplacements,
+                      agentId,
+                      segments: renderModel.segments,
+                      historyRowRevision,
+                      liveHeadRowRevision: expandedToolCallGroups,
+                      boundary,
+                      renderers,
+                      listEmptyComponent,
+                      viewportRef,
+                      routeBottomAnchorRequest,
+                      isAuthoritativeHistoryReady,
+                      isInitialHistoryLoading,
+                      revealInitialHistory,
+                      onNearBottomChange: nearBottom.set,
+                      onReadingPositionChange: handleReadingPositionChange,
+                      onNearHistoryStart: loadOlder,
+                      isLoadingOlderHistory: isLoadingOlder,
+                      hasOlderHistory: hasOlder,
+                      olderHistoryProgressKey: progressKey,
+                      scrollEnabled: streamScrollEnabled,
+                      listStyle: stylesheet.list,
+                      baseListContentContainerStyle: stylesheet.listContentContainer,
+                      forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
+                      contentMaxWidth,
+                      outlineInset,
+                    })}
+                  </UserMessageExpansionContext.Provider>
+                </ToolCallExpansionContext.Provider>
+              </MessageOuterSpacingProvider>
+              {outlineInset > 0 && chatOutline.prompts.length >= 2 ? (
+                <ChatOutlineRail
+                  prompts={chatOutline.prompts}
+                  activePrompt={chatOutline.activePrompt}
+                  onJumpToPrompt={chatOutline.jumpToPrompt}
+                />
+              ) : null}
+              <ScrollToBottomButton
+                nearBottom={nearBottom}
+                isTimelineDetached={isTimelineDetached}
+                bottomOffset={scrollToBottomOffset}
+                onPress={scrollToBottom}
+                corner={isMobile}
+                tail={effectiveStreamItems}
+                head={effectiveStreamHead ?? EMPTY_STREAM_HEAD}
               />
-            ) : null}
-            <ScrollToBottomButton
-              nearBottom={nearBottom}
-              isTimelineDetached={isTimelineDetached}
-              bottomOffset={scrollToBottomOffset}
-              onPress={scrollToBottom}
-              corner={isMobile}
-              tail={effectiveStreamItems}
-              head={effectiveStreamHead ?? EMPTY_STREAM_HEAD}
-            />
-          </AssistantSelectionCopySurface>
-        </ToolCallSheetProvider>
+            </AssistantSelectionCopySurface>
+          </ToolCallSheetProvider>
+        </QuestionJumpContext.Provider>
       </ChatNotesFindScope>
     );
   },

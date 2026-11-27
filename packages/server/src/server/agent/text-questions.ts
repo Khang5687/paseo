@@ -1,4 +1,5 @@
 import type { AgentOpenQuestion, AgentQuestionAnswer } from "@getpaseo/protocol/messages";
+import { parseWithdrawLine } from "@getpaseo/protocol/question-withdraw";
 
 /**
  * Questions agents write in plain reply text, in the grilling format:
@@ -128,6 +129,25 @@ export function mergeAskedQuestions(
   const askedIds = new Set(asked.map((question) => question.id));
   const merged = [...open.filter((question) => !askedIds.has(question.id)), ...asked];
   return merged.slice(-MAX_OPEN_QUESTIONS);
+}
+
+/**
+ * The open questions after one turn-ending reply: its ✖️ lines withdraw the agent's own open
+ * questions, then its ❓ questions are added. A label the same reply asks again stays open, since
+ * the ❓ is the newer word; an unknown label withdraws nothing.
+ */
+export function applyReplyQuestions(
+  open: readonly AgentOpenQuestion[],
+  reply: string | null | undefined,
+  askedAt: string,
+): AgentOpenQuestion[] {
+  const withdrawn = new Set(
+    (reply ?? "").split("\n").flatMap((line) => parseWithdrawLine(line)?.label ?? []),
+  );
+  const kept = withdrawn.size
+    ? open.filter((question) => !question.label || !withdrawn.has(question.label))
+    : open;
+  return mergeAskedQuestions(kept, parseTextQuestions(reply, askedAt));
 }
 
 /**

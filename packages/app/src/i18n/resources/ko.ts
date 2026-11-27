@@ -2442,6 +2442,9 @@ export const ko: TranslationResources = {
     tooManyFiles: "답변당 최대 {{max}}개 파일",
     uploadFailed: "파일을 업로드하지 못했습니다",
     sendFailed: "답변을 보내지 못했습니다",
+    withdrawn: "{{label}} 철회됨",
+    jumpTo: "{{label}}(으)로 이동",
+    notLoaded: "{{label}}이(가) 불러온 채팅에 없습니다",
   },
   needsYou: {
     title: "응답 필요",

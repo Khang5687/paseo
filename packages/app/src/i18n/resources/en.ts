@@ -2461,6 +2461,9 @@ export const en = {
     tooManyFiles: "Up to {{max}} files per answer",
     uploadFailed: "Could not upload the files",
     sendFailed: "Could not send the answers",
+    withdrawn: "{{label}} withdrawn",
+    jumpTo: "Jump to {{label}}",
+    notLoaded: "{{label}} is not in the loaded chat",
   },
   needsYou: {
     title: "Needs you",

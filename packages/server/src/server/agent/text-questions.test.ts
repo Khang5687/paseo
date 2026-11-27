@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { answerTextQuestions, mergeAskedQuestions, parseTextQuestions } from "./text-questions.js";
+import {
+  answerTextQuestions,
+  applyReplyQuestions,
+  mergeAskedQuestions,
+  parseTextQuestions,
+} from "./text-questions.js";
 
 const AT = "2026-11-27T01:00:00.000Z";
 const LATER = "2026-11-27T02:00:00.000Z";
@@ -119,5 +124,32 @@ describe("answerTextQuestions", () => {
 
   it("answers a question without a label on any message", () => {
     expect(remaining("Also, can you look at the build log?")).not.toContain("t:free");
+  });
+});
+
+describe("applyReplyQuestions", () => {
+  const open = parseTextQuestions(
+    ["❓ **Q1** - **A**: a?", "❓ **Q2** - **B**: b?", "❓ **Which host**: Omen?"].join("\n"),
+    AT,
+  );
+
+  it("withdraws the named open questions and adds the reply's new ones", () => {
+    const reply = ["✖️ Q1 → Q3: folded", "✖️ Q9: never asked", "❓ **Q3** - **C**: c?"].join("\n");
+    expect(applyReplyQuestions(open, reply, LATER).map((question) => question.id)).toEqual([
+      "Q2",
+      "t:which host",
+      "Q3",
+    ]);
+  });
+
+  it("keeps a question the same reply asks again", () => {
+    const reply = ["✖️ Q2: dropped", "❓ **Q2** - **B**: b, reworded?"].join("\n");
+    const next = applyReplyQuestions(open, reply, LATER);
+    expect(next.map((question) => question.id)).toEqual(["Q1", "t:which host", "Q2"]);
+    expect(next.at(-1)?.askedAt).toBe(LATER);
+  });
+
+  it("changes nothing for a reply without ✖️ or ❓ lines", () => {
+    expect(applyReplyQuestions(open, "Done.", LATER)).toEqual(open);
   });
 });

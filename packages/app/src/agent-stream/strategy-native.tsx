@@ -29,7 +29,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useTranslation } from "react-i18next";
-import type { StreamItem } from "@/types/stream";
+import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
 import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useIsMobilePanelActive } from "@/mobile-panels/provider";
@@ -472,6 +472,23 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     };
   }, [clearPendingUserScrollEnd, disposeHistoryStart, evaluateHistoryStart]);
 
+  // A jump to one message, such as the question a withdrawn question's line names. Following output
+  // stops first, so the end pin lets go before the list moves.
+  const scrollToMessage = useStableEvent((messageId: string) => {
+    if (!rows.some((item) => getStreamItemMessageId(item) === messageId)) return;
+    bottomAnchorController.detachByUser();
+    requestAnimationFrame(() => {
+      const index = rows.findIndex((item) => getStreamItemMessageId(item) === messageId);
+      if (index < 0) return;
+      void listRef.current?.scrollToIndex({
+        index,
+        animated: true,
+        viewPosition: 0,
+        viewOffset: topOverlayInset,
+      });
+    });
+  });
+
   useEffect(() => {
     const handle: StreamViewportHandle = {
       scrollToBottom: (reason = "jump-to-bottom") => {
@@ -484,6 +501,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
       },
       holdRow,
+      scrollToMessage,
     };
     viewportRef.current = handle;
     return () => {
@@ -491,7 +509,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [agentId, bottomAnchorController, holdRow, viewportRef]);
+  }, [agentId, bottomAnchorController, holdRow, scrollToMessage, viewportRef]);
 
   // The scroll-to-bottom button shows whenever following would not resume on its own. A detached
   // list resumes only from the end, so the button shows anywhere short of it. While following, the

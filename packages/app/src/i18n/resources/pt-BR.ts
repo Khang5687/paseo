@@ -2471,6 +2471,9 @@ export const ptBR: TranslationResources = {
     tooManyFiles: "Até {{max}} arquivos por resposta",
     uploadFailed: "Não foi possível enviar os arquivos",
     sendFailed: "Não foi possível enviar as respostas",
+    withdrawn: "{{label}} retirada",
+    jumpTo: "Ir para {{label}}",
+    notLoaded: "{{label}} não está no chat carregado",
   },
   needsYou: {
     title: "Precisa de você",

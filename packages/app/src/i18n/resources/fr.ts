@@ -2493,6 +2493,9 @@ export const fr: TranslationResources = {
     tooManyFiles: "Jusqu’à {{max}} fichiers par réponse",
     uploadFailed: "Impossible d’envoyer les fichiers",
     sendFailed: "Impossible d’envoyer les réponses",
+    withdrawn: "{{label}} retirée",
+    jumpTo: "Aller à {{label}}",
+    notLoaded: "{{label}} n’est pas dans la conversation chargée",
   },
   needsYou: {
     title: "Vous attend",

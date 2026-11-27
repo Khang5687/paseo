@@ -38,6 +38,26 @@ export function saveQuestionAnswer(input: {
     },
   }));
   schedulePush(input.serverId, input.agentId, input.questionId);
+  stopPruning ??= useSessionStore.subscribe(pruneClosedAnswers);
+}
+
+let stopPruning: (() => void) | null = null;
+
+// A question that left the agent's open questions (a message answered it, or the agent withdrew it
+// with ✖️) takes this device's answer with it: the answer is never sent or pushed to the host, and
+// the same label asked again starts empty. An agent this device has not loaded keeps its answers.
+function pruneClosedAnswers(): void {
+  const { answers } = useQuestionAnswerStore.getState();
+  const { sessions } = useSessionStore.getState();
+  for (const [scope, byQuestion] of Object.entries(answers)) {
+    const [serverId, agentId] = scope.split("\u0000");
+    const session = sessions[serverId];
+    const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+    if (!agent) continue;
+    const open = new Set((agent.openQuestions ?? []).map((question) => question.id));
+    const closed = Object.keys(byQuestion).filter((questionId) => !open.has(questionId));
+    if (closed.length > 0) clearQuestionAnswers({ serverId, agentId, questionIds: closed });
+  }
 }
 
 /** Drops this device's copies once a message answered them; the host drops the questions. */

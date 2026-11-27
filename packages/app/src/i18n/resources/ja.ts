@@ -2456,6 +2456,9 @@ export const ja: TranslationResources = {
     tooManyFiles: "1 回答につき最大 {{max}} ファイル",
     uploadFailed: "ファイルをアップロードできませんでした",
     sendFailed: "回答を送信できませんでした",
+    withdrawn: "{{label}} は取り下げ",
+    jumpTo: "{{label}} へ移動",
+    notLoaded: "{{label}} は読み込まれたチャットにありません",
   },
   needsYou: {
     title: "あなた待ち",

@@ -2402,6 +2402,9 @@ export const zhCN: TranslationResources = {
     tooManyFiles: "每个回答最多 {{max}} 个文件",
     uploadFailed: "无法上传文件",
     sendFailed: "无法发送回答",
+    withdrawn: "{{label}} 已撤回",
+    jumpTo: "跳到 {{label}}",
+    notLoaded: "{{label}} 不在已加载的对话中",
   },
   needsYou: {
     title: "等你处理",

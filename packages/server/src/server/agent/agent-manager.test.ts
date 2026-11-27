@@ -33,6 +33,7 @@ import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { buildStoredAgentPayload, toAgentPayload } from "./agent-projections.js";
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
+import { deriveAgentStateBucket } from "@getpaseo/protocol/agent-state-bucket";
 import { projectTimelineRows } from "./timeline-projection.js";
 import {
   getOpenAgentTabLabel,
@@ -7054,6 +7055,131 @@ test("open questions from replies stay through reading and close when a message 
   await manager.flush();
   expect(openIds()).toEqual([]);
   expect((await storage.get(snapshot.id))?.openQuestions).toBeUndefined();
+});
+
+test("a reply's ✖️ lines withdraw its own open questions on every surface", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-withdraw-questions-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const replies: string[] = [];
+  class ReplyingSession extends TestAgentSession {
+    private turns = 0;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turnId = `withdraw-turn-${++this.turns}`;
+      const text = replies.shift() ?? "";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (text) {
+          this.pushEvent({
+            type: "timeline",
+            provider: this.provider,
+            turnId,
+            item: { type: "assistant_message", text },
+          });
+        }
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+  class ReplyingClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new ReplyingSession(config);
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new ReplyingClient() },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000137",
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const payload = () => toAgentPayload(manager.getAgent(snapshot.id)!);
+  const openIds = () => (payload().openQuestions ?? []).map((q) => q.id);
+  const bucket = () => {
+    const agent = payload();
+    return deriveAgentStateBucket({
+      status: agent.status,
+      requiresAttention: agent.requiresAttention,
+      attentionReason: agent.attentionReason ?? null,
+      awaitingAnswer: agent.awaitingAnswer,
+      openQuestionCount: agent.openQuestions?.length,
+    });
+  };
+  let sent = 0;
+  const send = (text: string) =>
+    manager.runAgent(snapshot.id, text, { clientMessageId: `withdraw-${++sent}` });
+
+  replies.push(
+    ["❓ **Q630** - **Pause**: how long?", "❓ **Q631** - **Port**: 6768?", "❓ Q632 - Host?"].join(
+      "\n",
+    ),
+  );
+  await send("plan it");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q630", "Q631", "Q632"]);
+  // A half answer saved before the withdraw.
+  const half = { pick: false, text: "ten minutes", updatedAt: 1_000 };
+  expect(await manager.setOpenQuestionAnswer(snapshot.id, "Q630", half)).toBe(true);
+
+  // Another agent's ✖️ line in a message to this agent withdraws nothing: only the agent's reply.
+  await send(
+    '<paseo-system version="1" kind="agent-message" source-agent-id="helper" message-id="m1">\n✖️ Q632: dropped\n</paseo-system>',
+  );
+  await manager.flush();
+  expect(openIds()).toEqual(["Q630", "Q631", "Q632"]);
+
+  // Q630 folds into the new Q653; Q631 is withdrawn but asked again in the same reply, so the ❓
+  // wins; Q999 was never asked.
+  replies.push(
+    [
+      "Folding the pause questions.",
+      "",
+      '✖️ Q630 → Q653: folded into "When the pause ends"',
+      "✖️ **Q631**: dropped, asked again below",
+      "✖️ Q999: dropped",
+      "",
+      "❓ **Q631** - **Port**: 6769 now?",
+      "",
+      "❓ **Q653** - **When the pause ends**: resume at once?",
+    ].join("\n"),
+  );
+  await send("rethink these");
+  await manager.flush();
+  expect(openIds()).toEqual(["Q632", "Q631", "Q653"]);
+  expect((await storage.get(snapshot.id))?.openQuestions?.map((q) => q.id)).toEqual([
+    "Q632",
+    "Q631",
+    "Q653",
+  ]);
+  // The withdrawn question's half answer, arriving late from a device, cannot bring it back.
+  expect(
+    await manager.setOpenQuestionAnswer(snapshot.id, "Q630", { ...half, updatedAt: 2_000 }),
+  ).toBe(false);
+  expect(openIds()).not.toContain("Q630");
+  await manager.clearAgentAttention(snapshot.id);
+  expect(bucket()).toBe("needs_input");
+
+  replies.push(
+    ["✖️ Q632: dropped, no longer needed", "✖️ Q631 → Q653", "✖️ Q653: dropped"].join("\n"),
+  );
+  await send("continue");
+  await manager.flush();
+  await manager.clearAgentAttention(snapshot.id);
+  expect(openIds()).toEqual([]);
+  // The last open question withdrawn: the agent no longer waits on the user.
+  expect(bucket()).toBe("done");
+
+  // A restart reads the stored record: still nothing open.
+  const record = await storage.get(snapshot.id);
+  expect(record?.openQuestions).toBeUndefined();
+  expect(
+    buildStoredAgentPayload(record!, ["codex"], (provider, own) =>
+      manager.effectiveOptionsFor(provider, own),
+    ).openQuestions,
+  ).toBeUndefined();
 });
 
 test("archiveSnapshot clears persisted attention and normalizes running status", async () => {
