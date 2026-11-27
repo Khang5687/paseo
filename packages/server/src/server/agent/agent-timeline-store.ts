@@ -172,6 +172,10 @@ export class InMemoryAgentTimelineStore {
     return this.requireState(agentId).projection.getLastAssistantMessage();
   }
 
+  getLastAssistantMessageSinceUserMessage(agentId: string): string | null {
+    return this.requireState(agentId).projection.getLastAssistantMessageSinceUserMessage();
+  }
+
   getFirstUserMessage(agentId: string): string | null {
     return this.requireState(agentId).projection.getFirstUserMessage();
   }

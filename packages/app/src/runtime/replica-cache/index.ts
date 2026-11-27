@@ -19,6 +19,7 @@ import {
   type WorkspaceDescriptor,
 } from "@/stores/session-store";
 import {
+  createUserMessage,
   isUnreconciledLocalUserMessage,
   type AgentToolCallData,
   type StreamItem,
@@ -127,6 +128,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     clientMessageId: z.string().optional(),
     messageId: z.string().optional(),
     text: z.string(),
+    attachmentFiles: z.array(z.object({ label: z.string(), path: z.string() })).optional(),
   }),
   z.strictObject({
     ...TimelineItemBaseShape,
@@ -509,6 +511,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),
         text: item.text,
+        ...(item.attachmentFiles ? { attachmentFiles: item.attachmentFiles } : {}),
       };
     case "assistant_message":
       return {
@@ -598,13 +601,7 @@ function deserializeBuiltinTimelineItem(
   };
   switch (item.kind) {
     case "user_message":
-      return {
-        ...base,
-        kind: item.kind,
-        ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
-        ...(item.messageId ? { messageId: item.messageId } : {}),
-        text: item.text,
-      };
+      return createUserMessage({ ...item, ...base });
     case "assistant_message":
       return {
         ...base,

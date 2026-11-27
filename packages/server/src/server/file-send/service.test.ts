@@ -87,7 +87,7 @@ describe("send to device", () => {
         tokens: ["ExponentPushToken[a]"],
         payload: {
           title: "clip.mp4 is ready",
-          body: "From Omen · tap to open",
+          body: "From Omen · tap to download",
           data: { serverId: "omen-server", sentFilePath: clip },
         },
       },
@@ -111,7 +111,7 @@ describe("send to device", () => {
           path: clip,
           fileName: "clip.mp4",
           title: "clip.mp4 is ready",
-          body: "From Omen · tap to open",
+          body: "From Omen · tap to download",
         },
       },
     ]);

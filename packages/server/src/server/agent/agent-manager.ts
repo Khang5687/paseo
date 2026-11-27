@@ -86,7 +86,12 @@ import {
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import { assertModelEnabled, pickDefaultEnabledModel } from "./provider-disabled-models.js";
-import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentPermissionDraft,
+  JsonValue,
+  ProviderOptions,
+  UserMessageAttachmentFile,
+} from "@getpaseo/protocol/agent-types";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
 import {
@@ -101,7 +106,17 @@ import {
 } from "./option-controls.js";
 import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
 import { replyAwaitsAnswer } from "./awaiting-answer.js";
-import type { AgentQueuedMessagePayload } from "../messages.js";
+import {
+  answerTextQuestions,
+  mergeAskedQuestions,
+  parseTextQuestions,
+  setQuestionAnswer,
+} from "./text-questions.js";
+import type {
+  AgentOpenQuestion,
+  AgentQuestionAnswer,
+  AgentQueuedMessagePayload,
+} from "../messages.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -126,6 +141,7 @@ import {
 } from "./agent-run-state.js";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
+import { splitInlineRefNotes } from "./prompt-attachments.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
   PASEO_MCP_SERVER_NAME,
@@ -183,6 +199,17 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .flatMap((block) => (block.type === "text" && !("mimeType" in block) ? [block.text] : []))
     .join("\n")
     .trim();
+}
+
+// The files buildAgentPrompt names in its `[Image #N]: <path>` notes. A note block holds nothing
+// else, which keeps a text attachment that quotes such a line from adding files.
+function submittedPromptFiles(prompt: AgentPromptInput): UserMessageAttachmentFile[] {
+  if (typeof prompt === "string") return [];
+  return prompt.flatMap((block) => {
+    if (block.type !== "text" || !("mimeType" in block)) return [];
+    const notes = splitInlineRefNotes(block.text);
+    return notes.text === "" ? notes.files : [];
+  });
 }
 
 export class AgentManagerShuttingDownError extends Error {
@@ -619,6 +646,11 @@ interface ManagedAgentBase {
    * the user pauses or resumes.
    */
   queuePauseReason?: string;
+  /**
+   * ❓ questions from the agent's replies that no user message has answered yet, oldest first
+   * (see text-questions.ts). Persisted with the record; absent means none.
+   */
+  openQuestions?: AgentOpenQuestion[];
   /** Plugin-owned data. Paseo persists and forwards it and never reads a key. */
   metadata: AgentMetadata;
 }
@@ -1962,6 +1994,7 @@ export class AgentManager {
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
       queuePauseReason?: string;
+      openQuestions?: AgentOpenQuestion[];
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -2011,6 +2044,7 @@ export class AgentManager {
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
       queuePauseReason?: string;
+      openQuestions?: AgentOpenQuestion[];
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -2084,6 +2118,7 @@ export class AgentManager {
             attention: extractAttention(record),
             // Shown until the reopened session reports its own.
             sessionMetrics: record.sessionMetrics,
+            openQuestions: record.openQuestions,
           }
         : {}),
       workspaceId,
@@ -2402,6 +2437,7 @@ export class AgentManager {
         queuedMessages: existing.queuedMessages,
         queuePaused: existing.queuePaused,
         queuePauseReason: existing.queuePauseReason,
+        openQuestions: existing.openQuestions,
         restoring: true,
       });
     } catch (error) {
@@ -2895,6 +2931,7 @@ export class AgentManager {
         queuedMessages: record.queuedMessages ?? [],
         queuePaused: record.queuePaused ?? false,
         queuePauseReason: record.queuePauseReason,
+        openQuestions: record.openQuestions,
         background: record.background,
         labels: record.labels,
         metadata: record.metadata,
@@ -3544,6 +3581,54 @@ export class AgentManager {
     };
     await registry.upsert(nextRecord);
     this.dispatchStoredAgentState(nextRecord);
+  }
+
+  /**
+   * Keeps a half-written answer to one open question so every device shows it. Returns false
+   * when the question is no longer open or a newer answer already won.
+   */
+  async setOpenQuestionAnswer(
+    agentId: string,
+    questionId: string,
+    answer: AgentQuestionAnswer,
+  ): Promise<boolean> {
+    const liveAgent = this.agents.get(agentId);
+    if (liveAgent) {
+      const next = setQuestionAnswer(liveAgent.openQuestions ?? [], questionId, answer);
+      if (!next) return false;
+      liveAgent.openQuestions = next;
+      await this.persistSnapshot(liveAgent);
+      this.emitState(liveAgent, { persist: false });
+      return true;
+    }
+
+    const registry = this.requireRegistry();
+    const record = await registry.get(agentId);
+    if (!record || record.archivedAt) return false;
+    const next = setQuestionAnswer(record.openQuestions ?? [], questionId, answer);
+    if (!next) return false;
+    const nextRecord: StoredAgentRecord = { ...record, openQuestions: next };
+    await registry.upsert(nextRecord);
+    this.dispatchStoredAgentState(nextRecord);
+    return true;
+  }
+
+  /**
+   * Keeps the picks of a half-filled question box on its pending permission, so every device
+   * shows them. The newer draft wins; a box that is no longer pending refuses it.
+   */
+  setPendingPermissionDraft(
+    agentId: string,
+    permissionId: string,
+    draft: AgentPermissionDraft,
+  ): boolean {
+    const agent = this.agents.get(agentId);
+    const request = agent?.pendingPermissions.get(permissionId);
+    if (!agent || !request) return false;
+    if ((request.draftAnswers?.updatedAt ?? -1) >= draft.updatedAt) return false;
+    agent.pendingPermissions.set(permissionId, { ...request, draftAnswers: draft });
+    this.emitState(agent, { persist: false });
+    return true;
   }
 
   async markAgentUnread(agentId: string): Promise<void> {
@@ -5268,6 +5353,7 @@ export class AgentManager {
       queuedMessages?: AgentQueuedMessagePayload[];
       queuePaused?: boolean;
       queuePauseReason?: string;
+      openQuestions?: AgentOpenQuestion[];
       /**
        * Bringing a known agent back, rather than starting a new one. Its timestamps and
        * attention come from what was already recorded, and installing the session is not
@@ -5487,6 +5573,7 @@ export class AgentManager {
           queuedMessages?: AgentQueuedMessagePayload[];
           queuePaused?: boolean;
           queuePauseReason?: string;
+          openQuestions?: AgentOpenQuestion[];
           launchEnv?: Record<string, string>;
         }
       | undefined;
@@ -5538,6 +5625,7 @@ export class AgentManager {
       queuedMessages: options.queuedMessages ?? [],
       queuePaused: options.queuePaused ?? false,
       queuePauseReason: options.queuePauseReason,
+      openQuestions: options.openQuestions,
     } as ActiveManagedAgent;
   }
 
@@ -6371,6 +6459,7 @@ export class AgentManager {
       this.recordAndDispatchTimelineItem(agent.id, item, event.provider, event.turnId);
       if (item.type === "user_message") {
         agent.lastUserMessageAt = new Date();
+        this.answerOpenQuestions(agent, item.text);
         this.emitState(agent);
       }
       flags.shouldNotifyWaiters = true;
@@ -6649,11 +6738,13 @@ export class AgentManager {
     outcome: "accepted" | "rejected",
     options?: { messageId?: string; providerMessageId?: string; turnId?: string },
   ): void {
+    const attachmentFiles = submittedPromptFiles(prompt);
     const items = projectAgentMessages({
       type: "user_message",
       text: submittedPromptText(prompt),
       clientMessageId,
       ...(options?.messageId ? { messageId: options.messageId } : {}),
+      ...(attachmentFiles.length > 0 ? { attachmentFiles } : {}),
     });
     for (const item of items) {
       // Human attempts stay in history on rejection; delivery notifications require acceptance.
@@ -6674,7 +6765,10 @@ export class AgentManager {
     )
       return;
     this.touchUpdatedAt(agent);
-    if (item.type === "user_message") agent.lastUserMessageAt = new Date();
+    if (item.type === "user_message") {
+      agent.lastUserMessageAt = new Date();
+      this.answerOpenQuestions(agent, item.text);
+    }
     this.recordAndDispatchTimelineItem(agent.id, item, agent.provider, options?.turnId, options);
   }
 
@@ -6830,6 +6924,9 @@ export class AgentManager {
     }
 
     const finished = previousStatus === "running" && currentStatus === "idle";
+    if (finished) {
+      this.recordAskedQuestions(agent);
+    }
 
     // Skip if already requires attention. An unread finish stays one unread signal, but its
     // question flag follows the newest reply: a turn started without the user reading (a queued
@@ -6847,6 +6944,26 @@ export class AgentManager {
       agent.attention = this.finishedAttention(agent.id);
       this.broadcastAgentAttention(agent, "finished");
     }
+  }
+
+  // Reads only a reply written after the last user message: a turn that ends without text must not
+  // reopen questions an earlier reply asked and the user has answered since.
+  private recordAskedQuestions(agent: ManagedAgent): void {
+    if (!this.timelineStore.has(agent.id)) return;
+    const reply = this.timelineStore.getLastAssistantMessageSinceUserMessage(agent.id);
+    const asked = parseTextQuestions(reply, new Date().toISOString());
+    if (asked.length === 0) return;
+    agent.openQuestions = mergeAskedQuestions(agent.openQuestions ?? [], asked);
+  }
+
+  // A user message answers the open questions it names (see text-questions.ts). Messages other
+  // agents send arrive as user messages too; only the user's own words answer.
+  private answerOpenQuestions(agent: ManagedAgent, text: string): void {
+    if (!agent.openQuestions?.length) return;
+    const message = text.startsWith("<paseo-system") ? parseAgentMessage(text) : null;
+    if (message?.source) return;
+    const open = answerTextQuestions(agent.openQuestions, message?.text ?? text);
+    agent.openQuestions = open.length > 0 ? open : undefined;
   }
 
   // The failed state is only shown while error attention is unread, so every new failure raises

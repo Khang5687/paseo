@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OfflineFile } from "@/offline-files/store";
-import { openSentFile, type OpenSentFileDeps } from "./open-sent-file";
+import { receiveSentFile, type ReceiveSentFileDeps } from "./receive-sent-file";
 
 const target = { serverId: "omen", path: "/home/k/clip.mp4" };
 const file: OfflineFile = {
@@ -21,55 +21,55 @@ const file: OfflineFile = {
   },
 };
 
-function deps(overrides: Partial<OpenSentFileDeps> = {}): OpenSentFileDeps {
+function deps(overrides: Partial<ReceiveSentFileDeps> = {}): ReceiveSentFileDeps {
   return {
     waitForHost: async () => true,
     save: vi.fn(async () => ({ status: "saved" as const, file })),
-    openSaved: vi.fn(),
+    noteSaved: vi.fn(),
     ...overrides,
   };
 }
 
-describe("openSentFile", () => {
-  it("saves the file, then opens the saved copy", async () => {
+describe("receiveSentFile", () => {
+  it("saves the file, then says it is saved", async () => {
     const calls: string[] = [];
     const d = deps({
       save: async () => {
         calls.push("save");
         return { status: "saved", file };
       },
-      openSaved: () => calls.push("open"),
+      noteSaved: () => calls.push("note"),
     });
-    await expect(openSentFile(target, d)).resolves.toEqual({ status: "opened" });
-    expect(calls).toEqual(["save", "open"]);
+    await expect(receiveSentFile(target, d)).resolves.toEqual({ status: "saved" });
+    expect(calls).toEqual(["save", "note"]);
   });
 
-  it("opens the copy it already has", async () => {
+  it("says the copy it already has is saved", async () => {
     const d = deps({ save: async () => ({ status: "fresh", file }) });
-    await expect(openSentFile(target, d)).resolves.toEqual({ status: "opened" });
-    expect(d.openSaved).toHaveBeenCalledWith(target);
+    await expect(receiveSentFile(target, d)).resolves.toEqual({ status: "saved" });
+    expect(d.noteSaved).toHaveBeenCalledWith(target);
   });
 
-  it("reports an offline host without saving or opening anything", async () => {
+  it("reports an offline host without saving or noting anything", async () => {
     const d = deps({ waitForHost: async () => false });
-    await expect(openSentFile(target, d)).resolves.toEqual({ status: "hostOffline" });
+    await expect(receiveSentFile(target, d)).resolves.toEqual({ status: "hostOffline" });
     expect(d.save).not.toHaveBeenCalled();
-    expect(d.openSaved).not.toHaveBeenCalled();
+    expect(d.noteSaved).not.toHaveBeenCalled();
   });
 
-  it("does not open a file that did not save", async () => {
+  it("does not note a file that did not save", async () => {
     const tooLarge = deps({ save: async () => ({ status: "tooLarge", maxFileMb: 10 }) });
-    await expect(openSentFile(target, tooLarge)).resolves.toEqual({
+    await expect(receiveSentFile(target, tooLarge)).resolves.toEqual({
       status: "tooLarge",
       maxFileMb: 10,
     });
-    expect(tooLarge.openSaved).not.toHaveBeenCalled();
+    expect(tooLarge.noteSaved).not.toHaveBeenCalled();
 
     const failed = deps({ save: async () => ({ status: "failed", error: "File not found" }) });
-    await expect(openSentFile(target, failed)).resolves.toEqual({
+    await expect(receiveSentFile(target, failed)).resolves.toEqual({
       status: "failed",
       error: "File not found",
     });
-    expect(failed.openSaved).not.toHaveBeenCalled();
+    expect(failed.noteSaved).not.toHaveBeenCalled();
   });
 });

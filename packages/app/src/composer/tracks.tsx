@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { Pressable, Text, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
@@ -32,7 +39,8 @@ import {
 } from "@/utils/status-indicator-geometry";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import type { Theme } from "@/styles/theme";
-import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
+import { COMPOSER_PILL_CLEARANCE, composerPillStyles, useComposerPillBody } from "./pill-styles";
+import { useComposerStatusLine } from "./status-line";
 
 const ThemedClock = withUnistyles(Clock);
 const ThemedHourglass = withUnistyles(Hourglass);
@@ -49,16 +57,33 @@ const waitingIconMapping = (theme: Theme) => ({
  * pane. Built-in and contributed pills share this one-line rail and its deterministic geometry
  * on every platform.
  *
- * The bar floats over the transcript with no background, so content remains visible underneath.
- * Its host gives the scroll viewport a small bottom inset for as long as the bar is mounted, with
- * or without pills: that keeps the final footer clear, and pills that come and go every turn do not
- * move the transcript.
+ * On wide layouts the bar floats over the transcript with no background, so content remains
+ * visible underneath. Its host gives the scroll viewport a small bottom inset for as long as the
+ * bar is mounted, with or without pills: that keeps the final footer clear, and pills that come
+ * and go every turn do not move the transcript. Inside a `ComposerStatusLine` (the phone) it is
+ * part of the composer's layout instead, and needs no inset.
  */
 export function ComposerTrackBar({ children }: { children: ReactNode }): ReactElement {
   const scrollGesture = usePanelAwareHorizontalScrollGesture();
   const scrollBoundary = useHorizontalScrollBoundary();
+  // In the phone's status line the bar is part of the composer's layout, not an overlay, and it
+  // tells the line whether it has any pill to show.
+  const statusLine = useComposerStatusLine();
+  const { onContentSizeChange: onBoundaryContentSizeChange } = scrollBoundary;
+  const handleContentSizeChange = useCallback(
+    (width: number) => {
+      onBoundaryContentSizeChange(width);
+      statusLine?.reportStatusWidth(width);
+    },
+    [onBoundaryContentSizeChange, statusLine],
+  );
+  useEffect(() => () => statusLine?.reportStatusWidth(0), [statusLine]);
   return (
-    <View style={styles.bar} dataSet={CHAT_COLUMN_RAIL_DATASET} pointerEvents="box-none">
+    <View
+      style={statusLine ? styles.lineBar : styles.bar}
+      dataSet={statusLine ? undefined : CHAT_COLUMN_RAIL_DATASET}
+      pointerEvents="box-none"
+    >
       <View style={styles.trackViewport} pointerEvents="box-none">
         <GestureDetector gesture={scrollGesture}>
           <Animated.ScrollView
@@ -68,7 +93,7 @@ export function ComposerTrackBar({ children }: { children: ReactNode }): ReactEl
             keyboardShouldPersistTaps="handled"
             showsHorizontalScrollIndicator={false}
             onLayout={scrollBoundary.onLayout}
-            onContentSizeChange={scrollBoundary.onContentSizeChange}
+            onContentSizeChange={handleContentSizeChange}
             onScroll={scrollBoundary.onScroll}
             scrollEventThrottle={16}
           >
@@ -188,12 +213,13 @@ function ComposerTrackPillTrigger({
   // React Native Web does not map `accessibilityState.expanded` to `aria-expanded`, so the web
   // attribute is set by hand — the same workaround header toggles use.
   const ariaExpandedProps = isWeb ? { "aria-expanded": open } : null;
+  const pillBody = useComposerPillBody();
   const pillStyle = useCallback(
     ({ hovered, pressed, open: isOpen }: MenuTriggerState) => [
-      composerPillStyles.body,
+      pillBody,
       (hovered || pressed || isOpen) && composerPillStyles.bodyActive,
     ],
-    [],
+    [pillBody],
   );
   const labelStyle = useMemo(
     () => [composerPillStyles.label, open && composerPillStyles.labelActive],
@@ -440,6 +466,9 @@ const styles = StyleSheet.create((theme) => {
         xs: COMPOSER_PILL_CLEARANCE.compact,
         md: COMPOSER_PILL_CLEARANCE.wide,
       },
+    },
+    lineBar: {
+      minWidth: 0,
     },
     trackViewport: {
       width: "100%",

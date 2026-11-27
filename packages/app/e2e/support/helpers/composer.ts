@@ -423,10 +423,20 @@ export async function expectComposerDraftSelection(
     )
     .toEqual([start, end]);
 }
+/** The fullscreen editor's chrome: the title bar with its exit glyph, around the one live input. */
 export async function expectComposerFullscreenControls(page: Page): Promise<void> {
+  const frame = page.getByTestId("composer-fullscreen");
   await expect(page.getByRole("button", { name: "Exit fullscreen", exact: true })).toBeVisible();
-  await expect(page.getByTestId("composer-fullscreen").getByRole("button")).toHaveCount(2);
+  await expect(frame.getByRole("heading")).toBeVisible();
   await expect(composerInput(page)).toHaveCount(1);
+}
+/** A chat's fullscreen editor keeps the composer's whole bottom bar: attach, voice and Send. */
+export async function expectComposerFullscreenToolbar(page: Page): Promise<void> {
+  const frame = page.getByTestId("composer-fullscreen");
+  await expect(frame.getByRole("heading", { name: "Message", exact: true })).toBeVisible();
+  await expect(frame.getByRole("button", { name: "Add attachment", exact: true })).toBeVisible();
+  await expect(frame.getByRole("button", { name: /dictation/i })).toBeVisible();
+  await expect(frame.getByRole("button", { name: "Send message", exact: true })).toBeVisible();
 }
 /** The fullscreen frame and its submit button sit inside the browser's visible viewport. */
 export async function expectComposerFullscreenFitsVisibleViewport(

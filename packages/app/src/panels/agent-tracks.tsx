@@ -8,6 +8,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { usePaneContext } from "@/panels/pane-context";
 import { useSettings } from "@/hooks/use-settings";
 import { PluginComposerPills } from "@/plugins";
+import { OpenQuestionsTrack } from "@/questions/questions-track";
 import { useSessionStore } from "@/stores/session-store";
 import { useShallow } from "zustand/shallow";
 import {
@@ -151,6 +152,7 @@ export const AgentTracks = memo(function AgentTracks({
 
   return (
     <ComposerTrackBar>
+      <OpenQuestionsTrack serverId={serverId} agentId={agentId} />
       <BackgroundWorkTrack model={backgroundModel} summary={backgroundWork} />
       {parentAgentId ? <ParentAgentPill serverId={serverId} parentAgentId={parentAgentId} /> : null}
       <AgentTaskList tasks={tasks} />

@@ -1,3 +1,8 @@
+import type {
+  AgentPermissionDraft,
+  AgentPermissionDraftFile,
+} from "@getpaseo/protocol/agent-types";
+
 export interface QuestionOption {
   label: string;
   description?: string;
@@ -112,6 +117,7 @@ export function buildQuestionFormAnswerLists(
   questions: QuestionFormQuestion[],
   selections: QuestionSelections,
   otherTexts: QuestionOtherTexts,
+  extras: QuestionFormAnswerExtras = {},
 ): Record<string, string[]> {
   const answerLists: Record<string, string[]> = {};
   for (let i = 0; i < questions.length; i++) {
@@ -139,7 +145,7 @@ export function buildQuestionFormAnswerLists(
       answerLists[q.header] = labels;
     }
   }
-  return answerLists;
+  return withAnswerExtras(questions, answerLists, extras);
 }
 
 /** The comma-joined answer per question: Claude Code's native format, and the only one older daemons read. */
@@ -147,11 +153,90 @@ export function buildQuestionFormAnswers(
   questions: QuestionFormQuestion[],
   selections: QuestionSelections,
   otherTexts: QuestionOtherTexts,
+  extras?: QuestionFormAnswerExtras,
 ): Record<string, string> {
-  const answerLists = buildQuestionFormAnswerLists(questions, selections, otherTexts);
+  const answerLists = buildQuestionFormAnswerLists(questions, selections, otherTexts, extras);
   return Object.fromEntries(
     Object.entries(answerLists).map(([header, answers]) => [header, answers.join(", ")]),
   );
+}
+
+/** Sent for a question "Send what I have" leaves open (owner decision Q105). */
+export const NO_ANSWER_YET = "No answer yet: use your pick or ask me again";
+
+export type QuestionFiles = Record<number, readonly AgentPermissionDraftFile[]>;
+
+export interface QuestionFormAnswerExtras {
+  /** Uploaded files per question; their host paths join that question's answer. */
+  files?: QuestionFiles;
+  /** Answers every question left open with this text, for "Send what I have". */
+  fillUnanswered?: string;
+}
+
+function withAnswerExtras(
+  questions: QuestionFormQuestion[],
+  answerLists: Record<string, string[]>,
+  { files, fillUnanswered }: QuestionFormAnswerExtras,
+): Record<string, string[]> {
+  if (!files && !fillUnanswered) return answerLists;
+  const next = { ...answerLists };
+  questions.forEach((question, index) => {
+    const paths = files?.[index]?.map((file) => file.path) ?? [];
+    const current = next[question.header];
+    if (paths.length > 0) {
+      next[question.header] = [...(current ?? []), `Files: ${paths.join(", ")}`];
+    } else if (current === undefined && fillUnanswered) {
+      next[question.header] = [fillUnanswered];
+    }
+  });
+  return next;
+}
+
+/** The box's state as a draft every device can show. */
+export function draftFromQuestionForm(input: {
+  selections: QuestionSelections;
+  otherTexts: QuestionOtherTexts;
+  files: QuestionFiles;
+  updatedAt: number;
+}): AgentPermissionDraft {
+  const indexes = new Set([
+    ...Object.keys(input.selections),
+    ...Object.keys(input.otherTexts),
+    ...Object.keys(input.files),
+  ]);
+  const answers: AgentPermissionDraft["answers"] = {};
+  for (const key of indexes) {
+    const index = Number(key);
+    answers[key] = {
+      selected: [...(input.selections[index] ?? [])].sort((a, b) => a - b),
+      text: input.otherTexts[index] ?? "",
+      files: [...(input.files[index] ?? [])],
+    };
+  }
+  return { answers, updatedAt: input.updatedAt };
+}
+
+/** A question box's picks, typed words and files, by question index. */
+export interface QuestionFormDraftState {
+  selections: Record<number, Set<number>>;
+  otherTexts: QuestionOtherTexts;
+  files: QuestionFiles;
+}
+
+/** A draft from the host back into the box's state. */
+export function questionFormFromDraft(
+  draft: AgentPermissionDraft | undefined,
+): QuestionFormDraftState {
+  const selections: Record<number, Set<number>> = {};
+  const otherTexts: QuestionOtherTexts = {};
+  const files: QuestionFiles = {};
+  for (const [key, answer] of Object.entries(draft?.answers ?? {})) {
+    const index = Number(key);
+    if (answer.selected.length > 0) selections[index] = new Set(answer.selected);
+    if (answer.text) otherTexts[index] = answer.text;
+    if (answer.files.length > 0) files[index] = answer.files;
+  }
+  return { selections, otherTexts, files };
 }
 
 export function shouldSubmitEmptyOnDismiss(questions: QuestionFormQuestion[]): boolean {

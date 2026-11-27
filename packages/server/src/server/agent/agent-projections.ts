@@ -112,6 +112,7 @@ export function toStoredAgentRecord(
     ...(agent.background ? { background: true } : {}),
     owner: agent.owner,
     queuedMessages: agent.queuedMessages,
+    ...projectOpenQuestions(agent.openQuestions),
     ...(agent.queuePaused ? { queuePaused: true } : {}),
     ...(agent.queuePaused && agent.queuePauseReason
       ? { queuePauseReason: agent.queuePauseReason }
@@ -171,6 +172,7 @@ export function toAgentPayload(
     metadata: agent.metadata,
     archivedAt: options?.archivedAt ?? null,
     ...projectStoredQueue(agent),
+    ...projectOpenQuestions(agent.openQuestions),
     ...visibilityFlags(agent),
     ...projectSessionMetrics(agent.sessionMetrics),
   };
@@ -351,6 +353,7 @@ export function buildStoredAgentPayload(
     ...visibilityFlags(record),
     labels: normalizeLabels(record.labels),
     ...projectStoredQueue(record),
+    ...projectOpenQuestions(record.openQuestions),
     metadata: record.metadata,
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...projectSessionMetrics(record.sessionMetrics),
@@ -368,6 +371,13 @@ function projectStoredQueue(
       ? { queuePauseReason: record.queuePauseReason }
       : {}),
   };
+}
+
+// An agent with nothing open carries no field, so old records and snapshots stay unchanged.
+function projectOpenQuestions(
+  questions: AgentSnapshotPayload["openQuestions"],
+): Pick<AgentSnapshotPayload, "openQuestions"> {
+  return questions?.length ? { openQuestions: questions } : {};
 }
 
 // Snapshots carry summaries only: image bytes stay in the record and are
