@@ -4,6 +4,8 @@
  * "All" clears it. Its position is also the project's number for the jump keys.
  */
 
+import type { ProjectStatusCounts } from "@/hooks/sidebar-workspaces-view-model";
+
 /** With one project there is nothing to switch between, so the strip stays out of the way. */
 const PROJECT_STRIP_MIN_PROJECTS = 2;
 
@@ -79,4 +81,31 @@ export function moveProjectStripEntry(input: {
   keys.splice(index, 1);
   keys.splice(target, 0, input.viewKey);
   return keys;
+}
+
+/** A project's chats that get a dot beside its icon. Done chats you already opened get none. */
+export type ProjectStatusDot = "needs_input" | "failed" | "attention" | "running";
+
+/** About this many dots fit beside a rail icon. */
+const PROJECT_STATUS_DOT_LIMIT = 4;
+
+export interface ProjectStatusDots {
+  dots: ProjectStatusDot[];
+  /** More chats than dots: a "+" under the last dot. */
+  more: boolean;
+}
+
+/**
+ * One dot per chat, most urgent first: asking you, failed, done and not opened, working. Past the
+ * limit the last place goes to a "+", so working chats are the first to lose their dot.
+ */
+export function listProjectStatusDots(counts: ProjectStatusCounts): ProjectStatusDots {
+  const all: ProjectStatusDot[] = [
+    ...Array<ProjectStatusDot>(counts.needsInput).fill("needs_input"),
+    ...Array<ProjectStatusDot>(counts.failed).fill("failed"),
+    ...Array<ProjectStatusDot>(counts.attention).fill("attention"),
+    ...Array<ProjectStatusDot>(counts.running).fill("running"),
+  ];
+  if (all.length <= PROJECT_STATUS_DOT_LIMIT) return { dots: all, more: false };
+  return { dots: all.slice(0, PROJECT_STATUS_DOT_LIMIT - 1), more: true };
 }

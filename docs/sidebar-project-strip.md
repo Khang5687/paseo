@@ -46,11 +46,16 @@ Each project remembers the workspace you last had open in it (`useSidebarLastCha
 - A remembered workspace the project no longer lists (archived, moved) is ignored at jump time (`resolveProjectLastChat`), not deleted: a host that has not loaded yet lists nothing, and deleting then would forget every chat on it.
 - No remembered workspace: the jump only changes the list. It does not guess one.
 
-## The waiting badge
+## Status dots
 
-Each project shows how many of its workspaces have the `needs_input` status, through `countProjectWorkspacesNeedingInput`. It counts every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
+Each project shows one small dot per chat that has something going on: purple asks you, red failed, green finished and not opened yet, blue blinks while working (`ProjectStatusDots` in `components/sidebar/project-status-dots.tsx`). Done chats you already opened get none. The rail stacks the dots down the icon's right edge; a chip lines them up after its name. The counts come from `countProjectWorkspaceStatuses`, across every workspace in the project, including collapsed and hidden ones, because the strip is how you find work in a project you are not looking at.
 
-The badge is the palette purple (`theme.colors.palette.purple[500]`), the same purple as the New main agent dot, not the orange `needs_input` status dot. The status dots on workspace rows keep the orange; only the strip badge is purple, so a project-level count reads apart from a single workspace's status.
+- **Four places, urgent first.** `listProjectStatusDots` orders asking, failed, done, working. Past four, the last place becomes a "+", so working chats lose their dot first and the ones that want you stay visible.
+- **No numbers on the icon.** Exact counts are in the closed rail's tooltip and accessibility label ("Asking you: 1, Working: 2", `useProjectStatusLabel`) and beside the name on the open rail (`ProjectStatusCountList`). A chip has no hover, so its counts are in its accessibility label only; the list under it shows every chat.
+- **Purple, not orange.** Asking is the palette purple (`theme.colors.palette.purple[500]`), the same purple as the New main agent dot. Workspace rows keep the orange `needs_input` dot, so a project-level mark reads apart from one chat's status. The other three reuse the row dot colors.
+- The blink is a Reanimated opacity loop on an `Animated.View` that carries no Unistyles style (see [unistyles.md](unistyles.md)); it holds still under reduced motion.
+
+A collapsed project row in the list has its own aggregate: the most urgent status as a corner badge (`deriveProjectStatus`). When it is working only on chats that wait on a background job, the badge is the hourglass, not the ring, the same as those chats' own rows.
 
 ## Jump keys
 
@@ -77,4 +82,4 @@ Later sidebar features plug in here rather than adding a second switcher:
 
 - Per-project actions go in both menus: `ProjectChip`'s `ContextMenuContent` and `RailProjectButton`'s. Moves share `ProjectMoveItem`.
 - Anything that changes what selecting a project does belongs in the callers of `showOnlyProject`: the rail and chip press handlers and the `show-sidebar-project` keyboard route in `use-shortcuts.ts`.
-- Badges other than the waiting count go beside `NeedsInputBadge`, fed by a hook like `useSidebarProjectNeedsInputCount` that reads the session store with a primitive selector.
+- New per-project marks go beside `ProjectStatusDots`, fed by a hook like `useSidebarProjectStatusCounts` that reads the session store with a value-compared selector.

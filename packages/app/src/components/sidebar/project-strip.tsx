@@ -41,8 +41,14 @@ import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useShowProjectShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import {
   type SidebarProjectEntry,
-  useSidebarProjectNeedsInputCount,
+  useSidebarProjectStatusCounts,
 } from "@/hooks/use-sidebar-workspaces-list";
+import type { ProjectStatusCounts } from "@/hooks/sidebar-workspaces-view-model";
+import {
+  ProjectStatusCountList,
+  ProjectStatusDots,
+  useProjectStatusLabel,
+} from "./project-status-dots";
 import { useProjectIcons } from "@/projects/icons";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useSidebarLastChatStore } from "@/stores/sidebar-last-chat-store";
@@ -466,7 +472,8 @@ const RailProjectButton = memo(function RailProjectButton({
   const { hovered, onPointerEnter, onPointerLeave } = useHoverHandlers();
   const showOnlyProject = useSidebarViewStore((state) => state.showOnlyProject);
   const setRailOpen = useSidebarRailOpenStore((state) => state.setOpen);
-  const needsInputCount = useSidebarProjectNeedsInputCount(project.workspaces);
+  const statusCounts = useSidebarProjectStatusCounts(project.workspaces);
+  const statusLabel = useProjectStatusLabel(statusCounts);
   const chord = useProjectJumpChord(index);
   const shortcutNumber = projectStripShortcutNumber(index);
   const rememberedChat = useSidebarLastChatStore((state) => state.byProject[project.viewKey]);
@@ -478,8 +485,6 @@ const RailProjectButton = memo(function RailProjectButton({
     if (lastChat) navigateToWorkspace(lastChat);
   }, [project, rememberedChat, showOnlyProject]);
   const handleReorder = useCallback(() => setRailOpen(true), [setRailOpen]);
-  const needsInputLabel =
-    needsInputCount > 0 ? t("sidebar.projectStrip.needsInput", { count: needsInputCount }) : null;
 
   return (
     <View
@@ -496,15 +501,13 @@ const RailProjectButton = memo(function RailProjectButton({
             <RailTooltip
               show={!open}
               label={project.projectName}
-              subtext={needsInputLabel}
+              subtext={statusLabel}
               chord={chord}
             >
               <PressHighlight
                 accessibilityRole="tab"
                 accessibilityLabel={
-                  needsInputLabel
-                    ? `${project.projectName}, ${needsInputLabel}`
-                    : project.projectName
+                  statusLabel ? `${project.projectName}, ${statusLabel}` : project.projectName
                 }
                 aria-selected={selected}
                 highlightStyle={styles.railButtonPressed}
@@ -520,7 +523,7 @@ const RailProjectButton = memo(function RailProjectButton({
                   project={project}
                   iconDataUri={iconDataUri}
                   open={open}
-                  needsInputCount={needsInputCount}
+                  statusCounts={statusCounts}
                   shortcutNumber={showNumber ? shortcutNumber : null}
                 />
               </PressHighlight>
@@ -553,18 +556,21 @@ const RailProjectButton = memo(function RailProjectButton({
   );
 });
 
-/** What a rail project button shows: the icon, and on the open rail the name and a grip. */
+/**
+ * What a rail project button shows: the icon with a dot per busy chat; open, the name, the exact
+ * counts and a grip.
+ */
 function RailProjectFace({
   project,
   iconDataUri,
   open,
-  needsInputCount,
+  statusCounts,
   shortcutNumber,
 }: {
   project: SidebarProjectEntry;
   iconDataUri: string | null;
   open: boolean;
-  needsInputCount: number;
+  statusCounts: ProjectStatusCounts;
   shortcutNumber: number | null;
 }) {
   return (
@@ -577,30 +583,22 @@ function RailProjectFace({
         textStyle={styles.railIconText}
       />
       {open ? (
-        <Text style={styles.railRowText} numberOfLines={1}>
-          {project.projectName}
-        </Text>
-      ) : null}
-      {needsInputCount > 0 ? <NeedsInputBadge count={needsInputCount} floating={!open} /> : null}
-      {open ? <ThemedGripVertical size={14} uniProps={allIconMapping} /> : null}
+        <>
+          <Text style={styles.railRowText} numberOfLines={1}>
+            {project.projectName}
+          </Text>
+          <ProjectStatusCountList counts={statusCounts} />
+          <ThemedGripVertical size={14} uniProps={allIconMapping} />
+        </>
+      ) : (
+        <ProjectStatusDots counts={statusCounts} direction="column" />
+      )}
       {shortcutNumber !== null ? (
         <View style={styles.railNumber} pointerEvents="none" testID="sidebar-project-rail-number">
           <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
         </View>
       ) : null}
     </>
-  );
-}
-
-function NeedsInputBadge({ count, floating = false }: { count: number; floating?: boolean }) {
-  return (
-    <View
-      style={[styles.needsInputBadge, floating ? styles.needsInputBadgeFloating : null]}
-      pointerEvents="none"
-      testID="sidebar-project-strip-needs-input"
-    >
-      <Text style={styles.needsInputBadgeText}>{count > 99 ? "99+" : count}</Text>
-    </View>
   );
 }
 
@@ -787,24 +785,22 @@ const ProjectChip = memo(function ProjectChip({
   selected: boolean;
   showNumber: boolean;
 }) {
-  const { t } = useTranslation();
   const showOnlyProject = useSidebarViewStore((state) => state.showOnlyProject);
-  const needsInputCount = useSidebarProjectNeedsInputCount(project.workspaces);
+  const statusCounts = useSidebarProjectStatusCounts(project.workspaces);
+  const statusLabel = useProjectStatusLabel(statusCounts);
   const shortcutNumber = projectStripShortcutNumber(index);
   const moves = listProjectStripMoves({ projectKeys, viewKey: project.viewKey });
   const handlePress = useCallback(
     () => showOnlyProject(project.viewKey),
     [project.viewKey, showOnlyProject],
   );
-  const needsInputLabel =
-    needsInputCount > 0 ? t("sidebar.projectStrip.needsInput", { count: needsInputCount }) : null;
 
   return (
     <ContextMenu>
       <ContextMenuTrigger
         accessibilityRole="tab"
         accessibilityLabel={
-          needsInputLabel ? `${project.projectName}, ${needsInputLabel}` : project.projectName
+          statusLabel ? `${project.projectName}, ${statusLabel}` : project.projectName
         }
         aria-selected={selected}
         highlightStyle={styles.chipPressed}
@@ -826,7 +822,7 @@ const ProjectChip = memo(function ProjectChip({
         <Text style={styles.chipText} numberOfLines={1}>
           {project.projectName}
         </Text>
-        {needsInputCount > 0 ? <NeedsInputBadge count={needsInputCount} /> : null}
+        <ProjectStatusDots counts={statusCounts} direction="row" />
       </ContextMenuTrigger>
       <ContextMenuContent
         align="start"
@@ -996,31 +992,6 @@ const styles = StyleSheet.create((theme) => ({
     position: "absolute",
     left: -4,
     bottom: -4,
-  },
-  needsInputBadge: {
-    minWidth: 16,
-    height: 16,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: theme.borderRadius.full,
-    // The palette purple, as on the New main agent dot: the strip badge is not the orange status dot.
-    backgroundColor: theme.colors.palette.purple[500],
-  },
-  needsInputBadgeFloating: {
-    position: "absolute",
-    top: -5,
-    right: -5,
-    borderWidth: 2,
-    borderColor: theme.colors.surfaceSidebar,
-    height: 20,
-    minWidth: 20,
-  },
-  needsInputBadgeText: {
-    color: theme.colors.surface0,
-    fontSize: 10,
-    fontWeight: theme.fontWeight.semibold,
-    lineHeight: 12,
   },
   quietCountFloating: {
     position: "absolute",

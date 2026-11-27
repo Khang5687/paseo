@@ -6,7 +6,15 @@ import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-cli
 import { getServerId } from "../support/helpers/server-id";
 
 // theme.colors.palette.purple[500], the same purple as the New main agent dot.
-const STRIP_BADGE_PURPLE = "rgb(168, 85, 247)";
+const ASKING_DOT_PURPLE = "rgb(168, 85, 247)";
+
+// One dot per chat: the project asking you shows one purple dot and no number.
+async function expectOneAskingDot(item: Locator): Promise<void> {
+  const dot = item.getByTestId("sidebar-project-status-dot-needs_input");
+  await expect(dot).toHaveCount(1, { timeout: 60_000 });
+  await expect(dot).toHaveCSS("background-color", ASKING_DOT_PURPLE);
+  await expect(item).toHaveAttribute("aria-label", /Asking you: 1/);
+}
 
 // The strip only appears with two or more projects, so every test seeds two.
 async function seedTwoProjects(): Promise<[SeededWorkspace, SeededWorkspace]> {
@@ -106,12 +114,27 @@ test.describe("Sidebar project strip", () => {
         await expect(workspaceRow(page, alpha)).toBeVisible({ timeout: 30_000 });
         await expect(workspaceRow(page, beta)).toBeVisible({ timeout: 30_000 });
 
-        const railBadge = railItem(page, beta).getByTestId("sidebar-project-strip-needs-input");
-        await expect(railBadge).toHaveText("1", { timeout: 60_000 });
-        await expect(railBadge).toHaveCSS("background-color", STRIP_BADGE_PURPLE);
-        await expect(
-          railItem(page, alpha).getByTestId("sidebar-project-strip-needs-input"),
-        ).toHaveCount(0);
+        await expectOneAskingDot(railItem(page, beta));
+        await expect(railItem(page, beta)).not.toContainText("1");
+        await expect(railItem(page, alpha).getByTestId("sidebar-project-status-dots")).toHaveCount(
+          0,
+        );
+        await railItem(page, beta).hover();
+        await expect(page.getByText("Asking you: 1")).toBeVisible();
+        await screenshot(page, "desktop-rail-dots.png");
+
+        // The open rail writes the exact counts beside the name.
+        await page.getByTestId("sidebar-project-rail-toggle").click();
+        await expect(railItem(page, beta).getByTestId("sidebar-project-status-counts")).toHaveText(
+          "1",
+        );
+        await page.mouse.move(700, 400);
+        await screenshot(page, "desktop-rail-open-counts.png");
+        await page.getByTestId("sidebar-project-rail-toggle").click();
+        await expect(page.getByTestId("sidebar-project-rail-toggle")).toHaveAttribute(
+          "aria-expanded",
+          "false",
+        );
 
         await railItem(page, beta).click();
         await expectOnlyProjectShown(page, beta, alpha);
@@ -243,9 +266,7 @@ test.describe("Sidebar project strip", () => {
         await gotoAppShell(page);
         await page.getByRole("button", { name: "Open menu", exact: true }).tap();
         await expect(page.getByTestId("sidebar-project-chip-row")).toBeVisible({ timeout: 30_000 });
-        const chipBadge = chip(page, beta).getByTestId("sidebar-project-strip-needs-input");
-        await expect(chipBadge).toHaveText("1", { timeout: 60_000 });
-        await expect(chipBadge).toHaveCSS("background-color", STRIP_BADGE_PURPLE);
+        await expectOneAskingDot(chip(page, beta));
 
         await chip(page, beta).tap();
         await expectOnlyProjectShown(page, beta, alpha);

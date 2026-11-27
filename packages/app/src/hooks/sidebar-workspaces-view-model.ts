@@ -246,19 +246,26 @@ function forEachKnownProjectWorkspace(
   }
 }
 
-function collectProjectWorkspaceStatuses(input: ProjectStatusInput): SidebarStateBucket[] {
-  const buckets: SidebarStateBucket[] = [];
+interface ProjectWorkspaceStatus {
+  status: SidebarStateBucket;
+  /** The working chat is blocked on a background job. */
+  waiting: boolean;
+}
+
+function collectProjectWorkspaceStatuses(input: ProjectStatusInput): ProjectWorkspaceStatus[] {
+  const statuses: ProjectWorkspaceStatus[] = [];
   forEachKnownProjectWorkspace(input, (serverId, session, workspace) => {
-    buckets.push(
-      deriveEffectiveWorkspaceStatus({
+    statuses.push({
+      status: deriveEffectiveWorkspaceStatus({
         serverId,
         workspace,
         pendingCreateAttempts: input.pendingCreateAttempts,
         workspaceAgentActivity: session.workspaceAgentActivity,
       }).status,
-    );
+      waiting: (session.workspaceAgentActivity.get(workspace.id)?.waitingOn ?? null) !== null,
+    });
   });
-  return buckets;
+  return statuses;
 }
 
 export interface ProjectActivity {
@@ -302,17 +309,45 @@ export function deriveProjectActivity(input: ProjectStatusInput): ProjectActivit
   return { lastActivityMs, needsInput };
 }
 
-/**
- * Most urgent status among a project's workspaces. Backs the status dot on a collapsed
- * project row, which otherwise hides every workspace-level signal it contains.
- */
-export function deriveProjectStatusBucket(input: ProjectStatusInput): SidebarStateBucket {
-  return aggregateSidebarStateBuckets(collectProjectWorkspaceStatuses(input));
+export interface ProjectStatusSummary {
+  /** Most urgent status among the project's workspaces. */
+  bucket: SidebarStateBucket;
+  /** Working, and every working workspace waits on a background job: an hourglass, not a ring. */
+  waiting: boolean;
 }
 
-/** How many of a project's workspaces wait on the user. Backs the project strip's badge. */
-export function countProjectWorkspacesNeedingInput(input: ProjectStatusInput): number {
-  return collectProjectWorkspaceStatuses(input).filter((status) => status === "needs_input").length;
+/**
+ * Most urgent status among a project's workspaces. Backs the status badge on a collapsed
+ * project row, which otherwise hides every workspace-level signal it contains.
+ */
+export function deriveProjectStatus(input: ProjectStatusInput): ProjectStatusSummary {
+  const statuses = collectProjectWorkspaceStatuses(input);
+  const bucket = aggregateSidebarStateBuckets(statuses.map((entry) => entry.status));
+  const working = statuses.filter((entry) => entry.status === "running");
+  return {
+    bucket,
+    waiting: bucket === "running" && working.every((entry) => entry.waiting),
+  };
+}
+
+/** How many of a project's workspaces sit in each status that gets a dot on the project strip. */
+export interface ProjectStatusCounts {
+  needsInput: number;
+  failed: number;
+  /** Finished and not opened yet. */
+  attention: number;
+  running: number;
+}
+
+export function countProjectWorkspaceStatuses(input: ProjectStatusInput): ProjectStatusCounts {
+  const counts: ProjectStatusCounts = { needsInput: 0, failed: 0, attention: 0, running: 0 };
+  for (const { status } of collectProjectWorkspaceStatuses(input)) {
+    if (status === "needs_input") counts.needsInput += 1;
+    else if (status === "failed") counts.failed += 1;
+    else if (status === "attention") counts.attention += 1;
+    else if (status === "running") counts.running += 1;
+  }
+  return counts;
 }
 
 /** One bounded projection per sidebar; unchanged placements survive project reordering. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   listProjectEndMoves,
+  listProjectStatusDots,
   listProjectStripMoves,
   moveProjectStripEntry,
   resolveProjectStripShortcutKeys,
@@ -51,5 +52,32 @@ describe("project strip menu moves", () => {
     { viewKey: "a", move: "bottom" as const, expected: ["b", "c", "d", "a"] },
   ])("moves $viewKey $move", ({ viewKey, move, expected }) => {
     expect(moveProjectStripEntry({ projectKeys: KEYS, viewKey, move })).toEqual(expected);
+  });
+});
+
+describe("project status dots", () => {
+  const counts = (needsInput: number, failed: number, attention: number, running: number) => ({
+    needsInput,
+    failed,
+    attention,
+    running,
+  });
+
+  it("gives each chat a dot, asking first, then failed, done, working", () => {
+    expect(listProjectStatusDots(counts(1, 0, 1, 2))).toEqual({
+      dots: ["needs_input", "attention", "running", "running"],
+      more: false,
+    });
+  });
+
+  it("cuts working chats first and shows a plus past four", () => {
+    expect(listProjectStatusDots(counts(1, 1, 1, 3))).toEqual({
+      dots: ["needs_input", "failed", "attention"],
+      more: true,
+    });
+  });
+
+  it("shows nothing for a project with no dotted chats", () => {
+    expect(listProjectStatusDots(counts(0, 0, 0, 0))).toEqual({ dots: [], more: false });
   });
 });
