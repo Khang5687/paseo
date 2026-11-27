@@ -1,0 +1,8 @@
+{
+  "pr": 171,
+  "title": "feat(server): let a terminal belong to a chat",
+  "tests": [
+    "packages/server/src/terminal/worker-terminal-manager.test.ts",
+    "packages/server/src/terminal/terminal-worker-protocol.test.ts"
+  ]
+}
