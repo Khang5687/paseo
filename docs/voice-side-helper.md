@@ -17,15 +17,15 @@ Spellings are compared after `soundsLike` (soft c and z as s, i and y as e, sile
 
 ## Read-only guard
 
-The model runs as a one-shot internal agent (`runSideHelperModel`): `internal: true`, no persisted session, an empty folder under the OS temp dir as its cwd, the provider's safe mode (`colorTier: "safe"`, OMP `ask`), every `permission_requested` denied (the same guard `ask_agent` copies use), and closed and deleted in `finally`. The chat data is sent inline in the prompt.
+The model runs as a one-shot internal agent (`runSideHelperModel`): `internal: true`, no persisted session, an empty folder under the OS temp dir as its cwd, the provider's safe mode (`colorTier: "safe"`, OMP `ask`), and closed and deleted once the answer is in. It is created with `CreateAgentOptions.toolless`, which the OMP provider turns into `--no-tools --no-skills --no-rules --no-context-files --no-extensions --no-lsp --no-title --system-prompt=<SIDE_HELPER_SYSTEM_PROMPT>` and no Paseo tools or MCP servers. `--no-tools` also turns off OMP's own MCP. So the model has no tools at all, read tools included, and sees only our system prompt and the chat data sent inline.
 
-Residual risk: OMP's read tools are not approval-gated, so the model could read files under its empty cwd or by absolute path. It has nothing to change things with. Removing tools entirely (OMP `--no-tools`) needs a change in the OMP provider. A later action ("Paseo, tell fitup to run the tests") would be a new step that asks a spoken "yes" first, added in `voice-side-helper.ts`.
+A provider that does not implement `toolless` ignores it. For that case every `permission_requested` is still denied (the same guard `ask_agent` copies use). A later action ("Paseo, tell fitup to run the tests") would be a new step that asks a spoken "yes" first, added in `voice-side-helper.ts`.
 
 ## Cost and time
 
 - Context cap: `SIDE_HELPER_CONTEXT_TOKENS` = 6000 tokens, estimated at 4 characters each. Timelines get 60%: the current chat plus up to two chats the question names, last 12 items each, 600 characters per entry, newest kept. The chat list gets the rest, current chat and chats waiting on you first, then a "and N more" line.
-- The internal agent still loads the provider's global context files and Paseo tools, which add input tokens the cap does not cover. The daemon log line `Voice helper call` has the real `inputTokens`, `outputTokens`, `costUsd` and `durationMs` for each question.
-- "One sec." after 1.5 s, "Sorry, no answer." after 20 s or on any failure. Voice off, abort, or the next question cancels the run silently.
+- Toolless, the prompt is about the system prompt plus the chat data. Before `toolless` each question carried about 22.9k cached input tokens of OMP's coding prompt, tool schemas and context files. The daemon log line `Voice helper call` has the real `inputTokens`, `cachedInputTokens`, `outputTokens`, `costUsd` and `durationMs` for each question. OMP reports usage after the turn, so the line comes up to 2 s after the answer.
+- "One sec." after 1.5 s, "Sorry, no answer." after 20 s or on any failure. Voice off, abort, or the next question cancels the run silently. "One sec." is synthesized once per TTS provider and kept in memory (`TTSManager.prepareSpeechClip`), made when voice turns on, because Kokoro took about 4 s to synthesize it on demand and the cue came long after its timer.
 - The model is `features.voiceMode.sideHelperModel` (`<provider>/<model>`), read at every question. The default `omp/anthropic/claude-haiku-5-5` is provisional.
 
 ## Checking it again

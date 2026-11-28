@@ -4,6 +4,8 @@
   "tests": [
     "packages/server/src/server/session/voice/voice-side-helper.test.ts",
     "packages/server/src/server/session/voice/voice-session.test.ts",
-    "packages/server/src/server/daemon-config-store.test.ts"
+    "packages/server/src/server/daemon-config-store.test.ts",
+    "packages/server/src/server/agent/providers/omp/agent.test.ts",
+    "packages/server/src/server/agent/tts-manager.test.ts"
   ]
 }

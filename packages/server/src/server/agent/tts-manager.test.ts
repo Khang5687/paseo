@@ -295,4 +295,50 @@ describe("TTSManager", () => {
 
     expect(warnSpy).not.toHaveBeenCalled();
   });
+
+  it("synthesizes a speech clip once per provider and plays it from memory after that", async () => {
+    const calls: string[] = [];
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech(text: string) {
+        calls.push(text);
+        return { stream: Readable.from([Buffer.from("one "), Buffer.from("sec")]), format: "pcm" };
+      },
+    };
+    const first = new TTSManager("s1", pino({ level: "silent" }), tts);
+    const second = new TTSManager("s2", pino({ level: "silent" }), tts);
+    const played: string[] = [];
+    const play = (manager: TTSManager) =>
+      manager.playSpeechClip(
+        "One sec.",
+        (msg) => {
+          if (msg.type !== "audio_output") return;
+          played.push(Buffer.from(msg.payload.audio, "base64").toString());
+          manager.confirmAudioPlayed(msg.payload.id);
+        },
+        new AbortController().signal,
+      );
+
+    await first.prepareSpeechClip("One sec.");
+    await play(first);
+    await play(second);
+
+    expect(calls).toEqual(["One sec."]);
+    expect(played).toEqual(["one sec", "one sec"]);
+  });
+
+  it("forgets a failed speech clip so the next play synthesizes again", async () => {
+    let attempts = 0;
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech() {
+        attempts += 1;
+        if (attempts === 1) throw new Error("model not loaded");
+        return { stream: Readable.from([Buffer.from("ok")]), format: "pcm" };
+      },
+    };
+    const manager = new TTSManager("s1", pino({ level: "silent" }), tts);
+
+    await expect(manager.prepareSpeechClip("One sec.")).rejects.toThrow("model not loaded");
+    await expect(manager.prepareSpeechClip("One sec.")).resolves.toMatchObject({ format: "pcm" });
+    expect(attempts).toBe(2);
+  });
 });

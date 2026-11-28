@@ -17,6 +17,7 @@ import {
   type AgentForkSessionResult,
   type AgentOptionControl,
   type AgentClientInstallation,
+  type AgentCreateSessionOptions,
   type AgentLaunchContext,
   type AgentMetadata,
   type AgentMode,
@@ -505,6 +506,25 @@ function composeOmpSystemPrompt(
     ...(config.pluginAppendSystemPrompt ?? []),
     renderOutputStylePrompt(outputStyles.find((style) => style.name === selected)),
   );
+}
+
+/**
+ * OMP flags for a toolless one-shot: no built-in tools (which also turns off OMP's own MCP), no
+ * discovered skills, rules, context files or extensions, no LSP or title call, and the caller's
+ * system prompt in place of OMP's coding prompt.
+ */
+function ompToollessArgs(systemPrompt: string | undefined): string[] {
+  const prompt = systemPrompt?.trim();
+  return [
+    "--no-tools",
+    "--no-skills",
+    "--no-rules",
+    "--no-context-files",
+    "--no-extensions",
+    "--no-lsp",
+    "--no-title",
+    ...(prompt ? [`--system-prompt=${prompt}`] : []),
+  ];
 }
 
 function readNativeMessageId(
@@ -2788,9 +2808,17 @@ export class OmpAgentClient implements AgentClient {
   }
 
   async createSession(
-    config: AgentSessionConfig,
-    launchContext?: AgentLaunchContext,
+    requestedConfig: AgentSessionConfig,
+    requestedLaunchContext?: AgentLaunchContext,
+    options?: AgentCreateSessionOptions,
   ): Promise<AgentSession> {
+    const toolless = options?.toolless === true;
+    // A toolless session gets no MCP servers and no Paseo tools on top of OMP's own --no-tools.
+    const config = toolless ? { ...requestedConfig, mcpServers: undefined } : requestedConfig;
+    const launchContext =
+      toolless && requestedLaunchContext
+        ? { ...requestedLaunchContext, paseoTools: undefined }
+        : requestedLaunchContext;
     const launchMode = this.resolveLaunchMode(config.modeId, config.providerOptions);
     const outputStyles = await this.listOutputStyles(config.cwd, launchContext?.env);
     const startInput: OmpStartSessionInput = {
@@ -2798,10 +2826,14 @@ export class OmpAgentClient implements AgentClient {
       protocolMode: "rpc-ui",
       model: config.model,
       thinkingOptionId: normalizeOmpThinkingOption(config.thinkingOptionId) ?? undefined,
-      noSession: config.internal === true,
+      noSession: config.internal === true || toolless,
       modeId: launchMode.modeId,
-      extraArgs: launchMode.extraArgs,
-      systemPrompt: composeOmpSystemPrompt(config, outputStyles),
+      ...(toolless
+        ? { extraArgs: [...launchMode.extraArgs, ...ompToollessArgs(config.systemPrompt)] }
+        : {
+            extraArgs: launchMode.extraArgs,
+            systemPrompt: composeOmpSystemPrompt(config, outputStyles),
+          }),
       env: launchContext?.env,
       wrap: launchContext?.wrap,
     };

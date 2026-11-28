@@ -468,6 +468,8 @@ export interface CreateAgentOptions {
   owner?: AgentOwner;
   /** Background agents stay out of discovery, tabs, tracks and attention. Fixed at creation. */
   background?: boolean;
+  /** Run as a one-shot answer with no tools; see `AgentCreateSessionOptions.toolless`. */
+  toolless?: boolean;
 }
 
 export interface AgentManagerOptions {
@@ -1978,10 +1980,13 @@ export class AgentManager {
 
   private buildCreateSessionOptions(options?: {
     persistSession?: boolean;
+    toolless?: boolean;
   }): AgentCreateSessionOptions | undefined {
-    return options?.persistSession === undefined
-      ? undefined
-      : { persistSession: options.persistSession };
+    if (!options || (options.persistSession === undefined && !options.toolless)) return undefined;
+    return {
+      ...(options.persistSession !== undefined ? { persistSession: options.persistSession } : {}),
+      ...(options.toolless ? { toolless: true } : {}),
+    };
   }
 
   // Reconstruct an agent from provider persistence. Callers should explicitly

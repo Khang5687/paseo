@@ -540,6 +540,7 @@ export class VoiceSession {
         this.navigationEnabled = options.navigation === true;
         this.refreshSpeechConfirm();
         this.recordVoiceArrival(normalizedAgentId);
+        this.prepareSideHelperCue();
         this.sessionLogger.info(
           {
             agentId: this.voiceModeAgentId,
@@ -1428,7 +1429,7 @@ export class VoiceSession {
       timeout.abort(new Error("The voice helper took too long"));
     }, SIDE_HELPER_TIMEOUT_MS);
     const waitTimer = setTimeout(
-      () => this.queueAnnouncement(SIDE_HELPER_WAIT_SPEECH),
+      () => this.queueAnnouncement(SIDE_HELPER_WAIT_SPEECH, { clip: true }),
       SIDE_HELPER_WAIT_MS,
     );
     run.signal.addEventListener("abort", () => finish(null), { once: true });
@@ -1451,6 +1452,14 @@ export class VoiceSession {
     this.sideHelperWoken = false;
     this.sideHelperRun?.abort(new Error("Voice helper question cancelled"));
     this.sideHelperRun = null;
+  }
+
+  /** Makes "One sec." ahead of time, so it plays when due instead of after a synthesis. */
+  private prepareSideHelperCue(): void {
+    if (!this.host.askSideHelper) return;
+    this.ttsManager.prepareSpeechClip(SIDE_HELPER_WAIT_SPEECH).catch((error) => {
+      this.sessionLogger.warn({ err: error }, "Failed to prepare the voice helper cue");
+    });
   }
 
   private async deliverSpokenMessage(text: string): Promise<void> {
@@ -1536,6 +1545,27 @@ export class VoiceSession {
     if (spoken) {
       await this.playSpeech(spoken, this.abortController.signal);
     }
+    this.logSpoken(text);
+  }
+
+  /** A short fixed line played from memory (`TTSManager.playSpeechClip`). */
+  private async speakClipAloud(text: string): Promise<void> {
+    this.activePlaybacks += 1;
+    this.refreshSpeechConfirm();
+    try {
+      await this.ttsManager.playSpeechClip(
+        text,
+        (msg) => this.emit(msg),
+        this.abortController.signal,
+      );
+    } finally {
+      this.activePlaybacks -= 1;
+      this.refreshSpeechConfirm();
+    }
+    this.logSpoken(text);
+  }
+
+  private logSpoken(text: string): void {
     this.emit({
       type: "activity_log",
       payload: { id: uuidv4(), timestamp: new Date(), type: "assistant", content: text },
@@ -1568,9 +1598,10 @@ export class VoiceSession {
   }
 
   /** Announcements play one after another so two prompts never talk over each other. */
-  private queueAnnouncement(text: string): void {
+  private queueAnnouncement(text: string, options: { clip?: boolean } = {}): void {
+    const speak = () => (options.clip ? this.speakClipAloud(text) : this.speakAloud(text));
     this.announcementChain = this.announcementChain
-      .then(() => (this.closed ? undefined : this.speakAloud(text)))
+      .then(() => (this.closed ? undefined : speak()))
       .catch((error) => {
         this.sessionLogger.warn({ err: error }, "Failed to speak voice announcement");
       });

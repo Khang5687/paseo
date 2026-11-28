@@ -12,6 +12,7 @@ import {
   parseSideHelperCall,
   parseSideHelperModel,
   runSideHelperModel,
+  SIDE_HELPER_SYSTEM_PROMPT,
   type SideHelperChatInfo,
 } from "./voice-side-helper.js";
 
@@ -221,9 +222,10 @@ describe("runSideHelperModel", () => {
         internal: true,
         modeId: "ask",
         cwd: "/tmp/empty",
+        systemPrompt: SIDE_HELPER_SYSTEM_PROMPT,
       }),
       undefined,
-      { persistSession: false, workspaceId: undefined },
+      { persistSession: false, workspaceId: undefined, toolless: true },
     );
     expect(fake.respondToPermission).toHaveBeenCalledWith(
       "helper-agent",

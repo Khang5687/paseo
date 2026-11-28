@@ -344,19 +344,16 @@ export function buildSideHelperContext(
   return sections.join("\n\n");
 }
 
+/** The helper's whole system prompt: the provider adds no coding prompt, tools or context files. */
+export const SIDE_HELPER_SYSTEM_PROMPT = [
+  "You are Paseo's voice helper. The owner talks to his coding agents hands-free and hears your answer through text-to-speech.",
+  "Answer only from the chat data in the message. If it does not say, say you don't know.",
+  "Answer first, in at most three short sentences of plain spoken English. No markdown, lists, code, file paths or IDs.",
+  "You can only read. If asked to do something, say you can only read for now.",
+].join("\n");
+
 export function buildSideHelperPrompt(question: string, context: string): string {
-  return [
-    "You are Paseo's voice helper. The owner talks to his coding agents hands-free and hears your answer through text-to-speech.",
-    "Answer only from the chat data below. If it does not say, say you don't know.",
-    "Answer first, in at most three short sentences of plain spoken English. No markdown, lists, code, file paths or IDs.",
-    "You can only read. Do not use any tools. If asked to do something, say you can only read for now.",
-    "",
-    "<chat-data>",
-    context,
-    "</chat-data>",
-    "",
-    `Question: ${question}`,
-  ].join("\n");
+  return ["<chat-data>", context, "</chat-data>", "", `Question: ${question}`].join("\n");
 }
 
 export interface SideHelperModelChoice {
@@ -410,9 +407,11 @@ export interface SideHelperAnswer {
 const FINAL_USAGE_WAIT_MS = 2000;
 
 /**
- * One question, one model turn, on a hidden agent that is closed and deleted afterwards. It
- * starts in an empty folder in the provider's safest mode, and every approval it asks for is
- * denied, the same guard `ask_agent` copies use. Aborting `signal` cancels the run.
+ * One question, one model turn, on a hidden agent that is closed and deleted afterwards. It runs
+ * toolless (no tools, no skills, rules or context files, only `SIDE_HELPER_SYSTEM_PROMPT`) in an
+ * empty folder in the provider's safest mode, and every approval it asks for is denied, the same
+ * guard `ask_agent` copies use, for a provider that cannot run toolless. Aborting `signal`
+ * cancels the run.
  */
 export async function runSideHelperModel(input: {
   manager: OneShotManager;
@@ -431,10 +430,11 @@ export async function runSideHelperModel(input: {
       cwd: input.cwd,
       internal: true,
       title: "Voice helper",
+      systemPrompt: SIDE_HELPER_SYSTEM_PROMPT,
       ...(modeId ? { modeId } : {}),
     },
     undefined,
-    { persistSession: false, workspaceId: undefined },
+    { persistSession: false, workspaceId: undefined, toolless: true },
   );
   let streamedUsage: AgentUsage | undefined;
   let onLateUsage: (() => void) | null = null;

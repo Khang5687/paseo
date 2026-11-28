@@ -5,6 +5,7 @@ import { setImmediate as waitForImmediate } from "node:timers/promises";
 import pino from "pino";
 
 import type {
+  AgentCreateSessionOptions,
   AgentPersistenceHandle,
   AgentPermissionResponse,
   AgentSessionConfig,
@@ -113,10 +114,12 @@ export class OmpHarness {
     config: Partial<AgentSessionConfig> = {},
     paseoTools?: PaseoToolCatalog,
     env?: Record<string, string>,
+    options?: AgentCreateSessionOptions,
   ): Promise<void> {
     const session = await this.client.createSession(
       { provider: "omp", cwd: CWD, ...config },
       paseoTools || env ? { paseoTools, env } : undefined,
+      options,
     );
     if (!(session instanceof OmpAgentSession)) {
       throw new Error("OMP client returned a non-OMP session");
