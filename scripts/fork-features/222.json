@@ -1,0 +1,9 @@
+{
+  "pr": 222,
+  "title": "feat(server): let the \"Paseo, ...\" voice helper act after a spoken yes",
+  "tests": [
+    "packages/server/src/server/session/voice/voice-helper-actions.test.ts",
+    "packages/server/src/server/session/voice/voice-side-helper.test.ts",
+    "packages/server/src/server/session/voice/voice-session.test.ts"
+  ]
+}

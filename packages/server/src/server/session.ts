@@ -227,6 +227,7 @@ import {
   type VoiceChatProject,
 } from "./session/voice/voice-chat-directory.js";
 import { createVoiceSideHelper } from "./session/voice/voice-side-helper.js";
+import { runVoiceHelperAction } from "./session/voice/voice-helper-actions.js";
 import { CheckoutSession } from "./session/checkout/checkout-session.js";
 import {
   createWorkspaceGitObserverService,
@@ -1559,6 +1560,52 @@ export class Session {
             },
             logger: this.sessionLogger,
           }),
+          runSideHelperAction: (action) =>
+            runVoiceHelperAction(action, {
+              sendMessage: async (agentId, text) => {
+                const sent = await this.handleSendAgentMessage(
+                  agentId,
+                  text,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  { steer: true },
+                );
+                if (!sent.ok) throw new Error(sent.error);
+              },
+              respondToPermission: (agentId, requestId, response) =>
+                respondToAgentPermission({
+                  agentManager: this.agentManager,
+                  agentId,
+                  requestId,
+                  response,
+                  logger: this.sessionLogger,
+                }),
+              startChat: async (chat) => {
+                await this.createSessionAgent({
+                  type: "create_agent_request",
+                  config: {
+                    provider: chat.provider,
+                    cwd: chat.cwd,
+                    ...(chat.model ? { model: chat.model } : {}),
+                    ...(chat.modeId ? { modeId: chat.modeId } : {}),
+                    ...(chat.thinkingOptionId ? { thinkingOptionId: chat.thinkingOptionId } : {}),
+                  },
+                  workspaceId: chat.workspaceId,
+                  initialPrompt: chat.text,
+                  labels: {},
+                  requestId: uuidv4(),
+                });
+              },
+              stopRun: async (agentId) => {
+                await cancelAgentRunCommand(
+                  { agentManager: this.agentManager, logger: this.sessionLogger },
+                  agentId,
+                );
+              },
+              logger: this.sessionLogger,
+            }),
         },
         logger: this.sessionLogger,
         sessionId: this.sessionId,
@@ -5141,7 +5188,7 @@ export class Session {
     images?: Array<{ data: string; mimeType: string }>,
     attachments?: AgentAttachment[],
     runOptions?: AgentRunOptions,
-    options?: { spokenInput?: boolean; speakToolReady?: boolean },
+    options?: { spokenInput?: boolean; speakToolReady?: boolean; steer?: boolean },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     this.sessionLogger.info(
       {
@@ -5180,8 +5227,9 @@ export class Session {
         messageId,
         runOptions,
         // Speech never replaces a run in progress: a spoken turn joins it, like a typed
-        // message sent with the default "steer" send behavior.
-        activeTurnBehavior: options?.spokenInput ? "steer" : undefined,
+        // message sent with the default "steer" send behavior. So does a message the voice
+        // helper sends to another chat (`steer`).
+        activeTurnBehavior: options?.spokenInput || options?.steer ? "steer" : undefined,
         // A typed or spoken message from the human answers any permission the
         // agent is blocked on.
         clearPendingPermissions: true,
@@ -6495,6 +6543,7 @@ export class Session {
   private async readVoiceChats(): Promise<{
     directory: VoiceChatProject[];
     agents: AgentSnapshotPayload[];
+    workspaces: Array<{ workspaceId: string; projectId: string; cwd: string }>;
   }> {
     const [projects, workspaces] = await Promise.all([
       this.projectRegistry.list(),
@@ -6503,7 +6552,11 @@ export class Session {
     const agents = await this.listAgentPayloads({
       workspaceIds: workspaces.map((workspace) => workspace.workspaceId),
     });
-    return { directory: buildVoiceChatDirectory({ projects, workspaces, agents }), agents };
+    return {
+      directory: buildVoiceChatDirectory({ projects, workspaces, agents }),
+      agents,
+      workspaces,
+    };
   }
 
   private async resolveAgentIdentifier(

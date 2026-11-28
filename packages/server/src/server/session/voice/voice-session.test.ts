@@ -10,6 +10,11 @@ import type { VoiceSendMode } from "./send-words.js";
 import type { VoiceChatProject } from "./voice-chat-directory.js";
 import { createVoiceNavMemory, type VoiceNavMemory } from "./voice-navigate.js";
 import { SIDE_HELPER_TIMEOUT_MS, SIDE_HELPER_WAIT_MS } from "./voice-side-helper.js";
+import {
+  HELPER_CONFIRM_SILENCE_MS,
+  type SideHelperReply,
+  type VoiceHelperAction,
+} from "./voice-helper-actions.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
 import type { SessionOutboundMessage } from "../../messages.js";
@@ -785,23 +790,29 @@ describe("VoiceSession side helper", () => {
   ];
 
   type Ask = NonNullable<VoiceSessionHost["askSideHelper"]>;
+  const speech = (text: string): SideHelperReply => ({ kind: "speech", text });
 
-  async function startHelperSession(ask: Ask, options: { navigation?: boolean } = {}) {
+  async function startHelperSession(
+    ask: Ask,
+    options: { navigation?: boolean; run?: (action: VoiceHelperAction) => Promise<string> } = {},
+  ) {
     const setup = createVoiceSession(playedTts, { navMemory: createVoiceNavMemory() });
     acknowledgeAudio(setup);
     setup.host.chats = chats;
     const askSideHelper = vi.fn(ask);
     setup.host.askSideHelper = askSideHelper;
+    const runSideHelperAction = vi.fn(options.run ?? (async () => "Sent."));
+    setup.host.runSideHelperAction = runSideHelperAction;
     await setup.voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID, undefined, {
       navigation: options.navigation ?? false,
     });
-    return { ...setup, askSideHelper };
+    return { ...setup, askSideHelper, runSideHelperAction };
   }
 
   test("'Paseo, ...' is answered out loud and never reaches the chat; plain words still do", async () => {
     vi.useFakeTimers();
     const { voiceSession, detector, sttSession, host, askSideHelper } = await startHelperSession(
-      async () => "Food scan waits on you for an approval.",
+      async () => speech("Food scan waits on you for an approval."),
     );
 
     await sayTurn(detector, sttSession, "Paceo, which chats are waiting on me?", "segment-1");
@@ -831,7 +842,7 @@ describe("VoiceSession side helper", () => {
     let signal: AbortSignal | undefined;
     const { voiceSession, detector, sttSession, host } = await startHelperSession(
       (input) =>
-        new Promise<string>(() => {
+        new Promise<SideHelperReply>(() => {
           signal = input.signal;
         }),
     );
@@ -862,7 +873,7 @@ describe("VoiceSession side helper", () => {
     let signal: AbortSignal | undefined;
     const slow = await startHelperSession(
       (input) =>
-        new Promise<string>(() => {
+        new Promise<SideHelperReply>(() => {
           signal = input.signal;
         }),
     );
@@ -877,7 +888,7 @@ describe("VoiceSession side helper", () => {
   test("'Paseo.' alone says 'Yes?' and the next words are the question", async () => {
     vi.useFakeTimers();
     const { voiceSession, detector, sttSession, host, askSideHelper } = await startHelperSession(
-      async () => "Nothing waits on you.",
+      async () => speech("Nothing waits on you."),
     );
     await sayTurn(detector, sttSession, "Paseo.", "segment-1");
     await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual(["Yes?"]));
@@ -895,7 +906,7 @@ describe("VoiceSession side helper", () => {
   test("'Paseo, go to <chat>' still moves voice when navigation is on", async () => {
     vi.useFakeTimers();
     const { voiceSession, detector, sttSession, host, askSideHelper } = await startHelperSession(
-      async () => "unused",
+      async () => speech("unused"),
       { navigation: true },
     );
     await sayTurn(detector, sttSession, "Paseo, go to food scan.", "segment-1");
@@ -905,6 +916,176 @@ describe("VoiceSession side helper", () => {
       ),
     ).toEqual([SCAN_CHAT_ID]);
     expect(askSideHelper).not.toHaveBeenCalled();
+    expect(host.spokenInput).toEqual([]);
+    await voiceSession.cleanup();
+  });
+
+  const sendAction: VoiceHelperAction = {
+    type: "send_message",
+    agentId: SCAN_CHAT_ID,
+    text: "Run the tests.",
+  };
+  function confirmSend(agentId = SCAN_CHAT_ID): SideHelperReply {
+    return {
+      kind: "confirm",
+      action: { ...sendAction, agentId },
+      readBack: `Send to FitUp, ${agentId === SCAN_CHAT_ID ? "Food scan" : "Main chat"}: Run the tests. Okay?`,
+      askAgain: "Should I send it? Say yes or no.",
+      yesWords: ["send"],
+    };
+  }
+  const READ_BACK = "Send to FitUp, Food scan: Run the tests. Okay?";
+  /** Proposes the send for "tell ..." questions and answers anything else. */
+  const proposeSend: Ask = async ({ question }) =>
+    question.startsWith("tell") ? confirmSend() : speech("Nothing new.");
+
+  test("an action is read back and runs only after a natural yes; nothing reaches the chat", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, runSideHelperAction } =
+      await startHelperSession(proposeSend);
+
+    await sayTurn(detector, sttSession, "Paseo, tell food scan to run the tests.", "segment-1");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual([READ_BACK]));
+    expect(runSideHelperAction).not.toHaveBeenCalled();
+
+    await sayTurn(detector, sttSession, "Yeah, go ahead.", "segment-2");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual([READ_BACK, "Sent."]));
+    expect(runSideHelperAction).toHaveBeenCalledWith(sendAction);
+
+    // "Paseo, yes" still answers the read-back instead of asking a new question.
+    await sayTurn(detector, sttSession, "Paseo, tell food scan to run the tests.", "segment-3");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toHaveLength(3));
+    await sayTurn(detector, sttSession, "Paceo, yes, send it.", "segment-4");
+    await vi.waitFor(() => expect(runSideHelperAction).toHaveBeenCalledTimes(2));
+
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(host.spokenInput).toEqual([]);
+    await voiceSession.cleanup();
+  });
+
+  test("'no' drops the action; an unclear reply asks again once, then drops it", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, runSideHelperAction } =
+      await startHelperSession(proposeSend);
+
+    await sayTurn(detector, sttSession, "Paseo, tell food scan to run the tests.", "segment-1");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual([READ_BACK]));
+    await sayTurn(detector, sttSession, "No, wait.", "segment-2");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host)).toEqual([READ_BACK, "Okay, not doing it."]),
+    );
+
+    await sayTurn(detector, sttSession, "Paseo, tell food scan to run the tests.", "segment-3");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toHaveLength(3));
+    await sayTurn(detector, sttSession, "Hmm, the other one maybe.", "segment-4");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host).at(-1)).toBe("Should I send it? Say yes or no."),
+    );
+    await sayTurn(detector, sttSession, "I'm not sure about that.", "segment-5");
+    await vi.waitFor(() => expect(spokenAnnouncements(host).at(-1)).toBe("Okay, not doing it."));
+    expect(runSideHelperAction).not.toHaveBeenCalled();
+    expect(host.spokenInput).toEqual([]);
+
+    // With nothing pending, plain words go to the chat again.
+    await sayTurn(detector, sttSession, "Run the build.", "segment-6");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Run the build." }]);
+    await voiceSession.cleanup();
+  });
+
+  test("quiet after the read-back drops the action, and a new 'Paseo, ...' replaces it", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, runSideHelperAction } =
+      await startHelperSession(proposeSend);
+
+    await sayTurn(detector, sttSession, "Paseo, tell food scan to run the tests.", "segment-1");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual([READ_BACK]));
+    await vi.advanceTimersByTimeAsync(HELPER_CONFIRM_SILENCE_MS - 500);
+    expect(spokenAnnouncements(host)).toEqual([READ_BACK]);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host)).toEqual([READ_BACK, "Okay, not doing it."]),
+    );
+
+    await sayTurn(detector, sttSession, "Paseo, tell food scan to run the tests.", "segment-2");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toHaveLength(3));
+    await sayTurn(detector, sttSession, "Paseo, what's new?", "segment-3");
+    await vi.waitFor(() => expect(spokenAnnouncements(host).at(-1)).toBe("Nothing new."));
+    // The read-back is gone: "yes" is now plain words for the chat.
+    await sayTurn(detector, sttSession, "Yes.", "segment-4");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Yes." }]);
+    expect(runSideHelperAction).not.toHaveBeenCalled();
+    await voiceSession.cleanup();
+  });
+
+  test("voice off drops a pending action silently", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, runSideHelperAction } =
+      await startHelperSession(proposeSend);
+    await sayTurn(detector, sttSession, "Paseo, tell food scan to run the tests.", "segment-1");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual([READ_BACK]));
+    await voiceSession.handleSetVoiceMode(false);
+    await vi.advanceTimersByTimeAsync(HELPER_CONFIRM_SILENCE_MS * 2);
+    expect(spokenAnnouncements(host)).toEqual([READ_BACK]);
+    expect(runSideHelperAction).not.toHaveBeenCalled();
+    await voiceSession.cleanup();
+  });
+
+  test("an approval waits for the yes, and a failed action says so", async () => {
+    vi.useFakeTimers();
+    const approve: VoiceHelperAction = {
+      type: "answer_prompt",
+      agentId: SCAN_CHAT_ID,
+      requestId: "perm-1",
+      permission: true,
+      response: { behavior: "allow" },
+    };
+    const { voiceSession, detector, sttSession, host, runSideHelperAction } =
+      await startHelperSession(
+        async () => ({
+          kind: "confirm",
+          action: approve,
+          readBack: "Approve in FitUp, Food scan: bash, npm test. Okay?",
+          askAgain: "Should I approve it? Say yes or no.",
+          yesWords: ["approve"],
+        }),
+        {
+          run: async () => {
+            throw new Error("request gone");
+          },
+        },
+      );
+
+    await sayTurn(detector, sttSession, "Paseo, approve the food scan command.", "segment-1");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toHaveLength(1));
+    expect(runSideHelperAction).not.toHaveBeenCalled();
+    await sayTurn(detector, sttSession, "Approve it.", "segment-2");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host).at(-1)).toBe("Sorry, that didn't work."),
+    );
+    expect(runSideHelperAction).toHaveBeenCalledWith(approve);
+    await voiceSession.cleanup();
+  });
+
+  test("'Which one?' takes a chat name, then reads the action back", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, runSideHelperAction } =
+      await startHelperSession(async () => ({
+        kind: "pick",
+        speech: "Which FitUp chat? Main chat, Food scan.",
+        chats: chats[0].chats,
+        resume: (agentId) => confirmSend(agentId),
+      }));
+
+    await sayTurn(detector, sttSession, "Paseo, tell fitup to run the tests.", "segment-1");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host)).toEqual(["Which FitUp chat? Main chat, Food scan."]),
+    );
+    await sayTurn(detector, sttSession, "The food scan one.", "segment-2");
+    await vi.waitFor(() => expect(spokenAnnouncements(host).at(-1)).toBe(READ_BACK));
+    await sayTurn(detector, sttSession, "Yes please.", "segment-3");
+    await vi.waitFor(() => expect(runSideHelperAction).toHaveBeenCalledWith(sendAction));
     expect(host.spokenInput).toEqual([]);
     await voiceSession.cleanup();
   });
