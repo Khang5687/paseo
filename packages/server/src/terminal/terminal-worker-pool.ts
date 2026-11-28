@@ -266,11 +266,11 @@ export function createTerminalWorkerPool(
 
     closeTerminals,
 
-    async detach() {
+    async detach(detachOptions) {
       detached = true;
       for (const member of members()) member.stopRecovery();
       await starting?.catch(() => {});
-      await Promise.all(members().map((member) => member.manager.detach()));
+      await Promise.all(members().map((member) => member.manager.detach(detachOptions)));
     },
 
     async adoptTerminals() {
