@@ -151,7 +151,8 @@ for (const key of DARWIN_PACKAGES) {
   ]);
 }
 
-// 2. electron-builder, signing off (it cannot sign on Linux).
+// 2. electron-builder, signing off (it cannot sign on Linux). The mac icon is an Icon Composer
+//    document that only Xcode's actool compiles, so the cross-build uses the .icns built from it.
 const release = path.join(desktop, "release", "mac-arm64");
 rmSync(release, { recursive: true, force: true });
 run(
@@ -167,6 +168,7 @@ run(
     "-c.mac.identity=null",
     "-c.mac.hardenedRuntime=false",
     "-c.mac.notarize=false",
+    "-c.mac.icon=assets/icon.icns",
   ],
   {
     cwd: desktop,

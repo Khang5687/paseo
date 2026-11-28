@@ -1,0 +1,5 @@
+{
+  "pr": 211,
+  "title": "fix(fork): cross-build the Mac app with the .icns icon",
+  "untested": "build script: proven by the Linux cross-build of the Mac app (fork-mac-app.mjs) on main 1c0cdfd95"
+}
