@@ -35,6 +35,9 @@ import {
   parseSpokenQuestions,
   type SpokenQuestion,
 } from "./spoken-question.js";
+import { SHORT_WORD_CONFIRM_MS, VoiceSendGate } from "./send-gate.js";
+import { SEND_CUE_FORMAT, sendCuePcm } from "./send-cue.js";
+import type { VoiceSendMode } from "./send-words.js";
 import type { LocalSpeechModelId } from "../../speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "../../speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "../../speech/speech-runtime.js";
@@ -180,6 +183,8 @@ export interface VoiceSessionOptions {
   stt: Resolvable<SpeechToTextProvider | null>;
   voice?: {
     turnDetection?: Resolvable<TurnDetectionProvider | null>;
+    /** The host's send mode, read at every utterance so a settings change applies at once. */
+    sendMode?: () => VoiceSendMode;
   };
   voiceBridge?: {
     registerVoiceSpeakHandler?: (agentId: string, handler: VoiceSpeakHandler) => void;
@@ -256,6 +261,8 @@ export class VoiceSession {
   /** Permission prompts read aloud and still waiting for an on-screen answer. */
   private readonly pendingPermissionIds = new Set<string>();
   private announcementChain: Promise<void> = Promise.resolve();
+  /** When a spoken utterance becomes a message: send mode, beep, hold and "cancel". */
+  private readonly sendGate: VoiceSendGate;
 
   constructor(options: VoiceSessionOptions) {
     const { host, logger, sessionId, sttLanguage, tts, stt, voice, voiceBridge, dictation } =
@@ -286,6 +293,16 @@ export class VoiceSession {
       language: dictation?.sttLanguage,
       finalTimeoutMs: dictation?.finalTimeoutMs,
       onIdle: this.onIdle,
+    });
+    const resolveSendMode = voice?.sendMode ?? (() => "auto" as const);
+    this.sendGate = new VoiceSendGate({
+      getMode: resolveSendMode,
+      send: (text) => this.deliverSpokenMessage(text),
+      playSendCue: () => this.playSendCue(),
+      speak: (text) => this.queueAnnouncement(text),
+      setExpectingShortWord: (expecting) =>
+        this.voiceTurnController?.setSpeechConfirmMs(expecting ? SHORT_WORD_CONFIRM_MS : null),
+      onSendError: (error) => this.reportSendError(error),
     });
   }
 
@@ -613,6 +630,8 @@ export class VoiceSession {
   }
 
   private async disableVoiceModeForActiveAgent(restoreAgentConfig: boolean): Promise<void> {
+    // A message in its send hold was already confirmed by the beep; it goes before voice ends.
+    await this.sendGate.flush().catch((error) => this.reportSendError(error));
     this.pendingQuestion = null;
     this.pendingPermissionIds.clear();
     await this.stopVoiceTurnController();
@@ -687,6 +706,7 @@ export class VoiceSession {
               isSpeaking: true,
             },
           });
+          this.sendGate.handleSpeechStarted();
           this.handleVoiceSpeechStart();
         },
         onPartialTranscript: async ({ segmentId, transcript }) => {
@@ -1082,6 +1102,8 @@ export class VoiceSession {
       // Detected speech stopped playback. The agent's run goes on, so its next spoken
       // reply must not start on the aborted signal.
       this.createAbortController();
+      // Noise during a send hold: the held message goes once its window is over.
+      if (this.isVoiceMode) await this.sendGate.settleHeldMessage("");
       await this.flushPendingAudioSegments("empty transcription");
       return;
     }
@@ -1141,6 +1163,12 @@ export class VoiceSession {
       return;
     }
 
+    // A message waiting out its hold: "cancel" drops it, other words send it first.
+    if (await this.sendGate.settleHeldMessage(result.text)) {
+      await this.flushPendingAudioSegments("held message settled");
+      return;
+    }
+
     // A pending question card takes the reply as its answer; sending it as chat would leave the card open.
     if (this.pendingQuestion && (await this.answerPendingQuestion(result.text))) {
       await this.flushPendingAudioSegments("answered question card");
@@ -1155,10 +1183,43 @@ export class VoiceSession {
       return;
     }
 
-    await this.host.sendSpokenInput(agentId, result.text, {
+    await this.sendGate.handleUtterance(result.text);
+    await this.flushPendingAudioSegments("transcription complete");
+  }
+
+  private async deliverSpokenMessage(text: string): Promise<void> {
+    const agentId = this.voiceModeAgentId;
+    if (!agentId) {
+      this.sessionLogger.warn("Dropping spoken message: no agent is voice-enabled");
+      return;
+    }
+    await this.host.sendSpokenInput(agentId, text, {
       speakToolReady: !this.deferredVoicePrompt,
     });
-    await this.flushPendingAudioSegments("transcription complete");
+  }
+
+  private playSendCue(): void {
+    this.ttsManager
+      .playAudio(
+        sendCuePcm(),
+        SEND_CUE_FORMAT,
+        (msg) => this.emit(msg),
+        this.abortController.signal,
+      )
+      .catch((error) => this.sessionLogger.warn({ err: error }, "Failed to play the send cue"));
+  }
+
+  private reportSendError(error: unknown): void {
+    this.sessionLogger.warn({ err: error }, "Failed to send spoken message");
+    this.emit({
+      type: "activity_log",
+      payload: {
+        id: uuidv4(),
+        timestamp: new Date(),
+        type: "error",
+        content: `Could not send your message: ${getErrorMessage(error)}`,
+      },
+    });
   }
 
   private registerVoiceBridgeForAgent(agentId: string): void {

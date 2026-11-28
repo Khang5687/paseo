@@ -235,6 +235,7 @@ type LocalSpeechWorkerSessionRequest = Extract<
       | "session.clear"
       | "session.flush"
       | "session.reset"
+      | "session.confirm"
       | "session.close";
   }
 >;
@@ -269,6 +270,11 @@ function handleSessionRequest(message: LocalSpeechWorkerSessionRequest): void {
     case "session.reset":
       if (session && "reset" in session) {
         session.reset();
+      }
+      break;
+    case "session.confirm":
+      if (session && "setSpeechConfirmMs" in session) {
+        session.setSpeechConfirmMs?.(message.confirmMs);
       }
       break;
   }

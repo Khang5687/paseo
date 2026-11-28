@@ -3254,6 +3254,13 @@ export const en = {
         info: "Voice mode transcribes what you say and reads agent replies aloud.",
         enabled: "Voice mode",
         enabledHint: "Talk with your agents hands-free",
+        sendMode: "Send",
+        sendModeAuto: "By itself",
+        sendModeOver: 'Say "over"',
+        sendModeAutoHint:
+          'Sends after a short pause. Say "cancel" right after the beep to stop it.',
+        sendModeOverHint:
+          'Sends when you end with "over". Say "cancel" right after the beep to stop it.',
       },
       openai: {
         apiKey: "API key",

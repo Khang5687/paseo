@@ -79,7 +79,6 @@ import { CursorError } from "./pagination/cursor.js";
 import { SortablePager, type SortSpec } from "./pagination/sortable-pager.js";
 import { matchesAgentHistoryQuery } from "./agent-history-search.js";
 import type { SpeechToTextProvider, TextToSpeechProvider } from "./speech/speech-provider.js";
-import type { TurnDetectionProvider } from "./speech/turn-detection-provider.js";
 import {
   buildConfigOverrides,
   isStoredAgentProviderAvailable,
@@ -222,6 +221,7 @@ import {
   setProjectCustomIcon,
 } from "../utils/project-custom-icon.js";
 import { VoiceSessions } from "./session/voice/index.js";
+import type { VoiceSessionOptions } from "./session/voice/voice-session.js";
 import { CheckoutSession } from "./session/checkout/checkout-session.js";
 import {
   createWorkspaceGitObserverService,
@@ -654,9 +654,7 @@ export interface SessionOptions {
   getDaemonTcpHost?: () => string | null;
   serviceProxyPublicBaseUrl?: string | null;
   resolveScriptHealth?: (hostname: string) => ScriptHealthState | null;
-  voice?: {
-    turnDetection?: Resolvable<TurnDetectionProvider | null>;
-  };
+  voice?: VoiceSessionOptions["voice"];
   voiceBridge?: {
     registerVoiceSpeakHandler?: (agentId: string, handler: VoiceSpeakHandler) => void;
     unregisterVoiceSpeakHandler?: (agentId: string) => void;

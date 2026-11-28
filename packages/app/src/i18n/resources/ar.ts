@@ -3150,6 +3150,12 @@ export const ar: TranslationResources = {
         info: "يحوّل وضع الصوت كلامك إلى نص ويقرأ ردود الوكيل بصوت عالٍ.",
         enabled: "وضع الصوت",
         enabledHint: "تحدّث مع وكلائك دون استخدام يديك",
+        sendMode: "الإرسال",
+        sendModeAuto: "تلقائيًا",
+        sendModeOver: 'قل "over"',
+        sendModeAutoHint: 'يُرسل بعد توقف قصير. قل "cancel" بعد الصفارة مباشرة لإيقافه.',
+        sendModeOverHint:
+          'يُرسل عندما تنهي كلامك بكلمة "over". قل "cancel" بعد الصفارة مباشرة لإيقافه.',
       },
       openai: {
         apiKey: "مفتاح API",

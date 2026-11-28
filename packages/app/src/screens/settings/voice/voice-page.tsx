@@ -12,6 +12,7 @@ import {
 } from "@/components/settings";
 import { Alert } from "@/components/ui/alert";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/contexts/toast-api-context";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
@@ -27,6 +28,7 @@ import {
 } from "./voice-settings";
 
 type SavePatch = (patch: SpeechSettingsPatch) => Promise<unknown>;
+type VoiceSendMode = "auto" | "over";
 const EMPTY_ENV_OVERRIDES: Record<string, string> = {};
 
 // The sheet mounts fresh for every open (docs/forms.md); `openCount` keys each mount.
@@ -45,6 +47,7 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
   const toast = useToast();
   const isConnected = useHostRuntimeIsConnected(serverId);
   const supported = useHostFeature(serverId, "speechSettings");
+  const sendModeSupported = useHostFeature(serverId, "voiceSendMode");
   const { config, patchConfig } = useDaemonConfig(serverId);
   const localModels = useLocalSpeechModels(serverId);
   const { refresh: refreshModels } = localModels;
@@ -72,6 +75,10 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
   );
   const setVoiceModeEnabled = useCallback(
     (enabled: boolean) => saveSwitch({ voiceMode: { enabled } }),
+    [saveSwitch],
+  );
+  const setSendMode = useCallback(
+    (sendMode: VoiceSendMode) => saveSwitch({ voiceMode: { sendMode } }),
     [saveSwitch],
   );
   const openSheet = useCallback((siteId: SpeechSiteId) => {
@@ -143,6 +150,12 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
             value={features.voiceMode.enabled}
             onChange={setVoiceModeEnabled}
           />
+          {sendModeSupported ? (
+            <SendModeRow
+              value={features.voiceMode.sendMode === "over" ? "over" : "auto"}
+              onChange={setSendMode}
+            />
+          ) : null}
           {siteRow("voiceMode.stt", t("settings.voice.sites.voiceModeStt"))}
           {siteRow("voiceMode.tts", t("settings.voice.sites.voiceModeTts"))}
         </SettingsCard>
@@ -174,6 +187,44 @@ function siteLabel(t: TFunction, siteId: SpeechSiteId): string {
     case "voiceMode.tts":
       return t("settings.voice.sites.voiceModeTts");
   }
+}
+
+function SendModeRow({
+  value,
+  onChange,
+}: {
+  value: VoiceSendMode;
+  onChange: (value: VoiceSendMode) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <SettingsRow
+      label={t("settings.voice.voiceMode.sendMode")}
+      hint={
+        value === "over"
+          ? t("settings.voice.voiceMode.sendModeOverHint")
+          : t("settings.voice.voiceMode.sendModeAutoHint")
+      }
+      testID="voice-send-mode"
+    >
+      <SegmentedControl<VoiceSendMode>
+        value={value}
+        onValueChange={onChange}
+        options={[
+          {
+            value: "auto",
+            label: t("settings.voice.voiceMode.sendModeAuto"),
+            testID: "voice-send-mode-auto",
+          },
+          {
+            value: "over",
+            label: t("settings.voice.voiceMode.sendModeOver"),
+            testID: "voice-send-mode-over",
+          },
+        ]}
+      />
+    </SettingsRow>
+  );
 }
 
 function FeatureSwitchRow({

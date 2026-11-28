@@ -1960,6 +1960,20 @@ describe("DaemonConfigStore speech settings", () => {
     expect(loadPersistedConfig(paseoHome).features?.voiceMode?.enabled).toBe(true);
   });
 
+  test("voice send mode defaults to auto, saves 'over', and refuses other words", async () => {
+    const { paseoHome, store } = createSpeechStore();
+    expect(store.get().features?.voiceMode.sendMode).toBe("auto");
+
+    const result = await store.patch({ features: { voiceMode: { sendMode: "over" } } });
+    expect(result.features?.voiceMode.sendMode).toBe("over");
+    expect(loadPersistedConfig(paseoHome).features?.voiceMode?.sendMode).toBe("over");
+
+    await expect(
+      store.patch({ features: { voiceMode: { sendMode: "whenever" } } }),
+    ).rejects.toThrow();
+    expect(loadPersistedConfig(paseoHome).features?.voiceMode?.sendMode).toBe("over");
+  });
+
   test("stores the OpenAI key without ever returning it", async () => {
     const { paseoHome, store, applied } = createSpeechStore();
 

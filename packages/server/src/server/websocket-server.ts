@@ -155,6 +155,7 @@ import { FileDeviceRegistry } from "./file-send/device-registry.js";
 import { FileSendService, type FileSendLiveTarget } from "./file-send/service.js";
 import { FileCopySender } from "./file-copies/sender.js";
 import type { Note } from "@getpaseo/protocol/notes/schemas";
+import { parseVoiceSendMode } from "./session/voice/send-words.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -1916,6 +1917,8 @@ export class VoiceAssistantWebSocketServer {
       resolveScriptHealth: this.resolveScriptHealth ?? undefined,
       voice: {
         turnDetection: () => this.speech?.resolveTurnDetection() ?? null,
+        sendMode: () =>
+          parseVoiceSendMode(this.daemonConfigStore.get().features?.voiceMode.sendMode),
       },
       voiceBridge: {
         registerVoiceSpeakHandler: (agentId, handler) => {
@@ -2319,6 +2322,8 @@ export class VoiceAssistantWebSocketServer {
           : {}),
         // COMPAT(speechSettings): added in v0.12.0, remove gate after 2027-04-18.
         speechSettings: true,
+        // COMPAT(voiceSendMode): added after v0.18.1, remove gate after 2027-12-01.
+        voiceSendMode: true,
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         ...(this.advertiseRelayConfig ? { relayConfig: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.

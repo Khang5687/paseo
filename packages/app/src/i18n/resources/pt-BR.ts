@@ -3162,6 +3162,13 @@ export const ptBR: TranslationResources = {
         info: "O modo de voz transcreve o que você diz e lê em voz alta as respostas do agente.",
         enabled: "Modo de voz",
         enabledHint: "Converse com seus agentes sem usar as mãos",
+        sendMode: "Enviar",
+        sendModeAuto: "Sozinho",
+        sendModeOver: 'Dizer "over"',
+        sendModeAutoHint:
+          'Envia após uma pausa curta. Diga "cancel" logo após o bipe para impedir.',
+        sendModeOverHint:
+          'Envia quando você termina com "over". Diga "cancel" logo após o bipe para impedir.',
       },
       openai: {
         apiKey: "Chave de API",

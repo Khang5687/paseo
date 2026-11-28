@@ -34,6 +34,17 @@ You can start voice mode while the agent is running, and talk at any time.
 - To stop the agent, press **Stop**. Speaking never stops it.
 - Voice mode gives the agent a voice prompt and a `speak` tool by reloading its session, and a reload ends a running turn. If you start voice mode during a run, Paseo waits for the run to finish and then applies them. Until then your messages reach the agent without the `speak` tool, so it answers in normal chat messages instead of speaking. Turning voice mode off during a run waits for the run to finish in the same way.
 
+## Sending a Message
+
+Pick how a spoken message is sent in **Settings → Host → Voice → Send**:
+
+- **By itself** (the default): the message goes once you stop talking for about a second.
+- **Say "over"**: Paseo keeps listening across pauses until you end with the word "over". The word itself is not sent. It counts only as the last word, so "go over the plan" or "overall" never send.
+
+When a message is ready you hear a short beep. For about two seconds after it, say "cancel" (or "cancel that") to drop the message, and Paseo answers "Cancelled." Start talking about something else instead and the message goes at once. Only the whole phrase cancels: "cancel the build" is sent as a message. With nothing waiting, "cancel" gets "Nothing to cancel."
+
+"Over" and "cancel" are English words whatever language you speak. Turning voice mode off sends a message that already beeped and drops words still waiting for "over". The **Send** row appears once the host runs a version that supports it.
+
 ## Local Speech
 
 Local speech defaults to model IDs `parakeet-tdt-0.6b-v2-int8` (STT) and `kokoro-en-v0_19` (TTS, speaker 0 / voice 00).

@@ -2,9 +2,11 @@ import { Readable } from "node:stream";
 import type { VoiceSpeakHandler } from "../../voice-types.js";
 import { EventEmitter } from "node:events";
 import pino from "pino";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { VoiceSession, type VoiceSessionHost } from "./voice-session.js";
+import { SHORT_WORD_CONFIRM_MS, VOICE_SEND_HOLD_MS } from "./send-gate.js";
+import type { VoiceSendMode } from "./send-words.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
 import type { SessionOutboundMessage } from "../../messages.js";
@@ -30,6 +32,10 @@ class FakeVoiceTurnDetectionSession extends EventEmitter implements TurnDetectio
   appendPcm16(_chunk: Buffer): void {}
 
   flush(): void {}
+  readonly confirmWindows: Array<number | null> = [];
+  setSpeechConfirmMs(ms: number | null): void {
+    this.confirmWindows.push(ms);
+  }
   reset(): void {}
   close(): void {}
 }
@@ -119,7 +125,10 @@ function createFakeHost(): FakeVoiceHost {
   return host;
 }
 
-function createVoiceSession(tts: TextToSpeechProvider | null = null) {
+function createVoiceSession(
+  tts: TextToSpeechProvider | null = null,
+  options: { sendMode?: () => VoiceSendMode } = {},
+) {
   let speakHandler: VoiceSpeakHandler | undefined;
   const detector = new FakeVoiceTurnDetectionSession();
   const sttSession = new FakeVoiceSttSession();
@@ -144,7 +153,7 @@ function createVoiceSession(tts: TextToSpeechProvider | null = null) {
       },
     },
     stt,
-    voice: { turnDetection },
+    voice: { turnDetection, sendMode: options.sendMode },
   });
   return {
     voiceSession,
@@ -172,7 +181,33 @@ async function settle(): Promise<void> {
   await Promise.resolve();
 }
 
+/** One spoken turn through the fake detector and STT, ending with a final transcript. */
+async function sayTurn(
+  detector: FakeVoiceTurnDetectionSession,
+  sttSession: FakeVoiceSttSession,
+  transcript: string,
+  segmentId: string,
+): Promise<void> {
+  detector.emit("speech_started");
+  await settle();
+  detector.emit("speech_stopped");
+  await settle();
+  sttSession.emitCommitted({ segmentId, previousSegmentId: null });
+  sttSession.emitTranscript({
+    segmentId,
+    transcript,
+    isFinal: true,
+    avgLogprob: -0.1,
+    isLowConfidence: false,
+  });
+  await settle();
+}
+
 describe("VoiceSession streaming transcription", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test("speech detection stops playback but leaves the agent's run alone", async () => {
     const tts: TextToSpeechProvider = {
       async synthesizeSpeech() {
@@ -222,6 +257,7 @@ describe("VoiceSession streaming transcription", () => {
   });
 
   test("a spoken turn during a run reaches the agent without interrupting it", async () => {
+    vi.useFakeTimers();
     const { voiceSession, detector, sttSession, host } = createVoiceSession();
     host.interruptAgentIfRunning = vi.fn(async () => {});
 
@@ -240,6 +276,8 @@ describe("VoiceSession streaming transcription", () => {
       isLowConfidence: false,
     });
     await settle();
+    expect(host.spokenInput).toEqual([]);
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS);
 
     expect(host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "also check the logs" }]);
     expect(host.interruptAgentIfRunning).not.toHaveBeenCalled();
@@ -264,6 +302,7 @@ describe("VoiceSession streaming transcription", () => {
   });
 
   test("a spoken turn before the deferred voice prompt lands is sent without the speak tool", async () => {
+    vi.useFakeTimers();
     const { voiceSession, detector, sttSession, host } = createVoiceSession();
     host.setRunActive(true);
     await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
@@ -281,6 +320,7 @@ describe("VoiceSession streaming transcription", () => {
       isLowConfidence: false,
     });
     await settle();
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS);
     expect(host.speakToolReady).toEqual([false]);
 
     host.setRunActive(false);
@@ -396,6 +436,7 @@ describe("VoiceSession streaming transcription", () => {
   });
 
   test("delivers the streaming final transcript to the agent exactly once", async () => {
+    vi.useFakeTimers();
     const { voiceSession, detector, sttSession, host } = createVoiceSession();
 
     await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
@@ -413,6 +454,7 @@ describe("VoiceSession streaming transcription", () => {
       isLowConfidence: false,
     });
     await settle();
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS);
 
     expect(sttSession.commitCount).toBe(1);
     expect(host.spokenInput).toEqual([
@@ -516,5 +558,87 @@ describe("VoiceSession start", () => {
     expect(() => speak({ text: "hello" })).toThrow("Voice speak handler not registered");
 
     await voiceSession.cleanup();
+  });
+});
+
+describe("VoiceSession send words", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const tts: TextToSpeechProvider = {
+    async synthesizeSpeech() {
+      return { stream: Readable.from([Buffer.from("audio")]), format: "pcm;rate=24000" };
+    },
+  };
+
+  /** Plays every audio clip at once, as an app would after hearing it. */
+  function acknowledgeAudio(setup: ReturnType<typeof createVoiceSession>): void {
+    const emit = setup.host.emit;
+    setup.host.emit = (message) => {
+      emit(message);
+      if (message.type === "audio_output") setup.voiceSession.handleAudioPlayed(message.payload.id);
+    };
+  }
+
+  function spokenAnnouncements(host: FakeVoiceHost): string[] {
+    return host.emitted.flatMap((message) =>
+      message.type === "activity_log" && message.payload.type === "assistant"
+        ? [message.payload.content]
+        : [],
+    );
+  }
+
+  test("a sent message beeps first, and 'cancel' in the hold keeps it from the agent", async () => {
+    vi.useFakeTimers();
+    const setup = createVoiceSession(tts);
+    acknowledgeAudio(setup);
+    const { voiceSession, detector, sttSession, host } = setup;
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+
+    await sayTurn(detector, sttSession, "Delete the staging database.", "segment-1");
+    await vi.waitFor(() => expect(host.emitted.filter(isAudioOutput)).toHaveLength(1));
+    expect(detector.confirmWindows).toEqual([SHORT_WORD_CONFIRM_MS]);
+
+    await sayTurn(detector, sttSession, "Cancel.", "segment-2");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+
+    expect(host.spokenInput).toEqual([]);
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual(["Cancelled."]));
+    expect(detector.confirmWindows).toEqual([SHORT_WORD_CONFIRM_MS, null]);
+    await voiceSession.cleanup();
+  });
+
+  test("over mode sends only after the word 'over', without the word", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host } = createVoiceSession(null, {
+      sendMode: () => "over",
+    });
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+
+    await sayTurn(detector, sttSession, "Fix the login bug.", "segment-1");
+    await sayTurn(detector, sttSession, "Then go over the tests.", "segment-2");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(host.spokenInput).toEqual([]);
+    expect(detector.confirmWindows).toEqual([SHORT_WORD_CONFIRM_MS]);
+
+    await sayTurn(detector, sttSession, "Over.", "segment-3");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS);
+    expect(host.spokenInput).toEqual([
+      { agentId: VOICE_AGENT_ID, text: "Fix the login bug. Then go over the tests." },
+    ]);
+    expect(detector.confirmWindows).toEqual([SHORT_WORD_CONFIRM_MS, null]);
+    await voiceSession.cleanup();
+  });
+
+  test("turning voice off in the hold still sends the message", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host } = createVoiceSession();
+    await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+
+    await sayTurn(detector, sttSession, "Run the tests.", "segment-1");
+    expect(host.spokenInput).toEqual([]);
+    await voiceSession.handleSetVoiceMode(false);
+    expect(host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Run the tests." }]);
   });
 });

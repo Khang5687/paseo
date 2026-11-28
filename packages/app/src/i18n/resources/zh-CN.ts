@@ -3086,6 +3086,11 @@ export const zhCN: TranslationResources = {
         info: "语音模式会转写你说的话，并朗读智能体的回复。",
         enabled: "语音模式",
         enabledHint: "免手动与智能体对话",
+        sendMode: "发送",
+        sendModeAuto: "自动",
+        sendModeOver: "说 “over”",
+        sendModeAutoHint: "短暂停顿后发送。听到提示音后立即说 “cancel” 可取消。",
+        sendModeOverHint: "以 “over” 结尾时发送。听到提示音后立即说 “cancel” 可取消。",
       },
       openai: {
         apiKey: "API 密钥",

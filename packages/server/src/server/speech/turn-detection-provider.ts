@@ -11,6 +11,12 @@ export interface TurnDetectionSession {
   appendPcm16(pcm16le: Buffer): void;
   flush(): void;
   reset(): void;
+  /**
+   * How long sound must last before it counts as speech; `null` restores the session default.
+   * Short command words ("over", "cancel") are shorter than the default. Optional: a provider
+   * without it keeps its own rule.
+   */
+  setSpeechConfirmMs?(ms: number | null): void;
   close(): void;
 
   on(event: "speech_started", handler: () => void): unknown;

@@ -3148,6 +3148,13 @@ export const ja: TranslationResources = {
         info: "ボイスモードは話した内容を文字起こしし、エージェントの返答を読み上げます。",
         enabled: "ボイスモード",
         enabledHint: "ハンズフリーでエージェントと会話します",
+        sendMode: "送信",
+        sendModeAuto: "自動",
+        sendModeOver: "「over」と言う",
+        sendModeAutoHint:
+          "少し間が空くと送信します。ビープ音の直後に「cancel」と言うと取り消せます。",
+        sendModeOverHint:
+          "最後に「over」と言うと送信します。ビープ音の直後に「cancel」と言うと取り消せます。",
       },
       openai: {
         apiKey: "API キー",

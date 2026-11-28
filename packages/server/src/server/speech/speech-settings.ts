@@ -115,6 +115,7 @@ export function readSpeechSettings(persisted: PersistedConfig, env: NodeJS.Proce
       },
       voiceMode: {
         enabled: providers.voiceStt.enabled !== false,
+        sendMode: voiceMode?.sendMode ?? "auto",
         ...(voiceMode?.llm ? { llm: voiceMode.llm } : {}),
         ...(voiceMode?.turnDetection
           ? {

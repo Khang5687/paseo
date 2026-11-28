@@ -62,6 +62,8 @@ export interface VoiceTurnController {
   start(): Promise<void>;
   stop(): Promise<void>;
   appendClientChunk(input: { audioBase64: string; format: string }): Promise<void>;
+  /** Shorter confirm window while a short command word is expected; `null` restores the default. */
+  setSpeechConfirmMs(ms: number | null): void;
 }
 
 interface TranscriptSegmentMeta {
@@ -495,6 +497,10 @@ export function createVoiceTurnController(params: {
         currentFinalizingTurn = null;
         state = { status: "idle" };
       });
+    },
+
+    setSpeechConfirmMs(ms: number | null): void {
+      detector.setSpeechConfirmMs?.(ms);
     },
 
     async appendClientChunk(input): Promise<void> {
