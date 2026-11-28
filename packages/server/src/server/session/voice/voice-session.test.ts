@@ -924,6 +924,23 @@ describe("VoiceSession navigation", () => {
     await omen.voiceSession.cleanup();
   });
 
+  test("'go back' to a chat on a host that went offline says so, and voice stays", async () => {
+    vi.useFakeTimers();
+    const omen = await startOnHost("Omen", VOICE_AGENT_ID, {
+      macOnline: false,
+      arrival: { previous: { serverId: "mac", agentId: MAC_SHOP_ID } },
+    });
+    await sayTurn(omen.detector, omen.sttSession, "Go back.", "s-1");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(omen.host)).toEqual([
+        "Your last chat is on Mac, which is offline.",
+      ]),
+    );
+    expect(remoteNavigations(omen.host)).toEqual([]);
+    expect(omen.host.spokenInput).toEqual([]);
+    await omen.voiceSession.cleanup();
+  });
+
   test("an app without host lookup is never asked", async () => {
     vi.useFakeTimers();
     const setup = await startNavigatingSession(VOICE_AGENT_ID, createVoiceNavMemory());
