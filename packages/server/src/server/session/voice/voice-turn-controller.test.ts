@@ -195,6 +195,32 @@ describe("voice turn controller", () => {
     expect(harness.onError).not.toHaveBeenCalled();
   });
 
+  it("keeps only a short pre-roll of listening audio, so a sound the VAD rejected never joins the next turn", async () => {
+    const harness = createControllerHarness();
+    const chunk100Ms = (fill: number) => Buffer.alloc(3200, fill); // 100 ms at 16 kHz, 16-bit
+    const append = (pcm: Buffer) =>
+      harness.controller.appendClientChunk({
+        audioBase64: pcm.toString("base64"),
+        format: "audio/pcm;rate=16000;bits=16",
+      });
+
+    await harness.controller.start();
+    // A lone short word the VAD never confirmed, then two seconds of silence.
+    await append(chunk100Ms(7));
+    for (let i = 0; i < 20; i += 1) await append(chunk100Ms(0));
+    expect(harness.sttSessions[0]?.appendedChunks).toEqual([]);
+
+    harness.detector.emit("speech_started");
+    await settleSerialQueue();
+    await append(chunk100Ms(9));
+
+    const sent = harness.sttSessions[0]?.appendedChunks ?? [];
+    expect(sent.some((pcm) => pcm[0] === 7)).toBe(false);
+    // The 1.5 s before the confirmed start still reaches STT, so the first syllable is kept.
+    expect(sent.filter((pcm) => pcm[0] === 0)).toHaveLength(15);
+    expect(sent.at(-1)?.[0]).toBe(9);
+  });
+
   it("does not barge in on silence-only chunks", async () => {
     const harness = createControllerHarness();
 

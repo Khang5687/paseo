@@ -1960,13 +1960,15 @@ describe("DaemonConfigStore speech settings", () => {
     expect(loadPersistedConfig(paseoHome).features?.voiceMode?.enabled).toBe(true);
   });
 
-  test("voice send mode defaults to auto, saves 'over', and refuses other words", async () => {
-    const { paseoHome, store } = createSpeechStore();
+  test("voice send mode defaults to auto, saves 'over' without rebuilding speech, and refuses other words", async () => {
+    const { paseoHome, store, applied } = createSpeechStore();
     expect(store.get().features?.voiceMode.sendMode).toBe("auto");
 
     const result = await store.patch({ features: { voiceMode: { sendMode: "over" } } });
     expect(result.features?.voiceMode.sendMode).toBe("over");
     expect(loadPersistedConfig(paseoHome).features?.voiceMode?.sendMode).toBe("over");
+    // A rebuild restarts the local speech worker and deafens a live voice session.
+    expect(applied).toEqual([]);
 
     await expect(
       store.patch({ features: { voiceMode: { sendMode: "whenever" } } }),
