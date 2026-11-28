@@ -5615,13 +5615,19 @@ export class DaemonClient {
   // Audio / Voice
   // ============================================================================
 
-  async setVoiceMode(enabled: boolean, agentId?: string): Promise<SetVoiceModePayload> {
+  /** `navigation`: this client moves voice to the chat a spoken "go to" names (`voice.navigate`). */
+  async setVoiceMode(
+    enabled: boolean,
+    agentId?: string,
+    options: { navigation?: boolean } = {},
+  ): Promise<SetVoiceModePayload> {
     const requestId = this.createRequestId();
     const message = SessionInboundMessageSchema.parse({
       type: "set_voice_mode",
       enabled,
       ...(agentId ? { agentId } : {}),
       requestId,
+      ...(options.navigation ? { navigation: true } : {}),
     });
     const response = await this.sendRequest({
       requestId,

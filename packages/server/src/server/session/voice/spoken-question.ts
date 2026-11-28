@@ -137,6 +137,12 @@ const ORDINALS: Record<string, number> = {
 const ORDINAL_UTTERANCE =
   /^(?:(?:the|option|number|choice|answer|pick|choose|select|go with|i ll take|ill take|take) )*(first|1st|one|1|second|2nd|two|2|third|3rd|three|3|fourth|4th|four|4|fifth|5th|five|5|sixth|6th|six|6)(?: one| option)?$/;
 
+/** "the second one", "number two", "2": the zero-based index; null when the reply is not an ordinal. */
+export function spokenOrdinalIndex(transcript: string): number | null {
+  const ordinal = ORDINAL_UTTERANCE.exec(normalize(transcript));
+  return ordinal ? (ORDINALS[ordinal[1]] ?? null) : null;
+}
+
 const FILLER_WORDS = new Set([
   "i",
   "id",
@@ -173,12 +179,9 @@ function containsPhrase(haystack: string, phrase: string): boolean {
 function matchOptions(options: string[], spoken: string): number[] {
   const labels = options.map(normalize);
 
-  const ordinal = ORDINAL_UTTERANCE.exec(spoken);
-  if (ordinal) {
-    const index = ORDINALS[ordinal[1]];
-    if (index !== undefined && index < options.length) {
-      return [index];
-    }
+  const ordinal = spokenOrdinalIndex(spoken);
+  if (ordinal !== null && ordinal < options.length) {
+    return [ordinal];
   }
 
   // A one- or two-letter label ("A", "B") would match inside any sentence; it must be the whole reply.

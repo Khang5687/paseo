@@ -1424,6 +1424,9 @@ export const SetVoiceModeMessageSchema = z.object({
   enabled: z.boolean(),
   agentId: z.string().optional(),
   requestId: z.string().optional(),
+  // COMPAT(voiceNavigate): added after v0.18.1. The app moves voice when the daemon sends
+  // `voice.navigate`; without it the daemon never reads speech as a navigation command.
+  navigation: z.boolean().optional(),
 });
 
 // COMPAT(githubAttachmentKinds): legacy wire attachment retained when
@@ -4552,6 +4555,17 @@ export const VoiceInputStateMessageSchema = z.object({
   }),
 });
 
+// COMPAT(voiceNavigate): added after v0.18.1. A spoken "go to <project> <chat>" named this chat;
+// the app opens it and turns voice on there. Sent only to the socket that has voice on, and only
+// when its `set_voice_mode` had `navigation: true`.
+export const VoiceNavigateMessageSchema = z.object({
+  type: z.literal("voice.navigate"),
+  payload: z.object({
+    agentId: z.string(),
+    workspaceId: z.string().optional(),
+  }),
+});
+
 export const DictationStreamAckMessageSchema = z.object({
   type: z.literal("dictation_stream_ack"),
   payload: z.object({
@@ -4748,6 +4762,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(voiceSendMode): added after v0.18.1, remove gate after 2027-12-01.
         // Hosts with it read `features.voiceMode.sendMode` ("auto" or "over").
         voiceSendMode: z.boolean().optional(),
+        // COMPAT(voiceNavigate): added after v0.18.1, remove gate after 2027-12-01.
+        // Hosts with it read spoken "go to" commands and send `voice.navigate`.
+        voiceNavigate: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         relayConfig: z.boolean().optional(),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
@@ -8818,6 +8835,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AudioOutputMessageSchema,
   TranscriptionResultMessageSchema,
   VoiceInputStateMessageSchema,
+  VoiceNavigateMessageSchema,
   DictationStreamAckMessageSchema,
   DictationStreamFinishAcceptedMessageSchema,
   DictationStreamPartialMessageSchema,

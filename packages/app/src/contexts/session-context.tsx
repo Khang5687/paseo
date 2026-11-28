@@ -54,6 +54,7 @@ import { toErrorMessage } from "@/utils/error-messages";
 import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { resyncProviderSubagents, useProviderSubagentStore } from "@/subagents/provider-store";
+import { navigateToAgent } from "@/utils/navigate-to-agent";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -228,7 +229,10 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           throw new Error(t("common.errors.daemonUnavailable"));
         }
         try {
-          await client.setVoiceMode(enabled, agentId);
+          // COMPAT(voiceNavigate): older hosts ignore it; with it, a spoken "go to" moves voice.
+          await client.setVoiceMode(enabled, agentId, {
+            navigation: client.getLastServerInfoMessage()?.features?.voiceNavigate === true,
+          });
         } catch (error) {
           if (isVoiceActiveElsewhereError(error)) {
             throw new Error(t("composer.voice.activeOnAnotherDevice"), { cause: error });
@@ -619,6 +623,16 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       voiceRuntime?.onServerSpeechStateChanged(serverId, message.payload.isSpeaking);
     });
 
+    // A spoken "go to <project> <chat>": open that chat and move voice there.
+    const unsubVoiceNavigate = client.on("voice.navigate", (message) => {
+      if (message.type !== "voice.navigate" || !voiceRuntime) return;
+      const { agentId, workspaceId } = message.payload;
+      navigateToAgent({ serverId, agentId, workspaceId });
+      voiceRuntime.startVoice(serverId, agentId).catch((error) => {
+        toast.error(toErrorMessage(error));
+      });
+    });
+
     const unsubTerminalAttention = onFeed("terminal_attention_required", (message) => {
       if (message.type !== "terminal_attention_required") {
         return;
@@ -645,6 +659,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       unsubActivity();
       unsubTranscription();
       unsubVoiceInputState();
+      unsubVoiceNavigate();
       unsubTerminalAttention();
     };
   }, [

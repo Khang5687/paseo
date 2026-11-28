@@ -539,6 +539,7 @@ const OUTBOUND_PERMISSION = {
   transcription_result: "workspace.write",
   update_agent_response: "workspace.write",
   validate_branch_response: "workspace.read",
+  "voice.navigate": "workspace.write",
   voice_input_state: "workspace.write",
   wait_for_finish_response: "workspace.read",
   "workspace.clear_attention.response": "workspace.write",

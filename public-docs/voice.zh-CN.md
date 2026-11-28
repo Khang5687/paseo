@@ -43,6 +43,17 @@ Agent 运行期间也可以开启语音模式，并随时说话。
 
 无论你说什么语言，“over” 和 “cancel” 都是英文单词。关闭语音模式时，已经响过提示音的消息会发送，还在等待 “over” 的内容会被丢弃。主机升级到支持该功能的版本后，才会显示 **发送** 这一行。
 
+## 在对话之间切换 {#moving-between-chats}
+
+把命令单独说成一整句，语音就会切换到另一个对话，不用点屏幕：
+
+- **“Go to fitup”**：打开该项目的对话，并在那里继续语音。项目里有多个对话时，Paseo 会按从新到旧读出最多五个对话名，然后问 “Which one?”。用名字（“food scan”）或序号（“the second one”）回答。说的内容对不上任何对话时，会听到 “No chat called that.”，这句话也不会发给任何 Agent。
+- **“Go to fitup food scan”**：一次说出项目和对话。在当前项目里，只说对话名也可以（“go to food scan”）。
+- **“List chats”** 或 **“Which chats”**：读出当前项目的对话，然后同样等你选择。
+- **“Go back”**：回到语音之前所在的对话。
+
+语音在新对话中开启后，Paseo 会说出你在哪里（“fitup, food scan.”）。这些命令没有提示音，也不需要说 “over”。名字是模糊匹配的：“fit up” 能找到 FitUp，长标题只说其中一段也可以。以 “go to” 开头但没有说出项目或对话的句子（“go to the auth module and add logging”）会照常发给 Agent。对话指未归档的顶层 Agent，子 Agent 不会列出。只会查找当前对话所在主机上的项目。这些命令是英文单词，并且需要支持该功能的 App 和主机。
+
 ## 本地语音 {#local-speech}
 
 本地语音默认使用模型 ID `parakeet-tdt-0.6b-v2-int8`（STT）和 `kokoro-en-v0_19`（TTS，speaker 0 / voice 00）。
