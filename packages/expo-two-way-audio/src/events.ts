@@ -22,6 +22,8 @@ export interface ExpoTwoWayAudioEventMap {
   onOutputVolumeLevelData: VolumeLevelEvent;
   onRecordingChange: RecordingChangeEvent;
   onAudioInterruption: AudioInterruptionEvent;
+  /** Android: a microphone connected or disconnected, or the pick changed. Re-read the routes. */
+  onMicrophoneRoutesChange: Record<string, never>;
 }
 
 // These are useful for defining `useCallback` types inline

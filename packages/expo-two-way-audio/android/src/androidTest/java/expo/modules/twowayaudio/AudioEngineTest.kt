@@ -56,6 +56,7 @@ class AudioEngineTest {
             engine.tearDown()
             activity.finish()
         }
+        activity.getSharedPreferences(AudioEngine.PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
     }
 
     @Test fun dictationContinuesWhenMusicTakesFocus() {
@@ -186,6 +187,53 @@ class AudioEngineTest {
         await("normal audio mode") { audio.mode == AudioManager.MODE_NORMAL }
         await("cleared communication route") { !hasCommunicationRoute() }
         assertFalse(engine.isRecording)
+    }
+
+    @Test fun pickedMicrophoneIsRememberedByTheNextEngine() {
+        val changes = AtomicInteger()
+        main { engine.onMicrophoneRoutesChangeCallback = { changes.incrementAndGet() } }
+        val phone = engine.getMicrophoneRoutes().routes.single { it.key == AudioEngine.PHONE_ROUTE_KEY }
+        assertTrue(engine.setPreferredMicrophone(phone.key))
+        await("routes change event") { changes.get() > 0 }
+
+        lateinit var next: AudioEngine
+        main { next = AudioEngine(activity) }
+        try {
+            val routes = next.getMicrophoneRoutes()
+            assertEquals(phone.key, routes.preferredKey)
+            assertEquals(phone.name, routes.preferredName)
+            assertEquals(phone.key, routes.activeKey)
+        } finally {
+            main { next.tearDown() }
+        }
+
+        assertTrue(engine.setPreferredMicrophone(null))
+        assertNull(engine.getMicrophoneRoutes().preferredKey)
+    }
+
+    @Test fun microphoneThatIsNotConnectedCannotBePicked() {
+        assertFalse(engine.setPreferredMicrophone("bluetooth:Not here"))
+        assertNull(engine.getMicrophoneRoutes().preferredKey)
+    }
+
+    @Test @SdkSuppress(minSdkVersion = 31)
+    fun rememberedMicrophoneThatIsGoneFallsBackToAutomatic() {
+        // A headset picked earlier and switched off since then.
+        activity.getSharedPreferences(AudioEngine.PREFERENCES_NAME, Context.MODE_PRIVATE).edit()
+            .putString("preferredMicrophoneKey", "bluetooth:Gone")
+            .putString("preferredMicrophoneName", "Gone")
+            .commit()
+        main {
+            engine.tearDown()
+            engine = AudioEngine(activity)
+            engine.onMicDataCallback = { packets.incrementAndGet() }
+            assertTrue(engine.toggleRecording(true))
+        }
+        await("selected communication route") { hasCommunicationRoute() }
+        val routes = engine.getMicrophoneRoutes()
+        assertEquals("bluetooth:Gone", routes.preferredKey)
+        assertEquals(AudioEngine.PHONE_ROUTE_KEY, routes.activeKey)
+        assertEquals(android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, audio.communicationDevice?.type)
     }
 
     private fun assertDictationSurvives(gain: Int) {

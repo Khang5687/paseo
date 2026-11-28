@@ -21,8 +21,31 @@ import java.util.Queue
 import java.util.concurrent.Executors
 import kotlin.math.pow
 
+/**
+ * A microphone the user can pick for voice and dictation. [key] stays the same when the device
+ * reconnects, so it is what the remembered pick stores; [kind] is phone, bluetooth, wired, usb
+ * or hearing_aid.
+ */
+data class MicrophoneRoute(val key: String, val kind: String, val name: String)
+
+data class MicrophoneRoutes(
+    val routes: List<MicrophoneRoute>,
+    /** The remembered pick, or null for automatic. It may name a device that is not connected. */
+    val preferredKey: String?,
+    val preferredName: String?,
+    /** The route in use while capturing or playing, else the one the next session would use. */
+    val activeKey: String?,
+)
 
 class AudioEngine (context: Context) {
+    companion object {
+        /** Kept per phone, so the pick survives app restarts and is shared by voice and dictation. */
+        const val PREFERENCES_NAME = "expo-two-way-audio"
+        private const val PREFERRED_KEY = "preferredMicrophoneKey"
+        private const val PREFERRED_NAME = "preferredMicrophoneName"
+        const val PHONE_ROUTE_KEY = "phone"
+    }
+
     private val SAMPLE_RATE = 16000
     private val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     private val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
@@ -50,12 +73,14 @@ class AudioEngine (context: Context) {
     }
     private val deviceCallback = object : android.media.AudioDeviceCallback() {
         override fun onAudioDevicesAdded(devices: Array<out AudioDeviceInfo>) {
-            if (communicationRouteActive) updateAudioRouting()
+            refreshMicrophoneRoutes()
         }
         override fun onAudioDevicesRemoved(devices: Array<out AudioDeviceInfo>) {
-            if (communicationRouteActive) updateAudioRouting()
+            refreshMicrophoneRoutes()
         }
     }
+    private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private var activeRouteKey: String? = null
     private var communicationRouteActive = false
     private var bridgeWindowStartedAtMs = System.currentTimeMillis()
     private var micEvents = 0
@@ -74,6 +99,7 @@ class AudioEngine (context: Context) {
     var onInputVolumeCallback: ((Float) -> Unit)? = null
     var onOutputVolumeCallback: ((Float) -> Unit)? = null
     var onAudioInterruptionCallback: ((String) -> Unit)? = null
+    var onMicrophoneRoutesChangeCallback: (() -> Unit)? = null
 
     init {
         initializeAudio(context)
@@ -130,40 +156,107 @@ class AudioEngine (context: Context) {
         )
     }
 
+    /**
+     * Map an output device to the microphone route it stands for. Android picks the matching
+     * input for a communication sink, so the speaker means the phone's own mic, and a headset
+     * means its mic (headphones without one fall back to the phone's mic). The earpiece is left
+     * out: voice replies there are too quiet to hear with the phone away from your ear.
+     */
+    private fun routeOf(device: AudioDeviceInfo): MicrophoneRoute? {
+        val kind = when (device.type) {
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ->
+                return MicrophoneRoute(PHONE_ROUTE_KEY, "phone", device.productName.toString())
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET -> "bluetooth"
+            // Before Android 12 a connected headset shows up as A2DP until SCO starts.
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return null else "bluetooth"
+            AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired"
+            AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
+            AudioDeviceInfo.TYPE_HEARING_AID -> "hearing_aid"
+            else -> return null
+        }
+        val name = device.productName.toString()
+        return MicrophoneRoute("$kind:$name", kind, name)
+    }
+
+    /** One entry per route; a Bluetooth headset that shows as both SCO and A2DP is one route. */
+    @SuppressLint("NewApi")
+    private fun routeDevices(): List<Pair<AudioDeviceInfo, MicrophoneRoute>> {
+        val devices = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.availableCommunicationDevices
+        } else {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
+        }
+        return devices.mapNotNull { device -> routeOf(device)?.let { device to it } }
+            .distinctBy { it.second.key }
+    }
+
+    /** The remembered pick when it is connected, else Bluetooth, then wired, then the phone. */
+    private fun chooseRoute(
+        candidates: List<Pair<AudioDeviceInfo, MicrophoneRoute>>
+    ): Pair<AudioDeviceInfo, MicrophoneRoute>? {
+        val preferred = preferences.getString(PREFERRED_KEY, null)
+        return candidates.firstOrNull { it.second.key == preferred }
+            ?: candidates.firstOrNull { it.second.kind == "bluetooth" }
+            ?: candidates.firstOrNull { it.second.kind == "wired" || it.second.kind == "usb" }
+            ?: candidates.firstOrNull { it.second.kind == "phone" }
+    }
+
     @SuppressLint("NewApi")
     private fun updateAudioRouting() {
+        val chosen = chooseRoute(routeDevices())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val devices = audioManager.availableCommunicationDevices
-            // A2DP is a music output, not a microphone route. Android chooses the matching
-            // input for a valid communication sink (including SCO and BLE headsets).
-            val selected = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET }
-                ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET }
-                ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
             val routed = try {
-                selected != null && audioManager.setCommunicationDevice(selected)
+                chosen != null && audioManager.setCommunicationDevice(chosen.first)
             } catch (_: IllegalArgumentException) {
                 // The device disconnected between enumeration and selection.
                 false
             }
             if (!routed) audioManager.clearCommunicationDevice()
+            activeRouteKey = if (routed) chosen?.second?.key else null
         } else {
+            val kind = chosen?.second?.kind
             @Suppress("DEPRECATION")
-            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            // Before Android 12, A2DP signals a connected headset; start SCO to open its mic.
-            val bluetooth = devices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+            if (kind == "bluetooth") audioManager.startBluetoothSco() else audioManager.stopBluetoothSco()
             @Suppress("DEPRECATION")
-            if (bluetooth) audioManager.startBluetoothSco() else audioManager.stopBluetoothSco()
-            @Suppress("DEPRECATION")
-            audioManager.isSpeakerphoneOn = !bluetooth && !devices.any {
-                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET
-            }
+            audioManager.isSpeakerphoneOn = kind == "phone"
+            activeRouteKey = chosen?.second?.key
         }
+        onMicrophoneRoutesChangeCallback?.invoke()
+    }
+
+    /** Reroute a live session, or only tell JS the list changed when none is live. */
+    private fun refreshMicrophoneRoutes() {
+        if (communicationRouteActive) updateAudioRouting() else onMicrophoneRoutesChangeCallback?.invoke()
+    }
+
+    fun getMicrophoneRoutes(): MicrophoneRoutes {
+        val candidates = routeDevices()
+        return MicrophoneRoutes(
+            routes = candidates.map { it.second },
+            preferredKey = preferences.getString(PREFERRED_KEY, null),
+            preferredName = preferences.getString(PREFERRED_NAME, null),
+            activeKey = if (communicationRouteActive) activeRouteKey else chooseRoute(candidates)?.second?.key,
+        )
+    }
+
+    /**
+     * Remember [key] as this phone's microphone (null = automatic) and switch to it now when a
+     * session is live. Refuses a key that is not connected, since there would be no name to show
+     * for it later.
+     */
+    fun setPreferredMicrophone(key: String?): Boolean {
+        val route = key?.let { k -> routeDevices().firstOrNull { it.second.key == k }?.second }
+        if (key != null && route == null) return false
+        preferences.edit()
+            .putString(PREFERRED_KEY, route?.key)
+            .putString(PREFERRED_NAME, route?.name)
+            .apply()
+        // Route on the main thread, where the device callback also reroutes.
+        mainHandler.post {
+            refreshMicrophoneRoutes()
+        }
+        return true
     }
 
     @SuppressLint("NewApi")

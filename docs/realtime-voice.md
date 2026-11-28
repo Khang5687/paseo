@@ -25,3 +25,15 @@ Music and other apps keep playing, quieter, while voice or dictation holds the a
 - Ducked music on the phone speaker still reaches the microphone, so loud music can sound like speech to turn detection. Earbuds avoid it.
 
 Check route: on an emulator, play a song in YouTube Music or Chrome, start voice in Paseo, and run `adb -s <device> shell dumpsys audio`. The focus stack shows `sh.paseo.debug` with `gain: GAIN_TRANSIENT_MAY_DUCK` and the media app with `loss: LOSS_TRANSIENT_CAN_DUCK`, and the media app's player stays `state:started`. Stop voice: the media app's `loss` returns to `none`.
+
+## Microphone
+
+On Android the talk panel has a microphone button before Black. It lists the phone's mic and every connected headset (Bluetooth, BLE, wired, USB, hearing aid), plus Automatic. The pick is stored by the native module in Android `SharedPreferences` (`expo-two-way-audio`), so it holds across restarts and for dictation too, and applies each time the engine takes the communication route.
+
+- A route key is `phone` or `<kind>:<productName>`. The key survives reconnects; a device with no stable name collides with another of the same kind and name, which is acceptable for a phone.
+- A remembered device that is not connected is not an error: Android routing falls back to the automatic order (Bluetooth, then wired or USB, then the phone), and the Automatic row says which mic is missing. It is used again when it reconnects.
+- Android 12+ selects with `setCommunicationDevice`. Below that, a Bluetooth pick starts SCO and the phone pick turns the speakerphone on.
+- The earpiece is left out: voice replies there are too quiet with the phone away from your ear.
+- iOS, web and desktop show no button: the OS or browser owns the input choice. The app also hides it on an Android binary that predates the native functions.
+
+Check route: start voice on an Android emulator or phone and tap the mic button. The sheet lists "Phone mic" (and any headset) with a check on the current pick and "Automatic · Android picks". Pick one: a "Mic: <name>" toast shows. `adb shell dumpsys audio` lists `sh.paseo.debug` under "Communication route clients" with the picked device. The native logic is covered by `AudioEngineTest` (`pickedMicrophoneIsRememberedByTheNextEngine`, `rememberedMicrophoneThatIsGoneFallsBackToAutomatic`), and the menu rows by `packages/app/src/voice/microphone-menu.test.ts`.

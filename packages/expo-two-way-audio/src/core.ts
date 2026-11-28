@@ -84,3 +84,40 @@ export function pausePlayback() {
 export function resumePlayback() {
   return ExpoTwoWayAudioModule.resumePlayback();
 }
+
+export type MicrophoneRouteKind = "phone" | "bluetooth" | "wired" | "usb" | "hearing_aid";
+
+export interface MicrophoneRoute {
+  /** Stays the same when the device reconnects; this is what the remembered pick stores. */
+  key: string;
+  kind: MicrophoneRouteKind;
+  name: string;
+}
+
+export interface MicrophoneRoutes {
+  routes: MicrophoneRoute[];
+  /** The remembered pick, or null for automatic. It may name a device that is not connected. */
+  preferredKey: string | null;
+  preferredName: string | null;
+  /** The route in use while capturing or playing, else the one the next session would use. */
+  activeKey: string | null;
+}
+
+/**
+ * The microphones voice and dictation can use, Android only. Null on iOS (the OS owns the route),
+ * on a binary without the picker, and before `initialize()`.
+ */
+export function getMicrophoneRoutes(): MicrophoneRoutes | null {
+  if (typeof ExpoTwoWayAudioModule.getMicrophoneRoutes !== "function") {
+    return null;
+  }
+  return ExpoTwoWayAudioModule.getMicrophoneRoutes();
+}
+
+/** Remember a connected route as this phone's microphone; null goes back to automatic. */
+export function setPreferredMicrophone(key: string | null): boolean {
+  if (typeof ExpoTwoWayAudioModule.setPreferredMicrophone !== "function") {
+    return false;
+  }
+  return ExpoTwoWayAudioModule.setPreferredMicrophone(key);
+}
