@@ -36,7 +36,6 @@ interface HoverCardContextValue {
   triggerRef: RefObject<View | null>;
   contentRef: RefObject<View | null>;
   openNow: () => void;
-  scheduleClose: () => void;
 }
 
 const HoverCardContext = createContext<HoverCardContextValue | null>(null);
@@ -236,8 +235,11 @@ function WebHoverCard({
   }, [clearGraceTimer, keyPressed, open, openNow, scheduleClose]);
 
   // While open, the safe zone covers trigger + content + the bridge between
-  // them. Close only fires when the pointer leaves the safe zone; re-entering
-  // it (including the bridge) cancels the pending close.
+  // them. Close only fires when the pointer moves out of the safe zone; re-entering
+  // it (including the bridge) cancels the pending close. The trigger has no
+  // pointerleave of its own: the browser also fires one when the layout moves the
+  // trigger out from under a still pointer, as the composer's toolbar does when a
+  // run ends, and that is not the pointer leaving.
   useHoverSafeZone({
     enabled: open,
     triggerRef,
@@ -256,8 +258,8 @@ function WebHoverCard({
   useEffect(() => clearGraceTimer, [clearGraceTimer]);
 
   const value = useMemo<HoverCardContextValue>(
-    () => ({ open, layer, setTriggerRef, triggerRef, contentRef, openNow, scheduleClose }),
-    [open, layer, setTriggerRef, openNow, scheduleClose],
+    () => ({ open, layer, setTriggerRef, triggerRef, contentRef, openNow }),
+    [open, layer, setTriggerRef, openNow],
   );
 
   return (
@@ -291,7 +293,6 @@ export function HoverCardTrigger({
       accessibilityLabel={accessibilityLabel}
       collapsable={false}
       onPointerEnter={ctx.openNow}
-      onPointerLeave={ctx.scheduleClose}
     >
       {children}
     </View>
@@ -391,6 +392,19 @@ function HoverCardSurface({
   }, [alignment, contentRef, offset, placement, triggerRef]);
 
   useLayoutEffect(place, [place]);
+
+  // The trigger moves when a sibling in its row mounts or unmounts, as the composer's toolbar does
+  // when a run ends. An ancestor resizes then, so watching them keeps the card on its trigger.
+  useLayoutEffect(() => {
+    const trigger = triggerRef.current as unknown as HTMLElement | null;
+    if (!trigger) return undefined;
+    const observer = new ResizeObserver(place);
+    for (let node: HTMLElement | null = trigger; node && node !== document.body; ) {
+      observer.observe(node);
+      node = node.parentElement;
+    }
+    return () => observer.disconnect();
+  }, [place, triggerRef]);
 
   const frameStyle = useMemo(
     () => ({ position: "absolute" as const, ...(position ?? { top: -9999, left: -9999 }) }),
