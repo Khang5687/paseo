@@ -17,7 +17,7 @@ How a spoken "go to fitup", "list chats" or "go back" moves Voice mode to anothe
 
 ## The new voice session
 
-The app turns voice off on the old chat and on for the new one, and the daemon releases a voice session once it has no demand. So the move ends one `VoiceSession` and starts another on the same socket. Anything that must survive the move lives in `VoiceNavMemory`, which `VoiceSessions` keeps per socket: the chat voice was on (for "go back") and the arrival speech. The arrival speech ("FitUp, main chat.") is queued when `set_voice_mode` turns voice on in the named chat, so it only plays once voice is really there.
+The app turns voice off on the old chat and on for the new one, and the daemon releases a voice session once it has no demand. So the move ends one `VoiceSession` and starts another on the same socket. Anything that must survive the move lives in `VoiceNavMemory`, which `VoiceSessions` keeps per socket: the chat voice was on (for "go back") and the arrival speech. The arrival speech ("fitup, Main chat.": project name, then chat title) is queued when `set_voice_mode` turns voice on in the named chat, so it only plays once voice is really there.
 
 Words still waiting for "over" are dropped by the move, the same as turning voice off.
 
