@@ -1,0 +1,5 @@
+{
+  "pr": 213,
+  "title": "fix(app): ending live voice no longer stops the agent",
+  "tests": ["packages/app/src/composer/input/state.test.ts"]
+}
