@@ -1,0 +1,6 @@
+{
+  "pr": 225,
+  "title": "fix(fork): pass E2E_WORKERS through to the background build",
+  "untested": "build script: one name added to the env list systemd-run forwards; proven when a background build's fork-check log shows the forced worker count",
+  "tests": []
+}
