@@ -372,6 +372,9 @@ Run the microphone-privacy cases on Android 12 or newer.
 
 Verify these distinct outcomes:
 
+- Voice, voice playback, and dictation duck another media owner instead of pausing it: a music
+  focus holder gets `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK`, then `AUDIOFOCUS_GAIN` when the session
+  is released.
 - Dictation continues when another media owner takes permanent, temporary, or ducking focus.
 - Disabling microphone access pauses audio delivery without discarding the dictation. Enabling
   access resumes it. Starting dictation while access is disabled waits for the same recovery.
@@ -396,11 +399,11 @@ This fix requires a rebuilt native app. An OTA update on an older binary retains
 ### Releasing the audio session when idle
 
 Paseo must not hold the OS audio session once it is neither capturing nor playing, or the user's
-background music stays paused. On iOS this is not just a "while recording" problem: the
-`.playAndRecord`/`.voiceChat` category is non-mixing and survives backgrounding, and iOS re-asserts
-it every time the app returns to the foreground — so one dictation turn kills music for the life of
-the process, on every open, until the app is force-quit. Android holds
-`AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE` with the same effect. It must also reset
+background music stays ducked (quieter, see [Other audio](realtime-voice.md#other-audio)). On iOS
+this is not just a "while recording" problem: the `.playAndRecord`/`.voiceChat` category survives
+backgrounding, and iOS re-asserts it every time the app returns to the foreground, so one
+dictation turn would duck music for the life of the process. Android holds transient focus with
+the same effect. It must also reset
 `MODE_IN_COMMUNICATION` and clear the selected communication device; abandoning focus alone can
 leave Bluetooth earbuds on their narrow-band call route without an active microphone indicator.
 

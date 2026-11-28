@@ -78,6 +78,28 @@ class AudioEngineTest {
         assertFalse(engine.isRecording)
     }
 
+    // Music in this test shares our uid, so Android notifies its listener instead of auto-ducking
+    // its players; the change it receives is the focus type voice asked for.
+    @Test fun conversationDucksMusicInsteadOfPausingIt() {
+        val music = holdMusicFocus()
+        main { assertTrue(engine.toggleRecording(true)) }
+        await("conversation microphone data") { packets.get() > 2 }
+        await("music told to duck") { music.contains(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) }
+        main { engine.toggleRecording(false); engine.releaseAudioSession() }
+        await("music focus restored") { music.contains(AudioManager.AUDIOFOCUS_GAIN) }
+        assertEquals(listOf(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, AudioManager.AUDIOFOCUS_GAIN), music.toList())
+    }
+
+    @Test fun playbackDucksMusicInsteadOfPausingIt() {
+        val music = holdMusicFocus()
+        main { engine.playPCMData(ByteArray(3200)) }
+        await("music told to duck") { music.contains(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) }
+        await("playback drained") { !engine.isPlaying }
+        main { engine.releaseAudioSession() }
+        await("music focus restored") { music.contains(AudioManager.AUDIOFOCUS_GAIN) }
+        assertEquals(listOf(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, AudioManager.AUDIOFOCUS_GAIN), music.toList())
+    }
+
     @Test fun dictationStartsWhileMusicOwnsFocusAndCanBeStartedAgain() {
         takeFocus(AudioManager.AUDIOFOCUS_GAIN)
         startDictation()
@@ -186,16 +208,22 @@ class AudioEngineTest {
         await("initial microphone data") { packets.get() > before + 3 }
     }
 
-    private fun takeFocus(gain: Int): AudioFocusRequest {
+    private fun takeFocus(gain: Int, onChange: (Int) -> Unit = {}): AudioFocusRequest {
         val request = AudioFocusRequest.Builder(gain)
             .setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            .setOnAudioFocusChangeListener({}, Handler(Looper.getMainLooper()))
+            .setOnAudioFocusChangeListener({ onChange(it) }, Handler(Looper.getMainLooper()))
             .build()
         requests.add(request)
         main { assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, audio.requestAudioFocus(request)) }
         return request
+    }
+
+    private fun holdMusicFocus(): CopyOnWriteArrayList<Int> {
+        val changes = CopyOnWriteArrayList<Int>()
+        takeFocus(AudioManager.AUDIOFOCUS_GAIN) { changes.add(it) }
+        return changes
     }
 
     private fun main(action: () -> Unit) = instrumentation.runOnMainSync(action)

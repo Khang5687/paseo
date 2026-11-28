@@ -169,3 +169,5 @@ Keys and base URLs follow the fallback rule above.
 ## Operational Notes
 
 Voice mode can launch and control agents. Treat voice prompts with the same care as direct agent instructions, especially when specifying working directories or destructive operations.
+
+Music and other audio on the phone keep playing, quieter, while voice mode or dictation is on, and return to full volume when it stops. On Android, a podcast app may pause instead, because Android lets apps that play speech choose, and pressing play in a music app while voice mode is on ends voice mode.
