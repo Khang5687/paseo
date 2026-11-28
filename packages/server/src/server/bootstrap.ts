@@ -2182,7 +2182,9 @@ export async function createPaseoDaemon(
     await pluginRuntime.stopAllPlugins();
     try {
       if (keepTerminals) {
-        await terminalManager.detach();
+        // Owner moves are fire-and-forget; requests already sent get their answers first.
+        // Each request has its own timeout, so this wait is bounded.
+        await terminalManager.detach({ afterPendingRequests: true });
         logger.info("Terminals left running for the next daemon");
       } else {
         await terminalManager.closeTerminals();
