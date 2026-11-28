@@ -52,9 +52,11 @@ Say a command by itself, as the whole sentence, and voice moves to another chat 
 - **"Go to fitup"**: opens that project's chat and keeps voice on there. When the project has more than one chat, Paseo reads up to five chat names, newest first, and asks "Which one?". Answer with a name ("food scan") or a number ("the second one"). Words that name no chat get "No chat called that." and are not sent anywhere.
 - **"Go to fitup food scan"**: names the project and the chat in one go. In the project you are in, the chat name alone works too ("go to food scan").
 - **"List chats"** or **"Which chats"**: reads the chats of the project you are in, then waits for your pick the same way.
-- **"Go back"**: returns to the chat voice was on before.
+- **"Go back"**: returns to the chat voice was on before, on whichever host it is.
 
-Once voice is on in the new chat, Paseo says where you are ("fitup, food scan."). Commands play no beep and need no "over". Names match loosely: "fit up" finds FitUp, and a part of a long chat title is enough. A sentence that starts with "go to" but names no project or chat ("go to the auth module and add logging") is sent to the agent as usual. A chat is a top-level agent that is not archived; subagents are not listed. Only projects on the host of the chat you are in are found. The commands are English words, and they need an app and host that support them.
+Once voice is on in the new chat, Paseo says where you are ("fitup, food scan."). Commands play no beep and need no "over". Names match loosely: "fit up" finds FitUp, and a part of a long chat title is enough. A sentence that starts with "go to" but names no project or chat ("go to the auth module and add logging") is sent to the agent as usual. A chat is a top-level agent that is not archived; subagents are not listed. The commands are English words, and they need an app and host that support them.
+
+"Go to" looks on every host the app is connected to. When the chat is on another host, Paseo names the host as you arrive ("fitup on Mac, gym log."). When two hosts have a project of the same name, Paseo asks "fitup on Omen or on Mac?"; answer with the host's name or "the second one". When the only match is on a host that is offline or asleep, Paseo says so ("groceries is on Mac, which is offline.") and voice stays where it is. Host names are the names the hosts have in the app. "List chats" reads the project you are in, on the host you are on.
 
 ## Asking Paseo
 
