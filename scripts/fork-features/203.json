@@ -1,0 +1,8 @@
+{
+  "pr": 203,
+  "title": "fix(server): refuse voice mode when the agent would have no speak tool",
+  "tests": [
+    "packages/server/src/server/session/voice/voice-session.test.ts",
+    "packages/server/src/server/agent/agent-manager.test.ts"
+  ]
+}

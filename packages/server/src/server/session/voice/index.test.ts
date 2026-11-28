@@ -29,6 +29,7 @@ test("a failed speech close reports the failure without retaining observation de
         async loadAgent() {
           throw new Error("Unexpected agent load");
         },
+        speakToolUnavailableReason: () => null,
         async reloadAgentSession() {
           throw new Error("Unexpected agent reload");
         },
