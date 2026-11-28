@@ -30,6 +30,19 @@ import {
 type SavePatch = (patch: SpeechSettingsPatch) => Promise<unknown>;
 type VoiceSendMode = "auto" | "over";
 const EMPTY_ENV_OVERRIDES: Record<string, string> = {};
+// Provisional pair (Q226); any "<provider>/<model>" in config.json works and shows as Custom.
+const SIDE_HELPER_MODELS = [
+  {
+    value: "omp/anthropic/claude-haiku-5-5",
+    label: "Haiku 5.5",
+    testID: "voice-side-helper-haiku",
+  },
+  {
+    value: "omp/anthropic/claude-sonnet-5-5",
+    label: "Sonnet 5.5",
+    testID: "voice-side-helper-sonnet",
+  },
+];
 
 // The sheet mounts fresh for every open (docs/forms.md); `openCount` keys each mount.
 interface OpenSheet {
@@ -48,6 +61,7 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
   const isConnected = useHostRuntimeIsConnected(serverId);
   const supported = useHostFeature(serverId, "speechSettings");
   const sendModeSupported = useHostFeature(serverId, "voiceSendMode");
+  const sideHelperSupported = useHostFeature(serverId, "voiceSideHelper");
   const { config, patchConfig } = useDaemonConfig(serverId);
   const localModels = useLocalSpeechModels(serverId);
   const { refresh: refreshModels } = localModels;
@@ -79,6 +93,10 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
   );
   const setSendMode = useCallback(
     (sendMode: VoiceSendMode) => saveSwitch({ voiceMode: { sendMode } }),
+    [saveSwitch],
+  );
+  const setSideHelperModel = useCallback(
+    (sideHelperModel: string) => saveSwitch({ voiceMode: { sideHelperModel } }),
     [saveSwitch],
   );
   const openSheet = useCallback((siteId: SpeechSiteId) => {
@@ -156,6 +174,12 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
               onChange={setSendMode}
             />
           ) : null}
+          {sideHelperSupported && features.voiceMode.sideHelperModel ? (
+            <SideHelperModelRow
+              value={features.voiceMode.sideHelperModel}
+              onChange={setSideHelperModel}
+            />
+          ) : null}
           {siteRow("voiceMode.stt", t("settings.voice.sites.voiceModeStt"))}
           {siteRow("voiceMode.tts", t("settings.voice.sites.voiceModeTts"))}
         </SettingsCard>
@@ -223,6 +247,36 @@ function SendModeRow({
           },
         ]}
       />
+    </SettingsRow>
+  );
+}
+
+function SideHelperModelRow({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const known = SIDE_HELPER_MODELS.some((model) => model.value === value);
+  const options = known
+    ? SIDE_HELPER_MODELS
+    : [
+        ...SIDE_HELPER_MODELS,
+        {
+          value,
+          label: t("settings.voice.voiceMode.sideHelperModelCustom"),
+          testID: "voice-side-helper-custom",
+        },
+      ];
+  return (
+    <SettingsRow
+      label={t("settings.voice.voiceMode.sideHelperModel")}
+      hint={t("settings.voice.voiceMode.sideHelperModelHint")}
+      testID="voice-side-helper-model"
+    >
+      <SegmentedControl<string> value={value} onValueChange={onChange} options={options} />
     </SettingsRow>
   );
 }

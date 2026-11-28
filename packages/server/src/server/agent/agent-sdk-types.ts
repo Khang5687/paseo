@@ -739,6 +739,13 @@ export interface AgentCreateSessionOptions {
    * Providers that validate against runtime-advertised models must accept these.
    */
   configuredModelIds?: readonly string[];
+  /**
+   * A one-shot answer with no tools: the model gets only `config.systemPrompt` as its system
+   * prompt, no built-in, MCP or Paseo tools, and no discovered context (skills, rules, context
+   * files, extensions). For internal agents; never persisted. Providers that cannot honor it
+   * ignore it.
+   */
+  toolless?: boolean;
 }
 
 /** What a resumed session is for: driving the agent, or reading what it already did. */

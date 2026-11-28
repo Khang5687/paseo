@@ -3169,6 +3169,10 @@ export const ar: TranslationResources = {
         sendModeAutoHint: 'يُرسل بعد توقف قصير. قل "cancel" بعد الصفارة مباشرة لإيقافه.',
         sendModeOverHint:
           'يُرسل عندما تنهي كلامك بكلمة "over". قل "cancel" بعد الصفارة مباشرة لإيقافه.',
+        sideHelperModel: 'يجيب على "Paseo, …"',
+        sideHelperModelHint:
+          'ابدأ بـ "Paseo," لتسأل عن محادثاتك. يجيب هذا النموذج بصوت عالٍ ولا يُرسل شيء إلى المحادثة.',
+        sideHelperModelCustom: "مخصص",
       },
       openai: {
         apiKey: "مفتاح API",

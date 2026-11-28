@@ -561,6 +561,39 @@ describe("OMP agent client and session", () => {
     });
   });
 
+  test("a toolless session runs with no tools, no discovered context and only the given system prompt", async () => {
+    const omp = new OmpHarness();
+    await omp.start(
+      {
+        modeId: "ask",
+        systemPrompt: "You are the voice helper.",
+        daemonAppendSystemPrompt: "Daemon-wide rule.",
+        mcpServers: { echo: { type: "stdio", command: "echo-mcp" } },
+      },
+      createToolCatalog(),
+      undefined,
+      { toolless: true },
+    );
+
+    expect(omp.launchConfiguration().argv).toEqual([
+      "omp",
+      "--mode",
+      "rpc-ui",
+      "--approval-mode",
+      "always-ask",
+      "--no-tools",
+      "--no-skills",
+      "--no-rules",
+      "--no-context-files",
+      "--no-extensions",
+      "--no-lsp",
+      "--no-title",
+      "--system-prompt=You are the voice helper.",
+      "--no-session",
+    ]);
+    expect(omp.registeredHostTools()).toEqual([]);
+  });
+
   test("preserves max as the selected thinking option", async () => {
     const omp = new OmpHarness();
     await omp.start({ thinkingOptionId: "max" });

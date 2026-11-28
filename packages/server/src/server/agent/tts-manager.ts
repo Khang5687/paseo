@@ -31,6 +31,27 @@ const MAX_TTS_SEGMENT_CHARS = 260;
 const TTS_PREFETCH_SEGMENTS = 2;
 const CLOSED_AUDIO_ID_TTL_MS = 10_000;
 
+interface SpeechClip {
+  audio: Buffer;
+  format: string;
+}
+
+/**
+ * Short fixed lines ("One sec.") synthesized once and kept in memory, so they play the moment
+ * they are due. Keyed by the provider, so a new voice setting (a new provider) makes new clips
+ * and the old ones go with the old provider.
+ */
+const speechClips = new WeakMap<TextToSpeechProvider, Map<string, Promise<SpeechClip>>>();
+
+async function readSpeechClip(tts: TextToSpeechProvider, text: string): Promise<SpeechClip> {
+  const { stream, format } = await tts.synthesizeSpeech(text);
+  const buffers: Buffer[] = [];
+  for await (const chunk of stream) {
+    buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return { audio: Buffer.concat(buffers), format };
+}
+
 function splitOversizedFragment(fragment: string, maxChars: number): string[] {
   const trimmed = fragment.trim();
   if (!trimmed) {
@@ -159,6 +180,39 @@ export class TTSManager {
       abortSignal,
       isVoiceMode: true,
     });
+  }
+
+  /**
+   * Synthesize a short fixed line once per provider (see `speechClips`). Call it early so the
+   * first play does not wait either. A failed synthesis is forgotten and tried again next time.
+   */
+  public prepareSpeechClip(text: string): Promise<SpeechClip> {
+    const tts = this.resolveTts();
+    if (!tts) return Promise.reject(new Error("TTS not configured"));
+    let clips = speechClips.get(tts);
+    if (!clips) {
+      clips = new Map();
+      speechClips.set(tts, clips);
+    }
+    const cached = clips.get(text);
+    if (cached) return cached;
+    const clip = readSpeechClip(tts, text);
+    clips.set(text, clip);
+    const forget = clips;
+    clip.catch(() => {
+      if (forget.get(text) === clip) forget.delete(text);
+    });
+    return clip;
+  }
+
+  /** Play a short fixed line from memory, synthesizing it first only the first time. */
+  public async playSpeechClip(
+    text: string,
+    emitMessage: (msg: SessionOutboundMessage) => void,
+    abortSignal: AbortSignal,
+  ): Promise<void> {
+    const clip = await this.prepareSpeechClip(text);
+    await this.playAudio(clip.audio, clip.format, emitMessage, abortSignal);
   }
 
   /**

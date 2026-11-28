@@ -1018,6 +1018,10 @@
             "sendMode": {
               "type": "string",
               "enum": ["auto", "over"]
+            },
+            "sideHelperModel": {
+              "type": "string",
+              "minLength": 3
             }
           },
           "additionalProperties": false

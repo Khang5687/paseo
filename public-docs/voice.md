@@ -56,6 +56,20 @@ Say a command by itself, as the whole sentence, and voice moves to another chat 
 
 Once voice is on in the new chat, Paseo says where you are ("fitup, food scan."). Commands play no beep and need no "over". Names match loosely: "fit up" finds FitUp, and a part of a long chat title is enough. A sentence that starts with "go to" but names no project or chat ("go to the auth module and add logging") is sent to the agent as usual. A chat is a top-level agent that is not archived; subagents are not listed. Only projects on the host of the chat you are in are found. The commands are English words, and they need an app and host that support them.
 
+## Asking Paseo
+
+Start a sentence with "Paseo," and a pause, and Paseo answers it out loud instead of sending it to the agent:
+
+- "Paseo, which chats are waiting on me?"
+- "Paseo, what's going on in fitup?"
+- "Paseo, what did the agent just say?"
+
+The answer comes from a separate small model that reads your chats on this host: their names and state, what waits on you (approvals, question boxes, open questions), and the last messages of the chat you are in and of a chat you name. It can only read; nothing is sent to any chat. It answers in a few short sentences. When it takes more than a moment, Paseo says "One sec."; when it has no answer within 20 seconds, "Sorry, no answer."
+
+The pause matters: "Paseo app crashes on start" has none and goes to the agent as usual, and so does a sentence with "Paseo" in the middle. Say "Paseo." alone and Paseo answers "Yes?"; your next sentence is the question. A move command after the name still moves ("Paseo, go to fitup").
+
+Pick the model in **Settings > Voice > Answers "Paseo, …"**, or set `features.voiceMode.sideHelperModel` to `<provider>/<model>`. The default is `omp/anthropic/claude-haiku-5-5`. Each question is one model call with up to about 6,000 tokens of chat data, so it counts against that provider's usage. The row appears once the host runs a version that supports it.
+
 ## Local Speech
 
 Local speech defaults to model IDs `parakeet-tdt-0.6b-v2-int8` (STT) and `kokoro-en-v0_19` (TTS, speaker 0 / voice 00).

@@ -3182,6 +3182,10 @@ export const ptBR: TranslationResources = {
           'Envia após uma pausa curta. Diga "cancel" logo após o bipe para impedir.',
         sendModeOverHint:
           'Envia quando você termina com "over". Diga "cancel" logo após o bipe para impedir.',
+        sideHelperModel: 'Responde a "Paseo, …"',
+        sideHelperModelHint:
+          'Comece com "Paseo," para perguntar sobre seus chats. Este modelo responde em voz alta; nada vai para o chat.',
+        sideHelperModelCustom: "Personalizado",
       },
       openai: {
         apiKey: "Chave de API",

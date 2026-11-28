@@ -3274,6 +3274,10 @@ export const en = {
           'Sends after a short pause. Say "cancel" right after the beep to stop it.',
         sendModeOverHint:
           'Sends when you end with "over". Say "cancel" right after the beep to stop it.',
+        sideHelperModel: 'Answers "Paseo, …"',
+        sideHelperModelHint:
+          'Start with "Paseo," to ask about your chats ("Paseo, which chats are waiting on me?"). This model answers out loud; nothing goes into the chat.',
+        sideHelperModelCustom: "Custom",
       },
       openai: {
         apiKey: "API key",

@@ -56,7 +56,7 @@ interface SupportedMutableConfigPatch {
 const SPEECH_PERSISTED_PATHS = ["features.dictation", "features.voiceMode"];
 // Read at use time, so changing them must not rebuild the speech providers: a rebuild restarts
 // the local speech worker and stops a live voice session from hearing anything.
-const SPEECH_LIVE_PATHS = ["features.voiceMode.sendMode"];
+const SPEECH_LIVE_PATHS = ["features.voiceMode.sendMode", "features.voiceMode.sideHelperModel"];
 
 interface LoggerLike {
   child(bindings: Record<string, unknown>): LoggerLike;

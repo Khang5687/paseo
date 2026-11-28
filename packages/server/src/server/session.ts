@@ -41,7 +41,7 @@ import { SessionDelivery, type OwnedSubscription } from "./session/owned-subscri
 import { v4 as uuidv4 } from "uuid";
 import { lstat, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, join, resolve, sep } from "path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import { formatPluginSourceReference } from "@getpaseo/protocol/plugin-source-reference";
 import {
@@ -222,7 +222,11 @@ import {
 } from "../utils/project-custom-icon.js";
 import { VoiceSessions } from "./session/voice/index.js";
 import type { VoiceSessionOptions } from "./session/voice/voice-session.js";
-import { buildVoiceChatDirectory } from "./session/voice/voice-chat-directory.js";
+import {
+  buildVoiceChatDirectory,
+  type VoiceChatProject,
+} from "./session/voice/voice-chat-directory.js";
+import { createVoiceSideHelper } from "./session/voice/voice-side-helper.js";
 import { CheckoutSession } from "./session/checkout/checkout-session.js";
 import {
   createWorkspaceGitObserverService,
@@ -1534,16 +1538,27 @@ export class Session {
           interruptAgentIfRunning: (agentId) => this.interruptAgentIfRunning(agentId),
           hasActiveAgentRun: (agentId) => this.hasActiveAgentRun(agentId),
           waitForAgentIdle: (agentId, signal) => this.waitForAgentIdle(agentId, signal),
-          listVoiceChats: async () => {
-            const [projects, workspaces] = await Promise.all([
-              this.projectRegistry.list(),
-              this.workspaceRegistry.listActive(),
-            ]);
-            const agents = await this.listAgentPayloads({
-              workspaceIds: workspaces.map((workspace) => workspace.workspaceId),
-            });
-            return buildVoiceChatDirectory({ projects, workspaces, agents });
-          },
+          listVoiceChats: async () => (await this.readVoiceChats()).directory,
+          askSideHelper: createVoiceSideHelper({
+            manager: this.agentManager,
+            readChats: () => this.readVoiceChats(),
+            loadTimeline: async (agentId) => {
+              await ensureAgentLoaded(agentId, {
+                agentManager: this.agentManager,
+                agentStorage: this.agentStorage,
+                logger: this.sessionLogger,
+                purpose: "history",
+              });
+              return this.agentManager.getTimeline(agentId);
+            },
+            model: () => this.daemonConfigStore.get().features?.voiceMode.sideHelperModel,
+            scratchDir: async () => {
+              const dir = join(tmpdir(), "paseo-voice-helper");
+              await mkdir(dir, { recursive: true });
+              return dir;
+            },
+            logger: this.sessionLogger,
+          }),
         },
         logger: this.sessionLogger,
         sessionId: this.sessionId,
@@ -6474,6 +6489,21 @@ export class Session {
     filter?: Parameters<AgentDirectory["list"]>[0],
   ): Promise<AgentSnapshotPayload[]> {
     return this.agentDirectory.list(filter);
+  }
+
+  /** The chats voice can name (active workspaces only) and the agents behind them. */
+  private async readVoiceChats(): Promise<{
+    directory: VoiceChatProject[];
+    agents: AgentSnapshotPayload[];
+  }> {
+    const [projects, workspaces] = await Promise.all([
+      this.projectRegistry.list(),
+      this.workspaceRegistry.listActive(),
+    ]);
+    const agents = await this.listAgentPayloads({
+      workspaceIds: workspaces.map((workspace) => workspace.workspaceId),
+    });
+    return { directory: buildVoiceChatDirectory({ projects, workspaces, agents }), agents };
   }
 
   private async resolveAgentIdentifier(

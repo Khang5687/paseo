@@ -3168,6 +3168,10 @@ export const ja: TranslationResources = {
           "少し間が空くと送信します。ビープ音の直後に「cancel」と言うと取り消せます。",
         sendModeOverHint:
           "最後に「over」と言うと送信します。ビープ音の直後に「cancel」と言うと取り消せます。",
+        sideHelperModel: "「Paseo, …」に答える",
+        sideHelperModelHint:
+          "「Paseo,」で始めるとチャットについて質問できます。このモデルが声で答え、チャットには何も送りません。",
+        sideHelperModelCustom: "カスタム",
       },
       openai: {
         apiKey: "API キー",

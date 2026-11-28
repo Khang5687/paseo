@@ -3150,6 +3150,10 @@ export const ko: TranslationResources = {
         sendModeAutoHint: '잠시 멈추면 보냅니다. 삐 소리 직후 "cancel"이라고 말하면 취소됩니다.',
         sendModeOverHint:
           '"over"로 끝내면 보냅니다. 삐 소리 직후 "cancel"이라고 말하면 취소됩니다.',
+        sideHelperModel: '"Paseo, …"에 답하기',
+        sideHelperModelHint:
+          '"Paseo,"로 시작하면 채팅에 대해 물어볼 수 있습니다. 이 모델이 소리 내어 답하고, 채팅에는 아무것도 보내지 않습니다.',
+        sideHelperModelCustom: "사용자 지정",
       },
       openai: {
         apiKey: "API 키",

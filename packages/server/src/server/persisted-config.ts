@@ -162,6 +162,8 @@ const FeatureVoiceModeSchema = z
     tts: SpeechTtsConfigSchema.optional(),
     // "auto" sends after 1 s of quiet; "over" waits for the spoken word "over".
     sendMode: z.enum(["auto", "over"]).optional(),
+    // The model that answers "Paseo, ..." questions: "<provider>/<model>".
+    sideHelperModel: z.string().min(3).optional(),
   })
   .strict();
 

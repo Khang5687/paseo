@@ -9,6 +9,7 @@ import { SHORT_WORD_CONFIRM_MS, VOICE_SEND_HOLD_MS } from "./send-gate.js";
 import type { VoiceSendMode } from "./send-words.js";
 import type { VoiceChatProject } from "./voice-chat-directory.js";
 import { createVoiceNavMemory, type VoiceNavMemory } from "./voice-navigate.js";
+import { SIDE_HELPER_TIMEOUT_MS, SIDE_HELPER_WAIT_MS } from "./voice-side-helper.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
 import type { SessionOutboundMessage } from "../../messages.js";
@@ -763,5 +764,148 @@ describe("VoiceSession navigation", () => {
     expect(navigations(oldApp.host)).toEqual([]);
     expect(oldApp.host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Go to Paseo." }]);
     await oldApp.voiceSession.cleanup();
+  });
+});
+
+describe("VoiceSession side helper", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const SCAN_CHAT_ID = "22222222-2222-4222-8222-222222222222";
+  const chats: VoiceChatProject[] = [
+    {
+      projectId: "fitup",
+      name: "FitUp",
+      chats: [
+        { agentId: VOICE_AGENT_ID, workspaceId: "w-fitup", title: "Main chat", lastActiveAt: 2 },
+        { agentId: SCAN_CHAT_ID, workspaceId: "w-scan", title: "Food scan", lastActiveAt: 1 },
+      ],
+    },
+  ];
+
+  type Ask = NonNullable<VoiceSessionHost["askSideHelper"]>;
+
+  async function startHelperSession(ask: Ask, options: { navigation?: boolean } = {}) {
+    const setup = createVoiceSession(playedTts, { navMemory: createVoiceNavMemory() });
+    acknowledgeAudio(setup);
+    setup.host.chats = chats;
+    const askSideHelper = vi.fn(ask);
+    setup.host.askSideHelper = askSideHelper;
+    await setup.voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID, undefined, {
+      navigation: options.navigation ?? false,
+    });
+    return { ...setup, askSideHelper };
+  }
+
+  test("'Paseo, ...' is answered out loud and never reaches the chat; plain words still do", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, askSideHelper } = await startHelperSession(
+      async () => "Food scan waits on you for an approval.",
+    );
+
+    await sayTurn(detector, sttSession, "Paceo, which chats are waiting on me?", "segment-1");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host)).toEqual(["Food scan waits on you for an approval."]),
+    );
+    expect(askSideHelper).toHaveBeenCalledWith(
+      expect.objectContaining({
+        question: "which chats are waiting on me?",
+        currentAgentId: VOICE_AGENT_ID,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(host.spokenInput).toEqual([]);
+
+    await sayTurn(detector, sttSession, "Paceo app crashes when I open settings.", "segment-2");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(host.spokenInput).toEqual([
+      { agentId: VOICE_AGENT_ID, text: "Paceo app crashes when I open settings." },
+    ]);
+    expect(askSideHelper).toHaveBeenCalledTimes(1);
+    await voiceSession.cleanup();
+  });
+
+  test("a slow answer says 'One sec.', and one past the time box says 'Sorry, no answer.'", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    const { voiceSession, detector, sttSession, host } = await startHelperSession(
+      (input) =>
+        new Promise<string>(() => {
+          signal = input.signal;
+        }),
+    );
+
+    await sayTurn(detector, sttSession, "Paseo, what did the agent just say?", "segment-1");
+    await vi.advanceTimersByTimeAsync(SIDE_HELPER_WAIT_MS);
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual(["One sec."]));
+    await vi.advanceTimersByTimeAsync(SIDE_HELPER_TIMEOUT_MS);
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host)).toEqual(["One sec.", "Sorry, no answer."]),
+    );
+    expect(signal?.aborted).toBe(true);
+    expect(host.spokenInput).toEqual([]);
+    await voiceSession.cleanup();
+  });
+
+  test("a failed answer says 'Sorry, no answer.', and voice off mid-question stays silent", async () => {
+    vi.useFakeTimers();
+    const failing = await startHelperSession(async () => {
+      throw new Error("model unavailable");
+    });
+    await sayTurn(failing.detector, failing.sttSession, "Paseo, what's new?", "segment-1");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(failing.host)).toEqual(["Sorry, no answer."]),
+    );
+    await failing.voiceSession.cleanup();
+
+    let signal: AbortSignal | undefined;
+    const slow = await startHelperSession(
+      (input) =>
+        new Promise<string>(() => {
+          signal = input.signal;
+        }),
+    );
+    await sayTurn(slow.detector, slow.sttSession, "Paseo, what's new?", "segment-2");
+    await slow.voiceSession.handleSetVoiceMode(false);
+    expect(signal?.aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(SIDE_HELPER_TIMEOUT_MS * 2);
+    expect(spokenAnnouncements(slow.host)).toEqual([]);
+    await slow.voiceSession.cleanup();
+  });
+
+  test("'Paseo.' alone says 'Yes?' and the next words are the question", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, askSideHelper } = await startHelperSession(
+      async () => "Nothing waits on you.",
+    );
+    await sayTurn(detector, sttSession, "Paseo.", "segment-1");
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toEqual(["Yes?"]));
+    await sayTurn(detector, sttSession, "Anything waiting on me?", "segment-2");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host)).toEqual(["Yes?", "Nothing waits on you."]),
+    );
+    expect(askSideHelper).toHaveBeenCalledWith(
+      expect.objectContaining({ question: "Anything waiting on me?" }),
+    );
+    expect(host.spokenInput).toEqual([]);
+    await voiceSession.cleanup();
+  });
+
+  test("'Paseo, go to <chat>' still moves voice when navigation is on", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host, askSideHelper } = await startHelperSession(
+      async () => "unused",
+      { navigation: true },
+    );
+    await sayTurn(detector, sttSession, "Paseo, go to food scan.", "segment-1");
+    expect(
+      host.emitted.flatMap((message) =>
+        message.type === "voice.navigate" ? [message.payload.agentId] : [],
+      ),
+    ).toEqual([SCAN_CHAT_ID]);
+    expect(askSideHelper).not.toHaveBeenCalled();
+    expect(host.spokenInput).toEqual([]);
+    await voiceSession.cleanup();
   });
 });

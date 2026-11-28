@@ -3201,6 +3201,10 @@ export const es: TranslationResources = {
           'Se envía tras una pausa corta. Di "cancel" justo después del pitido para detenerlo.',
         sendModeOverHint:
           'Se envía cuando terminas con "over". Di "cancel" justo después del pitido para detenerlo.',
+        sideHelperModel: 'Responde a "Paseo, …"',
+        sideHelperModelHint:
+          'Empieza con "Paseo," para preguntar por tus chats. Este modelo responde en voz alta; nada va al chat.',
+        sideHelperModelCustom: "Personalizado",
       },
       openai: {
         apiKey: "Clave de API",

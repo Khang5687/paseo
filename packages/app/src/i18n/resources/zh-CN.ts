@@ -3104,6 +3104,10 @@ export const zhCN: TranslationResources = {
         sendModeOver: "说 “over”",
         sendModeAutoHint: "短暂停顿后发送。听到提示音后立即说 “cancel” 可取消。",
         sendModeOverHint: "以 “over” 结尾时发送。听到提示音后立即说 “cancel” 可取消。",
+        sideHelperModel: "回答 “Paseo, …”",
+        sideHelperModelHint:
+          "以 “Paseo,” 开头可询问你的对话。此模型会朗读回答，不会向对话发送任何内容。",
+        sideHelperModelCustom: "自定义",
       },
       openai: {
         apiKey: "API 密钥",
