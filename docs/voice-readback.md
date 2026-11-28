@@ -31,6 +31,8 @@ Needs a built daemon (`npm run build:server`), the local speech models in `~/.pa
 6. Expect: each question read once, the answer heard in `transcription_result`, the agent `running` until the last answer, then `pendingPermissions` empty and the agent `idle`. For the plan prompt, expect the read-back; then speak, and expect the reminder "A permission prompt is waiting. Answer it on screen.", the prompt still in `pendingPermissions`, the agent still `running`, and nothing sent to the agent.
 7. To hear what was spoken, write the captured PCM as a WAV and run `npm run speech:transcribe:local -- <file.wav>` in `packages/server`.
 
+Speed: `client.patchDaemonConfig({ features: { voiceMode: { speechSpeed: 1 } } })` (null clears it) while voice is on. Send a message while a permission prompt waits (`emit synthetic plan approval`, then speak, paced in real time) and every utterance gets the same spoken reminder, so its audio length shows the speed (1.2 about 2.8 s, 1.0 about 3.2 s, 1.4 about 2.1 s on Kokoro). Expect no new "Local speech worker spawned" and no "Speech provider reconciliation" in `daemon.log` after the first sentence. In the app: Settings > Voice > Speaking speed, tap a step, reload, the step stays selected and `config.json` holds `features.voiceMode.speechSpeed`.
+
 Two devices: hold voice on from a script client, open the web app at 390×844 on the same chat, tap Enable Voice mode. Expect "Voice is on for this chat on another device". The red "Failed to start voice mode" box under the composer is the dev-build console overlay and does not show in release builds.
 
 Gotchas:
