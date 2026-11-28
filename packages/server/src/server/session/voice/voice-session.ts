@@ -38,20 +38,28 @@ import {
 import { CANCELLED_SPEECH, SHORT_WORD_CONFIRM_MS, VoiceSendGate } from "./send-gate.js";
 import { SEND_CUE_FORMAT, sendCuePcm } from "./send-cue.js";
 import { isCancelCommand, type VoiceSendMode } from "./send-words.js";
-import type { VoiceChatProject } from "./voice-chat-directory.js";
+import type { VoiceChat, VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
+import { pickHostMatch, scoreGoToTarget } from "@getpaseo/protocol/voice/chat-match";
 import {
   NO_CHAT_SPEECH,
   NO_PREVIOUS_CHAT_SPEECH,
+  NO_MACHINE_SPEECH,
   buildAlreadyHereSpeech,
   buildArrivedSpeech,
   buildChatListSpeech,
+  buildChooseHostSpeech,
+  buildHostOfflineSpeech,
   buildNoChatsSpeech,
   buildOnlyChatSpeech,
+  buildPreviousOfflineSpeech,
   createVoiceNavMemory,
   findVoiceChat,
   parseVoiceNavCommand,
   resolveChatPick,
-  resolveGoToTarget,
+  resolveHostPick,
+  type VoiceFindChatsAnswer,
+  type VoiceFindChatsQuery,
+  type VoiceHostRef,
   type VoiceNavMemory,
   type VoiceChatTarget,
 } from "./voice-navigate.js";
@@ -90,6 +98,29 @@ type ProcessingPhase = "idle" | "transcribing";
 
 interface VoiceModeBaseConfig {
   systemPrompt?: string;
+}
+
+/** A project whose chat names were read out, waiting for the pick. */
+interface PendingChatPick {
+  project: VoiceChatProject;
+  host?: VoiceHostRef;
+}
+
+/** A project (and chat) a go-to names on one machine; `host` unset is this machine. */
+interface NavChoice {
+  project: VoiceChatProject;
+  chat: VoiceChat | null;
+  host?: VoiceHostRef;
+  /** The machine's name in the app, this one included: what "Omen or Mac?" says. */
+  hostName: string;
+  online: boolean;
+  score: number;
+}
+
+/** What the app sends with `set_voice_mode` when it moved voice here from another host. */
+export interface VoiceArrival {
+  speech?: string;
+  previous?: { serverId: string; agentId: string };
 }
 
 /**
@@ -224,10 +255,15 @@ export interface VoiceSessionHost {
   /** Resolves once the agent has no run in flight, or the signal aborts. */
   waitForAgentIdle(agentId: string, signal?: AbortSignal): Promise<void>;
   /**
-   * Projects and chats a spoken "go to" can name. The one place names come from: an app-side
-   * lookup across hosts could replace it without touching the command parser.
+   * Projects and chats a spoken "go to" can name on this host. Other hosts' chats come from the
+   * app (`findChatsOnOtherHosts`), which knows every host.
    */
   listVoiceChats(): Promise<VoiceChatProject[]>;
+  /**
+   * Asks the app that has voice on which of its other hosts has a name or a chat. Set per socket
+   * by `VoiceSessions`; resolves null when the app does not answer in time.
+   */
+  findChatsOnOtherHosts?(query: VoiceFindChatsQuery): Promise<VoiceFindChatsAnswer | null>;
   /**
    * Answers a "Paseo, ..." question from this daemon's chat data, or proposes an action for the
    * owner to confirm. Absent: the words go to the chat like any other. Aborting `signal` cancels
@@ -339,8 +375,12 @@ export class VoiceSession {
   private readonly navMemory: VoiceNavMemory;
   /** The app moves voice on `voice.navigate`; only then is speech read as a navigation command. */
   private navigationEnabled = false;
+  /** The app also finds chats on its other hosts and moves voice there. */
+  private navigationHostsEnabled = false;
   /** Chat names were read out; the next utterance picks one. */
-  private pendingChatPick: VoiceChatProject | null = null;
+  private pendingChatPick: PendingChatPick | null = null;
+  /** The same name is on several machines; the next utterance picks the machine. */
+  private pendingHostPick: NavChoice[] | null = null;
   /** Send gate state: a held message, or over-mode text waiting for its "over". */
   private expectingShortWord = false;
   /** Speech clips being played now; the VAD keeps its long window while any plays. */
@@ -509,12 +549,14 @@ export class VoiceSession {
 
   /**
    * Handle voice mode toggle. `navigation`: the app moves voice when told to (`voice.navigate`).
+   * `navigationHosts`: it also finds chats on its other hosts. `arrival`: voice came from another
+   * host.
    */
   async handleSetVoiceMode(
     enabled: boolean,
     agentId?: string,
     requestId?: string,
-    options: { navigation?: boolean } = {},
+    options: { navigation?: boolean; navigationHosts?: boolean; arrival?: VoiceArrival } = {},
   ): Promise<void> {
     const startedAt = Date.now();
     try {
@@ -573,9 +615,9 @@ export class VoiceSession {
           "set_voice_mode voice turn controller started",
         );
         this.isVoiceMode = !this.closed;
-        this.navigationEnabled = options.navigation === true;
+        this.setNavigation(options);
         this.refreshSpeechConfirm();
-        this.recordVoiceArrival(normalizedAgentId);
+        this.recordVoiceArrival(normalizedAgentId, options.arrival);
         this.prepareSideHelperCue();
         this.sessionLogger.info(
           {
@@ -606,8 +648,10 @@ export class VoiceSession {
       await this.disableVoiceModeForActiveAgent(true);
       this.isVoiceMode = false;
       this.navigationEnabled = false;
+      this.navigationHostsEnabled = false;
       this.refreshSpeechConfirm();
       this.pendingChatPick = null;
+      this.pendingHostPick = null;
       this.cancelSideHelper();
       this.sessionLogger.info({ elapsedMs: Date.now() - startedAt }, "Voice mode disabled");
       if (requestId) {
@@ -1335,22 +1379,19 @@ export class VoiceSession {
     await this.flushPendingAudioSegments("transcription complete");
   }
 
+  private setNavigation(options: { navigation?: boolean; navigationHosts?: boolean }): void {
+    this.navigationEnabled = options.navigation === true;
+    this.navigationHostsEnabled = this.navigationEnabled && options.navigationHosts === true;
+  }
+
   /** Returns true when the utterance was a navigation command (or the reply to "Which one?"). */
   private async handleNavigation(transcript: string): Promise<boolean> {
     const command = parseVoiceNavCommand(transcript);
-    const pick = this.pendingChatPick;
+    const chatPick = this.pendingChatPick;
+    const hostPick = this.pendingHostPick;
     this.pendingChatPick = null;
-    if (!command) {
-      if (!pick) return false;
-      if (isCancelCommand(transcript)) {
-        this.queueAnnouncement(CANCELLED_SPEECH);
-        return true;
-      }
-      const chat = resolveChatPick(transcript, pick.chats);
-      if (chat) this.moveVoiceTo({ project: pick, chat });
-      else this.queueAnnouncement(NO_CHAT_SPEECH);
-      return true;
-    }
+    this.pendingHostPick = null;
+    if (!command) return this.answerNavigationPick(transcript, chatPick, hostPick);
 
     let directory: VoiceChatProject[];
     try {
@@ -1363,9 +1404,7 @@ export class VoiceSession {
     const here = findVoiceChat(directory, this.voiceModeAgentId);
 
     if (command.kind === "go_back") {
-      const previous = findVoiceChat(directory, this.navMemory.previousAgentId);
-      if (previous) this.moveVoiceTo(previous);
-      else this.queueAnnouncement(NO_PREVIOUS_CHAT_SPEECH);
+      await this.goBack(directory);
       return true;
     }
 
@@ -1378,38 +1417,168 @@ export class VoiceSession {
       return true;
     }
 
-    const target = resolveGoToTarget(command.target, directory, here?.project.projectId ?? null);
-    // "Go to the auth module and add logging" names no project or chat: it is talk for the agent.
-    if (!target) return false;
-    if (target.chat) {
-      this.moveVoiceTo({ project: target.project, chat: target.chat });
-      return true;
+    return this.goTo(command.target, directory, here?.project.projectId ?? null);
+  }
+
+  /** The reply after a list of chats or machines was read out; false when none is waiting. */
+  private answerNavigationPick(
+    transcript: string,
+    chatPick: PendingChatPick | null,
+    hostPick: NavChoice[] | null,
+  ): boolean {
+    if (!chatPick && !hostPick) return false;
+    if (isCancelCommand(transcript)) {
+      this.queueAnnouncement(CANCELLED_SPEECH);
+    } else if (hostPick) {
+      const index = resolveHostPick(
+        transcript,
+        hostPick.map((choice) => choice.hostName),
+      );
+      if (index === null) this.queueAnnouncement(NO_MACHINE_SPEECH);
+      else this.goToChoice(hostPick[index]);
+    } else if (chatPick) {
+      const chat = resolveChatPick(transcript, chatPick.project.chats);
+      if (chat) this.moveVoiceTo({ project: chatPick.project, chat, host: chatPick.host });
+      else this.queueAnnouncement(NO_CHAT_SPEECH);
     }
-    const chats = target.project.chats;
-    if (chats.length === 1) this.moveVoiceTo({ project: target.project, chat: chats[0] });
-    else this.offerChats(target.project);
     return true;
   }
 
+  /**
+   * "Go to <name>": the best match here or on the app's other hosts. False when nothing anywhere
+   * has the name: "go to the auth module and add logging" is talk for the agent.
+   */
+  private async goTo(
+    target: string,
+    directory: VoiceChatProject[],
+    currentProjectId: string | null,
+  ): Promise<boolean> {
+    const local = scoreGoToTarget(target, directory, currentProjectId);
+    // Asked on every go-to, not only when nothing matches here: the same project name on two
+    // machines is a question, and a better name elsewhere ("fitup food scan") must win.
+    const elsewhere = await this.findChatsOnOtherHosts({ kind: "name", target });
+    const choices: NavChoice[] = [];
+    if (local) {
+      choices.push({
+        project: local.target.project,
+        chat: local.target.chat,
+        hostName: elsewhere?.hostName ?? "",
+        online: true,
+        score: local.score,
+      });
+    }
+    for (const match of elsewhere?.matches ?? []) {
+      choices.push({
+        project: match.project,
+        chat: match.project.chats.find((chat) => chat.agentId === match.chatAgentId) ?? null,
+        host: { serverId: match.serverId, hostName: match.hostName },
+        hostName: match.hostName,
+        online: match.online,
+        score: match.score,
+      });
+    }
+    const pick = pickHostMatch(choices);
+    if (!pick) return false;
+    if (pick.kind === "offline") {
+      this.queueAnnouncement(buildHostOfflineSpeech(pick.match.project, pick.match.hostName));
+    } else if (pick.kind === "choose") {
+      this.pendingHostPick = pick.matches;
+      this.queueAnnouncement(buildChooseHostSpeech(pick.matches));
+    } else {
+      this.goToChoice(pick.match);
+    }
+    return true;
+  }
+
+  /** A named chat moves voice there; a named project with several chats reads their names. */
+  private goToChoice(choice: NavChoice): void {
+    if (choice.chat) {
+      this.moveVoiceTo({ project: choice.project, chat: choice.chat, host: choice.host });
+      return;
+    }
+    const chats = choice.project.chats;
+    if (chats.length === 1) {
+      this.moveVoiceTo({ project: choice.project, chat: chats[0], host: choice.host });
+    } else {
+      this.offerChats(choice.project, choice.host);
+    }
+  }
+
+  /** "Go back": the chat voice came from, on this host or the one voice came from. */
+  private async goBack(directory: VoiceChatProject[]): Promise<void> {
+    const previous = this.navMemory.previous;
+    if (!previous) {
+      this.queueAnnouncement(NO_PREVIOUS_CHAT_SPEECH);
+      return;
+    }
+    const { serverId, agentId } = previous;
+    if (serverId === null) {
+      const target = findVoiceChat(directory, agentId);
+      if (target) this.moveVoiceTo(target);
+      else this.queueAnnouncement(NO_PREVIOUS_CHAT_SPEECH);
+      return;
+    }
+    const answer = await this.findChatsOnOtherHosts({ kind: "chat", serverId, agentId });
+    const match = answer?.matches[0];
+    const chat = match?.project.chats.find((candidate) => candidate.agentId === agentId);
+    if (!match || !chat) {
+      this.queueAnnouncement(NO_PREVIOUS_CHAT_SPEECH);
+    } else if (!match.online) {
+      this.queueAnnouncement(buildPreviousOfflineSpeech(match.hostName));
+    } else {
+      this.moveVoiceTo({
+        project: match.project,
+        chat,
+        host: { serverId: match.serverId, hostName: match.hostName },
+      });
+    }
+  }
+
+  /** The app's answer about its other hosts; null when it cannot look or did not answer. */
+  private async findChatsOnOtherHosts(
+    query: VoiceFindChatsQuery,
+  ): Promise<VoiceFindChatsAnswer | null> {
+    if (!this.navigationHostsEnabled || !this.host.findChatsOnOtherHosts) return null;
+    try {
+      return await this.host.findChatsOnOtherHosts(query);
+    } catch (error) {
+      this.sessionLogger.warn({ err: error }, "Failed to find chats on other hosts");
+      return null;
+    }
+  }
+
   /** Reads the project's chat names and waits for a pick; one chat or none is just said. */
-  private offerChats(project: VoiceChatProject): void {
+  private offerChats(project: VoiceChatProject, host?: VoiceHostRef): void {
     if (project.chats.length === 0) {
-      this.queueAnnouncement(buildNoChatsSpeech(project));
+      this.queueAnnouncement(buildNoChatsSpeech(project, host));
       return;
     }
     if (project.chats.length === 1) {
       this.queueAnnouncement(buildOnlyChatSpeech(project, project.chats[0]));
       return;
     }
-    this.pendingChatPick = project;
-    this.queueAnnouncement(buildChatListSpeech(project));
+    this.pendingChatPick = { project, host };
+    this.queueAnnouncement(buildChatListSpeech(project, host));
   }
 
   /**
    * Asks the app to open the chat and turn voice on there. The app restarts voice for the new
-   * chat, so the confirmation is spoken once voice is on there (`recordVoiceArrival`).
+   * chat, so the confirmation is spoken once voice is on there (`recordVoiceArrival`): from this
+   * socket's memory for a chat here, or from `arrival.speech` on the other host.
    */
   private moveVoiceTo(target: VoiceChatTarget): void {
+    if (target.host) {
+      this.emit({
+        type: "voice.navigate",
+        payload: {
+          agentId: target.chat.agentId,
+          workspaceId: target.chat.workspaceId,
+          serverId: target.host.serverId,
+          speech: buildArrivedSpeech(target),
+        },
+      });
+      return;
+    }
     if (target.chat.agentId === this.voiceModeAgentId) {
       this.queueAnnouncement(buildAlreadyHereSpeech(target));
       return;
@@ -1423,15 +1592,17 @@ export class VoiceSession {
   }
 
   /** Voice is on in `agentId`: remember where it came from and say where it is now. */
-  private recordVoiceArrival(agentId: string): void {
+  private recordVoiceArrival(agentId: string, arrival?: VoiceArrival): void {
     const memory = this.navMemory;
-    if (memory.currentAgentId && memory.currentAgentId !== agentId) {
-      memory.previousAgentId = memory.currentAgentId;
+    if (arrival?.previous) {
+      memory.previous = { serverId: arrival.previous.serverId, agentId: arrival.previous.agentId };
+    } else if (memory.currentAgentId && memory.currentAgentId !== agentId) {
+      memory.previous = { serverId: null, agentId: memory.currentAgentId };
     }
     memory.currentAgentId = agentId;
-    if (memory.arrival?.agentId === agentId) {
-      this.queueAnnouncement(memory.arrival.speech);
-    }
+    const speech =
+      arrival?.speech ?? (memory.arrival?.agentId === agentId ? memory.arrival.speech : null);
+    if (speech) this.queueAnnouncement(speech);
     memory.arrival = null;
   }
 

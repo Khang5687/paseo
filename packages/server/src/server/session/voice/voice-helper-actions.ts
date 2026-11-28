@@ -8,20 +8,22 @@ import type {
   AgentPermissionRequest,
   AgentPermissionResponse,
 } from "@getpaseo/protocol/agent-types";
+import type { VoiceChat, VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
+import {
+  MATCH_THRESHOLD,
+  resolveGoToTarget,
+  spokenNameScore,
+  wordsOf,
+} from "@getpaseo/protocol/voice/chat-match";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 import type pino from "pino";
 import { z } from "zod";
 
 import { prepareTextForSpeech } from "./speech-text.js";
 import { interpretSpokenAnswer, parseSpokenQuestions } from "./spoken-question.js";
-import type { VoiceChat, VoiceChatProject } from "./voice-chat-directory.js";
 import {
-  MATCH_THRESHOLD,
   SPOKEN_CHAT_LIMIT,
-  resolveGoToTarget,
   spokenChatName,
-  spokenNameScore,
-  wordsOf,
   type VoiceChatTarget,
 } from "./voice-navigate.js";
 import type { SideHelperAgentState } from "./voice-side-helper.js";

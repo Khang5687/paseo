@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
-import { buildVoiceChatDirectory } from "./voice-chat-directory.js";
+import { PARENT_AGENT_ID_LABEL } from "../agent-labels.js";
+import { buildVoiceChatDirectory } from "./chat-directory.js";
 
 function agent(
   id: string,
@@ -36,6 +36,7 @@ describe("buildVoiceChatDirectory", () => {
         agent("subagent", "w1", { labels: { [PARENT_AGENT_ID_LABEL]: "newer" } }),
         agent("archived", "w1", { archivedAt: "2026-11-28T09:00:00.000Z" }),
         agent("internal", "w1", { internal: true }),
+        agent("background", "w1", { background: true }),
         agent("archived-workspace", "w-gone"),
         agent("archived-project", "w3"),
       ],

@@ -1,5 +1,9 @@
 import { Buffer } from "buffer";
-import type { AgentStreamEventPayload, SessionOutboundMessage } from "@getpaseo/protocol/messages";
+import type {
+  AgentStreamEventPayload,
+  SessionOutboundMessage,
+  VoiceArrival,
+} from "@getpaseo/protocol/messages";
 import { resolveVoiceUnavailableMessage } from "@/utils/server-info-capabilities";
 import type { DaemonServerInfo } from "@/stores/session-store";
 import type { AudioEngine } from "@/audio";
@@ -54,7 +58,7 @@ export interface VoiceRuntimeTelemetrySnapshot {
 
 export interface VoiceSessionAdapter {
   serverId: string;
-  setVoiceMode(enabled: boolean, agentId?: string): Promise<void>;
+  setVoiceMode(enabled: boolean, agentId?: string, arrival?: VoiceArrival): Promise<void>;
   sendVoiceAudioChunk(audioData: string, mimeType: string): Promise<void>;
   audioPlayed(chunkId: string): Promise<void>;
   abortRequest(): Promise<void>;
@@ -171,7 +175,12 @@ export interface VoiceRuntime {
   handleCapturePcm(chunk: Uint8Array): void;
   handleCaptureVolume(level: number): void;
   handleAudioOutput(serverId: string, payload: AudioOutputPayload): void;
-  startVoice(serverId: string, agentId: string): Promise<void>;
+  /** `arrivalSpeech`: said on the new host when voice comes from another one (a spoken "go to"). */
+  startVoice(
+    serverId: string,
+    agentId: string,
+    options?: { arrivalSpeech?: string },
+  ): Promise<void>;
   stopVoice(): Promise<void>;
   destroy(): Promise<void>;
   toggleMute(): void;
@@ -703,7 +712,7 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
       void processPlaybackQueue(serverId);
     },
 
-    async startVoice(serverId, agentId) {
+    async startVoice(serverId, agentId, options = {}) {
       const session = sessions.get(serverId);
       if (!session) {
         throw new Error(`Voice runtime is not ready for host ${serverId}`);
@@ -736,6 +745,7 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
       }));
 
       try {
+        let arrival: VoiceArrival | undefined;
         if (
           state.snapshot.isVoiceMode &&
           previousServerId &&
@@ -746,6 +756,13 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
             previousSession.adapter.setAssistantAudioPlaying(false);
             await previousSession.adapter.setVoiceMode(false);
           }
+          // Voice changes host: the new host says where it arrived and "go back" returns here.
+          if (previousServerId !== serverId && previousAgentId) {
+            arrival = {
+              previous: { serverId: previousServerId, agentId: previousAgentId },
+              ...(options.arrivalSpeech ? { speech: options.arrivalSpeech } : {}),
+            };
+          }
         }
 
         await deps.activateKeepAwake(KEEP_AWAKE_TAG).catch((error) => {
@@ -753,7 +770,7 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
         });
 
         await deps.engine.initialize();
-        await session.adapter.setVoiceMode(true, agentId);
+        await session.adapter.setVoiceMode(true, agentId, arrival);
         enabledCurrentVoiceMode = true;
         await deps.engine.startCapture();
         if (state.generation !== generation) {

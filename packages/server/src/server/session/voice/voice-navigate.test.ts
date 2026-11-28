@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
-import type { VoiceChat, VoiceChatProject } from "./voice-chat-directory.js";
+import type { VoiceChat, VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
+import { resolveGoToTarget } from "@getpaseo/protocol/voice/chat-match";
 import {
   buildArrivedSpeech,
   buildChatListSpeech,
   parseVoiceNavCommand,
   resolveChatPick,
-  resolveGoToTarget,
 } from "./voice-navigate.js";
 
 function chat(agentId: string, title: string | null, lastActiveAt = 0): VoiceChat {

@@ -98,7 +98,7 @@ describe("voice runtime", () => {
     await runtime.startVoice("server-1", "agent-1");
 
     expect(engine.initialize).toHaveBeenCalled();
-    expect(adapter.setVoiceMode).toHaveBeenCalledWith(true, "agent-1");
+    expect(adapter.setVoiceMode).toHaveBeenCalledWith(true, "agent-1", undefined);
     expect(engine.startCapture).toHaveBeenCalled();
     expect(runtime.getSnapshot()).toMatchObject({
       phase: "listening",
@@ -106,6 +106,29 @@ describe("voice runtime", () => {
       activeServerId: "server-1",
       activeAgentId: "agent-1",
     });
+  });
+
+  it("tells the new host where voice came from when it moves to another host", async () => {
+    const omen = createSessionAdapter("omen");
+    const mac = createSessionAdapter("mac");
+    const { runtime } = createRuntime();
+    runtime.registerSession(omen);
+    runtime.registerSession(mac);
+
+    await runtime.startVoice("omen", "omen-chat");
+    await runtime.startVoice("mac", "mac-chat", {
+      arrivalSpeech: "Groceries on Mac, Shopping list.",
+    });
+
+    expect(omen.setVoiceMode).toHaveBeenLastCalledWith(false);
+    expect(mac.setVoiceMode).toHaveBeenCalledWith(true, "mac-chat", {
+      speech: "Groceries on Mac, Shopping list.",
+      previous: { serverId: "omen", agentId: "omen-chat" },
+    });
+
+    // A move inside one host is the host's own business: it already knows where voice was.
+    await runtime.startVoice("mac", "mac-other");
+    expect(mac.setVoiceMode).toHaveBeenLastCalledWith(true, "mac-other", undefined);
   });
 
   it("streams continuous PCM chunks and waits after receiving a transcript", async () => {
@@ -493,7 +516,7 @@ describe("voice runtime", () => {
       "audio focus unavailable",
     );
 
-    expect(adapter.setVoiceMode).toHaveBeenNthCalledWith(1, true, "agent-1");
+    expect(adapter.setVoiceMode).toHaveBeenNthCalledWith(1, true, "agent-1", undefined);
     expect(adapter.setVoiceMode).toHaveBeenNthCalledWith(2, false);
     expect(runtime.getSnapshot().phase).toBe("disabled");
   });

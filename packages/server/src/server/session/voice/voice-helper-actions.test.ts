@@ -2,7 +2,7 @@ import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
 
 import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
-import type { VoiceChatProject } from "./voice-chat-directory.js";
+import type { VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
 import {
   classifyConfirmation,
   parseHelperReply,

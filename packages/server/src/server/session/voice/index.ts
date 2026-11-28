@@ -1,8 +1,17 @@
+import { v4 as uuidv4 } from "uuid";
 import type { AgentPermissionRequest } from "../../agent/agent-sdk-types.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
 import type { OwnedOperation, SessionDelivery } from "../owned-subscriptions/index.js";
 import { VoiceSession, type VoiceSessionOptions } from "./voice-session.js";
-import { createVoiceNavMemory, type VoiceNavMemory } from "./voice-navigate.js";
+import {
+  createVoiceNavMemory,
+  type VoiceFindChatsAnswer,
+  type VoiceFindChatsQuery,
+  type VoiceNavMemory,
+} from "./voice-navigate.js";
+
+/** How long a voice command waits for the app to say what its other hosts have. */
+export const FIND_CHATS_TIMEOUT_MS = 3000;
 
 type VoiceMessage = Extract<
   SessionInboundMessage,
@@ -12,12 +21,58 @@ type VoiceMessage = Extract<
       | "abort_request"
       | "audio_played"
       | "set_voice_mode"
+      | "voice.navigate.find_chats.response"
       | "dictation_stream_start"
       | "dictation_stream_chunk"
       | "dictation_stream_finish"
       | "dictation_stream_cancel";
   }
 >;
+
+type FindChatsResponse = Extract<VoiceMessage, { type: "voice.navigate.find_chats.response" }>;
+
+/**
+ * Questions this daemon asked an app about its other hosts, by request id. An answer counts only
+ * from the socket that was asked; no answer within `FIND_CHATS_TIMEOUT_MS` resolves null, and the
+ * voice command goes on with this host's chats.
+ */
+export class FindChatsRequests {
+  private readonly requests = new Map<
+    string,
+    {
+      source: object;
+      resolve: (answer: VoiceFindChatsAnswer | null) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  ask(
+    source: object,
+    emit: (message: SessionOutboundMessage) => void,
+    query: VoiceFindChatsQuery,
+  ): Promise<VoiceFindChatsAnswer | null> {
+    const requestId = uuidv4();
+    // The server's lib predates Promise.withResolvers.
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => this.settle(requestId, null), FIND_CHATS_TIMEOUT_MS);
+      this.requests.set(requestId, { source, resolve, timeout });
+      emit({ type: "voice.navigate.find_chats.request", payload: { requestId, query } });
+    });
+  }
+
+  answer(source: object, payload: FindChatsResponse["payload"]): void {
+    if (this.requests.get(payload.requestId)?.source !== source) return;
+    this.settle(payload.requestId, { hostName: payload.hostName, matches: payload.matches });
+  }
+
+  private settle(requestId: string, answer: VoiceFindChatsAnswer | null): void {
+    const request = this.requests.get(requestId);
+    if (!request) return;
+    clearTimeout(request.timeout);
+    this.requests.delete(requestId);
+    request.resolve(answer);
+  }
+}
 
 interface ActiveVoiceSource {
   voice: VoiceSession;
@@ -31,6 +86,8 @@ export class VoiceSessions {
   private readonly sources = new Map<object, ActiveVoiceSource>();
   /** Outlives each socket's voice session: moving to another chat starts a new one. */
   private readonly navMemory = new WeakMap<object, VoiceNavMemory>();
+  /** Questions to the app about its other hosts. */
+  private readonly findChats = new FindChatsRequests();
 
   constructor(
     private readonly options: VoiceSessionOptions,
@@ -66,6 +123,11 @@ export class VoiceSessions {
   handleMessage(message: VoiceMessage): Promise<void> {
     const source = this.delivery.currentSource;
     if (!source) throw new Error("Voice request has no source");
+    // An answer to a question this daemon asked: it never starts a voice session.
+    if (message.type === "voice.navigate.find_chats.response") {
+      this.findChats.answer(source, message.payload);
+      return Promise.resolve();
+    }
     const existing = this.sources.get(source);
     if (existing?.closing) return existing.owner.release().then(() => this.handleMessage(message));
     const active = existing ?? this.startSource(source);
@@ -101,7 +163,12 @@ export class VoiceSessions {
       closing: false,
       voice: new VoiceSession({
         ...this.options,
-        host: { ...this.options.host, emit: (message) => owner.emit(message) },
+        host: {
+          ...this.options.host,
+          emit: (message) => owner.emit(message),
+          findChatsOnOtherHosts: (query) =>
+            this.findChats.ask(source, (message) => owner.emit(message), query),
+        },
         onIdle: () => this.releaseIdle(active),
         navMemory: this.navMemoryFor(source),
       }),
@@ -139,7 +206,11 @@ export class VoiceSessions {
       case "set_voice_mode":
         return voice.handleSetVoiceMode(message.enabled, message.agentId, message.requestId, {
           navigation: message.navigation === true,
+          navigationHosts: message.navigationHosts === true,
+          arrival: message.arrival,
         });
+      case "voice.navigate.find_chats.response":
+        return;
       case "dictation_stream_start":
         return voice.handleDictationStreamStart(message);
       case "dictation_stream_chunk":
@@ -163,6 +234,7 @@ function isVoiceOutput(message: SessionOutboundMessage): boolean {
     case "transcription_result":
     case "voice_input_state":
     case "voice.navigate":
+    case "voice.navigate.find_chats.request":
     case "set_voice_mode_response":
     case "dictation_stream_ack":
     case "dictation_stream_partial":

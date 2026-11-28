@@ -50,9 +50,11 @@ Agent 运行期间也可以开启语音模式，并随时说话。
 - **“Go to fitup”**：打开该项目的对话，并在那里继续语音。项目里有多个对话时，Paseo 会按从新到旧读出最多五个对话名，然后问 “Which one?”。用名字（“food scan”）或序号（“the second one”）回答。说的内容对不上任何对话时，会听到 “No chat called that.”，这句话也不会发给任何 Agent。
 - **“Go to fitup food scan”**：一次说出项目和对话。在当前项目里，只说对话名也可以（“go to food scan”）。
 - **“List chats”** 或 **“Which chats”**：读出当前项目的对话，然后同样等你选择。
-- **“Go back”**：回到语音之前所在的对话。
+- **“Go back”**：回到语音之前所在的对话，不管它在哪台主机上。
 
-语音在新对话中开启后，Paseo 会说出你在哪里（“fitup, food scan.”）。这些命令没有提示音，也不需要说 “over”。名字是模糊匹配的：“fit up” 能找到 FitUp，长标题只说其中一段也可以。以 “go to” 开头但没有说出项目或对话的句子（“go to the auth module and add logging”）会照常发给 Agent。对话指未归档的顶层 Agent，子 Agent 不会列出。只会查找当前对话所在主机上的项目。这些命令是英文单词，并且需要支持该功能的 App 和主机。
+语音在新对话中开启后，Paseo 会说出你在哪里（“fitup, food scan.”）。这些命令没有提示音，也不需要说 “over”。名字是模糊匹配的：“fit up” 能找到 FitUp，长标题只说其中一段也可以。以 “go to” 开头但没有说出项目或对话的句子（“go to the auth module and add logging”）会照常发给 Agent。对话指未归档的顶层 Agent，子 Agent 不会列出。这些命令是英文单词，并且需要支持该功能的 App 和主机。
+
+“Go to” 会在 App 连接的所有主机上查找。对话在另一台主机上时，Paseo 到达时会说出主机名（“fitup on Mac, gym log.”）。两台主机上有同名项目时，Paseo 会问 “fitup on Omen or on Mac?”，用主机名或 “the second one” 回答。唯一匹配的项目在离线或休眠的主机上时，Paseo 会说明（“groceries is on Mac, which is offline.”），语音留在原处。主机名就是这些主机在 App 里的名字。“List chats” 读出的是你当前主机上当前项目的对话。
 
 ## 向 Paseo 提问 {#asking-paseo}
 

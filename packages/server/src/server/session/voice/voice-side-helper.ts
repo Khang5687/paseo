@@ -12,6 +12,8 @@ import { curateAgentActivity } from "../../agent/activity-curator.js";
 import type { AgentManager } from "../../agent/agent-manager.js";
 import type { AgentRunResult, AgentTimelineItem, AgentUsage } from "../../agent/agent-sdk-types.js";
 import { selectItemsByProjectedLimit } from "../../agent/timeline-projection.js";
+import type { VoiceChat, VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
+import { similarity, spokenNameScore, wordsOf } from "@getpaseo/protocol/voice/chat-match";
 import {
   chatRef,
   parseHelperReply,
@@ -22,8 +24,7 @@ import {
   type SideHelperReply,
 } from "./voice-helper-actions.js";
 import { parseSpokenQuestions } from "./spoken-question.js";
-import type { VoiceChat, VoiceChatProject } from "./voice-chat-directory.js";
-import { similarity, spokenNameScore, wordsOf, type VoiceChatTarget } from "./voice-navigate.js";
+import type { VoiceChatTarget } from "./voice-navigate.js";
 
 /** Provisional (owner question Q226): Haiku through OMP, the provider that works on every host. */
 export const DEFAULT_SIDE_HELPER_MODEL = "omp/anthropic/claude-haiku-5-5";

@@ -55,6 +55,7 @@ import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { resyncProviderSubagents, useProviderSubagentStore } from "@/subagents/provider-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { answerVoiceFindChatsRequest } from "@/voice/voice-host-chats";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -224,14 +225,19 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   useEffect(() => {
     const unregister = voiceRuntime?.registerSession({
       serverId,
-      setVoiceMode: async (enabled, agentId) => {
+      setVoiceMode: async (enabled, agentId, arrival) => {
         if (!client) {
           throw new Error(t("common.errors.daemonUnavailable"));
         }
         try {
+          const features = client.getLastServerInfoMessage()?.features;
           // COMPAT(voiceNavigate): older hosts ignore it; with it, a spoken "go to" moves voice.
+          // COMPAT(voiceNavigateHosts): added after v0.18.1, remove gate after 2027-12-01.
+          // Without it the host only goes to its own chats and never asks for the others.
           await client.setVoiceMode(enabled, agentId, {
-            navigation: client.getLastServerInfoMessage()?.features?.voiceNavigate === true,
+            navigation: features?.voiceNavigate === true,
+            navigationHosts: features?.voiceNavigateHosts === true,
+            ...(features?.voiceNavigateHosts === true && arrival ? { arrival } : {}),
           });
         } catch (error) {
           if (isVoiceActiveElsewhereError(error)) {
@@ -623,14 +629,22 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       voiceRuntime?.onServerSpeechStateChanged(serverId, message.payload.isSpeaking);
     });
 
-    // A spoken "go to <project> <chat>": open that chat and move voice there.
+    // A spoken "go to <project> <chat>": open that chat and move voice there, on this host or
+    // on another one the app is connected to (`serverId`), which then says where voice is.
     const unsubVoiceNavigate = client.on("voice.navigate", (message) => {
       if (message.type !== "voice.navigate" || !voiceRuntime) return;
-      const { agentId, workspaceId } = message.payload;
-      navigateToAgent({ serverId, agentId, workspaceId });
-      voiceRuntime.startVoice(serverId, agentId).catch((error) => {
+      const { agentId, workspaceId, speech } = message.payload;
+      const targetServerId = message.payload.serverId ?? serverId;
+      navigateToAgent({ serverId: targetServerId, agentId, workspaceId });
+      voiceRuntime.startVoice(targetServerId, agentId, { arrivalSpeech: speech }).catch((error) => {
         toast.error(toErrorMessage(error));
       });
+    });
+
+    // The host with voice asks which of the app's other hosts has a spoken name or chat.
+    const unsubVoiceFindChats = client.on("voice.navigate.find_chats.request", (message) => {
+      if (message.type !== "voice.navigate.find_chats.request") return;
+      client.answerVoiceFindChats(answerVoiceFindChatsRequest(serverId, message.payload));
     });
 
     const unsubTerminalAttention = onFeed("terminal_attention_required", (message) => {
@@ -660,6 +674,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       unsubTranscription();
       unsubVoiceInputState();
       unsubVoiceNavigate();
+      unsubVoiceFindChats();
       unsubTerminalAttention();
     };
   }, [
