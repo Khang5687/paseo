@@ -123,6 +123,7 @@ export const SpeechTtsConfigSchema = z.discriminatedUnion("provider", [
       model: SpeechModelSchema,
       speakerId: z.number().int().optional(),
       speed: z.number().optional(),
+      numThreads: z.number().int().min(1).max(32).optional(),
     })
     .strict(),
   z
@@ -542,6 +543,7 @@ function normalizeSpeechSite(
     if (site.provider === "openai") {
       delete site.speakerId;
       delete site.speed;
+      delete site.numThreads;
     }
   }
   if (site.provider !== "openai" || !legacy) return;

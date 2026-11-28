@@ -981,6 +981,11 @@
                     },
                     "speed": {
                       "type": "number"
+                    },
+                    "numThreads": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 32
                     }
                   },
                   "required": ["provider"],

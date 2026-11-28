@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
 import { engineFiles, getLocalTtsEngine, type LocalTtsModelId } from "./model-catalog.js";
-import { SherpaOnnxTTS } from "./sherpa-tts.js";
+import { defaultTtsThreads, SherpaOnnxTTS } from "./sherpa-tts.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -150,6 +150,16 @@ describe("SherpaOnnxTTS", () => {
       expect(nativeConfig).not.toHaveProperty("provider");
     },
   );
+
+  it.each([
+    [1, 2],
+    [4, 2],
+    [6, 3],
+    [12, 6],
+    [64, 6],
+  ])("defaults a %i-core host to %i TTS threads", (cores, threads) => {
+    expect(defaultTtsThreads(cores)).toBe(threads);
+  });
 
   it("loads Piper voices through the vits engine", () => {
     const { nativeConfig } = createTts(undefined, undefined, "piper-de-thorsten");

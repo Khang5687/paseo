@@ -120,12 +120,16 @@ Dictation, listening and speaking each own their key, base URL and model:
 }
 ```
 
-| Provider | Speech-to-text fields                                           | Text-to-speech fields                 |
-| -------- | --------------------------------------------------------------- | ------------------------------------- |
-| `local`  | `model`, `language`                                             | `model`, `speakerId`, `speed`         |
-| `openai` | `apiKey`, `baseUrl`, `model`, `language`, `confidenceThreshold` | `apiKey`, `baseUrl`, `model`, `voice` |
+| Provider | Speech-to-text fields                                           | Text-to-speech fields                       |
+| -------- | --------------------------------------------------------------- | ------------------------------------------- |
+| `local`  | `model`, `language`                                             | `model`, `speakerId`, `speed`, `numThreads` |
+| `openai` | `apiKey`, `baseUrl`, `model`, `language`, `confidenceThreshold` | `apiKey`, `baseUrl`, `model`, `voice`       |
 
 Fields other than `provider` are optional. Omit `model` to use the provider's default.
+Local `numThreads` (1 to 32) sets how many CPU threads the local voice uses to speak.
+Without it Paseo uses half the CPU cores, at least 2 and at most 6. More threads make
+the first words start sooner; on a 12-core host, 6 threads instead of 2 cut the wait
+for the first sound from about 3.4 s to about 2 s.
 OpenAI model and voice names accept custom IDs from compatible servers. Keys saved
 on the host are write-only in the app.
 
@@ -175,7 +179,7 @@ Keys and base URLs follow the fallback rule above.
 - `PASEO_VOICE_LOCAL_STT_MODEL`, `PASEO_VOICE_LOCAL_TTS_MODEL`, local voice STT/TTS model IDs
 - `PASEO_DICTATION_LANGUAGE`, dictation STT language
 - `PASEO_VOICE_LANGUAGE`, voice mode STT language; falls back to `PASEO_DICTATION_LANGUAGE` when unset
-- `PASEO_VOICE_LOCAL_TTS_SPEAKER_ID`, `PASEO_VOICE_LOCAL_TTS_SPEED`, optional local voice TTS tuning
+- `PASEO_VOICE_LOCAL_TTS_SPEAKER_ID`, `PASEO_VOICE_LOCAL_TTS_SPEED`, `PASEO_VOICE_LOCAL_TTS_THREADS`, optional local voice TTS tuning
 
 ## Operational Notes
 

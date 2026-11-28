@@ -1001,7 +1001,7 @@ describe("speech provider config normalization", () => {
           dictation: { stt: { provider: "local", language: "fr", confidenceThreshold: -1 } },
           voiceMode: {
             enabled: true,
-            tts: { provider: "local", voice: "alloy", speakerId: 3, speed: 1.2 },
+            tts: { provider: "local", voice: "alloy", speakerId: 3, speed: 1.2, numThreads: 4 },
           },
         },
       };
@@ -1012,17 +1012,25 @@ describe("speech provider config normalization", () => {
         provider: "local",
         speakerId: 3,
         speed: 1.2,
+        numThreads: 4,
       });
       expect(
         resolveSpeechConfig({ paseoHome: home, env: {}, persisted: local }).speech.local?.models,
-      ).toMatchObject({ voiceTtsSpeakerId: 3, voiceTtsSpeed: 1.2 });
+      ).toMatchObject({ voiceTtsSpeakerId: 3, voiceTtsSpeed: 1.2, voiceTtsThreads: 4 });
       writeFileSync(
         path.join(home, "config.json"),
         JSON.stringify({
           features: {
             voiceMode: {
               enabled: true,
-              tts: { provider: "openai", apiKey: "key", voice: "alloy", speakerId: 3, speed: 1.2 },
+              tts: {
+                provider: "openai",
+                apiKey: "key",
+                voice: "alloy",
+                speakerId: 3,
+                speed: 1.2,
+                numThreads: 4,
+              },
             },
           },
         }),

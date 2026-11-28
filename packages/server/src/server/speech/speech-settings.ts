@@ -90,6 +90,7 @@ export function readSpeechSettings(persisted: PersistedConfig, env: NodeJS.Proce
     } else if (kind === "tts") {
       recordOverride(`${path}.speakerId`, ["PASEO_VOICE_LOCAL_TTS_SPEAKER_ID"]);
       recordOverride(`${path}.speed`, ["PASEO_VOICE_LOCAL_TTS_SPEED"]);
+      recordOverride(`${path}.numThreads`, ["PASEO_VOICE_LOCAL_TTS_THREADS"]);
     }
     return {
       ...fields,

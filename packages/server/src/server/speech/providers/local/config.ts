@@ -20,6 +20,7 @@ export interface LocalSpeechModelConfig {
   voiceTts: LocalTtsModelId;
   voiceTtsSpeakerId?: number;
   voiceTtsSpeed?: number;
+  voiceTtsThreads?: number;
 }
 
 export interface LocalSpeechProviderConfig {
@@ -64,6 +65,9 @@ const LocalSpeechResolutionSchema = z.object({
   voiceLanguage: LanguageSchema,
   voiceLocalTtsSpeakerId: OptionalIntegerSchema,
   voiceLocalTtsSpeed: OptionalFiniteNumberSchema,
+  voiceLocalTtsThreads: NumberLikeSchema.pipe(
+    z.coerce.number<string | number>().int().min(1).max(32),
+  ).optional(),
 });
 
 function persistedLocalFeatureModel(
@@ -194,6 +198,10 @@ function buildLocalSpeechResolutionInput(params: {
       env.PASEO_VOICE_LOCAL_TTS_SPEED,
       localTts?.speed,
     ]),
+    voiceLocalTtsThreads: firstDefinedValue<string | number>([
+      env.PASEO_VOICE_LOCAL_TTS_THREADS,
+      localTts?.numThreads,
+    ]),
   };
 }
 
@@ -228,6 +236,9 @@ export function resolveLocalSpeechConfig(params: {
               : {}),
             ...(parsed.voiceLocalTtsSpeed !== undefined
               ? { voiceTtsSpeed: parsed.voiceLocalTtsSpeed }
+              : {}),
+            ...(parsed.voiceLocalTtsThreads !== undefined
+              ? { voiceTtsThreads: parsed.voiceLocalTtsThreads }
               : {}),
           },
         }
