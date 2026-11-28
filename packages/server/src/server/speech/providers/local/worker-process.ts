@@ -1,3 +1,5 @@
+import { availableParallelism } from "node:os";
+
 import pino from "pino";
 
 import type { StreamingTranscriptionSession } from "../../speech-provider.js";
@@ -7,7 +9,7 @@ import { getLocalSttEngine, getLocalTtsEngine } from "./sherpa/model-catalog.js"
 import { SherpaOfflineRecognizerEngine } from "./sherpa/sherpa-offline-recognizer.js";
 import { SherpaOnnxParakeetSTT } from "./sherpa/sherpa-parakeet-stt.js";
 import { SherpaParakeetRealtimeTranscriptionSession } from "./sherpa/sherpa-parakeet-realtime-session.js";
-import { SherpaOnnxTTS } from "./sherpa/sherpa-tts.js";
+import { defaultTtsThreads, SherpaOnnxTTS } from "./sherpa/sherpa-tts.js";
 import {
   ensureSileroVadModel,
   SherpaSileroTurnDetectionProvider,
@@ -64,12 +66,17 @@ function sttEngineKey(config: LocalSpeechWorkerConfig, modelId: LocalSttModelId)
   return `${config.modelsDir}:${modelId}`;
 }
 
+function ttsThreads(config: LocalSpeechWorkerConfig): number {
+  return config.voiceTtsThreads ?? defaultTtsThreads(availableParallelism());
+}
+
 function ttsKey(config: LocalSpeechWorkerConfig): string {
   return [
     config.modelsDir,
     config.voiceTtsModel,
     config.voiceTtsSpeakerId ?? 0,
     config.voiceTtsSpeed ?? 1,
+    ttsThreads(config),
   ].join(":");
 }
 
@@ -126,6 +133,7 @@ function getTtsProvider(config: LocalSpeechWorkerConfig): SherpaOnnxTTS {
       engine: getLocalTtsEngine(ttsModelId(config)),
       speakerId: config.voiceTtsSpeakerId,
       speed: config.voiceTtsSpeed,
+      numThreads: ttsThreads(config),
     },
     logger,
   );

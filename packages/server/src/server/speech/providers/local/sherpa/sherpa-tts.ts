@@ -8,6 +8,14 @@ import { chunkBuffer, float32ToPcm16le } from "../../../audio.js";
 import { loadSherpaOnnxNode } from "./sherpa-onnx-node-loader.js";
 import { engineFiles, type LocalTtsModelId, type TtsEngine } from "./model-catalog.js";
 
+/**
+ * Half the cores, clamped to 2..6: the STT, VAD and agents share the host, so TTS never takes
+ * more than half. More threads cut Kokoro's first-sound time (~3.4 s at 2, ~2 s at 6, 12 cores).
+ */
+export function defaultTtsThreads(cores: number): number {
+  return Math.min(6, Math.max(2, Math.floor(cores / 2)));
+}
+
 export interface SherpaTtsConfig {
   modelId: LocalTtsModelId;
   modelDir: string;
@@ -128,7 +136,11 @@ export class SherpaOnnxTTS implements TextToSpeechProvider {
       sherpa as unknown as { OfflineTts: new (config: unknown) => SherpaOfflineTtsNative }
     ).OfflineTts(offlineTtsConfig);
     this.logger.info(
-      { modelId: config.modelId, modelDir: config.modelDir },
+      {
+        modelId: config.modelId,
+        modelDir: config.modelDir,
+        numThreads: modelConfig.numThreads,
+      },
       "Sherpa offline TTS initialized",
     );
   }

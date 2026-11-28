@@ -132,6 +132,28 @@ describe("resolveSpeechConfig", () => {
     expect(result.openai?.stt?.model).toBe("gpt-4o-transcribe");
   });
 
+  test("resolves the local TTS thread count: env over config, absent when unset, bounded", () => {
+    const persisted = PersistedConfigSchema.parse({
+      features: { voiceMode: { tts: { provider: "local", numThreads: 3 } } },
+    });
+    const models = (env: Record<string, string>, config = persisted) =>
+      resolveSpeechConfig({ paseoHome: "/tmp/paseo-home", env, persisted: config }).speech.local
+        ?.models;
+
+    expect(models({})?.voiceTtsThreads).toBe(3);
+    expect(models({ PASEO_VOICE_LOCAL_TTS_THREADS: "5" })?.voiceTtsThreads).toBe(5);
+    expect(
+      models({ PASEO_LOCAL_MODELS_DIR: "/tmp/models" }, PersistedConfigSchema.parse({}))
+        ?.voiceTtsThreads,
+    ).toBeUndefined();
+    expect(() => models({ PASEO_VOICE_LOCAL_TTS_THREADS: "0" })).toThrow();
+    expect(() =>
+      PersistedConfigSchema.parse({
+        features: { voiceMode: { tts: { provider: "local", numThreads: 64 } } },
+      }),
+    ).toThrow();
+  });
+
   test.each(["local", "openai"])(
     "resolves STT language from env, settings, and voice-to-dictation fallback (%s)",
     (provider) => {

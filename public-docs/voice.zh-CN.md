@@ -72,6 +72,8 @@ Agent 运行期间也可以开启语音模式，并随时说话。
 
 本地语音默认使用模型 ID `parakeet-tdt-0.6b-v2-int8`（STT）和 `kokoro-en-v0_19`（TTS，speaker 0 / voice 00）。
 
+本地 TTS 的 `numThreads`（1 到 32）设置朗读时使用的 CPU 线程数。未设置时，Paseo 使用 CPU 核心数的一半，最少 2、最多 6。线程越多，开口越快：在 12 核主机上，用 6 个线程代替 2 个，首个声音的等待时间从约 3.4 秒降到约 2 秒。
+
 缺失的模型会在 daemon 启动时下载到 `$PASEO_HOME/models/local-speech`。只会下载缺失的文件。
 
 ### 本地 STT 模型与语言支持 {#local-stt-models-and-language-support}
@@ -178,7 +180,7 @@ Paseo 会在文字送入语音引擎之前先清理它。围栏代码块会被�
 - `PASEO_VOICE_LOCAL_STT_MODEL`、`PASEO_VOICE_LOCAL_TTS_MODEL`：本地语音 STT/TTS 模型 ID
 - `PASEO_DICTATION_LANGUAGE`：口述 STT 语言（仅限 OpenAI STT；本地 Parakeet 会忽略）
 - `PASEO_VOICE_LANGUAGE`：语音模式 STT 语言；未设置时退回到 `PASEO_DICTATION_LANGUAGE`（仅限 OpenAI STT；本地 Parakeet 会忽略）
-- `PASEO_VOICE_LOCAL_TTS_SPEAKER_ID`、`PASEO_VOICE_LOCAL_TTS_SPEED`：可选的本地语音 TTS 调优
+- `PASEO_VOICE_LOCAL_TTS_SPEAKER_ID`、`PASEO_VOICE_LOCAL_TTS_SPEED`、`PASEO_VOICE_LOCAL_TTS_THREADS`：可选的本地语音 TTS 调优
 
 ## 使用须知 {#operational-notes}
 

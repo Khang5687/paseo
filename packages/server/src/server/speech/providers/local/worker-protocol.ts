@@ -12,6 +12,7 @@ export interface LocalSpeechWorkerConfig {
   voiceTtsModel: string;
   voiceTtsSpeakerId?: number;
   voiceTtsSpeed?: number;
+  voiceTtsThreads?: number;
 }
 
 export type LocalSpeechSessionKind = "voiceStt" | "dictationStt" | "vad";
