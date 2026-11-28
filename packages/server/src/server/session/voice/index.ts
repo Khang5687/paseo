@@ -31,6 +31,49 @@ type VoiceMessage = Extract<
 
 type FindChatsResponse = Extract<VoiceMessage, { type: "voice.navigate.find_chats.response" }>;
 
+/**
+ * Questions this daemon asked an app about its other hosts, by request id. An answer counts only
+ * from the socket that was asked; no answer within `FIND_CHATS_TIMEOUT_MS` resolves null, and the
+ * voice command goes on with this host's chats.
+ */
+export class FindChatsRequests {
+  private readonly requests = new Map<
+    string,
+    {
+      source: object;
+      resolve: (answer: VoiceFindChatsAnswer | null) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  ask(
+    source: object,
+    emit: (message: SessionOutboundMessage) => void,
+    query: VoiceFindChatsQuery,
+  ): Promise<VoiceFindChatsAnswer | null> {
+    const requestId = uuidv4();
+    // The server's lib predates Promise.withResolvers.
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => this.settle(requestId, null), FIND_CHATS_TIMEOUT_MS);
+      this.requests.set(requestId, { source, resolve, timeout });
+      emit({ type: "voice.navigate.find_chats.request", payload: { requestId, query } });
+    });
+  }
+
+  answer(source: object, payload: FindChatsResponse["payload"]): void {
+    if (this.requests.get(payload.requestId)?.source !== source) return;
+    this.settle(payload.requestId, { hostName: payload.hostName, matches: payload.matches });
+  }
+
+  private settle(requestId: string, answer: VoiceFindChatsAnswer | null): void {
+    const request = this.requests.get(requestId);
+    if (!request) return;
+    clearTimeout(request.timeout);
+    this.requests.delete(requestId);
+    request.resolve(answer);
+  }
+}
+
 interface ActiveVoiceSource {
   voice: VoiceSession;
   owner: OwnedOperation;
@@ -43,15 +86,8 @@ export class VoiceSessions {
   private readonly sources = new Map<object, ActiveVoiceSource>();
   /** Outlives each socket's voice session: moving to another chat starts a new one. */
   private readonly navMemory = new WeakMap<object, VoiceNavMemory>();
-  /** Questions to the app about its other hosts, by request id. */
-  private readonly findChatsRequests = new Map<
-    string,
-    {
-      source: object;
-      resolve: (answer: VoiceFindChatsAnswer | null) => void;
-      timeout: ReturnType<typeof setTimeout>;
-    }
-  >();
+  /** Questions to the app about its other hosts. */
+  private readonly findChats = new FindChatsRequests();
 
   constructor(
     private readonly options: VoiceSessionOptions,
@@ -89,7 +125,7 @@ export class VoiceSessions {
     if (!source) throw new Error("Voice request has no source");
     // An answer to a question this daemon asked: it never starts a voice session.
     if (message.type === "voice.navigate.find_chats.response") {
-      this.answerFindChats(source, message);
+      this.findChats.answer(source, message.payload);
       return Promise.resolve();
     }
     const existing = this.sources.get(source);
@@ -130,7 +166,8 @@ export class VoiceSessions {
         host: {
           ...this.options.host,
           emit: (message) => owner.emit(message),
-          findChatsOnOtherHosts: (query) => this.askAppForChats(source, owner, query),
+          findChatsOnOtherHosts: (query) =>
+            this.findChats.ask(source, (message) => owner.emit(message), query),
         },
         onIdle: () => this.releaseIdle(active),
         navMemory: this.navMemoryFor(source),
@@ -147,41 +184,6 @@ export class VoiceSessions {
     const created = createVoiceNavMemory();
     this.navMemory.set(source, created);
     return created;
-  }
-
-  /** Asks the socket's app which of its other hosts has the name or chat; null after the timeout. */
-  private askAppForChats(
-    source: object,
-    owner: OwnedOperation,
-    query: VoiceFindChatsQuery,
-  ): Promise<VoiceFindChatsAnswer | null> {
-    const requestId = uuidv4();
-    // The server's lib predates Promise.withResolvers.
-    return new Promise((resolve) => {
-      const timeout = setTimeout(
-        () => this.settleFindChats(requestId, null),
-        FIND_CHATS_TIMEOUT_MS,
-      );
-      this.findChatsRequests.set(requestId, { source, resolve, timeout });
-      owner.emit({ type: "voice.navigate.find_chats.request", payload: { requestId, query } });
-    });
-  }
-
-  private settleFindChats(requestId: string, answer: VoiceFindChatsAnswer | null): void {
-    const request = this.findChatsRequests.get(requestId);
-    if (!request) return;
-    clearTimeout(request.timeout);
-    this.findChatsRequests.delete(requestId);
-    request.resolve(answer);
-  }
-
-  private answerFindChats(source: object, message: FindChatsResponse): void {
-    const request = this.findChatsRequests.get(message.payload.requestId);
-    if (request?.source !== source) return;
-    this.settleFindChats(message.payload.requestId, {
-      hostName: message.payload.hostName,
-      matches: message.payload.matches,
-    });
   }
 
   private releaseIdle(source: ActiveVoiceSource): void {
