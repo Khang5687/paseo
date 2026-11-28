@@ -29,6 +29,8 @@ import {
 
 type SavePatch = (patch: SpeechSettingsPatch) => Promise<unknown>;
 type VoiceSendMode = "auto" | "over";
+// Read-back speed steps; any other number in config.json shows as its own "<n>x" option.
+const SPEECH_SPEEDS = [1, 1.2, 1.4];
 const EMPTY_ENV_OVERRIDES: Record<string, string> = {};
 // Provisional pair (Q226); any "<provider>/<model>" in config.json works and shows as Custom.
 const SIDE_HELPER_MODELS = [
@@ -62,6 +64,7 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
   const supported = useHostFeature(serverId, "speechSettings");
   const sendModeSupported = useHostFeature(serverId, "voiceSendMode");
   const sideHelperSupported = useHostFeature(serverId, "voiceSideHelper");
+  const speechSpeedSupported = useHostFeature(serverId, "voiceSpeechSpeed");
   const { config, patchConfig } = useDaemonConfig(serverId);
   const localModels = useLocalSpeechModels(serverId);
   const { refresh: refreshModels } = localModels;
@@ -93,6 +96,10 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
   );
   const setSendMode = useCallback(
     (sendMode: VoiceSendMode) => saveSwitch({ voiceMode: { sendMode } }),
+    [saveSwitch],
+  );
+  const setSpeechSpeed = useCallback(
+    (speechSpeed: number) => saveSwitch({ voiceMode: { speechSpeed } }),
     [saveSwitch],
   );
   const setSideHelperModel = useCallback(
@@ -174,6 +181,9 @@ export function HostVoicePage({ serverId }: { serverId: string }) {
               onChange={setSendMode}
             />
           ) : null}
+          {speechSpeedSupported && features.voiceMode.speechSpeed !== undefined ? (
+            <SpeechSpeedRow value={features.voiceMode.speechSpeed} onChange={setSpeechSpeed} />
+          ) : null}
           {sideHelperSupported && features.voiceMode.sideHelperModel ? (
             <SideHelperModelRow
               value={features.voiceMode.sideHelperModel}
@@ -246,6 +256,29 @@ function SendModeRow({
             testID: "voice-send-mode-over",
           },
         ]}
+      />
+    </SettingsRow>
+  );
+}
+
+function SpeechSpeedRow({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const { t } = useTranslation();
+  const speeds = SPEECH_SPEEDS.includes(value) ? SPEECH_SPEEDS : [...SPEECH_SPEEDS, value];
+  const handleChange = useCallback((next: string) => onChange(Number(next)), [onChange]);
+  return (
+    <SettingsRow
+      label={t("settings.voice.voiceMode.speechSpeed")}
+      hint={t("settings.voice.voiceMode.speechSpeedHint")}
+      testID="voice-speech-speed"
+    >
+      <SegmentedControl<string>
+        value={String(value)}
+        onValueChange={handleChange}
+        options={speeds.map((speed) => ({
+          value: String(speed),
+          label: speed === 1 ? t("settings.voice.voiceMode.speechSpeedNormal") : `${speed}x`,
+          testID: `voice-speech-speed-${speed}`,
+        }))}
       />
     </SettingsRow>
   );

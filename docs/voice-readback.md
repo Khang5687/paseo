@@ -11,6 +11,14 @@ What Voice mode says on its own, besides what the agent passes to `speak`: quest
 - Everything spoken goes through `prepareTextForSpeech` (`speech-text.ts`). Activity-log entries keep the original text.
 - A second device gets `reasonCode: "voice_active_elsewhere"` on `set_voice_mode_response`. The app maps it to a translated message. An old daemon sends only the raw text; the app shows that.
 
+## Speed
+
+`features.voiceMode.speechSpeed` (default 1.2, `resolveSpeechSpeed` in `speech-settings.ts`) is one provider-neutral number. `TTSManager` reads it through a getter at every sentence and passes it as `synthesizeSpeech(text, { speed })`; Kokoro (sherpa) and OpenAI each map it to their own parameter (OpenAI clamps to its 0.25 to 4 range). It is a per-call option on purpose: a speed in the local worker's engine key made every change load a second copy of the model. The key is in `SPEECH_LIVE_PATHS`, so saving it never rebuilds the speech providers (a rebuild restarts the worker and deafens a live session).
+
+The cached "One sec." cue remembers the speed it was made at; a different speed makes it again, at the next voice-on and when a helper question starts (it has 1.5 s before it is due).
+
+A local `tts.speed` or `PASEO_VOICE_LOCAL_TTS_SPEED` that predates the setting is the fallback until `speechSpeed` is saved.
+
 ## Checking it again
 
 Needs a built daemon (`npm run build:server`), the local speech models in `~/.paseo/models/local-speech`, and a free port.

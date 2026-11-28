@@ -225,6 +225,8 @@ export interface VoiceSessionOptions {
     turnDetection?: Resolvable<TurnDetectionProvider | null>;
     /** The host's send mode, read at every utterance so a settings change applies at once. */
     sendMode?: () => VoiceSendMode;
+    /** The host's read-back speed, read at every sentence so a settings change applies at once. */
+    speechSpeed?: () => number;
   };
   voiceBridge?: {
     registerVoiceSpeakHandler?: (agentId: string, handler: VoiceSpeakHandler) => void;
@@ -337,7 +339,9 @@ export class VoiceSession {
     this.unregisterVoiceCallerContext = voiceBridge?.unregisterVoiceCallerContext;
     this.getSpeechReadiness = dictation?.getSpeechReadiness;
 
-    this.ttsManager = new TTSManager(this.sessionId, this.sessionLogger, tts);
+    this.ttsManager = new TTSManager(this.sessionId, this.sessionLogger, tts, {
+      speed: voice?.speechSpeed,
+    });
     this.sttManager = new STTManager(this.sessionId, this.sessionLogger, stt, {
       language: sttLanguage,
     });
@@ -1410,6 +1414,8 @@ export class VoiceSession {
   private startSideHelper(question: string): void {
     const askSideHelper = this.host.askSideHelper?.bind(this.host);
     if (!askSideHelper) return;
+    // Re-makes the cue when the speed changed since voice went on; it has 1.5 s before it is due.
+    this.prepareSideHelperCue();
     this.cancelSideHelper();
     const run = new AbortController();
     this.sideHelperRun = run;

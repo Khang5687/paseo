@@ -163,7 +163,6 @@ export async function initializeLocalSpeechServices(params: {
           dictationSttModel: localModels.dictationLocalSttModel,
           voiceTtsModel: localModels.voiceLocalTtsModel,
           voiceTtsSpeakerId: speechConfig?.local?.models.voiceTtsSpeakerId,
-          voiceTtsSpeed: speechConfig?.local?.models.voiceTtsSpeed,
           voiceTtsThreads: speechConfig?.local?.models.voiceTtsThreads,
         },
       })

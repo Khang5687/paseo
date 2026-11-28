@@ -1016,7 +1016,7 @@ describe("speech provider config normalization", () => {
       });
       expect(
         resolveSpeechConfig({ paseoHome: home, env: {}, persisted: local }).speech.local?.models,
-      ).toMatchObject({ voiceTtsSpeakerId: 3, voiceTtsSpeed: 1.2, voiceTtsThreads: 4 });
+      ).toMatchObject({ voiceTtsSpeakerId: 3, voiceTtsThreads: 4 });
       writeFileSync(
         path.join(home, "config.json"),
         JSON.stringify({

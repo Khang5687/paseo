@@ -72,7 +72,6 @@ describe("resolveSpeechConfig", () => {
       PASEO_VOICE_LOCAL_STT_MODEL: "parakeet-tdt-0.6b-v2-int8",
       PASEO_VOICE_LOCAL_TTS_MODEL: "kokoro-en-v0_19",
       PASEO_VOICE_LOCAL_TTS_SPEAKER_ID: "5",
-      PASEO_VOICE_LOCAL_TTS_SPEED: "1.35",
       PASEO_DICTATION_LANGUAGE: "es",
       PASEO_VOICE_LANGUAGE: "pt",
       PASEO_LOCAL_MODELS_DIR: "/tmp/models",
@@ -95,7 +94,6 @@ describe("resolveSpeechConfig", () => {
         voiceStt: "parakeet-tdt-0.6b-v2-int8",
         voiceTts: "kokoro-en-v0_19",
         voiceTtsSpeakerId: 5,
-        voiceTtsSpeed: 1.35,
       },
     });
     expect(result.speech.providers.dictationStt).toEqual({
@@ -122,7 +120,6 @@ describe("resolveSpeechConfig", () => {
     expect(result.speech.local?.models.voiceStt).toBe("parakeet-tdt-0.6b-v2-int8");
     expect(result.speech.local?.models.voiceTts).toBe("kokoro-en-v0_19");
     expect(result.speech.local?.models.voiceTtsSpeakerId).toBe(5);
-    expect(result.speech.local?.models.voiceTtsSpeed).toBe(1.35);
     expect(result.speech.sttLanguages).toEqual({
       dictation: "es",
       voice: "pt",

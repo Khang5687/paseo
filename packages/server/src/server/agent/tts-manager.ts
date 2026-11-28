@@ -1,7 +1,7 @@
 import type pino from "pino";
 import { Readable } from "node:stream";
 import { v4 as uuidv4 } from "uuid";
-import type { TextToSpeechProvider } from "../speech/speech-provider.js";
+import type { SpeechSynthesisOptions, TextToSpeechProvider } from "../speech/speech-provider.js";
 import { toResolver, type Resolvable } from "../speech/provider-resolver.js";
 import type { SessionOutboundMessage } from "../messages.js";
 
@@ -36,20 +36,34 @@ interface SpeechClip {
   format: string;
 }
 
+interface CachedSpeechClip {
+  speed: number | undefined;
+  clip: Promise<SpeechClip>;
+}
+
 /**
  * Short fixed lines ("One sec.") synthesized once and kept in memory, so they play the moment
  * they are due. Keyed by the provider, so a new voice setting (a new provider) makes new clips
- * and the old ones go with the old provider.
+ * and the old ones go with the old provider. A clip also remembers the speed it was made at: a
+ * changed speed makes it again.
  */
-const speechClips = new WeakMap<TextToSpeechProvider, Map<string, Promise<SpeechClip>>>();
+const speechClips = new WeakMap<TextToSpeechProvider, Map<string, CachedSpeechClip>>();
 
-async function readSpeechClip(tts: TextToSpeechProvider, text: string): Promise<SpeechClip> {
-  const { stream, format } = await tts.synthesizeSpeech(text);
+async function readSpeechClip(
+  tts: TextToSpeechProvider,
+  text: string,
+  speed: number | undefined,
+): Promise<SpeechClip> {
+  const { stream, format } = await tts.synthesizeSpeech(text, speechOptions(speed));
   const buffers: Buffer[] = [];
   for await (const chunk of stream) {
     buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return { audio: Buffer.concat(buffers), format };
+}
+
+function speechOptions(speed: number | undefined): SpeechSynthesisOptions | undefined {
+  return speed === undefined ? undefined : { speed };
 }
 
 function splitOversizedFragment(fragment: string, maxChars: number): string[] {
@@ -154,14 +168,21 @@ export class TTSManager {
   private readonly recentlyClosedAudioIds: Map<string, number> = new Map();
   private readonly logger: pino.Logger;
   private readonly resolveTts: () => TextToSpeechProvider | null;
+  private readonly resolveSpeed: () => number | undefined;
 
+  /**
+   * `speed` is read at every synthesis, so a settings change applies to the next sentence of a
+   * running voice session.
+   */
   constructor(
     sessionId: string,
     logger: pino.Logger,
     tts: Resolvable<TextToSpeechProvider | null>,
+    options?: { speed?: () => number | undefined },
   ) {
     this.logger = logger.child({ module: "agent", component: "tts-manager", sessionId });
     this.resolveTts = toResolver(tts);
+    this.resolveSpeed = options?.speed ?? (() => undefined);
   }
   /**
    * Play ready-made audio (a cue tone) through the same path as speech and wait for the client
@@ -183,8 +204,9 @@ export class TTSManager {
   }
 
   /**
-   * Synthesize a short fixed line once per provider (see `speechClips`). Call it early so the
-   * first play does not wait either. A failed synthesis is forgotten and tried again next time.
+   * Synthesize a short fixed line once per provider and speed (see `speechClips`). Call it early
+   * so the first play does not wait either. A failed synthesis is forgotten and tried again
+   * next time.
    */
   public prepareSpeechClip(text: string): Promise<SpeechClip> {
     const tts = this.resolveTts();
@@ -194,13 +216,15 @@ export class TTSManager {
       clips = new Map();
       speechClips.set(tts, clips);
     }
+    const speed = this.resolveSpeed();
     const cached = clips.get(text);
-    if (cached) return cached;
-    const clip = readSpeechClip(tts, text);
-    clips.set(text, clip);
+    if (cached && cached.speed === speed) return cached.clip;
+    const clip = readSpeechClip(tts, text, speed);
+    const entry = { speed, clip };
+    clips.set(text, entry);
     const forget = clips;
     clip.catch(() => {
-      if (forget.get(text) === clip) forget.delete(text);
+      if (forget.get(text) === entry) forget.delete(text);
     });
     return clip;
   }
@@ -335,7 +359,10 @@ export class TTSManager {
     }
 
     const synthStart = Date.now();
-    const { stream, format } = await tts.synthesizeSpeech(segment.text);
+    const { stream, format } = await tts.synthesizeSpeech(
+      segment.text,
+      speechOptions(this.resolveSpeed()),
+    );
     this.logger.info(
       {
         segmentIndex: segment.index,

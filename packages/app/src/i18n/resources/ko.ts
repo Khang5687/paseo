@@ -3154,6 +3154,10 @@ export const ko: TranslationResources = {
         sideHelperModelHint:
           '"Paseo,"로 시작하면 채팅에 대해 물어볼 수 있습니다. 이 모델이 소리 내어 답하고, 채팅에는 아무것도 보내지 않습니다.',
         sideHelperModelCustom: "사용자 지정",
+        speechSpeed: "말하기 속도",
+        speechSpeedHint:
+          "Paseo가 답변을 소리 내어 읽는 속도입니다. 음성 모드가 켜져 있어도 다음 문장부터 적용됩니다.",
+        speechSpeedNormal: "보통",
       },
       openai: {
         apiKey: "API 키",

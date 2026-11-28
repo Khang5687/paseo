@@ -3108,6 +3108,9 @@ export const zhCN: TranslationResources = {
         sideHelperModelHint:
           "以 “Paseo,” 开头可询问你的对话。此模型会朗读回答，不会向对话发送任何内容。",
         sideHelperModelCustom: "自定义",
+        speechSpeed: "朗读速度",
+        speechSpeedHint: "Paseo 朗读回答的快慢。语音开启时也会从下一句起生效。",
+        speechSpeedNormal: "正常",
       },
       openai: {
         apiKey: "API 密钥",
