@@ -1,0 +1,9 @@
+{
+  "pr": 220,
+  "title": "perf(server): give local voice TTS more CPU threads by default",
+  "tests": [
+    "packages/server/src/server/speech/providers/local/sherpa/sherpa-tts.test.ts",
+    "packages/server/src/server/speech/speech-config-resolver.test.ts",
+    "packages/server/src/server/persisted-config.test.ts"
+  ]
+}
