@@ -64,7 +64,16 @@ Agent 运行期间也可以开启语音模式，并随时说话。
 - “Paseo, what's going on in fitup?”
 - “Paseo, what did the agent just say?”
 
-回答来自一个单独的小模型。它读取这台主机上的对话：名字和状态、等你处理的事项（审批、问题框、未回答的问题），以及当前对话和你点名的对话里的最近消息。它只能读，不会向任何对话发送内容。回答只有几句短话。稍慢时 Paseo 会先说 “One sec.”；20 秒内没有回答时会说 “Sorry, no answer.”。
+回答来自一个单独的小模型。它读取这台主机上的对话：名字和状态、等你处理的事项（审批、问题框、未回答的问题），以及当前对话和你点名的对话里的最近消息。回答只有几句短话。稍慢时 Paseo 会先说 “One sec.”；20 秒内没有回答时会说 “Sorry, no answer.”。
+
+Paseo 还能替你做四件事：
+
+- “Paseo, tell the food scan chat to add a loading spinner.”：把这条消息发到该对话。正在运行时会并入当前运行，不会打断它。
+- “Paseo, approve the plan in release beta.”：回答该对话正在等待的审批或问题框。问题框要说出选项（“go with Redis”）。包含多个问题的问题框请在 App 中回答。
+- “Paseo, start a new chat in notes and ask it to sum up today's work.”：在该项目中新建对话，沿用该项目最新对话的提供方、模型和模式，并发送这条消息。
+- “Paseo, stop the long build chat.”：停止该对话的运行。
+
+Paseo 会先复述要做的事（“Send to fitup, food scan redesign: add a loading spinner. Okay?”），只有你说同意时才执行：“yes”、“yeah, go ahead”、“sure”、“do it”、“send it”。说 “no”、“wait” 或 “cancel” 会放弃。其他回答会听到一次 “Should I send it? Say yes or no.”；第二次仍听不清，或安静约 8 秒，也会放弃。放弃时会听到 “Okay, not doing it.”，等待确认期间说的话不会发到任何对话。点名的项目有多个对话时，Paseo 会先问是哪一个。模型只提出建议；由 Paseo 确认对话存在并亲自执行。这些操作只作用于同一台主机上的对话。
 
 停顿很重要：“Paseo app crashes on start” 没有停顿，会照常发给 Agent；句子中间出现 “Paseo” 也一样。只说 “Paseo.” 时，Paseo 会回答 “Yes?”，你的下一句就是问题。名字后面跟切换命令时仍然会切换（“Paseo, go to fitup”）。
 

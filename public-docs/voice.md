@@ -66,7 +66,16 @@ Start a sentence with "Paseo," and a pause, and Paseo answers it out loud instea
 - "Paseo, what's going on in fitup?"
 - "Paseo, what did the agent just say?"
 
-The answer comes from a separate small model that reads your chats on this host: their names and state, what waits on you (approvals, question boxes, open questions), and the last messages of the chat you are in and of a chat you name. It can only read; nothing is sent to any chat. It answers in a few short sentences. When it takes more than a moment, Paseo says "One sec."; when it has no answer within 20 seconds, "Sorry, no answer."
+The answer comes from a separate small model that reads your chats on this host: their names and state, what waits on you (approvals, question boxes, open questions), and the last messages of the chat you are in and of a chat you name. It answers in a few short sentences. When it takes more than a moment, Paseo says "One sec."; when it has no answer within 20 seconds, "Sorry, no answer."
+
+Paseo can also do four things for you:
+
+- "Paseo, tell the food scan chat to add a loading spinner." sends that message to the chat. It joins a run in progress instead of stopping it.
+- "Paseo, approve the plan in release beta." answers the approval or question box that chat waits on. For a question box, say the option ("go with Redis"). A box with several questions is answered in the app.
+- "Paseo, start a new chat in notes and ask it to sum up today's work." starts a chat in that project with the same provider, model and mode as its newest chat, and sends the message.
+- "Paseo, stop the long build chat." stops that chat's run.
+
+Paseo reads the action back first ("Send to fitup, food scan redesign: add a loading spinner. Okay?") and does it only when you say yes: "yes", "yeah, go ahead", "sure", "do it", "send it". "No", "wait" or "cancel" drops it. Anything else gets one "Should I send it? Say yes or no."; a second unclear answer, or about 8 seconds of quiet, drops it. Dropped actions get "Okay, not doing it.", and nothing you say while Paseo waits for the yes reaches any chat. When you name a project with more than one chat, Paseo asks which one first. The model only suggests the action; Paseo checks the chat exists and runs it itself. Actions reach chats on the same host only.
 
 The pause matters: "Paseo app crashes on start" has none and goes to the agent as usual, and so does a sentence with "Paseo" in the middle. Say "Paseo." alone and Paseo answers "Yes?"; your next sentence is the question. A move command after the name still moves ("Paseo, go to fitup").
 

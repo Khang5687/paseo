@@ -1,7 +1,8 @@
 // "Paseo, ..." side questions. An utterance that starts with the name goes to a one-shot model
 // that answers by voice from this daemon's chat data; everything else still goes to the chat.
-// Read-only: the model gets a text block of chat data and no way to change anything. An action
-// (send to a chat, answer a card) would be a new step behind a spoken "yes", added here later.
+// The model has no tools: it gets a text block of chat data and replies with JSON, either an
+// answer or a proposed action. Actions are resolved, read back and run behind a spoken yes in
+// `voice-helper-actions.ts`; the model never runs anything.
 
 import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
@@ -13,6 +14,16 @@ import type { AgentRunResult, AgentTimelineItem, AgentUsage } from "../../agent/
 import { selectItemsByProjectedLimit } from "../../agent/timeline-projection.js";
 import type { VoiceChat, VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
 import { similarity, spokenNameScore, wordsOf } from "@getpaseo/protocol/voice/chat-match";
+import {
+  chatRef,
+  parseHelperReply,
+  projectRef,
+  resolveHelperProposal,
+  type HelperAgentState,
+  type HelperWorkspace,
+  type SideHelperReply,
+} from "./voice-helper-actions.js";
+import { parseSpokenQuestions } from "./spoken-question.js";
 import type { VoiceChatTarget } from "./voice-navigate.js";
 
 /** Provisional (owner question Q226): Haiku through OMP, the provider that works on every host. */
@@ -180,6 +191,8 @@ export function findNamedChats(
 
 /** What the helper is told about one chat in the list. */
 export interface SideHelperChatInfo {
+  /** "c3": how the model names the chat in an action. */
+  ref: string;
   agentId: string;
   projectName: string;
   title: string | null;
@@ -196,14 +209,30 @@ export interface SideHelperAgentState {
   requiresAttention?: boolean;
   attentionReason?: "finished" | "error" | "permission" | null;
   openQuestions?: Array<{ label: string | null; title: string }>;
-  pendingPermissions: Array<Pick<AgentPermissionRequest, "kind" | "name" | "title">>;
+  pendingPermissions: Array<
+    Pick<AgentPermissionRequest, "kind" | "name" | "title" | "input" | "detail">
+  >;
+}
+
+/** A question box's question and options, or a permission's command, for the chat list. */
+function describeRequest(
+  request: Pick<AgentPermissionRequest, "kind" | "name" | "title" | "input" | "detail">,
+): string {
+  const what = request.title ?? request.name;
+  if (request.kind === "question") {
+    const first = parseSpokenQuestions(request.input)?.[0];
+    if (!first) return `question box: ${what}`;
+    const options = first.options.length > 0 ? ` (options: ${first.options.join(", ")})` : "";
+    return `question box: ${first.question}${options}`;
+  }
+  if (request.detail?.type === "shell") return `approval: ${what}: ${request.detail.command}`;
+  return `approval: ${what}`;
 }
 
 function waitingReason(agent: SideHelperAgentState): string | null {
   const reasons: string[] = [];
   for (const request of agent.pendingPermissions) {
-    const what = request.title ?? request.name;
-    reasons.push(request.kind === "question" ? `question box: ${what}` : `approval: ${what}`);
+    reasons.push(describeRequest(request));
   }
   for (const question of agent.openQuestions ?? []) {
     reasons.push(`asked ${question.label ? `${question.label} ` : ""}${question.title}`);
@@ -225,6 +254,7 @@ export function buildSideHelperChats(
     for (const chat of project.chats) {
       const agent = byId.get(chat.agentId);
       chats.push({
+        ref: chatRef(chats.length),
         agentId: chat.agentId,
         projectName: project.name,
         title: chat.title,
@@ -280,7 +310,19 @@ function chatLine(chat: SideHelperChatInfo, now: number, currentAgentId: string 
   ];
   if (chat.waiting) parts.push(`waiting on you: ${chat.waiting}`);
   if (chat.agentId === currentAgentId) parts.push("this is the chat voice is in");
-  return `- ${parts.join(" | ")}`;
+  return `- [${chat.ref}] ${parts.join(" | ")}`;
+}
+
+/** The projects line: "[p1] FitUp (2 chats), [p2] Paseo (1 chat)". */
+export function buildSideHelperProjects(directory: VoiceChatProject[]): string {
+  return directory
+    .map(
+      (project, index) =>
+        `[${projectRef(index)}] ${project.name} (${project.chats.length} chat${
+          project.chats.length === 1 ? "" : "s"
+        })`,
+    )
+    .join(", ");
 }
 
 /** Keeps the end of `text` (the newest messages) within `chars`. */
@@ -300,12 +342,19 @@ export function buildSideHelperContext(
     currentAgentId: string | null;
     chats: SideHelperChatInfo[];
     timelines: SideHelperTimeline[];
+    /** `buildSideHelperProjects`; empty leaves the section out. */
+    projects?: string;
   },
   maxTokens = SIDE_HELPER_CONTEXT_TOKENS,
 ): string {
   const budget = maxTokens * CHARS_PER_TOKEN;
   const sections: string[] = [];
   let used = 0;
+  if (input.projects) {
+    const section = `## Projects\n${input.projects}`;
+    sections.push(section);
+    used += section.length + 2;
+  }
 
   const timelineBudget = Math.floor(budget * TIMELINE_SHARE);
   const perTimeline =
@@ -347,10 +396,18 @@ export function buildSideHelperContext(
 
 /** The helper's whole system prompt: the provider adds no coding prompt, tools or context files. */
 export const SIDE_HELPER_SYSTEM_PROMPT = [
-  "You are Paseo's voice helper. The owner talks to his coding agents hands-free and hears your answer through text-to-speech.",
-  "Answer only from the chat data in the message. If it does not say, say you don't know.",
-  "Answer first, in at most three short sentences of plain spoken English. No markdown, lists, code, file paths or IDs.",
-  "You can only read. If asked to do something, say you can only read for now.",
+  "You are Paseo's voice helper. The owner talks to his coding agents hands-free and hears your replies through text-to-speech.",
+  "Reply with exactly one JSON object and nothing else.",
+  "",
+  'To answer: {"type":"answer","text":"..."}. Answer only from the chat data in the message; if it does not say, say you don\'t know. Answer first, in at most three short sentences of plain spoken English. No markdown, lists, code, file paths or refs.',
+  "",
+  "When he asks you to do one of these, propose it. You never do it yourself: Paseo reads it back and does it only after he says yes.",
+  '- Send a message to a chat: {"type":"send_message","chat":"c3","target":"<his words naming the chat>","text":"<the message, written as he would type it to that agent>"}',
+  '- Answer the question box or approval a chat is waiting on: {"type":"answer_prompt","chat":"c3","target":"...","answer":"<his answer; for an approval, approve or deny>"}',
+  '- Start a new chat in a project: {"type":"start_chat","project":"p2","target":"<his words naming the project>","text":"<the first message>"}',
+  '- Stop a chat\'s run: {"type":"stop_run","chat":"c3","target":"..."}',
+  'Refs ("c3", "p2") come only from the chat data. When he names a project with several chats and does not say which one, set "chat" to null. "target" is always his own words for the chat or project.',
+  "Anything else (files, commands, git, settings, more than one action): answer that you can't do that.",
 ].join("\n");
 
 export function buildSideHelperPrompt(question: string, context: string): string {
@@ -507,8 +564,15 @@ async function raceAbort<T>(
 
 export interface VoiceSideHelperDeps {
   manager: OneShotManager;
-  /** The chats voice can name, and the agent state behind them (status, waiting on you). */
-  readChats(): Promise<{ directory: VoiceChatProject[]; agents: SideHelperAgentState[] }>;
+  /**
+   * The chats voice can name, the agent state behind them (status, waiting on you, provider),
+   * and the active workspaces, where a project with no chat starts one.
+   */
+  readChats(): Promise<{
+    directory: VoiceChatProject[];
+    agents: HelperAgentState[];
+    workspaces?: HelperWorkspace[];
+  }>;
   /** A chat's timeline; loads the chat's history when it is not loaded. */
   loadTimeline(agentId: string): Promise<readonly AgentTimelineItem[]>;
   /** The configured model, read at every question so a settings change applies at once. */
@@ -519,15 +583,18 @@ export interface VoiceSideHelperDeps {
   now?: () => number;
 }
 
-/** Answers one side question: builds the chat data, asks the model, logs the cost. */
+/**
+ * Answers one side question: builds the chat data, asks the model, logs the cost. A proposed
+ * action comes back resolved against the same chat data, ready to read back.
+ */
 export function createVoiceSideHelper(deps: VoiceSideHelperDeps) {
   const now = deps.now ?? Date.now;
   return async (input: {
     question: string;
     currentAgentId: string | null;
     signal: AbortSignal;
-  }): Promise<string> => {
-    const { directory, agents } = await deps.readChats();
+  }): Promise<SideHelperReply> => {
+    const { directory, agents, workspaces = [] } = await deps.readChats();
     const current = input.currentAgentId
       ? directory
           .flatMap((project) => project.chats.map((chat) => ({ project, chat })))
@@ -557,6 +624,7 @@ export function createVoiceSideHelper(deps: VoiceSideHelperDeps) {
       currentAgentId: input.currentAgentId,
       chats: buildSideHelperChats(directory, agents),
       timelines,
+      projects: buildSideHelperProjects(directory),
     });
     const choice = parseSideHelperModel(deps.model());
     const startedAt = now();
@@ -583,10 +651,12 @@ export function createVoiceSideHelper(deps: VoiceSideHelperDeps) {
       throw error;
     }
     const durationMs = now() - startedAt;
+    const reply = parseHelperReply(answer.text);
     void answer.usage.then((usage) =>
       deps.logger.info(
         {
           ...call,
+          reply: reply.kind === "action" ? reply.proposal.type : reply.kind,
           inputTokens: usage?.inputTokens ?? null,
           cachedInputTokens: usage?.cachedInputTokens ?? null,
           outputTokens: usage?.outputTokens ?? null,
@@ -596,6 +666,13 @@ export function createVoiceSideHelper(deps: VoiceSideHelperDeps) {
         "Voice helper call",
       ),
     );
-    return answer.text;
+    if (reply.kind === "answer") return { kind: "speech", text: reply.text };
+    if (reply.kind === "invalid") return { kind: "speech", text: SIDE_HELPER_FAILED_SPEECH };
+    return resolveHelperProposal(reply.proposal, {
+      directory,
+      agents,
+      workspaces,
+      currentAgentId: input.currentAgentId,
+    });
   };
 }
