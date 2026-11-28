@@ -1,6 +1,8 @@
 import type { SpeechSettings, SpeechSettingsPatch } from "@getpaseo/protocol/speech/rpc-schemas";
 
 import {
+  MAX_SPEECH_SPEED,
+  MIN_SPEECH_SPEED,
   PersistedConfigSchema,
   SpeechSttConfigSchema,
   SpeechTtsConfigSchema,
@@ -36,6 +38,23 @@ export function createSpeechSettingsOwner(params: {
       speechService.reconfigure({ openaiConfig: resolved.openai, speechConfig: resolved.speech });
     },
   };
+}
+
+export const DEFAULT_SPEECH_SPEED = 1.2;
+
+/**
+ * How fast read-back is spoken. The chosen setting wins; before one is chosen, a local voice
+ * speed set in config or `PASEO_VOICE_LOCAL_TTS_SPEED` still applies (it predates the setting);
+ * otherwise the default.
+ */
+export function resolveSpeechSpeed(persisted: PersistedConfig, env: NodeJS.ProcessEnv): number {
+  const tts = persisted.features?.voiceMode?.tts;
+  const legacy = Number(
+    env.PASEO_VOICE_LOCAL_TTS_SPEED?.trim() || (tts?.provider === "local" ? tts.speed : NaN),
+  );
+  const speed = persisted.features?.voiceMode?.speechSpeed ?? legacy;
+  if (!Number.isFinite(speed)) return DEFAULT_SPEECH_SPEED;
+  return Math.min(MAX_SPEECH_SPEED, Math.max(MIN_SPEECH_SPEED, speed));
 }
 
 export function readSpeechSettings(persisted: PersistedConfig, env: NodeJS.ProcessEnv): SpeechRead {
@@ -118,6 +137,7 @@ export function readSpeechSettings(persisted: PersistedConfig, env: NodeJS.Proce
       voiceMode: {
         enabled: providers.voiceStt.enabled !== false,
         sendMode: voiceMode?.sendMode ?? "auto",
+        speechSpeed: resolveSpeechSpeed(persisted, env),
         sideHelperModel: voiceMode?.sideHelperModel ?? DEFAULT_SIDE_HELPER_MODEL,
         ...(voiceMode?.llm ? { llm: voiceMode.llm } : {}),
         ...(voiceMode?.turnDetection

@@ -1976,6 +1976,41 @@ describe("DaemonConfigStore speech settings", () => {
     expect(loadPersistedConfig(paseoHome).features?.voiceMode?.sendMode).toBe("over");
   });
 
+  test("read-back speed defaults to 1.2, saves without rebuilding speech, and refuses wild values", async () => {
+    const { paseoHome, store, applied } = createSpeechStore();
+    expect(store.get().features?.voiceMode.speechSpeed).toBe(1.2);
+
+    const result = await store.patch({ features: { voiceMode: { speechSpeed: 1 } } });
+    expect(result.features?.voiceMode.speechSpeed).toBe(1);
+    expect(loadPersistedConfig(paseoHome).features?.voiceMode?.speechSpeed).toBe(1);
+    expect(applied).toEqual([]);
+
+    await expect(store.patch({ features: { voiceMode: { speechSpeed: 9 } } })).rejects.toThrow();
+    expect(loadPersistedConfig(paseoHome).features?.voiceMode?.speechSpeed).toBe(1);
+
+    const cleared = await store.patch({ features: { voiceMode: { speechSpeed: null } } });
+    expect(cleared.features?.voiceMode.speechSpeed).toBe(1.2);
+  });
+
+  test("a local voice speed from config or env stays the read-back speed until one is chosen", async () => {
+    const fromConfig = createSpeechStore({
+      features: { voiceMode: { tts: { provider: "local", speed: 1.35 } } },
+    });
+    expect(fromConfig.store.get().features?.voiceMode.speechSpeed).toBe(1.35);
+
+    const fromEnv = createSpeechStore(undefined, { PASEO_VOICE_LOCAL_TTS_SPEED: "1.1" });
+    expect(fromEnv.store.get().features?.voiceMode.speechSpeed).toBe(1.1);
+
+    const chosen = createSpeechStore(
+      { features: { voiceMode: { speechSpeed: 1 } } },
+      { PASEO_VOICE_LOCAL_TTS_SPEED: "1.1" },
+    );
+    expect(chosen.store.get().features?.voiceMode.speechSpeed).toBe(1);
+
+    const wild = createSpeechStore(undefined, { PASEO_VOICE_LOCAL_TTS_SPEED: "9" });
+    expect(wild.store.get().features?.voiceMode.speechSpeed).toBe(2);
+  });
+
   test("the voice helper model defaults to Haiku and saves without rebuilding speech", async () => {
     const { paseoHome, store, applied } = createSpeechStore();
     expect(store.get().features?.voiceMode.sideHelperModel).toBe("omp/anthropic/claude-haiku-5-5");

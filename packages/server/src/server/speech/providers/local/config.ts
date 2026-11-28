@@ -19,7 +19,6 @@ export interface LocalSpeechModelConfig {
   voiceStt: LocalSttModelId;
   voiceTts: LocalTtsModelId;
   voiceTtsSpeakerId?: number;
-  voiceTtsSpeed?: number;
   voiceTtsThreads?: number;
 }
 
@@ -47,10 +46,6 @@ export interface LocalSpeechSttLanguageConfig {
 const NumberLikeSchema = z.union([z.number(), z.string().trim().min(1)]);
 const LanguageSchema = z.string().trim().min(1).default(DEFAULT_STT_LANGUAGE);
 
-const OptionalFiniteNumberSchema = NumberLikeSchema.pipe(
-  z.coerce.number<string | number>().finite(),
-).optional();
-
 const OptionalIntegerSchema = NumberLikeSchema.pipe(
   z.coerce.number<string | number>().int(),
 ).optional();
@@ -64,7 +59,6 @@ const LocalSpeechResolutionSchema = z.object({
   dictationLanguage: LanguageSchema,
   voiceLanguage: LanguageSchema,
   voiceLocalTtsSpeakerId: OptionalIntegerSchema,
-  voiceLocalTtsSpeed: OptionalFiniteNumberSchema,
   voiceLocalTtsThreads: NumberLikeSchema.pipe(
     z.coerce.number<string | number>().int().min(1).max(32),
   ).optional(),
@@ -194,10 +188,6 @@ function buildLocalSpeechResolutionInput(params: {
       env.PASEO_VOICE_LOCAL_TTS_SPEAKER_ID,
       localTts?.speakerId,
     ]),
-    voiceLocalTtsSpeed: firstDefinedValue<string | number>([
-      env.PASEO_VOICE_LOCAL_TTS_SPEED,
-      localTts?.speed,
-    ]),
     voiceLocalTtsThreads: firstDefinedValue<string | number>([
       env.PASEO_VOICE_LOCAL_TTS_THREADS,
       localTts?.numThreads,
@@ -233,9 +223,6 @@ export function resolveLocalSpeechConfig(params: {
             voiceTts: parsed.voiceLocalTtsModel,
             ...(resolvedVoiceTtsSpeakerId !== undefined
               ? { voiceTtsSpeakerId: resolvedVoiceTtsSpeakerId }
-              : {}),
-            ...(parsed.voiceLocalTtsSpeed !== undefined
-              ? { voiceTtsSpeed: parsed.voiceLocalTtsSpeed }
               : {}),
             ...(parsed.voiceLocalTtsThreads !== undefined
               ? { voiceTtsThreads: parsed.voiceLocalTtsThreads }

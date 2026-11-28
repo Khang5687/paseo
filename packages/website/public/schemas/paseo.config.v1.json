@@ -1024,6 +1024,11 @@
               "type": "string",
               "enum": ["auto", "over"]
             },
+            "speechSpeed": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 2
+            },
             "sideHelperModel": {
               "type": "string",
               "minLength": 3

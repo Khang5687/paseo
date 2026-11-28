@@ -3173,6 +3173,10 @@ export const ar: TranslationResources = {
         sideHelperModelHint:
           'ابدأ بـ "Paseo," لتسأل عن محادثاتك. يجيب هذا النموذج بصوت عالٍ ولا يُرسل شيء إلى المحادثة.',
         sideHelperModelCustom: "مخصص",
+        speechSpeed: "سرعة الكلام",
+        speechSpeedHint:
+          "مدى سرعة قراءة Paseo للإجابات بصوت عالٍ. تنطبق على الجملة التالية حتى أثناء تشغيل الصوت.",
+        speechSpeedNormal: "عادية",
       },
       openai: {
         apiKey: "مفتاح API",

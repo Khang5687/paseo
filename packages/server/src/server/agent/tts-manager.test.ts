@@ -326,6 +326,57 @@ describe("TTSManager", () => {
     expect(played).toEqual(["one sec", "one sec"]);
   });
 
+  it("makes the speech clip again when the speed changes, and only then", async () => {
+    const calls: Array<{ text: string; speed: number | undefined }> = [];
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech(text, options) {
+        calls.push({ text, speed: options?.speed });
+        return { stream: Readable.from([Buffer.from("clip")]), format: "pcm" };
+      },
+    };
+    let speed = 1.2;
+    const manager = new TTSManager("s1", pino({ level: "silent" }), tts, { speed: () => speed });
+
+    await manager.prepareSpeechClip("One sec.");
+    await manager.prepareSpeechClip("One sec.");
+    speed = 1;
+    await manager.prepareSpeechClip("One sec.");
+    await manager.prepareSpeechClip("One sec.");
+
+    expect(calls).toEqual([
+      { text: "One sec.", speed: 1.2 },
+      { text: "One sec.", speed: 1 },
+    ]);
+  });
+
+  it("reads the speed again for every sentence, so a change applies mid-answer", async () => {
+    const speeds: Array<number | undefined> = [];
+    const tts: TextToSpeechProvider = {
+      async synthesizeSpeech(_text, options) {
+        speeds.push(options?.speed);
+        return { stream: Readable.from([Buffer.from("x")]), format: "pcm" };
+      },
+    };
+    let speed = 1.2;
+    const manager = new TTSManager("s1", pino({ level: "silent" }), tts, { speed: () => speed });
+    const emit = (msg: SessionOutboundMessage) => {
+      if (!isAudioOutputMessage(msg)) return;
+      // Sentence one is playing: the listener changes the setting.
+      speed = 1;
+      manager.confirmAudioPlayed(msg.payload.id);
+    };
+
+    await manager.generateAndWaitForPlayback(
+      "First. Second. Third. Fourth.",
+      emit,
+      new AbortController().signal,
+      true,
+    );
+
+    expect(speeds[0]).toBe(1.2);
+    expect(speeds.at(-1)).toBe(1);
+  });
+
   it("forgets a failed speech clip so the next play synthesizes again", async () => {
     let attempts = 0;
     const tts: TextToSpeechProvider = {

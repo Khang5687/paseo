@@ -3197,6 +3197,10 @@ export const ru: TranslationResources = {
         sideHelperModelHint:
           "Начните с «Paseo,», чтобы спросить о своих чатах. Эта модель отвечает вслух; в чат ничего не уходит.",
         sideHelperModelCustom: "Своя",
+        speechSpeed: "Скорость речи",
+        speechSpeedHint:
+          "Как быстро Paseo зачитывает ответы вслух. Применяется со следующего предложения, даже когда голос включён.",
+        speechSpeedNormal: "Обычная",
       },
       openai: {
         apiKey: "API-ключ",

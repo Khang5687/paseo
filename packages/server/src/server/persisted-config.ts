@@ -143,6 +143,9 @@ const FeatureDictationSchema = z
   })
   .strict();
 
+export const MIN_SPEECH_SPEED = 0.5;
+export const MAX_SPEECH_SPEED = 2;
+
 const FeatureVoiceModeSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -163,6 +166,8 @@ const FeatureVoiceModeSchema = z
     tts: SpeechTtsConfigSchema.optional(),
     // "auto" sends after 1 s of quiet; "over" waits for the spoken word "over".
     sendMode: z.enum(["auto", "over"]).optional(),
+    // How fast read-back is spoken, 1 = normal. Every TTS provider maps it to its own speed.
+    speechSpeed: z.number().min(MIN_SPEECH_SPEED).max(MAX_SPEECH_SPEED).optional(),
     // The model that answers "Paseo, ..." questions: "<provider>/<model>".
     sideHelperModel: z.string().min(3).optional(),
   })

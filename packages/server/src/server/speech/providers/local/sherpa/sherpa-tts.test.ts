@@ -81,6 +81,15 @@ describe("SherpaOnnxTTS", () => {
     expect(Buffer.concat(chunks).length).toBe(8);
   });
 
+  it("speaks at the speed asked for in each call, with the same loaded model", async () => {
+    const { tts, requests } = createTts();
+    (await tts.synthesizeSpeech("fast", { speed: 1.2 })).stream.destroy();
+    (await tts.synthesizeSpeech("normal", { speed: 1 })).stream.destroy();
+    (await tts.synthesizeSpeech("default")).stream.destroy();
+    expect(requests.map((request) => (request as { speed: number }).speed)).toEqual([1.2, 1, 1]);
+    tts.free();
+  });
+
   it("keeps the event loop available and serializes native synthesis", async () => {
     const { pending, wait } = holdNativeSynthesis();
     const { tts, requests } = createTts(undefined, wait);

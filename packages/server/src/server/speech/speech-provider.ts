@@ -63,6 +63,11 @@ export interface SpeechStreamResult {
   format: string;
 }
 
+export interface SpeechSynthesisOptions {
+  /** Playback speed, 1 = normal. Chosen per call so a setting change needs no new provider. */
+  speed?: number;
+}
+
 export interface TextToSpeechProvider {
-  synthesizeSpeech(text: string): Promise<SpeechStreamResult>;
+  synthesizeSpeech(text: string, options?: SpeechSynthesisOptions): Promise<SpeechStreamResult>;
 }

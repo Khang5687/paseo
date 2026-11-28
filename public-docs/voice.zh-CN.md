@@ -70,6 +70,10 @@ Agent 运行期间也可以开启语音模式，并随时说话。
 
 在 **设置 > 语音 > 回答 “Paseo, …”** 中选择模型，或把 `features.voiceMode.sideHelperModel` 设为 `<provider>/<model>`。默认是 `omp/anthropic/claude-haiku-5-5`。每个问题会调用一次模型，附带最多约 6,000 个 token 的对话数据，会计入该提供方的用量。主机升级到支持该功能的版本后，才会显示这一行。
 
+## 朗读速度 {#speaking-speed}
+
+Paseo 默认以 1.2 倍速朗读回答。在 **设置 > 语音 > 朗读速度** 中选择 **正常**、**1.2x** 或 **1.4x**，也可以设置 `features.voiceMode.speechSpeed`（0.5 到 2 之间的数字，1 为正常速度）。修改从下一句开始生效，语音开启时也一样。同一个值适用于所有语音 Provider：本地语音和 OpenAI 都会使用它，所以更换语音 Provider 后设置仍然有效。在这个设置出现之前配置的本地 `features.voiceMode.tts.speed` 或 `PASEO_VOICE_LOCAL_TTS_SPEED`，在你选择速度之前仍然有效。主机运行支持该功能的版本后，才会出现这一行。
+
 ## 本地语音 {#local-speech}
 
 本地语音默认使用模型 ID `parakeet-tdt-0.6b-v2-int8`（STT）和 `kokoro-en-v0_19`（TTS，speaker 0 / voice 00）。

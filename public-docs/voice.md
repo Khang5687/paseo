@@ -72,6 +72,10 @@ The pause matters: "Paseo app crashes on start" has none and goes to the agent a
 
 Pick the model in **Settings > Voice > Answers "Paseo, …"**, or set `features.voiceMode.sideHelperModel` to `<provider>/<model>`. The default is `omp/anthropic/claude-haiku-5-5`. Each question is one model call with up to about 6,000 tokens of chat data, so it counts against that provider's usage. The row appears once the host runs a version that supports it.
 
+## Speaking Speed
+
+Paseo reads answers at 1.2x by default. Pick **Normal**, **1.2x** or **1.4x** in **Settings > Voice > Speaking speed**, or set `features.voiceMode.speechSpeed` (a number from 0.5 to 2, 1 is normal). The change applies from the next sentence, even while voice is on. The same value drives every speech provider: the local voice and OpenAI both get it, so it carries over when you change the voice provider. A local `features.voiceMode.tts.speed` or `PASEO_VOICE_LOCAL_TTS_SPEED` set before this setting existed is used until you pick a speed. The row appears once the host runs a version that supports it.
+
 ## Local Speech
 
 Local speech defaults to model IDs `parakeet-tdt-0.6b-v2-int8` (STT) and `kokoro-en-v0_19` (TTS, speaker 0 / voice 00).

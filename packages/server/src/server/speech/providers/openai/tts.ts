@@ -1,9 +1,17 @@
 import type pino from "pino";
 import { OpenAI } from "openai";
 import { Readable } from "node:stream";
-import type { SpeechStreamResult, TextToSpeechProvider } from "../../speech-provider.js";
+import type {
+  SpeechStreamResult,
+  SpeechSynthesisOptions,
+  TextToSpeechProvider,
+} from "../../speech-provider.js";
 
 export type { SpeechStreamResult };
+
+// OpenAI `audio/speech` accepts 0.25 to 4.0.
+const OPENAI_MIN_SPEED = 0.25;
+const OPENAI_MAX_SPEED = 4;
 
 export interface TTSConfig {
   apiKey: string;
@@ -41,7 +49,10 @@ export class OpenAITTS implements TextToSpeechProvider {
     return this.config;
   }
 
-  public async synthesizeSpeech(text: string): Promise<SpeechStreamResult> {
+  public async synthesizeSpeech(
+    text: string,
+    options?: SpeechSynthesisOptions,
+  ): Promise<SpeechStreamResult> {
     if (!text || text.trim().length === 0) {
       throw new Error("Cannot synthesize empty text");
     }
@@ -58,6 +69,9 @@ export class OpenAITTS implements TextToSpeechProvider {
         model: this.config.model!,
         voice: this.config.voice!,
         input: text,
+        ...(options?.speed !== undefined
+          ? { speed: Math.min(OPENAI_MAX_SPEED, Math.max(OPENAI_MIN_SPEED, options.speed)) }
+          : {}),
         response_format: this.config.responseFormat as
           | "mp3"
           | "opus"

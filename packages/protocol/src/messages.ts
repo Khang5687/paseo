@@ -4838,6 +4838,9 @@ export const ServerInfoStatusPayloadSchema = z
         // Hosts with it ask the app for chats on other hosts (`voice.navigate.find_chats.request`)
         // and move voice there.
         voiceNavigateHosts: z.boolean().optional(),
+        // COMPAT(voiceSpeechSpeed): added after v0.18.1, remove gate after 2027-12-01.
+        // Hosts with it speak read-back at `features.voiceMode.speechSpeed`.
+        voiceSpeechSpeed: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         relayConfig: z.boolean().optional(),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
