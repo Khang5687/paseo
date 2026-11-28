@@ -1,16 +1,18 @@
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { Mic, MicOff, Moon, Square } from "lucide-react-native";
+import { Mic, MicOff, Moon, PhoneOff } from "lucide-react-native";
 import { FOOTER_HEIGHT } from "@/constants/layout";
 import { useVoiceTelemetry } from "@/contexts/voice-context";
 import { VoiceBlackScreen } from "./voice-black-screen";
 import { VolumeMeter } from "./volume-meter";
 
+/** `onStop` ends live voice only; `agentStop` is the agent's own Stop, shown while it runs. */
 interface RealtimeVoiceOverlayProps {
+  agentStop?: ReactNode;
   isMuted: boolean;
   isSwitching: boolean;
   onToggleMute: () => void;
@@ -21,6 +23,7 @@ const OVERLAY_BUTTON_SIZE = 44;
 const OVERLAY_VERTICAL_PADDING = (FOOTER_HEIGHT - OVERLAY_BUTTON_SIZE) / 2;
 
 export function RealtimeVoiceOverlay({
+  agentStop,
   isMuted,
   isSwitching,
   onToggleMute,
@@ -38,8 +41,12 @@ export function RealtimeVoiceOverlay({
     ],
     [isMuted, isSwitching],
   );
-  const stopButtonStyle = useMemo(
-    () => [styles.actionButton, styles.stopButton, isSwitching ? styles.buttonDisabled : undefined],
+  const endVoiceButtonStyle = useMemo(
+    () => [
+      styles.actionButton,
+      styles.endVoiceButton,
+      isSwitching ? styles.buttonDisabled : undefined,
+    ],
     [isSwitching],
   );
   // Lives in the panel, so ending live voice unmounts the panel and the black screen with it.
@@ -88,20 +95,17 @@ export function RealtimeVoiceOverlay({
           onPress={onStop}
           disabled={isSwitching}
           accessibilityRole="button"
-          accessibilityLabel={t("realtimeVoice.actions.stop")}
-          style={stopButtonStyle}
+          accessibilityLabel={t("realtimeVoice.actions.endVoice")}
+          testID="realtime-voice-end"
+          style={endVoiceButtonStyle}
         >
           {isSwitching ? (
-            <LoadingSpinner size="small" color={theme.colors.palette.white} />
+            <LoadingSpinner size="small" color={theme.colors.foreground} />
           ) : (
-            <Square
-              size={theme.iconSize.lg}
-              color={theme.colors.palette.white}
-              fill={theme.colors.palette.white}
-              strokeWidth={2.5}
-            />
+            <PhoneOff size={theme.iconSize.lg} color={theme.colors.foreground} strokeWidth={2.5} />
           )}
         </Pressable>
+        {agentStop}
       </View>
     </View>
   );
@@ -147,10 +151,10 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.palette.red[600],
     borderColor: theme.colors.palette.red[800],
   },
-  stopButton: {
-    backgroundColor: theme.colors.palette.red[600],
+  endVoiceButton: {
+    backgroundColor: theme.colors.surface0,
     borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.palette.red[800],
+    borderColor: theme.colors.border,
   },
   buttonDisabled: {
     opacity: 0.5,

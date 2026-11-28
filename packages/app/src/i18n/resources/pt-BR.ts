@@ -2332,7 +2332,7 @@ export const ptBR: TranslationResources = {
     actions: {
       mute: "Silenciar voz em tempo real",
       unmute: "Ativar voz em tempo real",
-      stop: "Parar voz em tempo real e interromper a resposta",
+      endVoice: "Encerrar a voz. O agente continua trabalhando",
       black: "Deixar a tela preta enquanto a voz continua",
     },
     blackScreen: {

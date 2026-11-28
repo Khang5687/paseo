@@ -2322,7 +2322,7 @@ export const en = {
     actions: {
       mute: "Mute realtime voice",
       unmute: "Unmute realtime voice",
-      stop: "Stop realtime voice and interrupt turn",
+      endVoice: "End voice. The agent keeps working",
       black: "Turn the screen black while voice keeps running",
     },
     blackScreen: {

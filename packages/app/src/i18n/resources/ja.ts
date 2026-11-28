@@ -2316,7 +2316,7 @@ export const ja: TranslationResources = {
     actions: {
       mute: "リアルタイム音声をミュート",
       unmute: "リアルタイム音声のミュートを解除",
-      stop: "リアルタイム音声を停止してターンを中断",
+      endVoice: "音声を終了。エージェントは作業を続けます",
       black: "音声を続けたまま画面を黒にする",
     },
     blackScreen: {

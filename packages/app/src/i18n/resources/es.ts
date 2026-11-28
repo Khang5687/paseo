@@ -2349,7 +2349,7 @@ export const es: TranslationResources = {
     actions: {
       mute: "Silenciar voz en tiempo real",
       unmute: "Activar voz en tiempo real",
-      stop: "Detener la voz en tiempo real e interrumpir el turno.",
+      endVoice: "Terminar la voz. El agente sigue trabajando",
       black: "Poner la pantalla en negro mientras la voz sigue activa",
     },
     blackScreen: {
