@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useLayoutEffect, type RefObject } from "react";
 import type { View } from "react-native";
 import { isWeb } from "@/constants/platform";
 import { createHoverSafeZoneTracker, type RectLike } from "@/hooks/hover-safe-zone-tracker";
@@ -23,7 +23,9 @@ export function useHoverSafeZone({
   onEnterSafeZone,
   onLeaveSafeZone,
 }: UseHoverSafeZoneParams): void {
-  useEffect(() => {
+  // A layout effect, so tracking starts in the commit that opens the card: a pointer that leaves
+  // before a passive effect would attach still closes it.
+  useLayoutEffect(() => {
     if (!isWeb || !enabled) return;
 
     const tracker = createHoverSafeZoneTracker({

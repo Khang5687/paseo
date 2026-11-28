@@ -1,0 +1,6 @@
+{
+  "pr": 210,
+  "title": "fix(app): keep a hover card open when its trigger moves under a still pointer",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/context-window-meter.spec.ts"]
+}
