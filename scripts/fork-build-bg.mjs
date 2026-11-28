@@ -66,8 +66,9 @@ function launch() {
   mkdirSync(dir, { recursive: true });
   const unit = `paseo-fork-build-${stamp}`;
   // The unit's environment is clean (no SSH_* variables, which would attach test terminals to the
-  // owner's tmux); a login shell brings mise's PATH. Only the daemon target is passed through.
-  const forwarded = ["PASEO_HOME", "PASEO_HOST", "PASEO_LISTEN"]
+  // owner's tmux); a login shell brings mise's PATH. Only the daemon target and the e2e worker
+  // override (fork-check's E2E_WORKERS) are passed through.
+  const forwarded = ["PASEO_HOME", "PASEO_HOST", "PASEO_LISTEN", "E2E_WORKERS"]
     .filter((name) => process.env[name])
     .map((name) => `--setenv=${name}=${process.env[name]}`);
   const started = spawnSync(
