@@ -189,7 +189,7 @@ class AudioEngine (context: Context) {
 
     /**
      * Give the complete communication session back once we are neither recording nor playing.
-     * Focus pauses the user's music, while MODE_IN_COMMUNICATION and the selected communication
+     * Focus ducks the user's music, while MODE_IN_COMMUNICATION and the selected communication
      * device can leave Bluetooth earbuds on their narrow-band call route after capture stops.
      */
     @SuppressLint("NewApi")
@@ -235,6 +235,14 @@ class AudioEngine (context: Context) {
         }
     }
 
+    /**
+     * Ask for transient focus that lets other audio keep playing quietly under us.
+     *
+     * `GAIN_TRANSIENT_EXCLUSIVE` paused the user's music for the whole voice session. With
+     * `MAY_DUCK`, Android lowers other players itself (API 26+ auto-ducking) and restores them
+     * when we abandon focus. Players that mark their content as speech (most podcast apps) are
+     * not auto-ducked: Android tells their app instead, and that app decides whether to pause.
+     */
     @SuppressLint("NewApi")
     private fun requestAudioFocus(): Boolean {
         audioFocusRequest?.let { request ->
@@ -243,7 +251,7 @@ class AudioEngine (context: Context) {
         }
 
         lateinit var focusRequest: AudioFocusRequest
-        focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+        focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -508,9 +516,9 @@ class AudioEngine (context: Context) {
     fun resumeRecordingAndPlayer() {
         val wasRecordingBeforePause = isRecordingBeforePause
         // Only take the session back if something was actually live when we backgrounded. The
-        // activity lifecycle listener calls this on every onResume, so requesting
-        // AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE unconditionally re-paused the user's music every
-        // time the app came to the foreground — the exact symptom this change exists to remove.
+        // activity lifecycle listener calls this on every onResume, so requesting focus
+        // unconditionally took focus from the user's music every time the app came to the
+        // foreground.
         if (!wasRecordingBeforePause && !isPlaying) {
             return
         }

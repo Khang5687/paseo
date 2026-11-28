@@ -98,7 +98,9 @@ class AudioEngine {
         let session = AVAudioSession.sharedInstance()
 
         do {
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
+            // .duckOthers keeps the user's music playing, quieter, under voice instead of
+            // interrupting it; it implies .mixWithOthers.
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .duckOthers])
         } catch {
             print("Could not set the audio category: \(error.localizedDescription)")
         }
@@ -125,12 +127,11 @@ class AudioEngine {
 
     /// Hand the audio session back to the system.
     ///
-    /// `.playAndRecord` + `.voiceChat` does not mix, so while it is active the user's
-    /// background music stays dead — including across backgrounding, because iOS
-    /// re-asserts whatever category the app last set when it returns to the foreground.
-    /// Releasing when we are neither capturing nor playing is what lets their music come
-    /// back; `.notifyOthersOnDeactivation` is what tells the other app to resume, and
-    /// dropping to `.ambient` means any implicit reactivation mixes instead of interrupting.
+    /// While `.playAndRecord` + `.voiceChat` is active the user's music stays ducked, including
+    /// across backgrounding, because iOS re-asserts whatever category the app last set when it
+    /// returns to the foreground. Releasing when we are neither capturing nor playing is what
+    /// brings their music back to full volume; `.notifyOthersOnDeactivation` tells the other app,
+    /// and dropping to `.ambient` means any implicit reactivation mixes instead of ducking.
     func releaseAudioSession() {
         // The native engine is a singleton shared by every JS-side engine wrapper, so it is the
         // only layer that knows whether *anything* is still using the session. Never release
