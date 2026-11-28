@@ -7,6 +7,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { VoiceSession, type VoiceSessionHost } from "./voice-session.js";
 import { SHORT_WORD_CONFIRM_MS, VOICE_SEND_HOLD_MS } from "./send-gate.js";
 import type { VoiceSendMode } from "./send-words.js";
+import type { VoiceChatProject } from "./voice-chat-directory.js";
+import { createVoiceNavMemory, type VoiceNavMemory } from "./voice-navigate.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
 import type { SessionOutboundMessage } from "../../messages.js";
@@ -73,6 +75,8 @@ interface FakeVoiceHost extends VoiceSessionHost {
   readonly reloads: Array<Partial<AgentSessionConfig>>;
   /** Starts or ends the agent's run; ending it releases every waitForAgentIdle. */
   setRunActive(active: boolean): void;
+  /** What `listVoiceChats` returns. */
+  chats: VoiceChatProject[];
 }
 
 function createFakeHost(): FakeVoiceHost {
@@ -121,13 +125,15 @@ function createFakeHost(): FakeVoiceHost {
         idleWaiters.push(resolve);
         signal?.addEventListener("abort", () => resolve(), { once: true });
       }),
+    chats: [],
+    listVoiceChats: async () => host.chats,
   };
   return host;
 }
 
 function createVoiceSession(
   tts: TextToSpeechProvider | null = null,
-  options: { sendMode?: () => VoiceSendMode } = {},
+  options: { sendMode?: () => VoiceSendMode; navMemory?: VoiceNavMemory } = {},
 ) {
   let speakHandler: VoiceSpeakHandler | undefined;
   const detector = new FakeVoiceTurnDetectionSession();
@@ -154,6 +160,7 @@ function createVoiceSession(
     },
     stt,
     voice: { turnDetection, sendMode: options.sendMode },
+    navMemory: options.navMemory,
   });
   return {
     voiceSession,
@@ -171,14 +178,39 @@ function isAudioOutput(message: SessionOutboundMessage): boolean {
   return message.type === "audio_output";
 }
 
+/** A TTS whose clips the tests play back at once (see `acknowledgeAudio`). */
+const playedTts: TextToSpeechProvider = {
+  async synthesizeSpeech() {
+    return { stream: Readable.from([Buffer.from("audio")]), format: "pcm;rate=24000" };
+  },
+};
+
+/** Plays every audio clip at once, as an app would after hearing it. */
+function acknowledgeAudio(setup: ReturnType<typeof createVoiceSession>): void {
+  const emit = setup.host.emit;
+  setup.host.emit = (message) => {
+    emit(message);
+    if (message.type === "audio_output") setup.voiceSession.handleAudioPlayed(message.payload.id);
+  };
+}
+
+function spokenAnnouncements(host: FakeVoiceHost): string[] {
+  return host.emitted.flatMap((message) =>
+    message.type === "activity_log" && message.payload.type === "assistant"
+      ? [message.payload.content]
+      : [],
+  );
+}
 async function waitForAudioOutput(host: FakeVoiceHost): Promise<void> {
   await vi.waitFor(() => expect(host.emitted.filter(isAudioOutput)).toHaveLength(1));
 }
 
+/**
+ * Lets the turn controller's serial queue drain. The fake STT answers at once, so a turn must not
+ * emit its transcript before the previous turn's handling (and its speech_stopped) has run.
+ */
 async function settle(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
 
 /** One spoken turn through the fake detector and STT, ending with a final transcript. */
@@ -566,32 +598,9 @@ describe("VoiceSession send words", () => {
     vi.useRealTimers();
   });
 
-  const tts: TextToSpeechProvider = {
-    async synthesizeSpeech() {
-      return { stream: Readable.from([Buffer.from("audio")]), format: "pcm;rate=24000" };
-    },
-  };
-
-  /** Plays every audio clip at once, as an app would after hearing it. */
-  function acknowledgeAudio(setup: ReturnType<typeof createVoiceSession>): void {
-    const emit = setup.host.emit;
-    setup.host.emit = (message) => {
-      emit(message);
-      if (message.type === "audio_output") setup.voiceSession.handleAudioPlayed(message.payload.id);
-    };
-  }
-
-  function spokenAnnouncements(host: FakeVoiceHost): string[] {
-    return host.emitted.flatMap((message) =>
-      message.type === "activity_log" && message.payload.type === "assistant"
-        ? [message.payload.content]
-        : [],
-    );
-  }
-
   test("a sent message beeps first, and 'cancel' in the hold keeps it from the agent", async () => {
     vi.useFakeTimers();
-    const setup = createVoiceSession(tts);
+    const setup = createVoiceSession(playedTts);
     acknowledgeAudio(setup);
     const { voiceSession, detector, sttSession, host } = setup;
     await voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
@@ -640,5 +649,119 @@ describe("VoiceSession send words", () => {
     expect(host.spokenInput).toEqual([]);
     await voiceSession.handleSetVoiceMode(false);
     expect(host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Run the tests." }]);
+  });
+});
+
+describe("VoiceSession navigation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const SCAN_CHAT_ID = "22222222-2222-4222-8222-222222222222";
+  const RELEASE_CHAT_ID = "33333333-3333-4333-8333-333333333333";
+  const SYNC_CHAT_ID = "44444444-4444-4444-8444-444444444444";
+  const chats: VoiceChatProject[] = [
+    {
+      projectId: "fitup",
+      name: "FitUp",
+      chats: [
+        { agentId: VOICE_AGENT_ID, workspaceId: "w-fitup", title: "Main chat", lastActiveAt: 2 },
+        { agentId: SCAN_CHAT_ID, workspaceId: "w-scan", title: "Food scan", lastActiveAt: 1 },
+      ],
+    },
+    {
+      projectId: "paseo",
+      name: "Paseo",
+      chats: [
+        { agentId: RELEASE_CHAT_ID, workspaceId: "w-p1", title: "Release beta", lastActiveAt: 2 },
+        { agentId: SYNC_CHAT_ID, workspaceId: "w-p2", title: "Upstream sync", lastActiveAt: 1 },
+      ],
+    },
+  ];
+
+  async function startNavigatingSession(agentId: string, navMemory: VoiceNavMemory) {
+    const setup = createVoiceSession(playedTts, { navMemory });
+    acknowledgeAudio(setup);
+    setup.host.chats = chats;
+    await setup.voiceSession.handleSetVoiceMode(true, agentId, undefined, { navigation: true });
+    return setup;
+  }
+
+  function navigations(host: FakeVoiceHost): string[] {
+    return host.emitted.flatMap((message) =>
+      message.type === "voice.navigate" ? [message.payload.agentId] : [],
+    );
+  }
+
+  test("'go to <project> <chat>' moves voice there, says where it is, and 'go back' returns", async () => {
+    vi.useFakeTimers();
+    const memory = createVoiceNavMemory();
+    const first = await startNavigatingSession(VOICE_AGENT_ID, memory);
+
+    await sayTurn(first.detector, first.sttSession, "Go to FitUp, food scan.", "segment-1");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(navigations(first.host)).toEqual([SCAN_CHAT_ID]);
+    expect(first.host.spokenInput).toEqual([]);
+    expect(first.host.emitted.filter(isAudioOutput)).toEqual([]);
+
+    // The app opens the chat and turns voice off and on again there: a new voice session.
+    await first.voiceSession.handleSetVoiceMode(false);
+    await first.voiceSession.cleanup();
+    const second = await startNavigatingSession(SCAN_CHAT_ID, memory);
+    await vi.waitFor(() => expect(spokenAnnouncements(second.host)).toEqual(["FitUp, Food scan."]));
+
+    await sayTurn(second.detector, second.sttSession, "Go back.", "segment-2");
+    expect(navigations(second.host)).toEqual([VOICE_AGENT_ID]);
+    await second.voiceSession.cleanup();
+  });
+
+  test("a project with several chats reads their names, and the next words pick one", async () => {
+    vi.useFakeTimers();
+    const { voiceSession, detector, sttSession, host } = await startNavigatingSession(
+      VOICE_AGENT_ID,
+      createVoiceNavMemory(),
+    );
+
+    await sayTurn(detector, sttSession, "Go to Paseo.", "segment-1");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(host)).toEqual([
+        "Paseo has 2 chats: Release beta, Upstream sync. Which one?",
+      ]),
+    );
+    expect(navigations(host)).toEqual([]);
+    // Short words ("go back", a chat name) are heard while nothing plays; the list kept the long window.
+    expect(detector.confirmWindows).toEqual([SHORT_WORD_CONFIRM_MS, null, SHORT_WORD_CONFIRM_MS]);
+    await sayTurn(detector, sttSession, "The second one.", "segment-2");
+    expect(navigations(host)).toEqual([SYNC_CHAT_ID]);
+
+    await sayTurn(detector, sttSession, "Go to Paseo.", "segment-3");
+    // The user answers after hearing the names again.
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toHaveLength(2));
+    await sayTurn(detector, sttSession, "Tell me a joke.", "segment-4");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    await vi.waitFor(() => expect(spokenAnnouncements(host)).toContain("No chat called that."));
+    expect(navigations(host)).toEqual([SYNC_CHAT_ID]);
+    expect(host.spokenInput).toEqual([]);
+    await voiceSession.cleanup();
+  });
+
+  test("words that name no chat, and every command on an app that cannot move, go to the agent", async () => {
+    vi.useFakeTimers();
+    const navigating = await startNavigatingSession(VOICE_AGENT_ID, createVoiceNavMemory());
+    await sayTurn(navigating.detector, navigating.sttSession, "Go to the auth module.", "s-1");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(navigating.host.spokenInput).toEqual([
+      { agentId: VOICE_AGENT_ID, text: "Go to the auth module." },
+    ]);
+    await navigating.voiceSession.cleanup();
+
+    const oldApp = createVoiceSession();
+    oldApp.host.chats = chats;
+    await oldApp.voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    await sayTurn(oldApp.detector, oldApp.sttSession, "Go to Paseo.", "s-2");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(navigations(oldApp.host)).toEqual([]);
+    expect(oldApp.host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Go to Paseo." }]);
+    await oldApp.voiceSession.cleanup();
   });
 });

@@ -72,6 +72,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/mobile-testing.md](docs/mobile-testing.md)                     | Maestro and mobile test workflows                                                                                              |
 | [docs/voice-readback.md](docs/voice-readback.md)                     | Voice read-back: questions and permission prompts spoken, spoken answers, text cleaning, how to check it                       |
 | [docs/voice-send.md](docs/voice-send.md)                             | Voice send: auto and "over" send modes, the beep and 2 s hold, spoken cancel, short words and the VAD, how to check it         |
+| [docs/voice-navigate.md](docs/voice-navigate.md)                     | Voice navigate: "go to", "list chats", "go back" without a model, name matching, the per-socket memory, how to check it        |
 | [docs/mobile-panels.md](docs/mobile-panels.md)                       | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
 | [docs/explorer-sidebar.md](docs/explorer-sidebar.md)                 | Explorer sidebar, side-pane, and compact workspace sheet host contracts, lifecycle, placement, routing preferences             |
 | [docs/sidebar-project-strip.md](docs/sidebar-project-strip.md)       | Project strip — desktop rail and compact chips, shared filter and order state, the waiting badge, where later features plug in |

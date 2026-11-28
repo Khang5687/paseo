@@ -14,7 +14,7 @@ How Voice mode decides that a spoken message is finished and sends it: the two s
 
 ## Short words and the VAD
 
-Silero VAD confirms speech only after it lasts `speechConfirmMs` (800 ms by default). A lone "over" (about 0.7 s) or "cancel" (about 0.8 s) never reaches that, so the turn is never started. While a short word is expected (a message is held, or over-mode text is waiting) the session drops the window to 300 ms (`SHORT_WORD_CONFIRM_MS`) through `setSpeechConfirmMs`, which reaches the worker's VAD session. Outside those windows it stays at 800 ms so noise does not barge in on playback.
+Silero VAD confirms speech only after it lasts `speechConfirmMs` (800 ms by default). A lone "over" (about 0.7 s) or "cancel" (about 0.8 s) never reaches that, so the turn is never started. The session drops the window to 300 ms (`SHORT_WORD_CONFIRM_MS`) through `setSpeechConfirmMs`, which reaches the worker's VAD session, while a short word is expected: a message is held, or over-mode text is waiting. When the app can move voice between chats ([voice-navigate.md](voice-navigate.md)) it also stays at 300 ms whenever no speech is playing, because "go back" or a chat name can come at any time. While speech plays it is 800 ms so noise does not barge in on playback. `VoiceSession.refreshSpeechConfirm` owns the rule.
 
 A lone "cancel" said when nothing is held may therefore not be heard at all. That is fine as long as it is dropped: `voice-turn-controller.ts` keeps only the last 1.5 s of listening audio for STT (`STT_PREROLL_MS`) and streams the rest only once the VAD confirms speech. Before that change, every sound the VAD rejected stayed in the STT buffer and was glued onto the next message ("Cancel cancel cancel the build...").
 

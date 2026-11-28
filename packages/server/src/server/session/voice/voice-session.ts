@@ -35,9 +35,26 @@ import {
   parseSpokenQuestions,
   type SpokenQuestion,
 } from "./spoken-question.js";
-import { SHORT_WORD_CONFIRM_MS, VoiceSendGate } from "./send-gate.js";
+import { CANCELLED_SPEECH, SHORT_WORD_CONFIRM_MS, VoiceSendGate } from "./send-gate.js";
 import { SEND_CUE_FORMAT, sendCuePcm } from "./send-cue.js";
-import type { VoiceSendMode } from "./send-words.js";
+import { isCancelCommand, type VoiceSendMode } from "./send-words.js";
+import type { VoiceChatProject } from "./voice-chat-directory.js";
+import {
+  NO_CHAT_SPEECH,
+  NO_PREVIOUS_CHAT_SPEECH,
+  buildAlreadyHereSpeech,
+  buildArrivedSpeech,
+  buildChatListSpeech,
+  buildNoChatsSpeech,
+  buildOnlyChatSpeech,
+  createVoiceNavMemory,
+  findVoiceChat,
+  parseVoiceNavCommand,
+  resolveChatPick,
+  resolveGoToTarget,
+  type VoiceNavMemory,
+  type VoiceChatTarget,
+} from "./voice-navigate.js";
 import type { LocalSpeechModelId } from "../../speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "../../speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "../../speech/speech-runtime.js";
@@ -171,6 +188,11 @@ export interface VoiceSessionHost {
   hasActiveAgentRun(agentId: string | null): boolean;
   /** Resolves once the agent has no run in flight, or the signal aborts. */
   waitForAgentIdle(agentId: string, signal?: AbortSignal): Promise<void>;
+  /**
+   * Projects and chats a spoken "go to" can name. The one place names come from: an app-side
+   * lookup across hosts could replace it without touching the command parser.
+   */
+  listVoiceChats(): Promise<VoiceChatProject[]>;
 }
 
 export interface VoiceSessionOptions {
@@ -198,6 +220,8 @@ export interface VoiceSessionOptions {
     sttLanguage?: string;
     getSpeechReadiness?: () => SpeechReadinessSnapshot;
   };
+  /** Kept by the caller per socket, so "go back" and the arrival speech survive a move. */
+  navMemory?: VoiceNavMemory;
 }
 
 /**
@@ -263,6 +287,16 @@ export class VoiceSession {
   private announcementChain: Promise<void> = Promise.resolve();
   /** When a spoken utterance becomes a message: send mode, beep, hold and "cancel". */
   private readonly sendGate: VoiceSendGate;
+  private readonly navMemory: VoiceNavMemory;
+  /** The app moves voice on `voice.navigate`; only then is speech read as a navigation command. */
+  private navigationEnabled = false;
+  /** Chat names were read out; the next utterance picks one. */
+  private pendingChatPick: VoiceChatProject | null = null;
+  /** Send gate state: a held message, or over-mode text waiting for its "over". */
+  private expectingShortWord = false;
+  /** Speech clips being played now; the VAD keeps its long window while any plays. */
+  private activePlaybacks = 0;
+  private appliedSpeechConfirmMs: number | null = null;
 
   constructor(options: VoiceSessionOptions) {
     const { host, logger, sessionId, sttLanguage, tts, stt, voice, voiceBridge, dictation } =
@@ -300,10 +334,13 @@ export class VoiceSession {
       send: (text) => this.deliverSpokenMessage(text),
       playSendCue: () => this.playSendCue(),
       speak: (text) => this.queueAnnouncement(text),
-      setExpectingShortWord: (expecting) =>
-        this.voiceTurnController?.setSpeechConfirmMs(expecting ? SHORT_WORD_CONFIRM_MS : null),
+      setExpectingShortWord: (expecting) => {
+        this.expectingShortWord = expecting;
+        this.refreshSpeechConfirm();
+      },
       onSendError: (error) => this.reportSendError(error),
     });
+    this.navMemory = options.navMemory ?? createVoiceNavMemory();
   }
 
   get hasDemand(): boolean {
@@ -413,9 +450,14 @@ export class VoiceSession {
   }
 
   /**
-   * Handle voice mode toggle
+   * Handle voice mode toggle. `navigation`: the app moves voice when told to (`voice.navigate`).
    */
-  async handleSetVoiceMode(enabled: boolean, agentId?: string, requestId?: string): Promise<void> {
+  async handleSetVoiceMode(
+    enabled: boolean,
+    agentId?: string,
+    requestId?: string,
+    options: { navigation?: boolean } = {},
+  ): Promise<void> {
     const startedAt = Date.now();
     try {
       this.sessionLogger.info(
@@ -473,6 +515,9 @@ export class VoiceSession {
           "set_voice_mode voice turn controller started",
         );
         this.isVoiceMode = !this.closed;
+        this.navigationEnabled = options.navigation === true;
+        this.refreshSpeechConfirm();
+        this.recordVoiceArrival(normalizedAgentId);
         this.sessionLogger.info(
           {
             agentId: this.voiceModeAgentId,
@@ -501,6 +546,9 @@ export class VoiceSession {
       );
       await this.disableVoiceModeForActiveAgent(true);
       this.isVoiceMode = false;
+      this.navigationEnabled = false;
+      this.refreshSpeechConfirm();
+      this.pendingChatPick = null;
       this.sessionLogger.info({ elapsedMs: Date.now() - startedAt }, "Voice mode disabled");
       if (requestId) {
         this.emit({
@@ -769,6 +817,8 @@ export class VoiceSession {
 
     this.sessionLogger.info("startVoiceTurnController connecting controller");
     this.voiceTurnController = controller;
+    // A new controller starts on the default window.
+    this.appliedSpeechConfirmMs = null;
     await controller.start();
     if (this.closed) await controller.stop();
     this.sessionLogger.info("startVoiceTurnController connected");
@@ -1163,14 +1213,25 @@ export class VoiceSession {
       return;
     }
 
+    await this.routeUtterance(result.text);
+  }
+
+  /** Where a voice-mode utterance goes: the held message, a command, a card, or the agent. */
+  private async routeUtterance(text: string): Promise<void> {
     // A message waiting out its hold: "cancel" drops it, other words send it first.
-    if (await this.sendGate.settleHeldMessage(result.text)) {
+    if (await this.sendGate.settleHeldMessage(text)) {
       await this.flushPendingAudioSegments("held message settled");
       return;
     }
 
+    // "go to fitup", "list chats", "go back", or the chat picked after its name was read out.
+    if (this.navigationEnabled && (await this.handleNavigation(text))) {
+      await this.flushPendingAudioSegments("voice navigation");
+      return;
+    }
+
     // A pending question card takes the reply as its answer; sending it as chat would leave the card open.
-    if (this.pendingQuestion && (await this.answerPendingQuestion(result.text))) {
+    if (this.pendingQuestion && (await this.answerPendingQuestion(text))) {
       await this.flushPendingAudioSegments("answered question card");
       return;
     }
@@ -1183,8 +1244,107 @@ export class VoiceSession {
       return;
     }
 
-    await this.sendGate.handleUtterance(result.text);
+    await this.sendGate.handleUtterance(text);
     await this.flushPendingAudioSegments("transcription complete");
+  }
+
+  /** Returns true when the utterance was a navigation command (or the reply to "Which one?"). */
+  private async handleNavigation(transcript: string): Promise<boolean> {
+    const command = parseVoiceNavCommand(transcript);
+    const pick = this.pendingChatPick;
+    this.pendingChatPick = null;
+    if (!command) {
+      if (!pick) return false;
+      if (isCancelCommand(transcript)) {
+        this.queueAnnouncement(CANCELLED_SPEECH);
+        return true;
+      }
+      const chat = resolveChatPick(transcript, pick.chats);
+      if (chat) this.moveVoiceTo({ project: pick, chat });
+      else this.queueAnnouncement(NO_CHAT_SPEECH);
+      return true;
+    }
+
+    let directory: VoiceChatProject[];
+    try {
+      directory = await this.host.listVoiceChats();
+    } catch (error) {
+      this.sessionLogger.warn({ err: error }, "Failed to list chats for a voice command");
+      this.queueAnnouncement("I couldn't read your chats.");
+      return true;
+    }
+    const here = findVoiceChat(directory, this.voiceModeAgentId);
+
+    if (command.kind === "go_back") {
+      const previous = findVoiceChat(directory, this.navMemory.previousAgentId);
+      if (previous) this.moveVoiceTo(previous);
+      else this.queueAnnouncement(NO_PREVIOUS_CHAT_SPEECH);
+      return true;
+    }
+
+    if (command.kind === "list_chats") {
+      if (!here) {
+        this.queueAnnouncement("This chat is not in a project I know.");
+        return true;
+      }
+      this.offerChats(here.project);
+      return true;
+    }
+
+    const target = resolveGoToTarget(command.target, directory, here?.project.projectId ?? null);
+    // "Go to the auth module and add logging" names no project or chat: it is talk for the agent.
+    if (!target) return false;
+    if (target.chat) {
+      this.moveVoiceTo({ project: target.project, chat: target.chat });
+      return true;
+    }
+    const chats = target.project.chats;
+    if (chats.length === 1) this.moveVoiceTo({ project: target.project, chat: chats[0] });
+    else this.offerChats(target.project);
+    return true;
+  }
+
+  /** Reads the project's chat names and waits for a pick; one chat or none is just said. */
+  private offerChats(project: VoiceChatProject): void {
+    if (project.chats.length === 0) {
+      this.queueAnnouncement(buildNoChatsSpeech(project));
+      return;
+    }
+    if (project.chats.length === 1) {
+      this.queueAnnouncement(buildOnlyChatSpeech(project, project.chats[0]));
+      return;
+    }
+    this.pendingChatPick = project;
+    this.queueAnnouncement(buildChatListSpeech(project));
+  }
+
+  /**
+   * Asks the app to open the chat and turn voice on there. The app restarts voice for the new
+   * chat, so the confirmation is spoken once voice is on there (`recordVoiceArrival`).
+   */
+  private moveVoiceTo(target: VoiceChatTarget): void {
+    if (target.chat.agentId === this.voiceModeAgentId) {
+      this.queueAnnouncement(buildAlreadyHereSpeech(target));
+      return;
+    }
+    this.navMemory.arrival = { agentId: target.chat.agentId, speech: buildArrivedSpeech(target) };
+    this.emit({
+      type: "voice.navigate",
+      payload: { agentId: target.chat.agentId, workspaceId: target.chat.workspaceId },
+    });
+  }
+
+  /** Voice is on in `agentId`: remember where it came from and say where it is now. */
+  private recordVoiceArrival(agentId: string): void {
+    const memory = this.navMemory;
+    if (memory.currentAgentId && memory.currentAgentId !== agentId) {
+      memory.previousAgentId = memory.currentAgentId;
+    }
+    memory.currentAgentId = agentId;
+    if (memory.arrival?.agentId === agentId) {
+      this.queueAnnouncement(memory.arrival.speech);
+    }
+    memory.arrival = null;
   }
 
   private async deliverSpokenMessage(text: string): Promise<void> {
@@ -1237,12 +1397,7 @@ export class VoiceSession {
         : this.abortController.signal;
       const spokenText = prepareTextForSpeech(text);
       if (spokenText) {
-        await this.ttsManager.generateAndWaitForPlayback(
-          spokenText,
-          (msg) => this.emit(msg),
-          abortSignal,
-          true,
-        );
+        await this.playSpeech(spokenText, abortSignal);
       }
       this.sessionLogger.info(
         { agentId, textLength: text.length },
@@ -1273,17 +1428,37 @@ export class VoiceSession {
   private async speakAloud(text: string): Promise<void> {
     const spoken = prepareTextForSpeech(text);
     if (spoken) {
-      await this.ttsManager.generateAndWaitForPlayback(
-        spoken,
-        (msg) => this.emit(msg),
-        this.abortController.signal,
-        true,
-      );
+      await this.playSpeech(spoken, this.abortController.signal);
     }
     this.emit({
       type: "activity_log",
       payload: { id: uuidv4(), timestamp: new Date(), type: "assistant", content: text },
     });
+  }
+
+  /** Plays speech in voice mode; the VAD keeps its long window meanwhile so noise cannot cut it. */
+  private async playSpeech(text: string, signal: AbortSignal): Promise<void> {
+    this.activePlaybacks += 1;
+    this.refreshSpeechConfirm();
+    try {
+      await this.ttsManager.generateAndWaitForPlayback(text, (msg) => this.emit(msg), signal, true);
+    } finally {
+      this.activePlaybacks -= 1;
+      this.refreshSpeechConfirm();
+    }
+  }
+
+  /**
+   * The VAD confirm window. A short word ("cancel", "over", "go back", a chat name) lasts under the
+   * default 800 ms, so it needs the short window to be heard at all. Short while a send-gate word is
+   * expected, and, when the app can move voice, whenever no speech is playing.
+   */
+  private refreshSpeechConfirm(): void {
+    const short = this.expectingShortWord || (this.navigationEnabled && this.activePlaybacks === 0);
+    const confirmMs = short ? SHORT_WORD_CONFIRM_MS : null;
+    if (confirmMs === this.appliedSpeechConfirmMs) return;
+    this.appliedSpeechConfirmMs = confirmMs;
+    this.voiceTurnController?.setSpeechConfirmMs(confirmMs);
   }
 
   /** Announcements play one after another so two prompts never talk over each other. */

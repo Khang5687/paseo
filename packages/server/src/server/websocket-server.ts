@@ -2324,6 +2324,8 @@ export class VoiceAssistantWebSocketServer {
         speechSettings: true,
         // COMPAT(voiceSendMode): added after v0.18.1, remove gate after 2027-12-01.
         voiceSendMode: true,
+        // COMPAT(voiceNavigate): added after v0.18.1, remove gate after 2027-12-01.
+        voiceNavigate: true,
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         ...(this.advertiseRelayConfig ? { relayConfig: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.

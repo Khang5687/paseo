@@ -2,6 +2,7 @@ import type { AgentPermissionRequest } from "../../agent/agent-sdk-types.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
 import type { OwnedOperation, SessionDelivery } from "../owned-subscriptions/index.js";
 import { VoiceSession, type VoiceSessionOptions } from "./voice-session.js";
+import { createVoiceNavMemory, type VoiceNavMemory } from "./voice-navigate.js";
 
 type VoiceMessage = Extract<
   SessionInboundMessage,
@@ -28,6 +29,8 @@ interface ActiveVoiceSource {
 /** Audio conversations belong to their requesting socket, including bootstrap and finalization. */
 export class VoiceSessions {
   private readonly sources = new Map<object, ActiveVoiceSource>();
+  /** Outlives each socket's voice session: moving to another chat starts a new one. */
+  private readonly navMemory = new WeakMap<object, VoiceNavMemory>();
 
   constructor(
     private readonly options: VoiceSessionOptions,
@@ -100,11 +103,20 @@ export class VoiceSessions {
         ...this.options,
         host: { ...this.options.host, emit: (message) => owner.emit(message) },
         onIdle: () => this.releaseIdle(active),
+        navMemory: this.navMemoryFor(source),
       }),
     };
     this.sources.set(source, active);
     this.demandChanged();
     return active;
+  }
+
+  private navMemoryFor(source: object): VoiceNavMemory {
+    const existing = this.navMemory.get(source);
+    if (existing) return existing;
+    const created = createVoiceNavMemory();
+    this.navMemory.set(source, created);
+    return created;
   }
 
   private releaseIdle(source: ActiveVoiceSource): void {
@@ -125,7 +137,9 @@ export class VoiceSessions {
       case "audio_played":
         return voice.handleAudioPlayed(message.id);
       case "set_voice_mode":
-        return voice.handleSetVoiceMode(message.enabled, message.agentId, message.requestId);
+        return voice.handleSetVoiceMode(message.enabled, message.agentId, message.requestId, {
+          navigation: message.navigation === true,
+        });
       case "dictation_stream_start":
         return voice.handleDictationStreamStart(message);
       case "dictation_stream_chunk":
@@ -148,6 +162,7 @@ function isVoiceOutput(message: SessionOutboundMessage): boolean {
     case "audio_output":
     case "transcription_result":
     case "voice_input_state":
+    case "voice.navigate":
     case "set_voice_mode_response":
     case "dictation_stream_ack":
     case "dictation_stream_partial":

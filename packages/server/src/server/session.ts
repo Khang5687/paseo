@@ -222,6 +222,7 @@ import {
 } from "../utils/project-custom-icon.js";
 import { VoiceSessions } from "./session/voice/index.js";
 import type { VoiceSessionOptions } from "./session/voice/voice-session.js";
+import { buildVoiceChatDirectory } from "./session/voice/voice-chat-directory.js";
 import { CheckoutSession } from "./session/checkout/checkout-session.js";
 import {
   createWorkspaceGitObserverService,
@@ -1533,6 +1534,16 @@ export class Session {
           interruptAgentIfRunning: (agentId) => this.interruptAgentIfRunning(agentId),
           hasActiveAgentRun: (agentId) => this.hasActiveAgentRun(agentId),
           waitForAgentIdle: (agentId, signal) => this.waitForAgentIdle(agentId, signal),
+          listVoiceChats: async () => {
+            const [projects, workspaces] = await Promise.all([
+              this.projectRegistry.list(),
+              this.workspaceRegistry.listActive(),
+            ]);
+            const agents = await this.listAgentPayloads({
+              workspaceIds: workspaces.map((workspace) => workspace.workspaceId),
+            });
+            return buildVoiceChatDirectory({ projects, workspaces, agents });
+          },
         },
         logger: this.sessionLogger,
         sessionId: this.sessionId,
