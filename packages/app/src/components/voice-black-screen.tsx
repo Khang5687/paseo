@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type AccessibilityActionEvent,
@@ -34,6 +34,18 @@ export function VoiceBlackScreen({ onWake }: VoiceBlackScreenProps) {
   const modalLayer = useGlobalOverlayLayer("modal", true);
   const pressStartRef = useRef<WakeTapPoint | null>(null);
   const pendingTapRef = useRef<WakeTap | null>(null);
+  // On Android the modal is its own dialog window. React Native hides the status bar on the
+  // app's window and on every dialog window it already knows, so hide it once the dialog is
+  // shown; hidden earlier, the dialog keeps its bar. Imperative, not `<StatusBar hidden />`: the
+  // component also resets the bar style when it unmounts, which overrides the theme's
+  // `SystemBars` style and leaves white icons on a light app.
+  const [shown, setShown] = useState(false);
+  const handleShow = useCallback(() => setShown(true), []);
+  useEffect(() => {
+    if (!shown) return;
+    StatusBar.setHidden(true);
+    return () => StatusBar.setHidden(false);
+  }, [shown]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardInputEvent) => {
@@ -80,8 +92,7 @@ export function VoiceBlackScreen({ onWake }: VoiceBlackScreenProps) {
   );
 
   return (
-    <Modal visible transparent statusBarTranslucent navigationBarTranslucent>
-      <StatusBar hidden />
+    <Modal visible transparent statusBarTranslucent navigationBarTranslucent onShow={handleShow}>
       <View
         ref={setOverlayScope}
         testID="voice-black-screen"
