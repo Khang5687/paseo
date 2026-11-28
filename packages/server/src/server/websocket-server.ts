@@ -2266,6 +2266,8 @@ export class VoiceAssistantWebSocketServer {
         questionAnswers: true,
         // COMPAT(questionBoxDrafts): fork, half-filled question boxes on every device.
         questionBoxDrafts: true,
+        // COMPAT(questionWithdraw): fork, agents withdraw their own open questions with ✖️ lines.
+        questionWithdraw: true,
         // COMPAT(notes): added in v0.15.0, remove gate after 2027-05-01.
         ...(this.notesService ? { notes: true } : {}),
         // COMPAT(fileCopies): added in v0.16.0, remove gate after 2027-05-20.

@@ -106,12 +106,7 @@ import {
 } from "./option-controls.js";
 import { toSearchableMessage, type StoredAgentRecord, type AgentStorage } from "./agent-storage.js";
 import { replyAwaitsAnswer } from "./awaiting-answer.js";
-import {
-  answerTextQuestions,
-  mergeAskedQuestions,
-  parseTextQuestions,
-  setQuestionAnswer,
-} from "./text-questions.js";
+import { answerTextQuestions, applyReplyQuestions, setQuestionAnswer } from "./text-questions.js";
 import type {
   AgentOpenQuestion,
   AgentQuestionAnswer,
@@ -6961,13 +6956,14 @@ export class AgentManager {
   }
 
   // Reads only a reply written after the last user message: a turn that ends without text must not
-  // reopen questions an earlier reply asked and the user has answered since.
+  // reopen questions an earlier reply asked and the user has answered since. Its ✖️ lines withdraw
+  // open questions and its ❓ lines open new ones.
   private recordAskedQuestions(agent: ManagedAgent): void {
     if (!this.timelineStore.has(agent.id)) return;
     const reply = this.timelineStore.getLastAssistantMessageSinceUserMessage(agent.id);
-    const asked = parseTextQuestions(reply, new Date().toISOString());
-    if (asked.length === 0) return;
-    agent.openQuestions = mergeAskedQuestions(agent.openQuestions ?? [], asked);
+    if (!reply) return;
+    const open = applyReplyQuestions(agent.openQuestions ?? [], reply, new Date().toISOString());
+    agent.openQuestions = open.length > 0 ? open : undefined;
   }
 
   // A user message answers the open questions it names (see text-questions.ts). Messages other

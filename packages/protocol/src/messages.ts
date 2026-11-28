@@ -4927,6 +4927,9 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(questionBoxDrafts): fork. Daemon keeps half-filled question boxes on the pending
         // permission (agent.permission.draft.set). Without it the picks stay on the device.
         questionBoxDrafts: z.boolean().optional(),
+        // COMPAT(questionWithdraw): fork. An agent's "✖️ Q630 → Q653" reply line withdraws its own
+        // open question. Without it the app shows that line as plain text.
+        questionWithdraw: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),

@@ -18,9 +18,12 @@ The daemon turns each one into an open question on the agent, so every client co
 - The pick runs to the next blank line, rule (`---`) or question, and keeps the agent's words. A leading "My pick:" is dropped.
 - The daemon parses the reply that ends a turn, and only when no user message came after it. A turn that ends without text would otherwise re-read an older reply and reopen questions the user has answered.
 - A question asked again replaces its earlier copy. An agent keeps at most 50 open questions; the oldest go first.
+- A line that starts with `✖️` withdraws one of the agent's own open questions: `✖️ Q630 → Q653: folded into "When the pause ends"` or `✖️ Q640: dropped, no longer needed`. The same parse rules apply: line start only, only the reply that ends a turn, and only when no user message came after it. A reply may hold several. An unknown label is ignored, and a label the same reply asks again with `❓` stays open. The parser is shared with the app: `packages/protocol/src/question-withdraw.ts`.
 - Internal and background agents raise no attention and track no questions: they report to their creator.
 
-## What answers a question
+## What closes a question
+
+A question closes when a user message answers it or when the agent withdraws it. Either way it leaves `openQuestions`, so the purple count, Needs you, the questions bar and the rail peek drop it on every device at once, and the stored record keeps it closed through a restart.
 
 A user message answers:
 
@@ -33,6 +36,12 @@ Anything else leaves labelled questions open. Messages from other agents arrive 
 ## Status
 
 An idle agent with open questions is `needs_input` (`deriveAgentStateBucket`, `openQuestionCount`) even after its chat is read, unlike the `awaitingAnswer` flag, which clears with the attention. A running agent shows as running. For a read chat the workspace's `statusEnteredAt` is when the newest open question was asked.
+
+## Withdrawn questions
+
+A `✖️` line shows in the chat as one small gray line, "Q630 withdrawn → Q653", without the agent's reason; the old `❓` question keeps its words. Tapping a line that names a replacement jumps to the newest loaded reply that asks it: on web to the question's own line, which flashes once; on native to the top of that reply. A replacement that is not in the loaded chat shows a toast. Hosts without `features.questionWithdraw` do not close withdrawn questions, so the app shows their `✖️` lines as plain Markdown.
+
+A withdrawn question's half answer goes with it. The host refuses `agent.question.answer.set` for a question that is not open, so a late write from another device cannot reopen it, and each device drops its own copy once the question leaves `openQuestions` (`packages/app/src/questions/answer-store.ts`), so the same label asked again starts empty.
 
 ## The questions bar
 

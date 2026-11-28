@@ -19,6 +19,10 @@ import {
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
+import { MarkdownBlockStack } from "@/components/markdown/block-stack";
+import { splitWithdrawnLines } from "@/questions/withdrawn-lines";
+import { WithdrawnQuestionLines } from "@/questions/withdrawn-line";
+import { useHostFeature } from "@/runtime/host-features";
 import {
   isRewindableMessage,
   RewindMenu,
@@ -1219,10 +1223,31 @@ export const AssistantMessage = memo(function AssistantMessage({
         : MESSAGE_TEXT_DATASET,
     [occurrenceKey, revealedMessage.length],
   );
+  const streaming = phase !== "complete" || revealedMessage.length < renderedMessage.text.length;
+  // COMPAT(questionWithdraw): a host that does not close withdrawn questions shows ✖️ lines as
+  // written, so the chat never says "withdrawn" while the question stays open.
+  const withdrawSupported = useHostFeature(serverId, "questionWithdraw");
+  const segments = useMemo(
+    () => (withdrawSupported ? splitWithdrawnLines(revealedMessage, streaming) : null),
+    [revealedMessage, streaming, withdrawSupported],
+  );
 
   const measureMessage = useStableEvent((event: import("react-native").LayoutChangeEvent) => {
     setAssistantMessageHeight({ markdown: revealedMessage, ...event.nativeEvent.layout });
   });
+  const renderMarkdown = (text: string, key?: string) => (
+    <MarkdownRenderer
+      key={key}
+      text={text}
+      agentCommands
+      streaming={streaming}
+      client={client}
+      workspaceRoot={workspaceRoot}
+      serverId={serverId}
+      messageAt={timestamp}
+    />
+  );
+  const split = segments?.some((segment) => segment.kind === "withdrawn") ? segments : null;
   return (
     <View
       testID="assistant-message"
@@ -1230,15 +1255,22 @@ export const AssistantMessage = memo(function AssistantMessage({
       style={assistantContainerStyle}
       onLayout={measureMessage}
     >
-      <MarkdownRenderer
-        text={revealedMessage}
-        agentCommands
-        streaming={phase !== "complete" || revealedMessage.length < renderedMessage.text.length}
-        client={client}
-        workspaceRoot={workspaceRoot}
-        serverId={serverId}
-        messageAt={timestamp}
-      />
+      {split ? (
+        <MarkdownBlockStack>
+          {split.map((segment, index) =>
+            segment.kind === "markdown" ? (
+              renderMarkdown(segment.text, `markdown-${index}`)
+            ) : (
+              <WithdrawnQuestionLines
+                key={`withdrawn-${segment.questions.map((question) => question.label).join("-")}`}
+                questions={segment.questions}
+              />
+            ),
+          )}
+        </MarkdownBlockStack>
+      ) : (
+        renderMarkdown(revealedMessage)
+      )}
       {fullMessageByteLength !== null ? (
         <Text
           testID="assistant-message-capped-notice"
