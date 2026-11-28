@@ -45,6 +45,9 @@ function chunkBytes(entry: { bytes: Buffer }): Buffer {
   return entry.bytes;
 }
 
+/** 300 ms of 24 kHz mono PCM16: longer than the send cue, shorter than any spoken reply. */
+const SEND_CUE_MAX_BYTES = 24_000 * 2 * 0.3;
+
 function makeAudioOutputHandler(
   state: AudioOutputState,
   resolve: (value: { format: string; chunks: Buffer[] }) => void,
@@ -67,10 +70,14 @@ function makeAudioOutputHandler(
     });
     if (payload.isLastChunk) {
       state.chunks.sort(byIndex);
-      resolve({
-        format: state.format,
-        chunks: state.chunks.map(chunkBytes),
-      });
+      const chunks = state.chunks.map(chunkBytes);
+      // The send cue (a beep under 200 ms) plays before the reply; wait for the reply itself.
+      if (Buffer.concat(chunks).length < SEND_CUE_MAX_BYTES) {
+        state.targetGroupId = null;
+        state.chunks = [];
+        return;
+      }
+      resolve({ format: state.format, chunks });
     }
   };
 }

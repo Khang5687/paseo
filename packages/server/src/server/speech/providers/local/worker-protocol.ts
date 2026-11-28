@@ -65,6 +65,13 @@ export type LocalSpeechWorkerRequest =
       sessionId: string;
     }
   | {
+      type: "session.confirm";
+      requestId: string;
+      sessionId: string;
+      /** Turn detection only: speech confirm window in ms; `null` restores the default. */
+      confirmMs: number | null;
+    }
+  | {
       type: "session.close";
       requestId: string;
       sessionId: string;

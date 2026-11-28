@@ -3144,6 +3144,12 @@ export const ko: TranslationResources = {
         info: "음성 모드는 말한 내용을 텍스트로 옮기고 에이전트의 답변을 소리 내어 읽어 줍니다.",
         enabled: "음성 모드",
         enabledHint: "손을 쓰지 않고 에이전트와 대화하세요",
+        sendMode: "보내기",
+        sendModeAuto: "자동",
+        sendModeOver: '"over"라고 말하기',
+        sendModeAutoHint: '잠시 멈추면 보냅니다. 삐 소리 직후 "cancel"이라고 말하면 취소됩니다.',
+        sendModeOverHint:
+          '"over"로 끝내면 보냅니다. 삐 소리 직후 "cancel"이라고 말하면 취소됩니다.',
       },
       openai: {
         apiKey: "API 키",

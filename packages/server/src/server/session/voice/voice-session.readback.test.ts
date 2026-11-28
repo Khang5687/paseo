@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import pino from "pino";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type {
   AgentPermissionRequest,
@@ -20,8 +20,13 @@ import type {
 } from "../../speech/turn-detection-provider.js";
 import { VoiceModeAlreadyActiveError, type VoiceSpeakHandler } from "../../voice-types.js";
 import { VoiceSession, type VoiceSessionHost } from "./voice-session.js";
+import { VOICE_SEND_HOLD_MS } from "./send-gate.js";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 class FakeDetector extends EventEmitter implements TurnDetectionSession {
   readonly requiredSampleRate = 16000;
@@ -211,14 +216,20 @@ describe("VoiceSession question read-back", () => {
   });
 
   test("without a pending question, the spoken reply goes to the agent as chat", async () => {
-    const t = setup();
-    await t.voice.handleSetVoiceMode(true, AGENT_ID);
+    vi.useFakeTimers();
+    try {
+      const t = setup();
+      await t.voice.handleSetVoiceMode(true, AGENT_ID);
 
-    await t.say("stop that");
+      await t.say("stop that");
+      await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS);
 
-    expect(t.interrupted).toEqual([]);
-    expect(t.spokenInput).toEqual(["stop that"]);
-    await t.voice.cleanup();
+      expect(t.interrupted).toEqual([]);
+      expect(t.spokenInput).toEqual(["stop that"]);
+      await t.voice.cleanup();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("reads a card with several questions one at a time and submits all answers together", async () => {
@@ -287,6 +298,7 @@ describe("VoiceSession question read-back", () => {
   });
 
   test("a card answered on screen stops taking spoken answers", async () => {
+    vi.useFakeTimers();
     const t = setup();
     await t.voice.handleSetVoiceMode(true, AGENT_ID);
     t.voice.announcePermissionRequest(
@@ -296,6 +308,7 @@ describe("VoiceSession question read-back", () => {
 
     t.voice.handlePermissionResolved(AGENT_ID, "q1");
     await t.say("yes");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS);
 
     expect(t.permissionResponses).toEqual([]);
     expect(t.spokenInput).toEqual(["yes"]);
@@ -374,12 +387,14 @@ describe("VoiceSession permission read-back", () => {
   });
 
   test("once the prompt is answered on screen, speech goes to the agent again", async () => {
+    vi.useFakeTimers();
     const t = setup();
     await t.voice.handleSetVoiceMode(true, AGENT_ID);
     t.voice.announcePermissionRequest(AGENT_ID, bashPrompt);
     t.voice.handlePermissionResolved(AGENT_ID, bashPrompt.id);
 
     await t.say("stop that");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS);
 
     expect(t.interrupted).toEqual([]);
     expect(t.spokenInput).toEqual(["stop that"]);

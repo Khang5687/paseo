@@ -4745,6 +4745,9 @@ export const ServerInfoStatusPayloadSchema = z
         daemonConfigReload: z.boolean().optional(),
         // COMPAT(speechSettings): added in v0.12.0, remove gate after 2027-04-18.
         speechSettings: z.boolean().optional(),
+        // COMPAT(voiceSendMode): added after v0.18.1, remove gate after 2027-12-01.
+        // Hosts with it read `features.voiceMode.sendMode` ("auto" or "over").
+        voiceSendMode: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         relayConfig: z.boolean().optional(),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.

@@ -12,6 +12,8 @@ import type {
 import type { TurnDetectionProvider } from "../../speech/turn-detection-provider.js";
 
 const VOICE_FINAL_TRANSCRIPT_TIMEOUT_MS = 10_000;
+// Longer than the slowest VAD confirm window (800 ms) plus its frame latency.
+const STT_PREROLL_MS = 1500;
 
 const FILLER_PARTIAL_WORDS = new Set([
   "uh",
@@ -62,6 +64,8 @@ export interface VoiceTurnController {
   start(): Promise<void>;
   stop(): Promise<void>;
   appendClientChunk(input: { audioBase64: string; format: string }): Promise<void>;
+  /** Shorter confirm window while a short command word is expected; `null` restores the default. */
+  setSpeechConfirmMs(ms: number | null): void;
 }
 
 interface TranscriptSegmentMeta {
@@ -113,6 +117,11 @@ export function createVoiceTurnController(params: {
   let reconnectAttemptedForTurn = false;
   const sealedTranscriptSegmentIds = new Set<string>();
   let currentFinalizingTurn: FinalizingVoiceTurn | null = null;
+  // Listening audio waits here instead of streaming to STT. It covers the VAD confirm delay, so
+  // the first syllable of a confirmed turn is kept; older audio is dropped, so a sound the VAD
+  // rejected (a lone short word, a cough) never joins the next transcript.
+  let sttPreroll: Buffer[] = [];
+  let sttPrerollBytes = 0;
 
   function fail(error: unknown): void {
     params.callbacks.onError(error instanceof Error ? error : new Error(String(error)));
@@ -398,6 +407,14 @@ export function createVoiceTurnController(params: {
     return sttResampler.processChunk(pcm16);
   }
 
+  function appendToStt(pcm16: Buffer): void {
+    try {
+      sttSession?.appendPcm16(pcm16);
+    } catch (error) {
+      handleSttError(error);
+    }
+  }
+
   async function handleSpeechStarted(): Promise<void> {
     if (state.status === "capturing") {
       return;
@@ -416,6 +433,12 @@ export function createVoiceTurnController(params: {
       utteranceId: uuidv4(),
       startedAt,
     };
+    const preroll = sttPreroll;
+    sttPreroll = [];
+    sttPrerollBytes = 0;
+    for (const pcm16 of preroll) {
+      appendToStt(pcm16);
+    }
     params.logger.info(
       {
         utteranceId: state.utteranceId,
@@ -493,8 +516,14 @@ export function createVoiceTurnController(params: {
         sttResampler = null;
         sttSession = null;
         currentFinalizingTurn = null;
+        sttPreroll = [];
+        sttPrerollBytes = 0;
         state = { status: "idle" };
       });
+    },
+
+    setSpeechConfirmMs(ms: number | null): void {
+      detector.setSpeechConfirmMs?.(ms);
     },
 
     async appendClientChunk(input): Promise<void> {
@@ -530,12 +559,23 @@ export function createVoiceTurnController(params: {
           detector.appendPcm16(detectorPcm16);
         }
 
-        if (sttPcm16 && sttPcm16.length > 0) {
-          try {
-            currentSttSession?.appendPcm16(sttPcm16);
-          } catch (error) {
-            handleSttError(error);
+        if (!currentSttSession || !sttPcm16 || sttPcm16.length === 0) {
+          return;
+        }
+        if (state.status === "capturing") {
+          appendToStt(sttPcm16);
+          return;
+        }
+        sttPreroll.push(sttPcm16);
+        sttPrerollBytes += sttPcm16.length;
+        const maxBytes = (currentSttSession.requiredSampleRate * 2 * STT_PREROLL_MS) / 1000;
+        for (;;) {
+          const [oldest] = sttPreroll;
+          if (!oldest || sttPreroll.length === 1 || sttPrerollBytes - oldest.length < maxBytes) {
+            break;
           }
+          sttPreroll.shift();
+          sttPrerollBytes -= oldest.length;
         }
       });
     },

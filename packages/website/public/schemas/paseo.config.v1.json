@@ -1014,6 +1014,10 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "sendMode": {
+              "type": "string",
+              "enum": ["auto", "over"]
             }
           },
           "additionalProperties": false

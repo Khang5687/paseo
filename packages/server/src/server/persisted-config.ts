@@ -160,6 +160,8 @@ const FeatureVoiceModeSchema = z
       .strict()
       .optional(),
     tts: SpeechTtsConfigSchema.optional(),
+    // "auto" sends after 1 s of quiet; "over" waits for the spoken word "over".
+    sendMode: z.enum(["auto", "over"]).optional(),
   })
   .strict();
 

@@ -1,5 +1,5 @@
 import type pino from "pino";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import { v4 as uuidv4 } from "uuid";
 import type { TextToSpeechProvider } from "../speech/speech-provider.js";
 import { toResolver, type Resolvable } from "../speech/provider-resolver.js";
@@ -141,6 +141,24 @@ export class TTSManager {
   ) {
     this.logger = logger.child({ module: "agent", component: "tts-manager", sessionId });
     this.resolveTts = toResolver(tts);
+  }
+  /**
+   * Play ready-made audio (a cue tone) through the same path as speech and wait for the client
+   * to confirm it, so speech queued after it cannot overlap it.
+   */
+  public async playAudio(
+    audio: Buffer,
+    format: string,
+    emitMessage: (msg: SessionOutboundMessage) => void,
+    abortSignal: AbortSignal,
+  ): Promise<void> {
+    if (abortSignal.aborted) return;
+    await this.emitPreparedSegment({
+      prepared: { index: 0, text: "", format, stream: Readable.from([audio]) },
+      emitMessage,
+      abortSignal,
+      isVoiceMode: true,
+    });
   }
 
   /**

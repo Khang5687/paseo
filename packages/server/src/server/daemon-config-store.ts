@@ -54,6 +54,9 @@ interface SupportedMutableConfigPatch {
 }
 
 const SPEECH_PERSISTED_PATHS = ["features.dictation", "features.voiceMode"];
+// Read at use time, so changing them must not rebuild the speech providers: a rebuild restarts
+// the local speech worker and stops a live voice session from hearing anything.
+const SPEECH_LIVE_PATHS = ["features.voiceMode.sendMode"];
 
 interface LoggerLike {
   child(bindings: Record<string, unknown>): LoggerLike;
@@ -671,8 +674,10 @@ export class DaemonConfigStore {
   }
 
   private speechPersistedChanged(previous: PersistedConfig, next: PersistedConfig): boolean {
-    return diffPaths(previous, next).some((path) =>
-      SPEECH_PERSISTED_PATHS.some((owner) => pathBelongsTo(path, owner)),
+    return diffPaths(previous, next).some(
+      (path) =>
+        SPEECH_PERSISTED_PATHS.some((owner) => pathBelongsTo(path, owner)) &&
+        !SPEECH_LIVE_PATHS.some((live) => pathBelongsTo(path, live)),
     );
   }
 

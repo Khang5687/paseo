@@ -42,6 +42,8 @@ export const SpeechSettingsSchema = z
           .passthrough()
           .optional(),
         turnDetection: z.object({ provider: z.string().optional() }).passthrough().optional(),
+        // COMPAT(voiceSendMode): added after v0.18.1; older daemons omit it. "auto" or "over".
+        sendMode: z.string().optional(),
       })
       .passthrough(),
   })
@@ -123,6 +125,7 @@ export const SpeechSettingsPatchSchema = z
           .object({ provider: z.string().nullable().optional() })
           .passthrough()
           .optional(),
+        sendMode: z.string().nullable().optional(),
       })
       .passthrough()
       .optional(),

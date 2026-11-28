@@ -3200,6 +3200,13 @@ export const fr: TranslationResources = {
         info: "Le mode vocal transcrit ce que vous dites et lit à voix haute les réponses de l'agent.",
         enabled: "Mode vocal",
         enabledHint: "Parlez à vos agents sans les mains",
+        sendMode: "Envoi",
+        sendModeAuto: "Automatique",
+        sendModeOver: 'Dire "over"',
+        sendModeAutoHint:
+          'Envoie après une courte pause. Dites "cancel" juste après le bip pour l\'arrêter.',
+        sendModeOverHint:
+          'Envoie quand vous finissez par "over". Dites "cancel" juste après le bip pour l\'arrêter.',
       },
       openai: {
         apiKey: "Clé d'API",

@@ -3186,6 +3186,13 @@ export const ru: TranslationResources = {
         info: "Голосовой режим расшифровывает вашу речь и зачитывает ответы агента вслух.",
         enabled: "Голосовой режим",
         enabledHint: "Общайтесь с агентами без рук",
+        sendMode: "Отправка",
+        sendModeAuto: "Автоматически",
+        sendModeOver: "Сказать «over»",
+        sendModeAutoHint:
+          "Отправляет после короткой паузы. Скажите «cancel» сразу после сигнала, чтобы отменить.",
+        sendModeOverHint:
+          "Отправляет, когда вы заканчиваете словом «over». Скажите «cancel» сразу после сигнала, чтобы отменить.",
       },
       openai: {
         apiKey: "API-ключ",

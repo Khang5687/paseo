@@ -68,7 +68,8 @@ export class SherpaSileroVadSession extends EventEmitter implements TurnDetectio
   private readonly inputBuffer: SherpaCircularBufferHandle;
   private readonly windowSize: number;
   private readonly msPerWindow: number;
-  private readonly confirmMs: number;
+  private readonly defaultConfirmMs: number;
+  private confirmMs: number;
   private readonly silenceMs: number;
   private connected = false;
   private phase: VadPhase = { state: "idle" };
@@ -85,7 +86,8 @@ export class SherpaSileroVadSession extends EventEmitter implements TurnDetectio
     this.requiredSampleRate = config.sampleRate ?? DEFAULT_SAMPLE_RATE;
     this.windowSize = config.windowSize ?? DEFAULT_WINDOW_SIZE;
     this.msPerWindow = (this.windowSize / this.requiredSampleRate) * 1000;
-    this.confirmMs = config.confirmMs ?? DEFAULT_CONFIRM_MS;
+    this.defaultConfirmMs = config.confirmMs ?? DEFAULT_CONFIRM_MS;
+    this.confirmMs = this.defaultConfirmMs;
     this.silenceMs = config.silenceMs ?? DEFAULT_SILENCE_MS;
 
     const threshold = config.threshold ?? DEFAULT_SILERO_THRESHOLD;
@@ -187,6 +189,11 @@ export class SherpaSileroVadSession extends EventEmitter implements TurnDetectio
     } finally {
       this.phase = { state: "idle" };
     }
+  }
+
+  setSpeechConfirmMs(ms: number | null): void {
+    this.confirmMs = ms ?? this.defaultConfirmMs;
+    this.logger.debug({ confirmMs: this.confirmMs }, "[VAD] speech confirm window changed");
   }
 
   close(): void {
