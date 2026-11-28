@@ -32,6 +32,7 @@ On Android the talk panel has a microphone button before Black. It lists the pho
 
 - A route key is `phone` or `<kind>:<productName>`. The key survives reconnects; a device with no stable name collides with another of the same kind and name, which is acceptable for a phone.
 - A remembered device that is not connected is not an error: Android routing falls back to the automatic order (Bluetooth, then wired or USB, then the phone), and the Automatic row says which mic is missing. It is used again when it reconnects.
+- On a phone-width panel the button is the mic's icon and a chevron, no name: with the name, Black, mute and Stop no longer fit (Stop was pushed off the panel at 412 dp). Wider panels show the name. Don't add text to the panel row without checking it at 390 dp.
 - Android 12+ selects with `setCommunicationDevice`. Below that, a Bluetooth pick starts SCO and the phone pick turns the speakerphone on.
 - The earpiece is left out: voice replies there are too quiet with the phone away from your ear.
 - iOS, web and desktop show no button: the OS or browser owns the input choice. The app also hides it on an Android binary that predates the native functions.

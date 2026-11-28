@@ -1,11 +1,20 @@
-import { Ear, Headphones, Headset, Smartphone, Usb } from "lucide-react-native";
+import { ChevronDown, Ear, Headphones, Headset, Smartphone, Usb } from "lucide-react-native";
 import { useCallback, useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { MicrophoneRouteKind } from "@getpaseo/expo-two-way-audio";
+import { controlIconSize, createControlGeometry } from "@/components/ui/control-geometry";
 import { DensityIcon } from "@/components/ui/density-icon";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
+import type { Theme } from "@/styles/theme";
 import {
   buildMicrophoneMenu,
   type MicrophoneLabels,
@@ -14,6 +23,16 @@ import {
 import { useMicrophoneRoutes } from "@/voice/use-microphone-routes";
 
 const TEST_ID = "realtime-voice-microphone";
+
+const ThemedChevronDown = withUnistyles(ChevronDown);
+
+const chevronColorMapping = (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
+
+function compactTriggerStyle({ pressed }: { pressed: boolean }) {
+  return [styles.compactTrigger, pressed ? styles.pressed : null];
+}
 
 const KIND_ICONS: Record<MicrophoneRouteKind, typeof Smartphone> = {
   phone: Smartphone,
@@ -31,6 +50,7 @@ const KIND_ICONS: Record<MicrophoneRouteKind, typeof Smartphone> = {
 export function RealtimeVoiceMicrophoneButton(): ReactElement | null {
   const { t } = useTranslation();
   const toast = useToast();
+  const isCompact = useIsCompactFormFactor();
   const microphones = useMicrophoneRoutes();
   const labels = useMemo<MicrophoneLabels>(
     () => ({
@@ -64,15 +84,25 @@ export function RealtimeVoiceMicrophoneButton(): ReactElement | null {
   );
   if (!menu) return null;
   const activeLabel = menu.active?.label ?? labels.automatic;
+  const accessibilityLabel = t("realtimeVoice.microphone.button", { name: activeLabel });
   return (
     <DropdownMenu compactMode="sheet">
-      <DropdownTrigger
-        testID={TEST_ID}
-        leading={leading}
-        accessibilityLabel={t("realtimeVoice.microphone.button", { name: activeLabel })}
-      >
-        {activeLabel}
-      </DropdownTrigger>
+      {isCompact ? (
+        // A phone-width panel has no room for the name next to Black, mute and Stop: the icon
+        // shows the kind, the menu and the toast name it.
+        <DropdownMenuTrigger
+          testID={TEST_ID}
+          accessibilityLabel={accessibilityLabel}
+          style={compactTriggerStyle}
+        >
+          {leading}
+          <ThemedChevronDown size={controlIconSize.md} uniProps={chevronColorMapping} />
+        </DropdownMenuTrigger>
+      ) : (
+        <DropdownTrigger testID={TEST_ID} leading={leading} accessibilityLabel={accessibilityLabel}>
+          {activeLabel}
+        </DropdownTrigger>
+      )}
       <DropdownMenuContent
         sheetTitle={t("realtimeVoice.microphone.title")}
         align="end"
@@ -115,3 +145,19 @@ function MicrophoneRow({
     </DropdownMenuItem>
   );
 }
+
+const styles = StyleSheet.create((theme) => ({
+  compactTrigger: {
+    ...createControlGeometry(theme).buttonMd,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[3],
+    borderWidth: 1,
+    borderColor: theme.colors.borderAccent,
+    backgroundColor: "transparent",
+  },
+  pressed: {
+    opacity: 0.85,
+  },
+}));
