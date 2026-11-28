@@ -1,0 +1,12 @@
+{
+  "pr": 215,
+  "title": "feat(server): voice send modes (auto / say \"over\"), send beep and spoken cancel",
+  "tests": [
+    "packages/server/src/server/session/voice/send-words.test.ts",
+    "packages/server/src/server/session/voice/send-gate.test.ts",
+    "packages/server/src/server/session/voice/voice-session.test.ts",
+    "packages/server/src/server/session/voice/voice-session.readback.test.ts",
+    "packages/server/src/server/session/voice/voice-turn-controller.test.ts",
+    "packages/server/src/server/daemon-config-store.test.ts"
+  ]
+}
