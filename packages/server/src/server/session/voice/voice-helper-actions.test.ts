@@ -32,6 +32,17 @@ describe("classifyConfirmation", () => {
     "Được.",
     "Được rồi",
     "Ok đi",
+    "Yeah go ahead",
+    "Sure, send it.",
+    "Yep, that's right.",
+    "Yes please, send it now.",
+    "Sure thing.",
+    "That works.",
+    "Let's do it.",
+    "Go on.",
+    "Fine, do that.",
+    "Ừ, gửi luôn nhé",
+    "Chuẩn rồi em",
   ])("%j is a yes", (reply) => {
     expect(classifyConfirmation(reply, ["send"])).toBe("yes");
   });
@@ -48,6 +59,8 @@ describe("classifyConfirmation", () => {
     "Không.",
     "Thôi.",
     "Đừng",
+    "Not now.",
+    "Don't do that.",
   ])("%j is a no", (reply) => {
     expect(classifyConfirmation(reply, ["send"])).toBe("no");
   });
@@ -60,6 +73,10 @@ describe("classifyConfirmation", () => {
     "Okay, no.",
     "Run the tests in the other chat instead.",
     "Please.",
+    "Yeah but change it to tomorrow.",
+    "Don't go ahead.",
+    "Send it to the other chat.",
+    "Go ahead and also stop the build.",
   ])("%j is unclear", (reply) => {
     expect(classifyConfirmation(reply, ["send"])).toBe("unclear");
   });

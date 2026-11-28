@@ -68,6 +68,21 @@ const YES_PHRASES = [
   "great",
   "uh huh",
   "mm hmm",
+  "go",
+  "go on",
+  "lets go",
+  "lets do it",
+  "do that",
+  "sure thing",
+  "fine",
+  "thats fine",
+  "cool",
+  "that works",
+  "works for me",
+  "thats correct",
+  "exactly",
+  "make it so",
+  "ship it",
   // Vietnamese, with and without the marks STT may drop.
   "ừ",
   "ừm",
@@ -85,6 +100,10 @@ const YES_PHRASES = [
   "ok đi",
   "gửi đi",
   "làm đi",
+  "gửi luôn",
+  "làm luôn",
+  "chuẩn",
+  "chuẩn rồi",
 ];
 
 const NO_PHRASES = [
@@ -105,6 +124,8 @@ const NO_PHRASES = [
   "do not",
   "dont do it",
   "do not do it",
+  "dont do that",
+  "do not do that",
   "never mind",
   "nevermind",
   "forget it",
@@ -123,7 +144,24 @@ const NO_PHRASES = [
   "huỷ",
 ];
 
-const FILLER_PHRASES = ["please", "thanks", "thank you", "then", "just", "oh", "um", "uh", "well"];
+// Filler may sit around yes or no words without changing them. Vietnamese particles and
+// pronouns ("ừ nhé", "được em") count as filler; "not now" stays a no (longest phrase wins).
+const FILLER_PHRASES = [
+  "please",
+  "thanks",
+  "thank you",
+  "then",
+  "just",
+  "now",
+  "oh",
+  "um",
+  "uh",
+  "well",
+  "nhé",
+  "nha",
+  "em",
+  "anh",
+];
 
 /** Lower case words in NFC, apostrophes dropped. Vietnamese marks stay: "đúng" is yes, "đừng" no. */
 function confirmationWords(text: string): string[] {
