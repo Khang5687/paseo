@@ -9,6 +9,7 @@ import {
 import { resolveRequestedSpeechProviders, resolveSpeechConfig } from "./speech-config-resolver.js";
 import type { SpeechService } from "./speech-runtime.js";
 import { LocalSttModelIdSchema, LocalTtsModelIdSchema } from "./providers/local/models.js";
+import { DEFAULT_SIDE_HELPER_MODEL } from "../session/voice/voice-side-helper.js";
 
 interface SpeechRead {
   features: SpeechSettings;
@@ -116,6 +117,7 @@ export function readSpeechSettings(persisted: PersistedConfig, env: NodeJS.Proce
       voiceMode: {
         enabled: providers.voiceStt.enabled !== false,
         sendMode: voiceMode?.sendMode ?? "auto",
+        sideHelperModel: voiceMode?.sideHelperModel ?? DEFAULT_SIDE_HELPER_MODEL,
         ...(voiceMode?.llm ? { llm: voiceMode.llm } : {}),
         ...(voiceMode?.turnDetection
           ? {

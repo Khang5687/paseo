@@ -3193,6 +3193,10 @@ export const ru: TranslationResources = {
           "Отправляет после короткой паузы. Скажите «cancel» сразу после сигнала, чтобы отменить.",
         sendModeOverHint:
           "Отправляет, когда вы заканчиваете словом «over». Скажите «cancel» сразу после сигнала, чтобы отменить.",
+        sideHelperModel: "Отвечает на «Paseo, …»",
+        sideHelperModelHint:
+          "Начните с «Paseo,», чтобы спросить о своих чатах. Эта модель отвечает вслух; в чат ничего не уходит.",
+        sideHelperModelCustom: "Своя",
       },
       openai: {
         apiKey: "API-ключ",

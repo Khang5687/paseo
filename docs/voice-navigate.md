@@ -10,6 +10,7 @@ How a spoken "go to fitup", "list chats" or "go back" moves Voice mode to anothe
 - "Go to X" is a command only when X names a project or chat. "Go to the auth module and add logging" parses as a go-to, names nothing, and goes to the agent. This is what keeps everyday talk that starts with "go to" safe.
 - Names come from one host function, `VoiceSessionHost.listVoiceChats` (built by `buildVoiceChatDirectory` in `voice-chat-directory.ts`). The parser and matcher in `voice-navigate.ts` only see the `VoiceChatProject[]` it returns. Today it lists the daemon's own projects; a lookup across hosts would replace that one function.
 - A chat is a top-level agent (no parent label), not archived, not internal, not background, in an active workspace of a project that is not archived. Chats are newest first by last user message.
+- "Paseo, go to fitup" is the same command: the side helper strips the name and hands exact commands to navigation first. Everything else after "Paseo," is a question for the side helper; see [voice-side-helper.md](voice-side-helper.md).
 
 ## Matching
 

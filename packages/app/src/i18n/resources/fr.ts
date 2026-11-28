@@ -3207,6 +3207,10 @@ export const fr: TranslationResources = {
           'Envoie après une courte pause. Dites "cancel" juste après le bip pour l\'arrêter.',
         sendModeOverHint:
           'Envoie quand vous finissez par "over". Dites "cancel" juste après le bip pour l\'arrêter.',
+        sideHelperModel: 'Répond à "Paseo, …"',
+        sideHelperModelHint:
+          'Commencez par "Paseo," pour poser une question sur vos chats. Ce modèle répond à voix haute ; rien ne va dans le chat.',
+        sideHelperModelCustom: "Personnalisé",
       },
       openai: {
         apiKey: "Clé d'API",

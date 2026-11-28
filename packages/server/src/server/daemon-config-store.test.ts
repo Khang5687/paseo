@@ -1976,6 +1976,17 @@ describe("DaemonConfigStore speech settings", () => {
     expect(loadPersistedConfig(paseoHome).features?.voiceMode?.sendMode).toBe("over");
   });
 
+  test("the voice helper model defaults to Haiku and saves without rebuilding speech", async () => {
+    const { paseoHome, store, applied } = createSpeechStore();
+    expect(store.get().features?.voiceMode.sideHelperModel).toBe("omp/anthropic/claude-haiku-5-5");
+
+    const sonnet = "omp/anthropic/claude-sonnet-5-5";
+    const result = await store.patch({ features: { voiceMode: { sideHelperModel: sonnet } } });
+    expect(result.features?.voiceMode.sideHelperModel).toBe(sonnet);
+    expect(loadPersistedConfig(paseoHome).features?.voiceMode?.sideHelperModel).toBe(sonnet);
+    expect(applied).toEqual([]);
+  });
+
   test("stores the OpenAI key without ever returning it", async () => {
     const { paseoHome, store, applied } = createSpeechStore();
 

@@ -54,6 +54,20 @@ Agent 运行期间也可以开启语音模式，并随时说话。
 
 语音在新对话中开启后，Paseo 会说出你在哪里（“fitup, food scan.”）。这些命令没有提示音，也不需要说 “over”。名字是模糊匹配的：“fit up” 能找到 FitUp，长标题只说其中一段也可以。以 “go to” 开头但没有说出项目或对话的句子（“go to the auth module and add logging”）会照常发给 Agent。对话指未归档的顶层 Agent，子 Agent 不会列出。只会查找当前对话所在主机上的项目。这些命令是英文单词，并且需要支持该功能的 App 和主机。
 
+## 向 Paseo 提问 {#asking-paseo}
+
+以 “Paseo,” 开头并稍作停顿，Paseo 会直接朗读回答，而不是把这句话发给 Agent：
+
+- “Paseo, which chats are waiting on me?”
+- “Paseo, what's going on in fitup?”
+- “Paseo, what did the agent just say?”
+
+回答来自一个单独的小模型。它读取这台主机上的对话：名字和状态、等你处理的事项（审批、问题框、未回答的问题），以及当前对话和你点名的对话里的最近消息。它只能读，不会向任何对话发送内容。回答只有几句短话。稍慢时 Paseo 会先说 “One sec.”；20 秒内没有回答时会说 “Sorry, no answer.”。
+
+停顿很重要：“Paseo app crashes on start” 没有停顿，会照常发给 Agent；句子中间出现 “Paseo” 也一样。只说 “Paseo.” 时，Paseo 会回答 “Yes?”，你的下一句就是问题。名字后面跟切换命令时仍然会切换（“Paseo, go to fitup”）。
+
+在 **设置 > 语音 > 回答 “Paseo, …”** 中选择模型，或把 `features.voiceMode.sideHelperModel` 设为 `<provider>/<model>`。默认是 `omp/anthropic/claude-haiku-5-5`。每个问题会调用一次模型，附带最多约 6,000 个 token 的对话数据，会计入该提供方的用量。主机升级到支持该功能的版本后，才会显示这一行。
+
 ## 本地语音 {#local-speech}
 
 本地语音默认使用模型 ID `parakeet-tdt-0.6b-v2-int8`（STT）和 `kokoro-en-v0_19`（TTS，speaker 0 / voice 00）。

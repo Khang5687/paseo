@@ -69,7 +69,7 @@ const NUMBER_WORDS: Record<string, string> = {
 };
 
 /** Lower case words without accents, punctuation or emoji; number words become digits. */
-function wordsOf(text: string): string[] {
+export function wordsOf(text: string): string[] {
   return text
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
@@ -119,7 +119,7 @@ function editDistance(left: string, right: string): number {
 }
 
 /** Spaces are ignored: STT writes "fit up" for FitUp and "hands free" for hands-free. */
-function similarity(left: string, right: string): number {
+export function similarity(left: string, right: string): number {
   const longest = Math.max(left.length, right.length);
   return longest === 0 ? 0 : 1 - editDistance(left, right) / longest;
 }

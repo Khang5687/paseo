@@ -44,6 +44,9 @@ export const SpeechSettingsSchema = z
         turnDetection: z.object({ provider: z.string().optional() }).passthrough().optional(),
         // COMPAT(voiceSendMode): added after v0.18.1; older daemons omit it. "auto" or "over".
         sendMode: z.string().optional(),
+        // COMPAT(voiceSideHelper): added after v0.18.1; older daemons omit it.
+        // "<provider>/<model>" that answers "Paseo, ..." questions.
+        sideHelperModel: z.string().optional(),
       })
       .passthrough(),
   })
@@ -126,6 +129,7 @@ export const SpeechSettingsPatchSchema = z
           .passthrough()
           .optional(),
         sendMode: z.string().nullable().optional(),
+        sideHelperModel: z.string().nullable().optional(),
       })
       .passthrough()
       .optional(),

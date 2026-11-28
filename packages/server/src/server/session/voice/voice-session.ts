@@ -55,6 +55,15 @@ import {
   type VoiceNavMemory,
   type VoiceChatTarget,
 } from "./voice-navigate.js";
+import {
+  SIDE_HELPER_FAILED_SPEECH,
+  SIDE_HELPER_TIMEOUT_MS,
+  SIDE_HELPER_WAIT_MS,
+  SIDE_HELPER_WAIT_SPEECH,
+  SIDE_HELPER_WAKE_SPEECH,
+  parseSideHelperCall,
+  type SideHelperCall,
+} from "./voice-side-helper.js";
 import type { LocalSpeechModelId } from "../../speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "../../speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "../../speech/speech-runtime.js";
@@ -193,6 +202,15 @@ export interface VoiceSessionHost {
    * lookup across hosts could replace it without touching the command parser.
    */
   listVoiceChats(): Promise<VoiceChatProject[]>;
+  /**
+   * Answers a "Paseo, ..." question from this daemon's chat data, read-only. Absent: the words
+   * go to the chat like any other. Aborting `signal` cancels the model call.
+   */
+  askSideHelper?(input: {
+    question: string;
+    currentAgentId: string | null;
+    signal: AbortSignal;
+  }): Promise<string>;
 }
 
 export interface VoiceSessionOptions {
@@ -297,6 +315,10 @@ export class VoiceSession {
   /** Speech clips being played now; the VAD keeps its long window while any plays. */
   private activePlaybacks = 0;
   private appliedSpeechConfirmMs: number | null = null;
+  /** "Paseo." was said alone; the next utterance is the side question. */
+  private sideHelperWoken = false;
+  /** The side question being answered; a newer one or voice off cancels it. */
+  private sideHelperRun: AbortController | null = null;
 
   constructor(options: VoiceSessionOptions) {
     const { host, logger, sessionId, sttLanguage, tts, stt, voice, voiceBridge, dictation } =
@@ -549,6 +571,7 @@ export class VoiceSession {
       this.navigationEnabled = false;
       this.refreshSpeechConfirm();
       this.pendingChatPick = null;
+      this.cancelSideHelper();
       this.sessionLogger.info({ elapsedMs: Date.now() - startedAt }, "Voice mode disabled");
       if (requestId) {
         this.emit({
@@ -1224,6 +1247,27 @@ export class VoiceSession {
       return;
     }
 
+    // "Paseo, ..." asks the side helper. A navigation command after the name still moves voice.
+    const sideCall = this.readSideHelperCall(text);
+    if (sideCall) {
+      if (sideCall.kind === "wake") {
+        this.sideHelperWoken = true;
+        this.queueAnnouncement(SIDE_HELPER_WAKE_SPEECH);
+      } else if (sideCall.kind === "cancel") {
+        this.queueAnnouncement(CANCELLED_SPEECH);
+      } else if (
+        !(
+          this.navigationEnabled &&
+          parseVoiceNavCommand(sideCall.question) &&
+          (await this.handleNavigation(sideCall.question))
+        )
+      ) {
+        this.startSideHelper(sideCall.question);
+      }
+      await this.flushPendingAudioSegments("side helper");
+      return;
+    }
+
     // "go to fitup", "list chats", "go back", or the chat picked after its name was read out.
     if (this.navigationEnabled && (await this.handleNavigation(text))) {
       await this.flushPendingAudioSegments("voice navigation");
@@ -1345,6 +1389,68 @@ export class VoiceSession {
       this.queueAnnouncement(memory.arrival.speech);
     }
     memory.arrival = null;
+  }
+
+  /** The side question in this utterance, or null when the host has no side helper. */
+  private readSideHelperCall(text: string): SideHelperCall | { kind: "cancel" } | null {
+    if (!this.host.askSideHelper) return null;
+    if (!this.sideHelperWoken) return parseSideHelperCall(text);
+    // "Paseo." came alone; these words are the question, unless they call it off.
+    this.sideHelperWoken = false;
+    if (isCancelCommand(text)) return { kind: "cancel" };
+    return parseSideHelperCall(text) ?? { kind: "question", question: text.trim() };
+  }
+
+  /**
+   * Asks the side helper and speaks its answer; nothing reaches the chat. A slow answer gets
+   * "One sec." first, and one that takes too long or fails gets "Sorry, no answer." A cancel
+   * (voice off, abort, the next question) ends it silently.
+   */
+  private startSideHelper(question: string): void {
+    const askSideHelper = this.host.askSideHelper?.bind(this.host);
+    if (!askSideHelper) return;
+    this.cancelSideHelper();
+    const run = new AbortController();
+    this.sideHelperRun = run;
+    const timeout = new AbortController();
+    let finished = false;
+    const finish = (speech: string | null) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeoutTimer);
+      clearTimeout(waitTimer);
+      if (this.sideHelperRun === run) this.sideHelperRun = null;
+      if (speech && !run.signal.aborted) this.queueAnnouncement(speech);
+    };
+    const timeoutTimer = setTimeout(() => {
+      this.sessionLogger.warn({ question }, "Voice helper took too long");
+      finish(SIDE_HELPER_FAILED_SPEECH);
+      timeout.abort(new Error("The voice helper took too long"));
+    }, SIDE_HELPER_TIMEOUT_MS);
+    const waitTimer = setTimeout(
+      () => this.queueAnnouncement(SIDE_HELPER_WAIT_SPEECH),
+      SIDE_HELPER_WAIT_MS,
+    );
+    run.signal.addEventListener("abort", () => finish(null), { once: true });
+    void (async () => {
+      try {
+        const answer = await askSideHelper({
+          question,
+          currentAgentId: this.voiceModeAgentId,
+          signal: AbortSignal.any([run.signal, timeout.signal]),
+        });
+        finish(answer.trim() || SIDE_HELPER_FAILED_SPEECH);
+      } catch (error) {
+        if (!finished) this.sessionLogger.warn({ err: error, question }, "Voice helper failed");
+        finish(SIDE_HELPER_FAILED_SPEECH);
+      }
+    })();
+  }
+
+  private cancelSideHelper(): void {
+    this.sideHelperWoken = false;
+    this.sideHelperRun?.abort(new Error("Voice helper question cancelled"));
+    this.sideHelperRun = null;
   }
 
   private async deliverSpokenMessage(text: string): Promise<void> {
@@ -1803,6 +1909,7 @@ export class VoiceSession {
     if (this.closed) return;
     this.closed = true;
     this.abortController.abort();
+    this.cancelSideHelper();
     this.clearBufferTimeout();
     this.pendingAudioSegments = [];
     this.audioBuffer = null;
