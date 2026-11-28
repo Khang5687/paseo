@@ -2305,7 +2305,7 @@ export const ko: TranslationResources = {
     actions: {
       mute: "실시간 음성 음소거",
       unmute: "실시간 음성 음소거 해제",
-      stop: "실시간 음성 중지 및 턴 중단",
+      endVoice: "음성 종료. 에이전트는 계속 작업합니다",
       black: "음성을 유지한 채 화면을 검게 만들기",
     },
     blackScreen: {

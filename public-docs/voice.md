@@ -31,7 +31,7 @@ You can start voice mode while the agent is running, and talk at any time.
 
 - When you start speaking, spoken replies stop playing at once. The agent keeps working.
 - When you finish speaking, your message joins the agent's running turn, the same as a typed message sent with the **Steer** send behavior. If the agent is idle, it starts a turn.
-- To stop the agent, press **Stop**. Speaking never stops it.
+- To stop the agent, press **Stop**, the red square. While voice is on and the agent runs, it sits at the end of the voice panel. Speaking never stops the agent, and neither does ending voice: the hang-up button and the voice shortcut only turn voice off.
 - Voice mode gives the agent a voice prompt and a `speak` tool by reloading its session, and a reload ends a running turn. If you start voice mode during a run, Paseo waits for the run to finish and then applies them. Until then your messages reach the agent without the `speak` tool, so it answers in normal chat messages instead of speaking. Turning voice mode off during a run waits for the run to finish in the same way.
 
 ## Local Speech

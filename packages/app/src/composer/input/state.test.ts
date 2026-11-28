@@ -566,44 +566,37 @@ describe("resolveMessageInputEnterAction", () => {
 });
 
 describe("stopRealtimeVoice", () => {
-  it("keeps voice mode active when the running agent refuses cancellation", async () => {
-    const cancellationError = new Error("active run cancellation was not acknowledged");
-    const cancelAgent = vi.fn().mockRejectedValue(cancellationError);
+  // The composer's full state during a run; ending voice must ignore the run fields.
+  function runningContext(client: { cancelAgent: () => Promise<unknown> } | null) {
     const stopVoice = vi.fn().mockResolvedValue(undefined);
-
-    await expect(
-      stopRealtimeVoice({
+    return {
+      stopVoice,
+      ctx: {
         voice: { stopVoice },
         isRealtimeVoiceForCurrentAgent: true,
         isAgentRunning: true,
-        client: { cancelAgent },
+        client,
         voiceAgentId: "agent-1",
-      }),
-    ).rejects.toBe(cancellationError);
+      },
+    };
+  }
 
-    expect(stopVoice).not.toHaveBeenCalled();
+  it("ends voice without cancelling the running agent", async () => {
+    const cancelAgent = vi.fn().mockResolvedValue(undefined);
+    const { ctx, stopVoice } = runningContext({ cancelAgent });
+
+    await stopRealtimeVoice(ctx);
+
+    expect(cancelAgent).not.toHaveBeenCalled();
+    expect(stopVoice).toHaveBeenCalledTimes(1);
   });
 
-  it("stops voice mode after the running agent acknowledges cancellation", async () => {
-    const calls: string[] = [];
+  it("ends voice during a run while the host is unreachable", async () => {
+    const { ctx, stopVoice } = runningContext(null);
 
-    await stopRealtimeVoice({
-      voice: {
-        stopVoice: async () => {
-          calls.push("stop voice");
-        },
-      },
-      isRealtimeVoiceForCurrentAgent: true,
-      isAgentRunning: true,
-      client: {
-        cancelAgent: async () => {
-          calls.push("cancel agent");
-        },
-      },
-      voiceAgentId: "agent-1",
-    });
+    await stopRealtimeVoice(ctx);
 
-    expect(calls).toEqual(["cancel agent", "stop voice"]);
+    expect(stopVoice).toHaveBeenCalledTimes(1);
   });
 });
 

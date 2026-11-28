@@ -663,6 +663,7 @@ function MessageInputOverlay({
   onRetryFailedRecording,
   onDiscardFailedRecording,
   onRealtimeVoiceStop,
+  agentStopContent,
 }: {
   showDictationOverlay: boolean;
   showRealtimeOverlay: boolean;
@@ -686,6 +687,7 @@ function MessageInputOverlay({
   onRetryFailedRecording: () => void;
   onDiscardFailedRecording: () => void;
   onRealtimeVoiceStop: () => void;
+  agentStopContent: React.ReactNode;
 }) {
   if (showDictationOverlay) {
     return (
@@ -707,6 +709,7 @@ function MessageInputOverlay({
   if (showRealtimeOverlay && voice) {
     return (
       <RealtimeVoiceOverlay
+        agentStop={agentStopContent}
         isMuted={voice.isMuted}
         isSwitching={voice.isVoiceSwitching}
         onToggleMute={voice.toggleMute}
@@ -1865,13 +1868,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
     const handleStopRealtimeVoice = useCallback(async () => {
       try {
-        await stopRealtimeVoice({
-          voice,
-          isRealtimeVoiceForCurrentAgent,
-          isAgentRunning,
-          client,
-          voiceAgentId,
-        });
+        await stopRealtimeVoice({ voice, isRealtimeVoiceForCurrentAgent });
       } catch (error) {
         console.error("[MessageInput] Failed to stop realtime voice", error);
         const message = extractErrorMessage(error);
@@ -1879,7 +1876,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           toast.error(message);
         }
       }
-    }, [client, isAgentRunning, isRealtimeVoiceForCurrentAgent, toast, voice, voiceAgentId]);
+    }, [isRealtimeVoiceForCurrentAgent, toast, voice]);
 
     const handleToggleRealtimeVoiceShortcut = useCallback(() => {
       toggleRealtimeVoiceImpl({
@@ -2493,6 +2490,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
             onRetryFailedRecording={handleRetryFailedRecording}
             onDiscardFailedRecording={handleDiscardFailedRecording}
             onRealtimeVoiceStop={handleRealtimeVoiceStop}
+            agentStopContent={isAgentRunning ? activeActionContent : null}
           />
         </View>
       ),
@@ -2514,6 +2512,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         handleRetryFailedRecording,
         handleDiscardFailedRecording,
         handleRealtimeVoiceStop,
+        isAgentRunning,
+        activeActionContent,
       ],
     );
     const resizeGrip = useMemo(

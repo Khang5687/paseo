@@ -2268,7 +2268,7 @@ export const zhCN: TranslationResources = {
     actions: {
       mute: "静音 realtime voice",
       unmute: "取消静音 realtime voice",
-      stop: "停止 realtime voice 并中断 turn",
+      endVoice: "结束语音。Agent 继续工作",
       black: "保持语音运行并将屏幕变黑",
     },
     blackScreen: {

@@ -2346,7 +2346,7 @@ export const fr: TranslationResources = {
     actions: {
       mute: "Couper la voix en temps réel",
       unmute: "Réactiver la voix en temps réel",
-      stop: "Arrêter la voix en temps réel et interrompre le tour",
+      endVoice: "Terminer la voix. L'agent continue de travailler",
       black: "Passer l'écran au noir pendant que la voix continue",
     },
     blackScreen: {
