@@ -1,5 +1,5 @@
 {
-  "pr": 9999,
+  "pr": 209,
   "title": "fix(server): pass detach options through the terminal worker pool",
   "tests": ["packages/server/src/terminal/worker-terminal-manager.test.ts"]
 }
