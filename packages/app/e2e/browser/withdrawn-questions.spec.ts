@@ -1,5 +1,6 @@
+import type { Locator } from "@playwright/test";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
-import { expect, test } from "../support/fixtures";
+import { expect, test, type Page } from "../support/fixtures";
 import { primeAdditionalPage } from "../support/helpers/archive-tab";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 
@@ -55,6 +56,41 @@ function openQuestionsOf(snapshot: unknown) {
 
 function halfAnswerOf(snapshot: unknown, id: string): string | undefined {
   return openQuestionsOf(snapshot).find((question) => question.id === id)?.answer?.text;
+}
+
+// Drags the chat down with a finger until `target` sits in the chat's upper half. A programmatic
+// scroll (scrollIntoView) does not do: the chat keeps following its bottom until a scroll gesture
+// moves it up, so it snaps back on the next layout change. The touch timestamps are paced and the
+// finger rests before it lifts, so the drag does not fling past the target.
+async function swipeChatUntilInView(page: Page, target: Locator): Promise<void> {
+  const chat = page.locator('[data-testid="agent-chat-scroll"]:visible').first();
+  const box = await chat.boundingBox();
+  if (!box) throw new Error("The chat has no box");
+  const x = box.x + box.width / 2;
+  const top = box.y + box.height * 0.2;
+  const middle = box.y + box.height * 0.5;
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    for (let swipe = 0; swipe < 10; swipe += 1) {
+      const line = await target.boundingBox();
+      if (!line) throw new Error("The target has no box");
+      if (line.y >= top) return;
+      const distance = Math.min(middle - line.y, box.height * 0.6);
+      let timestamp = Date.now() / 1000;
+      const touch = (type: "touchStart" | "touchMove", y: number) =>
+        cdp.send("Input.dispatchTouchEvent", { type, touchPoints: [{ x, y }], timestamp });
+      await touch("touchStart", top);
+      for (let moved = 10; moved <= distance; moved += 10) {
+        timestamp += 0.016;
+        await touch("touchMove", top + moved);
+      }
+      timestamp += 0.2;
+      await touch("touchMove", top + Math.floor(distance / 10) * 10);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp });
+    }
+  } finally {
+    await cdp.detach();
+  }
 }
 
 // A second project, because the project strip (rail, chips, Needs you entry) shows from two up.
@@ -144,7 +180,7 @@ test.describe("phone width", () => {
       const folded = page.getByTestId("withdrawn-question-Q100");
       await expect(folded).toHaveText("Q100 withdrawn → Q105");
       await expect(page.getByTestId("withdrawn-question-Q101")).toHaveText("Q101 withdrawn");
-      await folded.scrollIntoViewIfNeeded();
+      await swipeChatUntilInView(page, folded);
       await expect(folded).toBeInViewport();
       await page.screenshot({ path: test.info().outputPath("withdrawn-lines-phone.png") });
       const replacement = page.getByText("what do I build first, and with which icons?");
