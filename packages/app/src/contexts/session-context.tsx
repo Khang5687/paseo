@@ -41,6 +41,7 @@ import {
 import { sendOsNotification } from "@/utils/os-notifications";
 import { noteNotificationData } from "@/notes/notification";
 import { getIsAppVisible } from "@/utils/app-visibility";
+import { isVoiceActiveElsewhereError } from "@/voice/voice-start-error";
 import {
   getInitKey,
   getInitDeferred,
@@ -226,7 +227,14 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         if (!client) {
           throw new Error(t("common.errors.daemonUnavailable"));
         }
-        await client.setVoiceMode(enabled, agentId);
+        try {
+          await client.setVoiceMode(enabled, agentId);
+        } catch (error) {
+          if (isVoiceActiveElsewhereError(error)) {
+            throw new Error(t("composer.voice.activeOnAnotherDevice"), { cause: error });
+          }
+          throw error;
+        }
       },
       sendVoiceAudioChunk: async (audioData, mimeType) => {
         if (!client) {

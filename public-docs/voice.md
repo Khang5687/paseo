@@ -134,6 +134,17 @@ Paseo uses these paths under the configured OpenAI base URL:
 - voice mode STT: `/v1/audio/transcriptions`
 - voice mode TTS: `/v1/audio/speech`
 
+## What Voice Reads Aloud
+
+Paseo cleans text before it reaches the speech engine. Fenced code blocks are replaced by the words "Code block" (once per message), file paths shrink to their last segment, and URLs shrink to their host. Inline code keeps its words. The chat log keeps the original text. The voice prompt also tells the agent to answer first, in at most three short sentences, and to leave code and paths on screen.
+
+When the agent asks you something, Paseo reads it as soon as it appears, without waiting for the agent to call `speak`:
+
+- **Question cards** are read word for word, followed by the option labels. A card with several questions is read one at a time. While a card waits, your next spoken reply answers it instead of going to the agent as chat, and speaking does not interrupt the agent run that is waiting on the answer. Name an option ("Redis", "the second one"), or give a typed answer when the card takes free text. Say "repeat" to hear the question again, or "dismiss" to decline it. A reply that names no option on an options-only card is not guessed: Paseo reads the options again.
+- **Permission prompts** are read aloud with "Answer it on screen". Voice never approves or denies them, because a misheard "yes" must not run a command. If you speak while one waits, Paseo reminds you to answer on screen. Your words are not sent to the agent, and the prompt stays open.
+
+Voice mode runs on one device per chat. A second device that tries to start it sees "Voice is on for this chat on another device".
+
 ## Environment Variables
 
 Provider, enablement, model, language, voice and tuning env vars override config.

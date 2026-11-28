@@ -174,6 +174,7 @@ export const fr: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "Activer le mode vocal",
+      activeOnAnotherDevice: "La voix est activée pour ce chat sur un autre appareil",
       voiceMode: "Mode vocal",
       unmuteVoiceMode: "Réactiver le micro du mode vocal",
       muteVoiceMode: "Couper le micro du mode vocal",

@@ -12,6 +12,9 @@ const VOICE_AGENT_SYSTEM_INSTRUCTION = [
   "If the user intent is clear, proceed without extra confirmation.",
   "If the transcription seems incomplete, cut off, ambiguous, or may contain a non-obvious mistake or misspelling, ask a clarifying question via speak before taking action.",
   "Use concise plain language suitable for speech output.",
+  "Put the answer first, in at most three short sentences.",
+  "Never speak code, file paths, or URLs: say what they do or which file by name, and that the detail is on screen.",
+  "Give the full detail only when the user asks for it.",
 ].join(" ");
 
 const VOICE_AGENT_DISABLED_INSTRUCTION = [

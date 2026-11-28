@@ -173,6 +173,7 @@ export const ptBR: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "Ativar modo de voz",
+      activeOnAnotherDevice: "A voz está ativa para este chat em outro dispositivo",
       voiceMode: "Modo de voz",
       unmuteVoiceMode: "Ativar som do modo de voz",
       muteVoiceMode: "Silenciar modo de voz",

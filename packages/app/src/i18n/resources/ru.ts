@@ -173,6 +173,7 @@ export const ru: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "Включить голосовой режим",
+      activeOnAnotherDevice: "Голос для этого чата включён на другом устройстве",
       voiceMode: "Голосовой режим",
       unmuteVoiceMode: "Включить голосовой режим",
       muteVoiceMode: "Отключить голосовой режим",

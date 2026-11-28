@@ -172,6 +172,7 @@ export const ar: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "تمكين الوضع الصوتي",
+      activeOnAnotherDevice: "الصوت مفعّل لهذه المحادثة على جهاز آخر",
       voiceMode: "وضع الصوت",
       unmuteVoiceMode: "إلغاء كتم وضع الصوت",
       muteVoiceMode: "وضع كتم الصوت",

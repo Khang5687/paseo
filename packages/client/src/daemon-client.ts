@@ -1516,6 +1516,17 @@ export class TerminalKeepUnsupportedError extends Error {
   }
 }
 
+/** The daemon refused `set_voice_mode`; `reasonCode` says why when it is a known case. */
+export class SetVoiceModeRejectedError extends Error {
+  readonly reasonCode: string | undefined;
+
+  constructor(message: string, reasonCode: string | undefined) {
+    super(message);
+    this.name = "SetVoiceModeRejectedError";
+    this.reasonCode = reasonCode;
+  }
+}
+
 /**
  * Gate for an explicit "keep terminals" stop. Older daemons drop `keepTerminals` and close the
  * terminals anyway, so read the capability on the connection that will carry the shutdown and
@@ -5630,7 +5641,10 @@ export class DaemonClient {
         typeof response.reasonCode === "string" && response.reasonCode.trim().length > 0
           ? ` (${response.reasonCode})`
           : "";
-      throw new Error((response.error ?? "Failed to set voice mode") + codeSuffix);
+      throw new SetVoiceModeRejectedError(
+        (response.error ?? "Failed to set voice mode") + codeSuffix,
+        response.reasonCode,
+      );
     }
     return response;
   }

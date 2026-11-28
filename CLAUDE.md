@@ -70,6 +70,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/testing.md](docs/testing.md)                                   | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
 | [docs/qa.md](docs/qa.md)                                             | QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof                                      |
 | [docs/mobile-testing.md](docs/mobile-testing.md)                     | Maestro and mobile test workflows                                                                                              |
+| [docs/voice-readback.md](docs/voice-readback.md)                     | Voice read-back: questions and permission prompts spoken, spoken answers, text cleaning, how to check it                       |
 | [docs/mobile-panels.md](docs/mobile-panels.md)                       | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
 | [docs/explorer-sidebar.md](docs/explorer-sidebar.md)                 | Explorer sidebar, side-pane, and compact workspace sheet host contracts, lifecycle, placement, routing preferences             |
 | [docs/sidebar-project-strip.md](docs/sidebar-project-strip.md)       | Project strip — desktop rail and compact chips, shared filter and order state, the waiting badge, where later features plug in |

@@ -103,6 +103,7 @@ function createFakeHost(): FakeVoiceHost {
       reloads.push(overrides);
       return { id: agentId } as unknown as ManagedAgent;
     },
+    respondToPermission: async () => {},
     sendSpokenInput: async (agentId, text, options) => {
       spokenInput.push({ agentId, text });
       speakToolReady.push(options.speakToolReady);

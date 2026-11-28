@@ -173,6 +173,7 @@ export const ja: TranslationResources = {
     },
     voice: {
       enableVoiceMode: "音声モードを有効にする",
+      activeOnAnotherDevice: "このチャットの音声は別のデバイスでオンになっています",
       voiceMode: "音声モード",
       unmuteVoiceMode: "音声モードのミュートを解除",
       muteVoiceMode: "音声モードをミュート",

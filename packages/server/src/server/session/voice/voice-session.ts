@@ -15,9 +15,26 @@ import {
 } from "../../dictation/dictation-stream-manager.js";
 import { createVoiceTurnController, type VoiceTurnController } from "./voice-turn-controller.js";
 import { buildVoiceModeSystemPrompt, stripVoiceModeSystemPrompt } from "../../voice-config.js";
+import { VOICE_ACTIVE_ELSEWHERE_REASON_CODE } from "@getpaseo/protocol/voice";
+import { VoiceModeAlreadyActiveError } from "../../voice-types.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
-import type { AgentProvider, AgentSessionConfig } from "../../agent/agent-sdk-types.js";
+import type {
+  AgentPermissionRequest,
+  AgentPermissionResponse,
+  AgentProvider,
+  AgentSessionConfig,
+} from "../../agent/agent-sdk-types.js";
+import { prepareTextForSpeech } from "./speech-text.js";
+import {
+  buildPermissionReminderSpeech,
+  buildPermissionSpeech,
+  buildQuestionSpeech,
+  buildUnclearAnswerSpeech,
+  interpretSpokenAnswer,
+  parseSpokenQuestions,
+  type SpokenQuestion,
+} from "./spoken-question.js";
 import type { LocalSpeechModelId } from "../../speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "../../speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "../../speech/speech-runtime.js";
@@ -36,6 +53,15 @@ type ProcessingPhase = "idle" | "transcribing";
 
 interface VoiceModeBaseConfig {
   systemPrompt?: string;
+}
+
+interface PendingSpokenQuestion {
+  agentId: string;
+  request: AgentPermissionRequest;
+  questions: SpokenQuestion[];
+  /** The question being asked now; a card with several questions is read one at a time. */
+  index: number;
+  answers: Record<string, string>;
 }
 
 interface AudioBufferState {
@@ -128,6 +154,11 @@ export interface VoiceSessionHost {
     agentId: string,
     overrides: Partial<AgentSessionConfig>,
   ): Promise<ManagedAgent>;
+  respondToPermission(
+    agentId: string,
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<void>;
   sendSpokenInput(
     agentId: string,
     text: string,
@@ -219,6 +250,12 @@ export class VoiceSession {
   private voiceModeBaseConfig: VoiceModeBaseConfig | null = null;
   /** Set while voice mode started during a run and the voice prompt waits for the run to end. */
   private deferredVoicePrompt: AbortController | null = null;
+
+  private pendingQuestion: PendingSpokenQuestion | null = null;
+  private readonly announcedRequestIds = new Set<string>();
+  /** Permission prompts read aloud and still waiting for an on-screen answer. */
+  private readonly pendingPermissionIds = new Set<string>();
+  private announcementChain: Promise<void> = Promise.resolve();
 
   constructor(options: VoiceSessionOptions) {
     const { host, logger, sessionId, sttLanguage, tts, stt, voice, voiceBridge, dictation } =
@@ -482,6 +519,9 @@ export class VoiceSession {
             accepted: false,
             error: errorMessage,
             ...unavailable,
+            ...(error instanceof VoiceModeAlreadyActiveError
+              ? { reasonCode: VOICE_ACTIVE_ELSEWHERE_REASON_CODE, retryable: false }
+              : {}),
           },
         });
         return;
@@ -573,6 +613,8 @@ export class VoiceSession {
   }
 
   private async disableVoiceModeForActiveAgent(restoreAgentConfig: boolean): Promise<void> {
+    this.pendingQuestion = null;
+    this.pendingPermissionIds.clear();
     await this.stopVoiceTurnController();
 
     const agentId = this.voiceModeAgentId;
@@ -1099,6 +1141,20 @@ export class VoiceSession {
       return;
     }
 
+    // A pending question card takes the reply as its answer; sending it as chat would leave the card open.
+    if (this.pendingQuestion && (await this.answerPendingQuestion(result.text))) {
+      await this.flushPendingAudioSegments("answered question card");
+      return;
+    }
+
+    // A permission prompt is answered on screen only. The words must not approve it or reach the
+    // agent as chat.
+    if (this.pendingPermissionIds.size > 0) {
+      this.queueAnnouncement(buildPermissionReminderSpeech());
+      await this.flushPendingAudioSegments("permission prompt waiting");
+      return;
+    }
+
     await this.host.sendSpokenInput(agentId, result.text, {
       speakToolReady: !this.deferredVoicePrompt,
     });
@@ -1118,12 +1174,15 @@ export class VoiceSession {
       const abortSignal = signal
         ? AbortSignal.any([signal, this.abortController.signal])
         : this.abortController.signal;
-      await this.ttsManager.generateAndWaitForPlayback(
-        text,
-        (msg) => this.emit(msg),
-        abortSignal,
-        true,
-      );
+      const spokenText = prepareTextForSpeech(text);
+      if (spokenText) {
+        await this.ttsManager.generateAndWaitForPlayback(
+          spokenText,
+          (msg) => this.emit(msg),
+          abortSignal,
+          true,
+        );
+      }
       this.sessionLogger.info(
         { agentId, textLength: text.length },
         "Voice speak tool call finished playback",
@@ -1144,6 +1203,127 @@ export class VoiceSession {
       allowCustomCwd: false,
       enableVoiceTools: true,
     });
+  }
+
+  /**
+   * Speak text the agent did not send through the speak tool (a question card, a permission
+   * prompt). Code and long paths are cut first; the chat log keeps the original.
+   */
+  private async speakAloud(text: string): Promise<void> {
+    const spoken = prepareTextForSpeech(text);
+    if (spoken) {
+      await this.ttsManager.generateAndWaitForPlayback(
+        spoken,
+        (msg) => this.emit(msg),
+        this.abortController.signal,
+        true,
+      );
+    }
+    this.emit({
+      type: "activity_log",
+      payload: { id: uuidv4(), timestamp: new Date(), type: "assistant", content: text },
+    });
+  }
+
+  /** Announcements play one after another so two prompts never talk over each other. */
+  private queueAnnouncement(text: string): void {
+    this.announcementChain = this.announcementChain
+      .then(() => (this.closed ? undefined : this.speakAloud(text)))
+      .catch((error) => {
+        this.sessionLogger.warn({ err: error }, "Failed to speak voice announcement");
+      });
+  }
+
+  /**
+   * The agent asked the listener something. Read it aloud as written; for a question card, the
+   * next spoken reply answers it (see `answerPendingQuestion`). Permission prompts are read but
+   * answered on screen: a misheard "yes" must never approve a command.
+   */
+  announcePermissionRequest(agentId: string, request: AgentPermissionRequest): void {
+    if (!this.isActiveForAgent(agentId) || this.announcedRequestIds.has(request.id)) {
+      return;
+    }
+    this.announcedRequestIds.add(request.id);
+
+    const questions = request.kind === "question" ? parseSpokenQuestions(request.input) : null;
+    if (!questions) {
+      this.pendingPermissionIds.add(request.id);
+      this.queueAnnouncement(buildPermissionSpeech(request));
+      return;
+    }
+    this.pendingQuestion = { agentId, request, questions, index: 0, answers: {} };
+    this.queueAnnouncement(
+      buildQuestionSpeech(questions[0], { index: 0, total: questions.length }),
+    );
+  }
+
+  /** The card was answered or withdrawn somewhere else (the screen, another client, the agent). */
+  handlePermissionResolved(agentId: string, requestId: string): void {
+    this.pendingPermissionIds.delete(requestId);
+    if (
+      this.pendingQuestion?.agentId === agentId &&
+      this.pendingQuestion.request.id === requestId
+    ) {
+      this.pendingQuestion = null;
+    }
+  }
+
+  /** Returns true when the reply was spent on the pending question card instead of going to the agent as chat. */
+  private async answerPendingQuestion(transcript: string): Promise<boolean> {
+    const pending = this.pendingQuestion;
+    if (!pending) {
+      return false;
+    }
+    const question = pending.questions[pending.index];
+    const total = pending.questions.length;
+    const reply = interpretSpokenAnswer(question, transcript);
+
+    if (reply.kind === "repeat") {
+      this.queueAnnouncement(buildQuestionSpeech(question, { index: pending.index, total }));
+      return true;
+    }
+    if (reply.kind === "unclear") {
+      this.queueAnnouncement(buildUnclearAnswerSpeech(question));
+      return true;
+    }
+
+    if (reply.kind === "answer") {
+      pending.answers[question.header] = reply.answer;
+      pending.index += 1;
+      if (pending.index < total) {
+        this.queueAnnouncement(
+          buildQuestionSpeech(pending.questions[pending.index], { index: pending.index, total }),
+        );
+        return true;
+      }
+    }
+
+    this.pendingQuestion = null;
+    const response: AgentPermissionResponse =
+      reply.kind === "answer"
+        ? {
+            behavior: "allow",
+            updatedInput: { ...pending.request.input, answers: pending.answers },
+          }
+        : { behavior: "deny", message: "Dismissed by user" };
+    try {
+      await this.host.respondToPermission(pending.agentId, pending.request.id, response);
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, agentId: pending.agentId, requestId: pending.request.id },
+        "Failed to answer question card by voice",
+      );
+      this.emit({
+        type: "activity_log",
+        payload: {
+          id: uuidv4(),
+          timestamp: new Date(),
+          type: "error",
+          content: `Could not send your answer: ${getErrorMessage(error)}`,
+        },
+      });
+    }
+    return true;
   }
 
   /**
