@@ -1,7 +1,7 @@
 import type { Locator } from "@playwright/test";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { expect, test, type Page } from "../support/fixtures";
-import { primeAdditionalPage } from "../support/helpers/archive-tab";
+import { seedAdditionalPage } from "../support/helpers/archive-tab";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 
 // Withdrawn questions: an agent's reply withdraws its own open questions with ✖️ lines. Every
@@ -138,7 +138,7 @@ test.describe("phone width", () => {
     );
     const other = await page.context().newPage();
     try {
-      await primeAdditionalPage(other);
+      await seedAdditionalPage(other);
       await openAgentRoute(other, workspace);
       await expect(other.getByTestId("open-questions-pill")).toContainText("3 open questions", {
         timeout: 30_000,
@@ -171,7 +171,9 @@ test.describe("phone width", () => {
       await expect(send).toContainText("Send 1 answer");
       await send.tap();
 
-      await openAgentRoute(page, workspace);
+      // Q104 stays open, so the chat stays on the page: open it from there, as a phone user does,
+      // instead of booting the app a second time.
+      await section.getByTestId(`needs-you-open-${workspace.workspaceId}`).tap();
       const sent = page.getByTestId("user-message").filter({ hasText: "Q105" });
       await expect(sent).toContainText("Q105 (Sidebar order and icons) yes", { timeout: 30_000 });
       await expect(sent).not.toContainText("Q100");
