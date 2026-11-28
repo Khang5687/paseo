@@ -1,4 +1,4 @@
-import { isDelegatedAgent } from "@getpaseo/protocol/agent-labels";
+import { isDelegatedAgent } from "../agent-labels.js";
 
 /** A chat voice can move to: a top-level agent that is not archived. */
 export interface VoiceChat {
@@ -34,20 +34,24 @@ interface DirectoryAgent {
   workspaceId?: string;
   title: string | null;
   labels: Record<string, string>;
-  archivedAt?: string | null;
+  archivedAt?: string | Date | null;
   internal?: boolean;
-  lastUserMessageAt: string | null;
-  updatedAt: string;
+  /** Background agents stay out of the sidebar, so voice never names them either. */
+  background?: boolean;
+  lastUserMessageAt: string | Date | null;
+  updatedAt: string | Date;
 }
 
 function activityTime(agent: DirectoryAgent): number {
-  const time = Date.parse(agent.lastUserMessageAt ?? agent.updatedAt);
+  const value = agent.lastUserMessageAt ?? agent.updatedAt;
+  const time = value instanceof Date ? value.getTime() : Date.parse(value);
   return Number.isFinite(time) ? time : 0;
 }
 
 /**
  * Projects with the chats voice can name. Subagents are left out: a chat is what the owner talks
- * to. `workspaces` are the active ones, so chats in archived workspaces are left out too.
+ * to. `workspaces` are the active ones, so chats in archived workspaces are left out too. The
+ * daemon builds it from its own registries; the app builds one per connected host from its replica.
  */
 export function buildVoiceChatDirectory(input: {
   projects: DirectoryProject[];
@@ -57,7 +61,13 @@ export function buildVoiceChatDirectory(input: {
   const projectByWorkspace = new Map(input.workspaces.map((w) => [w.workspaceId, w.projectId]));
   const chatsByProject = new Map<string, VoiceChat[]>();
   for (const agent of input.agents) {
-    if (agent.archivedAt || agent.internal || isDelegatedAgent(agent) || !agent.workspaceId) {
+    if (
+      agent.archivedAt ||
+      agent.internal ||
+      agent.background ||
+      isDelegatedAgent(agent) ||
+      !agent.workspaceId
+    ) {
       continue;
     }
     const projectId = projectByWorkspace.get(agent.workspaceId);

@@ -2328,6 +2328,8 @@ export class VoiceAssistantWebSocketServer {
         voiceNavigate: true,
         // COMPAT(voiceSideHelper): added after v0.18.1, remove gate after 2027-12-01.
         voiceSideHelper: true,
+        // COMPAT(voiceNavigateHosts): added after v0.18.1, remove gate after 2027-12-01.
+        voiceNavigateHosts: true,
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         ...(this.advertiseRelayConfig ? { relayConfig: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.

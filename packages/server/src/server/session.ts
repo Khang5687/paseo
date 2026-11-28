@@ -225,7 +225,7 @@ import type { VoiceSessionOptions } from "./session/voice/voice-session.js";
 import {
   buildVoiceChatDirectory,
   type VoiceChatProject,
-} from "./session/voice/voice-chat-directory.js";
+} from "@getpaseo/protocol/voice/chat-directory";
 import { createVoiceSideHelper } from "./session/voice/voice-side-helper.js";
 import { CheckoutSession } from "./session/checkout/checkout-session.js";
 import {
@@ -3371,6 +3371,7 @@ export class Session {
       case "abort_request":
       case "audio_played":
       case "set_voice_mode":
+      case "voice.navigate.find_chats.response":
       case "dictation_stream_start":
       case "dictation_stream_chunk":
       case "dictation_stream_finish":

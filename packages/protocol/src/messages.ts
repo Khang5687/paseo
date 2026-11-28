@@ -1419,6 +1419,14 @@ export const WorkspaceArchiveUndoRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// COMPAT(voiceNavigateHosts): added after v0.18.1. Where voice came from when the app moved it
+// from another host: "go back" returns there, and `speech` ("fitup on Mac, Food scan.") is said
+// once voice is on.
+export const VoiceArrivalSchema = z.object({
+  speech: z.string().max(500).optional(),
+  previous: z.object({ serverId: z.string(), agentId: z.string() }).optional(),
+});
+
 export const SetVoiceModeMessageSchema = z.object({
   type: z.literal("set_voice_mode"),
   enabled: z.boolean(),
@@ -1427,6 +1435,44 @@ export const SetVoiceModeMessageSchema = z.object({
   // COMPAT(voiceNavigate): added after v0.18.1. The app moves voice when the daemon sends
   // `voice.navigate`; without it the daemon never reads speech as a navigation command.
   navigation: z.boolean().optional(),
+  // COMPAT(voiceNavigateHosts): added after v0.18.1. The app answers
+  // `voice.navigate.find_chats.request` and moves voice to chats on other hosts.
+  navigationHosts: z.boolean().optional(),
+  arrival: VoiceArrivalSchema.optional(),
+});
+
+export const VoiceChatSchema = z.object({
+  agentId: z.string(),
+  workspaceId: z.string(),
+  title: z.string().nullable(),
+  lastActiveAt: z.number(),
+});
+
+export const VoiceChatProjectSchema = z.object({
+  projectId: z.string(),
+  name: z.string(),
+  chats: z.array(VoiceChatSchema),
+});
+
+export const VoiceHostMatchSchema = z.object({
+  serverId: z.string(),
+  hostName: z.string(),
+  online: z.boolean(),
+  project: VoiceChatProjectSchema,
+  chatAgentId: z.string().nullable(),
+  score: z.number(),
+});
+
+// COMPAT(voiceNavigateHosts): added after v0.18.1. The app's answer to the daemon's
+// `voice.navigate.find_chats.request`: the best match on each other host it knows, offline ones
+// included. `hostName` is the app's name for the host that asked.
+export const VoiceNavigateFindChatsResponseSchema = z.object({
+  type: z.literal("voice.navigate.find_chats.response"),
+  payload: z.object({
+    requestId: z.string(),
+    hostName: z.string(),
+    matches: z.array(VoiceHostMatchSchema),
+  }),
 });
 
 // COMPAT(githubAttachmentKinds): legacy wire attachment retained when
@@ -4266,6 +4312,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceRecoveryRestoreRequestSchema,
   WorkspaceArchiveUndoRequestSchema,
   SetVoiceModeMessageSchema,
+  VoiceNavigateFindChatsResponseSchema,
   SendAgentMessageRequestSchema,
   WaitForFinishRequestSchema,
   DaemonGetStatusRequestSchema,
@@ -4563,6 +4610,25 @@ export const VoiceNavigateMessageSchema = z.object({
   payload: z.object({
     agentId: z.string(),
     workspaceId: z.string().optional(),
+    // COMPAT(voiceNavigateHosts): added after v0.18.1, sent only with `navigationHosts: true`.
+    // The chat is on this other host; the app passes `speech` on as `arrival.speech`.
+    serverId: z.string().optional(),
+    speech: z.string().optional(),
+  }),
+});
+
+// COMPAT(voiceNavigateHosts): added after v0.18.1. Daemon-to-app request, answered by
+// `voice.navigate.find_chats.response` with the same `requestId`. Sent only when the socket's
+// `set_voice_mode` had `navigationHosts: true`. `name`: a spoken go-to target to match on every
+// other host; `chat`: one chat by host and id, for "go back" to another host.
+export const VoiceNavigateFindChatsRequestSchema = z.object({
+  type: z.literal("voice.navigate.find_chats.request"),
+  payload: z.object({
+    requestId: z.string(),
+    query: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("name"), target: z.string() }),
+      z.object({ kind: z.literal("chat"), serverId: z.string(), agentId: z.string() }),
+    ]),
   }),
 });
 
@@ -4768,6 +4834,10 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(voiceSideHelper): added after v0.18.1, remove gate after 2027-12-01.
         // Hosts with it answer "Paseo, ..." by voice and read `features.voiceMode.sideHelperModel`.
         voiceSideHelper: z.boolean().optional(),
+        // COMPAT(voiceNavigateHosts): added after v0.18.1, remove gate after 2027-12-01.
+        // Hosts with it ask the app for chats on other hosts (`voice.navigate.find_chats.request`)
+        // and move voice there.
+        voiceNavigateHosts: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         relayConfig: z.boolean().optional(),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
@@ -8839,6 +8909,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   TranscriptionResultMessageSchema,
   VoiceInputStateMessageSchema,
   VoiceNavigateMessageSchema,
+  VoiceNavigateFindChatsRequestSchema,
   DictationStreamAckMessageSchema,
   DictationStreamFinishAcceptedMessageSchema,
   DictationStreamPartialMessageSchema,

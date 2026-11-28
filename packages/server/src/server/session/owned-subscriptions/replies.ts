@@ -35,6 +35,8 @@ const exceptions = {
   "daemon.update.progress": ["daemon.update.request"],
   // Transcription belongs to the explicitly retained voice operation, not a request ID.
   transcription_result: [],
+  // The daemon asks the app; the answer is a request of the app's (`.response` inbound).
+  "voice.navigate.find_chats.request": [],
   // This legacy requestId is a producer marker; checkout updates require event demand.
   checkout_status_update: [],
 } satisfies Record<ExceptionalReply, readonly Request["type"][]>;

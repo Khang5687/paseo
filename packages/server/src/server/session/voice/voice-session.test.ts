@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { VoiceSession, type VoiceSessionHost } from "./voice-session.js";
 import { SHORT_WORD_CONFIRM_MS, VOICE_SEND_HOLD_MS } from "./send-gate.js";
 import type { VoiceSendMode } from "./send-words.js";
-import type { VoiceChatProject } from "./voice-chat-directory.js";
+import type { VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
 import { createVoiceNavMemory, type VoiceNavMemory } from "./voice-navigate.js";
 import { SIDE_HELPER_TIMEOUT_MS, SIDE_HELPER_WAIT_MS } from "./voice-side-helper.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";

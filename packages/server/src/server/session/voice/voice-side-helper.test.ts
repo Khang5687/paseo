@@ -2,7 +2,7 @@ import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
 
 import type { AgentTimelineItem } from "../../agent/agent-sdk-types.js";
-import type { VoiceChatProject } from "./voice-chat-directory.js";
+import type { VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
 import {
   buildSideHelperChats,
   buildSideHelperContext,
