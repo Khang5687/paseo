@@ -1,0 +1,6 @@
+{
+  "pr": 224,
+  "title": "test(app): boot the app twice, not four times, in the withdrawn questions phone spec",
+  "tests": [],
+  "e2e": ["packages/app/e2e/browser/withdrawn-questions.spec.ts"]
+}

@@ -129,7 +129,12 @@ export async function fetchAgentArchivedAt(
   return result?.agent.archivedAt ?? null;
 }
 
-export async function primeAdditionalPage(page: Page): Promise<void> {
+/**
+ * Seeds a second page's storage and blocks the real daemon port, without loading the app. The
+ * seed runs on every navigation, so the page's first `goto` can go straight to the route it needs:
+ * each app boot costs 10 s or more on a loaded e2e host.
+ */
+export async function seedAdditionalPage(page: Page): Promise<void> {
   const seedNonce = randomUUID();
   const { daemon, preferences } = buildSeededStoragePayload();
 
@@ -156,6 +161,10 @@ export async function primeAdditionalPage(page: Page): Promise<void> {
     },
     { daemon, preferences, seedNonce },
   );
+}
+
+export async function primeAdditionalPage(page: Page): Promise<void> {
+  await seedAdditionalPage(page);
   await page.goto("/");
 }
 
