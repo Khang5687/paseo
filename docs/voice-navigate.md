@@ -13,7 +13,7 @@ How a spoken "go to fitup", "list chats" or "go back" moves Voice mode to anothe
 
 ## Matching
 
-`spokenNameScore` compares letters with spaces removed, because STT writes "fit up" for FitUp and "hands free" for hands-free. A run of words inside a long title ("food scan" in "Food scan redesign") scores 0.95 of a whole-name match, so "paseo" picks the project `paseo` over `paseo-sync`. The bar is 0.8. `resolveGoToTarget` tries every split of the words into project words and chat words, and also a chat of the current project alone. On a tie a project beats a project with a chat, which beats a chat of the current project.
+`spokenNameScore` compares letters by edit distance with spaces removed, because STT writes "Fit Up" for fitup, "hands free" for hands-free, and "Paceo" for paseo. A run of words inside a long title ("food scan" in "Food scan redesign") scores 0.95 of a whole-name match, so "paseo" picks the project `paseo` over `paseo-sync`. The bar is 0.8. `resolveGoToTarget` tries every split of the words into project words and chat words, and also a chat of the current project alone. On a tie a project beats a project with a chat, which beats a chat of the current project.
 
 ## The new voice session
 
