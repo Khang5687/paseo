@@ -14,6 +14,7 @@ class ExpoTwoWayAudioModule : Module() {
         private const val ON_OUTPUT_VOLUME_LEVEL_EVENT = "onOutputVolumeLevelData"
         private const val ON_RECORDING_CHANGE_EVENT = "onRecordingChange"
         private const val ON_AUDIO_INTERRUPTION_EVENT = "onAudioInterruption"
+        private const val ON_MICROPHONE_ROUTES_CHANGE_EVENT = "onMicrophoneRoutesChange"
         var audioEngine: AudioEngine? = null
     }
 
@@ -32,6 +33,24 @@ class ExpoTwoWayAudioModule : Module() {
                 promise.resolve(false)
             }
         }
+
+         // Null until initialize() creates the engine.
+         Function("getMicrophoneRoutes") {
+             audioEngine?.getMicrophoneRoutes()?.let { state ->
+                 mapOf(
+                     "routes" to state.routes.map {
+                         mapOf("key" to it.key, "kind" to it.kind, "name" to it.name)
+                     },
+                     "preferredKey" to state.preferredKey,
+                     "preferredName" to state.preferredName,
+                     "activeKey" to state.activeKey
+                 )
+             }
+         }
+
+         Function("setPreferredMicrophone") { key: String? ->
+             audioEngine?.setPreferredMicrophone(key) ?: false
+         }
 
          Function("releaseAudioSession") {
              audioEngine?.releaseAudioSession()
@@ -123,7 +142,8 @@ class ExpoTwoWayAudioModule : Module() {
             ON_INPUT_VOLUME_LEVEL_EVENT,
             ON_OUTPUT_VOLUME_LEVEL_EVENT,
             ON_RECORDING_CHANGE_EVENT,
-            ON_AUDIO_INTERRUPTION_EVENT
+            ON_AUDIO_INTERRUPTION_EVENT,
+            ON_MICROPHONE_ROUTES_CHANGE_EVENT
         )
     }
 
@@ -137,6 +157,9 @@ class ExpoTwoWayAudioModule : Module() {
             }
             onOutputVolumeCallback = { level ->
                 sendEvent(ON_OUTPUT_VOLUME_LEVEL_EVENT, bundleOf("data" to level))
+            }
+            onMicrophoneRoutesChangeCallback = {
+                sendEvent(ON_MICROPHONE_ROUTES_CHANGE_EVENT, bundleOf())
             }
             onAudioInterruptionCallback = { data ->
                 sendEvent(ON_AUDIO_INTERRUPTION_EVENT, bundleOf("data" to data))

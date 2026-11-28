@@ -7,6 +7,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { Mic, MicOff, Moon, PhoneOff } from "lucide-react-native";
 import { FOOTER_HEIGHT } from "@/constants/layout";
 import { useVoiceTelemetry } from "@/contexts/voice-context";
+import { RealtimeVoiceMicrophoneButton } from "./realtime-voice-microphone-button";
 import { VoiceBlackScreen } from "./voice-black-screen";
 import { VolumeMeter } from "./volume-meter";
 
@@ -66,6 +67,8 @@ export function RealtimeVoiceOverlay({
       </View>
 
       <View style={styles.actionsContainer}>
+        <RealtimeVoiceMicrophoneButton />
+
         <Button
           testID="realtime-voice-black"
           leftIcon={Moon}

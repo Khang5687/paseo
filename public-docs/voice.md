@@ -171,3 +171,5 @@ Keys and base URLs follow the fallback rule above.
 Voice mode can launch and control agents. Treat voice prompts with the same care as direct agent instructions, especially when specifying working directories or destructive operations.
 
 Music and other audio on the phone keep playing, quieter, while voice mode or dictation is on, and return to full volume when it stops. On Android, a podcast app may pause instead, because Android lets apps that play speech choose, and pressing play in a music app while voice mode is on ends voice mode.
+
+On Android, the microphone button in the voice panel picks which mic voice mode and dictation use: the phone's own mic, a connected headset, or Automatic. Paseo remembers the pick on that phone. If the remembered headset is not connected, Android picks automatically until it comes back. iOS and the desktop and web apps have no mic button; they use the system's input.
