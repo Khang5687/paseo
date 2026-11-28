@@ -45,7 +45,7 @@ const SPOKEN_TITLE_WORDS = 6;
 /** Most words a "go to" target may have; longer is a sentence for the agent. */
 const MAX_TARGET_WORDS = 8;
 /** Similarity a spoken name needs to count as naming a project or chat (0..1). */
-const MATCH_THRESHOLD = 0.8;
+export const MATCH_THRESHOLD = 0.8;
 /** A part of a longer name scores a little under the same whole name. */
 const PART_MATCH_FACTOR = 0.95;
 

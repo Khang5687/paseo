@@ -91,6 +91,7 @@ describe("buildSideHelperContext", () => {
 
   function manyChats(count: number): SideHelperChatInfo[] {
     return Array.from({ length: count }, (_, index) => ({
+      ref: `c${index + 1}`,
       agentId: `agent-${index}`,
       projectName: `Project ${index}`,
       title: `A chat with a fairly long title number ${index}`,
@@ -131,7 +132,14 @@ describe("buildSideHelperContext", () => {
       {
         id: SCAN_ID,
         status: "idle",
-        pendingPermissions: [{ kind: "tool", name: "Bash", title: "Run npm test" }],
+        pendingPermissions: [
+          {
+            kind: "tool",
+            name: "Bash",
+            title: "Run npm test",
+            detail: { type: "shell", command: "npm test -- --bail" },
+          },
+        ],
       },
       {
         id: RELEASE_ID,
@@ -140,10 +148,10 @@ describe("buildSideHelperContext", () => {
         pendingPermissions: [],
       },
     ]);
-    expect(chats.map((chat) => [chat.title, chat.waiting])).toEqual([
-      ["Main chat", null],
-      ["Food scan redesign", "approval: Run npm test"],
-      ["Release beta", "asked Q12 Ship the beta tonight?"],
+    expect(chats.map((chat) => [chat.ref, chat.title, chat.waiting])).toEqual([
+      ["c1", "Main chat", null],
+      ["c2", "Food scan redesign", "approval: Run npm test: npm test -- --bail"],
+      ["c3", "Release beta", "asked Q12 Ship the beta tonight?"],
     ]);
   });
 });
@@ -283,12 +291,14 @@ test("the helper reads the current chat and the chat the question names, then lo
     signal: new AbortController().signal,
   });
 
-  expect(answer).toBe("FitUp is redesigning the food scan.");
+  expect(answer).toEqual({ kind: "speech", text: "FitUp is redesigning the food scan." });
   expect(loadTimeline.mock.calls.map(([id]) => id)).toEqual([RELEASE_ID, SCAN_ID]);
   const prompt = fake.runAgent.mock.calls[0] as unknown as [string, string];
   expect(prompt[1]).toContain("Beta 0.19 is tagged.");
   expect(prompt[1]).toContain("The scan screen now has a camera hint.");
   expect(prompt[1]).toContain("Question: what did food scan say?");
+  expect(prompt[1]).toContain("[p1] FitUp (2 chats), [p2] Paseo (1 chat)");
+  expect(prompt[1]).toContain("- [c2] FitUp / Food scan redesign");
   await vi.waitFor(() =>
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -296,6 +306,43 @@ test("the helper reads the current chat and the chat the question names, then lo
         inputTokens: 1200,
         outputTokens: 20,
       }),
+      "Voice helper call",
+    ),
+  );
+});
+
+test("a proposed action comes back resolved and read back; the model never runs it", async () => {
+  const fake = createFakeManager(async () => ({
+    finalText:
+      '{"type":"send_message","chat":"c2","target":"food scan","text":"Add a camera hint."}',
+    usage: { inputTokens: 900, outputTokens: 30 },
+  }));
+  const info = vi.fn();
+  const logger = pino({ level: "silent" });
+  logger.info = info as unknown as typeof logger.info;
+  const ask = createVoiceSideHelper({
+    manager: asManager(fake),
+    readChats: async () => ({ directory, agents: [] }),
+    loadTimeline: async () => [],
+    model: () => undefined,
+    scratchDir: async () => "/tmp/empty",
+    logger,
+  });
+
+  const reply = await ask({
+    question: "tell food scan to add a camera hint",
+    currentAgentId: RELEASE_ID,
+    signal: new AbortController().signal,
+  });
+
+  expect(reply).toMatchObject({
+    kind: "confirm",
+    action: { type: "send_message", agentId: SCAN_ID, text: "Add a camera hint." },
+    readBack: "Send to FitUp, Food scan redesign: Add a camera hint. Okay?",
+  });
+  await vi.waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ reply: "send_message" }),
       "Voice helper call",
     ),
   );

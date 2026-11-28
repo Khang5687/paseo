@@ -64,6 +64,14 @@ import {
   parseSideHelperCall,
   type SideHelperCall,
 } from "./voice-side-helper.js";
+import {
+  HELPER_CONFIRM_SILENCE_MS,
+  HELPER_DROPPED_SPEECH,
+  HELPER_FAILED_ACTION_SPEECH,
+  classifyConfirmation,
+  type SideHelperReply,
+  type VoiceHelperAction,
+} from "./voice-helper-actions.js";
 import type { LocalSpeechModelId } from "../../speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "../../speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "../../speech/speech-runtime.js";
@@ -83,6 +91,24 @@ type ProcessingPhase = "idle" | "transcribing";
 interface VoiceModeBaseConfig {
   systemPrompt?: string;
 }
+
+/**
+ * A "Paseo, ..." action waiting on the owner: a read-back to confirm, or "Which one?" after
+ * the words named a project with several chats. One at a time.
+ */
+interface PendingHelperStep {
+  reply: Extract<SideHelperReply, { kind: "confirm" | "pick" }>;
+  /** Unclear replies so far; the second one drops the action. */
+  unclear: number;
+  /** Past this, quiet drops the action even while speech seems to go on (a stuck VAD). */
+  expiresAt: number;
+}
+
+/** A reply still being spoken when the quiet timer ends gets this much longer. */
+const HELPER_SPEECH_GRACE_MS = 1000;
+/** Longest a pending action can wait, however long the owner keeps talking. */
+const HELPER_PENDING_MAX_MS = 30_000;
+const HELPER_PICK_AGAIN_SPEECH = "Which one? Say a name or a number.";
 
 interface PendingSpokenQuestion {
   agentId: string;
@@ -203,14 +229,17 @@ export interface VoiceSessionHost {
    */
   listVoiceChats(): Promise<VoiceChatProject[]>;
   /**
-   * Answers a "Paseo, ..." question from this daemon's chat data, read-only. Absent: the words
-   * go to the chat like any other. Aborting `signal` cancels the model call.
+   * Answers a "Paseo, ..." question from this daemon's chat data, or proposes an action for the
+   * owner to confirm. Absent: the words go to the chat like any other. Aborting `signal` cancels
+   * the model call.
    */
   askSideHelper?(input: {
     question: string;
     currentAgentId: string | null;
     signal: AbortSignal;
-  }): Promise<string>;
+  }): Promise<SideHelperReply>;
+  /** Runs an action the owner confirmed out loud; resolves to what to say ("Sent."). */
+  runSideHelperAction?(action: VoiceHelperAction): Promise<string>;
 }
 
 export interface VoiceSessionOptions {
@@ -319,6 +348,9 @@ export class VoiceSession {
   private sideHelperWoken = false;
   /** The side question being answered; a newer one or voice off cancels it. */
   private sideHelperRun: AbortController | null = null;
+  /** The action waiting for "yes" (or for "which one?"), and its quiet timer. */
+  private helperPending: PendingHelperStep | null = null;
+  private helperSilenceTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: VoiceSessionOptions) {
     const { host, logger, sessionId, sttLanguage, tts, stt, voice, voiceBridge, dictation } =
@@ -1248,6 +1280,12 @@ export class VoiceSession {
       return;
     }
 
+    // A read-back waits for "yes" or "no", or "Which one?" for a chat name.
+    if (this.helperPending && this.takeHelperPendingReply(text)) {
+      await this.flushPendingAudioSegments("side helper action reply");
+      return;
+    }
+
     // "Paseo, ..." asks the side helper. A navigation command after the name still moves voice.
     const sideCall = this.readSideHelperCall(text);
     if (sideCall) {
@@ -1372,6 +1410,7 @@ export class VoiceSession {
       this.queueAnnouncement(buildAlreadyHereSpeech(target));
       return;
     }
+    this.clearHelperPending();
     this.navMemory.arrival = { agentId: target.chat.agentId, speech: buildArrivedSpeech(target) };
     this.emit({
       type: "voice.navigate",
@@ -1405,7 +1444,8 @@ export class VoiceSession {
   /**
    * Asks the side helper and speaks its answer; nothing reaches the chat. A slow answer gets
    * "One sec." first, and one that takes too long or fails gets "Sorry, no answer." A cancel
-   * (voice off, abort, the next question) ends it silently.
+   * (voice off, abort, the next question) ends it silently. A proposed action is read back and
+   * waits for the owner's yes (`answerHelperPending`).
    */
   private startSideHelper(question: string): void {
     const askSideHelper = this.host.askSideHelper?.bind(this.host);
@@ -1415,17 +1455,18 @@ export class VoiceSession {
     this.sideHelperRun = run;
     const timeout = new AbortController();
     let finished = false;
-    const finish = (speech: string | null) => {
+    const finish = (reply: SideHelperReply | null) => {
       if (finished) return;
       finished = true;
       clearTimeout(timeoutTimer);
       clearTimeout(waitTimer);
       if (this.sideHelperRun === run) this.sideHelperRun = null;
-      if (speech && !run.signal.aborted) this.queueAnnouncement(speech);
+      if (reply && !run.signal.aborted) this.presentHelperReply(reply);
     };
+    const failed: SideHelperReply = { kind: "speech", text: SIDE_HELPER_FAILED_SPEECH };
     const timeoutTimer = setTimeout(() => {
       this.sessionLogger.warn({ question }, "Voice helper took too long");
-      finish(SIDE_HELPER_FAILED_SPEECH);
+      finish(failed);
       timeout.abort(new Error("The voice helper took too long"));
     }, SIDE_HELPER_TIMEOUT_MS);
     const waitTimer = setTimeout(
@@ -1435,15 +1476,15 @@ export class VoiceSession {
     run.signal.addEventListener("abort", () => finish(null), { once: true });
     void (async () => {
       try {
-        const answer = await askSideHelper({
+        const reply = await askSideHelper({
           question,
           currentAgentId: this.voiceModeAgentId,
           signal: AbortSignal.any([run.signal, timeout.signal]),
         });
-        finish(answer.trim() || SIDE_HELPER_FAILED_SPEECH);
+        finish(reply.kind === "speech" && !reply.text.trim() ? failed : reply);
       } catch (error) {
         if (!finished) this.sessionLogger.warn({ err: error, question }, "Voice helper failed");
-        finish(SIDE_HELPER_FAILED_SPEECH);
+        finish(failed);
       }
     })();
   }
@@ -1452,6 +1493,144 @@ export class VoiceSession {
     this.sideHelperWoken = false;
     this.sideHelperRun?.abort(new Error("Voice helper question cancelled"));
     this.sideHelperRun = null;
+    this.clearHelperPending();
+  }
+
+  /** Speaks the helper's answer, or reads an action back and waits for the owner's reply. */
+  private presentHelperReply(reply: SideHelperReply): void {
+    if (reply.kind === "speech") {
+      this.queueAnnouncement(reply.text);
+      return;
+    }
+    this.helperPending = { reply, unclear: 0, expiresAt: Date.now() + HELPER_PENDING_MAX_MS };
+    this.refreshSpeechConfirm();
+    this.queueAnnouncement(reply.kind === "confirm" ? reply.readBack : reply.speech);
+    this.armHelperSilence();
+  }
+
+  /** "Paseo, yes" answers the read-back; "Paseo, what's new?" is a new question. */
+  private isHelperPendingReply(text: string): boolean {
+    const pending = this.helperPending;
+    if (!pending) return false;
+    if (pending.reply.kind === "pick") return resolveChatPick(text, pending.reply.chats) !== null;
+    return classifyConfirmation(text, pending.reply.yesWords) !== "unclear";
+  }
+
+  /**
+   * The owner's reply to a read-back or to "Which one?". Yes runs the action; no, or a second
+   * unclear reply, drops it with "Okay, not doing it."; the first unclear reply asks again.
+   * Nothing said here reaches the chat.
+   */
+  private answerHelperPending(text: string): void {
+    const pending = this.helperPending;
+    if (!pending) return;
+    const { reply } = pending;
+    if (reply.kind === "pick") {
+      const chat = resolveChatPick(text, reply.chats);
+      if (chat) {
+        this.clearHelperPending();
+        this.presentHelperReply(reply.resume(chat.agentId));
+        return;
+      }
+      if (classifyConfirmation(text) === "no") {
+        this.dropHelperPending();
+        return;
+      }
+      this.askHelperAgain(HELPER_PICK_AGAIN_SPEECH);
+      return;
+    }
+    const answer = classifyConfirmation(text, reply.yesWords);
+    if (answer === "yes") {
+      this.clearHelperPending();
+      this.runHelperAction(reply.action);
+    } else if (answer === "no") {
+      this.dropHelperPending();
+    } else {
+      this.askHelperAgain(reply.askAgain);
+    }
+  }
+
+  private askHelperAgain(speech: string): void {
+    const pending = this.helperPending;
+    if (!pending) return;
+    if (pending.unclear > 0) {
+      this.dropHelperPending();
+      return;
+    }
+    pending.unclear += 1;
+    this.queueAnnouncement(speech);
+    this.armHelperSilence();
+  }
+
+  private dropHelperPending(): void {
+    this.clearHelperPending();
+    this.queueAnnouncement(HELPER_DROPPED_SPEECH);
+  }
+
+  private clearHelperPending(): void {
+    clearTimeout(this.helperSilenceTimer);
+    this.helperSilenceTimer = undefined;
+    if (!this.helperPending) return;
+    this.helperPending = null;
+    this.refreshSpeechConfirm();
+  }
+
+  /**
+   * Quiet for `HELPER_CONFIRM_SILENCE_MS` after the last thing voice said drops the action. A
+   * reply still being spoken or transcribed when the timer ends gets a little longer.
+   */
+  private armHelperSilence(): void {
+    const pending = this.helperPending;
+    clearTimeout(this.helperSilenceTimer);
+    this.helperSilenceTimer = undefined;
+    if (!pending) return;
+    const onQuiet = () => {
+      this.helperSilenceTimer = undefined;
+      if (this.helperPending !== pending) return;
+      if (this.speechInProgress && Date.now() < pending.expiresAt) {
+        this.helperSilenceTimer = setTimeout(onQuiet, HELPER_SPEECH_GRACE_MS);
+        return;
+      }
+      this.dropHelperPending();
+    };
+    void (async () => {
+      await this.announcementChain;
+      if (this.helperPending !== pending || this.closed) return;
+      clearTimeout(this.helperSilenceTimer);
+      this.helperSilenceTimer = setTimeout(onQuiet, HELPER_CONFIRM_SILENCE_MS);
+    })();
+  }
+
+  /**
+   * Gives the words to the pending action; false when they leave it. A new "Paseo, ..." replaces
+   * it, except "Paseo, yes" and the like, which still answer it.
+   */
+  private takeHelperPendingReply(text: string): boolean {
+    const call = this.host.askSideHelper ? parseSideHelperCall(text) : null;
+    if (call === null) {
+      this.answerHelperPending(text);
+      return true;
+    }
+    if (call.kind === "question" && this.isHelperPendingReply(call.question)) {
+      this.answerHelperPending(call.question);
+      return true;
+    }
+    this.clearHelperPending();
+    return false;
+  }
+
+  /** Runs a confirmed action and says how it went. */
+  private runHelperAction(action: VoiceHelperAction): void {
+    const run = this.host.runSideHelperAction?.bind(this.host);
+    void (async () => {
+      let speech = HELPER_FAILED_ACTION_SPEECH;
+      try {
+        if (run) speech = await run(action);
+      } catch (error) {
+        this.sessionLogger.warn({ err: error, action: action.type }, "Voice helper action failed");
+      }
+      if (this.isVoiceMode) this.queueAnnouncement(speech);
+    })();
   }
 
   /** Makes "One sec." ahead of time, so it plays when due instead of after a synthesis. */
@@ -1590,7 +1769,10 @@ export class VoiceSession {
    * expected, and, when the app can move voice, whenever no speech is playing.
    */
   private refreshSpeechConfirm(): void {
-    const short = this.expectingShortWord || (this.navigationEnabled && this.activePlaybacks === 0);
+    const short =
+      this.expectingShortWord ||
+      this.helperPending !== null ||
+      (this.navigationEnabled && this.activePlaybacks === 0);
     const confirmMs = short ? SHORT_WORD_CONFIRM_MS : null;
     if (confirmMs === this.appliedSpeechConfirmMs) return;
     this.appliedSpeechConfirmMs = confirmMs;
