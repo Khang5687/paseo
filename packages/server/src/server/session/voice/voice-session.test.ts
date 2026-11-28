@@ -4,11 +4,17 @@ import { EventEmitter } from "node:events";
 import pino from "pino";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { VoiceSession, type VoiceSessionHost } from "./voice-session.js";
+import { VoiceSession, type VoiceArrival, type VoiceSessionHost } from "./voice-session.js";
 import { SHORT_WORD_CONFIRM_MS, VOICE_SEND_HOLD_MS } from "./send-gate.js";
 import type { VoiceSendMode } from "./send-words.js";
 import type { VoiceChatProject } from "@getpaseo/protocol/voice/chat-directory";
-import { createVoiceNavMemory, type VoiceNavMemory } from "./voice-navigate.js";
+import { findHostMatches, type VoiceHostChats } from "@getpaseo/protocol/voice/chat-match";
+import {
+  createVoiceNavMemory,
+  type VoiceFindChatsAnswer,
+  type VoiceFindChatsQuery,
+  type VoiceNavMemory,
+} from "./voice-navigate.js";
 import { SIDE_HELPER_TIMEOUT_MS, SIDE_HELPER_WAIT_MS } from "./voice-side-helper.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
@@ -764,6 +770,170 @@ describe("VoiceSession navigation", () => {
     expect(navigations(oldApp.host)).toEqual([]);
     expect(oldApp.host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Go to Paseo." }]);
     await oldApp.voiceSession.cleanup();
+  });
+
+  const MAC_FOOD_ID = "55555555-5555-4555-8555-555555555555";
+  const MAC_GYM_ID = "66666666-6666-4666-8666-666666666666";
+  const MAC_SHOP_ID = "77777777-7777-4777-8777-777777777777";
+  const fitupOnMac: VoiceChatProject = {
+    projectId: "mac-fitup",
+    name: "FitUp",
+    chats: [
+      {
+        agentId: MAC_FOOD_ID,
+        workspaceId: "mw-food",
+        title: "Food scan redesign 🍎",
+        lastActiveAt: 2,
+      },
+      { agentId: MAC_GYM_ID, workspaceId: "mw-gym", title: "Gym log", lastActiveAt: 1 },
+    ],
+  };
+  const groceriesOnMac: VoiceChatProject = {
+    projectId: "mac-groceries",
+    name: "Groceries",
+    chats: [
+      { agentId: MAC_SHOP_ID, workspaceId: "mw-shop", title: "Shopping list", lastActiveAt: 1 },
+    ],
+  };
+  const omenProjects = chats;
+
+  /** The app: Omen and Mac, each answering for the other with the shared matcher. */
+  function appHosts(askingHost: "Omen" | "Mac", macOnline = true) {
+    const hosts: VoiceHostChats[] = [
+      { serverId: "omen", hostName: "Omen", online: true, projects: omenProjects },
+      {
+        serverId: "mac",
+        hostName: "Mac",
+        online: macOnline,
+        projects: [fitupOnMac, groceriesOnMac],
+      },
+    ];
+    const others = hosts.filter((host) => host.hostName !== askingHost);
+    return vi.fn(async (query: VoiceFindChatsQuery): Promise<VoiceFindChatsAnswer> => {
+      if (query.kind === "name") {
+        return { hostName: askingHost, matches: findHostMatches(query.target, others) };
+      }
+      for (const host of others) {
+        if (host.serverId !== query.serverId) continue;
+        for (const project of host.projects) {
+          if (!project.chats.some((chat) => chat.agentId === query.agentId)) continue;
+          const match = { ...host, project, chatAgentId: query.agentId, score: 1 };
+          return { hostName: askingHost, matches: [match] };
+        }
+      }
+      return { hostName: askingHost, matches: [] };
+    });
+  }
+
+  async function startOnHost(
+    hostName: "Omen" | "Mac",
+    agentId: string,
+    options: { macOnline?: boolean; arrival?: VoiceArrival } = {},
+  ) {
+    const setup = createVoiceSession(playedTts, { navMemory: createVoiceNavMemory() });
+    acknowledgeAudio(setup);
+    setup.host.chats = hostName === "Omen" ? omenProjects : [fitupOnMac, groceriesOnMac];
+    setup.host.findChatsOnOtherHosts = appHosts(hostName, options.macOnline);
+    await setup.voiceSession.handleSetVoiceMode(true, agentId, undefined, {
+      navigation: true,
+      navigationHosts: true,
+      arrival: options.arrival,
+    });
+    return setup;
+  }
+
+  function remoteNavigations(host: FakeVoiceHost) {
+    return host.emitted.flatMap((message) =>
+      message.type === "voice.navigate" ? [message.payload] : [],
+    );
+  }
+
+  test("a chat on another host moves voice there, which says where it is, and 'go back' returns", async () => {
+    vi.useFakeTimers();
+    const omen = await startOnHost("Omen", VOICE_AGENT_ID);
+    await sayTurn(omen.detector, omen.sttSession, "Go to groceries, shopping list.", "s-1");
+    expect(remoteNavigations(omen.host)).toEqual([
+      {
+        agentId: MAC_SHOP_ID,
+        workspaceId: "mw-shop",
+        serverId: "mac",
+        speech: "Groceries on Mac, Shopping list.",
+      },
+    ]);
+    expect(omen.host.spokenInput).toEqual([]);
+    await omen.voiceSession.cleanup();
+
+    // The app turns voice on in the Mac chat with what to say and where it came from.
+    const mac = await startOnHost("Mac", MAC_SHOP_ID, {
+      arrival: {
+        speech: "Groceries on Mac, Shopping list.",
+        previous: { serverId: "omen", agentId: VOICE_AGENT_ID },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(mac.host)).toEqual(["Groceries on Mac, Shopping list."]),
+    );
+    await sayTurn(mac.detector, mac.sttSession, "Go back.", "s-2");
+    await vi.waitFor(() =>
+      expect(remoteNavigations(mac.host)).toEqual([
+        {
+          agentId: VOICE_AGENT_ID,
+          workspaceId: "w-fitup",
+          serverId: "omen",
+          speech: "FitUp on Omen, Main chat.",
+        },
+      ]),
+    );
+    await mac.voiceSession.cleanup();
+  });
+
+  test("the same project on two hosts asks which machine, then which chat", async () => {
+    vi.useFakeTimers();
+    const omen = await startOnHost("Omen", RELEASE_CHAT_ID);
+    await sayTurn(omen.detector, omen.sttSession, "Go to FitUp.", "s-1");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(omen.host)).toEqual(["FitUp on Omen or on Mac?"]),
+    );
+    await sayTurn(omen.detector, omen.sttSession, "On the Mac.", "s-2");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(omen.host)).toContain(
+        "FitUp on Mac has 2 chats: Food scan redesign, Gym log. Which one?",
+      ),
+    );
+    await sayTurn(omen.detector, omen.sttSession, "Gym log.", "s-3");
+    expect(remoteNavigations(omen.host)).toEqual([
+      expect.objectContaining({ agentId: MAC_GYM_ID, serverId: "mac" }),
+    ]);
+    expect(omen.host.spokenInput).toEqual([]);
+    await omen.voiceSession.cleanup();
+  });
+
+  test("a name only an offline host has says so, and voice stays", async () => {
+    vi.useFakeTimers();
+    const omen = await startOnHost("Omen", VOICE_AGENT_ID, { macOnline: false });
+    await sayTurn(omen.detector, omen.sttSession, "Go to groceries.", "s-1");
+    await vi.waitFor(() =>
+      expect(spokenAnnouncements(omen.host)).toEqual(["Groceries is on Mac, which is offline."]),
+    );
+    // FitUp is on both: the online Omen copy wins without a question.
+    await sayTurn(omen.detector, omen.sttSession, "Go to FitUp, food scan.", "s-2");
+    expect(remoteNavigations(omen.host)).toEqual([
+      { agentId: SCAN_CHAT_ID, workspaceId: "w-scan" },
+    ]);
+    expect(omen.host.spokenInput).toEqual([]);
+    await omen.voiceSession.cleanup();
+  });
+
+  test("an app without host lookup is never asked", async () => {
+    vi.useFakeTimers();
+    const setup = await startNavigatingSession(VOICE_AGENT_ID, createVoiceNavMemory());
+    const ask = appHosts("Omen");
+    setup.host.findChatsOnOtherHosts = ask;
+    await sayTurn(setup.detector, setup.sttSession, "Go to groceries.", "s-1");
+    await vi.advanceTimersByTimeAsync(VOICE_SEND_HOLD_MS * 2);
+    expect(ask).not.toHaveBeenCalled();
+    expect(setup.host.spokenInput).toEqual([{ agentId: VOICE_AGENT_ID, text: "Go to groceries." }]);
+    await setup.voiceSession.cleanup();
   });
 });
 

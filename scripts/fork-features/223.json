@@ -1,0 +1,12 @@
+{
+  "pr": 223,
+  "title": "feat(voice): go to, list chats and go back across every connected host",
+  "tests": [
+    "packages/protocol/src/voice/chat-match.test.ts",
+    "packages/protocol/src/voice/chat-directory.test.ts",
+    "packages/server/src/server/session/voice/voice-session.test.ts",
+    "packages/server/src/server/session/voice/voice-navigate.test.ts",
+    "packages/app/src/voice/voice-host-chats.test.ts",
+    "packages/app/src/voice/voice-runtime.test.ts"
+  ]
+}

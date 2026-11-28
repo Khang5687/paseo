@@ -9395,6 +9395,13 @@ export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;
 
 // Type exports for inbound message types
 export type VoiceAudioChunkMessage = z.infer<typeof VoiceAudioChunkMessageSchema>;
+export type VoiceArrival = z.infer<typeof VoiceArrivalSchema>;
+export type VoiceNavigateFindChatsResponsePayload = z.infer<
+  typeof VoiceNavigateFindChatsResponseSchema
+>["payload"];
+export type VoiceNavigateFindChatsRequestPayload = z.infer<
+  typeof VoiceNavigateFindChatsRequestSchema
+>["payload"];
 export type FetchAgentsRequestMessage = z.infer<typeof FetchAgentsRequestMessageSchema>;
 export type FetchAgentHistoryRequestMessage = z.infer<typeof FetchAgentHistoryRequestMessageSchema>;
 export type FetchRecentProviderSessionsRequestMessage = z.infer<

@@ -167,6 +167,8 @@ import type {
   AgentQueuedMessageSummaryPayload,
   AgentQuestionAnswer,
   AgentAttachment,
+  VoiceArrival,
+  VoiceNavigateFindChatsResponsePayload,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentOptionControl,
@@ -5615,11 +5617,19 @@ export class DaemonClient {
   // Audio / Voice
   // ============================================================================
 
-  /** `navigation`: this client moves voice to the chat a spoken "go to" names (`voice.navigate`). */
+  /**
+   * `navigation`: this client moves voice to the chat a spoken "go to" names (`voice.navigate`).
+   * `navigationHosts`: it also answers `voice.navigate.find_chats.request` for its other hosts.
+   * `arrival`: voice just moved here from another host (what to say, and where "go back" goes).
+   */
   async setVoiceMode(
     enabled: boolean,
     agentId?: string,
-    options: { navigation?: boolean } = {},
+    options: {
+      navigation?: boolean;
+      navigationHosts?: boolean;
+      arrival?: VoiceArrival;
+    } = {},
   ): Promise<SetVoiceModePayload> {
     const requestId = this.createRequestId();
     const message = SessionInboundMessageSchema.parse({
@@ -5628,6 +5638,8 @@ export class DaemonClient {
       ...(agentId ? { agentId } : {}),
       requestId,
       ...(options.navigation ? { navigation: true } : {}),
+      ...(options.navigationHosts ? { navigationHosts: true } : {}),
+      ...(options.arrival ? { arrival: options.arrival } : {}),
     });
     const response = await this.sendRequest({
       requestId,
@@ -5884,6 +5896,13 @@ export class DaemonClient {
 
   async audioPlayed(id: string): Promise<void> {
     this.sendSessionMessage({ type: "audio_played", id });
+  }
+
+  /** The answer to the daemon's `voice.navigate.find_chats.request`. */
+  answerVoiceFindChats(payload: VoiceNavigateFindChatsResponsePayload): void {
+    this.sendSessionMessage(
+      SessionInboundMessageSchema.parse({ type: "voice.navigate.find_chats.response", payload }),
+    );
   }
 
   // ============================================================================
