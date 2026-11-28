@@ -3278,6 +3278,10 @@ export const en = {
         sideHelperModelHint:
           'Start with "Paseo," to ask about your chats ("Paseo, which chats are waiting on me?"). This model answers out loud; nothing goes into the chat.',
         sideHelperModelCustom: "Custom",
+        speechSpeed: "Speaking speed",
+        speechSpeedHint:
+          "How fast Paseo reads answers out loud. Applies to the next sentence, even while voice is on.",
+        speechSpeedNormal: "Normal",
       },
       openai: {
         apiKey: "API key",

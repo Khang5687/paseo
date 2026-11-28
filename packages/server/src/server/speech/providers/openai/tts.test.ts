@@ -39,4 +39,19 @@ describe("OpenAITTS", () => {
       baseURL: "https://speech.example.com/v1",
     });
   });
+
+  test("passes the read-back speed to OpenAI, kept inside the range it accepts", async () => {
+    speechCreateMock.mockResolvedValue({ arrayBuffer: async () => new ArrayBuffer(2) });
+    const provider = new OpenAITTS({ apiKey: "sk-test" }, pino({ level: "silent" }));
+
+    await provider.synthesizeSpeech("hello", { speed: 1.2 });
+    await provider.synthesizeSpeech("hello", { speed: 9 });
+    await provider.synthesizeSpeech("hello");
+
+    expect(speechCreateMock.mock.calls.map(([request]) => request.speed)).toEqual([
+      1.2,
+      4,
+      undefined,
+    ]);
+  });
 });

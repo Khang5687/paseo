@@ -3,7 +3,11 @@ import { Readable } from "node:stream";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import type { SpeechStreamResult, TextToSpeechProvider } from "../../../speech-provider.js";
+import type {
+  SpeechStreamResult,
+  SpeechSynthesisOptions,
+  TextToSpeechProvider,
+} from "../../../speech-provider.js";
 import { chunkBuffer, float32ToPcm16le } from "../../../audio.js";
 import { loadSherpaOnnxNode } from "./sherpa-onnx-node-loader.js";
 import { engineFiles, type LocalTtsModelId, type TtsEngine } from "./model-catalog.js";
@@ -145,7 +149,10 @@ export class SherpaOnnxTTS implements TextToSpeechProvider {
     );
   }
 
-  async synthesizeSpeech(text: string): Promise<SpeechStreamResult> {
+  async synthesizeSpeech(
+    text: string,
+    options?: SpeechSynthesisOptions,
+  ): Promise<SpeechStreamResult> {
     const trimmed = text.trim();
     if (!trimmed) {
       throw new Error("Cannot synthesize empty text");
@@ -153,7 +160,9 @@ export class SherpaOnnxTTS implements TextToSpeechProvider {
 
     // The native handle is not reentrant. Keep prefetch off the worker event loop
     // while allowing only one generation at a time on this model.
-    const result = this.synthesisQueue.then(() => this.generateSpeech(trimmed));
+    const result = this.synthesisQueue.then(() =>
+      this.generateSpeech(trimmed, options?.speed ?? this.speed),
+    );
     this.synthesisQueue = result.then(
       () => undefined,
       () => undefined,
@@ -161,14 +170,14 @@ export class SherpaOnnxTTS implements TextToSpeechProvider {
     return result;
   }
 
-  private async generateSpeech(text: string): Promise<SpeechStreamResult> {
+  private async generateSpeech(text: string, speed: number): Promise<SpeechStreamResult> {
     if (this.closed) {
       throw new Error("TTS provider closed");
     }
     const audio = await this.tts.generateAsync({
       text,
       sid: this.speakerId,
-      speed: this.speed,
+      speed,
       // Electron rejects native external-backed typed arrays. Request a copied buffer
       // from sherpa itself instead of trying to clone after generate() returns.
       enableExternalBuffer: false,

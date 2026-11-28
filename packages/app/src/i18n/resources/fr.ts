@@ -3211,6 +3211,10 @@ export const fr: TranslationResources = {
         sideHelperModelHint:
           'Commencez par "Paseo," pour poser une question sur vos chats. Ce modèle répond à voix haute ; rien ne va dans le chat.',
         sideHelperModelCustom: "Personnalisé",
+        speechSpeed: "Vitesse de parole",
+        speechSpeedHint:
+          "La vitesse à laquelle Paseo lit les réponses à voix haute. S'applique dès la phrase suivante, même quand la voix est activée.",
+        speechSpeedNormal: "Normale",
       },
       openai: {
         apiKey: "Clé d'API",

@@ -3172,6 +3172,10 @@ export const ja: TranslationResources = {
         sideHelperModelHint:
           "「Paseo,」で始めるとチャットについて質問できます。このモデルが声で答え、チャットには何も送りません。",
         sideHelperModelCustom: "カスタム",
+        speechSpeed: "読み上げ速度",
+        speechSpeedHint:
+          "Paseo が回答を読み上げる速さです。音声モード中でも次の文から反映されます。",
+        speechSpeedNormal: "標準",
       },
       openai: {
         apiKey: "API キー",

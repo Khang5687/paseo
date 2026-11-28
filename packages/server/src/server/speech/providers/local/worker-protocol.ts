@@ -11,7 +11,6 @@ export interface LocalSpeechWorkerConfig {
   dictationSttModel: string;
   voiceTtsModel: string;
   voiceTtsSpeakerId?: number;
-  voiceTtsSpeed?: number;
   voiceTtsThreads?: number;
 }
 
@@ -23,6 +22,7 @@ export type LocalSpeechWorkerRequest =
       requestId: string;
       config: LocalSpeechWorkerConfig;
       text: string;
+      speed?: number;
     }
   | {
       type: "stt.transcribe";

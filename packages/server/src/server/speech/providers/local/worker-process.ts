@@ -75,7 +75,6 @@ function ttsKey(config: LocalSpeechWorkerConfig): string {
     config.modelsDir,
     config.voiceTtsModel,
     config.voiceTtsSpeakerId ?? 0,
-    config.voiceTtsSpeed ?? 1,
     ttsThreads(config),
   ].join(":");
 }
@@ -132,7 +131,6 @@ function getTtsProvider(config: LocalSpeechWorkerConfig): SherpaOnnxTTS {
       modelDir,
       engine: getLocalTtsEngine(ttsModelId(config)),
       speakerId: config.voiceTtsSpeakerId,
-      speed: config.voiceTtsSpeed,
       numThreads: ttsThreads(config),
     },
     logger,
@@ -291,7 +289,9 @@ function handleSessionRequest(message: LocalSpeechWorkerSessionRequest): void {
 
 async function handleRequest(message: LocalSpeechWorkerRequest): Promise<void> {
   if (message.type === "tts.synthesize") {
-    const result = await getTtsProvider(message.config).synthesizeSpeech(message.text);
+    const result = await getTtsProvider(message.config).synthesizeSpeech(message.text, {
+      speed: message.speed,
+    });
     const chunks: Buffer[] = [];
     for await (const chunk of result.stream) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));

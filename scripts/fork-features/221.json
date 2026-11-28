@@ -1,0 +1,10 @@
+{
+  "pr": 221,
+  "title": "feat(server): voice read-back speed setting, 1.2x by default",
+  "tests": [
+    "packages/server/src/server/agent/tts-manager.test.ts",
+    "packages/server/src/server/daemon-config-store.test.ts",
+    "packages/server/src/server/speech/providers/local/sherpa/sherpa-tts.test.ts",
+    "packages/server/src/server/speech/providers/openai/tts.test.ts"
+  ]
+}
