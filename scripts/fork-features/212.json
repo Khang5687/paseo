@@ -1,0 +1,5 @@
+{
+  "pr": 212,
+  "title": "fix(server): wait for pending terminal requests when stopping with kept terminals",
+  "tests": ["packages/server/src/server/bootstrap-terminal-shutdown.test.ts"]
+}
